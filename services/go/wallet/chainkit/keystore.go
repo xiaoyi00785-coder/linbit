@@ -118,10 +118,12 @@ func ksCipher(pass []byte, f keystoreFile) (cipher.AEAD, error) {
 	return cipher.NewGCM(blk)
 }
 
-// Key branches: deposit addresses live on branch 0, the hot wallet on branch 1.
+// Key branches: deposit addresses live on branch 0, the hot wallet on branch 1
+// and the reserve ("cold" stand-in, same HD seed) on branch 2.
 const (
 	BranchDeposit uint32 = 0
 	BranchHot     uint32 = 1
+	BranchReserve uint32 = 2
 )
 
 // accountPath is the hardened BIP44/84 account path for a secp256k1 chain.

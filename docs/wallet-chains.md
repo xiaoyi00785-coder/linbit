@@ -3,7 +3,9 @@
 ## 架构
 - `wallet` 服务：只持有**公钥**（xpub / SOL 地址列表），负责派生充值地址、扫链入账、提现广播、归集（sweep）。
 - `wallet-signer` 容器：唯一持有热钱包种子（scrypt + AES-GCM 加密 keystore），通过带 Bearer Token 的 HTTP 接口签名，**不对外发布端口**。目前与主服务同机独立容器；以后迁到独立服务器只需修改 `WALLET_SIGNER_URL`。
-- 冷钱包：保持 2/3 多签接口，系统只向 `WALLET_COLD_ADDRESS_<NET>` 归集，不持有冷钱包私钥。
+- 钱包方案（当前决定）：**单一软件 HD 钱包**，专用新助记词（signer `init` 生成，永不打印），充值地址由 xpub 派生（分支 0），热钱包为分支 1 / 索引 0，由 signer 签名。
+- 冷钱包/多签：保留接口，**暂不实现、不启用**（不做 Safe / TRON 多签）。默认把超过热钱包上限的部分归集到同一 HD 钱包派生的**储备地址**（分支 2 / 索引 0）；如设置 `WALLET_COLD_ADDRESS_<NET>` 则用该地址；`WALLET_COLD_FROM_HD=false` 关闭（全部留在热钱包）。注意储备地址与热钱包同一种子、同一 signer，安全性不等同真正冷钱包。
+- 热钱包上限：`WALLET_HOT_CAP_<ASSET>_<NET>`（如 `WALLET_HOT_CAP_USDT_TRC20=50000`），为空表示不设上限。
 - 注意：signer 会对任何持有有效 token 的请求签名，token 等同热钱包权限，请妥善保管并定期轮换。
 
 ## 支持网络（`WALLET_CHAIN=testnet`）
@@ -23,7 +25,7 @@
 2. `docker compose --profile chain run --rm wallet-signer init`（测试网；主网加 `-mainnet`）。备份 keystore 卷与口令（分开保存）。
 3. `docker compose --profile chain run --rm wallet-signer xpub` → 将输出的 `WALLET_XPUB_EVM/TRON/BTC` 写入 .env。
 4. `docker compose --profile chain run --rm wallet-signer sol-addresses -n 10000 -o /data/sol.txt`，将文件提供给 wallet 并设置 `WALLET_SOL_ADDRESSES_FILE`。
-5. 设置 `WALLET_CHAIN=testnet`、冷钱包地址 `WALLET_COLD_ADDRESS_<NET>`、热钱包上限 `WALLET_HOT_CAP_<ASSET>_<NET>`，可选 `WALLET_SWEEP_ENABLED=true`、`WALLET_SWEEP_MIN_<ASSET>_<NET>`。
+5. 设置 `WALLET_CHAIN=testnet`、热钱包上限 `WALLET_HOT_CAP_<ASSET>_<NET>`，可选 `WALLET_SWEEP_ENABLED=true`、`WALLET_SWEEP_MIN_<ASSET>_<NET>`。
 6. 启动时 wallet 会校验 xpub 与 signer 公钥一致，不一致拒绝启动。
 7. 用水龙头给 signer 日志里打印的热钱包地址充测试币（gas 补充需要）。
 

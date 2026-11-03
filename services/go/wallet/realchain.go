@@ -273,7 +273,20 @@ func (rc *RealChain) bindSigner(ctx context.Context) error {
 		if got != want {
 			return fmt.Errorf("%s: deposit key source (xpub / SOL list) does not match the signer keystore", cn.name)
 		}
-		log.Printf("wallet: %s (%s) hot=%s cold=%q", cn.name, cn.chain, cn.hot.Address, cn.cold)
+		// No multisig for now: unless an explicit WALLET_COLD_ADDRESS_<NET> is
+		// set, excess above the hot cap goes to a reserve address derived from
+		// the same HD seed (branch 2, index 0). WALLET_COLD_FROM_HD=false
+		// disables it (everything stays in the hot wallet).
+		if cn.cold == "" && !strings.EqualFold(common.Env("WALLET_COLD_FROM_HD", "true"), "false") {
+			rp, err := rc.signer.PublicKey(ctx, cn.chain, chainkit.BranchReserve, 0)
+			if err != nil {
+				return fmt.Errorf("signer reserve key: %w", err)
+			}
+			if cn.cold, err = chainkit.AddressFromPub(cn.chain, rp, cn.hrp); err != nil {
+				return err
+			}
+		}
+		log.Printf("wallet: %s (%s) hot=%s cold/reserve=%q", cn.name, cn.chain, cn.hot.Address, cn.cold)
 	}
 	return nil
 }
