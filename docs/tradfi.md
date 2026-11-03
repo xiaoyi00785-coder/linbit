@@ -38,7 +38,15 @@
 
 始终放行（退出路径）：撤单、平仓 / 减仓、`POST /strategy/grid/{id}/stop`、`DELETE /futures/copy/follows/{id}`、`POST /futures/copy/trader/close`、跟单镜像的减仓 / 平仓。
 
-**部署前提**：`CF-IPCountry` 只有在源站只允许 Cloudflare 回源时才可信。
+**部署前提 / 可信代理**：网关只在**直连对端 IP** 属于 `TRUSTED_PROXY_CIDRS`（逗号分隔 CIDR，留空 = Cloudflare 官方 IP 段）时才采信 `CF-IPCountry`；
+否则（对端不可信、头缺失、`XX`、`T1`/Tor）一律视为国家未知，股票 / 贵金属**失败即拒绝**（`403 REGION_RESTRICTED`），加密货币不受影响。
+网关前面有 nginx/Caddy 时，直连对端是代理而非 Cloudflare：把代理的地址（如 `127.0.0.1/32,::1/128` 或 docker 网桥 `172.16.0.0/12`）写入 `TRUSTED_PROXY_CIDRS`，
+并让该代理只接受 Cloudflare 回源、原样转发 `CF-IPCountry`（否则任何人都能伪造国家）。
+market-data 的运营位（placements）也读 `CF-IPCountry`，仅用于展示定向，不是合规门禁。
+
+做市：market-data 在开关关闭时仍把 TradFi 交易对列为 trading，做市服务因此自行读取 `/internal/tradfi/gate`：
+开关关闭（或门禁不可用，失败即关闭）→ 撤销该对全部做市挂单、状态 `disabled`、原因 `feature flag off (…)`。
+现货交易对若做市账户无基础资产且没有基线（从未注资），不再只挂买单，而是撤单并 `paused`（`no base inventory …`），需先在后台注资基础资产。
 
 ## 充提
 

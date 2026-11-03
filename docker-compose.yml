@@ -47,6 +47,10 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Optional JSON override for GET /wallet/withdraw/networks (empty = defaults).
       WITHDRAW_NETWORKS_JSON: ${WITHDRAW_NETWORKS_JSON:-}
+      # Futures wallet transfers + TradFi/USD pricing (defaults were localhost).
+      FUTURES_INTERNAL_URL: http://futures:8089
+      MARKET_URL: http://market-data:8085
+      ACCOUNT_INTERNAL_URL: http://account:8081
       # mm_testnet_seed is only accepted when WALLET_CHAIN is mock/testnet and
       # LINBIT_ENV != production.
       WALLET_CHAIN: ${WALLET_CHAIN:-mock}
@@ -85,6 +89,8 @@ services:
       # Chains are simulated by default (no real node/keys). Set DEV_MODE=true only
       # in local/CI environments to enable the mock-chain injection endpoints.
       DEV_MODE: ${WALLET_DEV_MODE:-false}
+      # Hot-wallet MPC secret: set in .env for production (never commit a value).
+      WALLET_HOT_SECRET: ${WALLET_HOT_SECRET:-}
       # Where the on-chain gas is charged: "amount" (default) deducts it from the
       # withdrawal amount (user receives amount-gas; only amount is frozen);
       # "extra" adds it on top.
@@ -203,6 +209,16 @@ services:
       # RESEND_FROM must use a domain verified in Resend, e.g. "Linbit <no-reply@your-domain>".
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
+      ORDER_INTERNAL_URL: http://order:8084
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      SMS_ENABLED: ${SMS_ENABLED:-false}
+      # Passkeys: unset WEBAUTHN_RP_ID = passkeys disabled. Origins: comma list
+      # (WEBAUTHN_ORIGINS accepted as an alias of WEBAUTHN_RP_ORIGINS).
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-}
+      WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-${WEBAUTHN_ORIGINS:-}}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       # Avatars persist on a named volume (survive container rebuilds).
       AVATAR_STORAGE_DIR: /data/avatars
     volumes:
@@ -242,6 +258,7 @@ services:
       FUTURES_INTERNAL_URL: http://futures:8089
       SPOT_MAKER_FEE_RATE: ${SPOT_MAKER_FEE_RATE:-0.001}
       SPOT_TAKER_FEE_RATE: ${SPOT_TAKER_FEE_RATE:-0.001}
+      FEE_ACCOUNT: ${FEE_ACCOUNT:-}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
     depends_on:
       postgres:
@@ -262,6 +279,10 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ENGINE_URL: http://matching-engine:8083
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
+      ACCOUNT_URL: http://account:8081
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      EARN_URL: http://earn:8092
+      FUTURES_URL: http://futures:8089
       # External index price (futures mark/index, KYC/admin USD conversion,
       # market maker): Binance public REST first, OKX backup; stale => 503.
       INDEX_FEED: ${INDEX_FEED:-binance,okx}
@@ -328,6 +349,8 @@ services:
       MM_INTERNAL_URL: http://marketmaker:8093
       WALLET_CHAIN: ${WALLET_CHAIN:-mock}
       MM_USER_ID: ${MM_USER_ID:-mm:main}
+      # true only when admin sits behind a trusted reverse proxy (X-Forwarded-For).
+      ADMIN_TRUST_PROXY: ${ADMIN_TRUST_PROXY:-}
       # Daily solvency reconciliation hour (UTC, -1 = off); alerts go to Telegram.
       SOLVENCY_HOUR_UTC: ${SOLVENCY_HOUR_UTC:-1}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -368,6 +391,7 @@ services:
       # Copy-trading TradFi gate: follower KYC country (docs/tradfi.md).
       KYC_URL: http://kyc:8087
       FUTURES_DEFAULT_LEVERAGE: ${FUTURES_DEFAULT_LEVERAGE:-20}
+      MM_USER_ID: ${MM_USER_ID:-mm:main}
       FUTURES_DEFAULT_MARGIN_MODE: ${FUTURES_DEFAULT_MARGIN_MODE:-cross}
       FUTURES_MARKET_PRICE_BAND: ${FUTURES_MARKET_PRICE_BAND:-0.05}
       FUTURES_FUNDING_HOURS: ${FUTURES_FUNDING_HOURS:-8}
@@ -427,6 +451,8 @@ services:
       GROWTH_SETTLE_HOUR_UTC: ${GROWTH_SETTLE_HOUR_UTC:-16}
       GROWTH_PARTNER_AUTO_APPROVE: ${GROWTH_PARTNER_AUTO_APPROVE:-false}
       GROWTH_INVITE_BASE_URL: ${GROWTH_INVITE_BASE_URL:-https://linbit.example.com/r/}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -451,6 +477,9 @@ services:
       ASSET_INTERNAL_URL: http://asset:8082
       FUTURES_INTERNAL_URL: http://futures:8089
       LOAN_EARLY_REPAY_PENALTY_RATE: ${LOAN_EARLY_REPAY_PENALTY_RATE:-0.0005}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -478,6 +507,7 @@ services:
       # Base-asset seed for the MM inventory (empty = code defaults).
       MM_SEED_BASE_USDT: ${MM_SEED_BASE_USDT:-}
       MM_SEED_BASE_ASSETS: ${MM_SEED_BASE_ASSETS:-}
+      MM_TICK_MS: ${MM_TICK_MS:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
@@ -513,6 +543,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # CF-IPCountry (TradFi region gate) is trusted only from these peer CIDRs;
+      # empty = Cloudflare edge ranges. Untrusted/missing country = TradFi denied.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      GATEWAY_CLIENT_IP_HEADER: ${GATEWAY_CLIENT_IP_HEADER:-}
+      GATEWAY_ACCESS_LOG: ${GATEWAY_ACCESS_LOG:-}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     ports:
       # Loopback only: put nginx/Caddy (TLS) in front.
       - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"

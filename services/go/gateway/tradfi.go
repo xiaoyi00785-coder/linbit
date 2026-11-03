@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -53,6 +54,7 @@ type kycEntry struct {
 type tradfiGuard struct {
 	marketURL, kycURL, strategyURL, assetURL, token string
 	ttl                                             time.Duration
+	trusted                                         []*net.IPNet
 	client                                          *http.Client
 
 	mu     sync.Mutex
@@ -62,7 +64,12 @@ type tradfiGuard struct {
 }
 
 func newTradFiGuard(cfg Config) *tradfiGuard {
-	return &tradfiGuard{marketURL: strings.TrimRight(cfg.MarketURL, "/"), kycURL: strings.TrimRight(cfg.KycURL, "/"),
+	cidrs := cfg.TrustedProxyCIDRs
+	if strings.TrimSpace(cidrs) == "" {
+		cidrs = DefaultTrustedProxyCIDRs
+	}
+	trusted, _ := parseCIDRs(cidrs) // validated in NewGateway
+	return &tradfiGuard{trusted: trusted, marketURL: strings.TrimRight(cfg.MarketURL, "/"), kycURL: strings.TrimRight(cfg.KycURL, "/"),
 		strategyURL: strings.TrimRight(cfg.StrategyURL, "/"), assetURL: strings.TrimRight(cfg.AssetURL, "/"),
 		token: cfg.InternalToken, ttl: 30 * time.Second, client: &http.Client{Timeout: 3 * time.Second}, kyc: map[string]kycEntry{}}
 }
@@ -319,7 +326,13 @@ func (t *tradfiGuard) check(w http.ResponseWriter, r *http.Request) bool {
 	for _, c := range g.RestrictedCountries {
 		restricted[strings.ToUpper(c)] = true
 	}
-	if ip := strings.ToUpper(strings.TrimSpace(r.Header.Get("CF-IPCountry"))); ip != "" && restricted[ip] {
+	// CF-IPCountry only counts from a trusted proxy peer; unknown -> fail closed.
+	ip := trustedCountry(r, t.trusted)
+	if ip == "" {
+		common.WriteError(w, http.StatusForbidden, "REGION_RESTRICTED", "无法确认您所在的国家或地区，暂不支持该服务")
+		return false
+	}
+	if restricted[ip] {
 		common.WriteError(w, http.StatusForbidden, "REGION_RESTRICTED", "您所在的国家或地区暂不支持该服务")
 		return false
 	}

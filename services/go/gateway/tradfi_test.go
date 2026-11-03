@@ -58,7 +58,8 @@ func TestTradFiGuard(t *testing.T) {
 	}))
 	defer up.Close()
 	cfg := Config{JWTSecret: "test-secret", AccountURL: up.URL, AssetURL: up.URL, WalletURL: up.URL, OrderURL: up.URL,
-		MarketURL: market.URL, KycURL: kyc.URL, FuturesURL: up.URL, StrategyURL: up.URL, GrowthURL: up.URL, EarnURL: up.URL}
+		MarketURL: market.URL, KycURL: kyc.URL, FuturesURL: up.URL, StrategyURL: up.URL, GrowthURL: up.URL, EarnURL: up.URL,
+		TrustedProxyCIDRs: "192.0.2.0/24"} // httptest peer = trusted proxy
 	gw, err := NewGateway(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +126,11 @@ func TestTradFiGuard(t *testing.T) {
 		{"sub transfer PAXG kyc US", "POST", "/sub-accounts/transfer", `{"asset":"PAXG","amount":"1"}`, "u-us", "", 403, "REGION_RESTRICTED"},
 		{"catalogue anon ok", "GET", "/tradfi/assets", "", "", "SG", 200, ""},
 		{"catalogue anon US", "GET", "/tradfi/assets", "", "", "US", 403, "REGION_RESTRICTED"},
+		// unknown country (no header / XX / Tor) fails closed for TradFi only
+		{"metal no country", "POST", "/spot/orders", `{"symbol":"PAXGUSDT"}`, "u1", "", 403, "REGION_RESTRICTED"},
+		{"metal XX", "POST", "/spot/orders", `{"symbol":"PAXGUSDT"}`, "u1", "XX", 403, "REGION_RESTRICTED"},
+		{"metal tor", "POST", "/spot/orders", `{"symbol":"PAXGUSDT"}`, "u1", "T1", 403, "REGION_RESTRICTED"},
+		{"crypto no country", "POST", "/spot/orders", `{"symbol":"BTCUSDT"}`, "u1", "", 200, ""},
 	}
 	for _, c := range cases {
 		got, code := do(c.method, c.path, c.body, c.uid, c.cc)
@@ -163,5 +169,49 @@ func TestTradFiGuardFailClosed(t *testing.T) {
 		if rec.Code != c.want {
 			t.Errorf("%s %s: got %d want %d", c.path, c.body, rec.Code, c.want)
 		}
+	}
+}
+
+func TestTrustedCountry(t *testing.T) {
+	trusted, err := parseCIDRs(DefaultTrustedProxyCIDRs + ",10.0.0.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := func(peer, cc string) *http.Request {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = peer
+		r.Header.Set("CF-IPCountry", cc)
+		return r
+	}
+	cases := []struct{ peer, cc, want string }{
+		{"173.245.48.10:443", "sg", "SG"},  // Cloudflare v4
+		{"[2606:4700::1]:443", "SG", "SG"}, // Cloudflare v6
+		{"10.0.0.5:1234", "SG", "SG"},      // bare IP entry
+		{"203.0.113.7:5555", "SG", ""},     // direct-to-origin: spoofable -> unknown
+		{"10.0.0.6:1234", "SG", ""},        // not listed
+		{"173.245.48.10:443", "", ""},
+		{"173.245.48.10:443", "XX", ""},
+		{"173.245.48.10:443", "SGP", ""},
+	}
+	for _, c := range cases {
+		if got := trustedCountry(req(c.peer, c.cc), trusted); got != c.want {
+			t.Errorf("%s %q: got %q want %q", c.peer, c.cc, got, c.want)
+		}
+	}
+	if _, err := parseCIDRs("10.0.0.0/33"); err == nil {
+		t.Error("bad cidr accepted")
+	}
+	if _, err := NewGateway(Config{JWTSecret: "x", TrustedProxyCIDRs: "nope/8"}); err == nil {
+		t.Error("gateway accepted bad TRUSTED_PROXY_CIDRS")
+	}
+}
+
+// A forged CF-IPCountry from an untrusted peer must not unlock TradFi.
+func TestTradFiSpoofedCountry(t *testing.T) {
+	trusted, _ := parseCIDRs(DefaultTrustedProxyCIDRs)
+	r := httptest.NewRequest("POST", "/spot/orders", nil) // RemoteAddr 192.0.2.1 (not Cloudflare)
+	r.Header.Set("CF-IPCountry", "SG")
+	if c := trustedCountry(r, trusted); c != "" {
+		t.Fatalf("spoofed country trusted: %q", c)
 	}
 }

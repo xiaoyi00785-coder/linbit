@@ -62,6 +62,9 @@ type Maker struct {
 	alert     func(string)
 	seedCache map[string]decimal.Decimal
 	seedAt    time.Time
+	gate      *tradfiGate
+	gateOK    bool
+	gateAt    time.Time
 }
 
 func key(market, sym string) string { return market + "/" + sym }
@@ -152,6 +155,10 @@ func (m *Maker) Cycle(ctx context.Context) {
 		return
 	}
 	m.refreshRules(ctx)
+	m.refreshGate(ctx)
+	m.mu.Lock()
+	gate, gateOK := m.gate, m.gateOK
+	m.mu.Unlock()
 	pairs, err := m.Pairs(ctx)
 	if err != nil {
 		log.Printf("mm: pairs: %v", err)
@@ -183,9 +190,12 @@ func (m *Maker) Cycle(ctx context.Context) {
 		if !known {
 			continue
 		}
-		if !running || !p.Enabled || !r.Trading {
+		blocked := gateBlock(gate, gateOK, p.Market, p.Symbol)
+		if !running || !p.Enabled || !r.Trading || blocked != "" {
 			reason := "stopped"
-			if running && !p.Enabled {
+			if running && blocked != "" {
+				reason = blocked // flag state wins: admin must see why it's off
+			} else if running && !p.Enabled {
 				reason = "disabled"
 			} else if running {
 				reason = "symbol not trading"
@@ -242,6 +252,16 @@ func (m *Maker) Cycle(ctx context.Context) {
 				}
 			}
 			inv = spotInventory(p, index, balances[strings.ToUpper(r.Base)], balances[strings.ToUpper(r.Quote)], baselines[strings.ToUpper(r.Base)])
+			if reason := oneSidedReason(inv); reason != "" {
+				// No base inventory and nothing seeded: quoting bids only would
+				// just build an unhedged long book. Stand down until seeded.
+				m.cancelAll(ctx, r, st)
+				m.mu.Lock()
+				st.Inventory = inv
+				m.mu.Unlock()
+				m.setStatus(st, "paused", reason)
+				continue
+			}
 		} else {
 			if positions == nil {
 				if positions, err = m.futuresPositions(ctx); err != nil {

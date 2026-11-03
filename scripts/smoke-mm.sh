@@ -166,6 +166,16 @@ eq "$(jq -r '[.orders[] | select(.side=="sell") | .price | tonumber * 1] | min' 
 eq "$(jq -r '[.orders[] | select(.side=="buy") | .price | tonumber * 1] | min' <<<"$F")" 59850 "futures 5th bid (5+4*5 bps)"
 pass "spot 3 levels/side, futures 5 levels/side; best 59970/60030 = 0.1% around index"
 
+say "TradFi flag off -> MM stands down"
+S="$(internal "$MM_URL" GET /internal/mm/status)"
+for SYM in PAXGUSDT AAPLUSDT; do
+  P="$(jq -c ".pairs[] | select(.market==\"spot\" and .symbol==\"$SYM\")" <<<"$S")"
+  [ -z "$P" ] && continue   # symbol not listed by market-data in this stack
+  [ "$(jq -r .status <<<"$P")" = disabled ] && jq -r .reason <<<"$P" | grep -q "feature flag off" || fail "$SYM with flag off: $P"
+  [ "$(curl -sS "$ORDER_URL/spot/orders/open?symbol=$SYM&pageSize=100" -H "X-User-Id: $MM" | jq '.items | length')" = 0 ] || fail "$SYM has MM orders with flag off"
+done
+pass "TradFi spot pairs disabled (feature flag off), no MM orders"
+
 say "follows the index"
 idx '{"symbol":"BTCUSDT","price":"61000"}'
 moved() { [ "$(spot_open | jq '[.items[] | select(.side=="buy") | .price | tonumber * 1] | max')" = 60969.5 ]; }

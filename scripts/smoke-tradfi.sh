@@ -15,7 +15,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [ "${SMOKE_INNER:-}" != "1" ]; then
-  ROOT="$(pwd)"; cd tools/devstack
+  ROOT="$(pwd)"
+  # devstack gateway is reached over loopback: trust that peer's CF-IPCountry.
+  export TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-127.0.0.1/32,::1/128}"
+  cd tools/devstack
   exec go run . -root "$ROOT" -exec "SMOKE_INNER=1 bash scripts/smoke-tradfi.sh"
 fi
 
@@ -136,6 +139,7 @@ sleep 31   # gateway gate cache (30s)
 
 say "region restriction"
 expect "$(apic - US GET /tradfi/assets)" 403 REGION_RESTRICTED "catalogue US"
+expect "$(api "$T1" POST /spot/orders '{"symbol":"PAXGUSDT","side":"buy","type":"limit","price":"3000","quantity":"0.01"}')" 403 REGION_RESTRICTED "PAXG unknown country (fail closed)"
 expect "$(apic "$T1" US POST /spot/orders '{"symbol":"AAPLUSDT","side":"buy","type":"limit","price":"200","quantity":"0.1"}')" 403 REGION_RESTRICTED "AAPL US"
 expect "$(apic "$T1" ir POST /spot/orders '{"symbol":"PAXGUSDT","side":"buy","type":"limit","price":"3000","quantity":"0.01"}')" 403 REGION_RESTRICTED "PAXG IR"
 expect "$(apic "$T1" US GET '/wallet/deposit/address?asset=AAPL&network=SOL')" 403 REGION_RESTRICTED "deposit addr US"

@@ -73,7 +73,7 @@ func LoadConfig() Config {
 		SMSEnabled:        common.Env("SMS_ENABLED", "") == "true",
 		WebAuthnRPID:      common.Env("WEBAUTHN_RP_ID", ""),
 		WebAuthnRPName:    common.Env("WEBAUTHN_RP_NAME", "Linbit"),
-		WebAuthnRPOrigins: splitCSV(common.Env("WEBAUTHN_RP_ORIGINS", "")),
+		WebAuthnRPOrigins: splitCSV(common.Env("WEBAUTHN_RP_ORIGINS", common.Env("WEBAUTHN_ORIGINS", ""))), // WEBAUTHN_ORIGINS: legacy alias,
 		ResendAPIKey:      common.Env("RESEND_API_KEY", ""),
 		ResendFrom:        common.Env("RESEND_FROM", ""),
 		ResendURL:         common.Env("RESEND_API_URL", "https://api.resend.com/emails"),

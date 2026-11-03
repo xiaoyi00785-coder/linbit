@@ -191,3 +191,14 @@ func Diff(resting []restingOrder, targets []Quote, requoteBps decimal.Decimal) (
 	}
 	return
 }
+
+// oneSidedReason: a spot pair with zero base balance and no seeded baseline
+// can only ever quote bids (AllowSell needs base > 0). That is the "bids only"
+// symptom on unseeded TradFi pairs; pause instead. Once the pair has been
+// seeded (baseline > 0) a temporarily empty base is normal inventory skew.
+func oneSidedReason(inv Inventory) string {
+	if !inv.BaseQty.IsPositive() && !inv.Baseline.IsPositive() {
+		return "no base inventory (seed the base asset to quote both sides)"
+	}
+	return ""
+}

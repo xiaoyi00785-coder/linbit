@@ -116,6 +116,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		r.Header.Del("X-Admin-Token")
 	}
 
+	if _, err := parseCIDRs(cfg.TrustedProxyCIDRs); err != nil {
+		return nil, err
+	}
 	return &Gateway{
 		cfg:           cfg,
 		announcements: annProxy,
