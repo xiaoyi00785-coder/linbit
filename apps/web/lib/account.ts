@@ -41,7 +41,8 @@ async function call<T>(
     const { data, error, response } = await fn();
     if (response.ok) return { ok: true, data: (data ?? (true as unknown)) as T, source: "api" };
     // 网关可达时的 4xx/5xx 都如实返回（之前 5xx 会落到 mock，导致"验证码已发送"误报）
-    return { ok: false, error: errMsg(error, response.status), code: (error as { code?: string } | undefined)?.code, source: "api" };
+    const ra = Number(response.headers.get("Retry-After"));
+    return { ok: false, error: errMsg(error, response.status), code: (error as { code?: string } | undefined)?.code ?? (response.status === 429 ? "RATE_LIMITED" : undefined), retryAfter: Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : undefined, source: "api" };
   } catch {
     /* 网络错误 → mock */
   }
@@ -117,6 +118,16 @@ export const login = (b: Target & { password: string }) =>
     () => api.POST("/auth/login", { body: { email: b.email, phone: b.phone, password: b.password, deviceId: deviceId(), deviceName: deviceName() } }),
     () => MOCK_TOKENS,
   );
+/** 登录第一步的错误文案（不进入验证码步骤） */
+export function loginErrMsg(r: { error?: string; code?: string; retryAfter?: number }) {
+  switch (r.code) {
+    case "RATE_LIMITED": return r.retryAfter ? `登录尝试过于频繁，请 ${r.retryAfter} 秒后再试` : "登录尝试过于频繁，请稍后再试";
+    case "EMAIL_UNAVAILABLE": return "邮件验证码暂时无法发送，请稍后再试";
+    case "SMS_UNAVAILABLE": return "短信验证码暂时无法发送，请稍后再试";
+    case "INVALID_EMAIL": return "邮箱格式不正确，请检查后重试";
+    default: return r.error || "登录失败";
+  }
+}
 export const isChallenge = (x: unknown): x is LoginChallenge => !!x && typeof (x as LoginChallenge).challengeToken === "string";
 
 export const loginVerify = (challengeToken: string, method: string, code: string) =>
