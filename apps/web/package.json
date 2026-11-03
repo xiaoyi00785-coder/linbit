@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/gen-asset-manifest.mjs",
     "dev": "next dev -p 3000",
+    "prebuild": "node scripts/gen-asset-manifest.mjs",
     "build": "next build",
     "start": "next start -p 3000",
+    "pretypecheck": "node scripts/gen-asset-manifest.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

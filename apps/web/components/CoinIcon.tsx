@@ -1,6 +1,7 @@
 "use client";
 // 币种图标：本地打包的真实 logo（public/coins，来源见 public/coins/LICENSE.txt），未知币种回退字母徽标
 import { useEffect, useState } from "react";
+import { asset } from "@/lib/asset";
 const COL: Record<string, string> = {};
 /** 代码别名 → 图标文件名 */
 const ALIAS: Record<string, string> = { GOLD: "xau", XAUUSD: "xau", SILVER: "xag", XAGUSD: "xag", USOIL: "wti", CL: "wti", UKOIL: "brent", NATGAS: "ngas", GOOG: "googl", WBTC: "wbtc", MATIC: "pol", "1000PEPE": "pepe", "1000SHIB": "shib" };
@@ -11,9 +12,7 @@ export function baseOf(s: string): string {
   if (q && q[1].length >= 2) x = q[1];
   return x;
 }
-/** 图标版本号：替换图标文件时递增，绕过 CDN / 浏览器缓存（/coins 为 max-age=86400） */
-const ICON_V = "2";
-export function coinSrc(s: string) { const b = baseOf(s); return `/coins/${ALIAS[b] || b.toLowerCase()}.svg?v=${ICON_V}`; }
+export function coinSrc(s: string) { const b = baseOf(s); return asset(`/coins/${ALIAS[b] || b.toLowerCase()}.svg`); }
 export function CoinIcon({ s, size = 20, col, className = "" }: { s: string; size?: number; col?: string; className?: string }) {
   const sym = baseOf(s);
   const [bad, setBad] = useState(false);
