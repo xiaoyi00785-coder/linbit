@@ -446,6 +446,9 @@ func run(root, execCmd string) int {
 		"INTERNAL_TOKEN=" + internalTok,
 		"ADMIN_URL=http://localhost:" + adminPort,
 		"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+		// Smokes read FUTURES_URL (default :8089); export it so shifted
+		// DEVSTACK_FUTURES_PORT never hits another stack on the default port.
+		"FUTURES_URL=http://localhost:" + futuresPort,
 		"MM_URL=http://localhost:" + mmPort,
 		"GROWTH_URL=http://localhost:" + growthPort,
 		"EARN_URL=http://localhost:" + earnPort,
