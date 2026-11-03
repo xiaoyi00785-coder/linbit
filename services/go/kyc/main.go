@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -42,6 +43,7 @@ func main() {
 	}
 
 	srv := NewServer(cfg, NewStore(db))
+	go srv.RunLevelSync(context.Background())
 	addr := ":" + cfg.Port
 	log.Printf("kyc service listening on %s (minAge=%d docMax=%dB)", addr, cfg.MinAge, cfg.DocMaxBytes)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

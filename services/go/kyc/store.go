@@ -31,9 +31,10 @@ const (
 
 // Document sides.
 const (
-	sideFront  = "front"
-	sideSelfie = "selfie"
-	sideBack   = "back"
+	sideFront          = "front"
+	sideSelfie         = "selfie"
+	sideBack           = "back"
+	sideProofOfAddress = "proof_of_address"
 )
 
 // Store wraps the KYC database.
@@ -70,6 +71,7 @@ type Application struct {
 	FrontDocID  sql.NullInt64
 	SelfieDocID sql.NullInt64
 	BackDocID   sql.NullInt64
+	ProofDocID  sql.NullInt64
 	Reason      sql.NullString
 	SubmittedAt time.Time
 	ReviewedAt  sql.NullTime
@@ -120,13 +122,13 @@ func (s *Store) OwnedDocument(ctx context.Context, userID string, id int64) (*Do
 // ---- applications ----
 
 const appColumns = `id, user_id, level, status, first_name, last_name, country,
-	id_type, id_number, date_of_birth, front_doc_id, selfie_doc_id, back_doc_id,
+	id_type, id_number, date_of_birth, front_doc_id, selfie_doc_id, back_doc_id, proof_of_address_doc_id,
 	reason, submitted_at, reviewed_at, created_at, updated_at`
 
 func scanApplication(row interface{ Scan(...any) error }) (*Application, error) {
 	var a Application
 	err := row.Scan(&a.ID, &a.UserID, &a.Level, &a.Status, &a.FirstName, &a.LastName, &a.Country,
-		&a.IDType, &a.IDNumber, &a.DateOfBirth, &a.FrontDocID, &a.SelfieDocID, &a.BackDocID,
+		&a.IDType, &a.IDNumber, &a.DateOfBirth, &a.FrontDocID, &a.SelfieDocID, &a.BackDocID, &a.ProofDocID,
 		&a.Reason, &a.SubmittedAt, &a.ReviewedAt, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -144,11 +146,11 @@ func (s *Store) InsertApplication(ctx context.Context, a Application) (*Applicat
 	row := s.db.QueryRowContext(ctx,
 		`INSERT INTO kyc_applications
 		   (user_id, level, status, first_name, last_name, country, id_type, id_number,
-		    date_of_birth, front_doc_id, selfie_doc_id, back_doc_id, submitted_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+		    date_of_birth, front_doc_id, selfie_doc_id, back_doc_id, proof_of_address_doc_id, submitted_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
 		 RETURNING `+appColumns,
 		a.UserID, a.Level, statusPending, a.FirstName, a.LastName, a.Country, a.IDType,
-		a.IDNumber, a.DateOfBirth, a.FrontDocID, a.SelfieDocID, a.BackDocID)
+		a.IDNumber, a.DateOfBirth, a.FrontDocID, a.SelfieDocID, a.BackDocID, a.ProofDocID)
 	out, err := scanApplication(row)
 	if err != nil {
 		switch uniqueConstraint(err) {

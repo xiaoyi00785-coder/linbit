@@ -16,7 +16,7 @@ import (
 const docFormField = "file"
 
 // handleUploadDocument accepts a multipart/form-data document upload (field
-// "file" plus side=front|selfie|back), validates its size and sniffed type,
+// "file" plus side=front|selfie|back|proof_of_address), validates its size and sniffed type,
 // stores it via the pluggable ObjectStorage, and returns an opaque fileId the
 // user later references when submitting an application.
 //
@@ -39,7 +39,7 @@ func (s *Server) handleUploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	side := strings.ToLower(strings.TrimSpace(r.FormValue("side")))
 	if !validSide(side) {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "side 必须为 front|selfie|back")
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "side 必须为 front|selfie|back|proof_of_address")
 		return
 	}
 	file, _, err := r.FormFile(docFormField)
@@ -126,7 +126,7 @@ func (s *Server) handleAdminDocument(w http.ResponseWriter, r *http.Request) {
 
 // validSide reports whether s is an accepted document side.
 func validSide(s string) bool {
-	return s == sideFront || s == sideSelfie || s == sideBack
+	return s == sideFront || s == sideSelfie || s == sideBack || s == sideProofOfAddress
 }
 
 // docFileID renders an opaque fileId from a document row id.

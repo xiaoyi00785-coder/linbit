@@ -27,6 +27,7 @@ type Server struct {
 	risk       RiskScorer
 	asset      *AssetClient
 	account    *AccountClient
+	market     *MarketClient
 	scanner    *Scanner
 }
 
@@ -45,6 +46,7 @@ func NewServer(cfg Config, store *Store) *Server {
 		risk:       NewLocalRiskScorer(),
 		asset:      asset,
 		account:    NewAccountClient(cfg.AccountInternalURL, cfg.InternalToken),
+		market:     NewMarketClient(cfg.MarketURL),
 		scanner:    NewScanner(store, cfg.Networks, asset, cfg.CreditBelowMinDeposit),
 	}
 }

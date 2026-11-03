@@ -684,7 +684,7 @@ paths:
               required: [file, side]
               properties:
                 file: { type: string, format: binary }
-                side: { type: string, enum: [front, selfie, back] }
+                side: { type: string, enum: [front, selfie, back, proof_of_address] }
       responses:
         "201":
           description: 已上传
@@ -797,6 +797,35 @@ paths:
             image/png: { schema: { type: string, format: binary } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/kyc/level-sync:
+    get:
+      tags: [KYC Admin]
+      summary: 待同步到账户服务的认证等级（失败自动重试队列）
+      description: |
+        审核通过后先持久化同步任务再立即尝试；失败按指数退避（默认 5s 起翻倍，
+        上限 1h，KYC_SYNC_BASE_SECONDS / KYC_SYNC_MAX_SECONDS）自动重试直至成功。
+      operationId: adminListKycLevelSync
+      security: [{ internalToken: [] }]
+      responses:
+        "200":
+          description: 未完成的同步任务
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId: { type: string }
+                        level: { type: integer }
+                        attempts: { type: integer }
+                        nextAttemptAt: { type: string, format: date-time }
+                        lastError: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /assets/balances:
     get:
       tags: [Assets]
@@ -897,6 +926,11 @@ paths:
       tags: [Wallet]
       summary: 发起提现申请
       operationId: createWithdrawal
+      description: |
+        Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
+        amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
+        未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
+      x-error-codes: [MIN_WITHDRAW, WITHDRAW_LIMIT_EXCEEDED, PRICE_UNAVAILABLE, KYC_REQUIRED]
       requestBody:
         required: true
         content:
@@ -926,11 +960,16 @@ paths:
                 createdAt: "2026-11-02T10:05:00Z"
         "400":
           description: |
-            参数错误；WITHDRAW_LIMIT_EXCEEDED 表示超过当前 KYC 等级的 24 小时提现额度
-            （USDT 等值，默认 level0=1000、level1=50000、level2=200000，可配置）
+            参数错误；MIN_WITHDRAW 表示低于最小提现数量或 amount 不大于 Gas；
+            WITHDRAW_LIMIT_EXCEEDED 表示超过当前 KYC 等级的 24 小时提现额度
+            （USDT 等值，默认 level1=50000、level2=200000，可配置）；非 USDT 资产按
+            market-data 实时价格（{ASSET}USDT 最新成交价）折算，无可用价格时拒绝提现并返回
+            PRICE_UNAVAILABLE。
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
-          description: 已开启提现白名单，但目标地址不在白名单内
+          description: |
+            KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
+            但目标地址不在白名单内
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1730,18 +1769,22 @@ components:
           description: 1 = 基础认证；2 = 高级认证（需基础认证已通过）
         documents:
           type: object
-          description: 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选
+          description: |
+            由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
+            高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
+            缺失时返回 400 DOCUMENT_REQUIRED。
           properties:
             front: { type: string, example: doc_1 }
             selfie: { type: string, example: doc_2 }
             back: { type: string, example: doc_3 }
+            proofOfAddress: { type: string, example: doc_4, description: 地址证明（level 2 必填） }
 
     KycDocument:
       type: object
       required: [fileId, side]
       properties:
         fileId: { type: string, example: doc_1 }
-        side: { type: string, enum: [front, selfie, back] }
+        side: { type: string, enum: [front, selfie, back, proof_of_address] }
 
     KycApplication:
       type: object
@@ -1766,7 +1809,7 @@ components:
           items:
             type: object
             properties:
-              side: { type: string, enum: [front, selfie, back] }
+              side: { type: string, enum: [front, selfie, back, proof_of_address] }
               fileId: { type: string }
               url: { type: string, example: /admin/kyc/documents/doc_1 }
 

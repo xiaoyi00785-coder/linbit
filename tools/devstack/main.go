@@ -232,6 +232,7 @@ func run(root, execCmd string) int {
 			"REDIS_URL=" + redisURL,
 			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
 			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"MARKET_URL=http://localhost:" + marketPort,
 			// Dev mode exposes the mock-chain injection/advance endpoints so smoke
 			// scripts can simulate deposits and block confirmations.
 			"DEV_MODE=true",

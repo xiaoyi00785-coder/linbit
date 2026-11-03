@@ -1,6 +1,10 @@
 package main
 
-import "github.com/linbit/platform/services/go/common"
+import (
+	"time"
+
+	"github.com/linbit/platform/services/go/common"
+)
 
 // Config holds the KYC service runtime configuration, sourced from env.
 type Config struct {
@@ -17,6 +21,12 @@ type Config struct {
 	// the submission date. Product default is 18
 	// (see summary). Configurable via KYC_MIN_AGE.
 	MinAge int
+
+	// Level-sync retry (approved level -> account): exponential backoff from
+	// SyncBaseDelay doubling up to SyncMaxDelay; the worker polls every SyncPoll.
+	SyncBaseDelay time.Duration
+	SyncMaxDelay  time.Duration
+	SyncPoll      time.Duration
 
 	// --- document object storage (reuses the shared ObjectStorage) ---
 	// StorageBackend selects the backend: "local" (default, on disk) or "s3".
@@ -46,6 +56,9 @@ func LoadConfig() Config {
 		RedisURL:           common.Env("REDIS_URL", ""),
 		AccountInternalURL: common.Env("ACCOUNT_INTERNAL_URL", ""),
 		MinAge:             common.EnvInt("KYC_MIN_AGE", 18),
+		SyncBaseDelay:      time.Duration(common.EnvInt("KYC_SYNC_BASE_SECONDS", 5)) * time.Second,
+		SyncMaxDelay:       time.Duration(common.EnvInt("KYC_SYNC_MAX_SECONDS", 3600)) * time.Second,
+		SyncPoll:           time.Duration(common.EnvInt("KYC_SYNC_POLL_SECONDS", 5)) * time.Second,
 
 		StorageBackend: common.Env("STORAGE_BACKEND", "local"),
 		DocDir:         common.Env("KYC_DOC_STORAGE_DIR", "data/kyc-docs"),

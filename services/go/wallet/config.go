@@ -30,8 +30,13 @@ type Config struct {
 	// GasDeductMode decides where the on-chain gas comes from:
 	//   "extra"  — charged on top of the amount (frozen from the user's balance).
 	//   "amount" — deducted from the withdrawal amount (the user receives amount-gas).
-	// The rules file does not specify; default is "extra" (see summary).
+	// Confirmed product rule: default "amount" — the user receives amount-gas,
+	// only the amount is frozen, and the amount must exceed gas.
 	GasDeductMode string
+
+	// MarketURL is the market-data service used for real-time USDT prices when
+	// converting non-stablecoin withdrawals for the KYC limit.
+	MarketURL string
 
 	// Risk-based release thresholds (amounts in USD-equivalent / the asset's own
 	// units for non-USDT assets). See risk.go for the decision function.
@@ -59,6 +64,10 @@ type KYCLimitConfig struct {
 	// DailyUSDT maps a KYC level (0, 1, 2) to its rolling-24h withdrawal cap in
 	// USDT-equivalent. A non-positive cap means "unlimited" for that level.
 	DailyUSDT map[int]decimal.Decimal
+	// MinLevel is the lowest KYC level allowed to withdraw at all (default 1:
+	// unverified users get KYC_REQUIRED). 0 disables the gate; level 0 then
+	// falls back to its DailyUSDT cap.
+	MinLevel int
 	// Prices maps an asset to its USDT price for limit conversion (USDT = 1).
 	Prices map[string]decimal.Decimal
 }
@@ -108,8 +117,9 @@ func LoadConfig() Config {
 		DevMode:            common.Env("DEV_MODE", "") == "true",
 		AccountInternalURL: common.Env("ACCOUNT_INTERNAL_URL", ""),
 		AssetInternalURL:   common.Env("ASSET_INTERNAL_URL", ""),
+		MarketURL:          common.Env("MARKET_URL", "http://localhost:8085"),
 		FeeAccount:         common.Env("WALLET_FEE_ACCOUNT", "platform:gas"),
-		GasDeductMode:      gasMode(common.Env("WALLET_GAS_DEDUCT_MODE", "extra")),
+		GasDeductMode:      gasMode(common.Env("WALLET_GAS_DEDUCT_MODE", "amount")),
 		Risk: RiskThresholds{
 			AutoMaxAmount:   decimalEnv("WALLET_RISK_AUTO_MAX_AMOUNT", "1000"),
 			AutoMaxScore:    common.EnvInt("WALLET_RISK_AUTO_MAX_SCORE", 20),
@@ -123,13 +133,15 @@ func LoadConfig() Config {
 	}
 }
 
-// loadKYCLimits builds the KYC-tiered daily withdrawal limit config from env. The
-// rules file does not specify KYC limits, so these defaults are Linbit's own (see
-// summary): level 0 = 1000, level 1 = 50000, level 2 = 200000 USDT/24h.
-// WALLET_KYC_PRICES_JSON optionally overrides the USDT price table used to convert
-// non-USDT amounts (default {"USDT":"1","USDC":"1"}).
+// loadKYCLimits builds the KYC-tiered daily withdrawal limit config from env.
+// Confirmed product rule: users below level 1 (no KYC) cannot withdraw at all
+// (KYC_REQUIRED); level 1 = 50000, level 2 = 200000 USDT/24h.
+// Non-stablecoins are converted at market-data's real-time {ASSET}USDT last
+// price; if no price is available the withdrawal is rejected (PRICE_UNAVAILABLE).
+// WALLET_KYC_PRICES_JSON pins fixed prices (default {"USDT":"1","USDC":"1"}).
 func loadKYCLimits() KYCLimitConfig {
 	return KYCLimitConfig{
+		MinLevel: common.EnvInt("WALLET_KYC_MIN_LEVEL", 1),
 		DailyUSDT: map[int]decimal.Decimal{
 			0: decimalEnv("WALLET_KYC_LEVEL0_DAILY_USDT", "1000"),
 			1: decimalEnv("WALLET_KYC_LEVEL1_DAILY_USDT", "50000"),
@@ -158,10 +170,10 @@ func loadKYCPrices() map[string]decimal.Decimal {
 }
 
 func gasMode(v string) string {
-	if v == "amount" {
-		return "amount"
+	if v == "extra" {
+		return "extra"
 	}
-	return "extra"
+	return "amount"
 }
 
 func middleAction(v string) string {

@@ -67,6 +67,7 @@ func docRefs(a *Application) []adminDocDTO {
 	add(sideFront, a.FrontDocID.Int64, a.FrontDocID.Valid)
 	add(sideSelfie, a.SelfieDocID.Int64, a.SelfieDocID.Valid)
 	add(sideBack, a.BackDocID.Int64, a.BackDocID.Valid)
+	add(sideProofOfAddress, a.ProofDocID.Int64, a.ProofDocID.Valid)
 	return out
 }
 
@@ -138,11 +139,14 @@ func (s *Server) handleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	// Sync the entitlement to the account service (account never downgrades). A
-	// failure here is logged but does not roll back the approval; the account
-	// level can be re-synced out of band.
-	if err := s.account.SetKYCLevel(r.Context(), app.UserID, app.Level); err != nil {
-		log.Printf("approve %d: sync account kyc-level: %v", id, err)
+	// Sync the entitlement to the account service (account never downgrades). The
+	// sync is persisted first (kyc_level_sync) and attempted immediately; a failure
+	// does not roll back the approval and is retried by the background worker with
+	// exponential backoff.
+	if err := s.store.EnqueueLevelSync(r.Context(), app.UserID, app.Level); err != nil {
+		log.Printf("approve %d: enqueue kyc-level sync: %v", id, err)
+	} else {
+		s.trySync(r.Context(), app.UserID, app.Level, 0)
 	}
 	common.WriteJSON(w, http.StatusOK, toAdminDTO(app, false))
 }

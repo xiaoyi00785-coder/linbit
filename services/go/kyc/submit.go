@@ -17,6 +17,8 @@ type submitDocuments struct {
 	Front  string `json:"front"`
 	Selfie string `json:"selfie"`
 	Back   string `json:"back"`
+	// ProofOfAddress is required for advanced (level 2) verification.
+	ProofOfAddress string `json:"proofOfAddress"`
 }
 
 // submitRequest is the POST /kyc body: the base KycSubmission fields plus the
@@ -105,6 +107,18 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		app.BackDocID.Int64, app.BackDocID.Valid = backID, true
+	}
+	// Advanced (level 2) additionally requires a proof-of-address document.
+	if level == 2 {
+		if strings.TrimSpace(req.Documents.ProofOfAddress) == "" {
+			common.WriteError(w, http.StatusBadRequest, "DOCUMENT_REQUIRED", "高级认证需上传地址证明（proof_of_address）")
+			return
+		}
+		poaID, ok := s.ownDoc(w, r, uid, req.Documents.ProofOfAddress, sideProofOfAddress)
+		if !ok {
+			return
+		}
+		app.ProofDocID.Int64, app.ProofDocID.Valid = poaID, true
 	}
 
 	// Advanced (level 2) requires an approved basic (level 1) first.
@@ -233,6 +247,8 @@ func sideLabel(side string) string {
 		return "手持证件照"
 	case sideBack:
 		return "证件背面"
+	case sideProofOfAddress:
+		return "地址证明"
 	default:
 		return "证件"
 	}

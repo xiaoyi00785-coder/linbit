@@ -68,6 +68,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /admin/kyc/applications/{id}/approve", s.internal(s.handleAdminApprove))
 	mux.HandleFunc("POST /admin/kyc/applications/{id}/reject", s.internal(s.handleAdminReject))
 	mux.HandleFunc("GET /admin/kyc/documents/{id}", s.internal(s.handleAdminDocument))
+	mux.HandleFunc("GET /admin/kyc/level-sync", s.internal(s.handleAdminLevelSync))
 	return mux
 }
 

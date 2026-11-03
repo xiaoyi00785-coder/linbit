@@ -182,10 +182,10 @@ SMALL_ID="$(printf '%s' "$SMALL" | jq -r '.id // empty')"
 # Auto-released: internal status is approved, exposed as processing.
 [ "$(printf '%s' "$SMALL" | jq -r '.status')" = "processing" ] || fail "small withdrawal not auto-approved: $SMALL"
 ok "small withdrawal $SMALL_ID auto-released"
-# Freeze = amount 100 + gas 2 (extra mode).
+# Freeze = amount 100 only (gas deducted from amount; user receives 98).
 BAL="$(balance_of "$TOKEN" "$ASSET")"
-[ "$(norm8 "$BAL")" = "10398.00000000" ] || fail "balance after freeze = $BAL, want 10398"
-ok "frozen 102 (100 + gas 2); free = 10398"
+[ "$(norm8 "$BAL")" = "10400.00000000" ] || fail "balance after freeze = $BAL, want 10400"
+ok "frozen 100 (gas 2 deducted from amount); free = 10400"
 
 # Broadcast it, then advance to confirmations and complete.
 PROC="$(internal POST /internal/process '')"
@@ -195,10 +195,10 @@ PROC="$(internal POST /internal/process '')"
 [ "$(printf '%s' "$PROC" | jq -r '.completed')" = "1" ] || fail "withdrawal not completed: $PROC"
 WSTATUS="$(api GET "/wallet/withdraw/records?asset=$ASSET" "$TOKEN" | jq -r --arg id "$SMALL_ID" '.items[] | select(.id==$id) | .status')"
 [ "$WSTATUS" = "completed" ] || fail "small withdrawal status = $WSTATUS, want completed"
-# Gas is booked to the platform: user balance stays 10398, locked back to 0.
+# Gas is booked to the platform: user balance stays 10400, locked back to 0.
 BAL="$(balance_of "$TOKEN" "$ASSET")"
-[ "$(norm8 "$BAL")" = "10398.00000000" ] || fail "balance after settlement = $BAL, want 10398"
-ok "settled; free = 10398, gas booked to platform"
+[ "$(norm8 "$BAL")" = "10400.00000000" ] || fail "balance after settlement = $BAL, want 10400"
+ok "settled; free = 10400, gas booked to platform"
 
 say "8/11 large withdrawal held for manual review"
 curl -sS -o /dev/null -X POST "$GATEWAY_URL/account/code/send" -H 'Content-Type: application/json' \
@@ -211,8 +211,8 @@ BIG_ID="$(printf '%s' "$BIG" | jq -r '.id // empty')"
 [ "$(printf '%s' "$BIG" | jq -r '.status')" = "pending" ] || fail "large withdrawal not pending review: $BIG"
 ok "large withdrawal $BIG_ID pending manual review"
 BAL="$(balance_of "$TOKEN" "$ASSET")"
-[ "$(norm8 "$BAL")" = "4396.00000000" ] || fail "balance after big freeze = $BAL, want 4396"
-ok "frozen 6002; free = 4396"
+[ "$(norm8 "$BAL")" = "4400.00000000" ] || fail "balance after big freeze = $BAL, want 4400"
+ok "frozen 6000; free = 4400"
 
 say "9/11 admin list + reject releases the freeze"
 ADMIN="$(internal GET '/internal/admin/withdrawals?status=pending_review' '')"
@@ -221,8 +221,8 @@ printf '%s' "$ADMIN" | jq -e --arg id "$BIG_ID" '.items[] | select(.id==$id)' >/
 REJ="$(internal POST "/internal/admin/withdrawals/$BIG_ID/reject" '{"reason":"smoke_test"}')"
 [ "$(printf '%s' "$REJ" | jq -r '.status')" = "canceled" ] || fail "reject did not cancel: $REJ"
 BAL="$(balance_of "$TOKEN" "$ASSET")"
-[ "$(norm8 "$BAL")" = "10398.00000000" ] || fail "balance after reject = $BAL, want 10398 (unfrozen)"
-ok "rejected; freeze released; free = 10398"
+[ "$(norm8 "$BAL")" = "10400.00000000" ] || fail "balance after reject = $BAL, want 10400 (unfrozen)"
+ok "rejected; freeze released; free = 10400"
 
 say "10/11 enable whitelist -> non-whitelisted address is blocked"
 curl -sS -o /dev/null -X POST "$GATEWAY_URL/account/code/send" -H 'Content-Type: application/json' \
@@ -238,15 +238,15 @@ BLOCK_HTTP="$(http -X POST "$GATEWAY_URL/wallet/withdraw" -H 'Content-Type: appl
   -d "{\"asset\":\"$ASSET\",\"network\":\"$NETWORK\",\"address\":\"TNotWhitelisted\",\"amount\":\"100\",\"code\":\"$WD_CODE\"}")"
 [ "$BLOCK_HTTP" = "403" ] || fail "whitelisted-mode withdrawal to non-listed addr returned $BLOCK_HTTP, want 403"
 BAL="$(balance_of "$TOKEN" "$ASSET")"
-[ "$(norm8 "$BAL")" = "10398.00000000" ] || fail "blocked withdrawal changed balance to $BAL"
+[ "$(norm8 "$BAL")" = "10400.00000000" ] || fail "blocked withdrawal changed balance to $BAL"
 ok "blocked with 403; no freeze applied"
 
 say "11/11 final balances and ledger agree (decimal-exact)"
 BALS="$(api GET /assets/balances "$TOKEN")"
 FINAL="$(printf '%s' "$BALS" | jq -r --arg a "$ASSET" '.items[] | select(.asset==$a) | .free')"
 LOCKED="$(printf '%s' "$BALS" | jq -r --arg a "$ASSET" '.items[] | select(.asset==$a) | .locked')"
-[ "$(norm8 "$FINAL")" = "10398.00000000" ] || fail "final free = $FINAL, want 10398"
+[ "$(norm8 "$FINAL")" = "10400.00000000" ] || fail "final free = $FINAL, want 10400"
 [ "$(norm8 "$LOCKED")" = "0.00000000" ] || fail "final locked = $LOCKED, want 0"
-ok "free = 10398, locked = 0 (deposits 10500 - withdrawal 100 - gas 2)"
+ok "free = 10400, locked = 0 (deposits 10500 - withdrawal 100 incl. gas 2)"
 
 printf '\n\033[1;32mSMOKE-WALLET PASSED\033[0m — deposit/confirm/credit -> withdraw/review/reject -> whitelist -> balances reconcile\n'

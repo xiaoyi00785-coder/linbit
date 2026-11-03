@@ -61,21 +61,27 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ACCOUNT_INTERNAL_URL: http://account:8081
       ASSET_INTERNAL_URL: http://asset:8082
+      # Real-time prices for the KYC limit (non-stablecoins; no price = rejected).
+      MARKET_URL: http://market-data:8085
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Chains are simulated by default (no real node/keys). Set DEV_MODE=true only
       # in local/CI environments to enable the mock-chain injection endpoints.
       DEV_MODE: ${WALLET_DEV_MODE:-false}
-      # Where the on-chain gas is charged: "extra" (default) adds it on top of the
-      # amount; "amount" deducts it from the transferred amount.
-      WALLET_GAS_DEDUCT_MODE: ${WALLET_GAS_DEDUCT_MODE:-extra}
+      # Where the on-chain gas is charged: "amount" (default) deducts it from the
+      # withdrawal amount (user receives amount-gas; only amount is frozen);
+      # "extra" adds it on top.
+      WALLET_GAS_DEDUCT_MODE: ${WALLET_GAS_DEDUCT_MODE:-amount}
       WALLET_FEE_ACCOUNT: ${WALLET_FEE_ACCOUNT:-platform:gas}
       # Optional JSON array override for the network registry (empty = built-in).
       WALLET_NETWORKS_JSON: ${WALLET_NETWORKS_JSON:-}
+      # Lowest KYC level allowed to withdraw (below it: KYC_REQUIRED).
+      WALLET_KYC_MIN_LEVEL: ${WALLET_KYC_MIN_LEVEL:-1}
       # KYC-tiered rolling-24h withdrawal caps (USDT-equivalent; <=0 = unlimited).
+      # Level 0 only applies if WALLET_KYC_MIN_LEVEL=0.
       WALLET_KYC_LEVEL0_DAILY_USDT: ${WALLET_KYC_LEVEL0_DAILY_USDT:-1000}
       WALLET_KYC_LEVEL1_DAILY_USDT: ${WALLET_KYC_LEVEL1_DAILY_USDT:-50000}
       WALLET_KYC_LEVEL2_DAILY_USDT: ${WALLET_KYC_LEVEL2_DAILY_USDT:-200000}
-      # USDT price table for non-USDT assets (unpriced assets are not counted).
+      # Pinned USDT prices (default USDT=1, USDC=1); others use market-data.
       WALLET_KYC_PRICES_JSON: ${WALLET_KYC_PRICES_JSON:-}
     depends_on:
       postgres:
