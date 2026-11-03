@@ -57,3 +57,13 @@
 - ✅ `GET /market/ticker?symbol=X` 返回单对象（前端仍兼容数组）。
 - ✅ `/wallet/withdraw/networks` USDT 各网络 `minWithdraw` 统一为 12；前端已改为直接使用接口值（12 仅作 mock 回退）。
 - ✅ websocket.md 已更新连接地址与周期。
+
+## 账户模块对接（feat/ui-p0-flows）
+
+已对接真实接口（`apps/web/lib/account.ts`，5xx/网络错误回退 mock）：注册两步（`/auth/code/send` → `/auth/register`，邮箱或手机 E.164 + 国家区号）、登录（`challengeToken` → `/auth/login/verify`，totp/sms/email，`/auth/login/code` 重发）、找回密码（发码 → 输入验证码 → `/auth/password/reset`）、设备列表/移除、提现地址簿增删 + 白名单开关（`/account/code/send purpose=address` 或 TOTP）、`PATCH /account/profile`。
+
+与 openapi 的差异 / 待确认：
+- 找回密码无独立“校验验证码”接口，第 2 步仅前端校验长度，验证码在 `/auth/password/reset` 时才校验（错误时退回第 2 步）。
+- `Device` 无 `current` 字段；前端以 `cid:<本地 deviceId>` 比对识别本机（依赖 deviceId 前缀约定）。
+- `/auth/code/send` 等的响应体为内联类型，未抽成 schema（`SendCodeResponse`）。
+- 头像只支持 URL（无上传接口）。

@@ -4,6 +4,7 @@ import { NavLink, Link, useNavigate, useLocation, useParams } from '@/lib/router
 import { useState } from 'react'
 import { Footer } from './App'
 import { MOCK } from './auth'
+import { useProfile } from './Pages'
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div>
 const Eye=()=><span className="eye">◉</span>
@@ -63,5 +64,5 @@ export function Points(){const n=useNavigate();return <main className="pts"><div
 <div className="lrow" style={{marginTop:60}}><h2 className="pth2" style={{margin:0}}>积分兑换奖励</h2><button className="pill dark">我的兑换记录 ›</button></div><p className="g">我的积分：0</p><div className="rdm">{REDEEM.map(([v,k,p])=><div key={v+k}><span className="coin">₮</span><b>{v}</b><small className="g">{k}</small><em><b>{p}</b> 积分兑换</em><button disabled>已结束</button></div>)}</div>
 <h2 className="pth2">活动规则</h2><ol className="prul">{['活动仅限 linbit 已注册用户参与，需先点击“立即报名”，报名后完成的任务才计入积分。','积分仅在本期活动内有效，活动结束后清零，不跨期累计。','体验金、抵扣金将发放至卡券中心，激活时需满足合约账户余额要求。','任务进度每天 UTC 0 点重置，每档奖品每人限兑换一次。','奖励仅限体验金 / 抵扣金，不提供实物奖品，不可折现。','如发现刷量、对敲等违规行为，平台有权取消资格并收回奖励。'].map(x=><li key={x}>{x}</li>)}</ol></div><Footer/></main>}
 // —— 头像下拉菜单 ——
-export function AvatarMenu(){return <div className="avm"><div className="avc"><div className="ava" style={{width:44,height:44}}><i/></div><div><b>{MOCK.name}</b><small>UID: {MOCK.uid} ⧉</small></div><span className="avv">▭ 未认证</span></div>
+export function AvatarMenu(){const p=useProfile();return <div className="avm"><div className="avc">{p.avatar?<img className="ava" src={p.avatar} alt="" style={{width:44,height:44,borderRadius:'50%',objectFit:'cover'}}/>:<div className="ava" style={{width:44,height:44}}><i/></div>}<div><b>{p.name}</b><small>UID: {p.uid} ⧉</small><small className="lg">{p.acct}</small></div><span className="avv">▭ {p.kyc?'已认证':'未认证'}</span></div>
 {[['▣','总览','/setting/dashboard'],['🔒','账户与安全','/setting/security'],['👤','身份认证','/setting/kyc',1],['🎁','福利中心','/rewards'],['👥','邀请好友','/invite'],['⚙','设置','/setting/settings'],['⌘','API 管理','/setting/api']].map(([i,t,to,k])=><Link key={t} to={to} className="avi"><span>{i}</span>{t}{k&&<em>未认证</em>}</Link>)}<Link to="/login" className="avo">退出登录</Link></div>}

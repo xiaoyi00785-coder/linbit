@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/auth/code/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 发送注册/找回密码验证码 */
+        post: operations["sendAuthCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/register": {
         parameters: {
             query?: never;
@@ -32,6 +49,57 @@ export interface paths {
         put?: never;
         /** 登录 */
         post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 提交二次验证，换取令牌 */
+        post: operations["loginVerify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重新发送登录二次验证码（email/sms） */
+        post: operations["loginResendCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 校验验证码并重置密码（撤销全部会话） */
+        post: operations["resetPassword"];
         delete?: never;
         options?: never;
         head?: never;
@@ -135,6 +203,127 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 修改昵称 / 头像 */
+        patch: operations["updateProfile"];
+        trace?: never;
+    };
+    "/account/code/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 向本人发送敏感操作验证码 */
+        post: operations["sendAccountCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出登录设备 */
+        get: operations["listDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/devices/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 移除设备（撤销该设备会话） */
+        delete: operations["removeDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/withdraw-whitelist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询提现白名单开关 */
+        get: operations["getWithdrawWhitelist"];
+        /** 开关提现白名单（需验证码或 2FA） */
+        put: operations["setWithdrawWhitelist"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/withdraw-addresses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 提现地址簿列表 */
+        get: operations["listWithdrawAddresses"];
+        put?: never;
+        /** 新增提现地址（需验证码或 2FA） */
+        post: operations["createWithdrawAddress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/withdraw-addresses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除提现地址（需验证码或 2FA） */
+        delete: operations["deleteWithdrawAddress"];
         options?: never;
         head?: never;
         patch?: never;
@@ -469,36 +658,127 @@ export interface components {
             /** @example 42 */
             total: number;
         };
+        /** @description 请求邮箱/短信验证码。register / reset_password 为公开接口；二选一提供 email 或 phone（手机号可用 E.164 的 "+8613800138000"，或 phone + countryCode 拨号区号组合）。为避免账号枚举，reset_password 对不存在的账号也返回 200。 */
+        SendCodeRequest: {
+            /**
+             * @example register
+             * @enum {string}
+             */
+            purpose: "register" | "reset_password";
+            /**
+             * Format: email
+             * @example trader@example.com
+             */
+            email?: string | null;
+            /**
+             * @description E.164 或本地号
+             * @example 13800138000
+             */
+            phone?: string | null;
+            /**
+             * @description 国家拨号码（如 86）
+             * @example 86
+             */
+            countryCode?: string | null;
+        };
+        /** @description 邮箱或手机号二选一；注册需验证码（先调用 /auth/code/send）。 */
         RegisterRequest: {
             /**
              * Format: email
              * @example trader@example.com
              */
-            email: string;
+            email?: string | null;
+            /** @example 13800138000 */
+            phone?: string | null;
+            /** @example 86 */
+            countryCode?: string | null;
             /**
              * Format: password
              * @example Str0ng-Passw0rd!
              */
             password: string;
+            /**
+             * @description 6 位验证码
+             * @example 123456
+             */
+            code: string;
             /** @example LB8DEMO */
             inviteCode?: string | null;
         };
+        /** @description 邮箱或手机号二选一 + 密码。密码正确后若需二次验证（已开启 TOTP、或新设备 登录触发邮箱/短信验证），返回 LoginChallenge 而非 AuthTokens。 */
         LoginRequest: {
             /**
              * Format: email
              * @example trader@example.com
              */
-            email: string;
+            email?: string | null;
+            /**
+             * @description E.164
+             * @example +8613800138000
+             */
+            phone?: string | null;
             /**
              * Format: password
              * @example Str0ng-Passw0rd!
              */
             password: string;
             /**
-             * @description 已开启 2FA 时必填
+             * @description 客户端稳定设备标识；缺省时按 User-Agent 推断
+             * @example web-7f3a
+             */
+            deviceId?: string | null;
+            /** @example Chrome on macOS */
+            deviceName?: string | null;
+        };
+        /** @description 二次验证票据。用 challengeToken 调 /auth/login/verify 换取令牌。 */
+        LoginChallenge: {
+            /** @example 3kZ9...challenge */
+            challengeToken: string;
+            /**
+             * @description 需要完成的二次验证方式（当前恒为单个）。
+             * @example [
+             *       "sms"
+             *     ]
+             */
+            methods: ("totp" | "email" | "sms")[];
+            /**
+             * @description 票据有效期（秒）
+             * @example 300
+             */
+            expiresIn: number;
+        };
+        LoginVerifyRequest: {
+            /** @example 3kZ9...challenge */
+            challengeToken: string;
+            /**
+             * @description method=totp 时必填
              * @example 123456
              */
             totpCode?: string | null;
+            /**
+             * @description method=email/sms 时必填
+             * @example 123456
+             */
+            code?: string | null;
+        };
+        /** @description 校验验证码后重置密码，并撤销该用户全部会话（refresh token）。 */
+        PasswordResetRequest: {
+            /**
+             * Format: email
+             * @example trader@example.com
+             */
+            email?: string | null;
+            /** @example 13800138000 */
+            phone?: string | null;
+            /** @example 86 */
+            countryCode?: string | null;
+            /** @example 123456 */
+            code: string;
+            /**
+             * Format: password
+             * @example N3w-Passw0rd!
+             */
+            newPassword: string;
         };
         AuthTokens: {
             accessToken: string;
@@ -536,18 +816,142 @@ export interface components {
              * Format: email
              * @example trader@example.com
              */
-            email: string;
+            email?: string | null;
+            /**
+             * @description E.164
+             * @example +8613800138000
+             */
+            phone?: string | null;
+            /** @example 86 */
+            countryCode?: string;
             /** @example lb_Trader */
             nickname?: string | null;
+            /** @example https://cdn.example.com/avatar/lb.png */
+            avatarUrl?: string | null;
             /** @example 1 */
             kycLevel: number;
             /** @example true */
             twoFactorEnabled: boolean;
+            /** @example true */
+            emailVerified?: boolean;
+            /** @example true */
+            phoneVerified?: boolean;
+            /** @example false */
+            withdrawWhitelistEnabled?: boolean;
             /**
              * Format: date-time
              * @example 2026-01-05T08:30:00Z
              */
             createdAt: string;
+        };
+        /** @description 至少提供一个字段。头像一期只存 URL（http/https，≤512）。 */
+        UpdateProfileRequest: {
+            /** @example lb_Trader */
+            nickname?: string | null;
+            /** @example https://cdn.example.com/avatar/lb.png */
+            avatarUrl?: string | null;
+        };
+        /** @description 向当前登录用户自己的邮箱/手机发送验证码，用于敏感操作前置校验。 */
+        SendCodeAuthedRequest: {
+            /**
+             * @example address
+             * @enum {string}
+             */
+            purpose: "address" | "bind" | "reset_password";
+            /**
+             * @description 缺省按账户已绑定的联系方式
+             * @example sms
+             * @enum {string|null}
+             */
+            channel?: "email" | "sms" | null;
+        };
+        Device: {
+            /**
+             * @description 设备指纹（移除设备时回传）
+             * @example cid:web-7f3a
+             */
+            deviceId: string;
+            /** @example Chrome on macOS */
+            name?: string;
+            /** @example Mozilla/5.0 ... */
+            userAgent?: string;
+            /** @example 203.0.113.7 */
+            ip?: string;
+            /**
+             * Format: date-time
+             * @example 2026-11-01T10:00:00Z
+             */
+            firstSeen: string;
+            /**
+             * Format: date-time
+             * @example 2026-11-03T08:30:00Z
+             */
+            lastSeen: string;
+        };
+        DeviceList: {
+            items: components["schemas"]["Device"][];
+        };
+        WhitelistStatus: {
+            /** @example false */
+            enabled: boolean;
+        };
+        /** @description 开关提现白名单；需验证码或 2FA（二选一）。 */
+        SetWhitelistRequest: {
+            /** @example true */
+            enabled: boolean;
+            /**
+             * @description 已开启 2FA 时提供
+             * @example 123456
+             */
+            totpCode?: string | null;
+            /**
+             * @description 未开启 2FA 时提供（purpose=address）
+             * @example 123456
+             */
+            code?: string | null;
+        };
+        WithdrawAddress: {
+            /** @example 1 */
+            id: string;
+            /** @example USDT */
+            asset: string;
+            /** @example TRC20 */
+            network: string;
+            /** @example TXy1Z9DemoAddr000000000000000000000 */
+            address: string;
+            /** @example  */
+            memo?: string;
+            /** @example cold-wallet */
+            label?: string;
+            /** @example true */
+            whitelisted: boolean;
+            /**
+             * Format: date-time
+             * @example 2026-11-03T08:30:00Z
+             */
+            createdAt: string;
+        };
+        WithdrawAddressList: {
+            items: components["schemas"]["WithdrawAddress"][];
+        };
+        /** @description 新增地址簿条目；需验证码或 2FA（二选一）。 */
+        CreateWithdrawAddressRequest: {
+            /** @example USDT */
+            asset: string;
+            /** @example TRC20 */
+            network: string;
+            /** @example TXy1Z9DemoAddr000000000000000000000 */
+            address: string;
+            /** @example  */
+            memo?: string | null;
+            /** @example cold-wallet */
+            label?: string | null;
+            /** @example true */
+            whitelisted?: boolean | null;
+            /** @example 123456 */
+            totpCode?: string | null;
+            /** @example 123456 */
+            code?: string | null;
         };
         KycSubmission: {
             /** @example San */
@@ -955,6 +1359,65 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    sendAuthCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "purpose": "register",
+                 *       "phone": "13800138000",
+                 *       "countryCode": "86"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SendCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description 已发送（reset_password 对不存在账号也返回 200） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "sent": true,
+                     *       "channel": "sms",
+                     *       "ttlSeconds": 600
+                     *     }
+                     */
+                    "application/json": {
+                        sent?: boolean;
+                        /** @enum {string} */
+                        channel?: "email" | "sms";
+                        ttlSeconds?: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description 发送过于频繁 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "RATE_LIMITED",
+                     *       "message": "验证码发送过于频繁，请稍后再试"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     register: {
         parameters: {
             query?: never;
@@ -968,6 +1431,7 @@ export interface operations {
                  * @example {
                  *       "email": "trader@example.com",
                  *       "password": "Str0ng-Passw0rd!",
+                 *       "code": "123456",
                  *       "inviteCode": "LB8DEMO"
                  *     }
                  */
@@ -1024,32 +1488,125 @@ export interface operations {
                  * @example {
                  *       "email": "trader@example.com",
                  *       "password": "Str0ng-Passw0rd!",
-                 *       "totpCode": "123456"
+                 *       "deviceId": "web-7f3a"
                  *     }
                  */
                 "application/json": components["schemas"]["LoginRequest"];
             };
         };
         responses: {
-            /** @description 登录成功 */
+            /** @description 密码正确。若无需二次验证返回 AuthTokens；若需要（已开启 TOTP 或新设备 触发邮箱/短信验证）返回 LoginChallenge。 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access",
-                     *       "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh",
-                     *       "tokenType": "Bearer",
-                     *       "expiresIn": 3600
-                     *     }
-                     */
+                    "application/json": components["schemas"]["AuthTokens"] | components["schemas"]["LoginChallenge"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    loginVerify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "challengeToken": "3kZ9...challenge",
+                 *       "code": "123456"
+                 *     }
+                 */
+                "application/json": components["schemas"]["LoginVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description 验证通过 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": components["schemas"]["AuthTokens"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    loginResendCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "challengeToken": "3kZ9...challenge"
+                 *     }
+                 */
+                "application/json": {
+                    challengeToken: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已发送 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 发送过于频繁 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800138000",
+                 *       "countryCode": "86",
+                 *       "code": "123456",
+                 *       "newPassword": "N3w-Passw0rd!"
+                 *     }
+                 */
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description 重置成功 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
         };
     };
     refreshToken: {
@@ -1246,6 +1803,269 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "nickname": "lb_Trader",
+                 *       "avatarUrl": "https://cdn.example.com/avatar/lb.png"
+                 *     }
+                 */
+                "application/json": components["schemas"]["UpdateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description 更新后的账户信息 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    sendAccountCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "purpose": "address",
+                 *       "channel": "sms"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SendCodeAuthedRequest"];
+            };
+        };
+        responses: {
+            /** @description 已发送 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 发送过于频繁 */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 设备列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    removeDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已移除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getWithdrawWhitelist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 开关状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhitelistStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    setWithdrawWhitelist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "enabled": true,
+                 *       "code": "123456"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SetWhitelistRequest"];
+            };
+        };
+        responses: {
+            /** @description 新状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhitelistStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listWithdrawAddresses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 地址簿 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawAddressList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createWithdrawAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "asset": "USDT",
+                 *       "network": "TRC20",
+                 *       "address": "TXy1Z9DemoAddr000000000000000000000",
+                 *       "label": "cold-wallet",
+                 *       "code": "123456"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateWithdrawAddressRequest"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawAddress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 地址已存在 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "ADDRESS_EXISTS",
+                     *       "message": "该地址已在地址簿中"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteWithdrawAddress: {
+        parameters: {
+            query?: {
+                /** @description 未开启 2FA 时提供（purpose=address） */
+                code?: string;
+                /** @description 已开启 2FA 时提供 */
+                totpCode?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     submitKyc: {

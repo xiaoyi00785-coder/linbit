@@ -98,24 +98,6 @@ export function submitKyc(body: KycSubmission) {
 /* ---------------- 缺口接口（仅 mock） ---------------- */
 
 /** 缺口：POST /auth/verification-code（注册 / 找回密码 / 提现安全验证） */
-export async function sendVerificationCode(
-  _target: string,
-  _scene: "register" | "reset_password" | "withdraw",
-): Promise<Result<{ ttl: number }>> {
-  await delay();
-  return { ok: true, data: { ttl: 60 }, source: "mock" };
-}
-
-/** 缺口：POST /auth/password/reset */
-export async function resetPassword(_b: {
-  account: string;
-  code: string;
-  password: string;
-}): Promise<Result<true>> {
-  await delay();
-  return { ok: true, data: true, source: "mock" };
-}
-
 /** 已对接：GET /wallet/withdraw/networks?asset=（网络列表 + gasFeeEstimate）。
  *  平台不收提现手续费，仅收链上 Gas。接口未实现（404/5xx/网络错误）时回退 mock。 */
 export interface WithdrawConfig {
@@ -361,53 +343,3 @@ export async function listAnnouncements(): Promise<Result<Announcement[]>> {
   };
 }
 
-export interface Device {
-  id: string;
-  name: string;
-  ip: string;
-  location: string;
-  lastActive: string;
-  current?: boolean;
-}
-/** 缺口：GET /account/devices、DELETE /account/devices/{id} */
-export async function listDevices(): Promise<Result<Device[]>> {
-  await delay();
-  return {
-    ok: true,
-    source: "mock",
-    data: [
-      { id: "d1", name: "Chrome · macOS", ip: "203.0.113.24", location: "示例城市", lastActive: "当前在线", current: true },
-      { id: "d2", name: "linbit App · iOS", ip: "198.51.100.7", location: "示例城市", lastActive: "2026-11-01 21:30" },
-      { id: "d3", name: "Edge · Windows", ip: "192.0.2.55", location: "示例城市", lastActive: "2026-10-22 08:15" },
-    ],
-  };
-}
-export async function removeDevice(_id: string): Promise<Result<true>> {
-  await delay();
-  return { ok: true, data: true, source: "mock" };
-}
-
-export interface WhitelistAddress {
-  id: string;
-  asset: string;
-  network: string;
-  address: string;
-  memo?: string;
-  label: string;
-}
-/** 缺口：GET/POST/DELETE /wallet/withdraw/addresses（新增需 2FA） */
-export async function listAddresses(): Promise<Result<WhitelistAddress[]>> {
-  await delay();
-  return {
-    ok: true,
-    source: "mock",
-    data: [{ id: "w1", asset: "USDT", network: "TRC20", address: "TDemo0000000000000000000000000001", label: "示例钱包" }],
-  };
-}
-export async function addAddress(
-  a: Omit<WhitelistAddress, "id"> & { totpCode: string },
-): Promise<Result<WhitelistAddress>> {
-  await delay();
-  const { totpCode: _t, ...rest } = a;
-  return { ok: true, data: { ...rest, id: `w${Date.now()}` }, source: "mock" };
-}
