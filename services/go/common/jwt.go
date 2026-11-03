@@ -21,6 +21,9 @@ type AccessClaims struct {
 	// sessions off parent-only and withdrawal/deposit endpoints.
 	Acct   string `json:"acct,omitempty"`
 	Parent string `json:"parent,omitempty"`
+	// IatMs is the issue time in unix milliseconds, compared against the
+	// per-user logout cutoff (see revoke.go).
+	IatMs int64 `json:"iatms,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -41,6 +44,7 @@ func SignAccessTokenFor(secret, uid, email, parentUID string, ttl time.Duration,
 		Typ:    "access",
 		Acct:   acct,
 		Parent: parentUID,
+		IatMs:  now.UnixMilli(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   uid,
 			Issuer:    "linbit",

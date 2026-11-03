@@ -30,6 +30,7 @@ type Server struct {
 	http     *http.Client
 	avatars  storage.ObjectStorage // pluggable blob store for avatar uploads
 	now      func() time.Time
+	rdb      *redis.Client // nil = no access-token revocation on logout
 }
 
 // NewServer constructs a Server. rdb may be nil (Redis is optional; the code
@@ -64,6 +65,7 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		http:     &http.Client{Timeout: 5 * time.Second},
 		avatars:  newAvatarStorage(cfg),
 		now:      now,
+		rdb:      rdb,
 	}
 }
 
@@ -108,7 +110,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /account/avatars/{rest...}", s.handleServeAvatar)
 
 	// Authenticated endpoints.
-	mux.Handle("POST /auth/logout", s.auth(http.HandlerFunc(s.handleLogout)))
+	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.Handle("GET /account", s.auth(http.HandlerFunc(s.handleAccount)))
 	mux.Handle("PATCH /account/profile", s.auth(http.HandlerFunc(s.handleUpdateProfile)))
 	mux.Handle("POST /account/avatar", s.auth(http.HandlerFunc(s.handleUploadAvatar)))
@@ -226,6 +228,9 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			return
 		}
 		claims, err := common.ParseAccessToken(s.cfg.JWTSecret, token)
+		if err == nil && s.accessRevoked(r, claims) {
+			err = common.ErrInvalidToken
+		}
 		if err != nil {
 			common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "令牌无效或已过期")
 			return
@@ -233,6 +238,15 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), ctxUID, claims.Subject)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// accessRevoked reports whether the user logged out after claims were issued.
+func (s *Server) accessRevoked(r *http.Request, c *common.AccessClaims) bool {
+	revoked, err := common.AccessTokenRevoked(r.Context(), s.rdb, c)
+	if err != nil {
+		log.Printf("auth: revocation check: %s", common.RedactSecrets(err.Error()))
+	}
+	return revoked
 }
 
 // authedUser resolves the authenticated user from the request context.

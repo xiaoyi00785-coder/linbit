@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/linbit/platform/services/go/common"
 )
@@ -22,12 +23,17 @@ func (e *DeliveryError) Error() string {
 	return fmt.Sprintf("%s delivery failed: reason=%s status=%d detail=%s", e.Channel, e.Reason, e.Status, e.Detail)
 }
 
+// sendRetryAfterSeconds is the Retry-After hint on RATE_LIMITED (matches the
+// CodeService min interval between two sends).
+const sendRetryAfterSeconds = 60
+
 // writeSendCodeError maps a CodeService.Send error to an API response and logs
 // the cause (without secrets). Delivery failures are 503 *_UNAVAILABLE so the
 // client can show "try later" instead of a generic 500. A provider 4xx that
 // blames the recipient address (reason invalid_recipient) is 400 INVALID_EMAIL.
 func writeSendCodeError(w http.ResponseWriter, where string, err error) {
 	if errors.Is(err, ErrRateLimited) {
+		w.Header().Set("Retry-After", strconv.Itoa(sendRetryAfterSeconds))
 		common.WriteError(w, http.StatusTooManyRequests, "RATE_LIMITED", "验证码发送过于频繁，请稍后再试")
 		return
 	}

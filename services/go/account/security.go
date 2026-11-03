@@ -749,7 +749,7 @@ func (m antiPhishingMailer) SendEmailCode(ctx context.Context, email, code, purp
 		title = "验证码"
 	}
 	body := p + "您的" + title + "为：" + code + "\n\n10 分钟内有效，请勿泄露给任何人。如非本人操作请忽略本邮件。"
-	if err := m.inner.SendEmail(ctx, email, "[Linbit] "+title, body); err != nil {
+	if err := m.inner.SendEmail(ctx, email, codeEmailSubject(title, code), body); err != nil {
 		return err
 	}
 	m.rec.record(email, purpose, code)

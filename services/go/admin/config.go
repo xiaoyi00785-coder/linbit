@@ -30,7 +30,7 @@ type Config struct {
 
 	// Market maker / solvency.
 	MMUserID        string // MM_USER_ID (default mm:main)
-	MMSeedMax       string // MM_SEED_MAX: max single-asset testnet seed per call (default 10000000)
+	MMSeedMax       string // ADMIN_MM_SEED_MAX (legacy MM_SEED_MAX): max single-asset testnet seed per call (default 10000000)
 	SolvencyHourUTC int    // SOLVENCY_HOUR_UTC: daily reconciliation hour (default 1); -1 disables
 
 	// Security.
@@ -90,7 +90,7 @@ func LoadConfig() Config {
 		MMURL:      common.Env("MM_INTERNAL_URL", "http://localhost:8093"),
 
 		MMUserID:        common.Env("MM_USER_ID", "mm:main"),
-		MMSeedMax:       common.Env("MM_SEED_MAX", "10000000"),
+		MMSeedMax:       common.Env("ADMIN_MM_SEED_MAX", common.Env("MM_SEED_MAX", "10000000")),
 		SolvencyHourUTC: common.EnvInt("SOLVENCY_HOUR_UTC", 1),
 
 		Require2FA:      common.Env("ADMIN_REQUIRE_2FA", "true") != "false",

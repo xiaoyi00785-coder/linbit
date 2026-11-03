@@ -156,10 +156,11 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 登出（吊销该用户全部刷新令牌）
-         * @description 需要 `Authorization: Bearer <accessToken>`。服务端按访问令牌识别用户，
-         *     吊销该用户所有未吊销的刷新令牌（全部设备）。请求体可选：客户端可以带
-         *     `{refreshToken}`，服务端目前不读取它；已签发的访问令牌在过期前仍然有效。
+         * 登出（吊销该用户全部刷新令牌和访问令牌）
+         * @description 通常带 `Authorization: Bearer <accessToken>`。服务端吊销该用户所有刷新令牌（全部设备），
+         *     并让此前签发的所有访问令牌立即失效（之后用旧访问令牌请求受保护接口返回 401）。
+         *     若访问令牌缺失或已过期，可在请求体带 `{refreshToken}`，服务端据此识别用户并同样完成登出。
+         *     建议客户端始终同时带上 refreshToken。
          */
         post: operations["logout"];
         delete?: never;
@@ -3923,7 +3924,7 @@ export interface paths {
          *     - 仅 {ref}：注入 MM_SEED_AMOUNT USDT（原行为不变）。
          *     - {ref, assets[, usdtValue, amounts]}：按指数价为每个基础资产注入约 usdtValue。
          *     - {ref, asset, amount, reason}：单资产精确注资到做市现货账户，例如 {asset:"USDT", amount:"5000000"}；
-         *       reason 必填，amount ≤ MM_SEED_MAX（默认 10,000,000，可配置），不可与 assets 混用；
+         *       reason 必填，amount ≤ ADMIN_MM_SEED_MAX（默认 10,000,000，可配置；兼容旧名 MM_SEED_MAX），不可与 assets 混用；
          *       资产须为 USDT 或 MM_SEED_BASE_ASSETS 之一。审计日志记录 asset/amount。
          */
         post: operations["adminMMTestnetSeed"];
@@ -7277,6 +7278,38 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description 需邮箱/短信验证码但发送过于频繁（RATE_LIMITED）。响应头 Retry-After 为建议等待秒数； 等待后重新调用登录即可。仅在密码正确后才可能返回，不暴露账号是否存在。 */
+            429: {
+                headers: {
+                    /** @description 建议等待秒数 */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "RATE_LIMITED",
+                     *       "message": "验证码发送过于频繁，请稍后再试"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 验证码邮件/短信发送失败（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），请稍后重试 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "EMAIL_UNAVAILABLE",
+                     *       "message": "邮件服务暂不可用，请稍后再试"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     loginVerify: {
@@ -7354,9 +7387,11 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description 发送过于频繁 */
+            /** @description 发送过于频繁（RATE_LIMITED），响应头 Retry-After 为建议等待秒数 */
             429: {
                 headers: {
+                    /** @description 建议等待秒数 */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -7495,13 +7530,13 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @description 可选，服务端忽略（全部刷新令牌都会被吊销） */
+                    /** @description 可选；访问令牌无效/过期时用于识别用户（全部刷新令牌都会被吊销） */
                     refreshToken?: string;
                 };
             };
         };
         responses: {
-            /** @description 已登出，刷新令牌已吊销 */
+            /** @description 已登出，刷新令牌已吊销，旧访问令牌立即失效 */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -7511,6 +7546,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description 服务器内部错误（INTERNAL） */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 刷新令牌已吊销，但访问令牌吊销暂时失败（LOGOUT_INCOMPLETE），请重试 */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13425,7 +13469,7 @@ export interface operations {
                      */
                     asset?: string;
                     /**
-                     * @description 单资产模式数量（≤ MM_SEED_MAX）
+                     * @description 单资产模式数量（≤ ADMIN_MM_SEED_MAX）
                      * @example 5000000
                      */
                     amount?: string;

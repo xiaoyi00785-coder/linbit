@@ -13,7 +13,8 @@ func main() {
 	cfg := LoadConfig()
 	common.RequireProduction("gateway", nil, "JWT_SECRET", "REDIS_URL", "CORS_ALLOWED_ORIGINS")
 
-	if client := common.MaybeRedis(cfg.RedisURL); client != nil {
+	client := common.MaybeRedis(cfg.RedisURL)
+	if client != nil {
 		defer client.Close()
 	}
 
@@ -21,6 +22,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("build gateway: %v", err)
 	}
+	gw.rdb = client
 	if accessLogEnabled() {
 		gw.accessLog = newAccessLogger(nil)
 	}

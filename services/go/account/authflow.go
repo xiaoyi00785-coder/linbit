@@ -366,12 +366,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	// For email/SMS challenges, dispatch the code now (best-effort: a rate-limit
-	// just means a recently-sent code is still valid).
+	// For email/SMS challenges, dispatch the code now. The password was already
+	// verified, so surfacing send errors leaks nothing about account existence.
+	// Rate limits (429 + Retry-After) and delivery failures (503) are returned
+	// to the client instead of a misleading 200.
 	if method == channelEmail || method == channelSMS {
 		if target := s.contactTarget(u, method); target != "" {
-			if err := s.codes.Send(r.Context(), method, target, purposeLogin); err != nil && !errors.Is(err, ErrRateLimited) {
-				log.Printf("login: send code: %v", err)
+			if err := s.codes.Send(r.Context(), method, target, purposeLogin); err != nil {
+				writeSendCodeError(w, "login", err)
+				return
 			}
 		}
 	}
@@ -505,15 +508,39 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, tokens)
 }
 
-// handleLogout revokes every active session for the user.
+// handleLogout revokes every active session for the user: all refresh tokens
+// are revoked and every access token issued so far stops working immediately
+// (per-user cutoff in Redis, checked by the gateway and s.auth). The user is
+// identified by a valid bearer access token or, when that is missing/expired,
+// by the refreshToken in the body.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	u, ok := s.authedUser(r)
-	if !ok {
+	var u *User
+	if token := bearer(r); token != "" {
+		if claims, err := common.ParseAccessToken(s.cfg.JWTSecret, token); err == nil && !s.accessRevoked(r, claims) {
+			u, _ = s.store.UserByUID(r.Context(), claims.Subject)
+		}
+	}
+	if u == nil {
+		var req refreshRequest
+		_ = common.DecodeJSON(r, &req)
+		if req.RefreshToken != "" {
+			if rec, err := s.store.ConsumeRefreshToken(r.Context(), req.RefreshToken); err == nil {
+				u = rec.User
+			}
+		}
+	}
+	if u == nil {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
 		return
 	}
 	if err := s.store.RevokeAllRefreshTokens(r.Context(), u.ID); err != nil {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	// Keep the cutoff for the longest possible access-token lifetime.
+	if err := common.RevokeAccessTokens(r.Context(), s.rdb, u.UID, s.now(), s.cfg.AccessTTL+time.Minute); err != nil {
+		log.Printf("logout: revoke access tokens: %s", common.RedactSecrets(err.Error()))
+		common.WriteError(w, http.StatusServiceUnavailable, "LOGOUT_INCOMPLETE", "刷新令牌已吊销，但访问令牌吊销失败，请稍后重试")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

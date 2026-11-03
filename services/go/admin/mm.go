@@ -88,7 +88,7 @@ func (s *Server) handleMMRun(action string) http.HandlerFunc {
 // POST /admin/v1/mm/testnet-seed {ref, assets?, usdtValue?, amounts?, asset?, amount?, reason, totpCode}
 // — single-asset mode {asset:"USDT", amount:"5000000"} credits exactly that
 // amount of one asset to the MM spot account (reason required, amount <=
-// MM_SEED_MAX, default 10,000,000).
+// ADMIN_MM_SEED_MAX (legacy MM_SEED_MAX), default 10,000,000).
 // — testnet/mock only. Without assets: MM_SEED_AMOUNT USDT. With assets
 // (e.g. ["BTC","ETH","SOL"]): each credited ~usdtValue (default 1,000,000) of
 // the base asset at the current index, idempotent per ref+asset.

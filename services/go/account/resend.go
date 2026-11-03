@@ -32,13 +32,20 @@ var purposeSubject = map[string]string{
 	purposeWithdraw: "提币验证码",
 }
 
+// codeEmailSubject puts the code in the subject so each mail is distinct
+// (Gmail otherwise threads identical subjects and hides new codes), e.g.
+// "Linbit 登录验证码 123456".
+func codeEmailSubject(title, code string) string {
+	return "Linbit " + title + " " + code
+}
+
 func (s *resendSender) SendEmailCode(ctx context.Context, email, code, purpose string) error {
 	title := purposeSubject[purpose]
 	if title == "" {
 		title = "验证码"
 	}
 	body := fmt.Sprintf("您的%s为：%s\n\n10 分钟内有效，请勿泄露给任何人。如非本人操作请忽略本邮件。", title, code)
-	if err := s.SendEmail(ctx, email, "[Linbit] "+title, body); err != nil {
+	if err := s.SendEmail(ctx, email, codeEmailSubject(title, code), body); err != nil {
 		return err
 	}
 	s.rec.record(email, purpose, code)

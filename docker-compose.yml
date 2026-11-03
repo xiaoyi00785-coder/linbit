@@ -334,7 +334,7 @@ services:
     environment:
       LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8088"
-      MM_SEED_MAX: ${MM_SEED_MAX:-10000000}
+      ADMIN_MM_SEED_MAX: ${ADMIN_MM_SEED_MAX:-10000000}
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ACCOUNT_INTERNAL_URL: http://account:8081

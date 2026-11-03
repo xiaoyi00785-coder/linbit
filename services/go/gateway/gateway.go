@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/linbit/platform/services/go/common"
+	"github.com/redis/go-redis/v9"
 )
 
 // route maps a path prefix to an upstream reverse proxy.
@@ -38,6 +40,14 @@ type Gateway struct {
 	// accessLog is nil when GATEWAY_ACCESS_LOG is off.
 	accessLog *slog.Logger
 	tradfi    *tradfiGuard
+	// rdb backs the logout revocation check (nil = no check).
+	rdb *redis.Client
+}
+
+// isLogout: POST /auth/logout is forwarded even with a missing/expired access
+// token so the account service can revoke via the refreshToken in the body.
+func isLogout(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == "/auth/logout"
 }
 
 // NewGateway builds a Gateway. It returns an error if an upstream URL is bad.
@@ -259,11 +269,24 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 
 	if !g.isPublic(r) {
 		token := bearer(r)
+		var claims *common.AccessClaims
+		var err error
+		if token != "" {
+			claims, err = common.ParseAccessToken(g.cfg.JWTSecret, token)
+			if err == nil && g.tokenRevoked(r, claims) {
+				claims, err = nil, common.ErrInvalidToken
+			}
+		}
+		if claims == nil && isLogout(r) {
+			// Account authenticates the bearer itself or falls back to the
+			// body refreshToken; no identity header is set here.
+			proxy.ServeHTTP(w, r)
+			return
+		}
 		if token == "" {
 			common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
 			return
 		}
-		claims, err := common.ParseAccessToken(g.cfg.JWTSecret, token)
 		if err != nil {
 			common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "令牌无效或已过期")
 			return
@@ -294,7 +317,7 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if token != "" {
-			if claims, err := common.ParseAccessToken(g.cfg.JWTSecret, token); err == nil {
+			if claims, err := common.ParseAccessToken(g.cfg.JWTSecret, token); err == nil && !g.tokenRevoked(r, claims) {
 				r.Header.Set("X-User-Id", claims.Subject)
 			}
 		}
@@ -304,6 +327,16 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// tokenRevoked reports whether the user logged out after the token was issued.
+// A Redis error fails open (logged) so an outage does not lock users out.
+func (g *Gateway) tokenRevoked(r *http.Request, c *common.AccessClaims) bool {
+	revoked, err := common.AccessTokenRevoked(r.Context(), g.rdb, c)
+	if err != nil {
+		log.Printf("gateway: revocation check: %s", common.RedactSecrets(err.Error()))
+	}
+	return revoked
 }
 
 func (g *Gateway) optionalAuth(r *http.Request) bool {

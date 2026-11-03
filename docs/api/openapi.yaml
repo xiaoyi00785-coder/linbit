@@ -192,6 +192,22 @@ paths:
                     expiresIn: 300
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429":
+          description: >
+            需邮箱/短信验证码但发送过于频繁（RATE_LIMITED）。响应头 Retry-After 为建议等待秒数；
+            等待后重新调用登录即可。仅在密码正确后才可能返回，不暴露账号是否存在。
+          headers:
+            Retry-After: { schema: { type: integer }, description: 建议等待秒数 }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: RATE_LIMITED, message: 验证码发送过于频繁，请稍后再试 }
+        "503":
+          description: 验证码邮件/短信发送失败（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），请稍后重试
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: 邮件服务暂不可用，请稍后再试 }
 
   /auth/login/verify:
     post:
@@ -239,7 +255,10 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "429": { description: 发送过于频繁 }
+        "429":
+          description: 发送过于频繁（RATE_LIMITED），响应头 Retry-After 为建议等待秒数
+          headers:
+            Retry-After: { schema: { type: integer }, description: 建议等待秒数 }
         "503":
           description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
           content:
@@ -327,14 +346,16 @@ paths:
   /auth/logout:
     post:
       tags: [Auth]
-      summary: 登出（吊销该用户全部刷新令牌）
+      summary: 登出（吊销该用户全部刷新令牌和访问令牌）
       description: |
-        需要 `Authorization: Bearer <accessToken>`。服务端按访问令牌识别用户，
-        吊销该用户所有未吊销的刷新令牌（全部设备）。请求体可选：客户端可以带
-        `{refreshToken}`，服务端目前不读取它；已签发的访问令牌在过期前仍然有效。
+        通常带 `Authorization: Bearer <accessToken>`。服务端吊销该用户所有刷新令牌（全部设备），
+        并让此前签发的所有访问令牌立即失效（之后用旧访问令牌请求受保护接口返回 401）。
+        若访问令牌缺失或已过期，可在请求体带 `{refreshToken}`，服务端据此识别用户并同样完成登出。
+        建议客户端始终同时带上 refreshToken。
       operationId: logout
       security:
         - bearerAuth: []
+        - {}
       requestBody:
         required: false
         content:
@@ -344,11 +365,16 @@ paths:
               properties:
                 refreshToken:
                   type: string
-                  description: 可选，服务端忽略（全部刷新令牌都会被吊销）
+                  description: 可选；访问令牌无效/过期时用于识别用户（全部刷新令牌都会被吊销）
       responses:
         "204":
-          description: 已登出，刷新令牌已吊销
+          description: 已登出，刷新令牌已吊销，旧访问令牌立即失效
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: 刷新令牌已吊销，但访问令牌吊销暂时失败（LOGOUT_INCOMPLETE），请重试
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: 服务器内部错误（INTERNAL）
           content:
@@ -5563,7 +5589,7 @@ paths:
         - 仅 {ref}：注入 MM_SEED_AMOUNT USDT（原行为不变）。
         - {ref, assets[, usdtValue, amounts]}：按指数价为每个基础资产注入约 usdtValue。
         - {ref, asset, amount, reason}：单资产精确注资到做市现货账户，例如 {asset:"USDT", amount:"5000000"}；
-          reason 必填，amount ≤ MM_SEED_MAX（默认 10,000,000，可配置），不可与 assets 混用；
+          reason 必填，amount ≤ ADMIN_MM_SEED_MAX（默认 10,000,000，可配置；兼容旧名 MM_SEED_MAX），不可与 assets 混用；
           资产须为 USDT 或 MM_SEED_BASE_ASSETS 之一。审计日志记录 asset/amount。
       operationId: adminMMTestnetSeed
       requestBody:
@@ -5579,7 +5605,7 @@ paths:
                 usdtValue: { type: string }
                 amounts: { type: object, additionalProperties: { type: string } }
                 asset: { type: string, example: USDT, description: 单资产模式 }
-                amount: { type: string, example: "5000000", description: 单资产模式数量（≤ MM_SEED_MAX） }
+                amount: { type: string, example: "5000000", description: 单资产模式数量（≤ ADMIN_MM_SEED_MAX） }
                 reason: { type: string, description: 单资产模式必填 }
                 totpCode: { type: string }
       responses:
