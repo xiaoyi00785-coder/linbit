@@ -44,6 +44,10 @@ r="$(curl -sS -w '\n%{http_code}' "$GATEWAY_URL/partner/rules")"
 [ "$(body "$r" | jq -r '.tiers|length')" = "4" ] || fail "tiers: $r"
 [ "$(body "$r" | jq -r '.tiers[3].key + " " + .tiers[3].futuresRate + " " + .tiers[3].spotRate')" = "diamond 0.5 0.35" ] || fail "diamond tier: $r"
 [ "$(body "$r" | jq -r .overrideLevels)" = "2" ] || fail "override levels"
+# Rebate table by market: futures 30/40/45/50%, spot 20/25/30/35% (normal/silver/gold/diamond).
+TIERS="$(body "$r" | jq -r '[.tiers[] | "\(.key):\(.futuresRate):\(.spotRate)"] | join(",")')"
+[ "$TIERS" = "normal:0.3:0.2,silver:0.4:0.25,gold:0.45:0.3,diamond:0.5:0.35" ] || fail "tier rates (futures/spot swapped?): $TIERS"
+[ "$(body "$r" | jq -r '[.tiers[] | (.futuresRate|tonumber) > (.spotRate|tonumber)] | all')" = "true" ] || fail "futures rate must exceed spot rate: $TIERS"
 [ "$(curl -sS -o /dev/null -w '%{http_code}' "$GATEWAY_URL/partner/me")" = "401" ] || fail "partner/me without token"
 [ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$GROWTH_URL/internal/dev/growth/settle")" = "401" ] || fail "settle without token"
 
@@ -167,6 +171,7 @@ eq "$(gain PA)" "$EXP_PA" "PA after re-settle"
 say "dashboards"
 s="$(ok "$(api "${TOK[PA]}" GET /partner/summary)" "PA summary")"
 [ "$(jq -r .tier <<<"$s")" = "silver" ] || fail "PA tier: $s"
+[ "$(jq -r '"\(.futuresRate) \(.spotRate)"' <<<"$s")" = "0.4 0.25" ] || fail "silver rates (futures 40% / spot 25%): $s"
 [ "$(jq -r '.directs, .directPartners' <<<"$s" | tr '\n' ' ')" = "2 1 " ] || fail "PA directs: $s"
 eq "$(jq -r .total <<<"$s")" "$EXP_PA" "PA total" 0.00000002
 [ "$(jq -r .nextTier.tier <<<"$s")" = "gold" ] || fail "next tier: $s"

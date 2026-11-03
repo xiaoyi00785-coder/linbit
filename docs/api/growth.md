@@ -104,7 +104,7 @@ Dev (account): `POST /internal/dev/account/bind-phone {uid, phone}`.
 | GROWTH_PAYOUT_ASSET | USDT |
 | GROWTH_USD_QUOTES | USDT,USDC |
 | GROWTH_INVITE_BASE_URL | https://linbit.example.com/r/ |
-| GROWTH_PARTNER_TIERS | normal:0:0.30:0.20,silver:5000000:0.40:0.25,gold:20000000:0.45:0.30,diamond:50000000:0.50:0.35 |
+| GROWTH_PARTNER_TIERS | normal:0:0.30:0.20,silver:5000000:0.40:0.25,gold:20000000:0.45:0.30,diamond:50000000:0.50:0.35 (key:minFutures30dVolume:futuresRate:spotRate) |
 | GROWTH_TIER_WINDOW_DAYS | 30 |
 | GROWTH_PARTNER_OVERRIDE_RATE | 0.10 |
 | GROWTH_PARTNER_OVERRIDE_DEPTH | 1 |

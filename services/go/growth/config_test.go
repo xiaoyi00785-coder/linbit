@@ -29,3 +29,13 @@ func TestLastBoundary(t *testing.T) {
 		t.Fatalf("day %s", d)
 	}
 }
+
+func TestDefaultTierRatesByMarket(t *testing.T) {
+	want := map[string][2]string{"normal": {"0.3", "0.2"}, "silver": {"0.4", "0.25"}, "gold": {"0.45", "0.3"}, "diamond": {"0.5", "0.35"}}
+	for _, tr := range parseTiers(defaultTiers) {
+		w, ok := want[tr.Key]
+		if !ok || tr.FuturesRate.String() != w[0] || tr.SpotRate.String() != w[1] {
+			t.Fatalf("tier %s: futures %s spot %s, want futures %s spot %s", tr.Key, tr.FuturesRate, tr.SpotRate, w[0], w[1])
+		}
+	}
+}
