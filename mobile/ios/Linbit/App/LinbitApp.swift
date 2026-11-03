@@ -83,6 +83,12 @@ struct RootTabView: View {
         case "futures-plan": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "plan"
         case "futures-orders-tpsl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "ordersTpsl"
         case "futures-history": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresHistory
+        case "futures-orders-plan": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "ordersPlan"
+        case "futures-amend": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "amend"
+        case "futures-mode-hedge": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "modeHedge"
+        case "futures-tpsl-partial": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "tpslPartial"
+        case "futures-position-history": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "posHistory"; router.feature = .futuresHistory
+        case "futures-algo-history": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "algoHistory"; router.feature = .futuresHistory
         case "futures-tiers": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresRiskTiers
         case "futures-funding": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresFunding
         case "event": router.tab = .futures; router.futuresTop = 1

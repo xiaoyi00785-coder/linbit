@@ -17,6 +17,11 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         case cross = "cross"
         case isolated = "isolated"
     }
+    public enum APIPositionSide: String, Codable, CaseIterable {
+        case both = "BOTH"
+        case long = "LONG"
+        case short = "SHORT"
+    }
     static let adlRankRule = NumericRule<Int>(minimum: 0, exclusiveMinimum: false, maximum: 5, exclusiveMaximum: false, multipleOf: nil)
     public var symbol: String?
     public var side: APISide?
@@ -45,8 +50,9 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
     public var tpPrice: String?
     public var slPrice: String?
     public var adlRank: Int?
+    public var positionSide: APIPositionSide?
 
-    public init(symbol: String? = nil, side: APISide? = nil, qty: String? = nil, entryPrice: String? = nil, markPrice: String? = nil, notional: String? = nil, unrealizedPnl: String? = nil, roe: String? = nil, realizedPnl: String? = nil, marginMode: APIMarginMode? = nil, leverage: Int? = nil, margin: String? = nil, maintenanceMargin: String? = nil, liquidationPrice: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, adlRank: Int? = nil) {
+    public init(symbol: String? = nil, side: APISide? = nil, qty: String? = nil, entryPrice: String? = nil, markPrice: String? = nil, notional: String? = nil, unrealizedPnl: String? = nil, roe: String? = nil, realizedPnl: String? = nil, marginMode: APIMarginMode? = nil, leverage: Int? = nil, margin: String? = nil, maintenanceMargin: String? = nil, liquidationPrice: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, adlRank: Int? = nil, positionSide: APIPositionSide? = nil) {
         self.symbol = symbol
         self.side = side
         self.qty = qty
@@ -64,6 +70,7 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         self.tpPrice = tpPrice
         self.slPrice = slPrice
         self.adlRank = adlRank
+        self.positionSide = positionSide
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -84,6 +91,7 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         case tpPrice
         case slPrice
         case adlRank
+        case positionSide
     }
 
     // Encodable protocol methods
@@ -107,6 +115,7 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(tpPrice, forKey: .tpPrice)
         try container.encodeIfPresent(slPrice, forKey: .slPrice)
         try container.encodeIfPresent(adlRank, forKey: .adlRank)
+        try container.encodeIfPresent(positionSide, forKey: .positionSide)
     }
 }
 

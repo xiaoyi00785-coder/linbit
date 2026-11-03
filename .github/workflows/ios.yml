@@ -106,16 +106,16 @@ jobs:
             sleep 7
             xcrun simctl io "$UDID" screenshot "shots/${screen}-${mode}.png" || true
           }
-          for screen in home markets spot assets login futures futures-chart futures-plan futures-history futures-tiers futures-funding \
+          for screen in home markets spot assets login futures futures-chart futures-plan futures-history futures-position-history futures-algo-history futures-tiers futures-funding \
                         event earn strategy swap chat subaccounts welfare; do
             for mode in light dark; do shoot "$screen" "$mode"; done
           done
           for screen in futures-leverage futures-mode futures-tpsl futures-kind futures-tools event-confirm \
-                        futures-orders-tpsl earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
+                        futures-orders-tpsl futures-orders-plan futures-amend futures-mode-hedge futures-tpsl-partial earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
             shoot "$screen" light
           done
           # 合约弹窗夜间版
-          for screen in futures-orders-tpsl futures-tpsl futures-mode futures-leverage futures-kind futures-tools; do
+          for screen in futures-orders-tpsl futures-orders-plan futures-amend futures-mode-hedge futures-tpsl-partial futures-tpsl futures-mode futures-leverage futures-kind futures-tools; do
             shoot "$screen" dark
           done
 

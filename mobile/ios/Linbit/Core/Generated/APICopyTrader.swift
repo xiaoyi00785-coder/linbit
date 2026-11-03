@@ -9,6 +9,8 @@ import Foundation
 
 public struct APICopyTrader: Codable, JSONEncodable, Hashable {
 
+    /** GET /futures/copy/trader：未申请带单时返回 200 {isTrader:false,status:none} */
+    public var isTrader: Bool?
     public var traderId: String?
     public var nickname: String?
     public var bio: String?
@@ -18,7 +20,8 @@ public struct APICopyTrader: Codable, JSONEncodable, Hashable {
     public var reviewNote: String?
     public var createdAt: Date?
 
-    public init(traderId: String? = nil, nickname: String? = nil, bio: String? = nil, profitShare: String? = nil, status: String? = nil, reviewNote: String? = nil, createdAt: Date? = nil) {
+    public init(isTrader: Bool? = nil, traderId: String? = nil, nickname: String? = nil, bio: String? = nil, profitShare: String? = nil, status: String? = nil, reviewNote: String? = nil, createdAt: Date? = nil) {
+        self.isTrader = isTrader
         self.traderId = traderId
         self.nickname = nickname
         self.bio = bio
@@ -29,6 +32,7 @@ public struct APICopyTrader: Codable, JSONEncodable, Hashable {
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
+        case isTrader
         case traderId
         case nickname
         case bio
@@ -42,6 +46,7 @@ public struct APICopyTrader: Codable, JSONEncodable, Hashable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(isTrader, forKey: .isTrader)
         try container.encodeIfPresent(traderId, forKey: .traderId)
         try container.encodeIfPresent(nickname, forKey: .nickname)
         try container.encodeIfPresent(bio, forKey: .bio)
