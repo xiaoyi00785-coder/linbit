@@ -16,7 +16,9 @@ type Config struct {
 	StrategyURL string
 	GrowthURL   string
 	EarnURL     string
-	RedisURL    string
+	// AdminURL is used ONLY for the public read-only GET /announcements.
+	AdminURL string
+	RedisURL string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string
 }
@@ -36,6 +38,7 @@ func LoadConfig() Config {
 		StrategyURL:    common.Env("STRATEGY_URL", "http://localhost:8090"),
 		GrowthURL:      common.Env("GROWTH_URL", "http://localhost:8091"),
 		EarnURL:        common.Env("EARN_URL", "http://localhost:8092"),
+		AdminURL:       common.Env("ADMIN_URL", "http://localhost:8088"),
 		RedisURL:       common.Env("REDIS_URL", ""),
 		AllowedOrigins: splitOrigins(common.Env("CORS_ALLOWED_ORIGINS", "")),
 	}

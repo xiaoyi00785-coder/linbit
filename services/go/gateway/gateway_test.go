@@ -280,3 +280,79 @@ func TestUnknownRoute(t *testing.T) {
 		t.Fatalf("unknown route status = %d", w.Code)
 	}
 }
+
+// adminRecorder records full request details for the announcements proxy.
+type adminRecorder struct {
+	server             *httptest.Server
+	hits               int
+	lastPath, lastAuth string
+	lastUID, lastTok   string
+}
+
+func newAdminRecorder() *adminRecorder {
+	a := &adminRecorder{}
+	a.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.hits++
+		a.lastPath = r.URL.Path
+		a.lastAuth = r.Header.Get("Authorization")
+		a.lastUID = r.Header.Get("X-User-Id")
+		a.lastTok = r.Header.Get("X-Internal-Token")
+		w.Write([]byte(`{"items":[]}`))
+	}))
+	return a
+}
+
+func TestPublicAnnouncementsProxied(t *testing.T) {
+	adm := newAdminRecorder()
+	defer adm.server.Close()
+	other := newUpstream()
+	defer other.server.Close()
+	h := newTestGatewayCfg(t, Config{AccountURL: other.server.URL, AssetURL: other.server.URL, AdminURL: adm.server.URL})
+
+	req := httptest.NewRequest("GET", "/announcements", nil) // no token
+	req.Header.Set("Authorization", "Bearer garbage")
+	req.Header.Set("X-User-Id", "spoof")
+	req.Header.Set("X-Internal-Token", "spoof")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || adm.hits != 1 || adm.lastPath != "/announcements" {
+		t.Fatalf("status=%d hits=%d path=%q", w.Code, adm.hits, adm.lastPath)
+	}
+	if adm.lastAuth != "" || adm.lastUID != "" || adm.lastTok != "" {
+		t.Fatal("credentials forwarded to admin service")
+	}
+	// Read-only: writes are rejected and never reach the admin service.
+	for _, m := range []string{"POST", "PUT", "PATCH", "DELETE"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(m, "/announcements", nil))
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s status=%d, want 405", m, w.Code)
+		}
+	}
+	if adm.hits != 1 {
+		t.Fatal("write method reached admin service")
+	}
+}
+
+func TestAdminStillBlockedWithAnnouncements(t *testing.T) {
+	adm := newAdminRecorder()
+	defer adm.server.Close()
+	other := newUpstream()
+	defer other.server.Close()
+	h := newTestGatewayCfg(t, Config{AccountURL: other.server.URL, AssetURL: other.server.URL, AdminURL: adm.server.URL})
+	paths := []string{"/admin", "/admin/", "/admin/v1/announcements", "/admin/v1/auth/login", "//admin/v1/users",
+		"/ADMIN/v1/announcements", "/admin/../admin/v1/me", "/announcements/../admin/v1/me", "/internal/x",
+		"/announcements/1", "/announcements/", "/announcementsx"}
+	for _, p := range paths {
+		for _, m := range []string{"GET", "POST"} {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest(m, p, nil))
+			if w.Code != http.StatusNotFound && w.Code != http.StatusUnauthorized {
+				t.Fatalf("%s %s status=%d, want 404/401", m, p, w.Code)
+			}
+		}
+	}
+	if adm.hits != 0 {
+		t.Fatalf("admin service reached %d times via non-public path", adm.hits)
+	}
+}

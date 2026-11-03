@@ -27,7 +27,10 @@ type publicRoute struct {
 type Gateway struct {
 	cfg    Config
 	routes []route
-	public []publicRoute
+	// announcements proxies ONLY the exact public path GET /announcements to
+	// the admin service. No other admin path is reachable through the gateway.
+	announcements *httputil.ReverseProxy
+	public        []publicRoute
 }
 
 // NewGateway builds a Gateway. It returns an error if an upstream URL is bad.
@@ -83,9 +86,32 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	earnProxy := httputil.NewSingleHostReverseProxy(earn)
+	adminURL := cfg.AdminURL
+	if adminURL == "" {
+		adminURL = "http://localhost:8088"
+	}
+	admin, err := url.Parse(adminURL)
+	if err != nil {
+		return nil, err
+	}
+	annProxy := httputil.NewSingleHostReverseProxy(admin)
+	annDirector := annProxy.Director
+	annProxy.Director = func(r *http.Request) {
+		annDirector(r)
+		// Pin the upstream path and strip any credentials: the admin service
+		// only ever sees an anonymous GET /announcements.
+		r.URL.Path = "/announcements"
+		r.URL.RawPath = ""
+		r.Header.Del("Authorization")
+		r.Header.Del("Cookie")
+		r.Header.Del("X-Internal-Token")
+		r.Header.Del("X-User-Id")
+		r.Header.Del("X-Admin-Token")
+	}
 
 	return &Gateway{
-		cfg: cfg,
+		cfg:           cfg,
+		announcements: annProxy,
 		// Order matters: longest/most-specific prefixes first.
 		routes: []route{
 			{prefix: "/auth", proxy: accountProxy},
@@ -155,6 +181,17 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 	// exposed through the public gateway: answer 404 so they are not discoverable.
 	if hiddenPath(r.URL.Path) {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
+		return
+	}
+
+	// Public, read-only announcements (admin service public handler only).
+	if r.URL.Path == "/announcements" {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			common.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "仅支持 GET")
+			return
+		}
+		g.announcements.ServeHTTP(w, r)
 		return
 	}
 
