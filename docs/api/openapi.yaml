@@ -5448,6 +5448,136 @@ paths:
       operationId: adminEventExposure
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventExposure" } } } }
+  /tradfi/assets:
+    get:
+      tags: [TradFi]
+      summary: TradFi 资产目录（公开；按开关 + active 过滤；只返回已配置合约地址的发行方代币；含参考价与偏离）
+      description: |
+        参考价 = Binance USDⓈ-M 永续（OKX SWAP 备用），不回退现货。现货偏离参考价超过阈值（默认 200 bps，可在后台按资产配置）时
+        做市自动放宽价差（widened=true）并发送 Telegram 告警。
+        网关拦截：两个开关都关 → 403 FEATURE_DISABLED；CF-IPCountry 或 KYC 国家在受限列表（默认 US + 美属地区 + OFAC：CU IR KP SY）→ 403 REGION_RESTRICTED。
+        同样的拦截作用于 POST /spot/orders、POST /futures/orders（TradFi 标的）、GET /wallet/deposit/address 与 POST /wallet/withdraw（TradFi 资产）；
+        撤单与平仓不受影响。
+      operationId: listTradFiAssets
+      security: []
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [stock, metal, commodity] } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/TradFiAsset" } }
+        "403": { description: FEATURE_DISABLED | REGION_RESTRICTED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: SERVICE_UNAVAILABLE（风控门禁不可用，fail closed）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /admin/v1/tradfi/assets:
+    get:
+      tags: [Admin]
+      summary: TradFi 资产、发行方代币与全局设置（symbol:view）
+      operationId: adminListTradFiAssets
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/TradFiAsset" } }
+                  settings: { $ref: "#/components/schemas/TradFiSettings" }
+  /admin/v1/tradfi/assets/{asset}:
+    put:
+      tags: [Admin]
+      summary: 更新资产（symbol:edit；totpCode + reason，审计 tradfi_asset）
+      operationId: adminUpdateTradFiAsset
+      parameters:
+        - { name: asset, in: path, required: true, schema: { type: string, example: AAPL } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  properties:
+                    status: { type: string, enum: [active, suspended] }
+                    name: { type: string }
+                    deviationBps: { type: integer, minimum: 10, maximum: 5000, description: 单资产偏离阈值（覆盖全局） }
+                    clearDeviationBps: { type: boolean, description: true = 恢复使用全局阈值 }
+                    refBinance: { type: string, example: AAPLUSDT }
+                    refOkx: { type: string, example: AAPL-USDT-SWAP }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiBeforeAfter" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/tradfi/tokens:
+    put:
+      tags: [Admin]
+      summary: 新增/更新发行方代币（symbol:edit；totpCode + reason，审计 tradfi_token）
+      description: 开启充值或提现必须先填合约地址，否则 400 ADDRESS_REQUIRED。新开启的代币需重启 wallet 生效；关闭即时生效。
+      operationId: adminUpsertTradFiToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  required: [asset, issuer, network]
+                  properties:
+                    asset: { type: string, example: AAPL }
+                    issuer: { type: string, enum: [xstocks, ondo, paxos, tether] }
+                    network: { type: string, example: SOL, description: 钱包网络名（SOL / ERC20 / TRC20 …） }
+                    contractAddress: { type: string }
+                    decimals: { type: integer }
+                    depositEnabled: { type: boolean }
+                    withdrawEnabled: { type: boolean }
+                    minWithdraw: { type: string, example: "0.05" }
+                    withdrawFee: { type: string, example: "0.02" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiBeforeAfter" } } } }
+        "400": { description: VALIDATION_ERROR | ADDRESS_REQUIRED | REASON_REQUIRED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /admin/v1/tradfi/settings:
+    get:
+      tags: [Admin]
+      summary: TradFi 全局设置（symbol:view）
+      operationId: adminGetTradFiSettings
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiSettings" } } } }
+    put:
+      tags: [Admin]
+      summary: 更新受限地区 / 偏离阈值 / 放宽倍数 / 告警冷却（symbol:edit；totpCode + reason，审计 tradfi_settings）
+      operationId: adminUpdateTradFiSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - $ref: "#/components/schemas/TradFiSettings"
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiBeforeAfter" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/tradfi/deviation:
+    get:
+      tags: [Admin]
+      summary: 偏离监控状态（每个 TradFi 现货标的：lastPrice、referencePrice、deviationBps、widened）（symbol:view）
+      operationId: adminGetTradFiDeviation
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/TradFiDeviation" } }
 components:
   securitySchemes:
     bearerAuth:
@@ -7935,5 +8065,59 @@ components:
         todayPayout: { type: string }
         todayPlatformPnl: { type: string }
         unfinishedOrders: { type: integer }
+    TradFiToken:
+      type: object
+      properties:
+        asset: { type: string }
+        issuer: { type: string, enum: [xstocks, ondo, paxos, tether] }
+        network: { type: string }
+        contractAddress: { type: string }
+        decimals: { type: integer }
+        depositEnabled: { type: boolean }
+        withdrawEnabled: { type: boolean }
+        minWithdraw: { type: string }
+        withdrawFee: { type: string }
+    TradFiAsset:
+      type: object
+      properties:
+        asset: { type: string, example: AAPL }
+        kind: { type: string, enum: [stock, metal, commodity] }
+        name: { type: string }
+        underlying: { type: string, example: "Apple Inc. (NASDAQ: AAPL)" }
+        market: { type: string, enum: [spot, futures] }
+        symbol: { type: string, example: AAPLUSDT }
+        refBinance: { type: string, description: 仅后台返回 }
+        refOkx: { type: string, description: 仅后台返回 }
+        deviationBps: { type: integer, nullable: true, description: 仅后台返回；null = 全局阈值 }
+        status: { type: string, enum: [active, suspended] }
+        sort: { type: integer }
+        tokens: { type: array, items: { $ref: "#/components/schemas/TradFiToken" } }
+        referencePrice: { type: string, description: 仅公开接口 }
+        referenceSource: { type: string, example: binance-tradfi }
+        lastPrice: { type: string }
+        currentDeviationBps: { type: string }
+        widened: { type: boolean }
+    TradFiSettings:
+      type: object
+      properties:
+        restrictedCountries: { type: array, items: { type: string, pattern: "^[A-Z0-9]{2}$" }, example: [US, PR, GU, VI, AS, MP, UM, CU, IR, KP, SY] }
+        deviationBps: { type: integer, minimum: 10, maximum: 5000, example: 200 }
+        widenFactor: { type: string, example: "3", description: 1–20 }
+        alertCooldownSec: { type: integer, minimum: 0, maximum: 86400, example: 900 }
+    TradFiDeviation:
+      type: object
+      properties:
+        symbol: { type: string }
+        lastPrice: { type: string }
+        referencePrice: { type: string }
+        deviationBps: { type: string }
+        thresholdBps: { type: integer }
+        widened: { type: boolean }
+        widenFactor: { type: string }
+    TradFiBeforeAfter:
+      type: object
+      properties:
+        before: { type: object, nullable: true }
+        after: { type: object }
 security:
   - bearerAuth: []

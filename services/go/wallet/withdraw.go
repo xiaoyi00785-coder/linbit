@@ -67,6 +67,9 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 	if net.MemoRequired && strings.TrimSpace(in.Memo) == "" {
 		return nil, errf(http.StatusBadRequest, "MEMO_REQUIRED", "该网络提现需要填写 Memo/Tag")
 	}
+	if !s.tradfiAllowed(ctx, in.Asset, in.Network, true) {
+		return nil, errTradFiDisabled
+	}
 	if in.Amount.Sign() <= 0 {
 		return nil, errf(http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
 	}

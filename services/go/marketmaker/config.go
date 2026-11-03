@@ -36,6 +36,6 @@ func LoadConfig() Config {
 		Tick:           time.Duration(common.EnvInt("MM_TICK_MS", 500)) * time.Millisecond,
 		SeedAmount:     common.Env("MM_SEED_AMOUNT", "10000000"),
 		SeedBaseUSDT:   common.Env("MM_SEED_BASE_USDT", "1000000"),
-		SeedBaseAssets: common.Env("MM_SEED_BASE_ASSETS", "BTC,ETH,SOL,BNB,TRX"),
+		SeedBaseAssets: common.Env("MM_SEED_BASE_ASSETS", "BTC,ETH,SOL,BNB,TRX,AAPL,TSLA,NVDA,MSFT,GOOGL,AMZN,META,COIN,SPY,PAXG,XAUT"),
 	}
 }

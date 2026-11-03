@@ -219,7 +219,7 @@ func run(root, execCmd string) int {
 			"INTERNAL_TOKEN=" + internalTok,
 			"DATA_DIR=" + engineData,
 			"SNAPSHOT_EVERY=1000",
-			"SYMBOLS=BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1",
+			"SYMBOLS=BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1,AAPLUSDT:4,TSLAUSDT:4,NVDAUSDT:4,MSFTUSDT:4,GOOGLUSDT:4,AMZNUSDT:4,METAUSDT:4,COINUSDT:4,SPYUSDT:4,PAXGUSDT:5,XAUTUSDT:5",
 			// Stream trade/depth events to market-data (local pub/sub stand-in).
 			"EVENT_SINK_URL=http://localhost:" + marketPort + "/internal/events",
 		},
@@ -242,6 +242,10 @@ func run(root, execCmd string) int {
 			// /internal/dev/index (smoke-mm). Override with DEVSTACK_INDEX_FEED.
 			"INDEX_FEED=" + envOr("DEVSTACK_INDEX_FEED", "off"),
 			"DEV_MODE=true",
+			// TradFi deviation alerts.
+			"TELEGRAM_API_URL=" + tgAPI,
+			"TELEGRAM_BOT_TOKEN=devstack-telegram-token",
+			"TELEGRAM_CHAT_ID=devstack-chat",
 			// Live APR for earn-linked home placements.
 			"EARN_URL=http://localhost:" + earnPort,
 			// Chat: KYC level for posting, futures contracts for rooms.
@@ -374,6 +378,7 @@ func run(root, execCmd string) int {
 			"ORDER_URL=http://localhost:" + orderPort,
 			"MARKET_URL=http://localhost:" + marketPort,
 			"KYC_URL=http://localhost:" + kycPort,
+			"INTERNAL_TOKEN=" + internalTok,
 			"ADMIN_URL=http://localhost:" + adminPort,
 			"FUTURES_URL=http://localhost:" + futuresPort,
 			"STRATEGY_URL=http://localhost:" + strategyPort,

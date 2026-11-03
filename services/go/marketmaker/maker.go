@@ -197,7 +197,7 @@ func (m *Maker) Cycle(ctx context.Context) {
 		if idxSym == "" {
 			idxSym = r.Symbol
 		}
-		index, src, err := m.index(ctx, idxSym)
+		index, src, widen, err := m.indexWiden(ctx, idxSym)
 		if err != nil {
 			// fail closed: no external price -> no quotes
 			m.cancelAll(ctx, r, st)
@@ -243,6 +243,11 @@ func (m *Maker) Cycle(ctx context.Context) {
 			}
 			inv = futuresInventory(p, index, positions[r.Symbol])
 		}
+		widened := widen.GreaterThan(decimal.NewFromInt(1))
+		if widened {
+			// TradFi spot deviates from the reference: quote wider
+			p.SpreadBps = p.SpreadBps.Mul(widen)
+		}
 		mid, targets := BuildLadder(p, r, index, inv)
 		resting, err := m.openOrders(ctx, r)
 		if err != nil {
@@ -270,6 +275,9 @@ func (m *Maker) Cycle(ctx context.Context) {
 		st.OpenOrders = len(resting) - len(cancel) + len(place)
 		st.hasOrders = true
 		st.Status, st.Reason, st.LastError = "quoting", "", lastErr
+		if widened {
+			st.Reason = "spread widened x" + widen.String() + " (reference deviation)"
+		}
 		m.mu.Unlock()
 	}
 	if len(newlyDown) > 0 {

@@ -246,6 +246,10 @@ func (s *Server) handleDepositAddress(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "DEPOSIT_DISABLED", "该网络暂停充值")
 		return
 	}
+	if !s.tradfiAllowed(r.Context(), asset, network, false) {
+		common.WriteError(w, errTradFiDisabled.status, errTradFiDisabled.code, errTradFiDisabled.msg)
+		return
+	}
 	da, err := s.store.UpsertDepositAddress(r.Context(), uid, asset, network, func() (string, string, *int64, error) {
 		if a, ok := s.chain.(AddressAllocator); ok {
 			return a.AllocateAddress(r.Context(), net)

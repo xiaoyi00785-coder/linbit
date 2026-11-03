@@ -19,7 +19,8 @@ type Config struct {
 	// AdminURL is used ONLY for the public read-only GET /announcements.
 	AdminURL string
 	RedisURL string
-	// InternalToken authenticates the gateway to account's /internal/api-keys/verify.
+	// InternalToken authenticates the gateway to account /internal/api-keys/verify and
+	// market-data/kyc internal lookups (TradFi gate).
 	InternalToken string
 	// ClientIPHeader names the trusted header carrying the real client IP (set by
 	// nginx); used for API-key IP allowlists. Empty = TCP peer address.

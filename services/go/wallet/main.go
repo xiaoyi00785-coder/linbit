@@ -38,6 +38,7 @@ func main() {
 		defer client.Close()
 	}
 
+	cfg.Networks = mergeTradFiNetworks(context.Background(), db, cfg.Networks)
 	srv := NewServer(cfg, NewStore(db))
 	if mode := chainMode(); mode != "mock" {
 		if err := srv.UseRealChain(context.Background(), mode); err != nil {

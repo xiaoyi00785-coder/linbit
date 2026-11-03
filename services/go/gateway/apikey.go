@@ -166,5 +166,9 @@ func (g *Gateway) serveAPIKey(w http.ResponseWriter, r *http.Request, key string
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
 		return
 	}
+	// TradFi region/feature gate applies to API-key traffic too.
+	if g.tradfi != nil && !g.tradfi.check(w, r) {
+		return
+	}
 	proxy.ServeHTTP(w, r)
 }

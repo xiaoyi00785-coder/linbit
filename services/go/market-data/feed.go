@@ -42,10 +42,14 @@ type indexSource struct {
 // IndexFeed polls the configured sources and answers index lookups.
 type IndexFeed struct {
 	sources []*indexSource
-	stale   time.Duration
-	poll    time.Duration
-	local   func(symbol string) (decimal.Decimal, bool) // INDEX_FEED=off fallback
-	devMode bool
+	// tradfi reference sources (Binance TradFi perps first, OKX SWAP backup),
+	// keyed by the venue's own instrument id; used only for symbols in tradfi.
+	tradfiSources []*indexSource
+	tradfi        map[string]tradfiRef // spot/futures symbol -> venue ids
+	stale         time.Duration
+	poll          time.Duration
+	local         func(symbol string) (decimal.Decimal, bool) // INDEX_FEED=off fallback
+	devMode       bool
 
 	mu       sync.Mutex
 	override map[string]decimal.Decimal // dev: fixed index per symbol
@@ -57,14 +61,30 @@ var feedHTTP = &http.Client{Timeout: 4 * time.Second}
 // NewIndexFeed builds the feed from config. names is the ordered source list.
 func NewIndexFeed(cfg Config, local func(string) (decimal.Decimal, bool)) *IndexFeed {
 	f := &IndexFeed{stale: cfg.IndexStale, poll: cfg.IndexPoll, local: local, devMode: cfg.DevMode,
-		override: map[string]decimal.Decimal{}}
+		override: map[string]decimal.Decimal{}, tradfi: map[string]tradfiRef{}}
 	for _, n := range cfg.IndexFeed {
 		switch n {
 		case "binance":
+			fbase := cfg.BinanceFAPIURL
+			f.tradfiSources = append(f.tradfiSources, &indexSource{name: "binance-tradfi", quotes: map[string]indexQuote{},
+				fetch: func(ctx context.Context) (map[string]decimal.Decimal, error) {
+					if !f.hasTradFi() {
+						return map[string]decimal.Decimal{}, nil
+					}
+					return fetchBinanceFAPI(ctx, fbase)
+				}})
 			base := cfg.BinanceURL
 			f.sources = append(f.sources, &indexSource{name: "binance", quotes: map[string]indexQuote{},
 				fetch: func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchBinance(ctx, base) }})
 		case "okx":
+			obase := cfg.OKXURL
+			f.tradfiSources = append(f.tradfiSources, &indexSource{name: "okx-swap", quotes: map[string]indexQuote{},
+				fetch: func(ctx context.Context) (map[string]decimal.Decimal, error) {
+					if !f.hasTradFi() {
+						return map[string]decimal.Decimal{}, nil
+					}
+					return fetchOKXSwap(ctx, obase)
+				}})
 			base := cfg.OKXURL
 			f.sources = append(f.sources, &indexSource{name: "okx", quotes: map[string]indexQuote{},
 				fetch: func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchOKX(ctx, base) }})
@@ -79,6 +99,9 @@ func (f *IndexFeed) External() bool { return len(f.sources) > 0 }
 // Start launches one poller per source.
 func (f *IndexFeed) Start(ctx context.Context) {
 	for _, src := range f.sources {
+		go f.run(ctx, src)
+	}
+	for _, src := range f.tradfiSources {
 		go f.run(ctx, src)
 	}
 }
@@ -153,6 +176,9 @@ func (f *IndexFeed) index(symbol string, allowLocal bool) (IndexResult, bool) {
 	if hasOv {
 		return IndexResult{Symbol: symbol, Price: ov.String(), Source: "dev-override", UpdatedAt: time.Now().UTC()}, true
 	}
+	f.mu.Lock()
+	ref, isTradFi := f.tradfi[symbol]
+	f.mu.Unlock()
 	if !f.External() {
 		if allowLocal && f.local != nil {
 			if p, ok := f.local(symbol); ok && p.IsPositive() {
@@ -162,6 +188,26 @@ func (f *IndexFeed) index(symbol string, allowLocal bool) (IndexResult, bool) {
 		return IndexResult{}, false
 	}
 	now := time.Now()
+	if isTradFi {
+		// tokenized stock / metal: reference = TradFi perp price, never the
+		// spot feed (the venue's spot PAXG/XAUT is not the reference)
+		for _, src := range f.tradfiSources {
+			id := ref.Binance
+			if src.name == "okx-swap" {
+				id = ref.OKX
+			}
+			if id == "" {
+				continue
+			}
+			src.mu.Lock()
+			q, ok := src.quotes[id]
+			src.mu.Unlock()
+			if ok && now.Sub(q.at) <= f.stale {
+				return IndexResult{Symbol: symbol, Price: q.price.String(), Source: src.name, UpdatedAt: q.at.UTC()}, true
+			}
+		}
+		return IndexResult{}, false
+	}
 	for _, src := range f.sources {
 		src.mu.Lock()
 		q, ok := src.quotes[symbol]
@@ -176,7 +222,7 @@ func (f *IndexFeed) index(symbol string, allowLocal bool) (IndexResult, bool) {
 // Status summarises each source for /market/index without a symbol.
 func (f *IndexFeed) Status() map[string]any {
 	srcs := []map[string]any{}
-	for _, src := range f.sources {
+	for _, src := range append(append([]*indexSource{}, f.sources...), f.tradfiSources...) {
 		src.mu.Lock()
 		row := map[string]any{"name": src.name, "healthy": !src.lastOK.IsZero() && time.Since(src.lastOK) <= f.stale, "symbols": len(src.quotes)}
 		if !src.lastOK.IsZero() {
@@ -279,6 +325,64 @@ func fetchOKX(ctx context.Context, base string) (map[string]decimal.Decimal, err
 	return out, nil
 }
 
+// tradfiRef maps a listed symbol to its reference instruments.
+type tradfiRef struct{ Binance, OKX string }
+
+func (f *IndexFeed) hasTradFi() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.tradfi) > 0 }
+
+// SetTradFi replaces the tradfi symbol -> reference map.
+func (f *IndexFeed) SetTradFi(m map[string]tradfiRef) { f.mu.Lock(); f.tradfi = m; f.mu.Unlock() }
+
+// fetchBinanceFAPI reads all USDⓈ-M perp prices (incl. TradFi perps such as
+// TSLAUSDT, XAUUSDT, XAGUSDT, CLUSDT): GET /fapi/v1/ticker/price.
+func fetchBinanceFAPI(ctx context.Context, base string) (map[string]decimal.Decimal, error) {
+	var rows []struct {
+		Symbol string `json:"symbol"`
+		Price  string `json:"price"`
+	}
+	if err := getJSON(ctx, strings.TrimRight(base, "/")+"/fapi/v1/ticker/price", &rows); err != nil {
+		return nil, err
+	}
+	out := make(map[string]decimal.Decimal, len(rows))
+	for _, r := range rows {
+		if p, err := decimal.NewFromString(r.Price); err == nil {
+			out[r.Symbol] = p
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+	return out, nil
+}
+
+// fetchOKXSwap reads all perpetual tickers: GET /api/v5/market/tickers?instType=SWAP,
+// keyed by instId (e.g. AAPL-USDT-SWAP, XAU-USDT-SWAP, CL-USDT-SWAP).
+func fetchOKXSwap(ctx context.Context, base string) (map[string]decimal.Decimal, error) {
+	var body struct {
+		Code string `json:"code"`
+		Data []struct {
+			InstID string `json:"instId"`
+			Last   string `json:"last"`
+		} `json:"data"`
+	}
+	if err := getJSON(ctx, strings.TrimRight(base, "/")+"/api/v5/market/tickers?instType=SWAP", &body); err != nil {
+		return nil, err
+	}
+	if body.Code != "0" {
+		return nil, fmt.Errorf("okx code %s", body.Code)
+	}
+	out := make(map[string]decimal.Decimal, len(body.Data))
+	for _, r := range body.Data {
+		if p, err := decimal.NewFromString(r.Last); err == nil {
+			out[r.InstID] = p
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+	return out, nil
+}
+
 // ---- HTTP ----
 
 // handleIndex: GET /market/index?symbol=BTCUSDT -> IndexResult | 503.
@@ -293,6 +397,13 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		common.WriteError(w, http.StatusServiceUnavailable, "INDEX_UNAVAILABLE", "外部指数价格不可用")
 		return
+	}
+	if s.tradfi != nil {
+		if d, ok := s.tradfi.deviation(sym); ok {
+			common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": res.Symbol, "indexPrice": res.Price, "source": res.Source,
+				"updatedAt": res.UpdatedAt, "reference": "tradfi", "deviationBps": d.DeviationBps, "widened": d.Widened, "widenFactor": d.WidenFactor})
+			return
+		}
 	}
 	common.WriteJSON(w, http.StatusOK, res)
 }
