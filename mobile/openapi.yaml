@@ -22,6 +22,14 @@ servers:
   - url: https://api.cowa.click
     description: 测试网 / 生产网关（无 /v1 前缀）
 tags:
+  - { name: Convert, description: 闪兑 }
+  - { name: Home, description: 首页聚合 }
+  - { name: App, description: 客户端功能开关 }
+  - { name: SubAccount, description: 子账户 }
+  - { name: Chat, description: 聊天室 }
+  - { name: Event, description: 事件合约 }
+  - { name: TradFi, description: 传统金融资产 }
+  - { name: Admin, description: 运营后台 }
   - name: Auth
     description: 注册、登录、令牌刷新与登出
   - name: 2FA
@@ -538,6 +546,337 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
+  /account/security:
+    get:
+      tags: [Account]
+      summary: 账户安全概览
+      operationId: getSecurityOverview
+      description: 2FA、邮箱/手机（脱敏）、资金密码、防钓鱼码、通行密钥数量、提现锁定状态、最近登录设备及当前安全策略。
+      responses:
+        "200":
+          description: 安全概览
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecurityOverview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/password/change:
+    post:
+      tags: [Account]
+      summary: 修改登录密码（原密码 + 2FA/验证码，默认注销其他会话）
+      operationId: changePassword
+      description: |
+        已开启 2FA 时需 totpCode；否则需 code（POST /account/code/send purpose=security）。
+        成功后撤销除当前设备外的全部会话，并触发提现锁定（默认 24 小时）与安全通知邮件。
+        错误码：OLD_PASSWORD_INVALID、PASSWORD_UNCHANGED、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、AUTH_CODE_INVALID。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "200":
+          description: 已修改
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  revokedSessions: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+
+  /account/contact/code:
+    post:
+      tags: [Account]
+      summary: 向新邮箱/手机发送绑定验证码（purpose=bind_new）
+      operationId: sendContactCode
+      description: 传 email 或 phone(+countryCode)。短信不可用时返回 503 SMS_UNAVAILABLE；已被他人使用返回 409 EMAIL_EXISTS/PHONE_EXISTS。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                phone: { type: string }
+                countryCode: { type: string, example: "+86" }
+      responses:
+        "200":
+          description: 已发送
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: boolean }
+                  channel: { type: string, enum: [email, sms] }
+                  ttlSeconds: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /account/email:
+    put:
+      tags: [Account]
+      summary: 修改/绑定邮箱（新旧双重验证）
+      operationId: changeEmail
+      description: |
+        newCode：发到新邮箱的验证码（/account/contact/code）；oldCode：发到原邮箱（未绑邮箱时为现有联系方式）的验证码
+        （/account/code/send purpose=security）；已开启 2FA 时另需 totpCode。成功后触发提现锁定与安全通知。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeContactRequest" }
+      responses:
+        "200": { description: 已更新, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+
+  /account/phone:
+    put:
+      tags: [Account]
+      summary: 修改/绑定手机（新旧双重验证）
+      operationId: changePhone
+      description: 同 /account/email，传 phone + countryCode。短信不可用时 503 SMS_UNAVAILABLE。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeContactRequest" }
+      responses:
+        "200": { description: 已更新, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /account/fund-password:
+    post:
+      tags: [Account]
+      summary: 设置资金密码（6 位数字，首次）
+      operationId: setFundPassword
+      description: 需 2FA 或 code(purpose=security)。已设置返回 409 FUND_PASSWORD_EXISTS。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundPasswordRequest" }
+      responses:
+        "200": { description: 已设置, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+    put:
+      tags: [Account]
+      summary: 修改资金密码（需原资金密码 + 2FA/验证码）
+      operationId: changeFundPassword
+      description: 原资金密码连续错误达上限（默认 5 次）锁定（423 FUND_PASSWORD_LOCKED，含 lockedUntil）。成功后触发提现锁定。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundPasswordRequest" }
+      responses:
+        "200": { description: 已修改, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "423": { $ref: "#/components/responses/BadRequest" }
+
+  /account/fund-password/reset:
+    post:
+      tags: [Account]
+      summary: 重置资金密码（忘记时，2FA/验证码，清除锁定）
+      operationId: resetFundPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundPasswordRequest" }
+      responses:
+        "200": { description: 已重置, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+
+  /account/anti-phishing:
+    put:
+      tags: [Account]
+      summary: 设置/修改防钓鱼码（4-20 位字母数字，显示在平台所有外发邮件开头）
+      operationId: setAntiPhishing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [antiPhishingCode]
+              properties:
+                antiPhishingCode: { type: string, example: "Lb2026" }
+                totpCode: { type: string }
+                code: { type: string, description: 未开 2FA 时 purpose=security 验证码 }
+      responses:
+        "200": { description: 已设置, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+
+  /account/sessions:
+    get:
+      tags: [Account]
+      summary: 列出有效登录会话（refresh token）
+      operationId: listSessions
+      responses:
+        "200":
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/sessions/{id}:
+    delete:
+      tags: [Account]
+      summary: 注销指定会话
+      operationId: revokeSession
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: 已注销 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /account/sessions/revoke-others:
+    post:
+      tags: [Account]
+      summary: 注销除当前设备外的全部会话
+      operationId: revokeOtherSessions
+      responses:
+        "200":
+          description: 已注销
+          content:
+            application/json:
+              schema: { type: object, properties: { revoked: { type: integer } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/passkeys:
+    get:
+      tags: [Account]
+      summary: 列出通行密钥（Passkey / WebAuthn）
+      operationId: listPasskeys
+      responses:
+        "200":
+          description: 列表；enabled=false 表示服务端未配置 WEBAUTHN_RP_ID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  items: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/passkeys/register/begin:
+    post:
+      tags: [Account]
+      summary: 开始注册通行密钥（需 2FA/验证码）
+      operationId: beginPasskeyRegistration
+      description: 返回 publicKey（PublicKeyCredentialCreationOptions，二进制字段为 base64url）与 sessionId（5 分钟有效、一次性）。未启用时 503 PASSKEY_UNAVAILABLE。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                totpCode: { type: string }
+                code: { type: string }
+      responses:
+        "200": { description: 注册选项, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /account/passkeys/register/finish:
+    post:
+      tags: [Account]
+      summary: 完成注册通行密钥
+      operationId: finishPasskeyRegistration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, credential]
+              properties:
+                sessionId: { type: string }
+                name: { type: string, maxLength: 64 }
+                credential: { type: object, description: navigator.credentials.create() 结果的 JSON（PublicKeyCredential.toJSON()） }
+      responses:
+        "201": { description: 已绑定, content: { application/json: { schema: { $ref: "#/components/schemas/Passkey" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+
+  /account/passkeys/{id}:
+    delete:
+      tags: [Account]
+      summary: 删除通行密钥
+      operationId: deletePasskey
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: 已删除 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /auth/passkey/login/begin:
+    post:
+      tags: [Auth]
+      summary: 通行密钥登录：获取挑战（可发现凭据，无需用户名）
+      operationId: beginPasskeyLogin
+      security: []
+      responses:
+        "200": { description: 登录选项, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/passkey/login/finish:
+    post:
+      tags: [Auth]
+      summary: 通行密钥登录：校验断言并签发令牌
+      operationId: finishPasskeyLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, credential]
+              properties:
+                sessionId: { type: string }
+                credential: { type: object, description: navigator.credentials.get() 结果的 JSON }
+                deviceId: { type: string }
+                deviceName: { type: string }
+      responses:
+        "200": { description: 登录成功, content: { application/json: { schema: { $ref: "#/components/schemas/AuthTokens" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/BadRequest" }
+
   /account/devices:
     get:
       tags: [Account]
@@ -640,6 +979,33 @@ paths:
               example: { code: ADDRESS_EXISTS, message: 该地址已在地址簿中 }
 
   /account/withdraw-addresses/{id}:
+    patch:
+      tags: [Account]
+      summary: 修改提现地址（label / memo / 白名单标记；需验证码或 2FA）
+      operationId: updateWithdrawAddress
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+                memo: { type: string }
+                whitelisted: { type: boolean }
+                totpCode: { type: string }
+                code: { type: string, description: 未开启 2FA 时提供（purpose=address） }
+      responses:
+        "200":
+          description: 更新后的地址
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WithdrawAddress" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [Account]
       summary: 删除提现地址（需验证码或 2FA）
@@ -981,7 +1347,10 @@ paths:
         Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
         amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
         未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
-      x-error-codes: [MIN_WITHDRAW, WITHDRAW_LIMIT_EXCEEDED, PRICE_UNAVAILABLE, KYC_REQUIRED]
+        二次验证错误码拆分：TWOFA_REQUIRED(403，未提供/未绑定二次验证)、INVALID_TOTP(401，TOTP 或验证码错误)。
+        安全设置：WITHDRAW_LOCKED(403，近期修改密码/邮箱/手机/资金密码/关闭 2FA 后锁定，默认 24h)、
+        FUND_PASSWORD_REQUIRED/FUND_PASSWORD_INVALID(400)、FUND_PASSWORD_LOCKED(423)、FUND_PASSWORD_NOT_SET(403)。
+      x-error-codes: [MIN_WITHDRAW, WITHDRAW_LIMIT_EXCEEDED, PRICE_UNAVAILABLE, KYC_REQUIRED, TWOFA_REQUIRED, INVALID_TOTP, WITHDRAW_LOCKED, FUND_PASSWORD_REQUIRED, FUND_PASSWORD_INVALID, FUND_PASSWORD_LOCKED, FUND_PASSWORD_NOT_SET]
       requestBody:
         required: true
         content:
@@ -1020,7 +1389,8 @@ paths:
         "403":
           description: |
             KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
-            但目标地址不在白名单内
+            但目标地址不在白名单内；TWOFA_REQUIRED：未提供/未绑定二次验证；WITHDRAW_LOCKED：安全设置变更后的锁定期；
+            FUND_PASSWORD_NOT_SET：后台要求资金密码但尚未设置
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1345,7 +1715,9 @@ paths:
         按 sort 排序。symbols 只包含当前已上线的现货交易对；暂无交易对的分类
         （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
         commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
-        layer2 Layer 2, ecosystem 生态。「全部」由前端自行处理。
+        layer2 Layer 2, ecosystem 生态, solana Solana 生态, gamefi GameFi,
+        depin DePIN, nft NFT, ton TON, lsd LSD, web3 Web3, platform 平台币,
+        payment 支付。「全部」由前端自行处理。
       operationId: listMarketCategories
       security: []
       responses:
@@ -1909,6 +2281,94 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /convert/pairs:
+    get:
+      tags: [Convert]
+      summary: 闪兑可兑换币对、限额与点差
+      operationId: getConvertPairs
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConvertPairs" }
+  /convert/quote:
+    post:
+      tags: [Convert]
+      summary: 闪兑询价（报价 10 秒有效）
+      operationId: createConvertQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConvertQuoteRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConvertQuote" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: PRICE_UNAVAILABLE（无指数价格或价格过期）；PAIR_PAUSED_DEPEG（USDC 偏离 1 超过 depegBps，USDC↔USDT 自动暂停；价格缺失/过期同样视为暂停）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /convert/accept:
+    post:
+      tags: [Convert]
+      summary: 确认闪兑（原子、幂等；同一 quoteId 重复提交返回同一订单 replay=true）
+      operationId: acceptConvertQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quoteId]
+              properties: { quoteId: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/ConvertOrder" }
+                  replay: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: QUOTE_EXPIRED
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /convert/orders:
+    get:
+      tags: [Convert]
+      summary: 闪兑历史（分页）
+      operationId: listConvertOrders
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: asset, in: query, required: false, description: 按币种过滤（from 或 to）, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConvertOrder" } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /loans/market:
     get:
       tags: [Loans]
@@ -3938,6 +4398,1196 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /home/placements:
+    get:
+      tags: [Home]
+      summary: 首页运营位（popup/splash/grid/carousel/promo_bar/search_hint），公开
+      operationId: getHomePlacements
+      security: []
+      parameters:
+        - { name: slots, in: query, required: false, schema: { type: string, example: "carousel,popup" }, description: 逗号分隔；为空返回全部槽位。未知槽位 400 VALIDATION_ERROR }
+        - { name: platform, in: query, required: false, schema: { type: string, enum: [web, app], example: app } }
+        - { name: locale, in: query, required: false, schema: { type: string, example: zh-CN } }
+        - { name: appVersion, in: query, required: false, schema: { type: string, example: "2.3.0" }, description: 仅 platform=app 时参与版本区间过滤；缺失时带版本区间的投放不返回 }
+        - { name: region, in: query, required: false, schema: { type: string, example: HK }, description: 缺省回退 CF-IPCountry 请求头 }
+      responses:
+        "200":
+          description: OK（缓存 15s）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HomePlacements" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /home/banners:
+    get:
+      tags: [Home]
+      summary: 轮播图（= placements 的 carousel 槽位别名），公开
+      operationId: getHomeBanners
+      security: []
+      parameters:
+        - { name: platform, in: query, required: false, schema: { type: string, enum: [web, app] } }
+        - { name: locale, in: query, required: false, schema: { type: string } }
+        - { name: appVersion, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Placement" } }
+  /home/hot:
+    get:
+      tags: [Home]
+      summary: 热门币种（置顶 + 成交额排序），公开
+      operationId: getHomeHot
+      security: []
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, example: 10 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /home/newcomer:
+    get:
+      tags: [Home]
+      summary: 新人任务卡片；可匿名（带合法 Bearer 时返回个人进度）
+      operationId: getHomeNewcomer
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK（无活动时 available=false、tasks=[]；状态读取失败时 degraded=true 返回模板）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HomeNewcomer" }
+  /market/fiat-rates:
+    get:
+      tags: [Market]
+      summary: 法币汇率（USDT=1 USD），公开
+      description: 免费 FX 源（FIAT_RATES_URLS 可配置，多源回退），缓存 10 分钟；失败时返回上次成功值（stale=true），从未成功则返回静态表（source=static, updatedAt=null）。
+      operationId: getFiatRates
+      security: []
+      parameters:
+        - { name: base, in: query, required: false, schema: { type: string, enum: [USDT, USDC, USD], default: USDT } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FiatRates" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /app/features:
+    get:
+      tags: [App]
+      summary: 功能开关，公开（缓存 30s）
+      operationId: getAppFeatures
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppFeatures" }
+  /account/favorites:
+    get:
+      tags: [Account]
+      summary: 自选列表
+      operationId: listFavorites
+      parameters:
+        - { name: market, in: query, required: false, schema: { type: string, enum: [spot, futures], default: spot } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Favorites" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [Account]
+      summary: 整体替换自选（顺序即 sort，上限 200）
+      operationId: replaceFavorites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbols]
+              properties:
+                market: { type: string, enum: [spot, futures], default: spot }
+                symbols: { type: array, items: { type: string, pattern: "^[A-Z0-9]{2,24}$" }, example: [BTCUSDT, ETHUSDT] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Favorites" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /account/favorites/{symbol}:
+    parameters:
+      - { name: symbol, in: path, required: true, schema: { type: string, example: BTCUSDT } }
+      - { name: market, in: query, required: false, schema: { type: string, enum: [spot, futures], default: spot } }
+    put:
+      tags: [Account]
+      summary: 添加自选（幂等；超过 200 返回 FAVORITES_LIMIT）
+      operationId: addFavorite
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Favorites" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [Account]
+      summary: 删除自选（幂等）
+      operationId: removeFavorite
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Favorites" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /assets/transfer:
+    post:
+      tags: [Assets]
+      summary: 账户间划转（spot ⇄ futures），按 clientId 幂等，记入账本
+      description: |
+        复用 /futures/transfer 内部实现（旧接口保持可用）。earn 不是划转账户：理财为按产品的持仓并计息，请使用申购/赎回接口。
+        错误码：INSUFFICIENT_BALANCE、ACCOUNT_NOT_SUPPORTED（如 earn）、SAME_ACCOUNT、VALIDATION_ERROR、IDEMPOTENCY_CONFLICT（同 clientId 不同参数）。
+      operationId: createAssetTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransferRequest" }
+      responses:
+        "200":
+          description: 完成（或同 clientId 重放返回原结果）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+  /assets/transfers:
+    get:
+      tags: [Assets]
+      summary: 划转历史（含旧 /futures/transfer 记录，clientId 为 null）
+      operationId: listAssetTransfers
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: asset, in: query, required: false, schema: { type: string, example: USDT } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Transfer" } }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /assets/overview:
+    get:
+      tags: [Assets]
+      summary: 资产总览（资金账户 funding / 现货 spot / 合约 futures 分账户余额与 USDT 估值）
+      description: |
+        充值默认入 funding、提现默认从 funding 扣（后台可配置为 spot，见 depositAccount/withdrawAccount）。
+        合约账户只接受 USDT 划转。价格缺失时该币 valuationUsd 为 null 且不计入合计；合约服务不可用时 futures.available=false。
+      operationId: getAssetsOverview
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssetsOverview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /wallet/networks:
+    get:
+      tags: [Wallet]
+      summary: 币种网络参数（充提开关、最小充值、确认数、Memo、提现手续费/最小提现）
+      operationId: listWalletNetworks
+      parameters:
+        - { name: asset, in: query, required: false, description: 不传返回全部网络, schema: { type: string, example: USDT } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [networks]
+                properties:
+                  asset: { type: string, example: USDT }
+                  networks: { type: array, items: { $ref: "#/components/schemas/WalletNetwork" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /wallet/internal-transfer:
+    post:
+      tags: [Wallet]
+      summary: 站内转账（免手续费、实时到账，需 2FA，按 clientId 幂等）
+      description: |
+        从资金账户（funding）转给另一位平台用户（toUid 或 toEmail 二选一）。收款方须存在、状态正常且不是子账户。
+        24 小时滚动额度按 USDT 估值计（后台可配，默认 50000；0=不限）；功能可被后台关闭。
+        错误码：VALIDATION_ERROR、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、WITHDRAW_LOCKED(403)、FUND_PASSWORD_*、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
+        RECIPIENT_SUB_ACCOUNT、RECIPIENT_UNAVAILABLE、PRICE_UNAVAILABLE、INTERNAL_TRANSFER_LIMIT_EXCEEDED、INSUFFICIENT_BALANCE、
+        IDEMPOTENCY_CONFLICT(409，同 clientId 不同参数)。
+      operationId: createInternalTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InternalTransferRequest" }
+      responses:
+        "200":
+          description: 完成（或同 clientId 重放返回原结果）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InternalTransfer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+  /wallet/internal-transfers:
+    get:
+      tags: [Wallet]
+      summary: 站内转账记录（转出 + 已到账的转入）
+      operationId: listInternalTransfers
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/InternalTransfer" } }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /spot/orders/conditional:
+    post:
+      tags: [Spot]
+      summary: 条件单（止损 stop / 止盈 take_profit / 计划委托 trigger），最新成交价穿越触发价后下限价或市价单
+      description: |
+        创建时即冻结所需资金；触发后释放并按普通下单流程提交子订单（orderId 回填）。
+        方向：stop 买=up 卖=down；take_profit 买=down 卖=up；trigger 按当前价自动判断或传 triggerDirection。
+        错误码：VALIDATION_ERROR、TRIGGER_WOULD_IMMEDIATELY_FIRE、CONDITIONAL_LIMIT_EXCEEDED（每人最多 50 个未触发）、INSUFFICIENT_BALANCE、IDEMPOTENCY_CONFLICT。
+      operationId: createConditionalOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConditionalOrderRequest" }
+      responses:
+        "201":
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConditionalOrder" }
+        "200":
+          description: 同 clientOrderId 重放
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConditionalOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      tags: [Spot]
+      summary: 条件单列表（默认 status=open 即 pending/triggering；all 或具体状态）
+      operationId: listConditionalOrders
+      parameters:
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [open, all, pending, triggering, triggered, canceled, failed] } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConditionalOrder" } }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /spot/orders/conditional/{id}:
+    delete:
+      tags: [Spot]
+      summary: 撤销未触发的条件单（释放冻结；已撤销重复调用返回 200）
+      operationId: cancelConditionalOrder
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 已撤销
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConditionalOrder" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+  /account/fee-rates:
+    get:
+      tags: [Account]
+      summary: 我的手续费率（现货 + 合约 maker/taker，含后台个人费率覆盖）
+      description: VIP 仅提供服务权益，费率统一（vipLevel 恒为 0）；合约服务不可用时 futures 为 null。
+      operationId: getFeeRates
+      parameters:
+        - { name: symbol, in: query, required: false, schema: { type: string, example: BTCUSDT } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeeRates" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /admin/v1/home/placements:
+    get:
+      tags: [Admin]
+      summary: 运营位列表（?slot= 过滤）
+      operationId: adminListPlacements
+      parameters:
+        - { name: slot, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Placement" } } } } } } }
+    post:
+      tags: [Admin]
+      summary: 创建运营位（需 content 权限 + totpCode + reason，审计 levelHigh）
+      operationId: adminCreatePlacement
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/home/placements/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [Admin]
+      summary: 更新运营位（totpCode + reason）
+      operationId: adminUpdatePlacement
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementInput" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Admin]
+      summary: 删除运营位（body 含 totpCode + reason）
+      operationId: adminDeletePlacement
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PlacementChange" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/v1/app/features:
+    get:
+      tags: [Admin]
+      summary: 功能开关（含默认值与可用 key）
+      operationId: adminGetAppFeatures
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+    put:
+      tags: [Admin]
+      summary: 部分更新功能开关（未知 key 400；totpCode + reason，审计）
+      operationId: adminSetAppFeatures
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  required: [features]
+                  properties:
+                    features: { type: object, additionalProperties: { type: boolean }, example: { chat: true } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  features: { type: object, additionalProperties: { type: boolean } }
+                  updatedAt: { type: string, format: date-time, nullable: true }
+                  before: { type: object, additionalProperties: { type: boolean } }
+                  after: { type: object, additionalProperties: { type: boolean } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /sub-accounts:
+    get:
+      tags: [SubAccount]
+      summary: 子账户列表（母账户）
+      operationId: subAccountList
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SubAccount' } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  size: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: SUB_ACCOUNT_FORBIDDEN（子账户调用）, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    post:
+      tags: [SubAccount]
+      summary: 创建子账户（母账户需已开启谷歌验证；上限默认 20，不可嵌套）
+      operationId: subAccountCreate
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string, pattern: '^[a-z0-9][a-z0-9_]{2,19}$', description: 子账户名，生成虚拟登录邮箱 }
+                nickname: { type: string, maxLength: 32 }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: TWOFA_REQUIRED / SUB_ACCOUNT_DISABLED / SUB_ACCOUNT_FORBIDDEN / ACCOUNT_FROZEN, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: SUB_ACCOUNT_LIMIT / SUB_ACCOUNT_EXISTS, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/assets:
+    get:
+      tags: [SubAccount]
+      summary: 全部子账户资产汇总
+      operationId: subAccountAssetsAll
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uid: { type: string }
+                        username: { type: string }
+                        nickname: { type: string }
+                        status: { type: string }
+                        balances: { type: array, items: { $ref: '#/components/schemas/SubBalance' } }
+                  totals: { type: array, items: { $ref: '#/components/schemas/SubBalance' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /sub-accounts/transfer:
+    post:
+      tags: [SubAccount]
+      summary: 母子账户现货划转（clientId 幂等）
+      description: |
+        母账户：direction=to_sub 或 to_parent，需 subAccountId。
+        子账户（登录或会话）：仅允许 to_parent，subAccountId 可省略。
+        同一 clientId 重放返回同一笔记录；参数不同返回 409 CLIENT_ID_REUSED。
+      operationId: subAccountTransfer
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, direction, asset, amount]
+              properties:
+                clientId: { type: string, maxLength: 64 }
+                subAccountId: { type: string, description: 子账户 UID }
+                direction: { type: string, enum: [to_sub, to_parent] }
+                asset: { type: string, example: USDT }
+                amount: { type: string, example: '100' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubTransfer' } } } }
+        '400': { description: VALIDATION_ERROR / INSUFFICIENT_BALANCE, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: SUB_ACCOUNT_FORBIDDEN / SUB_ACCOUNT_FROZEN, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: SUB_ACCOUNT_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: CLIENT_ID_REUSED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: TRANSFER_PENDING（可用同一 clientId 重试）, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/transfers:
+    get:
+      tags: [SubAccount]
+      summary: 母子划转记录
+      operationId: subAccountTransfers
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { name: subAccountId, in: query, required: false, schema: { type: string } }
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SubTransfer' } }
+                  total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /sub-accounts/{id}:
+    parameters:
+    - { name: id, in: path, required: true, description: 子账户 UID, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户详情
+      operationId: subAccountGet
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+        '404': { description: SUB_ACCOUNT_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    patch:
+      tags: [SubAccount]
+      summary: 修改子账户（昵称/备注/登录开关/密码）
+      description: 开启登录需 password(≥8) 与母账户 totpCode，返回子账户自己的谷歌验证密钥 loginTotp（仅此一次）。关闭登录会注销子账户全部会话。
+      operationId: subAccountPatch
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname: { type: string }
+                note: { type: string }
+                loginEnabled: { type: boolean }
+                password: { type: string, minLength: 8 }
+                totpCode: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subAccount: { $ref: '#/components/schemas/SubAccount' }
+                  loginTotp:
+                    type: object
+                    properties:
+                      secret: { type: string }
+                      otpauthUri: { type: string }
+        '401': { description: INVALID_TOTP（动态码错误）, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: TWOFA_REQUIRED（未绑定或未提供 TOTP）/ SUB_LOGIN_NOT_ALLOWED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/{id}/freeze:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [SubAccount]
+      summary: 冻结子账户（禁止登录、API Key、划入）
+      operationId: subAccountFreeze
+      security: [{ bearerAuth: [] }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reason: { type: string } } } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+  /sub-accounts/{id}/unfreeze:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [SubAccount]
+      summary: 解冻子账户
+      operationId: subAccountUnfreeze
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+  /sub-accounts/{id}/assets:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户现货资产
+      operationId: subAccountAssets
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uid: { type: string }
+                  username: { type: string }
+                  nickname: { type: string }
+                  status: { type: string }
+                  balances: { type: array, items: { $ref: '#/components/schemas/SubBalance' } }
+  /sub-accounts/{id}/orders:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户现货委托/历史/成交（透传订单服务的分页与筛选参数）
+      operationId: subAccountOrders
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { name: type, in: query, schema: { type: string, enum: [open, history, trades], default: history } }
+      - { name: symbol, in: query, schema: { type: string } }
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200': { description: 与 /spot/orders/open、/spot/orders/history、/spot/trades 相同 }
+  /sub-accounts/{id}/api-keys:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户 API Key 列表（不含 secret）
+      operationId: subAccountApiKeys
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/SubApiKey' } } } } } } }
+    post:
+      tags: [SubAccount]
+      summary: 为子账户创建 API Key（需母账户 totpCode；无提现权限）
+      description: |
+        调用方式：请求头 X-LB-APIKEY + X-LB-SECRET（secret 仅在创建时返回一次）。
+        read：GET /assets、/spot、/futures；spot_trade：/spot 全部；futures_trade：/futures 全部。
+        /wallet、/account、/auth、/2fa、/sub-accounts 等一律 403 API_KEY_FORBIDDEN。
+      operationId: subAccountApiKeyCreate
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permissions, totpCode]
+              properties:
+                label: { type: string, maxLength: 40 }
+                permissions: { type: array, items: { type: string, enum: [read, spot_trade, futures_trade] } }
+                ipAllowlist: { type: array, maxItems: 20, items: { type: string, description: IP 或 CIDR } }
+                totpCode: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubApiKey' } } } }
+        '400': { description: PERMISSION_NOT_ALLOWED / VALIDATION_ERROR, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: INVALID_TOTP, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: TWOFA_REQUIRED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: API_KEY_LIMIT, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/{id}/api-keys/{apiKey}:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    - { name: apiKey, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [SubAccount]
+      summary: 删除（吊销）子账户 API Key
+      operationId: subAccountApiKeyDelete
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+  /chat/rooms:
+    get:
+      tags: [Chat]
+      summary: 聊天室列表（公开；general + spot.{SYM} + futures.{SYM}，含在线人数与发言规则；功能开关 chat 关闭时 403 FEATURE_DISABLED）
+      description: |
+        实时推送：在现有 /ws 上订阅频道 `chat:{room}`（如 `chat:spot.BTCUSDT`）。
+        帧 data 为 `{type:"message", message: ChatMessage}` 或 `{type:"delete", id}`。
+      operationId: listChatRooms
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rooms: { type: array, items: { $ref: "#/components/schemas/ChatRoom" } }
+                  rules: { $ref: "#/components/schemas/ChatRules" }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /chat/rooms/{room}/messages:
+    parameters:
+      - { name: room, in: path, required: true, schema: { type: string, example: spot.BTCUSDT } }
+    get:
+      tags: [Chat]
+      summary: 历史消息（公开，新→旧；before=消息 id 游标，limit 默认 50，上限 historyLimitMax）
+      operationId: listChatMessages
+      security: []
+      parameters:
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ChatMessage" } }
+                  hasMore: { type: boolean }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Chat]
+      summary: 发言（需登录 + KYC ≥ minKycLevel；服务端拦截链接/联系方式/屏蔽词；频率与长度限制；clientId 幂等）
+      description: |
+        错误码：CHAT_KYC_REQUIRED/CHAT_MUTED(含 mutedUntil)/CHAT_BANNED/FEATURE_DISABLED (403)，
+        CHAT_RATE_LIMITED (429，含 retryAfterMs 与 Retry-After)，CHAT_TOO_LONG/CHAT_LINK_BLOCKED/CHAT_CONTACT_BLOCKED/CHAT_WORD_BLOCKED/VALIDATION_ERROR (400)，
+        CHAT_UNAVAILABLE (503)。相同 clientId 重放返回 200 与原消息。
+      operationId: postChatMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, text]
+              properties:
+                clientId: { type: string, maxLength: 64 }
+                text: { type: string, maxLength: 200 }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ChatMessage" } } } }
+        "200": { description: 幂等重放, content: { application/json: { schema: { $ref: "#/components/schemas/ChatMessage" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: CHAT_RATE_LIMITED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /chat/messages/{id}/report:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      tags: [Chat]
+      summary: 举报消息（需登录；不可举报自己；同一人重复举报幂等）
+      operationId: reportChatMessage
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { reason: { type: string, maxLength: 200 } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/v1/chat/config:
+    get:
+      tags: [Admin]
+      summary: 聊天配置（content 权限）
+      operationId: adminGetChatConfig
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatConfig" } } } }
+    put:
+      tags: [Admin]
+      summary: 部分更新聊天配置（未知 key 400；totpCode + reason，审计 chat_config_update）
+      operationId: adminUpdateChatConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { $ref: "#/components/schemas/ChatConfig" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/chat/messages:
+    get:
+      tags: [Admin]
+      summary: 消息检索（room/uid/status/q/before/limit；含完整 uid 与举报数）
+      operationId: adminListChatMessages
+      parameters:
+        - { name: room, in: query, required: false, schema: { type: string } }
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [visible, deleted] } }
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ChatAdminMessage" } }, hasMore: { type: boolean } } } } } }
+  /admin/v1/chat/messages/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    delete:
+      tags: [Admin]
+      summary: 删除消息（WS 推送 delete；关联未处理举报置为 resolved；totpCode + reason）
+      operationId: adminDeleteChatMessage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/v1/chat/sanctions:
+    get:
+      tags: [Admin]
+      summary: 禁言/封禁名单
+      operationId: adminListChatSanctions
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ChatSanction" } } } } } } }
+  /admin/v1/chat/mutes:
+    post:
+      tags: [Admin]
+      summary: 禁言（durationMinutes 1-525600；totpCode + reason）
+      operationId: adminMuteChatUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  required: [uid, durationMinutes]
+                  properties:
+                    uid: { type: string }
+                    durationMinutes: { type: integer, minimum: 1, maximum: 525600 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/chat/mutes/{uid}:
+    parameters:
+      - { name: uid, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Admin]
+      summary: 解除禁言（totpCode + reason）
+      operationId: adminUnmuteChatUser
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+  /admin/v1/chat/bans:
+    post:
+      tags: [Admin]
+      summary: 封禁发言（永久，直至解除；totpCode + reason）
+      operationId: adminBanChatUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { type: object, required: [uid], properties: { uid: { type: string } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/chat/bans/{uid}:
+    parameters:
+      - { name: uid, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Admin]
+      summary: 解除封禁（totpCode + reason）
+      operationId: adminUnbanChatUser
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+  /admin/v1/chat/reports:
+    get:
+      tags: [Admin]
+      summary: 举报列表（status=open|resolved|dismissed|all，默认 open）
+      operationId: adminListChatReports
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [open, resolved, dismissed, all] } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ChatReport" } } } } } } }
+  /admin/v1/chat/reports/{id}/resolve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      tags: [Admin]
+      summary: 处理举报（action=resolve|dismiss；totpCode + reason）
+      operationId: adminResolveChatReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { type: object, required: [action], properties: { action: { type: string, enum: [resolve, dismiss] } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /event/products:
+    get:
+      tags: [Event]
+      summary: 事件合约产品（公开；标的、周期、赔率、限额与当前指数价；功能开关 eventContracts 关闭时 enabled=false）
+      operationId: listEventProducts
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventProducts" } } } }
+  /event/orders:
+    post:
+      tags: [Event]
+      summary: 下单（猜涨跌；clientId 幂等，重放返回原订单）
+      description: |
+        开仓价 = 下单时指数价（同合约：Binance，OKX 备用）；到期按到期时刻指数结算。
+        赢：返还本金 + stake×payoutRatio；输：没收本金；平（到期价 = 开仓价）：退还本金；宽限期内无结算价：退还本金（result=refunded）。
+        错误码：FEATURE_DISABLED(403) SYMBOL_NOT_SUPPORTED SYMBOL_PAUSED PERIOD_NOT_SUPPORTED STAKE_OUT_OF_RANGE
+        DAILY_LIMIT_EXCEEDED EXPOSURE_LIMIT INSUFFICIENT_BALANCE INDEX_UNAVAILABLE(503)。
+        结算实时推送：/ws?token=<accessToken>（或 Authorization: Bearer）后订阅 `event:orders`，帧 data 为 EventOrder。
+      operationId: placeEventOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol, period, direction, stake, clientId]
+              properties:
+                symbol: { type: string, example: BTCUSDT }
+                period: { type: string, example: 5m }
+                direction: { type: string, enum: [up, down] }
+                stake: { type: string, example: "10" }
+                clientId: { type: string, example: ev-1730600000-1 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventOrder" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: INDEX_UNAVAILABLE, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [Event]
+      summary: 我的事件合约订单（新→旧；status=open|settled|rejected|all，before=id 游标）
+      operationId: listEventOrders
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [open, settled, rejected, all] } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders: { type: array, items: { $ref: "#/components/schemas/EventOrder" } }
+                  nextBefore: { type: string, nullable: true }
+                  dailyUsed: { type: string, description: 今日（UTC）已用下单额 }
+  /event/orders/{id}:
+    get:
+      tags: [Event]
+      summary: 订单详情（仅本人）
+      operationId: getEventOrder
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventOrder" } } } }
+        "404": { description: NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /admin/v1/event/config:
+    get:
+      tags: [Admin]
+      summary: 事件合约配置与标的（symbol:view）
+      operationId: adminGetEventConfig
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config: { $ref: "#/components/schemas/EventConfig" }
+                  symbols: { type: array, items: { $ref: "#/components/schemas/EventSymbol" } }
+    put:
+      tags: [Admin]
+      summary: 部分更新配置（symbol:edit；totpCode + reason，审计 event_config）
+      operationId: adminUpdateEventConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { $ref: "#/components/schemas/EventConfig" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { config: { $ref: "#/components/schemas/EventConfig" }, before: { $ref: "#/components/schemas/EventConfig" }, after: { $ref: "#/components/schemas/EventConfig" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/event/symbols/{symbol}:
+    put:
+      tags: [Admin]
+      summary: 暂停/恢复标的、设置单标的敞口上限（symbol:edit；totpCode + reason，审计 event_symbol_pause/resume/event_symbol）
+      operationId: adminUpdateEventSymbol
+      parameters:
+        - { name: symbol, in: path, required: true, schema: { type: string, example: BTCUSDT } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  properties:
+                    paused: { type: boolean }
+                    exposureLimit: { type: string, description: 覆盖全局 exposureLimit }
+                    clearExposureLimit: { type: boolean, description: true=恢复使用全局上限 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { symbol: { $ref: "#/components/schemas/EventSymbol" }, before: { $ref: "#/components/schemas/EventSymbol" }, after: { $ref: "#/components/schemas/EventSymbol" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/event/orders:
+    get:
+      tags: [Admin]
+      summary: 订单检索（symbol:view；uid/symbol/status/before/limit）
+      operationId: adminListEventOrders
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [pending, open, settling, settled, rejected] } }
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { orders: { type: array, items: { $ref: "#/components/schemas/EventOrder" } }, nextBefore: { type: string, nullable: true } } } } } }
+  /admin/v1/event/exposure:
+    get:
+      tags: [Admin]
+      summary: 平台敞口（按 symbol×period 的未结算净额）与今日盈亏（symbol:view）
+      operationId: adminEventExposure
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventExposure" } } } }
+  /tradfi/assets:
+    get:
+      tags: [TradFi]
+      summary: TradFi 资产目录（公开；按开关 + active 过滤；只返回已配置合约地址的发行方代币；含参考价与偏离）
+      description: |
+        参考价 = Binance USDⓈ-M 永续（OKX SWAP 备用），不回退现货。现货偏离参考价超过阈值（默认 200 bps，可在后台按资产配置）时
+        做市自动放宽价差（widened=true）并发送 Telegram 告警。
+        网关拦截：两个开关都关 → 403 FEATURE_DISABLED；CF-IPCountry 或 KYC 国家在受限列表（默认 US + 美属地区 + OFAC：CU IR KP SY）→ 403 REGION_RESTRICTED。
+        同样的拦截作用于 POST /spot/orders、POST /futures/orders（TradFi 标的）、GET /wallet/deposit/address 与 POST /wallet/withdraw（TradFi 资产）；
+        撤单与平仓不受影响。
+      operationId: listTradFiAssets
+      security: []
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [stock, metal, commodity] } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/TradFiAsset" } }
+        "403": { description: FEATURE_DISABLED | REGION_RESTRICTED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: SERVICE_UNAVAILABLE（风控门禁不可用，fail closed）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /admin/v1/tradfi/assets:
+    get:
+      tags: [Admin]
+      summary: TradFi 资产、发行方代币与全局设置（symbol:view）
+      operationId: adminListTradFiAssets
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/TradFiAsset" } }
+                  settings: { $ref: "#/components/schemas/TradFiSettings" }
+  /admin/v1/tradfi/assets/{asset}:
+    put:
+      tags: [Admin]
+      summary: 更新资产（symbol:edit；totpCode + reason，审计 tradfi_asset）
+      operationId: adminUpdateTradFiAsset
+      parameters:
+        - { name: asset, in: path, required: true, schema: { type: string, example: AAPL } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  properties:
+                    status: { type: string, enum: [active, suspended] }
+                    name: { type: string }
+                    deviationBps: { type: integer, minimum: 10, maximum: 5000, description: 单资产偏离阈值（覆盖全局） }
+                    clearDeviationBps: { type: boolean, description: true = 恢复使用全局阈值 }
+                    refBinance: { type: string, example: AAPLUSDT }
+                    refOkx: { type: string, example: AAPL-USDT-SWAP }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiBeforeAfter" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/tradfi/tokens:
+    put:
+      tags: [Admin]
+      summary: 新增/更新发行方代币（symbol:edit；totpCode + reason，审计 tradfi_token）
+      description: 开启充值或提现必须先填合约地址，否则 400 ADDRESS_REQUIRED。新开启的代币需重启 wallet 生效；关闭即时生效。
+      operationId: adminUpsertTradFiToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  required: [asset, issuer, network]
+                  properties:
+                    asset: { type: string, example: AAPL }
+                    issuer: { type: string, enum: [xstocks, ondo, paxos, tether] }
+                    network: { type: string, example: SOL, description: 钱包网络名（SOL / ERC20 / TRC20 …） }
+                    contractAddress: { type: string }
+                    decimals: { type: integer }
+                    depositEnabled: { type: boolean }
+                    withdrawEnabled: { type: boolean }
+                    minWithdraw: { type: string, example: "0.05" }
+                    withdrawFee: { type: string, example: "0.02" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiBeforeAfter" } } } }
+        "400": { description: VALIDATION_ERROR | ADDRESS_REQUIRED | REASON_REQUIRED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /admin/v1/tradfi/settings:
+    get:
+      tags: [Admin]
+      summary: TradFi 全局设置（symbol:view）
+      operationId: adminGetTradFiSettings
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiSettings" } } } }
+    put:
+      tags: [Admin]
+      summary: 更新受限地区 / 偏离阈值 / 放宽倍数 / 告警冷却（symbol:edit；totpCode + reason，审计 tradfi_settings）
+      operationId: adminUpdateTradFiSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - $ref: "#/components/schemas/TradFiSettings"
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/TradFiBeforeAfter" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/tradfi/deviation:
+    get:
+      tags: [Admin]
+      summary: 偏离监控状态（每个 TradFi 现货标的：lastPrice、referencePrice、deviationBps、widened）（symbol:view）
+      operationId: adminGetTradFiDeviation
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/TradFiDeviation" } }
 components:
   securitySchemes:
     bearerAuth:
@@ -3989,6 +5639,17 @@ components:
             code: AUTH_UNAUTHORIZED
             message: 请先登录
             requestId: req_401demo
+    Forbidden2FA:
+      description: |
+        TWOFA_REQUIRED：未提供二次验证或账户未绑定任何二次验证方式（403）。
+        注意：提供了但错误的 TOTP/验证码返回 401 INVALID_TOTP（见各接口）。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: TWOFA_REQUIRED
+            message: 请提供两步验证码
+            requestId: req_403demo
     NotFound:
       description: 资源不存在
       content:
@@ -4000,6 +5661,73 @@ components:
             requestId: req_404demo
 
   schemas:
+    ConvertPairs:
+      type: object
+      properties:
+        assets:
+          type: array
+          items:
+            type: object
+            properties: { asset: { type: string }, precision: { type: integer }, enabled: { type: boolean } }
+        pairs:
+          type: array
+          items:
+            type: object
+            properties:
+              from: { type: string }
+              to: { type: string }
+              fromPrecision: { type: integer }
+              toPrecision: { type: integer }
+              spreadBps: { type: integer }
+              route: { type: string, enum: [direct, via_usdt, stable] }
+              paused: { type: boolean, description: 仅 USDC↔USDT 出现；true 表示脱锚保护暂停中 }
+              pauseReason: { type: string, enum: [depeg, price_unavailable], description: paused=true 时的原因 }
+        minUsdt: { type: string, example: "10" }
+        maxUsdt: { type: string, example: "50000" }
+        spreadBps: { type: integer, example: 20 }
+        fee: { type: string, example: "0" }
+        quoteTtlSeconds: { type: integer, example: 10 }
+    ConvertQuoteRequest:
+      type: object
+      required: [from, to]
+      description: fromAmount 与 toAmount 二选一
+      properties:
+        from: { type: string, example: USDT }
+        to: { type: string, example: BTC }
+        fromAmount: { type: string, example: "1000" }
+        toAmount: { type: string }
+    ConvertQuote:
+      type: object
+      properties:
+        quoteId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        fromAmount: { type: string }
+        toAmount: { type: string }
+        rate: { type: string, description: 1 from = rate to（已含点差） }
+        inverseRate: { type: string }
+        indexRate: { type: string, description: 不含点差的指数汇率 }
+        spreadBps: { type: integer }
+        fee: { type: string, example: "0" }
+        feeAsset: { type: string }
+        expiresAt: { type: integer, format: int64, description: 毫秒时间戳 }
+        ttlSeconds: { type: integer }
+    ConvertOrder:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        quoteId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        fromAmount: { type: string }
+        toAmount: { type: string }
+        rate: { type: string }
+        indexRate: { type: string }
+        spreadBps: { type: integer }
+        fee: { type: string }
+        usdtValue: { type: string, description: 按成交时 USDT 估值 }
+        status: { type: string, example: filled }
+        createdAt: { type: integer, format: int64, description: 毫秒时间戳 }
     LoanMarket:
       type: object
       properties:
@@ -4310,7 +6038,7 @@ components:
       required: [purpose]
       description: 向当前登录用户自己的邮箱/手机发送验证码，用于敏感操作前置校验。
       properties:
-        purpose: { type: string, enum: [address, bind, reset_password], example: address }
+        purpose: { type: string, enum: [address, bind, reset_password, withdraw, security], example: address }
         channel: { type: string, nullable: true, enum: [email, sms], description: 缺省按账户已绑定的联系方式, example: sms }
 
     Device:
@@ -4485,8 +6213,10 @@ components:
         asset: { type: string, example: USDT }
         network: { type: string, example: TRC20 }
         address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
-        memo: { type: string, nullable: true, example: null }
+        memo: { type: string, nullable: true, example: null, description: memoRequired=true 时为必填的充值 Memo/Tag }
         minDeposit: { type: string, nullable: true, example: "1.00000000" }
+        memoRequired: { type: boolean }
+        confirmations: { type: integer }
 
     Deposit:
       type: object
@@ -4535,6 +6265,92 @@ components:
             未开启 2FA 时必填：发到用户邮箱/手机的验证码（purpose=withdraw）。
             与 totpCode 二选一，由服务端按账户状态校验。
           example: "123456"
+        fundPassword:
+          type: string
+          nullable: true
+          description: 资金密码（已设置且后台策略要求时必填；fundPasswordMandatory=true 时未设置将被拒绝 FUND_PASSWORD_NOT_SET）
+
+    OkResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+    ChangePasswordRequest:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword: { type: string }
+        newPassword: { type: string, minLength: 8, maxLength: 128 }
+        totpCode: { type: string, description: 已开启 2FA 时必填 }
+        code: { type: string, description: 未开 2FA 时必填（purpose=security） }
+        revokeOtherSessions: { type: boolean, default: true }
+    ChangeContactRequest:
+      type: object
+      required: [newCode, oldCode]
+      properties:
+        email: { type: string }
+        phone: { type: string }
+        countryCode: { type: string }
+        newCode: { type: string, description: 新联系方式收到的验证码（purpose=bind_new） }
+        oldCode: { type: string, description: 原联系方式收到的验证码（purpose=security） }
+        totpCode: { type: string, description: 已开启 2FA 时必填 }
+    FundPasswordRequest:
+      type: object
+      required: [fundPassword]
+      properties:
+        fundPassword: { type: string, pattern: "^[0-9]{6}$" }
+        oldFundPassword: { type: string, description: PUT（修改）时必填 }
+        totpCode: { type: string }
+        code: { type: string, description: 未开 2FA 时 purpose=security 验证码 }
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        deviceId: { type: string }
+        name: { type: string }
+        ip: { type: string }
+        userAgent: { type: string }
+        current: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    Passkey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+    PasskeyCeremony:
+      type: object
+      properties:
+        sessionId: { type: string }
+        publicKey: { type: object, additionalProperties: true }
+    SecurityOverview:
+      type: object
+      properties:
+        twoFactor:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            method: { type: string, nullable: true, enum: [totp, null] }
+        email: { type: string, nullable: true, description: 脱敏 }
+        emailVerified: { type: boolean }
+        phone: { type: string, nullable: true, description: 脱敏，如 138****5678 }
+        phoneVerified: { type: boolean }
+        fundPasswordSet: { type: boolean }
+        fundPasswordLockedUntil: { type: string, format: date-time, nullable: true }
+        antiPhishingSet: { type: boolean }
+        antiPhishingHint: { type: string, nullable: true, description: 首字符 + 星号 }
+        passkeysCount: { type: integer }
+        withdrawLockedUntil: { type: string, format: date-time, nullable: true }
+        withdrawLockReason: { type: string, nullable: true }
+        recentDevices: { type: array, items: { $ref: "#/components/schemas/Device" } }
+        policy:
+          type: object
+          properties:
+            fundPasswordForWithdraw: { type: boolean }
+            fundPasswordForInternalTransfer: { type: boolean }
+            fundPasswordMandatory: { type: boolean }
+            withdrawLockHours: { type: integer }
 
     Withdrawal:
       type: object
@@ -4632,7 +6448,8 @@ components:
 
     TimeInForce:
       type: string
-      enum: [GTC, IOC, FOK]
+      description: PostOnly（别名 GTX）= 只做 Maker，会立即成交则拒绝（POST_ONLY_REJECTED）
+      enum: [GTC, IOC, FOK, PostOnly, GTX]
 
     PlaceOrderRequest:
       type: object
@@ -4648,6 +6465,7 @@ components:
           example: "76768.40"
         quantity: { type: string, example: "0.01000000" }
         timeInForce: { $ref: "#/components/schemas/TimeInForce" }
+        postOnly: { type: boolean, description: 等价于 timeInForce=PostOnly；会立即成交时返回 POST_ONLY_REJECTED }
         clientOrderId: { type: string, nullable: true, example: cli-20261102-001 }
 
     Order:
@@ -5775,5 +7593,541 @@ components:
           type: string
           format: date-time
 
+    AdminWriteMeta:
+      type: object
+      required: [totpCode, reason]
+      properties:
+        totpCode: { type: string, example: "123456" }
+        reason: { type: string, example: "双十一活动" }
+    PlacementInput:
+      type: object
+      required: [slot]
+      properties:
+        slot: { type: string, enum: [popup, splash, grid, carousel, promo_bar, search_hint] }
+        title: { type: string }
+        imageUrl: { type: string, description: carousel/splash/popup 必填 }
+        imageDarkUrl: { type: string }
+        linkUrl: { type: string, description: "https/http、站内 / 路径或 linbit:/cowa: deep link" }
+        platform: { type: string, enum: [web, app, all], default: all }
+        locale: { type: string }
+        audience: { type: string, enum: [all, new, existing], default: all }
+        regions: { type: array, items: { type: string }, example: [HK, SG] }
+        appMinVersion: { type: string }
+        appMaxVersion: { type: string }
+        frequency: { type: string, enum: [always, once, daily, session], default: always }
+        countdownEndAt: { type: string, format: date-time, nullable: true }
+        trackingId: { type: string }
+        earnProductId: { type: string, description: "填写后公开接口返回 earnApr（来自 earn 服务）" }
+        content: { type: object, additionalProperties: true }
+        sort: { type: integer }
+        startAt: { type: string, format: date-time, nullable: true }
+        endAt: { type: string, format: date-time, nullable: true }
+        enabled: { type: boolean, default: true }
+        totpCode: { type: string }
+        reason: { type: string }
+    Placement:
+      type: object
+      properties:
+        id: { type: integer }
+        slot: { type: string }
+        title: { type: string }
+        imageUrl: { type: string }
+        imageDarkUrl: { type: string }
+        linkUrl: { type: string }
+        platform: { type: string }
+        locale: { type: string }
+        audience: { type: string }
+        regions: { type: array, items: { type: string } }
+        appMinVersion: { type: string }
+        appMaxVersion: { type: string }
+        frequency: { type: string }
+        countdownEndAt: { type: string, format: date-time, nullable: true }
+        trackingId: { type: string }
+        earnProductId: { type: string }
+        earnApr: { type: string, nullable: true, description: 仅公开接口, example: "0.123" }
+        content: { type: object, additionalProperties: true }
+        sort: { type: integer }
+        startAt: { type: string, format: date-time, nullable: true }
+        endAt: { type: string, format: date-time, nullable: true }
+        enabled: { type: boolean }
+        updatedBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PlacementChange:
+      type: object
+      properties:
+        placement: { $ref: "#/components/schemas/Placement" }
+        before: { type: object, nullable: true, additionalProperties: true }
+        after: { type: object, nullable: true, additionalProperties: true }
+    HomePlacements:
+      type: object
+      properties:
+        slots:
+          type: object
+          additionalProperties: { type: array, items: { $ref: "#/components/schemas/Placement" } }
+        serverTime: { type: string, format: date-time }
+    HomeNewcomer:
+      type: object
+      properties:
+        available: { type: boolean }
+        loggedIn: { type: boolean }
+        enrolled: { type: boolean }
+        total: { type: string }
+        asset: { type: string, example: USDT }
+        days: { type: integer }
+        completed: { type: integer }
+        claimable: { type: string }
+        deadline: { type: string, format: date-time, nullable: true }
+        link: { type: string, example: /rewards/newcomer }
+        cta: { type: string, enum: [login, kyc, enroll, claim, continue, done, none, open] }
+        degraded: { type: boolean }
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              title: { type: string }
+              type: { type: string }
+              kind: { type: string }
+              amount: { type: string }
+              target: { type: string }
+              progress: { type: string }
+              status: { type: string }
+    FiatRates:
+      type: object
+      properties:
+        base: { type: string, example: USDT }
+        rates: { type: object, additionalProperties: { type: number }, example: { CNY: 7.12, USD: 1, EUR: 0.92, HKD: 7.8, JPY: 150.1, KRW: 1380 } }
+        source: { type: string, example: open.er-api.com, description: 主机名或 static }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean }
+    AppFeatures:
+      type: object
+      properties:
+        features:
+          type: object
+          additionalProperties: { type: boolean }
+          example: { tokenizedStocks: false, metals: false, eventContracts: false, chat: false, subAccounts: false, convert: true, copyTrading: false, p2p: false, fiatOnRamp: false, options: false }
+        updatedAt: { type: string, format: date-time, nullable: true }
+    Favorites:
+      type: object
+      properties:
+        market: { type: string, enum: [spot, futures] }
+        symbols: { type: array, items: { type: string } }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              market: { type: string }
+              sort: { type: integer }
+              createdAt: { type: string, format: date-time }
+    AssetsOverviewAccount:
+      type: object
+      properties:
+        account: { type: string, enum: [funding, spot, futures] }
+        available: { type: boolean }
+        totalValueUsdt: { type: string, example: "1234.56" }
+        balances:
+          type: array
+          items:
+            type: object
+            properties:
+              asset: { type: string }
+              free: { type: string }
+              locked: { type: string }
+              total: { type: string }
+              valuationUsd: { type: string, nullable: true }
+    AssetsOverview:
+      type: object
+      properties:
+        totalValueUsdt: { type: string }
+        accounts: { type: array, items: { $ref: "#/components/schemas/AssetsOverviewAccount" } }
+        depositAccount: { type: string, enum: [funding, spot] }
+        withdrawAccount: { type: string, enum: [funding, spot] }
+        transferable:
+          type: object
+          additionalProperties: true
+          example: { funding: [spot, futures], spot: [funding, futures], futures: [funding, spot], futuresAssets: [USDT] }
+    WalletNetwork:
+      type: object
+      properties:
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        minDeposit: { type: string }
+        confirmations: { type: integer }
+        memoRequired: { type: boolean }
+        withdrawFee: { type: string }
+        withdrawFeeAsset: { type: string }
+        minWithdraw: { type: string }
+        maxWithdraw: { type: string, nullable: true }
+        depositEnabled: { type: boolean }
+        withdrawEnabled: { type: boolean }
+        estimatedArrivalMinutes: { type: integer }
+    InternalTransferRequest:
+      type: object
+      required: [clientId, asset, amount, totpCode]
+      properties:
+        clientId: { type: string, maxLength: 64 }
+        asset: { type: string, example: USDT }
+        amount: { type: string, example: "10" }
+        toUid: { type: string }
+        toEmail: { type: string }
+        totpCode: { type: string }
+        code: { type: string, description: 未开 2FA 时 purpose=withdraw 验证码 }
+        fundPassword: { type: string, description: 资金密码（已设置且后台策略要求时必填） }
+    InternalTransfer:
+      type: object
+      properties:
+        id: { type: string }
+        clientId: { type: string }
+        direction: { type: string, enum: [out, in] }
+        fromUid: { type: string }
+        toUid: { type: string }
+        toMaskedEmail: { type: string }
+        asset: { type: string }
+        amount: { type: string }
+        fee: { type: string, example: "0" }
+        status: { type: string, enum: [pending, completed, failed] }
+        failReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+    ConditionalOrderRequest:
+      type: object
+      required: [symbol, side, type, triggerPrice]
+      properties:
+        symbol: { type: string, example: BTCUSDT }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        type: { $ref: "#/components/schemas/OrderType" }
+        kind: { type: string, enum: [stop, take_profit, trigger], default: trigger }
+        triggerPrice: { type: string }
+        triggerDirection: { type: string, enum: [up, down], description: 仅 kind=trigger 且无最新价时需要 }
+        price: { type: string, nullable: true, description: limit 子单必填 }
+        quantity: { type: string, nullable: true }
+        quoteOrderQty: { type: string, nullable: true, description: 市价买按金额 }
+        timeInForce: { $ref: "#/components/schemas/TimeInForce" }
+        clientOrderId: { type: string, nullable: true }
+    ConditionalOrder:
+      type: object
+      properties:
+        id: { type: string }
+        clientOrderId: { type: string, nullable: true }
+        symbol: { type: string }
+        side: { type: string }
+        kind: { type: string, enum: [stop, take_profit, trigger] }
+        type: { type: string, enum: [limit, market] }
+        triggerPrice: { type: string }
+        triggerDirection: { type: string, enum: [up, down] }
+        price: { type: string, nullable: true }
+        quantity: { type: string, nullable: true }
+        quoteOrderQty: { type: string, nullable: true }
+        timeInForce: { type: string }
+        status: { type: string, enum: [pending, triggering, triggered, canceled, failed] }
+        orderId: { type: string, nullable: true, description: 触发后生成的现货订单 }
+        frozenAsset: { type: string }
+        frozenAmount: { type: string }
+        failReason: { type: string }
+        createdAt: { type: string, format: date-time }
+        triggeredAt: { type: string, format: date-time, nullable: true }
+    FeePair:
+      type: object
+      properties:
+        maker: { type: string, example: "0.001" }
+        taker: { type: string, example: "0.001" }
+    FeeRates:
+      type: object
+      properties:
+        symbol: { type: string }
+        vipLevel: { type: integer, example: 0 }
+        spot: { $ref: "#/components/schemas/FeePair" }
+        futures:
+          allOf: [{ $ref: "#/components/schemas/FeePair" }]
+          nullable: true
+        overridden: { type: boolean }
+        source: { type: string, enum: [default, override] }
+        note: { type: string }
+    TransferRequest:
+      type: object
+      required: [clientId, asset, amount, from, to]
+      properties:
+        clientId: { type: string, maxLength: 64, example: "c-20261103-0001" }
+        asset: { type: string, example: USDT }
+        amount: { type: string, example: "100" }
+        from: { type: string, enum: [funding, spot, futures], description: 涉及 futures 时仅支持 USDT }
+        to: { type: string, enum: [funding, spot, futures] }
+    Transfer:
+      type: object
+      properties:
+        id: { type: string, example: fut-4e77c5c8769ee51d }
+        clientId: { type: string, nullable: true }
+        asset: { type: string }
+        amount: { type: string }
+        from: { type: string }
+        to: { type: string }
+        status: { type: string, enum: [pending, done, failed] }
+        kind: { type: string, example: transfer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    SubAccount:
+      type: object
+      properties:
+        uid: { type: string }
+        parentUid: { type: string }
+        username: { type: string }
+        loginEmail: { type: string, example: 80000001_desk01@sub.linbit.invalid }
+        nickname: { type: string }
+        note: { type: string }
+        status: { type: string, enum: [active, frozen] }
+        loginEnabled: { type: boolean }
+        totpBound: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    SubBalance:
+      type: object
+      properties:
+        asset: { type: string }
+        free: { type: string }
+        locked: { type: string }
+        total: { type: string }
+    SubTransfer:
+      type: object
+      properties:
+        transferId: { type: string }
+        clientId: { type: string }
+        subAccountId: { type: string }
+        direction: { type: string, enum: [to_sub, to_parent] }
+        asset: { type: string }
+        amount: { type: string }
+        status: { type: string, enum: [pending, success, failed] }
+        errorCode: { type: string }
+        initiator: { type: string, enum: [parent, sub] }
+        createdAt: { type: string, format: date-time }
+    SubApiKey:
+      type: object
+      properties:
+        apiKey: { type: string, example: lbk_3f2a... }
+        secret: { type: string, description: 仅创建时返回 }
+        label: { type: string }
+        permissions: { type: array, items: { type: string } }
+        ipAllowlist: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+    ChatRoom:
+      type: object
+      properties:
+        id: { type: string, example: spot.BTCUSDT }
+        kind: { type: string, enum: [general, spot, futures] }
+        symbol: { type: string }
+        online: { type: integer }
+    ChatRules:
+      type: object
+      properties:
+        maxLength: { type: integer }
+        minIntervalMs: { type: integer }
+        minKycLevel: { type: integer }
+        blockLinks: { type: boolean }
+        blockContacts: { type: boolean }
+    ChatMessage:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        room: { type: string }
+        sender: { type: string, description: 脱敏昵称，如 用户***1234 }
+        text: { type: string }
+        mine: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ChatAdminMessage:
+      allOf:
+        - { $ref: "#/components/schemas/ChatMessage" }
+        - type: object
+          properties:
+            uid: { type: string }
+            clientId: { type: string }
+            status: { type: string, enum: [visible, deleted] }
+            deletedBy: { type: string, nullable: true }
+            deletedReason: { type: string, nullable: true }
+            reports: { type: integer }
+    ChatConfig:
+      type: object
+      properties:
+        minIntervalMs: { type: integer, default: 3000 }
+        maxLength: { type: integer, default: 200 }
+        minKycLevel: { type: integer, default: 1, minimum: 0, maximum: 3 }
+        blockLinks: { type: boolean, default: true }
+        blockContacts: { type: boolean, default: true }
+        bannedWords: { type: array, items: { type: string } }
+        historyLimitMax: { type: integer, default: 100 }
+        generalRoom: { type: boolean, default: true }
+        futuresRooms: { type: boolean, default: true }
+        reportsToHide: { type: integer, default: 0, description: 达到该举报数自动隐藏（0=关闭） }
+    ChatSanction:
+      type: object
+      properties:
+        uid: { type: string }
+        mutedUntil: { type: string, format: date-time, nullable: true }
+        banned: { type: boolean }
+        reason: { type: string }
+        updatedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+    ChatReport:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        messageId: { type: integer, format: int64 }
+        reporter: { type: string }
+        reason: { type: string }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        handledBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        message: { $ref: "#/components/schemas/ChatAdminMessage" }
+    ChatChange:
+      type: object
+      properties:
+        before: { type: object, additionalProperties: true, nullable: true }
+        after: { type: object, additionalProperties: true, nullable: true }
+    EventProducts:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        stakeAsset: { type: string, example: USDT }
+        payoutRatio: { type: string, example: "0.8" }
+        minStake: { type: string, example: "5" }
+        maxStake: { type: string, example: "1000" }
+        dailyLimit: { type: string, example: "10000" }
+        tieRule: { type: string, enum: [refund] }
+        periods:
+          type: array
+          items: { type: object, properties: { period: { type: string, example: 5m }, seconds: { type: integer } } }
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string, example: BTCUSDT }
+              baseAsset: { type: string }
+              quoteAsset: { type: string }
+              paused: { type: boolean }
+              indexPrice: { type: string, nullable: true }
+              priceAvailable: { type: boolean }
+    EventOrder:
+      type: object
+      properties:
+        id: { type: string }
+        clientId: { type: string }
+        userId: { type: string, description: 仅管理端 }
+        symbol: { type: string }
+        period: { type: string }
+        direction: { type: string, enum: [up, down] }
+        stake: { type: string }
+        payoutRatio: { type: string }
+        openPrice: { type: string }
+        openTime: { type: integer, format: int64, description: ms }
+        expiryTime: { type: integer, format: int64, description: ms }
+        status: { type: string, enum: [pending, open, settling, settled, rejected] }
+        result: { type: string, nullable: true, enum: [won, lost, tie, refunded] }
+        settlePrice: { type: string, nullable: true }
+        payout: { type: string, nullable: true }
+        pnl: { type: string, nullable: true }
+        settledAt: { type: integer, format: int64, nullable: true }
+        expectedPayout: { type: string, description: 若赢可得（本金 + 收益） }
+        rejectReason: { type: string, nullable: true }
+        createdAt: { type: integer, format: int64, description: 仅管理端 }
+    EventConfig:
+      type: object
+      properties:
+        periods: { type: array, items: { type: string }, example: [5m, 15m, 30m, 1h, 4h, 1d] }
+        payoutRatio: { type: string }
+        minStake: { type: string }
+        maxStake: { type: string }
+        dailyLimit: { type: string }
+        exposureLimit: { type: string, description: 默认每 symbol×period 净敞口上限 }
+        settleGraceSeconds: { type: integer }
+        updatedBy: { type: string, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    EventSymbol:
+      type: object
+      properties:
+        symbol: { type: string }
+        paused: { type: boolean }
+        exposureLimit: { type: string, nullable: true }
+        updatedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+    EventExposure:
+      type: object
+      properties:
+        books:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              period: { type: string }
+              paused: { type: boolean }
+              upStake: { type: string }
+              downStake: { type: string }
+              netExposure: { type: string }
+              limit: { type: string }
+              openOrders: { type: integer }
+              utilization: { type: string }
+        todayStakeSettled: { type: string }
+        todayPayout: { type: string }
+        todayPlatformPnl: { type: string }
+        unfinishedOrders: { type: integer }
+    TradFiToken:
+      type: object
+      properties:
+        asset: { type: string }
+        issuer: { type: string, enum: [xstocks, ondo, paxos, tether] }
+        network: { type: string }
+        contractAddress: { type: string }
+        decimals: { type: integer }
+        depositEnabled: { type: boolean }
+        withdrawEnabled: { type: boolean }
+        minWithdraw: { type: string }
+        withdrawFee: { type: string }
+    TradFiAsset:
+      type: object
+      properties:
+        asset: { type: string, example: AAPL }
+        kind: { type: string, enum: [stock, metal, commodity] }
+        name: { type: string }
+        underlying: { type: string, example: "Apple Inc. (NASDAQ: AAPL)" }
+        market: { type: string, enum: [spot, futures] }
+        symbol: { type: string, example: AAPLUSDT }
+        refBinance: { type: string, description: 仅后台返回 }
+        refOkx: { type: string, description: 仅后台返回 }
+        deviationBps: { type: integer, nullable: true, description: 仅后台返回；null = 全局阈值 }
+        status: { type: string, enum: [active, suspended] }
+        sort: { type: integer }
+        tokens: { type: array, items: { $ref: "#/components/schemas/TradFiToken" } }
+        referencePrice: { type: string, description: 仅公开接口 }
+        referenceSource: { type: string, example: binance-tradfi }
+        lastPrice: { type: string }
+        currentDeviationBps: { type: string }
+        widened: { type: boolean }
+    TradFiSettings:
+      type: object
+      properties:
+        restrictedCountries: { type: array, items: { type: string, pattern: "^[A-Z0-9]{2}$" }, example: [US, PR, GU, VI, AS, MP, UM, CU, IR, KP, SY] }
+        deviationBps: { type: integer, minimum: 10, maximum: 5000, example: 200 }
+        widenFactor: { type: string, example: "3", description: 1–20 }
+        alertCooldownSec: { type: integer, minimum: 0, maximum: 86400, example: 900 }
+    TradFiDeviation:
+      type: object
+      properties:
+        symbol: { type: string }
+        lastPrice: { type: string }
+        referencePrice: { type: string }
+        deviationBps: { type: string }
+        thresholdBps: { type: integer }
+        widened: { type: boolean }
+        widenFactor: { type: string }
+    TradFiBeforeAfter:
+      type: object
+      properties:
+        before: { type: object, nullable: true }
+        after: { type: object }
 security:
   - bearerAuth: []

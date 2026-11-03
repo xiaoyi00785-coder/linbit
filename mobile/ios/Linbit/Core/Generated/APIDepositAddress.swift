@@ -12,15 +12,20 @@ public struct APIDepositAddress: Codable, JSONEncodable, Hashable {
     public var asset: String
     public var network: String
     public var address: String
+    /** memoRequired=true 时为必填的充值 Memo/Tag */
     public var memo: String?
     public var minDeposit: String?
+    public var memoRequired: Bool?
+    public var confirmations: Int?
 
-    public init(asset: String, network: String, address: String, memo: String? = nil, minDeposit: String? = nil) {
+    public init(asset: String, network: String, address: String, memo: String? = nil, minDeposit: String? = nil, memoRequired: Bool? = nil, confirmations: Int? = nil) {
         self.asset = asset
         self.network = network
         self.address = address
         self.memo = memo
         self.minDeposit = minDeposit
+        self.memoRequired = memoRequired
+        self.confirmations = confirmations
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -29,6 +34,8 @@ public struct APIDepositAddress: Codable, JSONEncodable, Hashable {
         case address
         case memo
         case minDeposit
+        case memoRequired
+        case confirmations
     }
 
     // Encodable protocol methods
@@ -40,6 +47,8 @@ public struct APIDepositAddress: Codable, JSONEncodable, Hashable {
         try container.encode(address, forKey: .address)
         try container.encodeIfPresent(memo, forKey: .memo)
         try container.encodeIfPresent(minDeposit, forKey: .minDeposit)
+        try container.encodeIfPresent(memoRequired, forKey: .memoRequired)
+        try container.encodeIfPresent(confirmations, forKey: .confirmations)
     }
 }
 

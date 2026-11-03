@@ -16,15 +16,18 @@ public struct APIPlaceOrderRequest: Codable, JSONEncodable, Hashable {
     public var price: String?
     public var quantity: String
     public var timeInForce: APITimeInForce?
+    /** 等价于 timeInForce=PostOnly；会立即成交时返回 POST_ONLY_REJECTED */
+    public var postOnly: Bool?
     public var clientOrderId: String?
 
-    public init(symbol: String, side: APIOrderSide, type: APIOrderType, price: String? = nil, quantity: String, timeInForce: APITimeInForce? = nil, clientOrderId: String? = nil) {
+    public init(symbol: String, side: APIOrderSide, type: APIOrderType, price: String? = nil, quantity: String, timeInForce: APITimeInForce? = nil, postOnly: Bool? = nil, clientOrderId: String? = nil) {
         self.symbol = symbol
         self.side = side
         self.type = type
         self.price = price
         self.quantity = quantity
         self.timeInForce = timeInForce
+        self.postOnly = postOnly
         self.clientOrderId = clientOrderId
     }
 
@@ -35,6 +38,7 @@ public struct APIPlaceOrderRequest: Codable, JSONEncodable, Hashable {
         case price
         case quantity
         case timeInForce
+        case postOnly
         case clientOrderId
     }
 
@@ -48,6 +52,7 @@ public struct APIPlaceOrderRequest: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(price, forKey: .price)
         try container.encode(quantity, forKey: .quantity)
         try container.encodeIfPresent(timeInForce, forKey: .timeInForce)
+        try container.encodeIfPresent(postOnly, forKey: .postOnly)
         try container.encodeIfPresent(clientOrderId, forKey: .clientOrderId)
     }
 }

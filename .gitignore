@@ -66,3 +66,6 @@ secrets/
 sol-deposit-addresses.txt
 services/go/market-data/market-data
 mobile/ios/Linbit/Resources/Assets.xcassets/AppIcon.appiconset/*.png
+
+# iOS app icon: generated in CI by mobile/tools/gen_app_icon.py (no binaries in git)
+mobile/ios/Linbit/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png

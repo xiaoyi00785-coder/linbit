@@ -14,6 +14,8 @@ public struct APISendCodeAuthedRequest: Codable, JSONEncodable, Hashable {
         case address = "address"
         case bind = "bind"
         case resetPassword = "reset_password"
+        case withdraw = "withdraw"
+        case security = "security"
     }
     public enum APIChannel: String, Codable, CaseIterable {
         case email = "email"

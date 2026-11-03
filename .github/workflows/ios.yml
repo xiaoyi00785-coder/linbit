@@ -39,6 +39,11 @@ jobs:
       - name: Install XcodeGen
         run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
 
+      - name: Generate AppIcon (logo.svg -> 1024 PNG)
+        run: |
+          python3 mobile/tools/gen_app_icon.py
+          sips -g pixelWidth -g pixelHeight mobile/ios/Linbit/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+
       - name: Generate project
         working-directory: ${{ env.IOS_DIR }}
         run: xcodegen generate
