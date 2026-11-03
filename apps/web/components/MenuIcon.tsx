@@ -1,6 +1,6 @@
 /** 菜单插画图标：白色主体 + 主题色点缀，32x32 */
 import type { ReactNode } from "react";
-const W = "#fff", G = "var(--lb-primary)";
+const W = "var(--mi-w,#fff)", G = "var(--lb-primary)";
 const s = { fill: "none", stroke: W, strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 const g = { ...s, stroke: G };
 const P: Record<string, ReactNode> = {

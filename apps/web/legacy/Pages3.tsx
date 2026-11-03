@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { MenuIcon } from "../components/MenuIcon";
 import { CoinIcon } from '@/components/CoinIcon'
 import { LoanRecords } from '@/features/Loan'
 import { NavLink, Link, useNavigate, useLocation, useParams } from '@/lib/router'
@@ -11,13 +12,13 @@ import { useProfile } from './Pages'
 const Empty=()=><div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div>
 const Eye=()=><span className="eye">◉</span>
 const U=()=><CoinIcon s="USDT" size={22}/>
-const ACCTS=[['/assets/overview','▰','资产总览'],['/assets/funding-account','●','资金账户'],['/assets/trading-account','◧','合约账户'],['/assets/spot-account','◎','现货账户'],['/assets/earn-account','◒','理财账户'],['/assets/tradfi-account','⌂','传统金融账户'],['/assets/bots-account','◙','策略账户']]
+const ACCTS=[['/assets/overview','bankcard','资产总览'],['/assets/funding-account','coin','资金账户'],['/assets/trading-account','perp','合约账户'],['/assets/spot-account','spot','现货账户'],['/assets/earn-account','pie','理财账户'],['/assets/tradfi-account','tradfi','传统金融账户'],['/assets/bots-account','grid','策略账户']]
 export const RECS=[['funding','资金记录'],['futures','合约记录'],['spot','现货记录'],['tradfi','传统金融记录']]
 export const ORDS=[['futures','合约订单'],['spot','现货订单'],['buy','买币订单'],['earn','理财订单'],['convert','闪兑记录'],['tradfi','传统金融订单'],['loan','借贷订单']]
 function ASide(){const p=useLocation().pathname;const[h,setH]=useState(p.startsWith('/assets/history'));const[o,setO]=useState(p.startsWith('/orders'))
-return <aside className="lside a2">{ACCTS.map(([to,i,t])=><NavLink key={to} to={to} className="lsi"><span className="lsic">{i}</span>{t}</NavLink>)}
-<div className="lsi" onClick={()=>setH(!h)}><span className="lsic">▤</span>资金流水<em>{h?'▴':'▾'}</em></div>{h&&RECS.map(([k,t])=><NavLink key={k} to={'/assets/history/'+k} className="lsi sub">{t}</NavLink>)}
-<div className="lsi" onClick={()=>setO(!o)}><span className="lsic">≣</span>订单中心<em>{o?'▴':'▾'}</em></div>{o&&ORDS.map(([k,t])=><NavLink key={k} to={'/orders/'+k} className="lsi sub">{t}</NavLink>)}</aside>}
+return <aside className="lside a2">{ACCTS.map(([to,i,t])=><NavLink key={to} to={to} className="lsi"><span className="lsic"><MenuIcon n={i} size={20}/></span>{t}</NavLink>)}
+<div className="lsi" onClick={()=>setH(!h)}><span className="lsic"><MenuIcon n="doc" size={20}/></span>资金流水<em>{h?'▴':'▾'}</em></div>{h&&RECS.map(([k,t])=><NavLink key={k} to={'/assets/history/'+k} className="lsi sub">{t}</NavLink>)}
+<div className="lsi" onClick={()=>setO(!o)}><span className="lsic"><MenuIcon n="book" size={20}/></span>订单中心<em>{o?'▴':'▾'}</em></div>{o&&ORDS.map(([k,t])=><NavLink key={k} to={'/orders/'+k} className="lsi sub">{t}</NavLink>)}</aside>}
 const AS=({children})=><main className="light"><div className="lwrap">{<ASide/>}<section className="lmain a2">{children}</section></div></main>
 const Head=({t,btns})=>{const n=useNavigate();return <div className="lhead"><h2>{t}</h2><div className="lbtns">{btns.map(([b,to],i)=><button key={b} className={i?'lb':'lb dark'} onClick={()=>to&&n(to)}>{b}</button>)}</div></div>}
 const Val=({t='资产估值',children,set})=><div className="lcard v"><div className="lg">{t}(USDT) <Eye/>{set&&<span className="vset">⚙</span>}</div><div className="big">0 <small>USDT ▾</small></div><div className="lg">≈ $0</div>{children}</div>
