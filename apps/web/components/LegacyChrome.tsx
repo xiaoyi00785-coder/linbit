@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 import { loadFeatures } from "@/lib/features";
 import { installUiDelegates } from "@/lib/ui";
+import { pageTitle, isDarkScope } from "@/lib/pageMeta";
 
 const RV = "main section, .wrap > section, section.center, .trader, .pcard, .two > *, .three > *, details.faq, .dl, .promo";
 /** 滚动入场：元素进入视口时淡入上移（仅首屏外元素）。 */
@@ -42,6 +43,13 @@ const ModalHost = dynamic(() => import("@/features/Kit").then((m) => m.ModalHost
 export default function LegacyChrome({ children }: { children: React.ReactNode }) {
   const p = usePathname();
   useReveal(p);
+  // 每页独立标题 + 原白底页面统一深色作用域
+  useEffect(() => {
+    const t = pageTitle(p); document.title = t;
+    const id = setTimeout(() => { document.title = t; }, 300); // 防止 Next 元数据回写覆盖
+    document.body.classList.toggle("lb-dk", isDarkScope(p));
+    return () => clearTimeout(id);
+  }, [p]);
   useEffect(() => installUiDelegates(), []);
   useEffect(() => initLang(), []);
   // 功能开关变化（/app/features）时重挂载，使入口在「即将上线」与正常路由间切换
