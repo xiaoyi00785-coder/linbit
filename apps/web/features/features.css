@@ -46,3 +46,14 @@
 .fx-inline{height:32px;border:1px solid var(--lb-border);border-radius:8px;background:none;color:inherit;padding:0 10px;margin-right:8px;min-width:240px}
 .ah .sw{width:auto;height:auto;white-space:nowrap;padding:4px 12px;border-radius:8px;background:var(--lb-border);color:var(--lb-white)}
 .ah .sw::before,.ah .sw::after{display:none}
+/* 闪兑 */
+.cv-pick{position:relative}.cv-pick-btn{display:flex;align-items:center;gap:6px;background:none;border:0;cursor:pointer;font-size:15px;color:inherit;padding:4px 6px;border-radius:8px}.cv-pick-btn:hover{background:rgba(0,0,0,.05)}
+.cv-pop{position:absolute;z-index:20;top:calc(100% + 6px);left:0;width:220px;background:#fff;border:1px solid var(--lb-light-border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:8px}
+.cv-pop input{width:100%;box-sizing:border-box;height:34px;border:1px solid var(--lb-light-border);border-radius:8px;padding:0 10px;margin-bottom:6px}.cv-pop input:focus{outline:0;border-color:#abe127}
+.cv-list{max-height:260px;overflow:auto;display:flex;flex-direction:column}.cv-list button{display:flex;align-items:center;gap:8px;background:none;border:0;padding:8px;border-radius:8px;cursor:pointer;text-align:left;white-space:nowrap}.cv-list button:hover,.cv-list button.on{background:var(--lb-light-fill-2)}
+.cv-amt{border:0;background:none;text-align:right;font-size:18px;font-weight:600;width:55%;outline:0}.cv-amt.ro{color:var(--lb-light-text-2)}
+.cv-max{background:none;border:0;color:#7aa300;cursor:pointer;font-weight:600}.cv-ref{background:none;border:0;cursor:pointer;font-size:16px;transition:transform .3s}.cv-ref:hover{transform:rotate(180deg)}
+.cv-swap{display:block;margin:-8px auto;width:32px;height:32px;border-radius:50%;border:1px solid var(--lb-light-border);background:#fff;cursor:pointer;transition:transform .2s}.cv-swap:hover{transform:rotate(180deg);border-color:#abe127}
+.cv-warn{background:#fff7e6;color:#ad6800;border-radius:8px;padding:8px 10px;font-size:13px}.cv-err{color:#e5484d;font-size:12px;margin-top:-6px}.cv-cd{color:#7aa300;font-style:normal}
+.cv-empty{color:var(--lb-light-text-2);text-align:center;padding:16px}.cv-hist{max-width:1200px;margin:0 auto 60px;padding:0 24px}.cv-hist table{width:100%;border-collapse:collapse;font-size:13px}.cv-hist th,.cv-hist td{text-align:left;padding:10px 6px;border-bottom:1px solid var(--lb-light-border)}
+.cv-modal{display:flex;flex-direction:column;gap:12px;min-width:360px}
