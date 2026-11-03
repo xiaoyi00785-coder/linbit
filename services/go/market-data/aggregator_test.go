@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/shopspring/decimal"
 	"strings"
 	"sync"
@@ -320,7 +321,47 @@ func TestIndexCandlesWhenNoTrades(t *testing.T) {
 	}
 	a.OnTrade(TradeEvent{Symbol: "BTCUSDT", TradeID: "1", Price: decimal.NewFromInt(101), Quantity: decimal.NewFromInt(1), TakerSide: "buy", Time: base.Add(80 * time.Second)})
 	k, _ = a.Klines("BTCUSDT", "1m", 10)
-	if len(k) != 1 || k[0].Source != "" {
-		t.Fatalf("trade candles should win: %+v", k)
+	// Index fills buckets without trades; the trade candle wins its bucket.
+	if len(k) != 2 || k[0].Source != "index" || k[1].Source != "" || k[1].Volume != "1" {
+		t.Fatalf("trade candles should win their bucket: %+v", k)
+	}
+}
+
+func TestTickerIndexFallbackStats(t *testing.T) {
+	a := NewAggregator(nil, []string{"BTCUSDT"})
+	now := time.Unix(1700003600, 0)
+	a.now = func() time.Time { return now }
+	px := decimal.NewFromInt(100)
+	a.SetIndexSource(func(string) (decimal.Decimal, bool) { return px, true })
+	a.SampleIndex(now.Add(-30 * time.Minute))
+	px = decimal.NewFromInt(120)
+	a.SampleIndex(now.Add(-10 * time.Minute))
+	px = decimal.NewFromInt(110)
+	a.SampleIndex(now)
+	tk, _ := a.TickerFrame("BTCUSDT")
+	if tk.PriceSource != "index" || tk.High != "120" || tk.Low != "100" || tk.PriceChangePercent != "10" || tk.Volume != "0" {
+		t.Fatalf("ticker: %+v", tk)
+	}
+}
+
+func TestStaleRecoveredTradeYieldsToIndex(t *testing.T) {
+	a := NewAggregator(nil, []string{"BTCUSDT"})
+	now := time.Unix(1700100000, 0)
+	a.now = func() time.Time { return now }
+	ss := a.states["BTCUSDT"]
+	ss.lastPrice, ss.hasLast, ss.lastTs = decimal.NewFromInt(50), true, now.Add(-48*time.Hour).Unix()
+	a.SetIndexSource(func(string) (decimal.Decimal, bool) { return decimal.NewFromInt(77), true })
+	tk, _ := a.TickerFrame("BTCUSDT")
+	if tk.LastPrice != "77" || tk.PriceSource != "index" {
+		t.Fatalf("stale trade should yield to index: %+v", tk)
+	}
+}
+
+func TestParseBinanceKlines(t *testing.T) {
+	var rows [][]json.RawMessage
+	_ = json.Unmarshal([]byte(`[[1700000000000,"1.0","2.0","0.5","1.5","10",1700000059999]]`), &rows)
+	c := parseBinanceKlines(rows)
+	if len(c) != 1 || c[0].OpenTime != 1700000000 || c[0].High.String() != "2" || !c[0].Volume.IsZero() {
+		t.Fatalf("%+v", c)
 	}
 }

@@ -167,11 +167,12 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/market", proxy: marketProxy},
 			// market-data only serves GET /ws; /ws/* is not a route.
 			{prefix: "/ws", exact: true, proxy: marketProxy},
-			{prefix: "/home/newcomer", proxy: growthProxy}, // newcomer task bar (growth)
-			{prefix: "/app/features", proxy: marketProxy},  // app feature switches (market-data)
-			{prefix: "/home", proxy: marketProxy},          // home placements/banners + hot list (market-data)
-			{prefix: "/chat", proxy: marketProxy},          // trading chat rooms (market-data)
-			{prefix: "/tradfi", proxy: marketProxy},        // tokenized stocks / metals catalogue (market-data)
+			{prefix: "/home/newcomer", proxy: growthProxy},              // newcomer task bar (growth)
+			{prefix: "/growth/config", exact: true, proxy: growthProxy}, // public program numbers (growth)
+			{prefix: "/app/features", proxy: marketProxy},               // app feature switches (market-data)
+			{prefix: "/home", proxy: marketProxy},                       // home placements/banners + hot list (market-data)
+			{prefix: "/chat", proxy: marketProxy},                       // trading chat rooms (market-data)
+			{prefix: "/tradfi", proxy: marketProxy},                     // tokenized stocks / metals catalogue (market-data)
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -206,6 +207,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
 			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
+			{method: http.MethodGet, path: "/growth/config"},                     // invite/newcomer numbers (read-only)
 			{method: http.MethodGet, path: "/home/hot"},                          // home hot list (read-only)
 			{method: "", path: "/ws", optionalAuth: true},                        // market WebSocket; a token unlocks private channels (event:orders)
 			{method: http.MethodGet, path: "/event/products"},                    // event contract products (public)

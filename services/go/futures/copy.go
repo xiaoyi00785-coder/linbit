@@ -770,6 +770,8 @@ func (s *Server) syncSettings(ctx context.Context, acct string, c Contract, lev 
 
 type TraderStats struct {
 	Trader
+	// IsTrader is true on GET /futures/copy/trader (false body when not applied).
+	IsTrader       bool            `json:"isTrader,omitempty"`
 	Days           int             `json:"days"`
 	PnL            decimal.Decimal `json:"pnl"`
 	ROI            decimal.Decimal `json:"roi"`
@@ -1023,6 +1025,12 @@ func (s *Server) hCopyTrader(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hMyTrader(w http.ResponseWriter, r *http.Request, uid string) {
 	t, err := s.getTrader(r.Context(), uid)
+	if a, ok := asAPI(err); ok && a.Code == "TRADER_NOT_FOUND" {
+		// Not having applied is a normal state, not a client error: answer 200
+		// so the copy-trading page does not log a failed request.
+		common.WriteJSON(w, http.StatusOK, map[string]any{"isTrader": false, "status": "none"})
+		return
+	}
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -1032,6 +1040,7 @@ func (s *Server) hMyTrader(w http.ResponseWriter, r *http.Request, uid string) {
 		writeErr(w, err)
 		return
 	}
+	st.IsTrader = true
 	common.WriteJSON(w, http.StatusOK, st)
 }
 

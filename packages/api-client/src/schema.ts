@@ -1100,6 +1100,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/proof-of-reserves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 储备证明（最新快照）；未发布时 available=false */
+        get: operations["getProofOfReserves"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/growth/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 邀请返佣 / 新人礼包等公开配置（营销文案以此为准，勿写死） */
+        get: operations["getGrowthConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/market/symbols": {
         parameters: {
             query?: never;
@@ -1967,7 +2001,6 @@ export interface paths {
                         "application/json": components["schemas"]["CopyTrader"];
                     };
                 };
-                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
             };
         };
@@ -5531,7 +5564,7 @@ export interface components {
             /** @example 28915681.30 */
             quoteVolume: string;
             /**
-             * @description lastPrice 来源：最近成交 > 盘口中间价 > 指数价；无成交时 24h 涨跌为 0、high/low=lastPrice、volume=0（不伪造成交）。合约行情另有 mark。
+             * @description lastPrice 来源：24h 内最近成交 > 盘口中间价 > 外部指数价（超过 24h 的旧成交价视为过期）。24h 内无本地成交时，priceChangePercent/high/low 取外部指数价的 24h 走势，volume/quoteVolume 为 0（不伪造成交）。合约行情另有 mark。
              * @enum {string}
              */
             priceSource?: "trade" | "mid" | "index" | "none";
@@ -5799,7 +5832,64 @@ export interface components {
         StatusResult: {
             status?: string;
         };
+        ProofOfReserves: {
+            available: boolean;
+            /**
+             * Format: date-time
+             * @description UTC RFC3339
+             */
+            snapshotAt?: string | null;
+            items: {
+                asset: string;
+                /** @description 用户资产总额 */
+                liabilities: string;
+                /** @description 平台储备 */
+                reserves: string;
+                /** @description reserves/liabilities，例如 1.0234；liabilities=0 时为空串 */
+                ratio: string;
+            }[];
+        };
+        GrowthConfig: {
+            /** @example USDT */
+            payoutAsset?: string;
+            referral?: {
+                /**
+                 * @description 普通邀请返佣比例（小数）
+                 * @example 0.1
+                 */
+                rate?: string;
+                /** @example 365 */
+                validDays?: number;
+            };
+            partner?: {
+                /**
+                 * @description 合伙人最高合约返佣比例
+                 * @example 0.5
+                 */
+                maxFuturesRate?: string;
+                /** @example 0.35 */
+                maxSpotRate?: string;
+                /** @example 0.1 */
+                overrideRate?: string;
+            };
+            inviteKyc?: {
+                /** @example 20 */
+                reward?: string;
+                kycLevel?: number;
+                withinDays?: number;
+            };
+            newcomer?: {
+                available?: boolean;
+                /** @description 新人礼包总额 */
+                total?: string;
+                days?: number;
+            };
+            /** @description 邀请链接前缀 */
+            inviteBaseUrl?: string;
+        };
         CopyTrader: {
+            /** @description GET /futures/copy/trader：未申请带单时返回 200 {isTrader:false,status:none} */
+            isTrader?: boolean;
             traderId?: string;
             nickname?: string;
             bio?: string;
@@ -6008,7 +6098,7 @@ export interface components {
         FuturesKlines: {
             symbol?: string;
             interval?: string;
-            /** @description trades / index */
+            /** @description trades / index。现货：有成交的周期用成交 K 线，无成交的周期用指数价 K 线补齐（单根 source=index、volume=0） */
             source?: string;
             klines?: {
                 /** Format: int64 */
@@ -9496,6 +9586,46 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getProofOfReserves: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProofOfReserves"];
+                };
+            };
+        };
+    };
+    getGrowthConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthConfig"];
+                };
+            };
         };
     };
     listSymbols: {

@@ -444,6 +444,7 @@ func (s *Store) ListDevices(ctx context.Context, userID int64) ([]Device, error)
 		if err := rows.Scan(&d.DeviceKey, &d.Name, &d.UserAgent, &d.IP, &d.FirstSeen, &d.LastSeen); err != nil {
 			return nil, err
 		}
+		d.FirstSeen, d.LastSeen = d.FirstSeen.UTC(), d.LastSeen.UTC() // always RFC3339 "Z"
 		out = append(out, d)
 	}
 	return out, rows.Err()

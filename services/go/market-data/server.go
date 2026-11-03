@@ -41,6 +41,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /market/klines", s.handleKlines)
 	mux.HandleFunc("GET /market/trades", s.handleTrades)
 	mux.HandleFunc("GET /market/index", s.handleIndex)
+	mux.HandleFunc("GET /market/proof-of-reserves", s.handleProofOfReserves)
 
 	s.homeInternalRoutes(mux)
 	s.chatRoutes(mux)
