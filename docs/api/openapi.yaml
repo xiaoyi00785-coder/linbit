@@ -1,0 +1,1223 @@
+openapi: 3.0.3
+info:
+  title: Linbit Exchange API
+  description: |
+    Linbit 加密货币交易所 REST API。
+
+    - 统一错误模型（`Error`），业务错误码放在 `code` 字段。
+    - 除公开行情接口外，均需 `Authorization: Bearer <accessToken>`。
+    - 列表接口统一使用 `page` / `pageSize` 游标分页，返回 `Paginated*` 包装。
+
+    该文档同时用于 Prism mock（`pnpm mock`）、生成 TypeScript 类型（`@linbit/api-client`），
+    以及未来生成 Kotlin / Swift 客户端，请保持 `examples` 完整。
+  version: 1.0.0
+  contact:
+    name: Linbit Platform
+    url: https://linbit.example.com
+  license:
+    name: Proprietary
+servers:
+  - url: http://localhost:4010
+    description: 本地 Prism mock
+  - url: https://api.linbit.example.com/v1
+    description: 生产环境
+tags:
+  - name: Auth
+    description: 注册、登录、令牌刷新与登出
+  - name: 2FA
+    description: 基于 TOTP 的双重验证
+  - name: Account
+    description: 账户信息
+  - name: KYC
+    description: 身份认证
+  - name: Assets
+    description: 资产余额
+  - name: Wallet
+    description: 充值与提现
+  - name: Spot
+    description: 现货交易
+  - name: Market
+    description: 行情数据（公开）
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: 注册新账户
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              email: trader@example.com
+              password: "Str0ng-Passw0rd!"
+              inviteCode: LB8DEMO
+      responses:
+        "201":
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokens"
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access
+                refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh
+                tokenType: Bearer
+                expiresIn: 3600
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: 邮箱已被注册
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: AUTH_EMAIL_EXISTS
+                message: 该邮箱已被注册
+                requestId: req_8c1f2a
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: 登录
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: trader@example.com
+              password: "Str0ng-Passw0rd!"
+              totpCode: "123456"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access
+                refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh
+                tokenType: Bearer
+                expiresIn: 3600
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: 刷新访问令牌
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+            example:
+              refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh
+      responses:
+        "200":
+          description: 刷新成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newaccess
+                refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newrefresh
+                tokenType: Bearer
+                expiresIn: 3600
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: 登出（吊销当前刷新令牌）
+      operationId: logout
+      responses:
+        "204":
+          description: 已登出
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /2fa/totp/bind:
+    post:
+      tags: [2FA]
+      summary: 开始绑定 TOTP（返回密钥与 otpauth URI）
+      operationId: bindTotp
+      responses:
+        "200":
+          description: 返回待绑定的密钥
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TotpBinding" }
+              example:
+                secret: JBSWY3DPEHPK3PXP
+                otpauthUri: otpauth://totp/Linbit:trader@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Linbit
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /2fa/totp/verify:
+    post:
+      tags: [2FA]
+      summary: 校验 TOTP 验证码并启用 2FA
+      operationId: verifyTotp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  description: 6 位 TOTP 验证码
+            example:
+              code: "123456"
+      responses:
+        "200":
+          description: 2FA 已启用
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TwoFactorStatus" }
+              example:
+                enabled: true
+                method: totp
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /2fa/totp/disable:
+    post:
+      tags: [2FA]
+      summary: 关闭 TOTP 二次验证
+      operationId: disableTotp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+            example:
+              code: "123456"
+      responses:
+        "200":
+          description: 2FA 已关闭
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TwoFactorStatus" }
+              example:
+                enabled: false
+                method: null
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account:
+    get:
+      tags: [Account]
+      summary: 获取当前账户信息
+      operationId: getAccount
+      responses:
+        "200":
+          description: 账户信息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+              example:
+                uid: "80000001"
+                email: trader@example.com
+                nickname: lb_Trader
+                kycLevel: 1
+                twoFactorEnabled: true
+                createdAt: "2026-01-05T08:30:00Z"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /kyc:
+    post:
+      tags: [KYC]
+      summary: 提交 KYC 认证资料
+      operationId: submitKyc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KycSubmission" }
+            example:
+              firstName: San
+              lastName: Zhang
+              country: SG
+              idType: passport
+              idNumber: E12345678
+              dateOfBirth: "1992-04-18"
+      responses:
+        "202":
+          description: 已受理，进入审核
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycStatus" }
+              example:
+                level: 1
+                status: pending
+                submittedAt: "2026-11-02T10:00:00Z"
+                reason: null
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /kyc/status:
+    get:
+      tags: [KYC]
+      summary: 查询 KYC 状态
+      operationId: getKycStatus
+      responses:
+        "200":
+          description: KYC 状态
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycStatus" }
+              example:
+                level: 1
+                status: approved
+                submittedAt: "2026-11-01T10:00:00Z"
+                reason: null
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /assets/balances:
+    get:
+      tags: [Assets]
+      summary: 获取资产余额列表
+      operationId: getBalances
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 余额列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedBalances" }
+              example:
+                items:
+                  - asset: USDT
+                    free: "10520.33000000"
+                    locked: "250.00000000"
+                    total: "10770.33000000"
+                    valuationUsd: "10770.33"
+                  - asset: BTC
+                    free: "0.52100000"
+                    locked: "0.00000000"
+                    total: "0.52100000"
+                    valuationUsd: "39994.40"
+                page: 1
+                pageSize: 20
+                total: 2
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /wallet/deposit/address:
+    get:
+      tags: [Wallet]
+      summary: 获取充值地址
+      operationId: getDepositAddress
+      parameters:
+        - name: asset
+          in: query
+          required: true
+          schema: { type: string }
+          example: USDT
+        - name: network
+          in: query
+          required: true
+          schema: { type: string }
+          example: TRC20
+      responses:
+        "200":
+          description: 充值地址
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DepositAddress" }
+              example:
+                asset: USDT
+                network: TRC20
+                address: TXy1Z9DemoAddr000000000000000000000
+                memo: null
+                minDeposit: "1.00000000"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /wallet/deposit/records:
+    get:
+      tags: [Wallet]
+      summary: 充值记录
+      operationId: listDeposits
+      parameters:
+        - name: asset
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 充值记录列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedDeposits" }
+              example:
+                items:
+                  - id: dep_0001
+                    asset: USDT
+                    network: TRC20
+                    amount: "500.00000000"
+                    txId: 9a7b...demo
+                    status: completed
+                    confirmations: 20
+                    createdAt: "2026-10-30T12:00:00Z"
+                page: 1
+                pageSize: 20
+                total: 1
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /wallet/withdraw:
+    post:
+      tags: [Wallet]
+      summary: 发起提现申请
+      operationId: createWithdrawal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WithdrawRequest" }
+            example:
+              asset: USDT
+              network: TRC20
+              address: TXy1Z9DemoAddr000000000000000000000
+              amount: "100.00000000"
+              memo: null
+              totpCode: "123456"
+      responses:
+        "202":
+          description: 提现申请已受理
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Withdrawal" }
+              example:
+                id: wd_0001
+                asset: USDT
+                network: TRC20
+                address: TXy1Z9DemoAddr000000000000000000000
+                amount: "100.00000000"
+                fee: "1.00000000"
+                status: pending
+                createdAt: "2026-11-02T10:05:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /wallet/withdraw/records:
+    get:
+      tags: [Wallet]
+      summary: 提现记录
+      operationId: listWithdrawals
+      parameters:
+        - name: asset
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 提现记录列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedWithdrawals" }
+              example:
+                items:
+                  - id: wd_0001
+                    asset: USDT
+                    network: TRC20
+                    address: TXy1Z9DemoAddr000000000000000000000
+                    amount: "100.00000000"
+                    fee: "1.00000000"
+                    status: completed
+                    createdAt: "2026-10-28T09:00:00Z"
+                page: 1
+                pageSize: 20
+                total: 1
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /spot/orders:
+    post:
+      tags: [Spot]
+      summary: 现货下单
+      operationId: placeSpotOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlaceOrderRequest" }
+            example:
+              symbol: BTCUSDT
+              side: buy
+              type: limit
+              price: "76768.40"
+              quantity: "0.01000000"
+              timeInForce: GTC
+              clientOrderId: cli-20261102-001
+      responses:
+        "201":
+          description: 下单成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+              example:
+                orderId: "1000000001"
+                clientOrderId: cli-20261102-001
+                symbol: BTCUSDT
+                side: buy
+                type: limit
+                price: "76768.40"
+                quantity: "0.01000000"
+                filledQuantity: "0.00000000"
+                status: new
+                timeInForce: GTC
+                createdAt: "2026-11-02T10:10:00Z"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /spot/orders/{orderId}:
+    delete:
+      tags: [Spot]
+      summary: 撤销现货订单
+      operationId: cancelSpotOrder
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+          example: "1000000001"
+        - name: symbol
+          in: query
+          required: true
+          schema: { type: string }
+          example: BTCUSDT
+      responses:
+        "200":
+          description: 撤单成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+              example:
+                orderId: "1000000001"
+                clientOrderId: cli-20261102-001
+                symbol: BTCUSDT
+                side: buy
+                type: limit
+                price: "76768.40"
+                quantity: "0.01000000"
+                filledQuantity: "0.00000000"
+                status: canceled
+                timeInForce: GTC
+                createdAt: "2026-11-02T10:10:00Z"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /spot/orders/open:
+    get:
+      tags: [Spot]
+      summary: 当前委托（未成交/部分成交）
+      operationId: listOpenOrders
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 当前委托列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedOrders" }
+              example:
+                items:
+                  - orderId: "1000000001"
+                    clientOrderId: cli-20261102-001
+                    symbol: BTCUSDT
+                    side: buy
+                    type: limit
+                    price: "76768.40"
+                    quantity: "0.01000000"
+                    filledQuantity: "0.00000000"
+                    status: new
+                    timeInForce: GTC
+                    createdAt: "2026-11-02T10:10:00Z"
+                page: 1
+                pageSize: 20
+                total: 1
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /spot/orders/history:
+    get:
+      tags: [Spot]
+      summary: 历史订单
+      operationId: listOrderHistory
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema: { type: string }
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 历史订单列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedOrders" }
+              example:
+                items:
+                  - orderId: "0999999900"
+                    clientOrderId: cli-20261030-009
+                    symbol: BTCUSDT
+                    side: sell
+                    type: limit
+                    price: "78000.00"
+                    quantity: "0.02000000"
+                    filledQuantity: "0.02000000"
+                    status: filled
+                    timeInForce: GTC
+                    createdAt: "2026-10-30T11:00:00Z"
+                page: 1
+                pageSize: 20
+                total: 1
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /spot/trades:
+    get:
+      tags: [Spot]
+      summary: 个人成交记录
+      operationId: listMyTrades
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 成交记录列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaginatedTrades" }
+              example:
+                items:
+                  - tradeId: "5000000001"
+                    orderId: "0999999900"
+                    symbol: BTCUSDT
+                    side: sell
+                    price: "78000.00"
+                    quantity: "0.02000000"
+                    fee: "1.56000000"
+                    feeAsset: USDT
+                    role: maker
+                    createdAt: "2026-10-30T11:05:00Z"
+                page: 1
+                pageSize: 20
+                total: 1
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /market/symbols:
+    get:
+      tags: [Market]
+      summary: 交易对列表
+      operationId: listSymbols
+      security: []
+      responses:
+        "200":
+          description: 交易对列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Symbol" }
+              example:
+                - symbol: BTCUSDT
+                  base: BTC
+                  quote: USDT
+                  pricePrecision: 1
+                  quantityPrecision: 6
+                  minQuantity: "0.000010"
+                  status: trading
+                - symbol: ETHUSDT
+                  base: ETH
+                  quote: USDT
+                  pricePrecision: 2
+                  quantityPrecision: 5
+                  minQuantity: "0.00100"
+                  status: trading
+
+  /market/ticker:
+    get:
+      tags: [Market]
+      summary: 24 小时行情 ticker（单个或全部）
+      operationId: getTicker
+      security: []
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          description: 不传则返回全部交易对
+          schema: { type: string }
+          example: BTCUSDT
+      responses:
+        "200":
+          description: 行情数据
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Ticker" }
+              example:
+                - symbol: BTCUSDT
+                  lastPrice: "76771.90"
+                  priceChangePercent: "-1.71"
+                  high: "78878.00"
+                  low: "76705.00"
+                  volume: "371.65"
+                  quoteVolume: "28915681.30"
+                - symbol: ETHUSDT
+                  lastPrice: "2252.77"
+                  priceChangePercent: "-0.82"
+                  high: "2301.10"
+                  low: "2230.00"
+                  volume: "12850.40"
+                  quoteVolume: "28996512.10"
+
+  /market/depth:
+    get:
+      tags: [Market]
+      summary: 订单簿深度
+      operationId: getDepth
+      security: []
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema: { type: string }
+          example: BTCUSDT
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 200
+      responses:
+        "200":
+          description: 订单簿
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Depth" }
+              example:
+                symbol: BTCUSDT
+                lastUpdateId: 123456789
+                bids:
+                  - ["76768.40", "0.51230"]
+                  - ["76768.30", "1.20100"]
+                asks:
+                  - ["76768.50", "0.33200"]
+                  - ["76768.60", "0.89500"]
+
+  /market/klines:
+    get:
+      tags: [Market]
+      summary: K 线数据
+      operationId: getKlines
+      security: []
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema: { type: string }
+          example: BTCUSDT
+        - name: interval
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/KlineInterval" }
+          example: 15m
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 160
+            maximum: 1000
+      responses:
+        "200":
+          description: K 线数组（每根含 time/open/high/low/close/volume）
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Kline" }
+              example:
+                - time: 1762070400
+                  open: "76500.00"
+                  high: "76820.00"
+                  low: "76410.00"
+                  close: "76768.40"
+                  volume: "123.45"
+                - time: 1762071300
+                  open: "76768.40"
+                  high: "76900.00"
+                  low: "76700.00"
+                  close: "76771.90"
+                  volume: "98.76"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 页码，从 1 开始
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: 每页条数
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: VALIDATION_ERROR
+            message: 请求参数不合法
+            requestId: req_400demo
+    Unauthorized:
+      description: 未认证或令牌失效
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: AUTH_UNAUTHORIZED
+            message: 请先登录
+            requestId: req_401demo
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: NOT_FOUND
+            message: 资源不存在
+            requestId: req_404demo
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 业务错误码
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: 可读错误信息
+          example: 请求参数不合法
+        requestId:
+          type: string
+          nullable: true
+          description: 便于排查的请求 ID
+          example: req_8c1f2a
+        details:
+          type: array
+          nullable: true
+          description: 字段级错误明细
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              issue: { type: string }
+
+    Pagination:
+      type: object
+      required: [page, pageSize, total]
+      properties:
+        page: { type: integer, example: 1 }
+        pageSize: { type: integer, example: 20 }
+        total: { type: integer, example: 42 }
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: trader@example.com }
+        password: { type: string, format: password, minLength: 8, example: "Str0ng-Passw0rd!" }
+        inviteCode: { type: string, nullable: true, example: LB8DEMO }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: trader@example.com }
+        password: { type: string, format: password, example: "Str0ng-Passw0rd!" }
+        totpCode:
+          type: string
+          nullable: true
+          description: 已开启 2FA 时必填
+          example: "123456"
+
+    AuthTokens:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, enum: [Bearer], example: Bearer }
+        expiresIn: { type: integer, description: accessToken 有效期（秒）, example: 3600 }
+
+    TotpBinding:
+      type: object
+      required: [secret, otpauthUri]
+      properties:
+        secret: { type: string, example: JBSWY3DPEHPK3PXP }
+        otpauthUri:
+          type: string
+          example: otpauth://totp/Linbit:trader@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Linbit
+
+    TwoFactorStatus:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean, example: true }
+        method:
+          type: string
+          nullable: true
+          enum: [totp, null]
+          example: totp
+
+    Account:
+      type: object
+      required: [uid, email, kycLevel, twoFactorEnabled, createdAt]
+      properties:
+        uid: { type: string, example: "80000001" }
+        email: { type: string, format: email, example: trader@example.com }
+        nickname: { type: string, nullable: true, example: lb_Trader }
+        kycLevel: { type: integer, example: 1 }
+        twoFactorEnabled: { type: boolean, example: true }
+        createdAt: { type: string, format: date-time, example: "2026-01-05T08:30:00Z" }
+
+    KycSubmission:
+      type: object
+      required: [firstName, lastName, country, idType, idNumber, dateOfBirth]
+      properties:
+        firstName: { type: string, example: San }
+        lastName: { type: string, example: Zhang }
+        country: { type: string, description: ISO 3166-1 alpha-2, example: SG }
+        idType:
+          type: string
+          enum: [passport, id_card, driver_license]
+          example: passport
+        idNumber: { type: string, example: E12345678 }
+        dateOfBirth: { type: string, format: date, example: "1992-04-18" }
+
+    KycStatus:
+      type: object
+      required: [level, status]
+      properties:
+        level: { type: integer, example: 1 }
+        status:
+          type: string
+          enum: [none, pending, approved, rejected]
+          example: approved
+        submittedAt: { type: string, format: date-time, nullable: true, example: "2026-11-01T10:00:00Z" }
+        reason: { type: string, nullable: true, example: null }
+
+    Balance:
+      type: object
+      required: [asset, free, locked, total]
+      properties:
+        asset: { type: string, example: USDT }
+        free: { type: string, description: 可用（字符串防精度丢失）, example: "10520.33000000" }
+        locked: { type: string, example: "250.00000000" }
+        total: { type: string, example: "10770.33000000" }
+        valuationUsd: { type: string, nullable: true, example: "10770.33" }
+
+    PaginatedBalances:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Balance" }
+
+    DepositAddress:
+      type: object
+      required: [asset, network, address]
+      properties:
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
+        memo: { type: string, nullable: true, example: null }
+        minDeposit: { type: string, nullable: true, example: "1.00000000" }
+
+    Deposit:
+      type: object
+      required: [id, asset, network, amount, status, createdAt]
+      properties:
+        id: { type: string, example: dep_0001 }
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        amount: { type: string, example: "500.00000000" }
+        txId: { type: string, nullable: true, example: 9a7b...demo }
+        status:
+          type: string
+          enum: [pending, completed, failed]
+          example: completed
+        confirmations: { type: integer, nullable: true, example: 20 }
+        createdAt: { type: string, format: date-time, example: "2026-10-30T12:00:00Z" }
+
+    PaginatedDeposits:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Deposit" }
+
+    WithdrawRequest:
+      type: object
+      required: [asset, network, address, amount]
+      properties:
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
+        amount: { type: string, example: "100.00000000" }
+        memo: { type: string, nullable: true, example: null }
+        totpCode:
+          type: string
+          nullable: true
+          description: 已开启 2FA 时必填
+          example: "123456"
+
+    Withdrawal:
+      type: object
+      required: [id, asset, network, address, amount, fee, status, createdAt]
+      properties:
+        id: { type: string, example: wd_0001 }
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
+        amount: { type: string, example: "100.00000000" }
+        fee: { type: string, example: "1.00000000" }
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, canceled]
+          example: pending
+        createdAt: { type: string, format: date-time, example: "2026-11-02T10:05:00Z" }
+
+    PaginatedWithdrawals:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Withdrawal" }
+
+    OrderSide:
+      type: string
+      enum: [buy, sell]
+
+    OrderType:
+      type: string
+      enum: [limit, market]
+
+    OrderStatus:
+      type: string
+      enum: [new, partially_filled, filled, canceled, rejected]
+
+    TimeInForce:
+      type: string
+      enum: [GTC, IOC, FOK]
+
+    PlaceOrderRequest:
+      type: object
+      required: [symbol, side, type, quantity]
+      properties:
+        symbol: { type: string, example: BTCUSDT }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        type: { $ref: "#/components/schemas/OrderType" }
+        price:
+          type: string
+          nullable: true
+          description: limit 单必填
+          example: "76768.40"
+        quantity: { type: string, example: "0.01000000" }
+        timeInForce: { $ref: "#/components/schemas/TimeInForce" }
+        clientOrderId: { type: string, nullable: true, example: cli-20261102-001 }
+
+    Order:
+      type: object
+      required: [orderId, symbol, side, type, quantity, filledQuantity, status, createdAt]
+      properties:
+        orderId: { type: string, example: "1000000001" }
+        clientOrderId: { type: string, nullable: true, example: cli-20261102-001 }
+        symbol: { type: string, example: BTCUSDT }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        type: { $ref: "#/components/schemas/OrderType" }
+        price: { type: string, nullable: true, example: "76768.40" }
+        quantity: { type: string, example: "0.01000000" }
+        filledQuantity: { type: string, example: "0.00000000" }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        timeInForce: { $ref: "#/components/schemas/TimeInForce" }
+        createdAt: { type: string, format: date-time, example: "2026-11-02T10:10:00Z" }
+
+    PaginatedOrders:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Order" }
+
+    Trade:
+      type: object
+      required: [tradeId, orderId, symbol, side, price, quantity, createdAt]
+      properties:
+        tradeId: { type: string, example: "5000000001" }
+        orderId: { type: string, example: "0999999900" }
+        symbol: { type: string, example: BTCUSDT }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        price: { type: string, example: "78000.00" }
+        quantity: { type: string, example: "0.02000000" }
+        fee: { type: string, nullable: true, example: "1.56000000" }
+        feeAsset: { type: string, nullable: true, example: USDT }
+        role:
+          type: string
+          enum: [maker, taker]
+          example: maker
+        createdAt: { type: string, format: date-time, example: "2026-10-30T11:05:00Z" }
+
+    PaginatedTrades:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Trade" }
+
+    Symbol:
+      type: object
+      required: [symbol, base, quote, pricePrecision, quantityPrecision, status]
+      properties:
+        symbol: { type: string, example: BTCUSDT }
+        base: { type: string, example: BTC }
+        quote: { type: string, example: USDT }
+        pricePrecision: { type: integer, example: 1 }
+        quantityPrecision: { type: integer, example: 6 }
+        minQuantity: { type: string, nullable: true, example: "0.000010" }
+        status:
+          type: string
+          enum: [trading, halted, delisted]
+          example: trading
+
+    Ticker:
+      type: object
+      required: [symbol, lastPrice, priceChangePercent, high, low, volume, quoteVolume]
+      properties:
+        symbol: { type: string, example: BTCUSDT }
+        lastPrice: { type: string, example: "76771.90" }
+        priceChangePercent: { type: string, example: "-1.71" }
+        high: { type: string, example: "78878.00" }
+        low: { type: string, example: "76705.00" }
+        volume: { type: string, example: "371.65" }
+        quoteVolume: { type: string, example: "28915681.30" }
+
+    Depth:
+      type: object
+      required: [symbol, lastUpdateId, bids, asks]
+      properties:
+        symbol: { type: string, example: BTCUSDT }
+        lastUpdateId: { type: integer, example: 123456789 }
+        bids:
+          type: array
+          description: "[price, quantity] 数组，买盘从高到低"
+          items:
+            type: array
+            items: { type: string }
+            minItems: 2
+            maxItems: 2
+        asks:
+          type: array
+          description: "[price, quantity] 数组，卖盘从低到高"
+          items:
+            type: array
+            items: { type: string }
+            minItems: 2
+            maxItems: 2
+
+    KlineInterval:
+      type: string
+      enum: ["1m", "5m", "15m", "1h", "4h", "1d", "1w"]
+
+    Kline:
+      type: object
+      required: [time, open, high, low, close, volume]
+      properties:
+        time: { type: integer, description: 秒级时间戳（K 线开始时间）, example: 1762070400 }
+        open: { type: string, example: "76500.00" }
+        high: { type: string, example: "76820.00" }
+        low: { type: string, example: "76410.00" }
+        close: { type: string, example: "76768.40" }
+        volume: { type: string, example: "123.45" }
+
+security:
+  - bearerAuth: []

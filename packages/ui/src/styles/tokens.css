@@ -1,0 +1,37 @@
+/**
+ * Linbit 设计令牌（design tokens）。
+ * 全部颜色均以 CSS 变量定义，品牌色为蓝色系，深色底。
+ * 迁移自原型的 style.css（原为 lime 绿 #abe127），这里改为蓝色 #2f6bff。
+ * 修改这里即可整站换肤。
+ */
+:root {
+  /* 背景与容器 */
+  --lb-bg: #0b0e15;
+  --lb-bg-deep: #060910;
+  --lb-card: #111724;
+  --lb-card-2: #19202f;
+  --lb-border: #232c3d;
+  --lb-border-2: #303c52;
+
+  /* 品牌蓝 */
+  --lb-primary: #2f6bff;
+  --lb-primary-dark: #1e50d6;
+  --lb-on-primary: #ffffff;
+
+  /* 文本 */
+  --lb-text: #eaf0fb;
+  --lb-text-2: #9aa7bd;
+  --lb-text-3: #646f85;
+  --lb-white: #ffffff;
+
+  /* 涨跌 */
+  --lb-up: #16c784;
+  --lb-down: #ea3943;
+  --lb-up-vol: #16603f;
+  --lb-down-vol: #7a1f27;
+
+  /* 图表 / 其它 */
+  --lb-grid: #141a26;
+  --lb-warn: #f5a623;
+  --lb-usdt: #26a17b;
+}

@@ -1,0 +1,22 @@
+{
+  "name": "linbit-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @linbit/web dev",
+    "build": "pnpm -r build",
+    "mock": "prism mock docs/api/openapi.yaml --host 0.0.0.0 --port 4010",
+    "gen:api": "pnpm --filter @linbit/api-client gen",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@stoplight/prism-cli": "^5.14.2",
+    "typescript": "^5.6.3"
+  }
+}
