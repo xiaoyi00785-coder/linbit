@@ -31,6 +31,7 @@ function Download({ kind = "apple", close }: MP) {
 const ACCTS = ["资金账户", "现货账户", "合约账户", "理财账户"];
 const TACC: Record<string, "spot" | "futures"> = { 现货账户: "spot", 合约账户: "futures" };
 const TERR: Record<string, string> = { INSUFFICIENT_BALANCE: "可用余额不足", ACCOUNT_NOT_SUPPORTED: "该账户暂不支持划转（目前支持现货 ⇄ 合约）", SAME_ACCOUNT: "转出与转入账户不能相同", VALIDATION_ERROR: "参数有误，请检查数量" };
+const TST: Record<string, string> = { pending: "处理中", done: "已完成", completed: "已完成", failed: "失败" };
 type Tx = { id: string; asset: string; amount: string; from: string; to: string; createdAt?: string; status?: string };
 /** 划转：POST /assets/transfer（clientId 幂等，spot ⇄ futures）+ GET /assets/transfers 最近记录 */
 function Transfer({ from = "现货账户", to = "合约账户", close }: MP) {
@@ -59,7 +60,7 @@ function Transfer({ from = "现货账户", to = "合约账户", close }: MP) {
     <div className="tk-lbl">币种</div><Dropdown v={coin} opts={["USDT", "BTC", "ETH"]} onChange={setCoin} />
     <div className="tk-lbl">数量</div><input className="kit-in" inputMode="decimal" placeholder="请输入数量" value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
     <p className="tk-txt" style={{ fontSize: 12, opacity: .7 }}>目前支持现货账户 ⇄ 合约账户；理财请在理财页申购/赎回。</p>
-    {hist && hist.length > 0 && <div><div className="tk-lbl">最近划转</div>{hist.map((h) => <div key={h.id} className="tk-txt" style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span>{NM[h.from] || h.from} → {NM[h.to] || h.to}</span><span>{h.amount} {h.asset}</span><span style={{ opacity: .6 }}>{h.createdAt ? new Date(h.createdAt).toLocaleString() : h.status}</span></div>)}</div>}
+    {hist && hist.length > 0 && <div><div className="tk-lbl">最近划转</div>{hist.map((h) => <div key={h.id} className="tk-txt" style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span>{NM[h.from] || h.from} → {NM[h.to] || h.to}</span><span>{h.amount} {h.asset}</span><span style={{ opacity: .6 }}>{TST[h.status || ""] || h.status}{h.createdAt ? " · " + new Date(h.createdAt).toLocaleString() : ""}</span></div>)}</div>}
   </Box>;
 }
 
@@ -69,9 +70,15 @@ const SEC: Record<string, [string, string[]]> = {
 };
 function Security({ kind = "other", label, close }: MP) {
   const [t, fields] = SEC[kind] || SEC.other; const [v, setV] = useState<Record<string, string>>({});
-  const ok = () => { const miss = fields.find((x) => !v[x]); if (miss) return toast("请填写" + miss, "err"); if (fields[1]?.startsWith("确认") && v[fields[0]] !== v[fields[1]]) return toast("两次输入不一致", "err"); toast("该安全设置接口暂未开放，请稍后再试", "info"); close(); };
-  return <Box title={label || t} onClose={close} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" onClick={ok}>确认</button></>}>
-    {kind === "totp" && <div className="kit-qr"><QRCodeSVG value="otpauth://totp/linbit?secret=PENDING" size={140} marginSize={2} /></div>}
+  const [bind, setBind] = useState<{ secret: string; otpauthUri: string } | null>(null); const [be, setBe] = useState(""); const [busy, setBusy] = useState(false);
+  useEffect(() => { if (kind !== "totp") return; if (!authed()) { close(); location.href = "/login"; return; }
+    rest<any>("POST", "/2fa/totp/bind").then((r) => r.ok && r.data?.otpauthUri ? setBind(r.data) : setBe(r.status === 401 ? "请先登录" : (r as any).error || "获取绑定密钥失败")); }, [kind]);
+  const ok = async () => { const miss = fields.find((x) => !v[x]); if (miss) return toast("请填写" + miss, "err"); if (fields[1]?.startsWith("确认") && v[fields[0]] !== v[fields[1]]) return toast("两次输入不一致", "err");
+    if (kind === "totp") { if (!bind) return toast(be || "绑定密钥未就绪", "err"); const code = (v[fields[0]] || "").trim(); if (!/^\d{6}$/.test(code)) return toast("请输入 6 位验证码", "err");
+      setBusy(true); const r = await rest<any>("POST", "/2fa/totp/verify", { code }); setBusy(false); if (r.ok) { toast("谷歌验证已开启"); close(); } else toast(r.status === 400 ? "验证码错误或已过期" : (r as any).error || "验证失败", "err"); return; }
+    toast("该安全设置接口暂未开放，请稍后再试", "info"); close(); };
+  return <Box title={label || t} onClose={close} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>{busy ? "提交中…" : "确认"}</button></>}>
+    {kind === "totp" && (bind ? <><div className="kit-qr"><QRCodeSVG value={bind.otpauthUri} size={140} marginSize={2} /></div><p className="tk-txt">无法扫码？手动输入密钥：<b>{bind.secret}</b> <a role="button" onClick={() => copyText(bind.secret)}>复制</a></p></> : <p className="tk-txt">{be || "正在获取绑定密钥…"}</p>)}
     {kind === "passkey" && <p className="tk-txt">尚未添加通行密钥。通行密钥使用设备生物识别登录，更安全便捷。</p>}
     {fields.map((x) => <div key={x}><div className="tk-lbl">{x}</div><input className="kit-in" type={/密码/.test(x) ? "password" : "text"} value={v[x] || ""} onChange={(e) => setV({ ...v, [x]: e.target.value })} placeholder={"请输入" + x} /></div>)}
   </Box>;
