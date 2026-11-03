@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import {useHideSmall} from '@/lib/hideSmall'
 import { openTransfer } from "@/components/Transfer";
 import {G,SOCIAL} from "@/components/Glyph";
 import { MenuIcon } from "../components/MenuIcon";
@@ -88,4 +89,4 @@ export function Strategy(){const[t,setT]=useState(0);const[pg,setPg]=useState(1)
 <h2 className="mh">策略广场</h2><div className="pt aline">{['现货网格'].map((x,i)=><b key={x} className={t===i?'on':''} onClick={()=>{setT(i);setPg(1)}}>{x}</b>)}</div><div className="stf"><Dropdown cls="dsel" v="默认排序" opts={['默认排序','运行时间','收益率']} onChange={()=>setPg(1)}/></div>
 <div className="g3 sqg">{Array.from({length:9}).map((d,i)=>{const k=i+pg*3;return <SqCard key={'g'+i} i={k} title="BTC/USDT" tag="现货网格" label="128 日收益率" val={(i>6?'+':'-')+(0.3+(k*0.17)%0.8).toFixed(2)+'%'} rows={[['运行周期',`128天15小时${i}分`],['7 日最大回撤',(1.7+(k*0.31)%1.4).toFixed(2)+'%']]} users={(400+k*1731%15000).toLocaleString()} onBtn={()=>openM('grid',{symbol:'BTCUSDT'})}/>})}</div>
 <Pager n={10} cur={pg} set={setPg}/></div><Footer/></main>}
-function HideSmall(){const[h,setH]=useState(()=>typeof localStorage!=='undefined'&&localStorage.getItem('lb_hide_small')==='1');return <label className={"lchk"+(h?" on":"")} role="checkbox" aria-checked={h} onClick={()=>{const v=!h;setH(v);try{localStorage.setItem('lb_hide_small',v?'1':'0')}catch{}}}><i/>隐藏小额资产</label>}
+function HideSmall(){const[h,set]=useHideSmall();return <label className={"lchk"+(h?" on":"")} role="checkbox" aria-checked={h} onClick={()=>set(!h)}><i/>隐藏小额资产</label>}
