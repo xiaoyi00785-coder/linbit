@@ -41,8 +41,10 @@ struct FuturesTradeView: View {
     @State private var marginTarget: APIFuturesPosition?
     @State private var confirm: ConfirmRequest?
     @State private var couponTab = 0
+    @State private var orderFilter = 0     // 委托：0 普通委托 1 止盈止损 2 计划委托
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(spacing: 0) {
                 pairHeader
@@ -55,10 +57,18 @@ struct FuturesTradeView: View {
                     FuturesBookView(m: m).frame(width: 138)
                 }
                 .padding(.horizontal, Spacing.pageH).padding(.top, 10)
-                chartToggle.padding(.top, 14)
-                bottomSection.padding(.top, 8)
+                chartToggle.padding(.top, 14).id("lb.chart")
+                bottomSection.padding(.top, 8).id("lb.bottom")
             }
             .padding(.bottom, Metrics.tabBarH + 60)
+        }
+        .task {
+            // 截图：把 K 线 / 委托区滚动到画面内
+            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (router.shotSheet == "ordersTpsl" ? "lb.bottom" : nil)
+            guard let target else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            proxy.scrollTo(target, anchor: .top)
+        }
         }
         .refreshable { await m.refreshMarket(); await m.refreshAccount() }
         .background(p.bg)
@@ -69,7 +79,7 @@ struct FuturesTradeView: View {
         .lbSheet($showMode) { MarginModeSheet(m: m) { showMode = false } }
         .lbSheet($showLev) { LeverageSheet(m: m) { showLev = false } }
         .lbSheet($showKind) { FuturesKindSheet(selected: m.kind) { k in
-            if k.available { m.kind = k } else { ToastCenter.shared.show("\(k.title)即将开放") }
+            m.kind = k
             showKind = false
         } onClose: { showKind = false } }
         .lbSheet($showTools) { FuturesToolsSheet { showTools = false } }
@@ -88,6 +98,9 @@ struct FuturesTradeView: View {
         case "tpsl": showTpslForm = true
         case "kind": showKind = true
         case "tools": showTools = true
+        case "chart": showChart = true
+        case "plan": m.kind = .plan
+        case "ordersTpsl": bottomTab = 1; orderFilter = 1
         default: break
         }
         if router.shotSheet != nil { router.shotSheet = nil }
@@ -138,6 +151,9 @@ struct FuturesTradeView: View {
                     Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
                 }.padding(.horizontal, 10).frame(height: 34).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
             }.buttonStyle(PressableStyle(scale: 1))
+            if m.kind == .plan {
+                NumberBox(label: "触发价", unit: m.quote, text: $m.triggerText, onEdit: {})
+            }
             if m.kind == .market {
                 Text("市价").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
                     .frame(maxWidth: .infinity).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
@@ -173,6 +189,9 @@ struct FuturesTradeView: View {
                     Button { Router.shared.open(.transfer) } label: { Image(systemName: "arrow.left.arrow.right.square.fill").font(.system(size: 12)).foregroundColor(p.textPrimary) }
                 }
                 KVRow(k: m.isOpen ? "可开" : "可平", v: "\(Fmt.amount(m.isOpen ? m.maxOpenQty : abs(Dec.parse(m.current?.qty)), m.qtyPrec)) \(m.base)")
+            }
+            if m.kind.backendMissing {
+                InlineBanner(text: "\(m.kind.title)需后端提供下单接口，暂不可提交")
             }
             sideButton(long: true)
             sideButton(long: false)
@@ -214,16 +233,11 @@ struct FuturesTradeView: View {
                         KVCell(k: "指数价格", v: Fmt.priceAuto(Dec.parse(m.ticker?.indexPrice)))
                         KVCell(k: "24h 成交额", v: Fmt.volumeCN(Dec.parse(m.ticker?.turnover24h)), align: .trailing)
                     }
-                    Sparkline(values: chartValues, color: m.changePct < 0 ? p.down : p.up).frame(height: 120)
+                    FuturesChartPanel(symbol: m.symbol, pricePrec: m.pricePrec)
                 }.padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
             }
             Rectangle().fill(p.fill).frame(height: 8)
         }
-    }
-    private var chartValues: [Double] {
-        let lo = Dec.double(Dec.parse(m.ticker?.lowPrice24h)), hi = Dec.double(Dec.parse(m.ticker?.highPrice24h))
-        let o = Dec.double(Dec.parse(m.ticker?.openPrice24h)), l = Dec.double(m.last)
-        return [o, (o + lo) / 2, lo, (lo + hi) / 2, hi, (hi + l) / 2, l]
     }
 
     // 仓位 / 委托 / 跟单 / 卡券
@@ -235,7 +249,7 @@ struct FuturesTradeView: View {
                 tab("跟单", 2)
                 tab("卡券", 3)
                 Spacer()
-                Button { ToastCenter.shared.show("合约历史记录即将开放") } label: {
+                Button { Router.shared.openFeature(.futuresHistory) } label: {
                     Image(systemName: "doc.text").font(.system(size: 15)).foregroundColor(p.textSecondary)
                 }
             }.padding(.horizontal, Spacing.pageH).frame(height: 40)
@@ -305,14 +319,64 @@ struct FuturesTradeView: View {
     @ViewBuilder private var ordersList: some View {
         if !session.isLoggedIn {
             EmptyBlock(text: "登录后查看委托", actions: [("登录 / 注册", { session.present(.login) })])
-        } else if m.shownOrders.isEmpty {
+        } else {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    ForEach(["普通委托", "止盈止损", "计划委托"].indices, id: \.self) { i in
+                        Text(["普通委托", "止盈止损", "计划委托"][i]).font(.lb(FontSize.small, orderFilter == i ? .medium : .regular))
+                            .foregroundColor(orderFilter == i ? p.textPrimary : p.textSecondary)
+                            .padding(.horizontal, 10).frame(height: 24)
+                            .background(RoundedRectangle(cornerRadius: Radius.xs).fill(orderFilter == i ? p.fill : Color.clear))
+                            .onTapGesture { orderFilter = i }
+                    }
+                    Spacer()
+                }.padding(.horizontal, Spacing.pageH).padding(.top, 10)
+                switch orderFilter {
+                case 0: normalOrders
+                case 1: tpslOrders
+                default:
+                    VStack(spacing: 0) {
+                        InlineBanner(text: "计划委托需后端提供创建 / 查询 / 撤销接口，暂无数据").padding(.horizontal, Spacing.pageH).padding(.top, 10)
+                        EmptyBlock(text: "暂无计划委托", actions: [])
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var normalOrders: some View {
+        let list = m.shownOrders.filter { $0.source != "tpsl" }
+        if !m.accountLoaded {
+            SkeletonList(rows: 2)
+        } else if list.isEmpty {
             EmptyBlock(text: "暂无委托", actions: [])
         } else {
             LazyVStack(spacing: 0) {
-                ForEach(m.shownOrders, id: \.self) { o in
+                ForEach(list, id: \.self) { o in
                     FuturesOrderRow(o: o) {
                         confirm = .init(title: "撤销委托", message: "确定撤销该笔委托吗？", confirmTitle: "撤销", destructive: true) { Task { await m.cancel(o) } }
                     }
+                    Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
+                }
+            }
+        }
+    }
+
+    /// 持仓止盈止损：查看 / 修改 / 撤销（整仓）
+    @ViewBuilder private var tpslOrders: some View {
+        let list = m.shownPositions.filter { !($0.tpPrice ?? "").isEmpty || !($0.slPrice ?? "").isEmpty }
+        if !m.accountLoaded {
+            SkeletonList(rows: 2)
+        } else if list.isEmpty {
+            EmptyBlock(text: "暂无止盈止损", actions: [])
+        } else {
+            LazyVStack(spacing: 0) {
+                ForEach(list, id: \.self) { pos in
+                    TpslOrderRow(pos: pos, onEdit: { tpslTarget = pos; showTpslForm = true }, onCancel: {
+                        confirm = .init(title: "撤销止盈止损", message: "确定撤销 \(pos.symbol ?? "") 的止盈止损吗？", confirmTitle: "撤销", destructive: true) {
+                            Task { _ = await m.clearTpsl(pos) }
+                        }
+                    })
                     Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
                 }
             }
@@ -494,5 +558,38 @@ struct FuturesBookView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { m.priceText = Dec.plain(l.price, m.pricePrec); if m.kind == .market { m.kind = .limit } }
+    }
+}
+
+/// 止盈止损行：触发价 + 预计收益，修改 / 撤销
+struct TpslOrderRow: View {
+    @Environment(\.palette) private var p
+    let pos: APIFuturesPosition
+    let onEdit: () -> Void
+    let onCancel: () -> Void
+    var body: some View {
+        let long = pos.side != .short
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(long ? "平多" : "平空").font(.lb(FontSize.small, .semibold)).foregroundColor(long ? p.down : p.up)
+                Text(pos.symbol ?? "").font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                Text("整仓止盈止损").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                Spacer()
+                small("修改", onEdit)
+                small("撤销", onCancel)
+            }
+            HStack {
+                KVCell(k: "止盈触发价", v: pos.tpPrice.flatMap { $0.isEmpty ? nil : Fmt.priceAuto(Dec.parse($0)) } ?? "--", vColor: p.up)
+                KVCell(k: "止损触发价", v: pos.slPrice.flatMap { $0.isEmpty ? nil : Fmt.priceAuto(Dec.parse($0)) } ?? "--", align: .center, vColor: p.down)
+                KVCell(k: "数量", v: pos.qty ?? "--", align: .trailing)
+            }
+            Text("触发类型：最新价 · 触发后市价全部平仓").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+        }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
+    }
+    private func small(_ t: String, _ a: @escaping () -> Void) -> some View {
+        Button(action: a) {
+            Text(t).font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                .padding(.horizontal, 12).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+        }
     }
 }

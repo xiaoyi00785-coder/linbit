@@ -137,7 +137,7 @@ extension Error {
     var lbMessage: String {
         if let f = self as? APIFailure {
             switch f {
-            case let .server(status, e):
+            case let .server(status, e, _):
                 if status == 401 || e?.code == "AUTH_UNAUTHORIZED" {
                     return TokenStore.shared.sessionExpired ? "登录已过期，请重新登录" : ErrorText.loginRequired
                 }
@@ -167,6 +167,8 @@ enum ErrorText {
         "INSUFFICIENT_MARGIN": "保证金不足",
         "INVALID_AMOUNT": "数量不正确",
         "AMOUNT_TOO_SMALL": "低于最小数量",
+        "INVALID_EMAIL": "邮箱地址无效或无法接收邮件，请检查后重试",
+        "LOGOUT_INCOMPLETE": "退出未完成，请重试",
         "EMAIL_UNAVAILABLE": "邮件服务暂不可用，请稍后再试",
         "SMS_UNAVAILABLE": "短信服务暂不可用，请稍后再试",
         "STAKE_OUT_OF_RANGE": "投注金额超出范围",

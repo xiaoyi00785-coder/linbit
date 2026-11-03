@@ -13,7 +13,7 @@ final class Session: ObservableObject {
     init() {
         NotificationCenter.default.addObserver(forName: .lbSessionExpired, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.isLoggedIn else { return }
+                guard let self, self.isLoggedIn, !TokenStore.shared.loggingOut else { return }
                 self.isLoggedIn = false; self.account = nil
                 ToastCenter.shared.show("登录已过期，请重新登录", .error)
                 self.showAuth = true
@@ -27,6 +27,7 @@ final class Session: ObservableObject {
     func present(_ start: AuthFlow.Start) { authStart = start; showAuth = true }
 
     func didLogin() async {
+        TokenStore.shared.loggingOut = false
         isLoggedIn = true
         showAuth = false
         await reloadAccount()
@@ -38,8 +39,8 @@ final class Session: ObservableObject {
     func reloadAccount() async { account = try? await AuthAPI.account() }
 
     func logout() async {
-        await AuthAPI.logout()
         isLoggedIn = false; account = nil
+        await AuthAPI.logout()
         ToastCenter.shared.show("已退出登录")
     }
     func cancelAuth() { pending = nil; showAuth = false }

@@ -16,7 +16,7 @@ public struct APIAdminMMTestnetSeedRequest: Codable, JSONEncodable, Hashable {
     public var amounts: [String: String]?
     /** 单资产模式 */
     public var asset: String?
-    /** 单资产模式数量（≤ MM_SEED_MAX） */
+    /** 单资产模式数量（≤ ADMIN_MM_SEED_MAX） */
     public var amount: String?
     /** 单资产模式必填 */
     public var reason: String?

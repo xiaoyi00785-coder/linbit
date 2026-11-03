@@ -101,6 +101,9 @@ struct PasswordView: View {
     @ObservedObject var m: AuthModel
     @Binding var path: [AuthFlow.Step]
     @State private var error: String?
+    /// 429 RATE_LIMITED：按 Retry-After 倒计时，期间禁止再次提交
+    @State private var cooldown = 0
+    @State private var cooldownTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -109,7 +112,10 @@ struct PasswordView: View {
                 AuthHeader(title: "请输入密码", subtitle: Text(m.id.masked))
                 FieldLabel(text: "密码").padding(.bottom, 8)
                 LBTextField(placeholder: "输入您的密码", text: $m.password, secure: true, error: error)
-                LBButton(title: "下一步", enabled: !m.password.isEmpty, loading: m.loading) { Task { await submit() } }.padding(.top, 28)
+                if cooldown > 0 {
+                    InlineBanner(text: "验证码发送过于频繁，请 \(cooldown) 秒后重试").padding(.top, 12)
+                }
+                LBButton(title: cooldown > 0 ? "\(cooldown)s 后重试" : "下一步", enabled: !m.password.isEmpty && cooldown == 0, loading: m.loading) { Task { await submit() } }.padding(.top, 28)
                 HStack { DashedLink(title: "忘记密码?") { path.append(.forgot) }; Spacer() }.padding(.top, 20)
                 Spacer()
             }
@@ -117,6 +123,19 @@ struct PasswordView: View {
         }
         .background(p.bg.ignoresSafeArea())
         .onChange(of: m.password) { _ in error = nil }
+        .onDisappear { cooldownTask?.cancel() }
+    }
+
+    private func startCooldown(_ seconds: Int) {
+        cooldownTask?.cancel()
+        cooldown = max(1, seconds)
+        cooldownTask = Task { @MainActor in
+            while cooldown > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+                cooldown -= 1
+            }
+        }
     }
 
     private func submit() async {
@@ -130,6 +149,12 @@ struct PasswordView: View {
             }
         } catch let e as APIFailure where e.code == "AUTH_INVALID_CREDENTIALS" {
             error = "请输入正确的账户和密码"; Haptics.error()
+        } catch let e as APIFailure where e.code == "RATE_LIMITED" || e.status == 429 {
+            // 不进入验证码页，按 Retry-After 倒计时
+            startCooldown(e.retryAfter ?? 60); Haptics.error()
+        } catch let e as APIFailure where ["EMAIL_UNAVAILABLE", "SMS_UNAVAILABLE", "INVALID_EMAIL"].contains(e.code ?? "") {
+            // 验证码未能发出：留在本页显示错误，不跳验证码页
+            error = ErrorText.map[e.code ?? ""] ?? e.lbMessage; Haptics.error()
         } catch { ToastCenter.shared.error(error) }
     }
 }

@@ -88,9 +88,25 @@ enum AuthAPI {
         let _: EmptyResponse = try await api.post("/auth/password/reset", body: APIPasswordResetRequest(resetToken: token, newPassword: newPassword), auth: false)
     }
 
+    /// 退出：请求体始终带 refreshToken（访问令牌过期时服务端据此识别用户）；
+    /// 503 LOGOUT_INCOMPLETE（访问令牌吊销暂时失败）时退避重试，最多 3 次。
+    /// 退出后旧访问令牌会立即 401，期间置 loggingOut，避免误报「登录已过期」。
     static func logout() async {
-        let _: EmptyResponse? = try? await api.post("/auth/logout", body: Optional<Int>.none)
-        TokenStore.shared.clear()
+        let tokens = TokenStore.shared
+        tokens.loggingOut = true
+        let body = APILogoutRequest(refreshToken: tokens.refreshToken)
+        for attempt in 0..<3 {
+            do {
+                let _: EmptyResponse = try await api.postNoRefresh("/auth/logout", body: body)
+                break
+            } catch let e as APIFailure where e.code == "LOGOUT_INCOMPLETE" || e.status == 503 {
+                if attempt < 2 { try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 800_000_000) }
+            } catch { break }   // 401 等：令牌已无效，本地清除即可
+        }
+        tokens.clear()
+        tokens.sessionExpired = false
+        // 在途请求可能仍携带旧令牌，稍后再恢复「登录过期」提示
+        Task { try? await Task.sleep(nanoseconds: 3_000_000_000); if !tokens.isLoggedIn { tokens.loggingOut = false } }
     }
 
     static func account() async throws -> APIAccount { try await api.get("/account", auth: true) }

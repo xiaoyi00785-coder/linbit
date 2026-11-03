@@ -79,6 +79,12 @@ struct RootTabView: View {
         case "futures-tpsl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "tpsl"
         case "futures-kind": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "kind"
         case "futures-tools": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "tools"
+        case "futures-chart": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "chart"
+        case "futures-plan": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "plan"
+        case "futures-orders-tpsl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "ordersTpsl"
+        case "futures-history": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresHistory
+        case "futures-tiers": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresRiskTiers
+        case "futures-funding": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresFunding
         case "event": router.tab = .futures; router.futuresTop = 1
         case "event-confirm": router.tab = .futures; router.futuresTop = 1; router.shotSheet = "eventConfirm"
         case "earn": router.feature = .earn
