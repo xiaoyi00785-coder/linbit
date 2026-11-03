@@ -46,6 +46,7 @@ var (
 	assetPort   = envOr("DEVSTACK_ASSET_PORT", "8082")
 	enginePort  = envOr("DEVSTACK_ENGINE_PORT", "8083")
 	orderPort   = envOr("DEVSTACK_ORDER_PORT", "8084")
+	marketPort  = envOr("DEVSTACK_MARKET_PORT", "8085")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -124,7 +125,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order"}
+	services := []string{"account", "asset", "gateway", "order", "market-data"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -175,12 +176,21 @@ func run(root, execCmd string) int {
 			"INTERNAL_TOKEN=" + internalTok,
 			"DATA_DIR=" + engineData,
 			"SNAPSHOT_EVERY=1000",
+			// Stream trade/depth events to market-data (local pub/sub stand-in).
+			"EVENT_SINK_URL=http://localhost:" + marketPort + "/internal/events",
 		},
 		"order": {
 			"PORT=" + orderPort,
 			"DATABASE_URL=" + databaseURL,
 			"INTERNAL_TOKEN=" + internalTok,
 			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"ENGINE_URL=http://localhost:" + enginePort,
+			"REDIS_URL=" + redisURL,
+		},
+		"market-data": {
+			"PORT=" + marketPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
 			"ENGINE_URL=http://localhost:" + enginePort,
 			"REDIS_URL=" + redisURL,
 		},
@@ -198,14 +208,16 @@ func run(root, execCmd string) int {
 			"ACCOUNT_URL=http://localhost:" + accountPort,
 			"ASSET_URL=http://localhost:" + assetPort,
 			"ORDER_URL=http://localhost:" + orderPort,
+			"MARKET_URL=http://localhost:" + marketPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
 
 	// Start order matters: asset first (account/order call it), then the engine,
 	// then the order service (migrates the spot schema, needs asset+engine), then
-	// account, then gateway. Each is started and awaited healthy before the next
-	// so their startup migrations run sequentially, not concurrently.
+	// market-data (reads the symbols table order seeded), then account, then
+	// gateway. Each is started and awaited healthy before the next so their
+	// startup migrations run sequentially, not concurrently.
 	startOrder := []struct {
 		name   string
 		health string
@@ -213,6 +225,7 @@ func run(root, execCmd string) int {
 		{"asset", "http://localhost:" + assetPort + "/healthz"},
 		{"engine", "http://localhost:" + enginePort + "/healthz"},
 		{"order", "http://localhost:" + orderPort + "/healthz"},
+		{"market-data", "http://localhost:" + marketPort + "/healthz"},
 		{"account", "http://localhost:" + accountPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
@@ -256,6 +269,7 @@ func run(root, execCmd string) int {
 		"ASSET_URL=http://localhost:" + assetPort,
 		"ORDER_URL=http://localhost:" + orderPort,
 		"ENGINE_URL=http://localhost:" + enginePort,
+		"MARKET_URL=http://localhost:" + marketPort,
 		"DATABASE_URL=" + databaseURL,
 		"REDIS_URL=" + redisURL,
 		// Dev-only shared secret so smoke scripts can reach asset's /internal/*
