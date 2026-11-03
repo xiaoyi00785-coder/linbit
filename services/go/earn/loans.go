@@ -60,15 +60,6 @@ func scanLoan(sc interface{ Scan(...any) error }) (*Loan, error) {
 
 func (l *Loan) debt() decimal.Decimal { return l.Principal.Add(l.Interest) }
 
-func (s *Server) collateral(asset string) (Collateral, bool) {
-	for _, c := range s.cfg.Loan.Collaterals {
-		if c.Asset == strings.ToUpper(asset) {
-			return c, true
-		}
-	}
-	return Collateral{}, false
-}
-
 // price returns the USDT index price of a collateral asset (futures index of
 // <ASSET>USDT). Fails closed when unavailable.
 func (s *Server) price(ctx context.Context, asset string) (decimal.Decimal, error) {
@@ -104,15 +95,27 @@ func (s *Server) loanRoutes(mux *http.ServeMux) {
 
 func (s *Server) handleLoanMarket(w http.ResponseWriter, r *http.Request) {
 	lr := s.cfg.Loan
-	terms := []map[string]any{}
-	for _, t := range []string{"flexible", "7d", "30d"} {
-		terms = append(terms, map[string]any{"term": t, "days": lr.TermDays[t], "hourlyRate": lr.Rates[t],
-			"annualRate": lr.Rates[t].Mul(decimal.NewFromInt(24 * 365)).Round(4)})
+	ctx := r.Context()
+	all, err := s.loanTerms(ctx)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	terms := []*loanTerm{}
+	for _, t := range all {
+		if t.Status == "online" {
+			terms = append(terms, t)
+		}
+	}
+	cs, err := s.loanCollaterals(ctx, true)
+	if err != nil {
+		writeErr(w, err)
+		return
 	}
 	cols := []map[string]any{}
-	for _, c := range lr.Collaterals {
+	for _, c := range cs {
 		m := map[string]any{"asset": c.Asset, "cap": c.Cap}
-		if p, err := s.price(r.Context(), c.Asset); err == nil {
+		if p, err := s.price(ctx, c.Asset); err == nil {
 			m["price"] = p
 		}
 		cols = append(cols, m)
@@ -136,13 +139,19 @@ type quote struct {
 
 func (s *Server) makeQuote(ctx context.Context, colAsset, term string, amount, coll decimal.Decimal) (*quote, error) {
 	lr := s.cfg.Loan
-	if _, ok := s.collateral(colAsset); !ok {
-		return nil, bad("UNSUPPORTED_COLLATERAL", "不支持的质押币种")
+	if c, err := s.collateralOf(ctx, colAsset); err != nil {
+		return nil, err
+	} else if c.Status != "online" {
+		return nil, bad("UNSUPPORTED_COLLATERAL", "该质押币种已下架")
 	}
-	rate, ok := lr.Rates[term]
-	if !ok {
-		return nil, bad("INVALID_TERM", "借款期限不合法")
+	lt, err := s.loanTerm(ctx, term)
+	if err != nil {
+		return nil, err
 	}
+	if lt.Status != "online" {
+		return nil, bad("TERM_OFFLINE", "该借款期限已下架")
+	}
+	rate := lt.HourlyRate
 	if amount.Sign() <= 0 || amount.Exponent() < -dp {
 		return nil, bad("VALIDATION_ERROR", "借款金额不合法")
 	}
@@ -226,7 +235,18 @@ func (s *Server) handleBorrow(w http.ResponseWriter, r *http.Request, uid string
 		return
 	}
 	colAsset := strings.ToUpper(req.CollateralAsset)
-	c, _ := s.collateral(colAsset)
+	c, err := s.collateralOf(ctx, colAsset)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if lt, err := s.loanTerm(ctx, req.Term); err != nil {
+		writeErr(w, err)
+		return
+	} else if lt.Remaining != nil && amount.GreaterThan(*lt.Remaining) {
+		writeErr(w, bad("TERM_QUOTA_EXCEEDED", "该期限可借额度不足，剩余 "+lt.Remaining.String()+" "+lr.Asset))
+		return
+	}
 	switch {
 	case amount.LessThan(lr.MinAmount):
 		writeErr(w, bad("AMOUNT_TOO_SMALL", "单次借款最少 "+lr.MinAmount.String()+" "+lr.Asset))
@@ -647,7 +667,11 @@ func (s *Server) handleAddCollateral(w http.ResponseWriter, r *http.Request, uid
 		writeErr(w, conflict("LOAN_NOT_ACTIVE", "借款订单已结束"))
 		return
 	}
-	c, _ := s.collateral(l.CollateralAsset)
+	c, err := s.collateralOf(ctx, l.CollateralAsset)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	var locked decimal.Decimal
 	_ = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(collateral),0) FROM e_loans WHERE uid=$1 AND collateral_asset=$2 AND status='active'`, uid, l.CollateralAsset).Scan(&locked)
 	if locked.Add(amt).GreaterThan(c.Cap) {

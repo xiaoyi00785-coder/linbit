@@ -85,3 +85,24 @@ the UI; simple products earn the upper APR on the first bonus quota (USDT/USDC
 | LOAN_OVERDUE_LIQUIDATION_DAYS | 7 |
 | LOAN_LIQUIDATION_FEE_RATE | 0.03 |
 | LOAN_EARLY_REPAY_PENALTY_RATE | 0.0005 |
+
+## 产品管理（内部接口，仅供 admin 服务调用，需 `X-Internal-Token`）
+
+借币期限与抵押币种已从环境变量迁移到数据库（`e_loan_terms`、`e_loan_collaterals`，迁移 00003）。
+启动时用环境变量默认值补种（`ON CONFLICT DO NOTHING`，不会覆盖后台修改）。所有写接口返回 `{before, after}`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/internal/earn/products[/{id}]` | 含下架产品、已售、剩余额度 |
+| PATCH | `/internal/earn/products/{id}` | title / minAmount / unlockDays / newcomer / hot / status / sort（不含利率） |
+| DELETE | `/internal/earn/products/{id}` | 仅限从未有持仓/订单的产品，否则 409 `PRODUCT_IN_USE`（应改为下架） |
+| PUT | `/internal/earn/products/{id}/rate` | `{apr?, bonusApr?}`，[0,1]，≤6 位小数；bonusApr 仅活期。**只由已审批的变更调用** |
+| PUT | `/internal/earn/products/{id}/quota` | `{totalQuota?, perUserMax?, bonusQuota?, clear:[...]}`；低于已售返回 409 `QUOTA_BELOW_SOLD` |
+| GET | `/internal/loans/terms` | 含 outstanding / remaining |
+| PATCH | `/internal/loans/terms/{term}` | `{status: online|offline}`；下架后新借款返回 `TERM_OFFLINE` |
+| PUT | `/internal/loans/terms/{term}/rate` | `{hourlyRate}`，[0,0.001]，≤12 位小数。**只由已审批的变更调用** |
+| PUT | `/internal/loans/terms/{term}/quota` | `{totalQuota}` 或 `{clear:true}`；超额借款返回 `TERM_QUOTA_EXCEEDED` |
+| GET/POST | `/internal/loans/collaterals` | POST upsert `{asset, cap, status?, sort?}` |
+| DELETE | `/internal/loans/collaterals/{asset}` | 有借款订单时 409 `COLLATERAL_IN_USE` |
+
+利率调整只影响生效后的新借款；已有借款（含续期）沿用借入时锁定的利率。理财利率调整从生效时刻起按新 APR 计息。

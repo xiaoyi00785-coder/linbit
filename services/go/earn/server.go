@@ -93,6 +93,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	s.loanRoutes(mux)
 	s.savingsRoutes(mux)
+	manageRoutes(s, mux)
 	// Dev: move the service clock forward and run one tick.
 	mux.HandleFunc("POST /internal/dev/earn/advance", s.dev(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

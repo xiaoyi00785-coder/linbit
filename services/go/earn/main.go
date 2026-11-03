@@ -35,6 +35,9 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 	srv := NewServer(cfg, db)
+	if err := srv.seedLoanProducts(context.Background()); err != nil {
+		log.Fatalf("seed loan products: %v", err)
+	}
 	go srv.Run(context.Background())
 	log.Printf("earn service listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, srv.Routes()); err != nil {
