@@ -16,13 +16,13 @@ func TestUserTransferIdempotentAndBalanced(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := "subxfer:" + a
-	if err := s.UserTransfer(ctx, a, b, "USDT", decimal.NewFromInt(40), ref); err != nil {
+	if err := s.UserTransfer(ctx, a, b, "USDT", AcctSpot, decimal.NewFromInt(40), ref); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UserTransfer(ctx, a, b, "USDT", decimal.NewFromInt(40), ref); !errors.Is(err, ErrAlreadyApplied) {
+	if err := s.UserTransfer(ctx, a, b, "USDT", AcctSpot, decimal.NewFromInt(40), ref); !errors.Is(err, ErrAlreadyApplied) {
 		t.Fatalf("replay: %v", err)
 	}
-	if err := s.UserTransfer(ctx, a, b, "USDT", decimal.NewFromInt(1000), ref+"x"); !errors.Is(err, ErrInsufficient) {
+	if err := s.UserTransfer(ctx, a, b, "USDT", AcctSpot, decimal.NewFromInt(1000), ref+"x"); !errors.Is(err, ErrInsufficient) {
 		t.Fatalf("overdraw: %v", err)
 	}
 	la, _ := s.LedgerBalance(ctx, a, "USDT")

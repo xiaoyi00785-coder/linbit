@@ -580,7 +580,7 @@ func (s *Server) handleSubTransfer(w http.ResponseWriter, r *http.Request) {
 		from, to = sub.UID, parent.UID
 	}
 	code, body, err := s.internalCall(r.Context(), http.MethodPost, s.cfg.AssetInternalURL, "/internal/user-transfer", nil, map[string]string{
-		"fromUserId": from, "toUserId": to, "asset": req.Asset, "amount": amount.String(), "ref": "subxfer:" + cur.TransferID})
+		"userId": from, "toUserId": to, "account": "spot", "asset": req.Asset, "amount": amount.String(), "ref": "subxfer:" + cur.TransferID})
 	if err != nil || code >= 500 {
 		log.Printf("sub transfer asset call: status=%d err=%v", code, err)
 		common.WriteError(w, http.StatusServiceUnavailable, "TRANSFER_PENDING", "划转处理中，请稍后用相同 clientId 重试")

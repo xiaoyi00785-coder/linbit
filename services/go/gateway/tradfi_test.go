@@ -114,10 +114,10 @@ func TestTradFiGuard(t *testing.T) {
 		// convert
 		{"convert quote to AAPL", "POST", "/convert/quote", `{"from":"USDT","to":"AAPL","fromAmount":"10"}`, "u1", "SG", 403, "FEATURE_DISABLED"},
 		{"convert quote from PAXG US", "POST", "/convert/quote", `{"from":"PAXG","to":"USDT","fromAmount":"1"}`, "u1", "US", 403, "REGION_RESTRICTED"},
-		{"convert quote BTC US", "POST", "/convert/quote", `{"from":"BTC","to":"USDT","fromAmount":"1"}`, "u1", "US", 404, "NOT_FOUND"}, // passes the gate; /convert not routed on this branch,
+		{"convert quote BTC US", "POST", "/convert/quote", `{"from":"BTC","to":"USDT","fromAmount":"1"}`, "u1", "US", 200, ""}, // passes the gate; routed to asset
 		{"convert accept AAPL", "POST", "/convert/accept", `{"quoteId":"q-aapl"}`, "u1", "SG", 403, "FEATURE_DISABLED"},
 		{"convert accept PAXG kyc US", "POST", "/convert/accept", `{"quoteId":"q-paxg"}`, "u-us", "", 403, "REGION_RESTRICTED"},
-		{"convert accept unknown", "POST", "/convert/accept", `{"quoteId":"q-x"}`, "u1", "US", 404, "NOT_FOUND"},
+		{"convert accept unknown", "POST", "/convert/accept", `{"quoteId":"q-x"}`, "u1", "US", 200, ""},
 		// transfers
 		{"transfer AAPL flag off", "POST", "/assets/transfer", `{"asset":"AAPL","amount":"1","from":"spot","to":"futures"}`, "u1", "SG", 403, "FEATURE_DISABLED"},
 		{"transfer PAXG US", "POST", "/assets/transfer", `{"asset":"paxg","amount":"1"}`, "u1", "US", 403, "REGION_RESTRICTED"},

@@ -481,6 +481,7 @@ func (s *Server) convertRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/convert/position", s.internal(s.handleConvertPosition))
 	mux.HandleFunc("GET /internal/convert/hedges", s.internal(s.handleConvertHedges))
 	mux.HandleFunc("GET /internal/convert/events", s.internal(s.handleConvertEvents))
+	mux.HandleFunc("GET /internal/convert/quotes/{id}", s.internal(s.handleInternalQuoteAssets))
 	mux.HandleFunc("POST /internal/convert/hedge/run", s.internal(s.handleHedgeRun))
 }
 
@@ -853,4 +854,25 @@ func (s *Server) handleConvertPosition(w http.ResponseWriter, r *http.Request) {
 	cfg, _ := s.store.convertConfig(r.Context(), s.cfg.Convert)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"account": ConvertAccount, "hedgeAccount": s.cfg.Convert.HedgeUserID,
 		"hedgeEnabled": cfg.Hedge.Enabled, "depeg": s.checkDepeg(r.Context()), "items": items})
+}
+
+// GET /internal/convert/quotes/{id} -> {from,to}. Used by the gateway TradFi
+// gate to check a quote's assets before POST /convert/accept. 404 when unknown.
+func (s *Server) handleInternalQuoteAssets(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" || len(id) > 128 {
+		common.WriteError(w, http.StatusNotFound, "QUOTE_NOT_FOUND", "报价不存在")
+		return
+	}
+	var from, to string
+	err := s.store.db.QueryRowContext(r.Context(), `SELECT from_asset, to_asset FROM convert_quotes WHERE id=$1`, id).Scan(&from, &to)
+	if errors.Is(err, sql.ErrNoRows) {
+		common.WriteError(w, http.StatusNotFound, "QUOTE_NOT_FOUND", "报价不存在")
+		return
+	}
+	if err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]string{"from": from, "to": to})
 }
