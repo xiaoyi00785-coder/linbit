@@ -6,7 +6,8 @@
 #   admin settings (restricted list) + asset + token (ADDRESS_REQUIRED, address
 #   then enable, audit); AAPLUSDT trade -> deviation monitor: index pinned +10%
 #   -> widened + Telegram alert, back to par -> recovery alert; XAG/WTI perps
-#   listed; crypto (BTCUSDT) orders from US still pass.
+#   listed; crypto (BTCUSDT) orders from US still pass; grid create / convert
+#   quote / asset + sub-account transfers of TradFi are gated, stop / crypto not.
 #
 #   bash scripts/smoke-tradfi.sh     # boots devstack (honours DEVSTACK_*_PORT)
 #
@@ -125,6 +126,9 @@ expect "$(apic - SG GET /tradfi/assets)" 403 FEATURE_DISABLED "catalogue off"
 expect "$(apic "$T1" SG POST /spot/orders '{"symbol":"AAPLUSDT","side":"buy","type":"limit","price":"200","quantity":"0.1"}')" 403 FEATURE_DISABLED "AAPL off"
 expect "$(apic "$T1" SG POST /spot/orders '{"symbol":"PAXGUSDT","side":"buy","type":"limit","price":"3000","quantity":"0.01"}')" 403 FEATURE_DISABLED "PAXG off"
 expect "$(apic "$T1" SG POST /futures/orders '{"symbol":"XAGUSDT","side":"buy","type":"market","quantity":"1","leverage":5}')" 403 FEATURE_DISABLED "XAG off"
+expect "$(apic "$T1" SG POST /strategy/grid '{"symbol":"AAPLUSDT","mode":"arithmetic","lowerPrice":"150","upperPrice":"250","gridCount":5,"investment":"100"}')" 403 FEATURE_DISABLED "grid AAPL off"
+expect "$(apic "$T2" SG POST /assets/transfer '{"asset":"AAPL","amount":"1","from":"spot","to":"futures"}')" 403 FEATURE_DISABLED "transfer AAPL off"
+expect "$(apic "$T2" SG POST /convert/quote '{"from":"AAPL","to":"USDT","fromAmount":"1"}')" 403 FEATURE_DISABLED "convert AAPL off"
 
 say "admin enables tokenizedStocks + metals"
 fresh; ok "$(A PUT /admin/v1/app/features "$(w 'launch tradfi' '{"features":{"tokenizedStocks":true,"metals":true}}')")" "flags on" >/dev/null
@@ -135,10 +139,23 @@ expect "$(apic - US GET /tradfi/assets)" 403 REGION_RESTRICTED "catalogue US"
 expect "$(apic "$T1" US POST /spot/orders '{"symbol":"AAPLUSDT","side":"buy","type":"limit","price":"200","quantity":"0.1"}')" 403 REGION_RESTRICTED "AAPL US"
 expect "$(apic "$T1" ir POST /spot/orders '{"symbol":"PAXGUSDT","side":"buy","type":"limit","price":"3000","quantity":"0.01"}')" 403 REGION_RESTRICTED "PAXG IR"
 expect "$(apic "$T1" US GET '/wallet/deposit/address?asset=AAPL&network=SOL')" 403 REGION_RESTRICTED "deposit addr US"
+expect "$(apic "$T1" US POST /strategy/grid '{"symbol":"PAXGUSDT","mode":"arithmetic","lowerPrice":"2500","upperPrice":"3500","gridCount":5,"investment":"100"}')" 403 REGION_RESTRICTED "grid PAXG US"
+expect "$(apic "$T2" US POST /assets/transfer '{"asset":"PAXG","amount":"0.1","from":"spot","to":"futures"}')" 403 REGION_RESTRICTED "transfer PAXG US"
+expect "$(apic "$T2" US POST /sub-accounts/transfer '{"asset":"PAXG","amount":"0.1"}')" 403 REGION_RESTRICTED "sub transfer PAXG US"
+expect "$(apic "$T2" IR POST /convert/quote '{"from":"USDT","to":"PAXG","fromAmount":"10"}')" 403 REGION_RESTRICTED "convert PAXG IR"
+# exits and crypto stay open
+for R in "$(apic "$T1" US POST /strategy/grid/999999/stop '{}')" "$(apic "$T1" US POST /strategy/grid/square/999999/copy '{"investment":"10"}')" \
+         "$(apic "$T1" US POST /assets/transfer '{"asset":"USDT","amount":"1","from":"spot","to":"futures"}')"; do
+  [ "$(code "$R")" != 403 ] || fail "exit / crypto path must not be TradFi gated: $(body "$R")"
+done
 R="$(apic "$T1" US POST /spot/orders '{"symbol":"BTCUSDT","side":"buy","type":"limit","price":"1","quantity":"0.001"}')"
 [ "$(code "$R")" != 403 ] || fail "BTC from US must not be region gated: $(body "$R")"
 L="$(ok "$(apic - SG GET /tradfi/assets)" catalogue)"
 jq -e '(.items|length)==13 and ([.items[].tokens[]?]|length)==0' <<<"$L" >/dev/null || fail "catalogue (no addresses -> no tokens): $L"
+
+if [ -n "${STRATEGY_URL:-}" ]; then # internal lookup used by the grid-copy gate
+  [ "$(curl -sS -o /dev/null -w '%{http_code}' "$STRATEGY_URL/internal/strategy/grid/1/symbol")" = 401 ] || fail "grid symbol lookup must need the internal token"
+fi
 
 say "admin settings / asset / token (2FA + reason + audit)"
 expect "$(A PUT /admin/v1/tradfi/settings '{"deviationBps":300}')" 400 REASON_REQUIRED "settings no reason"

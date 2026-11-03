@@ -21,6 +21,8 @@ type Server struct {
 	market *MarketClient
 	now    func() time.Time
 
+	tradfi *copyTradFi
+
 	mu        sync.Mutex
 	tickMu    sync.Mutex
 	contracts map[string]Contract
@@ -38,6 +40,7 @@ type Server struct {
 func NewServer(cfg Config, db *sql.DB) (*Server, error) {
 	s := &Server{cfg: cfg, db: db, asset: NewAssetClient(cfg.AssetURL, cfg.InternalToken), market: NewMarketClient(cfg.MarketURL),
 		now: time.Now, contracts: map[string]Contract{}, prices: map[string]*priceState{}, devIndex: map[string]decimal.Decimal{}, tpslRetry: map[string]time.Time{}, traders: map[string]bool{}}
+	s.tradfi = newCopyTradFi(cfg.MarketURL, cfg.KycURL, cfg.InternalToken)
 	ctx := context.Background()
 	cs, err := loadContracts(ctx, db)
 	if err != nil {

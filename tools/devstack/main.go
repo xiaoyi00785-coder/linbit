@@ -331,6 +331,7 @@ func run(root, execCmd string) int {
 			"INTERNAL_TOKEN=" + internalTok,
 			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
 			"MARKET_URL=http://localhost:" + marketPort,
+			"KYC_URL=http://localhost:" + kycPort,
 			// Dev mode exposes index override / forced tick / funding endpoints.
 			"DEV_MODE=true",
 		},

@@ -23,6 +23,13 @@ import (
 //   - POST /futures/orders   {symbol} XAG/WTI      metals
 //   - GET  /wallet/deposit/address?asset=          flag of the asset's kind
 //   - POST /wallet/withdraw  {asset}
+//   - POST /strategy/grid    {symbol}              grid creation
+//   - POST /strategy/grid/square/{id}/copy         source bot symbol (strategy internal lookup)
+//   - POST /convert/quote    {from,to}             both assets
+//   - POST /convert/accept   {quoteId}             quote assets (asset internal lookup;
+//                                                  404 = unknown quote, upstream rejects)
+//   - POST /assets/transfer, /sub-accounts/transfer {asset}
+//   Copy-trading mirrors are gated in futures (copy_tradfi.go), per follower.
 //
 // Checks, in order: feature flag off -> 403 FEATURE_DISABLED; CF-IPCountry in
 // the restricted list -> 403 REGION_RESTRICTED; logged-in user whose KYC
@@ -44,9 +51,9 @@ type kycEntry struct {
 }
 
 type tradfiGuard struct {
-	marketURL, kycURL, token string
-	ttl                      time.Duration
-	client                   *http.Client
+	marketURL, kycURL, strategyURL, assetURL, token string
+	ttl                                             time.Duration
+	client                                          *http.Client
 
 	mu     sync.Mutex
 	gate   *tradfiGate
@@ -56,6 +63,7 @@ type tradfiGuard struct {
 
 func newTradFiGuard(cfg Config) *tradfiGuard {
 	return &tradfiGuard{marketURL: strings.TrimRight(cfg.MarketURL, "/"), kycURL: strings.TrimRight(cfg.KycURL, "/"),
+		strategyURL: strings.TrimRight(cfg.StrategyURL, "/"), assetURL: strings.TrimRight(cfg.AssetURL, "/"),
 		token: cfg.InternalToken, ttl: 30 * time.Second, client: &http.Client{Timeout: 3 * time.Second}, kyc: map[string]kycEntry{}}
 }
 
@@ -76,6 +84,26 @@ func (t *tradfiGuard) getJSON(ctx context.Context, u string, v any) error {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(v)
+}
+
+// lookup GETs an internal JSON object, returning the HTTP status (0 on transport error).
+func (t *tradfiGuard) lookup(ctx context.Context, u string, v any) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return 0, err
+	}
+	if t.token != "" {
+		req.Header.Set("X-Internal-Token", t.token)
+	}
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return resp.StatusCode, json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(v)
 }
 
 func (t *tradfiGuard) snapshot(ctx context.Context) (*tradfiGate, error) {
@@ -124,8 +152,13 @@ func (t *tradfiGuard) kycCountry(ctx context.Context, uid string) (string, error
 	return c, nil
 }
 
-// peekField reads a top-level string field from a JSON body and restores the body.
+// peekField reads a top-level string field from a JSON body (upper-cased) and restores the body.
 func peekField(r *http.Request, field string) string {
+	return strings.ToUpper(peekRaw(r, field))
+}
+
+// peekRaw is peekField without case folding (ids).
+func peekRaw(r *http.Request, field string) string {
 	if r.Body == nil {
 		return ""
 	}
@@ -140,68 +173,147 @@ func peekField(r *http.Request, field string) string {
 		return ""
 	}
 	s, _ := m[field].(string)
-	return strings.ToUpper(strings.TrimSpace(s))
+	return strings.TrimSpace(s)
 }
 
-// classify returns (gated, which map, key) for the request.
-func classify(r *http.Request) (bool, string, string) {
+// target is one instrument a request touches: kind "any" (any TradFi flag),
+// "spot" / "futures" (symbol maps) or "asset" (asset map).
+type target struct{ kind, key string }
+
+// classify returns (gated, targets). Lookups that need upstream state
+// (grid copy source, convert quote) return kind "gridCopy" / "convertQuote"
+// with the path id as key; check resolves them.
+func classify(r *http.Request) (bool, []target) {
 	p := r.URL.Path
+	post := r.Method == http.MethodPost
+	one := func(kind, key string) (bool, []target) { return true, []target{{kind, key}} }
 	switch {
 	case p == "/tradfi" || strings.HasPrefix(p, "/tradfi/"):
-		return true, "any", ""
-	case r.Method == http.MethodPost && p == "/spot/orders":
-		return true, "spot", peekField(r, "symbol")
-	case r.Method == http.MethodPost && p == "/futures/orders":
-		return true, "futures", peekField(r, "symbol")
+		return one("any", "")
+	case post && p == "/spot/orders":
+		return one("spot", peekField(r, "symbol"))
+	case post && p == "/futures/orders":
+		return one("futures", peekField(r, "symbol"))
 	case r.Method == http.MethodGet && p == "/wallet/deposit/address":
-		return true, "asset", strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("asset")))
-	case r.Method == http.MethodPost && p == "/wallet/withdraw":
-		return true, "asset", peekField(r, "asset")
+		return one("asset", strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("asset"))))
+	case post && p == "/wallet/withdraw":
+		return one("asset", peekField(r, "asset"))
+	// Entry paths beyond direct orders (stop / close / cancel stay open).
+	case post && p == "/strategy/grid":
+		return one("spot", peekField(r, "symbol"))
+	case post && strings.HasPrefix(p, "/strategy/grid/square/") && strings.HasSuffix(p, "/copy"):
+		return one("gridCopy", strings.TrimSuffix(strings.TrimPrefix(p, "/strategy/grid/square/"), "/copy"))
+	case post && p == "/convert/quote":
+		return true, []target{{"asset", peekField(r, "from")}, {"asset", peekField(r, "to")}}
+	case post && p == "/convert/accept":
+		return one("convertQuote", peekRaw(r, "quoteId"))
+	case post && (p == "/assets/transfer" || p == "/sub-accounts/transfer"):
+		return one("asset", peekField(r, "asset"))
 	}
-	return false, "", ""
+	return false, nil
+}
+
+// resolve turns lookup targets into instrument targets. found=false means the
+// referenced object does not exist (upstream answers 404 itself).
+func (t *tradfiGuard) resolve(ctx context.Context, tg target) (out []target, found bool, err error) {
+	switch tg.kind {
+	case "gridCopy":
+		var b struct {
+			Symbol string `json:"symbol"`
+		}
+		code, err := t.lookup(ctx, t.strategyURL+"/internal/strategy/grid/"+url.PathEscape(tg.key)+"/symbol", &b)
+		if code == http.StatusNotFound {
+			return nil, false, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		return []target{{"spot", strings.ToUpper(b.Symbol)}}, true, nil
+	case "convertQuote":
+		var q struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}
+		code, err := t.lookup(ctx, t.assetURL+"/internal/convert/quotes/"+url.PathEscape(tg.key), &q)
+		if code == http.StatusNotFound {
+			return nil, false, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		return []target{{"asset", strings.ToUpper(q.From)}, {"asset", strings.ToUpper(q.To)}}, true, nil
+	}
+	return []target{tg}, true, nil
+}
+
+func writeUnavailable(w http.ResponseWriter) {
+	common.WriteError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "服务暂不可用，请稍后重试")
 }
 
 // check returns false after writing the error response.
 func (t *tradfiGuard) check(w http.ResponseWriter, r *http.Request) bool {
-	gated, kind, key := classify(r)
+	gated, raw := classify(r)
 	if !gated {
 		return true
 	}
-	if kind != "any" && key == "" {
-		return true // upstream validates the missing field
+	var targets []target
+	for _, tg := range raw {
+		if tg.kind != "any" && tg.key == "" {
+			continue // upstream validates the missing field
+		}
+		rs, found, err := t.resolve(r.Context(), tg)
+		if err != nil {
+			writeUnavailable(w) // cannot tell whether it is TradFi: fail closed
+			return false
+		}
+		if found {
+			targets = append(targets, rs...)
+		}
+	}
+	if len(targets) == 0 {
+		return true
 	}
 	g, err := t.snapshot(r.Context())
 	if err != nil {
 		// No gate ever loaded: fail closed for the seeded TradFi instruments
 		// only, so crypto trading does not depend on market-data being up.
-		if kind == "any" || seededTradFi[key] {
-			common.WriteError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "服务暂不可用，请稍后重试")
-			return false
+		for _, tg := range targets {
+			if tg.kind == "any" || seededTradFi[tg.key] {
+				writeUnavailable(w)
+				return false
+			}
 		}
 		return true
 	}
-	var flag string
-	switch kind {
-	case "any":
-		if !g.Features["tokenizedStocks"] && !g.Features["metals"] {
-			common.WriteError(w, http.StatusForbidden, "FEATURE_DISABLED", "该功能暂未开放")
-			return false
+	hit := false
+	for _, tg := range targets {
+		var flag string
+		switch tg.kind {
+		case "any":
+			if !g.Features["tokenizedStocks"] && !g.Features["metals"] {
+				common.WriteError(w, http.StatusForbidden, "FEATURE_DISABLED", "该功能暂未开放")
+				return false
+			}
+			hit = true
+			continue
+		case "spot":
+			flag = g.SpotSymbols[tg.key]
+		case "futures":
+			flag = g.FuturesSymbols[tg.key]
+		case "asset":
+			flag = g.Assets[tg.key]
 		}
-	case "spot":
-		flag = g.SpotSymbols[key]
-	case "futures":
-		flag = g.FuturesSymbols[key]
-	case "asset":
-		flag = g.Assets[key]
-	}
-	if kind != "any" {
 		if flag == "" {
-			return true // not a TradFi instrument
+			continue // not a TradFi instrument
 		}
 		if !g.Features[flag] {
 			common.WriteError(w, http.StatusForbidden, "FEATURE_DISABLED", "该功能暂未开放")
 			return false
 		}
+		hit = true
+	}
+	if !hit {
+		return true
 	}
 	restricted := map[string]bool{}
 	for _, c := range g.RestrictedCountries {
@@ -214,7 +326,7 @@ func (t *tradfiGuard) check(w http.ResponseWriter, r *http.Request) bool {
 	if uid := r.Header.Get("X-User-Id"); uid != "" {
 		c, err := t.kycCountry(r.Context(), uid)
 		if err != nil {
-			common.WriteError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "服务暂不可用，请稍后重试")
+			writeUnavailable(w)
 			return false
 		}
 		if c != "" && restricted[c] {

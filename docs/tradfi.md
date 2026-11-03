@@ -27,7 +27,16 @@
 `CF-IPCountry` 或用户最新 KYC 申请的国家（ISO-2）在受限列表 → `403 REGION_RESTRICTED`；开关关闭 → `403 FEATURE_DISABLED`；
 门禁数据不可用 → TradFi 请求 `503 SERVICE_UNAVAILABLE`（fail closed，加密货币请求不受影响）。
 拦截范围：`/tradfi/*`、`POST /spot/orders`、`POST /futures/orders`（TradFi 标的）、`GET /wallet/deposit/address`、`POST /wallet/withdraw`（TradFi 资产）。
-撤单、平仓不拦截（已持仓用户可以退出）。策略 / 网格 / 闪兑 / 跟单路径目前**未**拦截（TradFi 标的不在这些产品中配置即可）。
+撤单、平仓不拦截（已持仓用户可以退出）。
+
+扩展拦截（同一套 FEATURE_DISABLED / REGION_RESTRICTED / fail-closed 规则）：
+- `POST /strategy/grid`（`symbol`）网格创建；`POST /strategy/grid/square/{id}/copy` 复制网格——网关通过 strategy `GET /internal/strategy/grid/{id}/symbol`（X-Internal-Token）取源策略标的，查询失败 → 503，策略不存在 → 放行由上游 404。
+- `POST /convert/quote`（`from`、`to` 任一为 TradFi 资产）；`POST /convert/accept`（`quoteId`）——网关查 asset `GET /internal/convert/quotes/{id}` 取报价两端资产。**该内部接口需随 feat/convert 合并时在 asset 服务补上**（返回 `{from,to}`，不存在 404）；未部署前 404 视为未知报价放行，此时仅靠 quote 阶段拦截（报价 TTL 内的开关变更为残余风险）。
+- `POST /assets/transfer`、`POST /sub-accounts/transfer`（`asset`）账户间 / 子账户划转。`POST /futures/transfer` 仅 USDT，不涉及。
+- 跟单：镜像开仓在 futures 服务内部发生，网关看不到。futures 在为跟随者开 / 加 TradFi 永续（XAG、WTI 等，以 market-data 门禁的 `futuresSymbols` 为准）前检查开关与跟随者 KYC 国家（futures 需配置 `KYC_URL`），不通过则记一条 `skipped` 跟单记录（reason `FEATURE_DISABLED` / `REGION_RESTRICTED` / `TRADFI_UNAVAILABLE`）。带单员自己的下单已在 `POST /futures/orders` 拦截。跟随 / 申请带单本身不拦截（与标的无关）。
+- 网关 TradFi 检查在路由匹配之前执行，`/convert`、`/sub-accounts` 在本分支尚无路由，合并后即生效。
+
+始终放行（退出路径）：撤单、平仓 / 减仓、`POST /strategy/grid/{id}/stop`、`DELETE /futures/copy/follows/{id}`、`POST /futures/copy/trader/close`、跟单镜像的减仓 / 平仓。
 
 **部署前提**：`CF-IPCountry` 只有在源站只允许 Cloudflare 回源时才可信。
 
