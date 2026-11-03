@@ -31,7 +31,7 @@ function Shell({ title, sw, children }: { title: string; sw?: [string, string]; 
           <h2>{title}</h2>
           {sw && (
             <Link to={sw[0]} className="sw">
-              ⇄ {sw[1]}
+              <G n="swap" s={14} /> {sw[1]}
             </Link>
           )}
         </div>

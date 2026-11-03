@@ -319,3 +319,5 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 .hdr .dd.wide .ddcols{height:auto!important;max-height:none!important}
 
 .pgdoc{display:grid;gap:16px;margin:24px 0}.pgdoc ul{margin:8px 0 0;padding-left:18px;color:var(--lb-text-2);line-height:1.9;font-size:14px}.pgt{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}.pgt th{text-align:left;color:var(--lb-text-2);font-weight:500;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08)}.pgt td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05)}
+
+.klg .kdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#6b6f70;margin-right:6px;vertical-align:1px}.klg .kdot.on{background:#abe127}.side span svg,.kbtn svg{display:block}
