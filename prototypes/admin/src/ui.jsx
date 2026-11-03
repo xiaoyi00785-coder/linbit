@@ -96,16 +96,27 @@ export function Donut({ parts, size = 150 }) {
 }
 
 /** 资金类二次确认：展示变更摘要 + 2FA + 原因，确认后 say() */
-export function Confirm({ title, danger, rows = [], note, onClose, onOk, okText = '确认' }) {
-  const { say } = useApp(); const [code, setCode] = useState('')
+export function Confirm({ title, danger, rows = [], note, onClose, onOk, okText = '确认', reasonLabel = '操作原因', children, noCode, noReason }) {
+  const { say } = useApp(); const [code, setCode] = useState(''); const [reason, setReason] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false)
+  const ok = async () => { if (!onOk) { say('已提交'); onClose(); return } setBusy(true); setErr('')
+    try { const m = await onOk({ totpCode: code, reason, comment: reason }); say(m || '已提交'); onClose() } catch (e) { setErr((e && e.message) || String(e)) } finally { setBusy(false) } }
   return <Modal title={title} onClose={onClose} footer={<><button className="btn" onClick={onClose}>取消</button>
-    <button className={'btn ' + (danger ? 'd' : 'p')} disabled={code.length < 6} onClick={() => { onOk ? onOk() : say('已提交'); onClose() }}>{okText}</button></>}>
-    <div className={'banner' + (danger ? ' bad' : '')}>涉及真实资金：操作写入审计日志，需 Google 验证码；≥ 5,000 USDT 需第二人复核。</div>
+    <button className={'btn ' + (danger ? 'd' : 'p')} disabled={(!noCode && code.length < 6) || (!noReason && !reason.trim()) || busy} onClick={ok}>{busy ? '提交中…' : okText}</button></>}>
+    <div className={'banner' + (danger ? ' bad' : '')}>操作将写入审计日志{noCode ? '' : '，需 Google 验证码'}。</div>
+    {err && <div className="banner bad">{err}</div>}
     {rows.length > 0 && <dl className="kv">{rows.flatMap(([a, b]) => [<dt key={a}>{a}</dt>, <dd key={a + 'v'}>{b}</dd>])}</dl>}
+    {children}
     {note && <div className="muted" style={{ margin: '8px 0' }}>{note}</div>}
-    <div className="fr"><label>Google 验证码</label><input className="in" placeholder="6 位动态码" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></div>
-    <div className="fr"><label>操作原因</label><input className="in" placeholder="必填" /></div></Modal>
+    {!noCode && <div className="fr"><label>Google 验证码</label><input className="in" placeholder="6 位动态码" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></div>}
+    {!noReason && <div className="fr"><label>{reasonLabel}</label><input className="in" placeholder="必填" value={reason} onChange={e => setReason(e.target.value)} /></div>}</Modal>
 }
+/** 接口状态：加载 / 错误（含重试） */
+export function ApiState({ q, children }) {
+  if (q.loading && !q.data) return <Skeleton />
+  if (q.error) return <div className="card pad"><div className="banner bad">加载失败：{q.error.message}{q.error.code ? ` (${q.error.code})` : ''}</div><button className="btn" onClick={q.reload}>重试</button></div>
+  return children
+}
+export const DemoBadge = () => <Tag k="wn">演示数据 · 接口未提供</Tag>
 /** 加载骨架屏 */
 export const Skeleton = ({ rows = 6 }) => <div className="card pad">{Array.from({ length: rows }, (_, i) => <div key={i} className="skel" style={{ width: (60 + (i * 13) % 40) + '%' }} />)}</div>
 /** 空状态 */

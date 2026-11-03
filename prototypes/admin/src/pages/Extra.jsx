@@ -42,7 +42,7 @@ export function Liquidation() {
 
 /* 合伙人管理：4 档等级、上级 override、每日结算 */
 const TIERS = [['普通', '-', 30, 20], ['银牌', '≥ 5M', 40, 25], ['金牌', '≥ 20M', 45, 30], ['钻石', '≥ 50M', 50, 35]]
-export function Partners() {
+function PartnersDemo() {
   const [t, setT] = useState('全部'); const [cur, setCur] = useState(null); const [m, setM] = useState(null)
   const [rows, set] = useFilter(partners.filter(p => t === '全部' || p.status === t || p.tier === t), (r, f) => has(r.uid, f.k) || has(r.nick, f.k))
   return <><PageHead title="合伙人管理" desc="等级按直属下级近 30 日合约交易量自动评定 · 上级 override 10%（出自平台份额，最多 2 级）· 每日结算 · 终身有效 · 与普通邀请不叠加 · 跟单分润不计返佣"><a className="btn" href="#/rebate">返佣规则配置</a></PageHead>
@@ -62,7 +62,7 @@ export function Partners() {
 }
 
 /* 卡券管理 */
-export function Coupons() {
+function CouponsDemo() {
   const [m, setM] = useState(false); const { say } = useApp()
   return <><PageHead title="卡券管理" desc="手续费抵扣券（仅合约手续费，抵扣部分不计返佣）· 合约体验金（本金到期回收，盈利可提）· 现金券"><button className="btn p" onClick={() => setM(true)}>+ 新建卡券</button></PageHead>
     <div className="grid g4" style={{ marginBottom: 12 }}><Kpi l="发放中模板" v="4" /><Kpi l="本月已发放" v="$58,210" d="预算 $120,000" /><Kpi l="核销率" v="61.4%" up d="▲ 4.1%" /><Kpi l="风控拦截" v="38" d="同设备批量领取" up={false} /></div>
@@ -76,7 +76,7 @@ export function Coupons() {
 }
 
 /* 消息推送 */
-export function Notify() {
+function NotifyDemo() {
   const [m, setM] = useState(false); const { say } = useApp()
   return <><PageHead title="消息推送" desc="站内信 / 邮件 / App 推送；支持人群包、定时发送、多语言；交易与安全类通知由系统自动触发，不在此发送"><button className="btn p" onClick={() => setM(true)}>+ 新建推送</button></PageHead>
     <div className="grid g2" style={{ marginBottom: 12 }}><div className="card pad"><h3>系统自动通知（模板）</h3>{['登录新设备', '提现申请 / 到账', '充值到账', '强平预警（保证金率 80%）', '强平完成', '返佣每日结算', '跟单分润结算', 'KYC 结果'].map(x => <div className="rule" key={x}><Sw on />{x}<span className="sp" /><a className="btn g" style={{ marginLeft: 'auto' }}>编辑模板</a></div>)}</div>
@@ -89,3 +89,6 @@ export function Notify() {
       <textarea className="in" rows="4" placeholder="正文，支持 {nick} {uid} 变量" /><div className="fr" style={{ marginTop: 8 }}><label>发送时间</label><select className="sel"><option>立即</option><option>定时</option></select></div>
       <div className="banner" style={{ marginBottom: 0 }}>全量推送需运营负责人审核；禁止包含外部链接与收款地址。</div></Modal>}</>
 }
+
+// 已接入真实接口的版本见 Live.jsx；上面的 *Demo 保留为原型参考
+export { Partners, Coupons, Notify } from './Live.jsx'

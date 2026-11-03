@@ -87,7 +87,9 @@ var realNetDefaults = map[string]netDefaults{
 		testnetTokens: map[string]string{"USDT": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf:6"}},
 	"ERC20": {chain: chainkit.ChainEVM, native: "ETH", testRPC: "https://ethereum-sepolia-rpc.publicnode.com",
 		chainID: 11155111, mainChainID: 1, nativeAssetName: "ETH",
-		testnetTokens: map[string]string{"USDC": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238:6"}},
+		testnetTokens: map[string]string{"USDC": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238:6",
+			// Aave V3 Sepolia test USDT (mintable at app.aave.com testnet faucet).
+			"USDT": "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0:6"}},
 	"BEP20": {chain: chainkit.ChainEVM, native: "BNB", testRPC: "https://bsc-testnet-rpc.publicnode.com",
 		chainID: 97, mainChainID: 56,
 		testnetTokens: map[string]string{"USDT": "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd:18"}},

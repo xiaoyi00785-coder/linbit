@@ -178,9 +178,10 @@ func (k *Keystore) secpKey(c Chain, branch, index uint32) (*ExtKey, error) {
 }
 
 // solKey derives an ed25519 key with SLIP-10 (hardened only):
-// m/44'/501'/(branch*2^20+index)'/0'. Branch 1 index 0 is the hot wallet.
+// m/44'/501'/(branch*2^20+index)'/0'. Branch 0 = deposit, 1 = hot,
+// 2 = reserve (cold-from-HD). Branches 0..BranchReserve are allowed.
 func (k *Keystore) solKey(branch, index uint32) (ed25519.PrivateKey, error) {
-	if index >= 1<<20 || branch > 1 {
+	if index >= 1<<20 || branch > BranchReserve {
 		return nil, errors.New("keystore: sol index out of range")
 	}
 	mac := hmac.New(sha512.New, []byte("ed25519 seed"))

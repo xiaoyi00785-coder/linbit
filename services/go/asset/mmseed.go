@@ -30,9 +30,12 @@ var ErrSeedDisabled = errors.New("mm_testnet_seed disabled")
 // MMTestnetSeed credits amount of asset to userID's free balance as a virtual
 // testnet seed. Idempotent on ref.
 func (s *Store) MMTestnetSeed(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
-	if ok, _ := common.TestnetSeedAllowed(); !ok {
+	ok, why := common.TestnetSeedAllowed()
+	if !ok {
+		log.Printf("!!! REFUSED mm_testnet_seed user=%s asset=%s amount=%s: %s", userID, asset, amount, why)
 		return ErrSeedDisabled
 	}
+	log.Printf("!!! VIRTUAL (UNBACKED) mm_testnet_seed user=%s asset=%s amount=%s ref=%s — %s; excluded from solvency", userID, asset, amount, ref, why)
 	if amount.Sign() <= 0 || ref == "" {
 		return ErrInvalidAmount
 	}
