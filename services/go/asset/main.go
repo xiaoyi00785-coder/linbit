@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -35,6 +36,9 @@ func main() {
 	}
 
 	srv := NewServer(cfg, NewStore(db))
+	if err := srv.startConvertRisk(context.Background()); err != nil {
+		log.Fatalf("convert risk: %v", err)
+	}
 	addr := ":" + cfg.Port
 	log.Printf("asset service listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

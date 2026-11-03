@@ -22,6 +22,7 @@ servers:
   - url: https://api.linbit.example.com/v1
     description: 生产环境
 tags:
+  - { name: Convert, description: 闪兑 }
   - name: Auth
     description: 注册、登录、令牌刷新与登出
   - name: 2FA
@@ -1903,6 +1904,94 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /convert/pairs:
+    get:
+      tags: [Convert]
+      summary: 闪兑可兑换币对、限额与点差
+      operationId: getConvertPairs
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConvertPairs" }
+  /convert/quote:
+    post:
+      tags: [Convert]
+      summary: 闪兑询价（报价 10 秒有效）
+      operationId: createConvertQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConvertQuoteRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConvertQuote" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: PRICE_UNAVAILABLE（无指数价格或价格过期）；PAIR_PAUSED_DEPEG（USDC 偏离 1 超过 depegBps，USDC↔USDT 自动暂停；价格缺失/过期同样视为暂停）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /convert/accept:
+    post:
+      tags: [Convert]
+      summary: 确认闪兑（原子、幂等；同一 quoteId 重复提交返回同一订单 replay=true）
+      operationId: acceptConvertQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quoteId]
+              properties: { quoteId: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/ConvertOrder" }
+                  replay: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: QUOTE_EXPIRED
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /convert/orders:
+    get:
+      tags: [Convert]
+      summary: 闪兑历史（分页）
+      operationId: listConvertOrders
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: asset, in: query, required: false, description: 按币种过滤（from 或 to）, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConvertOrder" } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /loans/market:
     get:
       tags: [Loans]
@@ -2155,6 +2244,73 @@ components:
             requestId: req_404demo
 
   schemas:
+    ConvertPairs:
+      type: object
+      properties:
+        assets:
+          type: array
+          items:
+            type: object
+            properties: { asset: { type: string }, precision: { type: integer }, enabled: { type: boolean } }
+        pairs:
+          type: array
+          items:
+            type: object
+            properties:
+              from: { type: string }
+              to: { type: string }
+              fromPrecision: { type: integer }
+              toPrecision: { type: integer }
+              spreadBps: { type: integer }
+              route: { type: string, enum: [direct, via_usdt, stable] }
+              paused: { type: boolean, description: 仅 USDC↔USDT 出现；true 表示脱锚保护暂停中 }
+              pauseReason: { type: string, enum: [depeg, price_unavailable], description: paused=true 时的原因 }
+        minUsdt: { type: string, example: "10" }
+        maxUsdt: { type: string, example: "50000" }
+        spreadBps: { type: integer, example: 20 }
+        fee: { type: string, example: "0" }
+        quoteTtlSeconds: { type: integer, example: 10 }
+    ConvertQuoteRequest:
+      type: object
+      required: [from, to]
+      description: fromAmount 与 toAmount 二选一
+      properties:
+        from: { type: string, example: USDT }
+        to: { type: string, example: BTC }
+        fromAmount: { type: string, example: "1000" }
+        toAmount: { type: string }
+    ConvertQuote:
+      type: object
+      properties:
+        quoteId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        fromAmount: { type: string }
+        toAmount: { type: string }
+        rate: { type: string, description: 1 from = rate to（已含点差） }
+        inverseRate: { type: string }
+        indexRate: { type: string, description: 不含点差的指数汇率 }
+        spreadBps: { type: integer }
+        fee: { type: string, example: "0" }
+        feeAsset: { type: string }
+        expiresAt: { type: integer, format: int64, description: 毫秒时间戳 }
+        ttlSeconds: { type: integer }
+    ConvertOrder:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        quoteId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        fromAmount: { type: string }
+        toAmount: { type: string }
+        rate: { type: string }
+        indexRate: { type: string }
+        spreadBps: { type: integer }
+        fee: { type: string }
+        usdtValue: { type: string, description: 按成交时 USDT 估值 }
+        status: { type: string, example: filled }
+        createdAt: { type: integer, format: int64, description: 毫秒时间戳 }
     LoanMarket:
       type: object
       properties:
