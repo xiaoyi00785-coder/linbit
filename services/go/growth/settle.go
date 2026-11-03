@@ -20,7 +20,8 @@ import (
 //     The two never stack; only one level of invitees counts.
 //   - Override: the partner's own inviter, if an active partner, receives
 //     OverrideRate x the direct commission (platform-funded, not deducted
-//     from the sub-partner), up to OverrideDepth levels.
+//     from the sub-partner), up to OverrideDepth levels above
+//     the direct partner (default 2).
 //   - Copy-trading profit share is not a fee and never enters this pipeline.
 
 type commKey struct {
@@ -118,17 +119,8 @@ func (s *Server) computeCommissions(ctx context.Context, q queryer, cutoff time.
 				rate = t.FuturesRate
 			}
 			direct := add(commKey{inviter, uid, product, day}, t.Key, rate, base)
-			sub := inviter
-			for d := 0; d < s.cfg.OverrideDepth; d++ {
-				p, ok := parents[sub]
-				if !ok {
-					break
-				}
-				if _, active := tiers[p]; !active {
-					break
-				}
-				add(commKey{p, sub, "override", day}, tiers[p], s.cfg.OverrideRate, direct)
-				sub = p
+			for _, ov := range overrideChain(parents, tiers, inviter, s.cfg.OverrideDepth) {
+				add(commKey{ov.Ben, ov.Src, "override", day}, tiers[ov.Ben], s.cfg.OverrideRate, direct)
 			}
 			continue
 		}
@@ -263,4 +255,29 @@ func (s *Server) PayPending(ctx context.Context) (int, error) {
 		paid++
 	}
 	return paid, nil
+}
+
+type overrideHop struct{ Ben, Src string }
+
+// overrideChain walks up from the direct partner, returning at most depth
+// (beneficiary, source sub-partner) hops; it stops at the first inviter that
+// is missing or not an active partner. Every hop earns OverrideRate x the
+// DIRECT commission (platform-funded, not compounded).
+func overrideChain(parents map[string]string, tiers map[string]string, partner string, depth int) []overrideHop {
+	var out []overrideHop
+	sub := partner
+	seen := map[string]bool{partner: true}
+	for d := 0; d < depth; d++ {
+		p, ok := parents[sub]
+		if !ok || seen[p] {
+			break
+		}
+		if _, active := tiers[p]; !active {
+			break
+		}
+		out = append(out, overrideHop{p, sub})
+		seen[p] = true
+		sub = p
+	}
+	return out
 }

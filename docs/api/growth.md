@@ -46,8 +46,10 @@ Tiers (by directs' trailing-30-day futures notional, recomputed at each settleme
 Commission base = fee actually paid (minus trial-bonus and fee-coupon covered
 parts), in USDT. Spot fees in the base asset are valued at the fill price;
 only `GROWTH_USD_QUOTES` pairs count. Override: the partner's inviter, if an
-active partner, earns 10% of the direct commission (platform-funded, two
-levels in total). Settled daily at `GROWTH_SETTLE_HOUR_UTC` (16 = 00:00 UTC+8)
+active partner, earns 10% of the direct commission, and that partner's inviter
+likewise (platform-funded, at most 2 override levels above the direct partner;
+each is 10% of the direct commission, level 3+ earns nothing). `/partner/rules`
+returns `overrideDepth` (2) and `overrideLevels` (3, total incl. direct). Settled daily at `GROWTH_SETTLE_HOUR_UTC` (16 = 00:00 UTC+8)
 into the funding account (`ref growth_comm_<settlement>_<uid>`); valid for life.
 
 ## Referral (`/referral`)
@@ -107,7 +109,7 @@ Dev (account): `POST /internal/dev/account/bind-phone {uid, phone}`.
 | GROWTH_PARTNER_TIERS | normal:0:0.30:0.20,silver:5000000:0.40:0.25,gold:20000000:0.45:0.30,diamond:50000000:0.50:0.35 (key:minFutures30dVolume:futuresRate:spotRate) |
 | GROWTH_TIER_WINDOW_DAYS | 30 |
 | GROWTH_PARTNER_OVERRIDE_RATE | 0.10 |
-| GROWTH_PARTNER_OVERRIDE_DEPTH | 1 |
+| GROWTH_PARTNER_OVERRIDE_DEPTH | 2 (extra override levels above the direct partner; level 3+ earns nothing) |
 | GROWTH_PARTNER_AUTO_APPROVE | false |
 | GROWTH_REFERRAL_RATE | 0.10 |
 | GROWTH_REFERRAL_DAYS | 365 |
