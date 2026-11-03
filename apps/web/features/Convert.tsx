@@ -191,7 +191,7 @@ export function Convert() {
         </section>
       )}
       {confirm && quote && (
-        <div className="fx-modal" onClick={() => setConfirm(false)}>
+        <div className="fx-modal" aria-busy={busy} onClick={() => setConfirm(false)}>
           <div className="cv-modal" onClick={(e) => e.stopPropagation()}>
             <h3>确认兑换</h3>
             <div className="lrow"><span>支付</span><b><CoinIcon s={from} size={18} /> {quote.fromAmount} {from}</b></div>

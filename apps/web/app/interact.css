@@ -348,3 +348,5 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 .hdr nav a,.hdr nav .ni,.hdr .lb,.hdr .pill,.hdr button{white-space:nowrap}
 @media (max-width:1200px){.hdr{padding:0 16px}.hdr nav{gap:10px}.hdr nav a{font-size:14px}.hdr nav a em.caret{margin-left:2px}}
 @media (max-width:1200px){.hdr .hib{margin-left:4px}.hdr nav{gap:8px}}
+.fx-modal>div{position:relative}.fx-x{position:absolute;top:12px;right:14px;width:28px;height:28px;display:grid;place-items:center;border-radius:6px;cursor:pointer;color:#888;font-size:14px}.fx-x:hover{background:rgba(127,127,127,.15);color:inherit}
+@keyframes ovNudge{0%,100%{transform:none}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}.ov-nudge{animation:ovNudge .25s}

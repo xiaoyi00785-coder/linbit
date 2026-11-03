@@ -68,8 +68,9 @@ function SecModal({ kind, sec, onClose }: { kind: Kind; sec: SecurityOverview; o
   const pw = (k: string, ph: string, d = false) => <input type="password" inputMode={d ? "numeric" : undefined} maxLength={d ? 6 : 128} placeholder={ph} value={v(k)} onChange={set(k, d)} />;
   const oldLabel = kind === "email" ? (sec.email ? `原邮箱验证码（${sec.email}）` : "原联系方式验证码") : (sec.phone ? `原手机验证码（${sec.phone}）` : "原联系方式验证码");
   return (
-    <div className="fx-modal" onClick={onClose}>
+    <div className="fx-modal" data-dismissible="false" aria-busy={busy} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}>
+        <span className="fx-x" role="button" aria-label="关闭" onClick={onClose}>✕</span>
         <h3>{TITLE[kind]}</h3>
         {kind !== "phishing" && kind !== "passkey" && <div className="sec-lock"><b>!</b>为保障资产安全，修改后 {hours} 小时内将禁止提现和站内转出。</div>}
         {kind === "password" && <>

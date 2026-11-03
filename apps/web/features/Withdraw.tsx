@@ -31,6 +31,7 @@ const WLOCK = "安全设置变更后 24 小时内禁止提现";
 export function Withdraw() {
   const [coinOpen, setCoinOpen] = useState(false);
   const [asset, setAsset] = useState("USDT");
+  const [sending, setSending] = useState(false);
   const [net, setNet] = useState("TRC20");
   const [addr, setAddr] = useState("");
   const [memo, setMemo] = useState("");
@@ -250,8 +251,9 @@ export function Withdraw() {
         </div>
       </div>
       {confirm && (
-        <div className="fx-modal" onClick={() => setConfirm(false)}>
+        <div className="fx-modal" data-dismissible="false" aria-busy={sending} onClick={() => setConfirm(false)}>
           <div onClick={(e) => e.stopPropagation()}>
+            <span className="fx-x" role="button" aria-label="关闭" onClick={() => { if (!sending) setConfirm(false); }}>✕</span>
             <h3>安全验证</h3>
             <p className="lg">{tab === "inner" ? `站内转账 ${amt} ${asset} 至 ${to}，免手续费，实时到账` : `提现 ${amt} ${asset}（${net}），到账 ${receive} ${asset}`}</p>
             <div className="fx-field">
@@ -268,14 +270,17 @@ export function Withdraw() {
             {fpe === "unset" && <div className="tfa-req"><span><b>!</b>请先设置资金密码，设置后才能{tab === "inner" ? "转账" : "提现"}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>去设置</button></div>}
             {fpe && typeof fpe === "object" && <div className="tfa-req"><span><b>!</b>资金密码错误次数过多，已锁定{fpe.locked ? `至 ${fpe.locked}` : ""}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>重置资金密码</button></div>}
             <button
-              className="lb lime wide"
+              className={"lb lime wide" + (sending ? " dis" : "")}
+              disabled={sending}
               onClick={async () => {
+                if (sending) return;
                 if (totp.length !== 6) return setErr("请输入 6 位 2FA 动态码");
                 if (fpSet && fp.length !== 6) return setFpe("missing");
                 setTfa(null); setFpe(null);
                 const fpw = fp ? { fundPassword: fp } : {};
                 if (tab === "inner") {
-                  const r = await createInternalTransfer({ clientId: newClientId(), asset, amount: amt, totpCode: totp, ...fpw, ...(toKey === "email" ? { toEmail: to } : { toUid: to }) });
+                  setSending(true);
+                  const r = await createInternalTransfer({ clientId: newClientId(), asset, amount: amt, totpCode: totp, ...fpw, ...(toKey === "email" ? { toEmail: to } : { toUid: to }) }).finally(() => setSending(false));
                   const k = twofaKind(r);
                   if (fundErr(r)) return;
                   if (k === "invalid") { setTfa("invalid"); setTotp(""); return; }
@@ -285,7 +290,8 @@ export function Withdraw() {
                   else { const m = errMsg(r); setErr(m); if (m === SOON) toast(m, "info"); }
                   return;
                 }
-                const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp, ...fpw });
+                setSending(true);
+                const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp, ...fpw }).finally(() => setSending(false));
                 const k = twofaKind(r);
                 if (fundErr(r)) return;
                 if (k === "invalid") { setTfa("invalid"); setTotp(""); return; }

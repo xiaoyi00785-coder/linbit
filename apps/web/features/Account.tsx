@@ -213,8 +213,9 @@ export function AddressBook() {
         </div>
       </div>
       {pend && (
-        <div className="fx-modal" onClick={() => setPend(null)}>
+        <div className="fx-modal" data-dismissible="false" aria-busy={busy} onClick={() => setPend(null)}>
           <div onClick={(e) => e.stopPropagation()}>
+            <span className="fx-x" role="button" aria-label="关闭" onClick={() => setPend(null)}>✕</span>
             <h3>{title}</h3>
             {pend.kind === "add" && ([["label", "备注名"], ["asset", "币种"], ["network", "网络"], ["address", "地址"], ["memo", "Memo / Tag（选填）"]] as const).map(([k, l]) => (
               <label key={k} className="fx-field">{l}<input value={f[k]} onChange={(e) => setF({ ...f, [k]: k === "asset" || k === "network" ? e.target.value.trim().toUpperCase() : e.target.value.trim() })} /></label>
