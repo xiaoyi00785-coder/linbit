@@ -115,7 +115,7 @@ func LoadConfig() Config {
 		DayOffset:     time.Duration(common.EnvInt("GROWTH_DAY_UTC_OFFSET_HOURS", 8)) * time.Hour,
 		PayoutAsset:   strings.ToUpper(common.Env("GROWTH_PAYOUT_ASSET", "USDT")),
 		USDQuotes:     quotes,
-		InviteBaseURL: common.Env("GROWTH_INVITE_BASE_URL", "https://linbit.example.com/r/"),
+		InviteBaseURL: common.Env("GROWTH_INVITE_BASE_URL", "https://www.cowa.click/r/"),
 
 		Tiers:          tiers,
 		TierWindow:     time.Duration(common.EnvInt("GROWTH_TIER_WINDOW_DAYS", 30)) * 24 * time.Hour,

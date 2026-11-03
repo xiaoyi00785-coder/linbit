@@ -95,6 +95,20 @@ func (s *Server) Routes() http.Handler {
 	s.partnerRoutes(mux)
 	s.referralRoutes(mux)
 	s.extraRoutes(mux)
+	// Internal: a user's own invite code (account service enriches GET /account).
+	mux.HandleFunc("GET /internal/growth/invite-code", s.internal(func(w http.ResponseWriter, r *http.Request) {
+		uid := r.URL.Query().Get("uid")
+		if uid == "" {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "uid required")
+			return
+		}
+		code, err := s.inviteCode(r.Context(), uid)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		common.WriteJSON(w, http.StatusOK, map[string]any{"uid": uid, "code": code})
+	}))
 	mux.HandleFunc("POST /internal/dev/growth/sync", s.dev(func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Sync(r.Context()); err != nil {
 			writeErr(w, err)

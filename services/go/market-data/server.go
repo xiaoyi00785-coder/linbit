@@ -45,6 +45,7 @@ func (s *Server) Routes() http.Handler {
 
 	s.homeInternalRoutes(mux)
 	s.chatRoutes(mux)
+	s.porRoutes(mux)
 	s.tradfiRoutes(mux)
 
 	mux.HandleFunc("GET /ws", s.hub.ServeHTTP)

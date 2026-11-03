@@ -21,7 +21,20 @@ func (a *Aggregator) BackfillIndex(ctx context.Context, base string) {
 		return
 	}
 	base = strings.TrimRight(base, "/")
+	// Only symbols Binance spot actually lists (TradFi stocks/metals such as
+	// AAPLUSDT / XAUUSDT are not), so we don't spam 400 Invalid symbol logs.
+	// If the listing can't be fetched, fall back to trying every symbol.
+	c, cancel := context.WithTimeout(ctx, 10*time.Second)
+	listed, lerr := fetchBinance(c, base)
+	cancel()
+	var skipped []string
 	for _, sym := range a.TrackedSymbols() {
+		if lerr == nil {
+			if _, ok := listed[sym]; !ok {
+				skipped = append(skipped, sym)
+				continue
+			}
+		}
 		for _, iv := range Intervals {
 			url := fmt.Sprintf("%s/api/v3/klines?symbol=%s&interval=%s&limit=1000", base, sym, iv.Name)
 			var rows [][]json.RawMessage
@@ -35,6 +48,9 @@ func (a *Aggregator) BackfillIndex(ctx context.Context, base string) {
 			candles := parseBinanceKlines(rows)
 			a.mergeIndexHistory(sym, iv.Name, candles)
 		}
+	}
+	if len(skipped) > 0 {
+		log.Printf("index backfill: skipped %d symbols not listed on Binance spot: %s", len(skipped), strings.Join(skipped, ","))
 	}
 }
 

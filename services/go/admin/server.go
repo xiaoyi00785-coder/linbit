@@ -156,6 +156,7 @@ func (s *Server) Routes() http.Handler {
 	a("GET /admin/v1/convert/events", permLedgerView, s.handleAssetGet("/internal/convert/events", []string{"kind", "page", "pageSize"}))
 	s.registerHomeRoutes(a)
 	s.registerChatRoutes(a)
+	s.registerPorRoutes(a)
 	s.registerEventRoutes(a)
 	s.registerTradFiRoutes(a)
 
