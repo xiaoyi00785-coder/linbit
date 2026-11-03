@@ -4,6 +4,13 @@ import { Link } from "@/lib/router";
 import { useBalances } from "@/lib/queries";
 import { getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type Withdrawal } from "@/lib/services";
 import { Src } from "./common";
+// @ts-ignore legacy JS 组件
+import { Ico } from "@/legacy/App";
+// @ts-ignore
+import { coins } from "@/legacy/data";
+
+const coinOf = (s: string) => (coins as { s: string; col: string }[]).find((x) => x.s === s) ?? { col: "var(--lb-usdt)", s };
+
 
 const ASSETS = ["USDT", "BTC", "ETH"];
 const NETS: Record<string, string[]> = {
@@ -14,6 +21,7 @@ const NETS: Record<string, string[]> = {
 
 /** 提现：币种 → 网络 → 地址/memo/数量（最小额、链上网络费来自配置接口，平台不收提现手续费）→ 2FA 确认 */
 export function Withdraw() {
+  const [coinOpen, setCoinOpen] = useState(false);
   const [asset, setAsset] = useState("USDT");
   const [net, setNet] = useState("TRC20");
   const [addr, setAddr] = useState("");
@@ -68,9 +76,21 @@ export function Withdraw() {
           <div className="lcard">
             <div className="fx-field">
               币种
-              <select value={asset} onChange={(e) => { setAsset(e.target.value); setNet(NETS[e.target.value][0]); }}>
-                {ASSETS.map((a) => <option key={a}>{a}</option>)}
-              </select>
+              <div className="lsel big2" onClick={() => setCoinOpen(!coinOpen)}>
+                <Ico c={coinOf(asset)} s={20} /> {asset} <em>▾</em>
+              </div>
+              {coinOpen && (
+                <div className="lmenu">
+                  {ASSETS.map((a) => (
+                    <a key={a} style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={() => { setAsset(a); setNet(NETS[a][0]); setCoinOpen(false); }}>
+                      <Ico c={coinOf(a)} s={18} /> {a}
+                    </a>
+                  ))}
+                </div>
+              )}
+              <div className="chips">
+                {ASSETS.map((a) => <span key={a} onClick={() => { setAsset(a); setNet(NETS[a][0]); }}>{a}</span>)}
+              </div>
             </div>
             <div className="fx-field">
               网络
