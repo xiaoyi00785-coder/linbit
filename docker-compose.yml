@@ -212,7 +212,7 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       DATA_DIR: /data
       SNAPSHOT_EVERY: "1000"
-      SYMBOLS: "BTCUSDT:6,ETHUSDT:5"
+      SYMBOLS: "BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1"
       # Stream trade/depth events to market-data (local pub/sub stand-in).
       EVENT_SINK_URL: http://market-data:8085/internal/events
     volumes:

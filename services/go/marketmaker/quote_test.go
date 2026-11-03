@@ -98,3 +98,15 @@ func TestPatchValidate(t *testing.T) {
 		t.Fatal("empty patch rejected")
 	}
 }
+
+func TestSeedQty(t *testing.T) {
+	for _, c := range []struct{ v, p, want string }{
+		{"1000000", "100000", "10"},
+		{"1000000", "3000", "333.33333333"},
+		{"1000000", "0.12345", "8100445.52450384"},
+	} {
+		if got := SeedQty(decimal.RequireFromString(c.v), decimal.RequireFromString(c.p)); got.String() != c.want {
+			t.Fatalf("SeedQty(%s,%s)=%s want %s", c.v, c.p, got, c.want)
+		}
+	}
+}

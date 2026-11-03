@@ -1294,6 +1294,30 @@ paths:
                   quantityPrecision: 5
                   minQuantity: "0.00100"
                   status: trading
+                  tags: [layer1]
+
+  /market/categories:
+    get:
+      tags: [Market]
+      summary: 行情分类标签（公链、贵金属…）
+      description: |
+        按 sort 排序。symbols 只包含当前已上线的现货交易对；暂无交易对的分类
+        （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
+        commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
+        layer2 Layer 2, ecosystem 生态。「全部」由前端自行处理。
+      operationId: listMarketCategories
+      security: []
+      responses:
+        "200":
+          description: 分类列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MarketCategory" }
+              example:
+                - { id: layer1, name: 公链, symbols: [BNBUSDT, BTCUSDT, ETHUSDT, SOLUSDT, TRXUSDT] }
+                - { id: metals, name: 贵金属, symbols: [] }
 
   /market/ticker:
     get:
@@ -2842,6 +2866,19 @@ components:
           type: string
           enum: [trading, halted, delisted]
           example: trading
+        tags:
+          type: array
+          items: { type: string }
+          description: 所属分类 id（见 /market/categories）
+          example: [layer1]
+
+    MarketCategory:
+      type: object
+      required: [id, name, symbols]
+      properties:
+        id: { type: string, example: layer1 }
+        name: { type: string, example: 公链 }
+        symbols: { type: array, items: { type: string }, example: [BTCUSDT, ETHUSDT] }
 
     Ticker:
       type: object

@@ -26,3 +26,26 @@
 - 每个币种：链上持有 ≥ 全部用户余额 + 做市余额（现货 + 合约保证金）− 测试网虚拟入账，否则 Telegram 告警「偿付对账失败」。
   任一数据源出错也视为失败。结果写入 `solvency_reports`。
 - Telegram：`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` 从环境变量读取，token 不写日志。
+
+## 测试网基础币虚拟注资（2026-11-03）
+
+`POST /admin/v1/mm/testnet-seed`（mm:edit + 2FA + 审计；仅 `common.TestnetSeedAllowed()`：
+WALLET_CHAIN=testnet，或非 production 的 mock；主网一律 403 SEED_DISABLED）。
+
+- `{"ref":"r1"}`：注入 `MM_SEED_AMOUNT` USDT（原行为）。
+- `{"ref":"base-1103","assets":["BTC","ETH","SOL"],"usdtValue":"1000000"}`：每个币按当时
+  `/market/index?symbol=<A>USDT` 折算数量（截断 8 位），usdtValue 默认 `MM_SEED_BASE_USDT=1000000`；
+  也可用 `"amounts":{"BTC":"10"}` 指定固定数量。允许的币：`MM_SEED_BASE_ASSETS`（默认 BTC,ETH,SOL,BNB,TRX）。
+- 幂等键按币：`mm_testnet_seed:<ref>:<ASSET>`，重放返回 `already_applied`。
+- 返回 `{txType, usdtValue, items:[{asset, amount, indexPrice, status: ok|already_applied|failed, error}]}`。
+- asset 的 `MM_SEED_MAX`（默认 10,000,000）按**数量**限制单笔，TRX 如需注资可能需调高。
+- 偿付能力：`/internal/solvency/liabilities` 每币 `virtualSeed` = 该币全部 mm_testnet_seed 之和，已从 required 中扣除。
+
+合约账户资金：`POST /admin/v1/mm/futures-transfer {"direction":"in","amount":"3000000","reason":"…","totpCode":"…"}`
+把做市账户现货 USDT 转入合约账户（out 反向）。
+
+## 现货 SOLUSDT / BNBUSDT / TRXUSDT
+
+order 迁移 00003 新增三个交易对（TRX 价格 5 位小数、数量整数），marketmaker 迁移 00002 预置各自参数，
+撮合引擎 `SYMBOLS` 追加 `SOLUSDT:3,BNBUSDT:3,TRXUSDT:1`（只能追加，顺序决定成交 id 命名空间）。
+指数价自动来自 Binance `SOLUSDT` 等 / OKX `SOL-USDT` 等全量 ticker，无需映射配置。

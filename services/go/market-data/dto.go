@@ -55,13 +55,14 @@ type tradeDTO struct {
 
 // symbolDTO is a trading pair (openapi Symbol).
 type symbolDTO struct {
-	Symbol            string  `json:"symbol"`
-	Base              string  `json:"base"`
-	Quote             string  `json:"quote"`
-	PricePrecision    int     `json:"pricePrecision"`
-	QuantityPrecision int     `json:"quantityPrecision"`
-	MinQuantity       *string `json:"minQuantity,omitempty"`
-	Status            string  `json:"status"`
+	Symbol            string   `json:"symbol"`
+	Base              string   `json:"base"`
+	Quote             string   `json:"quote"`
+	PricePrecision    int      `json:"pricePrecision"`
+	QuantityPrecision int      `json:"quantityPrecision"`
+	MinQuantity       *string  `json:"minQuantity,omitempty"`
+	Status            string   `json:"status"`
+	Tags              []string `json:"tags"` // market_categories ids containing this symbol
 }
 
 func toRESTKline(c Candle) restKline {

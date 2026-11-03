@@ -123,6 +123,20 @@ R="$(internal "$ASSET_URL" POST /internal/mm/testnet-seed "{\"userId\":\"$MM\",\
 L="$(A "$SA" GET "/admin/v1/audit-logs?module=mm&action=testnet_seed")"
 [ "$(jq '[.items[] | select(.result=="ok")] | length' <<<"$L")" -ge 2 ] || fail "seed audit: $L"
 pass "2FA required; 10,000,000 USDT credited once (idempotent ref); non-MM / over-cap refused; audited"
+say "virtual base-asset seed set (index-priced, per-asset idempotent)"
+idx "{\"symbol\":\"SOLUSDT\",\"price\":\"150\"}"
+fresh; R="$(A "$SA" POST /admin/v1/mm/testnet-seed "{\"ref\":\"b1-$TS\",\"assets\":[\"SOL\",\"DOGE\"],\"usdtValue\":\"1000000\",\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+SOLQ="$(jq -r '.items[] | select(.asset=="SOL") | .amount' <<<"$R")"; SOLP="$(jq -r '.items[] | select(.asset=="SOL") | .indexPrice' <<<"$R")"
+[ "$(jq -r '.items[] | select(.asset=="SOL") | .status' <<<"$R")" = ok ] || fail "base seed SOL: $R"
+[ "$(jq -r '.items[] | select(.asset=="DOGE") | .error' <<<"$R")" = ASSET_NOT_ALLOWED ] || fail "base seed DOGE allowed: $R"
+python3 -c "import sys; v=float('$SOLQ')*float('$SOLP'); sys.exit(0 if abs(v-1e6)<1 else 1)" || fail "SOL qty*index != 1e6: $SOLQ x $SOLP"
+fresh; R="$(A "$SA" POST /admin/v1/mm/testnet-seed "{\"ref\":\"b1-$TS\",\"assets\":[\"SOL\"],\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r '.items[0].status' <<<"$R")" = already_applied ] || fail "base seed replay: $R"
+B="$(internal "$ASSET_URL" GET "/internal/balances?userId=$MM")"
+eq "$(jq -r '.items[] | select(.asset=="SOL") | .total' <<<"$B")" "$SOLQ" "MM SOL after seed"
+LB="$(internal "$ASSET_URL" GET /internal/solvency/liabilities)"
+eq "$(jq -r '.items[] | select(.asset=="SOL") | .virtualSeed' <<<"$LB")" "$SOLQ" "SOL virtualSeed"
+pass "SOL ~1,000,000 USDT at index $SOLP (= $SOLQ SOL), replay already_applied, DOGE refused, virtualSeed tracked"
 # give the MM some base so spot quotes both sides (unbacked on purpose -> solvency shortfall below)
 credit "$MM" BTC 1
 

@@ -33,6 +33,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 
 	mux.HandleFunc("GET /market/symbols", s.handleSymbols)
+	mux.HandleFunc("GET /market/categories", s.handleCategories)
 	mux.HandleFunc("GET /market/ticker", s.handleTicker)
 	mux.HandleFunc("GET /market/depth", s.handleDepth)
 	mux.HandleFunc("GET /market/klines", s.handleKlines)
@@ -56,6 +57,16 @@ func (s *Server) handleSymbols(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
+	tags := map[string][]string{}
+	if cats, err := s.store.Categories(r.Context()); err == nil {
+		for _, c := range cats {
+			for _, sym := range c.Symbols {
+				tags[sym] = append(tags[sym], c.ID)
+			}
+		}
+	} else {
+		log.Printf("symbols: categories: %v", err)
+	}
 	out := make([]symbolDTO, 0, len(infos))
 	for _, si := range infos {
 		d := symbolDTO{
@@ -65,12 +76,49 @@ func (s *Server) handleSymbols(w http.ResponseWriter, r *http.Request) {
 			PricePrecision:    si.PricePrecision,
 			QuantityPrecision: si.QuantityPrecision,
 			Status:            si.Status,
+			Tags:              tags[si.Symbol],
+		}
+		if d.Tags == nil {
+			d.Tags = []string{}
 		}
 		mq := si.MinQuantity.String()
 		d.MinQuantity = &mq
 		out = append(out, d)
 	}
 	common.WriteJSON(w, http.StatusOK, out)
+}
+
+// handleCategories: GET /market/categories -> [{id,name,symbols}], symbols
+// limited to currently listed spot pairs; empty categories keep [].
+func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := s.store.Categories(r.Context())
+	if err != nil {
+		log.Printf("categories: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	listed := map[string]bool{}
+	if infos, err := s.store.Symbols(r.Context()); err == nil {
+		for _, si := range infos {
+			listed[si.Symbol] = true
+		}
+	}
+	common.WriteJSON(w, http.StatusOK, filterCategories(cats, listed))
+}
+
+// filterCategories drops symbols that are not listed (pure; unit tested).
+func filterCategories(cats []Category, listed map[string]bool) []Category {
+	out := make([]Category, 0, len(cats))
+	for _, c := range cats {
+		keep := []string{}
+		for _, sym := range c.Symbols {
+			if listed[sym] {
+				keep = append(keep, sym)
+			}
+		}
+		out = append(out, Category{ID: c.ID, Name: c.Name, Symbols: keep})
+	}
+	return out
 }
 
 func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
