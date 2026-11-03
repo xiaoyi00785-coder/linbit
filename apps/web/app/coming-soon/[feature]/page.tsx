@@ -1,13 +1,16 @@
 "use client";
 import { G } from "@/components/Glyph";
 import { useParams, useRouter } from "next/navigation";
-import { SOON, bySlug } from "@/lib/features";
+import { useEffect } from "react";
+import { SOON, LIVE, bySlug, isOn, loadFeatures } from "@/lib/features";
 
 export default function ComingSoon() {
   const { feature } = useParams<{ feature: string }>();
   const r = useRouter();
   const k = bySlug(feature);
   const it = k ? SOON[k] : { name: decodeURIComponent(feature || ""), intro: "该功能即将上线，敬请期待。", icon: "◇" };
+  // 功能已开启 ⇒ 跳转真实页面
+  useEffect(() => { if (k) loadFeatures().then(() => { if (isOn(k) && LIVE[k]) r.replace(LIVE[k]!); }); }, [k, r]);
   const back = () => (typeof window !== "undefined" && window.history.length > 1 && document.referrer.startsWith(location.origin) ? r.back() : r.push("/"));
   return (
     <main className="cs-wrap">
