@@ -242,7 +242,7 @@ BAL="$(balance_of "$TOKEN" "$ASSET")"
 ok "blocked with 403; no freeze applied"
 
 say "11/11 final balances and ledger agree (decimal-exact)"
-BALS="$(api GET /assets/balances "$TOKEN")"
+BALS="$(api GET "/assets/balances?account=funding" "$TOKEN")"
 FINAL="$(printf '%s' "$BALS" | jq -r --arg a "$ASSET" '.items[] | select(.asset==$a) | .free')"
 LOCKED="$(printf '%s' "$BALS" | jq -r --arg a "$ASSET" '.items[] | select(.asset==$a) | .locked')"
 [ "$(norm8 "$FINAL")" = "10400.00000000" ] || fail "final free = $FINAL, want 10400"
