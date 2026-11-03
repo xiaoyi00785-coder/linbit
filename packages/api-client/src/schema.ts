@@ -305,6 +305,323 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 账户安全概览
+         * @description 2FA、邮箱/手机（脱敏）、资金密码、防钓鱼码、通行密钥数量、提现锁定状态、最近登录设备及当前安全策略。
+         */
+        get: operations["getSecurityOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/password/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 修改登录密码（原密码 + 2FA/验证码，默认注销其他会话）
+         * @description 已开启 2FA 时需 totpCode；否则需 code（POST /account/code/send purpose=security）。
+         *     成功后撤销除当前设备外的全部会话，并触发提现锁定（默认 24 小时）与安全通知邮件。
+         *     错误码：OLD_PASSWORD_INVALID、PASSWORD_UNCHANGED、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、AUTH_CODE_INVALID。
+         */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/contact/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 向新邮箱/手机发送绑定验证码（purpose=bind_new）
+         * @description 传 email 或 phone(+countryCode)。短信不可用时返回 503 SMS_UNAVAILABLE；已被他人使用返回 409 EMAIL_EXISTS/PHONE_EXISTS。
+         */
+        post: operations["sendContactCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改/绑定邮箱（新旧双重验证）
+         * @description newCode：发到新邮箱的验证码（/account/contact/code）；oldCode：发到原邮箱（未绑邮箱时为现有联系方式）的验证码
+         *     （/account/code/send purpose=security）；已开启 2FA 时另需 totpCode。成功后触发提现锁定与安全通知。
+         */
+        put: operations["changeEmail"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/phone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改/绑定手机（新旧双重验证）
+         * @description 同 /account/email，传 phone + countryCode。短信不可用时 503 SMS_UNAVAILABLE。
+         */
+        put: operations["changePhone"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/fund-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改资金密码（需原资金密码 + 2FA/验证码）
+         * @description 原资金密码连续错误达上限（默认 5 次）锁定（423 FUND_PASSWORD_LOCKED，含 lockedUntil）。成功后触发提现锁定。
+         */
+        put: operations["changeFundPassword"];
+        /**
+         * 设置资金密码（6 位数字，首次）
+         * @description 需 2FA 或 code(purpose=security)。已设置返回 409 FUND_PASSWORD_EXISTS。
+         */
+        post: operations["setFundPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/fund-password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重置资金密码（忘记时，2FA/验证码，清除锁定） */
+        post: operations["resetFundPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/anti-phishing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 设置/修改防钓鱼码（4-20 位字母数字，显示在平台所有外发邮件开头） */
+        put: operations["setAntiPhishing"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出有效登录会话（refresh token） */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 注销指定会话 */
+        delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/sessions/revoke-others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 注销除当前设备外的全部会话 */
+        post: operations["revokeOtherSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出通行密钥（Passkey / WebAuthn） */
+        get: operations["listPasskeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys/register/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 开始注册通行密钥（需 2FA/验证码）
+         * @description 返回 publicKey（PublicKeyCredentialCreationOptions，二进制字段为 base64url）与 sessionId（5 分钟有效、一次性）。未启用时 503 PASSKEY_UNAVAILABLE。
+         */
+        post: operations["beginPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys/register/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 完成注册通行密钥 */
+        post: operations["finishPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除通行密钥 */
+        delete: operations["deletePasskey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkey/login/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 通行密钥登录：获取挑战（可发现凭据，无需用户名） */
+        post: operations["beginPasskeyLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkey/login/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 通行密钥登录：校验断言并签发令牌 */
+        post: operations["finishPasskeyLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/account/devices": {
         parameters: {
             query?: never;
@@ -389,7 +706,8 @@ export interface paths {
         delete: operations["deleteWithdrawAddress"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** 修改提现地址（label / memo / 白名单标记；需验证码或 2FA） */
+        patch: operations["updateWithdrawAddress"];
         trace?: never;
     };
     "/kyc": {
@@ -618,6 +936,9 @@ export interface paths {
          * @description Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
          *     amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
          *     未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
+         *     二次验证错误码拆分：TWOFA_REQUIRED(403，未提供/未绑定二次验证)、INVALID_TOTP(401，TOTP 或验证码错误)。
+         *     安全设置：WITHDRAW_LOCKED(403，近期修改密码/邮箱/手机/资金密码/关闭 2FA 后锁定，默认 24h)、
+         *     FUND_PASSWORD_REQUIRED/FUND_PASSWORD_INVALID(400)、FUND_PASSWORD_LOCKED(423)、FUND_PASSWORD_NOT_SET(403)。
          */
         post: operations["createWithdrawal"];
         delete?: never;
@@ -2846,6 +3167,1088 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/home/placements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 首页运营位（popup/splash/grid/carousel/promo_bar/search_hint），公开 */
+        get: operations["getHomePlacements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home/banners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 轮播图（= placements 的 carousel 槽位别名），公开 */
+        get: operations["getHomeBanners"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home/hot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 热门币种（置顶 + 成交额排序），公开 */
+        get: operations["getHomeHot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home/newcomer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 新人任务卡片；可匿名（带合法 Bearer 时返回个人进度） */
+        get: operations["getHomeNewcomer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/fiat-rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 法币汇率（USDT=1 USD），公开
+         * @description 免费 FX 源（FIAT_RATES_URLS 可配置，多源回退），缓存 10 分钟；失败时返回上次成功值（stale=true），从未成功则返回静态表（source=static, updatedAt=null）。
+         */
+        get: operations["getFiatRates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 功能开关，公开（缓存 30s） */
+        get: operations["getAppFeatures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 自选列表 */
+        get: operations["listFavorites"];
+        /** 整体替换自选（顺序即 sort，上限 200） */
+        put: operations["replaceFavorites"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/favorites/{symbol}": {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 添加自选（幂等；超过 200 返回 FAVORITES_LIMIT） */
+        put: operations["addFavorite"];
+        post?: never;
+        /** 删除自选（幂等） */
+        delete: operations["removeFavorite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 账户间划转（spot ⇄ futures），按 clientId 幂等，记入账本
+         * @description 复用 /futures/transfer 内部实现（旧接口保持可用）。earn 不是划转账户：理财为按产品的持仓并计息，请使用申购/赎回接口。
+         *     错误码：INSUFFICIENT_BALANCE、ACCOUNT_NOT_SUPPORTED（如 earn）、SAME_ACCOUNT、VALIDATION_ERROR、IDEMPOTENCY_CONFLICT（同 clientId 不同参数）。
+         */
+        post: operations["createAssetTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 划转历史（含旧 /futures/transfer 记录，clientId 为 null） */
+        get: operations["listAssetTransfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 资产总览（资金账户 funding / 现货 spot / 合约 futures 分账户余额与 USDT 估值）
+         * @description 充值默认入 funding、提现默认从 funding 扣（后台可配置为 spot，见 depositAccount/withdrawAccount）。
+         *     合约账户只接受 USDT 划转。价格缺失时该币 valuationUsd 为 null 且不计入合计；合约服务不可用时 futures.available=false。
+         */
+        get: operations["getAssetsOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/wallet/networks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 币种网络参数（充提开关、最小充值、确认数、Memo、提现手续费/最小提现） */
+        get: operations["listWalletNetworks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/wallet/internal-transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 站内转账（免手续费、实时到账，需 2FA，按 clientId 幂等）
+         * @description 从资金账户（funding）转给另一位平台用户（toUid 或 toEmail 二选一）。收款方须存在、状态正常且不是子账户。
+         *     24 小时滚动额度按 USDT 估值计（后台可配，默认 50000；0=不限）；功能可被后台关闭。
+         *     错误码：VALIDATION_ERROR、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、WITHDRAW_LOCKED(403)、FUND_PASSWORD_*、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
+         *     RECIPIENT_SUB_ACCOUNT、RECIPIENT_UNAVAILABLE、PRICE_UNAVAILABLE、INTERNAL_TRANSFER_LIMIT_EXCEEDED、INSUFFICIENT_BALANCE、
+         *     IDEMPOTENCY_CONFLICT(409，同 clientId 不同参数)。
+         */
+        post: operations["createInternalTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/wallet/internal-transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 站内转账记录（转出 + 已到账的转入） */
+        get: operations["listInternalTransfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/spot/orders/conditional": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 条件单列表（默认 status=open 即 pending/triggering；all 或具体状态） */
+        get: operations["listConditionalOrders"];
+        put?: never;
+        /**
+         * 条件单（止损 stop / 止盈 take_profit / 计划委托 trigger），最新成交价穿越触发价后下限价或市价单
+         * @description 创建时即冻结所需资金；触发后释放并按普通下单流程提交子订单（orderId 回填）。
+         *     方向：stop 买=up 卖=down；take_profit 买=down 卖=up；trigger 按当前价自动判断或传 triggerDirection。
+         *     错误码：VALIDATION_ERROR、TRIGGER_WOULD_IMMEDIATELY_FIRE、CONDITIONAL_LIMIT_EXCEEDED（每人最多 50 个未触发）、INSUFFICIENT_BALANCE、IDEMPOTENCY_CONFLICT。
+         */
+        post: operations["createConditionalOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/spot/orders/conditional/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销未触发的条件单（释放冻结；已撤销重复调用返回 200） */
+        delete: operations["cancelConditionalOrder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/fee-rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的手续费率（现货 + 合约 maker/taker，含后台个人费率覆盖）
+         * @description VIP 仅提供服务权益，费率统一（vipLevel 恒为 0）；合约服务不可用时 futures 为 null。
+         */
+        get: operations["getFeeRates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/home/placements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 运营位列表（?slot= 过滤） */
+        get: operations["adminListPlacements"];
+        put?: never;
+        /** 创建运营位（需 content 权限 + totpCode + reason，审计 levelHigh） */
+        post: operations["adminCreatePlacement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/home/placements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新运营位（totpCode + reason） */
+        put: operations["adminUpdatePlacement"];
+        post?: never;
+        /** 删除运营位（body 含 totpCode + reason） */
+        delete: operations["adminDeletePlacement"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/app/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 功能开关（含默认值与可用 key） */
+        get: operations["adminGetAppFeatures"];
+        /** 部分更新功能开关（未知 key 400；totpCode + reason，审计） */
+        put: operations["adminSetAppFeatures"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 子账户列表（母账户） */
+        get: operations["subAccountList"];
+        put?: never;
+        /** 创建子账户（母账户需已开启谷歌验证；上限默认 20，不可嵌套） */
+        post: operations["subAccountCreate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 全部子账户资产汇总 */
+        get: operations["subAccountAssetsAll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 母子账户现货划转（clientId 幂等）
+         * @description 母账户：direction=to_sub 或 to_parent，需 subAccountId。
+         *     子账户（登录或会话）：仅允许 to_parent，subAccountId 可省略。
+         *     同一 clientId 重放返回同一笔记录；参数不同返回 409 CLIENT_ID_REUSED。
+         */
+        post: operations["subAccountTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 母子划转记录 */
+        get: operations["subAccountTransfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 子账户 UID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** 子账户详情 */
+        get: operations["subAccountGet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * 修改子账户（昵称/备注/登录开关/密码）
+         * @description 开启登录需 password(≥8) 与母账户 totpCode，返回子账户自己的谷歌验证密钥 loginTotp（仅此一次）。关闭登录会注销子账户全部会话。
+         */
+        patch: operations["subAccountPatch"];
+        trace?: never;
+    };
+    "/sub-accounts/{id}/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 冻结子账户（禁止登录、API Key、划入） */
+        post: operations["subAccountFreeze"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/{id}/unfreeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 解冻子账户 */
+        post: operations["subAccountUnfreeze"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/{id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** 子账户现货资产 */
+        get: operations["subAccountAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/{id}/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** 子账户现货委托/历史/成交（透传订单服务的分页与筛选参数） */
+        get: operations["subAccountOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/{id}/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** 子账户 API Key 列表（不含 secret） */
+        get: operations["subAccountApiKeys"];
+        put?: never;
+        /**
+         * 为子账户创建 API Key（需母账户 totpCode；无提现权限）
+         * @description 调用方式：请求头 X-LB-APIKEY + X-LB-SECRET（secret 仅在创建时返回一次）。
+         *     read：GET /assets、/spot、/futures；spot_trade：/spot 全部；futures_trade：/futures 全部。
+         *     /wallet、/account、/auth、/2fa、/sub-accounts 等一律 403 API_KEY_FORBIDDEN。
+         */
+        post: operations["subAccountApiKeyCreate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sub-accounts/{id}/api-keys/{apiKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                apiKey: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除（吊销）子账户 API Key */
+        delete: operations["subAccountApiKeyDelete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 聊天室列表（公开；general + spot.{SYM} + futures.{SYM}，含在线人数与发言规则；功能开关 chat 关闭时 403 FEATURE_DISABLED）
+         * @description 实时推送：在现有 /ws 上订阅频道 `chat:{room}`（如 `chat:spot.BTCUSDT`）。
+         *     帧 data 为 `{type:"message", message: ChatMessage}` 或 `{type:"delete", id}`。
+         */
+        get: operations["listChatRooms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/rooms/{room}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room: string;
+            };
+            cookie?: never;
+        };
+        /** 历史消息（公开，新→旧；before=消息 id 游标，limit 默认 50，上限 historyLimitMax） */
+        get: operations["listChatMessages"];
+        put?: never;
+        /**
+         * 发言（需登录 + KYC ≥ minKycLevel；服务端拦截链接/联系方式/屏蔽词；频率与长度限制；clientId 幂等）
+         * @description 错误码：CHAT_KYC_REQUIRED/CHAT_MUTED(含 mutedUntil)/CHAT_BANNED/FEATURE_DISABLED (403)，
+         *     CHAT_RATE_LIMITED (429，含 retryAfterMs 与 Retry-After)，CHAT_TOO_LONG/CHAT_LINK_BLOCKED/CHAT_CONTACT_BLOCKED/CHAT_WORD_BLOCKED/VALIDATION_ERROR (400)，
+         *     CHAT_UNAVAILABLE (503)。相同 clientId 重放返回 200 与原消息。
+         */
+        post: operations["postChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/messages/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 举报消息（需登录；不可举报自己；同一人重复举报幂等） */
+        post: operations["reportChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 聊天配置（content 权限） */
+        get: operations["adminGetChatConfig"];
+        /** 部分更新聊天配置（未知 key 400；totpCode + reason，审计 chat_config_update） */
+        put: operations["adminUpdateChatConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 消息检索（room/uid/status/q/before/limit；含完整 uid 与举报数） */
+        get: operations["adminListChatMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除消息（WS 推送 delete；关联未处理举报置为 resolved；totpCode + reason） */
+        delete: operations["adminDeleteChatMessage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/sanctions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 禁言/封禁名单 */
+        get: operations["adminListChatSanctions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/mutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 禁言（durationMinutes 1-525600；totpCode + reason） */
+        post: operations["adminMuteChatUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/mutes/{uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 解除禁言（totpCode + reason） */
+        delete: operations["adminUnmuteChatUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/bans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 封禁发言（永久，直至解除；totpCode + reason） */
+        post: operations["adminBanChatUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/bans/{uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 解除封禁（totpCode + reason） */
+        delete: operations["adminUnbanChatUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 举报列表（status=open|resolved|dismissed|all，默认 open） */
+        get: operations["adminListChatReports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/reports/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 处理举报（action=resolve|dismiss；totpCode + reason） */
+        post: operations["adminResolveChatReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 事件合约产品（公开；标的、周期、赔率、限额与当前指数价；功能开关 eventContracts 关闭时 enabled=false） */
+        get: operations["listEventProducts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的事件合约订单（新→旧；status=open|settled|rejected|all，before=id 游标） */
+        get: operations["listEventOrders"];
+        put?: never;
+        /**
+         * 下单（猜涨跌；clientId 幂等，重放返回原订单）
+         * @description 开仓价 = 下单时指数价（同合约：Binance，OKX 备用）；到期按到期时刻指数结算。
+         *     赢：返还本金 + stake×payoutRatio；输：没收本金；平（到期价 = 开仓价）：退还本金；宽限期内无结算价：退还本金（result=refunded）。
+         *     错误码：FEATURE_DISABLED(403) SYMBOL_NOT_SUPPORTED SYMBOL_PAUSED PERIOD_NOT_SUPPORTED STAKE_OUT_OF_RANGE
+         *     DAILY_LIMIT_EXCEEDED EXPOSURE_LIMIT INSUFFICIENT_BALANCE INDEX_UNAVAILABLE(503)。
+         *     结算实时推送：/ws?token=<accessToken>（或 Authorization: Bearer）后订阅 `event:orders`，帧 data 为 EventOrder。
+         */
+        post: operations["placeEventOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 订单详情（仅本人） */
+        get: operations["getEventOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 事件合约配置与标的（symbol:view） */
+        get: operations["adminGetEventConfig"];
+        /** 部分更新配置（symbol:edit；totpCode + reason，审计 event_config） */
+        put: operations["adminUpdateEventConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/symbols/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 暂停/恢复标的、设置单标的敞口上限（symbol:edit；totpCode + reason，审计 event_symbol_pause/resume/event_symbol） */
+        put: operations["adminUpdateEventSymbol"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 订单检索（symbol:view；uid/symbol/status/before/limit） */
+        get: operations["adminListEventOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/exposure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 平台敞口（按 symbol×period 的未结算净额）与今日盈亏（symbol:view） */
+        get: operations["adminEventExposure"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tradfi/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * TradFi 资产目录（公开；按开关 + active 过滤；只返回已配置合约地址的发行方代币；含参考价与偏离）
+         * @description 参考价 = Binance USDⓈ-M 永续（OKX SWAP 备用），不回退现货。现货偏离参考价超过阈值（默认 200 bps，可在后台按资产配置）时
+         *     做市自动放宽价差（widened=true）并发送 Telegram 告警。
+         *     网关拦截：两个开关都关 → 403 FEATURE_DISABLED；CF-IPCountry 或 KYC 国家在受限列表（默认 US + 美属地区 + OFAC：CU IR KP SY）→ 403 REGION_RESTRICTED。
+         *     同样的拦截作用于 POST /spot/orders、POST /futures/orders（TradFi 标的）、GET /wallet/deposit/address 与 POST /wallet/withdraw（TradFi 资产）；
+         *     撤单与平仓不受影响。
+         */
+        get: operations["listTradFiAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TradFi 资产、发行方代币与全局设置（symbol:view） */
+        get: operations["adminListTradFiAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/assets/{asset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新资产（symbol:edit；totpCode + reason，审计 tradfi_asset） */
+        put: operations["adminUpdateTradFiAsset"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 新增/更新发行方代币（symbol:edit；totpCode + reason，审计 tradfi_token）
+         * @description 开启充值或提现必须先填合约地址，否则 400 ADDRESS_REQUIRED。新开启的代币需重启 wallet 生效；关闭即时生效。
+         */
+        put: operations["adminUpsertTradFiToken"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TradFi 全局设置（symbol:view） */
+        get: operations["adminGetTradFiSettings"];
+        /** 更新受限地区 / 偏离阈值 / 放宽倍数 / 告警冷却（symbol:edit；totpCode + reason，审计 tradfi_settings） */
+        put: operations["adminUpdateTradFiSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/deviation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 偏离监控状态（每个 TradFi 现货标的：lastPrice、referencePrice、deviationBps、widened）（symbol:view） */
+        get: operations["adminGetTradFiDeviation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3360,7 +4763,7 @@ export interface components {
              * @example address
              * @enum {string}
              */
-            purpose: "address" | "bind" | "reset_password";
+            purpose: "address" | "bind" | "reset_password" | "withdraw" | "security";
             /**
              * @description 缺省按账户已绑定的联系方式
              * @example sms
@@ -3584,10 +4987,15 @@ export interface components {
             network: string;
             /** @example TXy1Z9DemoAddr000000000000000000000 */
             address: string;
-            /** @example null */
+            /**
+             * @description memoRequired=true 时为必填的充值 Memo/Tag
+             * @example null
+             */
             memo?: string | null;
             /** @example 1.00000000 */
             minDeposit?: string | null;
+            memoRequired?: boolean;
+            confirmations?: number;
         };
         Deposit: {
             /** @example dep_0001 */
@@ -3637,6 +5045,96 @@ export interface components {
              * @example 123456
              */
             code?: string | null;
+            /** @description 资金密码（已设置且后台策略要求时必填；fundPasswordMandatory=true 时未设置将被拒绝 FUND_PASSWORD_NOT_SET） */
+            fundPassword?: string | null;
+        };
+        OkResponse: {
+            ok?: boolean;
+        };
+        ChangePasswordRequest: {
+            oldPassword: string;
+            newPassword: string;
+            /** @description 已开启 2FA 时必填 */
+            totpCode?: string;
+            /** @description 未开 2FA 时必填（purpose=security） */
+            code?: string;
+            /** @default true */
+            revokeOtherSessions: boolean;
+        };
+        ChangeContactRequest: {
+            email?: string;
+            phone?: string;
+            countryCode?: string;
+            /** @description 新联系方式收到的验证码（purpose=bind_new） */
+            newCode: string;
+            /** @description 原联系方式收到的验证码（purpose=security） */
+            oldCode: string;
+            /** @description 已开启 2FA 时必填 */
+            totpCode?: string;
+        };
+        FundPasswordRequest: {
+            fundPassword: string;
+            /** @description PUT（修改）时必填 */
+            oldFundPassword?: string;
+            totpCode?: string;
+            /** @description 未开 2FA 时 purpose=security 验证码 */
+            code?: string;
+        };
+        Session: {
+            id?: string;
+            deviceId?: string;
+            name?: string;
+            ip?: string;
+            userAgent?: string;
+            current?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+        };
+        Passkey: {
+            id?: string;
+            name?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            lastUsedAt?: string | null;
+        };
+        PasskeyCeremony: {
+            sessionId?: string;
+            publicKey?: {
+                [key: string]: unknown;
+            };
+        };
+        SecurityOverview: {
+            twoFactor?: {
+                enabled?: boolean;
+                /** @enum {string|null} */
+                method?: "totp" | null;
+            };
+            /** @description 脱敏 */
+            email?: string | null;
+            emailVerified?: boolean;
+            /** @description 脱敏，如 138****5678 */
+            phone?: string | null;
+            phoneVerified?: boolean;
+            fundPasswordSet?: boolean;
+            /** Format: date-time */
+            fundPasswordLockedUntil?: string | null;
+            antiPhishingSet?: boolean;
+            /** @description 首字符 + 星号 */
+            antiPhishingHint?: string | null;
+            passkeysCount?: number;
+            /** Format: date-time */
+            withdrawLockedUntil?: string | null;
+            withdrawLockReason?: string | null;
+            recentDevices?: components["schemas"]["Device"][];
+            policy?: {
+                fundPasswordForWithdraw?: boolean;
+                fundPasswordForInternalTransfer?: boolean;
+                fundPasswordMandatory?: boolean;
+                withdrawLockHours?: number;
+            };
         };
         Withdrawal: {
             /** @example wd_0001 */
@@ -3720,8 +5218,11 @@ export interface components {
         OrderType: "limit" | "market";
         /** @enum {string} */
         OrderStatus: "new" | "partially_filled" | "filled" | "canceled" | "rejected";
-        /** @enum {string} */
-        TimeInForce: "GTC" | "IOC" | "FOK";
+        /**
+         * @description PostOnly（别名 GTX）= 只做 Maker，会立即成交则拒绝（POST_ONLY_REJECTED）
+         * @enum {string}
+         */
+        TimeInForce: "GTC" | "IOC" | "FOK" | "PostOnly" | "GTX";
         PlaceOrderRequest: {
             /** @example BTCUSDT */
             symbol: string;
@@ -3735,6 +5236,8 @@ export interface components {
             /** @example 0.01000000 */
             quantity: string;
             timeInForce?: components["schemas"]["TimeInForce"];
+            /** @description 等价于 timeInForce=PostOnly；会立即成交时返回 POST_ONLY_REJECTED */
+            postOnly?: boolean;
             /** @example cli-20261102-001 */
             clientOrderId?: string | null;
         };
@@ -4624,6 +6127,739 @@ export interface components {
             /** Format: date-time */
             publishAt?: string;
         };
+        AdminWriteMeta: {
+            /** @example 123456 */
+            totpCode: string;
+            /** @example 双十一活动 */
+            reason: string;
+        };
+        PlacementInput: {
+            /** @enum {string} */
+            slot: "popup" | "splash" | "grid" | "carousel" | "promo_bar" | "search_hint";
+            title?: string;
+            /** @description carousel/splash/popup 必填 */
+            imageUrl?: string;
+            imageDarkUrl?: string;
+            /** @description https/http、站内 / 路径或 linbit:/cowa: deep link */
+            linkUrl?: string;
+            /**
+             * @default all
+             * @enum {string}
+             */
+            platform: "web" | "app" | "all";
+            locale?: string;
+            /**
+             * @default all
+             * @enum {string}
+             */
+            audience: "all" | "new" | "existing";
+            /**
+             * @example [
+             *       "HK",
+             *       "SG"
+             *     ]
+             */
+            regions?: string[];
+            appMinVersion?: string;
+            appMaxVersion?: string;
+            /**
+             * @default always
+             * @enum {string}
+             */
+            frequency: "always" | "once" | "daily" | "session";
+            /** Format: date-time */
+            countdownEndAt?: string | null;
+            trackingId?: string;
+            /** @description 填写后公开接口返回 earnApr（来自 earn 服务） */
+            earnProductId?: string;
+            content?: {
+                [key: string]: unknown;
+            };
+            sort?: number;
+            /** Format: date-time */
+            startAt?: string | null;
+            /** Format: date-time */
+            endAt?: string | null;
+            /** @default true */
+            enabled: boolean;
+            totpCode?: string;
+            reason?: string;
+        };
+        Placement: {
+            id?: number;
+            slot?: string;
+            title?: string;
+            imageUrl?: string;
+            imageDarkUrl?: string;
+            linkUrl?: string;
+            platform?: string;
+            locale?: string;
+            audience?: string;
+            regions?: string[];
+            appMinVersion?: string;
+            appMaxVersion?: string;
+            frequency?: string;
+            /** Format: date-time */
+            countdownEndAt?: string | null;
+            trackingId?: string;
+            earnProductId?: string;
+            /**
+             * @description 仅公开接口
+             * @example 0.123
+             */
+            earnApr?: string | null;
+            content?: {
+                [key: string]: unknown;
+            };
+            sort?: number;
+            /** Format: date-time */
+            startAt?: string | null;
+            /** Format: date-time */
+            endAt?: string | null;
+            enabled?: boolean;
+            updatedBy?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        PlacementChange: {
+            placement?: components["schemas"]["Placement"];
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            after?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        HomePlacements: {
+            slots?: {
+                [key: string]: components["schemas"]["Placement"][];
+            };
+            /** Format: date-time */
+            serverTime?: string;
+        };
+        HomeNewcomer: {
+            available?: boolean;
+            loggedIn?: boolean;
+            enrolled?: boolean;
+            total?: string;
+            /** @example USDT */
+            asset?: string;
+            days?: number;
+            completed?: number;
+            claimable?: string;
+            /** Format: date-time */
+            deadline?: string | null;
+            /** @example /rewards/newcomer */
+            link?: string;
+            /** @enum {string} */
+            cta?: "login" | "kyc" | "enroll" | "claim" | "continue" | "done" | "none" | "open";
+            degraded?: boolean;
+            tasks?: {
+                key?: string;
+                title?: string;
+                type?: string;
+                kind?: string;
+                amount?: string;
+                target?: string;
+                progress?: string;
+                status?: string;
+            }[];
+        };
+        FiatRates: {
+            /** @example USDT */
+            base?: string;
+            /**
+             * @example {
+             *       "CNY": 7.12,
+             *       "USD": 1,
+             *       "EUR": 0.92,
+             *       "HKD": 7.8,
+             *       "JPY": 150.1,
+             *       "KRW": 1380
+             *     }
+             */
+            rates?: {
+                [key: string]: number;
+            };
+            /**
+             * @description 主机名或 static
+             * @example open.er-api.com
+             */
+            source?: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            stale?: boolean;
+        };
+        AppFeatures: {
+            /**
+             * @example {
+             *       "tokenizedStocks": false,
+             *       "metals": false,
+             *       "eventContracts": false,
+             *       "chat": false,
+             *       "subAccounts": false,
+             *       "convert": true,
+             *       "copyTrading": false,
+             *       "p2p": false,
+             *       "fiatOnRamp": false,
+             *       "options": false
+             *     }
+             */
+            features?: {
+                [key: string]: boolean;
+            };
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        Favorites: {
+            /** @enum {string} */
+            market?: "spot" | "futures";
+            symbols?: string[];
+            items?: {
+                symbol?: string;
+                market?: string;
+                sort?: number;
+                /** Format: date-time */
+                createdAt?: string;
+            }[];
+        };
+        AssetsOverviewAccount: {
+            /** @enum {string} */
+            account?: "funding" | "spot" | "futures";
+            available?: boolean;
+            /** @example 1234.56 */
+            totalValueUsdt?: string;
+            balances?: {
+                asset?: string;
+                free?: string;
+                locked?: string;
+                total?: string;
+                valuationUsd?: string | null;
+            }[];
+        };
+        AssetsOverview: {
+            totalValueUsdt?: string;
+            accounts?: components["schemas"]["AssetsOverviewAccount"][];
+            /** @enum {string} */
+            depositAccount?: "funding" | "spot";
+            /** @enum {string} */
+            withdrawAccount?: "funding" | "spot";
+            /**
+             * @example {
+             *       "funding": [
+             *         "spot",
+             *         "futures"
+             *       ],
+             *       "spot": [
+             *         "funding",
+             *         "futures"
+             *       ],
+             *       "futures": [
+             *         "funding",
+             *         "spot"
+             *       ],
+             *       "futuresAssets": [
+             *         "USDT"
+             *       ]
+             *     }
+             */
+            transferable?: {
+                [key: string]: unknown;
+            };
+        };
+        WalletNetwork: {
+            /** @example USDT */
+            asset?: string;
+            /** @example TRC20 */
+            network?: string;
+            minDeposit?: string;
+            confirmations?: number;
+            memoRequired?: boolean;
+            withdrawFee?: string;
+            withdrawFeeAsset?: string;
+            minWithdraw?: string;
+            maxWithdraw?: string | null;
+            depositEnabled?: boolean;
+            withdrawEnabled?: boolean;
+            estimatedArrivalMinutes?: number;
+        };
+        InternalTransferRequest: {
+            clientId: string;
+            /** @example USDT */
+            asset: string;
+            /** @example 10 */
+            amount: string;
+            toUid?: string;
+            toEmail?: string;
+            totpCode: string;
+            /** @description 未开 2FA 时 purpose=withdraw 验证码 */
+            code?: string;
+            /** @description 资金密码（已设置且后台策略要求时必填） */
+            fundPassword?: string;
+        };
+        InternalTransfer: {
+            id?: string;
+            clientId?: string;
+            /** @enum {string} */
+            direction?: "out" | "in";
+            fromUid?: string;
+            toUid?: string;
+            toMaskedEmail?: string;
+            asset?: string;
+            amount?: string;
+            /** @example 0 */
+            fee?: string;
+            /** @enum {string} */
+            status?: "pending" | "completed" | "failed";
+            failReason?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            completedAt?: string | null;
+        };
+        ConditionalOrderRequest: {
+            /** @example BTCUSDT */
+            symbol: string;
+            side: components["schemas"]["OrderSide"];
+            type: components["schemas"]["OrderType"];
+            /**
+             * @default trigger
+             * @enum {string}
+             */
+            kind: "stop" | "take_profit" | "trigger";
+            triggerPrice: string;
+            /**
+             * @description 仅 kind=trigger 且无最新价时需要
+             * @enum {string}
+             */
+            triggerDirection?: "up" | "down";
+            /** @description limit 子单必填 */
+            price?: string | null;
+            quantity?: string | null;
+            /** @description 市价买按金额 */
+            quoteOrderQty?: string | null;
+            timeInForce?: components["schemas"]["TimeInForce"];
+            clientOrderId?: string | null;
+        };
+        ConditionalOrder: {
+            id?: string;
+            clientOrderId?: string | null;
+            symbol?: string;
+            side?: string;
+            /** @enum {string} */
+            kind?: "stop" | "take_profit" | "trigger";
+            /** @enum {string} */
+            type?: "limit" | "market";
+            triggerPrice?: string;
+            /** @enum {string} */
+            triggerDirection?: "up" | "down";
+            price?: string | null;
+            quantity?: string | null;
+            quoteOrderQty?: string | null;
+            timeInForce?: string;
+            /** @enum {string} */
+            status?: "pending" | "triggering" | "triggered" | "canceled" | "failed";
+            /** @description 触发后生成的现货订单 */
+            orderId?: string | null;
+            frozenAsset?: string;
+            frozenAmount?: string;
+            failReason?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            triggeredAt?: string | null;
+        };
+        FeePair: {
+            /** @example 0.001 */
+            maker?: string;
+            /** @example 0.001 */
+            taker?: string;
+        };
+        FeeRates: {
+            symbol?: string;
+            /** @example 0 */
+            vipLevel?: number;
+            spot?: components["schemas"]["FeePair"];
+            futures?: components["schemas"]["FeePair"] | null;
+            overridden?: boolean;
+            /** @enum {string} */
+            source?: "default" | "override";
+            note?: string;
+        };
+        TransferRequest: {
+            /** @example c-20261103-0001 */
+            clientId: string;
+            /** @example USDT */
+            asset: string;
+            /** @example 100 */
+            amount: string;
+            /**
+             * @description 涉及 futures 时仅支持 USDT
+             * @enum {string}
+             */
+            from: "funding" | "spot" | "futures";
+            /** @enum {string} */
+            to: "funding" | "spot" | "futures";
+        };
+        Transfer: {
+            /** @example fut-4e77c5c8769ee51d */
+            id?: string;
+            clientId?: string | null;
+            asset?: string;
+            amount?: string;
+            from?: string;
+            to?: string;
+            /** @enum {string} */
+            status?: "pending" | "done" | "failed";
+            /** @example transfer */
+            kind?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        SubAccount: {
+            uid?: string;
+            parentUid?: string;
+            username?: string;
+            /** @example 80000001_desk01@sub.linbit.invalid */
+            loginEmail?: string;
+            nickname?: string;
+            note?: string;
+            /** @enum {string} */
+            status?: "active" | "frozen";
+            loginEnabled?: boolean;
+            totpBound?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        SubBalance: {
+            asset?: string;
+            free?: string;
+            locked?: string;
+            total?: string;
+        };
+        SubTransfer: {
+            transferId?: string;
+            clientId?: string;
+            subAccountId?: string;
+            /** @enum {string} */
+            direction?: "to_sub" | "to_parent";
+            asset?: string;
+            amount?: string;
+            /** @enum {string} */
+            status?: "pending" | "success" | "failed";
+            errorCode?: string;
+            /** @enum {string} */
+            initiator?: "parent" | "sub";
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        SubApiKey: {
+            /** @example lbk_3f2a... */
+            apiKey?: string;
+            /** @description 仅创建时返回 */
+            secret?: string;
+            label?: string;
+            permissions?: string[];
+            ipAllowlist?: string[];
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            lastUsedAt?: string | null;
+        };
+        ChatRoom: {
+            /** @example spot.BTCUSDT */
+            id?: string;
+            /** @enum {string} */
+            kind?: "general" | "spot" | "futures";
+            symbol?: string;
+            online?: number;
+        };
+        ChatRules: {
+            maxLength?: number;
+            minIntervalMs?: number;
+            minKycLevel?: number;
+            blockLinks?: boolean;
+            blockContacts?: boolean;
+        };
+        ChatMessage: {
+            /** Format: int64 */
+            id?: number;
+            room?: string;
+            /** @description 脱敏昵称，如 用户***1234 */
+            sender?: string;
+            text?: string;
+            mine?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        ChatAdminMessage: components["schemas"]["ChatMessage"] & {
+            uid?: string;
+            clientId?: string;
+            /** @enum {string} */
+            status?: "visible" | "deleted";
+            deletedBy?: string | null;
+            deletedReason?: string | null;
+            reports?: number;
+        };
+        ChatConfig: {
+            /** @default 3000 */
+            minIntervalMs: number;
+            /** @default 200 */
+            maxLength: number;
+            /** @default 1 */
+            minKycLevel: number;
+            /** @default true */
+            blockLinks: boolean;
+            /** @default true */
+            blockContacts: boolean;
+            bannedWords?: string[];
+            /** @default 100 */
+            historyLimitMax: number;
+            /** @default true */
+            generalRoom: boolean;
+            /** @default true */
+            futuresRooms: boolean;
+            /**
+             * @description 达到该举报数自动隐藏（0=关闭）
+             * @default 0
+             */
+            reportsToHide: number;
+        };
+        ChatSanction: {
+            uid?: string;
+            /** Format: date-time */
+            mutedUntil?: string | null;
+            banned?: boolean;
+            reason?: string;
+            updatedBy?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        ChatReport: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            messageId?: number;
+            reporter?: string;
+            reason?: string;
+            /** @enum {string} */
+            status?: "open" | "resolved" | "dismissed";
+            handledBy?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            message?: components["schemas"]["ChatAdminMessage"];
+        };
+        ChatChange: {
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            after?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        EventProducts: {
+            enabled?: boolean;
+            /** @example USDT */
+            stakeAsset?: string;
+            /** @example 0.8 */
+            payoutRatio?: string;
+            /** @example 5 */
+            minStake?: string;
+            /** @example 1000 */
+            maxStake?: string;
+            /** @example 10000 */
+            dailyLimit?: string;
+            /** @enum {string} */
+            tieRule?: "refund";
+            periods?: {
+                /** @example 5m */
+                period?: string;
+                seconds?: number;
+            }[];
+            products?: {
+                /** @example BTCUSDT */
+                symbol?: string;
+                baseAsset?: string;
+                quoteAsset?: string;
+                paused?: boolean;
+                indexPrice?: string | null;
+                priceAvailable?: boolean;
+            }[];
+        };
+        EventOrder: {
+            id?: string;
+            clientId?: string;
+            /** @description 仅管理端 */
+            userId?: string;
+            symbol?: string;
+            period?: string;
+            /** @enum {string} */
+            direction?: "up" | "down";
+            stake?: string;
+            payoutRatio?: string;
+            openPrice?: string;
+            /**
+             * Format: int64
+             * @description ms
+             */
+            openTime?: number;
+            /**
+             * Format: int64
+             * @description ms
+             */
+            expiryTime?: number;
+            /** @enum {string} */
+            status?: "pending" | "open" | "settling" | "settled" | "rejected";
+            /** @enum {string|null} */
+            result?: "won" | "lost" | "tie" | "refunded" | null;
+            settlePrice?: string | null;
+            payout?: string | null;
+            pnl?: string | null;
+            /** Format: int64 */
+            settledAt?: number | null;
+            /** @description 若赢可得（本金 + 收益） */
+            expectedPayout?: string;
+            rejectReason?: string | null;
+            /**
+             * Format: int64
+             * @description 仅管理端
+             */
+            createdAt?: number;
+        };
+        EventConfig: {
+            /**
+             * @example [
+             *       "5m",
+             *       "15m",
+             *       "30m",
+             *       "1h",
+             *       "4h",
+             *       "1d"
+             *     ]
+             */
+            periods?: string[];
+            payoutRatio?: string;
+            minStake?: string;
+            maxStake?: string;
+            dailyLimit?: string;
+            /** @description 默认每 symbol×period 净敞口上限 */
+            exposureLimit?: string;
+            settleGraceSeconds?: number;
+            readonly updatedBy?: string;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+        };
+        EventSymbol: {
+            symbol?: string;
+            paused?: boolean;
+            exposureLimit?: string | null;
+            updatedBy?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        EventExposure: {
+            books?: {
+                symbol?: string;
+                period?: string;
+                paused?: boolean;
+                upStake?: string;
+                downStake?: string;
+                netExposure?: string;
+                limit?: string;
+                openOrders?: number;
+                utilization?: string;
+            }[];
+            todayStakeSettled?: string;
+            todayPayout?: string;
+            todayPlatformPnl?: string;
+            unfinishedOrders?: number;
+        };
+        TradFiToken: {
+            asset?: string;
+            /** @enum {string} */
+            issuer?: "xstocks" | "ondo" | "paxos" | "tether";
+            network?: string;
+            contractAddress?: string;
+            decimals?: number;
+            depositEnabled?: boolean;
+            withdrawEnabled?: boolean;
+            minWithdraw?: string;
+            withdrawFee?: string;
+        };
+        TradFiAsset: {
+            /** @example AAPL */
+            asset?: string;
+            /** @enum {string} */
+            kind?: "stock" | "metal" | "commodity";
+            name?: string;
+            /** @example Apple Inc. (NASDAQ: AAPL) */
+            underlying?: string;
+            /** @enum {string} */
+            market?: "spot" | "futures";
+            /** @example AAPLUSDT */
+            symbol?: string;
+            /** @description 仅后台返回 */
+            refBinance?: string;
+            /** @description 仅后台返回 */
+            refOkx?: string;
+            /** @description 仅后台返回；null = 全局阈值 */
+            deviationBps?: number | null;
+            /** @enum {string} */
+            status?: "active" | "suspended";
+            sort?: number;
+            tokens?: components["schemas"]["TradFiToken"][];
+            /** @description 仅公开接口 */
+            referencePrice?: string;
+            /** @example binance-tradfi */
+            referenceSource?: string;
+            lastPrice?: string;
+            currentDeviationBps?: string;
+            widened?: boolean;
+        };
+        TradFiSettings: {
+            /**
+             * @example [
+             *       "US",
+             *       "PR",
+             *       "GU",
+             *       "VI",
+             *       "AS",
+             *       "MP",
+             *       "UM",
+             *       "CU",
+             *       "IR",
+             *       "KP",
+             *       "SY"
+             *     ]
+             */
+            restrictedCountries?: string[];
+            /** @example 200 */
+            deviationBps?: number;
+            /**
+             * @description 1–20
+             * @example 3
+             */
+            widenFactor?: string;
+            /** @example 900 */
+            alertCooldownSec?: number;
+        };
+        TradFiDeviation: {
+            symbol?: string;
+            lastPrice?: string;
+            referencePrice?: string;
+            deviationBps?: string;
+            thresholdBps?: number;
+            widened?: boolean;
+            widenFactor?: string;
+        };
+        TradFiBeforeAfter: {
+            before?: Record<string, never> | null;
+            after?: Record<string, never>;
+        };
     };
     responses: {
         /** @description 请求参数错误 */
@@ -4653,6 +6889,25 @@ export interface components {
                  *       "code": "AUTH_UNAUTHORIZED",
                  *       "message": "请先登录",
                  *       "requestId": "req_401demo"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description TWOFA_REQUIRED：未提供二次验证或账户未绑定任何二次验证方式（403）。
+         *     注意：提供了但错误的 TOTP/验证码返回 401 INVALID_TOTP（见各接口）。
+         */
+        Forbidden2FA: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "code": "TWOFA_REQUIRED",
+                 *       "message": "请提供两步验证码",
+                 *       "requestId": "req_403demo"
                  *     }
                  */
                 "application/json": components["schemas"]["Error"];
@@ -5417,6 +7672,498 @@ export interface operations {
             };
         };
     };
+    getSecurityOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 安全概览 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已修改 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok?: boolean;
+                        revokedSessions?: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+        };
+    };
+    sendContactCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    email?: string;
+                    phone?: string;
+                    /** @example +86 */
+                    countryCode?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已发送 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sent?: boolean;
+                        /** @enum {string} */
+                        channel?: "email" | "sms";
+                        ttlSeconds?: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["BadRequest"];
+            429: components["responses"]["BadRequest"];
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    changeEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeContactRequest"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    changePhone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeContactRequest"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            409: components["responses"]["BadRequest"];
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    changeFundPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已修改 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            423: components["responses"]["BadRequest"];
+        };
+    };
+    setFundPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已设置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    resetFundPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已重置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+        };
+    };
+    setAntiPhishing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example Lb2026 */
+                    antiPhishingCode: string;
+                    totpCode?: string;
+                    /** @description 未开 2FA 时 purpose=security 验证码 */
+                    code?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已设置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 会话列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Session"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已注销 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revokeOtherSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已注销 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        revoked?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listPasskeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 列表；enabled=false 表示服务端未配置 WEBAUTHN_RP_ID */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled?: boolean;
+                        items?: components["schemas"]["Passkey"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    beginPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    totpCode?: string;
+                    code?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 注册选项 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyCeremony"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    finishPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionId: string;
+                    name?: string;
+                    /** @description navigator.credentials.create() 结果的 JSON（PublicKeyCredential.toJSON()） */
+                    credential: Record<string, never>;
+                };
+            };
+        };
+        responses: {
+            /** @description 已绑定 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    deletePasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    beginPasskeyLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 登录选项 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyCeremony"];
+                };
+            };
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    finishPasskeyLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionId: string;
+                    /** @description navigator.credentials.get() 结果的 JSON */
+                    credential: Record<string, never>;
+                    deviceId?: string;
+                    deviceName?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 登录成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokens"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["BadRequest"];
+        };
+    };
     listDevices: {
         parameters: {
             query?: never;
@@ -5607,6 +8354,42 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateWithdrawAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label?: string;
+                    memo?: string;
+                    whitelisted?: boolean;
+                    totpCode?: string;
+                    /** @description 未开启 2FA 时提供（purpose=address） */
+                    code?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 更新后的地址 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawAddress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -6108,7 +8891,8 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /**
              * @description KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
-             *     但目标地址不在白名单内
+             *     但目标地址不在白名单内；TWOFA_REQUIRED：未提供/未绑定二次验证；WITHDRAW_LOCKED：安全设置变更后的锁定期；
+             *     FUND_PASSWORD_NOT_SET：后台要求资金密码但尚未设置
              */
             403: {
                 headers: {
@@ -8789,6 +11573,2188 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getHomePlacements: {
+        parameters: {
+            query?: {
+                /** @description 逗号分隔；为空返回全部槽位。未知槽位 400 VALIDATION_ERROR */
+                slots?: string;
+                platform?: "web" | "app";
+                locale?: string;
+                /** @description 仅 platform=app 时参与版本区间过滤；缺失时带版本区间的投放不返回 */
+                appVersion?: string;
+                /** @description 缺省回退 CF-IPCountry 请求头 */
+                region?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK（缓存 15s） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomePlacements"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getHomeBanners: {
+        parameters: {
+            query?: {
+                platform?: "web" | "app";
+                locale?: string;
+                appVersion?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Placement"][];
+                    };
+                };
+            };
+        };
+    };
+    getHomeHot: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    getHomeNewcomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK（无活动时 available=false、tasks=[]；状态读取失败时 degraded=true 返回模板） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeNewcomer"];
+                };
+            };
+        };
+    };
+    getFiatRates: {
+        parameters: {
+            query?: {
+                base?: "USDT" | "USDC" | "USD";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiatRates"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getAppFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppFeatures"];
+                };
+            };
+        };
+    };
+    listFavorites: {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    replaceFavorites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default spot
+                     * @enum {string}
+                     */
+                    market?: "spot" | "futures";
+                    /**
+                     * @example [
+                     *       "BTCUSDT",
+                     *       "ETHUSDT"
+                     *     ]
+                     */
+                    symbols: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    addFavorite: {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    removeFavorite: {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createAssetTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferRequest"];
+            };
+        };
+        responses: {
+            /** @description 完成（或同 clientId 重放返回原结果） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    listAssetTransfers: {
+        parameters: {
+            query?: {
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+                asset?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Transfer"][];
+                        page?: number;
+                        pageSize?: number;
+                        total?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getAssetsOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetsOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listWalletNetworks: {
+        parameters: {
+            query?: {
+                /** @description 不传返回全部网络 */
+                asset?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example USDT */
+                        asset?: string;
+                        networks: components["schemas"]["WalletNetwork"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createInternalTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description 完成（或同 clientId 重放返回原结果） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalTransfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    listInternalTransfers: {
+        parameters: {
+            query?: {
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["InternalTransfer"][];
+                        page?: number;
+                        pageSize?: number;
+                        total?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listConditionalOrders: {
+        parameters: {
+            query?: {
+                symbol?: string;
+                status?: "open" | "all" | "pending" | "triggering" | "triggered" | "canceled" | "failed";
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ConditionalOrder"][];
+                        page?: number;
+                        pageSize?: number;
+                        total?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createConditionalOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConditionalOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description 同 clientOrderId 重放 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionalOrder"];
+                };
+            };
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionalOrder"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    cancelConditionalOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已撤销 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionalOrder"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    getFeeRates: {
+        parameters: {
+            query?: {
+                symbol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeRates"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    adminListPlacements: {
+        parameters: {
+            query?: {
+                slot?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Placement"][];
+                    };
+                };
+            };
+        };
+    };
+    adminCreatePlacement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacementInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUpdatePlacement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacementInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminDeletePlacement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementChange"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminGetAppFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminSetAppFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /**
+                     * @example {
+                     *       "chat": true
+                     *     }
+                     */
+                    features: {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        features?: {
+                            [key: string]: boolean;
+                        };
+                        /** Format: date-time */
+                        updatedAt?: string | null;
+                        before?: {
+                            [key: string]: boolean;
+                        };
+                        after?: {
+                            [key: string]: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    subAccountList: {
+        parameters: {
+            query?: {
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["SubAccount"][];
+                        total?: number;
+                        page?: number;
+                        size?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description SUB_ACCOUNT_FORBIDDEN（子账户调用） */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    subAccountCreate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 子账户名，生成虚拟登录邮箱 */
+                    username: string;
+                    nickname?: string;
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubAccount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description TWOFA_REQUIRED / SUB_ACCOUNT_DISABLED / SUB_ACCOUNT_FORBIDDEN / ACCOUNT_FROZEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description SUB_ACCOUNT_LIMIT / SUB_ACCOUNT_EXISTS */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    subAccountAssetsAll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            uid?: string;
+                            username?: string;
+                            nickname?: string;
+                            status?: string;
+                            balances?: components["schemas"]["SubBalance"][];
+                        }[];
+                        totals?: components["schemas"]["SubBalance"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    subAccountTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    clientId: string;
+                    /** @description 子账户 UID */
+                    subAccountId?: string;
+                    /** @enum {string} */
+                    direction: "to_sub" | "to_parent";
+                    /** @example USDT */
+                    asset: string;
+                    /** @example 100 */
+                    amount: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubTransfer"];
+                };
+            };
+            /** @description VALIDATION_ERROR / INSUFFICIENT_BALANCE */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description SUB_ACCOUNT_FORBIDDEN / SUB_ACCOUNT_FROZEN */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description SUB_ACCOUNT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description CLIENT_ID_REUSED */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description TRANSFER_PENDING（可用同一 clientId 重试） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    subAccountTransfers: {
+        parameters: {
+            query?: {
+                subAccountId?: string;
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["SubTransfer"][];
+                        total?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    subAccountGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 子账户 UID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubAccount"];
+                };
+            };
+            /** @description SUB_ACCOUNT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    subAccountPatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 子账户 UID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    nickname?: string;
+                    note?: string;
+                    loginEnabled?: boolean;
+                    password?: string;
+                    totpCode?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        subAccount?: components["schemas"]["SubAccount"];
+                        loginTotp?: {
+                            secret?: string;
+                            otpauthUri?: string;
+                        };
+                    };
+                };
+            };
+            /** @description INVALID_TOTP（动态码错误） */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description TWOFA_REQUIRED（未绑定或未提供 TOTP）/ SUB_LOGIN_NOT_ALLOWED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    subAccountFreeze: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubAccount"];
+                };
+            };
+        };
+    };
+    subAccountUnfreeze: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubAccount"];
+                };
+            };
+        };
+    };
+    subAccountAssets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        uid?: string;
+                        username?: string;
+                        nickname?: string;
+                        status?: string;
+                        balances?: components["schemas"]["SubBalance"][];
+                    };
+                };
+            };
+        };
+    };
+    subAccountOrders: {
+        parameters: {
+            query?: {
+                type?: "open" | "history" | "trades";
+                symbol?: string;
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 与 /spot/orders/open、/spot/orders/history、/spot/trades 相同 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    subAccountApiKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["SubApiKey"][];
+                    };
+                };
+            };
+        };
+    };
+    subAccountApiKeyCreate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label?: string;
+                    permissions: ("read" | "spot_trade" | "futures_trade")[];
+                    ipAllowlist?: string[];
+                    totpCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubApiKey"];
+                };
+            };
+            /** @description PERMISSION_NOT_ALLOWED / VALIDATION_ERROR */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description INVALID_TOTP */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description TWOFA_REQUIRED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description API_KEY_LIMIT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    subAccountApiKeyDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                apiKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listChatRooms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        rooms?: components["schemas"]["ChatRoom"][];
+                        rules?: components["schemas"]["ChatRules"];
+                    };
+                };
+            };
+            /** @description FEATURE_DISABLED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listChatMessages: {
+        parameters: {
+            query?: {
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                room: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatMessage"][];
+                        hasMore?: boolean;
+                    };
+                };
+            };
+            /** @description FEATURE_DISABLED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    postChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    clientId: string;
+                    text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 幂等重放 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessage"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description CHAT_RATE_LIMITED */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reportChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminGetChatConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConfig"];
+                };
+            };
+        };
+    };
+    adminUpdateChatConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & components["schemas"]["ChatConfig"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminListChatMessages: {
+        parameters: {
+            query?: {
+                room?: string;
+                uid?: string;
+                status?: "visible" | "deleted";
+                q?: string;
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatAdminMessage"][];
+                        hasMore?: boolean;
+                    };
+                };
+            };
+        };
+    };
+    adminDeleteChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminListChatSanctions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatSanction"][];
+                    };
+                };
+            };
+        };
+    };
+    adminMuteChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    uid: string;
+                    durationMinutes: number;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUnmuteChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+        };
+    };
+    adminBanChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    uid: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUnbanChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+        };
+    };
+    adminListChatReports: {
+        parameters: {
+            query?: {
+                status?: "open" | "resolved" | "dismissed" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatReport"][];
+                    };
+                };
+            };
+        };
+    };
+    adminResolveChatReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @enum {string} */
+                    action: "resolve" | "dismiss";
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listEventProducts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventProducts"];
+                };
+            };
+        };
+    };
+    listEventOrders: {
+        parameters: {
+            query?: {
+                status?: "open" | "settled" | "rejected" | "all";
+                symbol?: string;
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["EventOrder"][];
+                        nextBefore?: string | null;
+                        /** @description 今日（UTC）已用下单额 */
+                        dailyUsed?: string;
+                    };
+                };
+            };
+        };
+    };
+    placeEventOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example BTCUSDT */
+                    symbol: string;
+                    /** @example 5m */
+                    period: string;
+                    /** @enum {string} */
+                    direction: "up" | "down";
+                    /** @example 10 */
+                    stake: string;
+                    /** @example ev-1730600000-1 */
+                    clientId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventOrder"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description FEATURE_DISABLED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description INDEX_UNAVAILABLE */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEventOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventOrder"];
+                };
+            };
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminGetEventConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        config?: components["schemas"]["EventConfig"];
+                        symbols?: components["schemas"]["EventSymbol"][];
+                    };
+                };
+            };
+        };
+    };
+    adminUpdateEventConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & components["schemas"]["EventConfig"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        config?: components["schemas"]["EventConfig"];
+                        before?: components["schemas"]["EventConfig"];
+                        after?: components["schemas"]["EventConfig"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUpdateEventSymbol: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    paused?: boolean;
+                    /** @description 覆盖全局 exposureLimit */
+                    exposureLimit?: string;
+                    /** @description true=恢复使用全局上限 */
+                    clearExposureLimit?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: components["schemas"]["EventSymbol"];
+                        before?: components["schemas"]["EventSymbol"];
+                        after?: components["schemas"]["EventSymbol"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminListEventOrders: {
+        parameters: {
+            query?: {
+                uid?: string;
+                symbol?: string;
+                status?: "pending" | "open" | "settling" | "settled" | "rejected";
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["EventOrder"][];
+                        nextBefore?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    adminEventExposure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExposure"];
+                };
+            };
+        };
+    };
+    listTradFiAssets: {
+        parameters: {
+            query?: {
+                kind?: "stock" | "metal" | "commodity";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TradFiAsset"][];
+                    };
+                };
+            };
+            /** @description FEATURE_DISABLED | REGION_RESTRICTED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description SERVICE_UNAVAILABLE（风控门禁不可用，fail closed） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminListTradFiAssets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["TradFiAsset"][];
+                        settings?: components["schemas"]["TradFiSettings"];
+                    };
+                };
+            };
+        };
+    };
+    adminUpdateTradFiAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @enum {string} */
+                    status?: "active" | "suspended";
+                    name?: string;
+                    /** @description 单资产偏离阈值（覆盖全局） */
+                    deviationBps?: number;
+                    /** @description true = 恢复使用全局阈值 */
+                    clearDeviationBps?: boolean;
+                    /** @example AAPLUSDT */
+                    refBinance?: string;
+                    /** @example AAPL-USDT-SWAP */
+                    refOkx?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiBeforeAfter"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUpsertTradFiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @example AAPL */
+                    asset: string;
+                    /** @enum {string} */
+                    issuer: "xstocks" | "ondo" | "paxos" | "tether";
+                    /**
+                     * @description 钱包网络名（SOL / ERC20 / TRC20 …）
+                     * @example SOL
+                     */
+                    network: string;
+                    contractAddress?: string;
+                    decimals?: number;
+                    depositEnabled?: boolean;
+                    withdrawEnabled?: boolean;
+                    /** @example 0.05 */
+                    minWithdraw?: string;
+                    /** @example 0.02 */
+                    withdrawFee?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiBeforeAfter"];
+                };
+            };
+            /** @description VALIDATION_ERROR | ADDRESS_REQUIRED | REASON_REQUIRED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminGetTradFiSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiSettings"];
+                };
+            };
+        };
+    };
+    adminUpdateTradFiSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & components["schemas"]["TradFiSettings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiBeforeAfter"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminGetTradFiDeviation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["TradFiDeviation"][];
+                    };
                 };
             };
         };
