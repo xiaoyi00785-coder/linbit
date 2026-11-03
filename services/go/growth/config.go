@@ -38,7 +38,7 @@ type Config struct {
 	Tiers          []Tier          // GROWTH_PARTNER_TIERS key:minVol:futRate:spotRate,...
 	TierWindow     time.Duration   // GROWTH_TIER_WINDOW_DAYS (30)
 	OverrideRate   decimal.Decimal // GROWTH_PARTNER_OVERRIDE_RATE (0.10)
-	OverrideDepth  int             // GROWTH_PARTNER_OVERRIDE_DEPTH (1 => two levels total)
+	OverrideDepth  int             // GROWTH_PARTNER_OVERRIDE_DEPTH (override levels above the direct partner; default 2)
 	PartnerAutoOK  bool            // GROWTH_PARTNER_AUTO_APPROVE (false)
 	ReferralRate   decimal.Decimal // GROWTH_REFERRAL_RATE (0.10)
 	ReferralPeriod time.Duration   // GROWTH_REFERRAL_DAYS (365)
@@ -120,7 +120,7 @@ func LoadConfig() Config {
 		Tiers:          tiers,
 		TierWindow:     time.Duration(common.EnvInt("GROWTH_TIER_WINDOW_DAYS", 30)) * 24 * time.Hour,
 		OverrideRate:   dec("GROWTH_PARTNER_OVERRIDE_RATE", "0.10"),
-		OverrideDepth:  common.EnvInt("GROWTH_PARTNER_OVERRIDE_DEPTH", 1),
+		OverrideDepth:  common.EnvInt("GROWTH_PARTNER_OVERRIDE_DEPTH", 2),
 		PartnerAutoOK:  common.Env("GROWTH_PARTNER_AUTO_APPROVE", "false") == "true",
 		ReferralRate:   dec("GROWTH_REFERRAL_RATE", "0.10"),
 		ReferralPeriod: time.Duration(common.EnvInt("GROWTH_REFERRAL_DAYS", 365)) * 24 * time.Hour,

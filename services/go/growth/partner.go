@@ -32,7 +32,8 @@ func (s *Server) handlePartnerRules(w http.ResponseWriter, r *http.Request) {
 		"tiers":           s.cfg.Tiers,
 		"tierBasis":       "直推用户近" + strconv.Itoa(int(s.cfg.TierWindow.Hours()/24)) + "日合约交易额",
 		"overrideRate":    s.cfg.OverrideRate.String(),
-		"overrideLevels":  s.cfg.OverrideDepth + 1,
+		"overrideLevels":  s.cfg.OverrideDepth + 1, // total levels incl. direct
+		"overrideDepth":   s.cfg.OverrideDepth,     // extra override levels
 		"overrideFunding": "平台出资，不扣减下级合伙人佣金",
 		"settlement":      "每日结算至资金账户",
 		"settleHourUtc":   s.cfg.SettleHourUTC,

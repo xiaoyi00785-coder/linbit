@@ -4,7 +4,7 @@
 #   invite-code attribution at registration, partner application with manual
 #   admin review (RBAC + 2FA + audit), futures/spot fee capture from the
 #   order/futures feeds, tier promotion by directs' 30-day futures volume,
-#   tier commission + 10% platform-funded override (two levels), regular
+#   tier commission + 10% platform-funded override (up to 2 levels above the direct partner), regular
 #   referral (non-partner inviter, no stacking), daily settlement paid into
 #   the funding account (idempotent), partner dashboards and gateway access.
 #
@@ -43,7 +43,8 @@ r="$(curl -sS -w '\n%{http_code}' "$GATEWAY_URL/partner/rules")"
 [ "$(code "$r")" = "200" ] || fail "rules not public"
 [ "$(body "$r" | jq -r '.tiers|length')" = "4" ] || fail "tiers: $r"
 [ "$(body "$r" | jq -r '.tiers[3].key + " " + .tiers[3].futuresRate + " " + .tiers[3].spotRate')" = "diamond 0.5 0.35" ] || fail "diamond tier: $r"
-[ "$(body "$r" | jq -r .overrideLevels)" = "2" ] || fail "override levels"
+[ "$(body "$r" | jq -r .overrideLevels)" = "3" ] || fail "override levels"
+[ "$(body "$r" | jq -r .overrideDepth)" = "2" ] || fail "override depth"
 # Rebate table by market: futures 30/40/45/50%, spot 20/25/30/35% (normal/silver/gold/diamond).
 TIERS="$(body "$r" | jq -r '[.tiers[] | "\(.key):\(.futuresRate):\(.spotRate)"] | join(",")')"
 [ "$TIERS" = "normal:0.3:0.2,silver:0.4:0.25,gold:0.45:0.3,diamond:0.5:0.35" ] || fail "tier rates (futures/spot swapped?): $TIERS"
