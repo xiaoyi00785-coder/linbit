@@ -321,3 +321,18 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 .pgdoc{display:grid;gap:16px;margin:24px 0}.pgdoc ul{margin:8px 0 0;padding-left:18px;color:var(--lb-text-2);line-height:1.9;font-size:14px}.pgt{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}.pgt th{text-align:left;color:var(--lb-text-2);font-weight:500;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08)}.pgt td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05)}
 
 .klg .kdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#6b6f70;margin-right:6px;vertical-align:1px}.klg .kdot.on{background:#abe127}.side span svg,.kbtn svg{display:block}
+/* 合约数据页 */
+.fi{display:flex;flex-direction:column;gap:16px}.fi-sym{display:flex;flex-wrap:wrap;gap:8px}
+.fi-chip{background:#1c1c1c;border:1px solid #2a2a2a;color:#e6e6e6;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer}.fi-chip span{margin-left:6px;font-size:11px;color:#8a8f90}
+.fi-chip.on{border-color:#abe127;color:#abe127}.fi-chip.sk{width:110px;height:36px;animation:fiP 1.2s infinite}
+.fi-state{display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 0;color:#8a8f90;font-size:14px}.fi-state.err{color:#f6465d}
+.fi-spin{width:22px;height:22px;border:2px solid #2a2a2a;border-top-color:#abe127;border-radius:50%;animation:fiS .8s linear infinite}
+@keyframes fiS{to{transform:rotate(360deg)}}@keyframes fiP{50%{opacity:.4}}
+.fi-btn{background:#1c1c1c;border:1px solid #2a2a2a;color:#e6e6e6;border-radius:6px;padding:6px 14px;cursor:pointer}.fi-btn:disabled{opacity:.35;cursor:default}.fi-btn:not(:disabled):hover{border-color:#abe127}
+.fi-pager{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:14px;color:#8a8f90;font-size:13px}
+.fi-hd{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}.fi-tabs{display:flex;gap:4px}
+.fi-tabs button{background:none;border:0;color:#8a8f90;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:13px}.fi-tabs button.on{background:#1c1c1c;color:#abe127}
+.fi-kv{display:grid;grid-template-columns:repeat(2,1fr);gap:0 40px}.fi-kv div{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #1f1f1f;font-size:14px}.fi-kv span{color:#8a8f90}
+.fi-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.fi-stats div{display:flex;flex-direction:column;gap:6px}.fi-stats span{color:#8a8f90;font-size:13px}.fi-stats b{font-size:20px}
+.fi-spark{width:100%;height:160px;margin:8px 0 12px}.fi-note{color:#8a8f90;font-size:12px;margin-top:10px}.pgc h3 small{color:#8a8f90;font-weight:400;font-size:13px}
+.pgt td.up{color:#abe127}.pgt td.down{color:#f6465d}
