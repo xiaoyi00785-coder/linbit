@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { useBalances } from "@/lib/queries";
-import { getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type Withdrawal } from "@/lib/services";
+import { listWithdrawNetworks, getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type Withdrawal } from "@/lib/services";
 import { Src } from "./common";
 // @ts-ignore legacy JS 组件
 import { Ico } from "@/legacy/App";
@@ -36,6 +36,19 @@ export function Withdraw() {
   const [records, setRecords] = useState<Withdrawal[]>([]);
   const [recSrc, setRecSrc] = useState<"api" | "mock">();
   const bal = useBalances();
+  const [apiNets, setApiNets] = useState<Record<string, string[]>>({});
+  const netsOf = (a: string) => apiNets[a] ?? NETS[a];
+
+  // 网络列表来自 GET /wallet/withdraw/networks（失败回退本地列表）
+  useEffect(() => {
+    listWithdrawNetworks(asset).then((r) => {
+      const l = (r.data?.networks ?? []).map((x) => x.network);
+      if (r.source === "api" && l.length) {
+        setApiNets((m) => ({ ...m, [asset]: l }));
+        setNet((cur) => (l.includes(cur) ? cur : l[0]));
+      }
+    });
+  }, [asset]);
 
   useEffect(() => {
     getWithdrawConfig(asset, net).then((r) => {
@@ -82,20 +95,20 @@ export function Withdraw() {
               {coinOpen && (
                 <div className="lmenu">
                   {ASSETS.map((a) => (
-                    <a key={a} style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={() => { setAsset(a); setNet(NETS[a][0]); setCoinOpen(false); }}>
+                    <a key={a} style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={() => { setAsset(a); setNet(netsOf(a)[0]); setCoinOpen(false); }}>
                       <Ico c={coinOf(a)} s={18} /> {a}
                     </a>
                   ))}
                 </div>
               )}
               <div className="chips">
-                {ASSETS.map((a) => <span key={a} onClick={() => { setAsset(a); setNet(NETS[a][0]); }}>{a}</span>)}
+                {ASSETS.map((a) => <span key={a} onClick={() => { setAsset(a); setNet(netsOf(a)[0]); }}>{a}</span>)}
               </div>
             </div>
             <div className="fx-field">
               网络
               <select value={net} onChange={(e) => setNet(e.target.value)}>
-                {NETS[asset].map((a) => <option key={a}>{a}</option>)}
+                {netsOf(asset).map((a) => <option key={a}>{a}</option>)}
               </select>
             </div>
             <div className="fx-field">

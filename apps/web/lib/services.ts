@@ -80,9 +80,9 @@ export function withdraw(body: WithdrawRequest) {
 }
 
 /** 已对接：GET /wallet/withdraw/records */
-export function withdrawRecords() {
+export function withdrawRecords(asset?: string) {
   return tryApi(
-    () => api.GET("/wallet/withdraw/records", {}),
+    () => api.GET("/wallet/withdraw/records", { params: { query: asset ? { asset } : {} } }),
     () => ({ page: 1, pageSize: 20, total: 0, items: [] as Withdrawal[] }),
   );
 }

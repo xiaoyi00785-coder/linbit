@@ -749,6 +749,7 @@ export interface components {
             /** @example cli-20261102-001 */
             clientOrderId?: string | null;
         };
+        /** @description 现货订单。所有价格/数量字段均为十进制字符串（非浮点），并按交易对精度格式化输出： price 按 pricePrecision、quantity/filledQuantity 按 quantityPrecision 补齐定长小数位。 示例按 BTCUSDT（pricePrecision=2, quantityPrecision=6）。 */
         Order: {
             /** @example 1000000001 */
             orderId: string;
@@ -758,11 +759,20 @@ export interface components {
             symbol: string;
             side: components["schemas"]["OrderSide"];
             type: components["schemas"]["OrderType"];
-            /** @example 76768.40 */
+            /**
+             * @description 限价，按 pricePrecision 格式化的十进制字符串；市价单为 null。
+             * @example 76768.40
+             */
             price?: string | null;
-            /** @example 0.01000000 */
+            /**
+             * @description 下单数量，按 quantityPrecision 格式化的十进制字符串。
+             * @example 0.010000
+             */
             quantity: string;
-            /** @example 0.00000000 */
+            /**
+             * @description 已成交数量，按 quantityPrecision 格式化的十进制字符串。
+             * @example 0.000000
+             */
             filledQuantity: string;
             status: components["schemas"]["OrderStatus"];
             timeInForce?: components["schemas"]["TimeInForce"];
@@ -775,6 +785,7 @@ export interface components {
         PaginatedOrders: components["schemas"]["Pagination"] & {
             items: components["schemas"]["Order"][];
         };
+        /** @description 成交记录。price/quantity/fee 均为十进制字符串（非浮点）并按交易对精度格式化： price 按 pricePrecision、quantity 按 quantityPrecision；fee 按其计价资产精度 （base 计价按 quantityPrecision、quote 计价按 pricePrecision）。示例按 BTCUSDT。 */
         Trade: {
             /** @example 5000000001 */
             tradeId: string;
@@ -783,11 +794,20 @@ export interface components {
             /** @example BTCUSDT */
             symbol: string;
             side: components["schemas"]["OrderSide"];
-            /** @example 78000.00 */
+            /**
+             * @description 成交价，按 pricePrecision 格式化的十进制字符串。
+             * @example 78000.00
+             */
             price: string;
-            /** @example 0.02000000 */
+            /**
+             * @description 成交数量，按 quantityPrecision 格式化的十进制字符串。
+             * @example 0.020000
+             */
             quantity: string;
-            /** @example 1.56000000 */
+            /**
+             * @description 手续费，按其计价资产（feeAsset）精度格式化的十进制字符串。
+             * @example 1.56
+             */
             fee?: string | null;
             /** @example USDT */
             feeAsset?: string | null;
@@ -1583,7 +1603,7 @@ export interface operations {
                  *       "side": "buy",
                  *       "type": "limit",
                  *       "price": "76768.40",
-                 *       "quantity": "0.01000000",
+                 *       "quantity": "0.010000",
                  *       "timeInForce": "GTC",
                  *       "clientOrderId": "cli-20261102-001"
                  *     }
@@ -1606,8 +1626,8 @@ export interface operations {
                      *       "side": "buy",
                      *       "type": "limit",
                      *       "price": "76768.40",
-                     *       "quantity": "0.01000000",
-                     *       "filledQuantity": "0.00000000",
+                     *       "quantity": "0.010000",
+                     *       "filledQuantity": "0.000000",
                      *       "status": "new",
                      *       "timeInForce": "GTC",
                      *       "createdAt": "2026-11-02T10:10:00Z"
@@ -1649,8 +1669,8 @@ export interface operations {
                      *       "side": "buy",
                      *       "type": "limit",
                      *       "price": "76768.40",
-                     *       "quantity": "0.01000000",
-                     *       "filledQuantity": "0.00000000",
+                     *       "quantity": "0.010000",
+                     *       "filledQuantity": "0.000000",
                      *       "status": "canceled",
                      *       "timeInForce": "GTC",
                      *       "createdAt": "2026-11-02T10:10:00Z"
@@ -1694,8 +1714,8 @@ export interface operations {
                      *           "side": "buy",
                      *           "type": "limit",
                      *           "price": "76768.40",
-                     *           "quantity": "0.01000000",
-                     *           "filledQuantity": "0.00000000",
+                     *           "quantity": "0.010000",
+                     *           "filledQuantity": "0.000000",
                      *           "status": "new",
                      *           "timeInForce": "GTC",
                      *           "createdAt": "2026-11-02T10:10:00Z"
@@ -1744,8 +1764,8 @@ export interface operations {
                      *           "side": "sell",
                      *           "type": "limit",
                      *           "price": "78000.00",
-                     *           "quantity": "0.02000000",
-                     *           "filledQuantity": "0.02000000",
+                     *           "quantity": "0.020000",
+                     *           "filledQuantity": "0.020000",
                      *           "status": "filled",
                      *           "timeInForce": "GTC",
                      *           "createdAt": "2026-10-30T11:00:00Z"
@@ -1792,8 +1812,8 @@ export interface operations {
                      *           "symbol": "BTCUSDT",
                      *           "side": "sell",
                      *           "price": "78000.00",
-                     *           "quantity": "0.02000000",
-                     *           "fee": "1.56000000",
+                     *           "quantity": "0.020000",
+                     *           "fee": "1.56",
                      *           "feeAsset": "USDT",
                      *           "role": "maker",
                      *           "createdAt": "2026-10-30T11:05:00Z"
