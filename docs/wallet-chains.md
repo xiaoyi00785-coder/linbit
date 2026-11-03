@@ -24,7 +24,7 @@
 1. 准备口令文件 `./secrets/signer_passphrase`（已在 .gitignore），设置 `WALLET_SIGNER_TOKEN`（≥24 位随机串）。
 2. `docker compose --profile chain run --rm wallet-signer init`（测试网；主网加 `-mainnet`）。备份 keystore 卷与口令（分开保存）。
 3. `docker compose --profile chain run --rm wallet-signer xpub` → 将输出的 `WALLET_XPUB_EVM/TRON/BTC` 写入 .env。
-4. `docker compose --profile chain run --rm wallet-signer sol-addresses -n 10000 -o /data/sol.txt`，将文件提供给 wallet 并设置 `WALLET_SOL_ADDRESSES_FILE`。
+4. `docker compose --profile chain run --rm wallet-signer sol-addresses -n 10000 -o /export/sol.txt`（写入共享卷 `solexport`，只含公开地址），并设置 `WALLET_SOL_ADDRESSES_FILE=/data/sol/sol.txt`（wallet 以只读方式挂载该卷）。
 5. 设置 `WALLET_CHAIN=testnet`、热钱包上限 `WALLET_HOT_CAP_<ASSET>_<NET>`，可选 `WALLET_SWEEP_ENABLED=true`、`WALLET_SWEEP_MIN_<ASSET>_<NET>`。
 6. 启动时 wallet 会校验 xpub 与 signer 公钥一致，不一致拒绝启动。
 7. 用水龙头给 signer 日志里打印的热钱包地址充测试币（gas 补充需要）。

@@ -126,6 +126,22 @@ func TestInternalBlocked(t *testing.T) {
 	}
 }
 
+func TestAdminHidden(t *testing.T) {
+	asset := newUpstream()
+	defer asset.server.Close()
+	h := newTestGateway(t, asset.server.URL, asset.server.URL)
+	for _, p := range []string{"/admin", "/admin/", "/admin/v1/login", "//admin/v1/users", "/ADMIN/v1/x", "/internal"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", p, nil)) // no token: must be 404, not 401
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want 404", p, w.Code)
+		}
+	}
+	if asset.hits != 0 {
+		t.Fatal("hidden path reached upstream")
+	}
+}
+
 func TestWalletRouteProxiesToAsset(t *testing.T) {
 	asset := newUpstream()
 	defer asset.server.Close()

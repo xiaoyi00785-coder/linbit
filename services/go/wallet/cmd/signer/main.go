@@ -24,6 +24,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	_ "github.com/linbit/platform/services/go/common" // log redaction
 	"log"
 	"net/http"
 	"os"

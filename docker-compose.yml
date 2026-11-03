@@ -95,6 +95,8 @@ services:
       WALLET_XPUB_EVM: ${WALLET_XPUB_EVM:-}
       WALLET_XPUB_TRON: ${WALLET_XPUB_TRON:-}
       WALLET_XPUB_BTC: ${WALLET_XPUB_BTC:-}
+      # SOL deposit address list exported by `wallet-signer sol-addresses -o /export/sol.txt`
+      # into the shared solexport volume (public addresses only, no keys).
       WALLET_SOL_ADDRESSES_FILE: ${WALLET_SOL_ADDRESSES_FILE:-}
       WALLET_TRON_API_KEY: ${WALLET_TRON_API_KEY:-}
       # Empty = public testnet RPC defaults (required for mainnet).
@@ -115,6 +117,8 @@ services:
       WALLET_COLD_ADDRESS_BTC: ${WALLET_COLD_ADDRESS_BTC:-}
       WALLET_COLD_ADDRESS_SOL: ${WALLET_COLD_ADDRESS_SOL:-}
       WALLET_WORKER_INTERVAL: ${WALLET_WORKER_INTERVAL:-}
+    volumes:
+      - solexport:/data/sol:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,6 +146,7 @@ services:
       - signer_passphrase
     volumes:
       - signerdata:/data
+      - solexport:/export
     restart: unless-stopped
 
   account:
@@ -446,6 +451,7 @@ secrets:
 
 volumes:
   avatars:
+  solexport:
   signerdata:
   pgdata:
   enginedata:

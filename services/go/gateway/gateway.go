@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/linbit/platform/services/go/common"
@@ -150,8 +151,9 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 		return
 	}
-	// Internal service-to-service endpoints are never exposed through the gateway.
-	if strings.HasPrefix(r.URL.Path, "/internal") {
+	// Internal service-to-service endpoints and the admin back office are never
+	// exposed through the public gateway: answer 404 so they are not discoverable.
+	if hiddenPath(r.URL.Path) {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
 		return
 	}
@@ -213,4 +215,10 @@ func bearer(r *http.Request) string {
 		return strings.TrimSpace(h[len("Bearer "):])
 	}
 	return ""
+}
+
+// hiddenPath: /internal* and /admin* are not routed by the public gateway.
+func hiddenPath(raw string) bool {
+	p := strings.ToLower(path.Clean("/" + raw))
+	return strings.HasPrefix(p, "/internal") || p == "/admin" || strings.HasPrefix(p, "/admin/")
 }
