@@ -5457,6 +5457,7 @@ paths:
       description: |
         实时推送：在现有 /ws 上订阅频道 `chat:{room}`（如 `chat:spot.BTCUSDT`）。
         帧 data 为 `{type:"message", message: ChatMessage}` 或 `{type:"delete", id}`。
+        推送帧是广播，不含 `mine` 和 `clientId`；客户端用发言接口返回的消息 `id` 与推送 `message.id` 比对来识别自己的消息。
       operationId: listChatRooms
       security: []
       responses:
@@ -8364,9 +8365,11 @@ components:
       type: object
       properties:
         id: { type: string, example: spot.BTCUSDT }
-        kind: { type: string, enum: [general, spot, futures] }
-        symbol: { type: string }
+        type: { type: string, enum: [general, spot, futures] }
+        symbol: { type: string, description: general 房间不返回 }
+        name: { type: string, example: BTC/USDT 现货 }
         online: { type: integer }
+      required: [id, type, name, online]
     ChatRules:
       type: object
       properties:
@@ -8382,8 +8385,10 @@ components:
         room: { type: string }
         sender: { type: string, description: 脱敏昵称，如 用户***1234 }
         text: { type: string }
-        mine: { type: boolean }
+        clientId: { type: string, description: 仅发言接口的响应返回（发送者自己的 clientId）；历史与推送不返回 }
+        mine: { type: boolean, description: 发送者是否为当前登录用户；仅历史与发言接口返回，匿名请求与 WS 推送不返回 }
         createdAt: { type: string, format: date-time }
+      required: [id, room, sender, text, createdAt]
     ChatAdminMessage:
       allOf:
         - { $ref: "#/components/schemas/ChatMessage" }

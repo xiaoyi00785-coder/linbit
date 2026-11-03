@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestChatViolation(t *testing.T) {
 	cfg := defaultChatConfig()
@@ -72,5 +76,25 @@ func TestHubChatChannel(t *testing.T) {
 	}
 	if code, _ := c.validateChannel("chat:nope"); code == "" {
 		t.Fatal("unknown room accepted")
+	}
+}
+
+func TestChatMine(t *testing.T) {
+	enc := func(m chatMessage) string { b, _ := json.Marshal(m); return string(b) }
+	m := chatMessage{ID: 1, Room: "general", Sender: maskUID("u1234"), Text: "hi"}
+	if s := enc(m); strings.Contains(s, "mine") {
+		t.Errorf("anonymous/broadcast must omit mine: %s", s)
+	}
+	m.Mine = mineFlag("u1234", "")
+	if m.Mine != nil {
+		t.Errorf("anonymous requester: want nil")
+	}
+	m.Mine = mineFlag("u1234", "u1234")
+	if s := enc(m); !strings.Contains(s, `"mine":true`) {
+		t.Errorf("own message: %s", s)
+	}
+	m.Mine = mineFlag("u1234", "u9999")
+	if s := enc(m); !strings.Contains(s, `"mine":false`) {
+		t.Errorf("other's message: %s", s)
 	}
 }
