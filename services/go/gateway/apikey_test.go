@@ -128,6 +128,12 @@ func TestSubSessionFenced(t *testing.T) {
 		{"POST", "/wallet/withdraw"}, {"GET", "/wallet/deposit/address"}, {"POST", "/account/withdraw-addresses"},
 		{"GET", "/sub-accounts"}, {"POST", "/sub-accounts"}, {"POST", "/sub-accounts/5/freeze"},
 		{"POST", "/sub-accounts/5/api-keys"}, {"POST", "/2fa/totp/disable"},
+		{"POST", "/wallet/internal-transfer"}, {"GET", "/wallet/internal-transfers"},
+		{"POST", "/account/password/change"}, {"PUT", "/account/email"}, {"PUT", "/account/phone"},
+		{"POST", "/account/contact/code"}, {"POST", "/account/code/send"},
+		{"POST", "/account/fund-password"}, {"PUT", "/account/fund-password"}, {"POST", "/account/fund-password/reset"},
+		{"PUT", "/account/anti-phishing"}, {"POST", "/account/passkeys/register/begin"}, {"DELETE", "/account/passkeys/3"},
+		{"POST", "/2fa/totp/bind"}, {"POST", "/chat/rooms/BTCUSDT/messages"}, {"POST", "/chat/messages/9/report"},
 	} {
 		if code := do(c.m, c.p); code != http.StatusForbidden {
 			t.Errorf("sub JWT %s %s: %d want 403", c.m, c.p, code)
@@ -139,8 +145,13 @@ func TestSubSessionFenced(t *testing.T) {
 	if code := do("POST", "/sub-accounts/transfer"); code != http.StatusOK {
 		t.Fatalf("sub transfer back to parent: %d", code)
 	}
-	if code := do("GET", "/assets/balances"); code != http.StatusOK {
-		t.Fatalf("sub own assets: %d", code)
+	for _, c := range []struct{ m, p string }{
+		{"GET", "/assets/balances"}, {"GET", "/account/security"}, {"GET", "/account/passkeys"},
+		{"POST", "/event/orders"}, {"POST", "/spot/orders"},
+	} {
+		if code := do(c.m, c.p); code != http.StatusOK {
+			t.Fatalf("sub allowed %s %s: %d", c.m, c.p, code)
+		}
 	}
 	// Parent (normal) token still reaches /sub-accounts.
 	ptok, _ := common.SignAccessToken("test-secret", "U_PARENT", "p@x.com", time.Hour, now)
@@ -154,6 +165,16 @@ func TestSubSessionFenced(t *testing.T) {
 }
 
 func TestAPIKeyAllowedTable(t *testing.T) {
+	all := []string{"read", "spot_trade", "futures_trade"}
+	for _, c := range []struct{ m, p string }{
+		{"POST", "/wallet/internal-transfer"}, {"POST", "/account/fund-password"}, {"PUT", "/account/anti-phishing"},
+		{"POST", "/account/passkeys/register/begin"}, {"POST", "/event/orders"}, {"POST", "/chat/rooms/BTCUSDT/messages"},
+		{"POST", "/assets/transfer"}, {"POST", "/convert/accept"},
+	} {
+		if apiKeyAllowed(all, c.m, c.p) {
+			t.Errorf("api key allowed %s %s", c.m, c.p)
+		}
+	}
 	if apiKeyAllowed([]string{"read", "spot_trade", "futures_trade"}, "POST", "/wallet/withdraw") {
 		t.Fatal("withdraw allowed")
 	}

@@ -35,6 +35,24 @@ func alwaysDeniedForSub(p string) bool {
 		hasPrefixSeg(p, "/sub-accounts")
 }
 
+func subSecurityChange(method, p string) bool {
+	if method == http.MethodGet || method == http.MethodHead {
+		return false
+	}
+	switch {
+	case hasPrefixSeg(p, "/2fa"),
+		p == "/account/code/send",
+		p == "/account/password/change",
+		hasPrefixSeg(p, "/account/contact"),
+		p == "/account/email", p == "/account/phone",
+		hasPrefixSeg(p, "/account/fund-password"),
+		p == "/account/anti-phishing",
+		hasPrefixSeg(p, "/account/passkeys"):
+		return true
+	}
+	return false
+}
+
 // subSessionAllowed fences a logged-in sub-account (JWT acct=sub). The only
 // /sub-accounts call it may make is sending funds back to its parent, and it
 // may not disable its 2FA.
@@ -44,6 +62,17 @@ func subSessionAllowed(method, raw string) bool {
 		return true
 	}
 	if p == "/2fa/totp/disable" || hasPrefixSeg(p, "/kyc") {
+		return false
+	}
+	// Security settings are managed by the parent only: a sub session may read
+	// its security overview/sessions/devices/passkeys but never change password,
+	// contact, fund password, anti-phishing, passkeys or TOTP binding, nor
+	// request security/withdraw verification codes.
+	if subSecurityChange(method, p) {
+		return false
+	}
+	// Chat posting/reporting needs a KYC'd primary identity; subs only read.
+	if hasPrefixSeg(p, "/chat") && method != http.MethodGet && method != http.MethodHead {
 		return false
 	}
 	return !alwaysDeniedForSub(p)

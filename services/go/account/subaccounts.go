@@ -315,7 +315,7 @@ func (s *Server) handleCreateSub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if st.RequireParent2FA && !p.TOTPEnabled {
-		common.WriteError(w, http.StatusForbidden, "TWO_FACTOR_REQUIRED", "请先开启两步验证（谷歌验证器）")
+		common.WriteError(w, http.StatusForbidden, "TWOFA_REQUIRED", "请先开启两步验证（谷歌验证器）")
 		return
 	}
 	if p.Status == userFrozen {
@@ -391,8 +391,7 @@ func (s *Server) handlePatchSub(w http.ResponseWriter, r *http.Request) {
 	}
 	var loginTOTP map[string]string
 	if req.LoginEnabled != nil || req.Password != "" {
-		if !p.TOTPEnabled || req.TOTPCode == "" || !validateTOTP(p.TOTPSecret, req.TOTPCode) {
-			common.WriteError(w, http.StatusForbidden, "TOTP_INVALID", "请输入正确的两步验证码")
+		if !requireParentTOTP(w, p, req.TOTPCode) {
 			return
 		}
 	}
@@ -818,8 +817,7 @@ func (s *Server) handleCreateSubKey(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "IP 白名单格式不正确（最多 20 条）")
 		return
 	}
-	if !p.TOTPEnabled || req.TOTPCode == "" || !validateTOTP(p.TOTPSecret, req.TOTPCode) {
-		common.WriteError(w, http.StatusForbidden, "TOTP_INVALID", "请输入正确的两步验证码")
+	if !requireParentTOTP(w, p, req.TOTPCode) {
 		return
 	}
 	if sub.Status == userFrozen {
@@ -982,4 +980,14 @@ var ErrSubLoginDisabled = errors.New("sub-account login disabled")
 
 func writeSubLoginDisabled(w http.ResponseWriter) {
 	common.WriteError(w, http.StatusForbidden, "SUB_LOGIN_DISABLED", "该子账户未开启登录，请联系母账户")
+}
+
+// requireParentTOTP: sub-account management always needs the parent's TOTP.
+// TWOFA_REQUIRED (403) = TOTP not bound or not supplied; INVALID_TOTP (401) = wrong code.
+func requireParentTOTP(w http.ResponseWriter, p *User, code string) bool {
+	if !p.TOTPEnabled {
+		common.WriteError(w, http.StatusForbidden, "TWOFA_REQUIRED", "请先开启两步验证（谷歌验证器）")
+		return false
+	}
+	return requireTOTPIfEnabled(w, p, code)
 }
