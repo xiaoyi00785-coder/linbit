@@ -58,7 +58,7 @@ a:not(.lb):not(.pill):hover{opacity:.9}
 .lb-rv.lb-rv-in{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.lb-rv{opacity:1;transform:none}}
 
-/* ===== toast（参照 easicoin：.3s 过渡，深色卡片 + 品牌色描边） ===== */
+/* ===== toast（.3s 过渡，深色卡片 + 品牌色描边） ===== */
 #lb-toasts{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .lb-toast{min-width:220px;max-width:420px;padding:11px 18px;border-radius:10px;background:#1d1d1d;border:1px solid #2a2c2d;color:#fff;font-size:14px;box-shadow:0 8px 28px rgba(0,0,0,.45);display:flex;gap:8px;align-items:center;animation:lbToastIn .3s cubic-bezier(.16,1,.3,1)}
 .lb-toast::before{content:"";width:8px;height:8px;border-radius:50%;background:#abe127;flex:none}

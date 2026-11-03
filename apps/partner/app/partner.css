@@ -20,7 +20,7 @@ th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--lb-border)
 ol{line-height:2;color:var(--lb-text-2)}
 input{height:40px;background:var(--lb-card-2);border:1px solid var(--lb-border);border-radius:8px;color:var(--lb-text);padding:0 12px;width:100%;margin-bottom:12px}
 .tag{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--lb-primary-soft);color:var(--lb-primary)}
-/* ---- 交互（参照 easicoin：.3s 过渡，#1d1d1d hover，品牌色描边） ---- */
+/* ---- 交互（.3s 过渡，#1d1d1d hover，品牌色描边） ---- */
 .ph{position:sticky;top:0;z-index:10;background:var(--lb-bg)}
 .ph nav a{position:relative;transition:color .3s;padding:18px 0}
 .ph nav a.on{color:var(--lb-primary)}
