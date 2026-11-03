@@ -28,6 +28,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /strategy/grid/{id}", s.user(s.hGet))
 	mux.HandleFunc("GET /strategy/grid/{id}/orders", s.user(s.hOrders))
 	mux.HandleFunc("POST /strategy/grid/{id}/stop", s.user(s.hStop))
+	// Internal: gateway TradFi gate resolves a copy source's symbol.
+	mux.HandleFunc("GET /internal/strategy/grid/{id}/symbol", s.hInternalSymbol)
 	if s.cfg.DevMode {
 		mux.HandleFunc("POST /internal/dev/grid/tick", func(w http.ResponseWriter, r *http.Request) {
 			s.Tick(r.Context())
@@ -391,4 +393,27 @@ func (s *Server) hSquare(w http.ResponseWriter, r *http.Request) {
 		items = append(items, rows[i].m)
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(rows), "page": page, "pageSize": size})
+}
+
+// hInternalSymbol: GET /internal/strategy/grid/{id}/symbol (X-Internal-Token).
+func (s *Server) hInternalSymbol(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.InternalToken == "" || r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "内部令牌无效")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "策略不存在")
+		return
+	}
+	b, err := s.bot(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "策略不存在")
+		return
+	}
+	if err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]string{"symbol": b.Symbol})
 }

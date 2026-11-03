@@ -679,6 +679,11 @@ func (s *Server) mirror(ctx context.Context, f Follow, e copyEvent) {
 	if e.New.Sign() < 0 {
 		side = "sell"
 	}
+	// TradFi gate (flag + follower KYC country, fail closed); closes above stay open.
+	if reason := s.tradfi.blocked(ctx, c.Symbol, f.Follower); reason != "" {
+		s.skipCopy(ctx, f.ID, e.ID, c.Symbol, "open", side, reason)
+		return
+	}
 	lev, mode, err := s.settings(ctx, s.db, e.Trader, c)
 	if err != nil {
 		return

@@ -16,6 +16,7 @@ type Config struct {
 	InternalToken string
 	AssetURL      string // asset internal URL (spot <-> futures transfers)
 	MarketURL     string // market-data URL (index price = spot last price)
+	KycURL        string // kyc internal URL (copy-trading TradFi gate: follower country)
 	DevMode       bool   // enables /internal/dev/* (index override, tick, funding)
 
 	DefaultLeverage   int    // FUTURES_DEFAULT_LEVERAGE (20, matches the UI)
@@ -71,6 +72,7 @@ func LoadConfig() Config {
 		InternalToken:        common.Env("INTERNAL_TOKEN", ""),
 		AssetURL:             common.Env("ASSET_INTERNAL_URL", "http://localhost:8082"),
 		MarketURL:            common.Env("MARKET_URL", "http://localhost:8085"),
+		KycURL:               common.Env("KYC_URL", "http://localhost:8087"),
 		DevMode:              common.Env("DEV_MODE", "false") == "true",
 		DefaultLeverage:      common.EnvInt("FUTURES_DEFAULT_LEVERAGE", 20),
 		DefaultMarginMode:    mode,

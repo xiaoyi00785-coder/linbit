@@ -220,12 +220,14 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// TradFi gate runs before routing so paths owned by services merged on
+	// other branches (/convert, /sub-accounts) are gated as soon as routed.
+	if g.tradfi != nil && !g.tradfi.check(w, r) {
+		return
+	}
 	proxy := g.match(r.URL.Path)
 	if proxy == nil {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
-		return
-	}
-	if g.tradfi != nil && !g.tradfi.check(w, r) {
 		return
 	}
 	proxy.ServeHTTP(w, r)

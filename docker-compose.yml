@@ -353,6 +353,8 @@ services:
       ASSET_INTERNAL_URL: http://asset:8082
       # Index price = spot last price from market-data (no price = no mark = fail closed).
       MARKET_URL: http://market-data:8085
+      # Copy-trading TradFi gate: follower KYC country (docs/tradfi.md).
+      KYC_URL: http://kyc:8087
       FUTURES_DEFAULT_LEVERAGE: ${FUTURES_DEFAULT_LEVERAGE:-20}
       FUTURES_DEFAULT_MARGIN_MODE: ${FUTURES_DEFAULT_MARGIN_MODE:-cross}
       FUTURES_MARKET_PRICE_BAND: ${FUTURES_MARKET_PRICE_BAND:-0.05}
