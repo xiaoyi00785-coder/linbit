@@ -83,6 +83,19 @@ Internal: `GET|POST /internal/points/campaigns` (admin `points/campaigns`, rewar
 `POST /coupons/{id}/activate` → futures `POST /internal/bonus/grant` (ref `coupon:<id>`). Trial vouchers need futures own funds ≥ amount (INSUFFICIENT_OWN_FUNDS).
 Errors: COUPON_NOT_FOUND, COUPON_NOT_ACTIVATABLE. Internal: `GET /internal/coupons?userId=`.
 
+## Newcomer gift package (新人礼包) / invite KYC reward / activity center
+
+`GET /rewards/newcomer` (KYC state, enrollment window, 8 tasks with `status` locked|in_progress|claimable|claimed|expired),
+`POST /rewards/newcomer/enroll` (KYC ≥ GROWTH_NEWCOMER_KYC_LEVEL, once per user; window GROWTH_NEWCOMER_DAYS from enrollment),
+`POST /rewards/newcomer/tasks/{key}/claim` → voucher in the coupon center (source `newcomer:<task>:<uid>`).
+Tasks: `bind` (email + phone verified → deduction), `first_deposit` (a USD deposit ≥ min inside the window followed by a transfer
+to futures → trial), `volume_1..6` (cumulative futures notional since enrollment, stackable → trial).
+Errors: KYC_REQUIRED (403), ALREADY_ENROLLED, NOT_ENROLLED, TASK_NOT_FOUND, TASK_NOT_COMPLETED, ALREADY_CLAIMED.
+Invite: when an invitee reaches GROWTH_INVITE_KYC_LEVEL within GROWTH_INVITE_KYC_DAYS of registering, inviter and invitee each
+get a GROWTH_INVITE_KYC_REWARD trial voucher (checked on every sync; idempotent).
+Public `GET /activities`: newcomer + invite (long-term) and every points period with its status (period 5 = ended).
+Dev (account): `POST /internal/dev/account/bind-phone {uid, phone}`.
+
 | Env | Default |
 |---|---|
 | GROWTH_SYNC_MS | 2000 |
@@ -108,3 +121,12 @@ Errors: COUPON_NOT_FOUND, COUPON_NOT_ACTIVATABLE. Internal: `GET /internal/coupo
 | GROWTH_POINTS_INVITE_POINTS | 8 |
 | GROWTH_POINTS_INVITE_DAILY_CAP | 80 |
 | GROWTH_POINTS_REDEEM | 10:deduction:3,20:deduction:6,35:trial:10,50:deduction:10,75:trial:20,100:trial:30,200:deduction:75,300:trial:100 |
+| GROWTH_NEWCOMER_DAYS | 7 |
+| GROWTH_NEWCOMER_KYC_LEVEL | 1 |
+| GROWTH_NEWCOMER_BIND_REWARD | 5 (deduction) |
+| GROWTH_NEWCOMER_DEPOSIT_MIN | 50 |
+| GROWTH_NEWCOMER_DEPOSIT_REWARD | 5 (trial) |
+| GROWTH_NEWCOMER_VOLUME_TIERS | 10000:5,50000:10,100000:15,300000:30,500000:50,1000000:100 (trial) |
+| GROWTH_INVITE_KYC_REWARD | 20 (trial, each side) |
+| GROWTH_INVITE_KYC_LEVEL | 1 |
+| GROWTH_INVITE_KYC_DAYS | 30 |

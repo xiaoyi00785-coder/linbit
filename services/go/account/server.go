@@ -136,6 +136,7 @@ func (s *Server) Routes() http.Handler {
 	// Guarded by DEV_MODE + the shared internal token; never proxied by the gateway.
 	if s.cfg.DevMode {
 		mux.HandleFunc("GET /internal/dev/last-code", s.handleDevLastCode)
+		mux.HandleFunc("POST /internal/dev/account/bind-phone", s.handleDevBindPhone)
 	}
 	return mux
 }
@@ -354,4 +355,26 @@ func (s *Server) initAssetAccount(ctx context.Context, uid string) {
 	if resp.StatusCode >= 300 {
 		log.Printf("initAssetAccount: asset returned %d", resp.StatusCode)
 	}
+}
+
+// handleDevBindPhone (dev only) attaches a verified phone to a user so smoke
+// scripts can exercise the "bind email + phone" newcomer task.
+func (s *Server) handleDevBindPhone(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.InternalToken == "" || r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "internal token required")
+		return
+	}
+	var req struct {
+		UID   string `json:"uid"`
+		Phone string `json:"phone"`
+	}
+	if err := common.DecodeJSON(r, &req); err != nil || req.UID == "" || req.Phone == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	if _, err := s.store.db.ExecContext(r.Context(), `UPDATE users SET phone=$2, phone_verified=TRUE, email_verified=(email IS NOT NULL) WHERE uid=$1`, req.UID, req.Phone); err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

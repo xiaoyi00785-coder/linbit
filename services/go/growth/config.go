@@ -48,6 +48,11 @@ type Config struct {
 	CouponOwnFunds     bool            // GROWTH_COUPON_REQUIRE_OWN_FUNDS (true): trial needs own futures funds >= amount
 	ValidInviteeFees   decimal.Decimal // GROWTH_VALID_INVITEE_FEES (100): cumulative fees of a "valid" invitee
 	Points             PointsRules     // GROWTH_POINTS_* defaults for new carnival periods
+
+	Newcomer        NewcomerRules
+	InviteKYCReward decimal.Decimal // GROWTH_INVITE_KYC_REWARD (20): trial voucher for inviter and invitee
+	InviteKYCLevel  int             // GROWTH_INVITE_KYC_LEVEL (1)
+	InviteKYCWithin time.Duration   // GROWTH_INVITE_KYC_DAYS (30): invitee must pass KYC within N days of registering
 }
 
 func dec(key, def string) decimal.Decimal {
@@ -125,6 +130,11 @@ func LoadConfig() Config {
 		CouponOwnFunds:     common.Env("GROWTH_COUPON_REQUIRE_OWN_FUNDS", "true") == "true",
 		ValidInviteeFees:   dec("GROWTH_VALID_INVITEE_FEES", "100"),
 		Points:             loadPointsRules(),
+
+		Newcomer:        loadNewcomerRules(),
+		InviteKYCReward: dec("GROWTH_INVITE_KYC_REWARD", "20"),
+		InviteKYCLevel:  common.EnvInt("GROWTH_INVITE_KYC_LEVEL", 1),
+		InviteKYCWithin: time.Duration(common.EnvInt("GROWTH_INVITE_KYC_DAYS", 30)) * 24 * time.Hour,
 	}
 }
 

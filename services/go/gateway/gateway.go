@@ -121,6 +121,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/partner/rules"},
 			{method: http.MethodGet, path: "/points/campaigns"},
 			{method: http.MethodGet, path: "/points/campaign"},
+			{method: http.MethodGet, path: "/activities"},
 			{method: "", path: "/ws"}, // public market WebSocket
 		},
 	}, nil
