@@ -272,6 +272,7 @@ func run(root, execCmd string) int {
 			"MARKET_URL=http://localhost:" + marketPort,
 			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
 			"GROWTH_INTERNAL_URL=http://localhost:" + growthPort,
+			"EARN_INTERNAL_URL=http://localhost:" + earnPort,
 			"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
 			"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
 			"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,

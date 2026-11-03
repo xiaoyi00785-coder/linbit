@@ -201,6 +201,7 @@ services:
       KYC_INTERNAL_URL: http://kyc:8087
       FUTURES_INTERNAL_URL: http://futures:8089
       GROWTH_INTERNAL_URL: http://growth:8091
+      EARN_INTERNAL_URL: http://earn:8092
       # First super admin, created only when the admin_users table is empty.
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}

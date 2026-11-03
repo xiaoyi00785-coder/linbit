@@ -23,6 +23,7 @@ type Config struct {
 	KYCURL     string
 	FuturesURL string
 	GrowthURL  string
+	EarnURL    string
 	OrderURL   string
 	MarketURL  string
 
@@ -77,6 +78,7 @@ func LoadConfig() Config {
 		KYCURL:     common.Env("KYC_INTERNAL_URL", "http://localhost:8087"),
 		FuturesURL: common.Env("FUTURES_INTERNAL_URL", "http://localhost:8089"),
 		GrowthURL:  common.Env("GROWTH_INTERNAL_URL", "http://localhost:8091"),
+		EarnURL:    common.Env("EARN_INTERNAL_URL", "http://localhost:8092"),
 		OrderURL:   common.Env("ORDER_INTERNAL_URL", "http://localhost:8084"),
 		MarketURL:  common.Env("MARKET_URL", "http://localhost:8085"),
 

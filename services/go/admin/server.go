@@ -120,6 +120,8 @@ func (s *Server) Routes() http.Handler {
 	a("POST /admin/v1/points/campaigns", permRewardEdit, s.handlePointsCampaignCreate)
 	a("GET /admin/v1/users/{uid}/coupons", permUserView, s.handleUserCoupons)
 
+	s.registerEarnRoutes(a)
+
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
 
 	if s.cfg.DevMode {

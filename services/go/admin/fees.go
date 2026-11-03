@@ -167,8 +167,13 @@ func (s *Server) getChange(ctx context.Context, id int64) (*changeDTO, error) {
 
 // listChanges: filter "" = all, "open" = pending|scheduled, otherwise a status.
 func (s *Server) listChanges(ctx context.Context, filter string) ([]*changeDTO, error) {
-	q := `SELECT ` + changeCols + ` FROM change_requests WHERE kind = $1`
-	args := []interface{}{kindFee}
+	return s.listChangesOf(ctx, []string{kindFee}, filter)
+}
+
+// listChangesOf lists changes of the given kinds.
+func (s *Server) listChangesOf(ctx context.Context, kinds []string, filter string) ([]*changeDTO, error) {
+	q := `SELECT ` + changeCols + ` FROM change_requests WHERE kind = ANY($1)`
+	args := []interface{}{textArray(kinds)}
 	switch filter {
 	case "":
 	case "open":
@@ -272,6 +277,13 @@ func (s *Server) handleSubmitFeeChange(w http.ResponseWriter, r *http.Request) {
 // handleFeeDecision records an approval or rejection. The approver must hold
 // super_admin or finance_second, not be the submitter, and not have voted.
 func (s *Server) handleFeeDecision(decision string) http.HandlerFunc {
+	return s.handleChangeDecision([]string{kindFee}, decision)
+}
+
+// handleChangeDecision is the shared dual-approval step for every change
+// kind (fee rates, earn/loan rates): super_admin + finance_second, neither the
+// submitter, then a public notice and the FeeNotice delay before applying.
+func (s *Server) handleChangeDecision(kinds []string, decision string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		a := actorOf(r)
 		id, ok := pathID(r)
@@ -292,6 +304,10 @@ func (s *Server) handleFeeDecision(decision string) http.HandlerFunc {
 			return
 		} else if err != nil {
 			internalErr(w, "fee decision load", err)
+			return
+		}
+		if !kindIn(c.Kind, kinds) {
+			common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "变更不存在")
 			return
 		}
 		if c.Status != "pending" {
@@ -367,11 +383,10 @@ func (s *Server) handleFeeDecision(decision string) http.HandlerFunc {
 						eff = rt
 					}
 				}
-				var p feePayload
-				_ = json.Unmarshal(c.Payload, &p)
+				cat, title, body := changeNotice(c, eff)
 				var annID int64
-				if err := tx.QueryRowContext(r.Context(), `INSERT INTO announcements (category, title, body, publish_at, created_by) VALUES ('fee', $1, $2, $3, 'system') RETURNING id`,
-					"交易手续费调整公告", feeNoticeBody(p, eff), now).Scan(&annID); err != nil {
+				if err := tx.QueryRowContext(r.Context(), `INSERT INTO announcements (category, title, body, publish_at, created_by) VALUES ($1, $2, $3, $4, 'system') RETURNING id`,
+					cat, title, body, now).Scan(&annID); err != nil {
 					internalErr(w, "fee announcement", err)
 					return
 				}
@@ -388,7 +403,7 @@ func (s *Server) handleFeeDecision(decision string) http.HandlerFunc {
 			return
 		}
 		after, _ := s.getChange(r.Context(), id)
-		s.audit(r, a, "fee", decision+"_change", "fee_change:"+strconv.FormatInt(id, 10), levelHigh, result, nil, map[string]string{"status": after.Status, "asRole": asRole}, comment)
+		s.audit(r, a, changeModule(c.Kind), decision+"_change", changeModule(c.Kind)+"_change:"+strconv.FormatInt(id, 10), levelHigh, result, nil, map[string]string{"status": after.Status, "asRole": asRole}, comment)
 		common.WriteJSON(w, http.StatusOK, after)
 	}
 }
@@ -425,6 +440,10 @@ func (s *Server) handleFeeRollback(w http.ResponseWriter, r *http.Request) {
 		internalErr(w, "rollback load", err)
 		return
 	}
+	if c.Kind != kindFee {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "变更不存在")
+		return
+	}
 	if c.Status != "applied" || len(c.Before) == 0 {
 		common.WriteError(w, http.StatusConflict, "NOT_APPLIED", "只能回滚已生效的变更")
 		return
@@ -450,7 +469,7 @@ func (s *Server) RunScheduler(ctx context.Context) {
 		if n, err := s.applyDue(ctx, s.now()); err != nil {
 			log.Printf("scheduler: %v", err)
 		} else if n > 0 {
-			log.Printf("scheduler: applied %d fee change(s)", n)
+			log.Printf("scheduler: applied %d change(s)", n)
 		}
 		select {
 		case <-ctx.Done():
@@ -463,18 +482,20 @@ func (s *Server) RunScheduler(ctx context.Context) {
 // applyDue pushes every scheduled change whose effective time has passed.
 // Failures stay scheduled (retried next tick) with the error recorded.
 func (s *Server) applyDue(ctx context.Context, now time.Time) (int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, payload::text FROM change_requests WHERE kind = $1 AND status = 'scheduled' AND effective_at <= $2 ORDER BY effective_at, id`, kindFee, now)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, payload::text FROM change_requests WHERE kind = ANY($1) AND status = 'scheduled' AND effective_at <= $2 ORDER BY effective_at, id`,
+		textArray([]string{kindFee, kindEarnRate, kindLoanRate}), now)
 	if err != nil {
 		return 0, err
 	}
 	type due struct {
 		id      int64
+		kind    string
 		payload string
 	}
 	var list []due
 	for rows.Next() {
 		var d due
-		if err := rows.Scan(&d.id, &d.payload); err != nil {
+		if err := rows.Scan(&d.id, &d.kind, &d.payload); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -483,22 +504,16 @@ func (s *Server) applyDue(ctx context.Context, now time.Time) (int, error) {
 	rows.Close()
 	n := 0
 	for _, d := range list {
-		var p feePayload
-		_ = json.Unmarshal([]byte(d.payload), &p)
-		body := map[string]string{"spotMaker": p.SpotMaker, "spotTaker": p.SpotTaker, "by": "admin:change:" + strconv.FormatInt(d.id, 10)}
-		u, err := s.call(ctx, http.MethodPut, s.cfg.OrderURL, "/internal/admin/fees", body)
-		if err == nil && !u.ok() {
-			err = fmt.Errorf("order %d %s", u.Status, u.errCode())
-		}
+		err := s.applyChange(ctx, d.id, d.kind, []byte(d.payload))
 		if err != nil {
 			_, _ = s.db.ExecContext(ctx, `UPDATE change_requests SET error = $2, updated_at = now() WHERE id = $1`, d.id, err.Error())
-			s.auditSystem("fee", "apply_change", "fee_change:"+strconv.FormatInt(d.id, 10), "failed", err.Error())
+			s.auditSystem(changeModule(d.kind), "apply_change", changeModule(d.kind)+"_change:"+strconv.FormatInt(d.id, 10), "failed", err.Error())
 			continue
 		}
 		if _, err := s.db.ExecContext(ctx, `UPDATE change_requests SET status = 'applied', applied_at = $2, error = NULL, updated_at = $2 WHERE id = $1`, d.id, now); err != nil {
 			return n, err
 		}
-		s.auditSystem("fee", "apply_change", "fee_change:"+strconv.FormatInt(d.id, 10), "ok", "")
+		s.auditSystem(changeModule(d.kind), "apply_change", changeModule(d.kind)+"_change:"+strconv.FormatInt(d.id, 10), "ok", "")
 		n++
 	}
 	return n, nil
@@ -532,4 +547,51 @@ func (s *Server) handleDevRunScheduler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]int{"applied": n})
+}
+
+func kindIn(k string, kinds []string) bool {
+	for _, x := range kinds {
+		if x == k {
+			return true
+		}
+	}
+	return false
+}
+
+// changeModule is the audit module of a change kind.
+func changeModule(kind string) string {
+	switch kind {
+	case kindEarnRate:
+		return "earn_rate"
+	case kindLoanRate:
+		return "loan_rate"
+	}
+	return "fee"
+}
+
+// changeNotice builds the public announcement for an approved change.
+func changeNotice(c *changeDTO, eff time.Time) (category, title, body string) {
+	switch c.Kind {
+	case kindEarnRate, kindLoanRate:
+		return rateNotice(c, eff)
+	}
+	var p feePayload
+	_ = json.Unmarshal(c.Payload, &p)
+	return "fee", "交易手续费调整公告", feeNoticeBody(p, eff)
+}
+
+// applyChange pushes one approved, due change to its owning service.
+func (s *Server) applyChange(ctx context.Context, id int64, kind string, payload []byte) error {
+	switch kind {
+	case kindEarnRate, kindLoanRate:
+		return s.applyRateChange(ctx, kind, payload)
+	}
+	var p feePayload
+	_ = json.Unmarshal(payload, &p)
+	body := map[string]string{"spotMaker": p.SpotMaker, "spotTaker": p.SpotTaker, "by": "admin:change:" + strconv.FormatInt(id, 10)}
+	u, err := s.call(ctx, http.MethodPut, s.cfg.OrderURL, "/internal/admin/fees", body)
+	if err == nil && !u.ok() {
+		err = fmt.Errorf("order %d %s", u.Status, u.errCode())
+	}
+	return err
 }
