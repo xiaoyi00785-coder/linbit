@@ -102,3 +102,15 @@
 .cs-card h1{font-size:26px;margin:12px 0 8px}.cs-card p{color:#999;font-size:14px;line-height:1.7;margin:0}
 .cs-btns{display:flex;gap:12px;justify-content:center;margin-top:28px}.cs-btns>*{min-width:120px;padding:11px 18px;border-radius:999px;font-weight:600;cursor:pointer;border:0;font-size:14px;text-decoration:none}
 .cs-b1{background:#abe127;color:#111}.cs-b2{background:#2a2d34;color:#ddd}
+.tk-views{cursor:default}
+.tk-views{cursor:default!important}.obr.fl,.fl{background:rgba(198,255,0,.12)!important}
+/* 现货下单：买/卖切换 + 比例滑杆 */
+.sp-side{display:grid;grid-template-columns:1fr 1fr;gap:0;background:var(--lb-card-2,#1a1a1a);border-radius:8px;padding:3px;margin-bottom:12px}
+.of .sp-side button{border:0;background:transparent;color:var(--lb-text-3,#8a8a8a);font:600 13px/1 inherit;padding:9px 0;border-radius:6px;cursor:pointer;transition:background .15s,color .15s}
+.of .sp-side button:hover{color:#fff}
+.of .sp-side button.on.buy{background:var(--lb-up,#20b26c);color:#fff}
+.of .sp-side button.on.sell{background:var(--lb-down,#ef454a);color:#fff}
+.sp-sl.sell .fill{background:var(--lb-down,#ef454a)}.sp-sl.buy .fill{background:var(--lb-up,#20b26c)}
+.sp-sl.sell span.on i{border-color:var(--lb-down,#ef454a);background:var(--lb-down,#ef454a)}.sp-sl.buy span.on i{border-color:var(--lb-up,#20b26c);background:var(--lb-up,#20b26c)}
+.ltr .act,.sp-side{cursor:default}.ltr .act a,.sp-side button{cursor:pointer}
+.of .sp-side button:not(.on){background:transparent!important;color:#8a8a8a!important}

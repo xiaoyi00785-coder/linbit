@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast, copyText } from "@/lib/ui";
-import { rest } from "@/lib/rest";
+import { rest, rget } from "@/lib/rest";
+import { useAuthStore } from "@/lib/store";
+const authed = () => !!useAuthStore.getState().accessToken || (typeof localStorage !== "undefined" && !!localStorage.getItem("lb_auth"));
 
 type MP = Record<string, any>;
 export const openM = (name: string, props: MP = {}) => window.dispatchEvent(new CustomEvent("lb-modal", { detail: { name, props } }));
@@ -27,16 +29,37 @@ function Download({ kind = "apple", close }: MP) {
 }
 
 const ACCTS = ["资金账户", "现货账户", "合约账户", "理财账户"];
-function Transfer({ from = "资金账户", to = "合约账户", close }: MP) {
-  const [f, setF] = useState(from); const [t, setT] = useState(to === from ? ACCTS.find((x) => x !== from) : to);
-  const [coin, setCoin] = useState("USDT"); const [amt, setAmt] = useState("");
-  const ok = () => { if (!(+amt > 0)) return toast("请输入划转数量", "err"); if (f === t) return toast("转出与转入账户不能相同", "err"); toast("账户间划转接口暂未开放，已记录你的划转意向", "info"); close(); };
-  return <Box title="划转" onClose={close} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" onClick={ok}>确认划转</button></>}>
+const TACC: Record<string, "spot" | "futures"> = { 现货账户: "spot", 合约账户: "futures" };
+const TERR: Record<string, string> = { INSUFFICIENT_BALANCE: "可用余额不足", ACCOUNT_NOT_SUPPORTED: "该账户暂不支持划转（目前支持现货 ⇄ 合约）", SAME_ACCOUNT: "转出与转入账户不能相同", VALIDATION_ERROR: "参数有误，请检查数量" };
+type Tx = { id: string; asset: string; amount: string; from: string; to: string; createdAt?: string; status?: string };
+/** 划转：POST /assets/transfer（clientId 幂等，spot ⇄ futures）+ GET /assets/transfers 最近记录 */
+function Transfer({ from = "现货账户", to = "合约账户", close }: MP) {
+  const f0 = TACC[from] ? from : "现货账户";
+  const [f, setF] = useState(f0); const [t, setT] = useState(TACC[to] && to !== f0 ? to : f0 === "合约账户" ? "现货账户" : "合约账户");
+  const [coin, setCoin] = useState("USDT"); const [amt, setAmt] = useState(""); const [busy, setBusy] = useState(false);
+  const [cid] = useState(() => "c-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8));
+  const [hist, setHist] = useState<Tx[] | null>(null);
+  const loadH = () => rget<{ items: Tx[] }>("/assets/transfers?page=1&pageSize=5").then((r) => setHist(r.ok ? r.data?.items || [] : null));
+  useEffect(() => { if (authed()) loadH(); }, []);
+  const ok = async () => {
+    if (!authed()) { close(); location.href = "/login?next=" + encodeURIComponent(location.pathname); return; }
+    if (!(+amt > 0)) return toast("请输入划转数量", "err"); if (f === t) return toast(TERR.SAME_ACCOUNT, "err");
+    if (!TACC[f] || !TACC[t]) return toast(TERR.ACCOUNT_NOT_SUPPORTED, "err");
+    setBusy(true);
+    const r = await rest<Tx>("POST", "/assets/transfer", { clientId: cid, asset: coin, amount: amt, from: TACC[f], to: TACC[t] });
+    setBusy(false);
+    if (!r.ok) return toast(TERR[r.code || ""] || r.error || "划转失败，请稍后重试", "err");
+    toast(`已划转 ${amt} ${coin}：${f} → ${t}`, "ok"); window.dispatchEvent(new Event("lb-refresh")); close();
+  };
+  const NM: Record<string, string> = { spot: "现货", futures: "合约" };
+  return <Box title="划转" onClose={close} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>{busy ? "提交中…" : "确认划转"}</button></>}>
     <div className="tk-lbl">从</div><Dropdown v={f} opts={ACCTS} onChange={setF} />
     <div style={{ textAlign: "center", margin: "6px 0" }}><button className="tk-chip ic" aria-label="交换" onClick={() => { setF(t); setT(f); }}>⇅</button></div>
     <div className="tk-lbl">到</div><Dropdown v={t} opts={ACCTS} onChange={setT} />
     <div className="tk-lbl">币种</div><Dropdown v={coin} opts={["USDT", "BTC", "ETH"]} onChange={setCoin} />
     <div className="tk-lbl">数量</div><input className="kit-in" inputMode="decimal" placeholder="请输入数量" value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
+    <p className="tk-txt" style={{ fontSize: 12, opacity: .7 }}>目前支持现货账户 ⇄ 合约账户；理财请在理财页申购/赎回。</p>
+    {hist && hist.length > 0 && <div><div className="tk-lbl">最近划转</div>{hist.map((h) => <div key={h.id} className="tk-txt" style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span>{NM[h.from] || h.from} → {NM[h.to] || h.to}</span><span>{h.amount} {h.asset}</span><span style={{ opacity: .6 }}>{h.createdAt ? new Date(h.createdAt).toLocaleString() : h.status}</span></div>)}</div>}
   </Box>;
 }
 

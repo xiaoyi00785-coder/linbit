@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { openM } from '@/features/Kit'
 import { soonPath } from '@/lib/features'
 import { CoinIcon } from '@/components/CoinIcon'
 import { Link, NavLink } from '@/lib/router'
@@ -30,7 +31,7 @@ export function Header(){const auth=useAuth();const[o,setO]=useState(null);const
 return <header className="hdr"><Link to="/" className="logo"><svg width="22" height="22" viewBox="0 0 22 22"><rect x="2" y="2" width="18" height="18" rx="5" fill="none" style={{stroke:'var(--lb-primary)'}} strokeWidth="3"/><rect x="8" y="8" width="6" height="6" rx="1.5" style={{fill:'var(--lb-primary)'}}/></svg>LINBIT</Link>
 <nav>{nav.map(([to,l])=><div key={l} className={'ni'+(o===l?' open':'')} onMouseEnter={()=>M[l]&&setO(l)} onMouseLeave={()=>setO(null)}><NavLink end to={to}>{l}{M[l]&&<em>{o===l?'▴':'▾'}</em>}</NavLink>{o===l&&<div onClick={()=>setO(null)}><Panel m={M[l]}/></div>}</div>)}</nav>
 <div className="sp"/>{auth?<><Link to="/deposit" className="pill white">充值</Link><span className="sep"/><Link to="/assets/overview" className="hib" title="资产">▣</Link><div className={'ni ic'+(o==='av'?' open':'')} onMouseEnter={()=>setO('av')} onMouseLeave={()=>setO(null)}><Link to="/setting/dashboard" className="hib ava-s" title="个人中心"><i/></Link>{o==='av'&&<AvatarMenu/>}</div><Link to="/orders/futures" className="hib" title="订单">≣</Link></>:<><Link to="/login" className="pill dark">登录</Link><Link to="/register" className="pill white">注册</Link><span className="sep"/></>}
-<div className={'ni ic'+(o==='dl'?' open':'')} onMouseEnter={()=>setO('dl')} onMouseLeave={()=>setO(null)}><span className="hib">⤓</span>{o==='dl'&&<div className="dd qrpop"><p>扫码下载<br/>linbit App</p><div className="qr"><QRCodeSVG value="https://linbit.example.com/" size={120} marginSize={2} bgColor="transparent" fgColor="currentColor"/></div><button>更多平台</button></div>}</div>
+<div className={'ni ic'+(o==='dl'?' open':'')} onMouseEnter={()=>setO('dl')} onMouseLeave={()=>setO(null)}><span className="hib" role="button" onClick={()=>openM('download')}>⤓</span>{o==='dl'&&<div className="dd qrpop"><p>扫码下载<br/>linbit App</p><div className="qr"><QRCodeSVG value="https://linbit.example.com/" size={120} marginSize={2} bgColor="transparent" fgColor="currentColor"/></div><button>更多平台</button></div>}</div>
 <span className="hib" onClick={()=>setLang(true)}>◍</span>{lang&&<LangModal close={()=>setLang(false)}/>}</header>}
 export function Cookie(){const[s,setS]=useState(()=>!localStorage.getItem('lb_ck'));if(!s)return null;const ok=()=>{localStorage.setItem('lb_ck',1);setS(false)}
 return <div className="cookie"><h4>Cookie 设置</h4><p>我们使用 Cookie 来改善你的浏览体验并提供个性化服务。你可以随时调整偏好，详见 <a>Cookie 政策</a>。</p><button className="cw" onClick={ok}>全部接受</button><button className="cd" onClick={ok}>全部拒绝</button><a className="cs">Cookie 偏好设置</a></div>}

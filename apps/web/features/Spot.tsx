@@ -11,6 +11,7 @@ import { SPOT_FEE } from "@/lib/fees";
 import { Src } from "./common";
 import { useFillPrice, type PairMeta } from "./TradeKit";
 import { useTicker } from "@/lib/market";
+import { useBalances } from "@/lib/queries";
 
 const EVT = "lb-spot-orders";
 const bump = () => window.dispatchEvent(new Event(EVT));
@@ -33,6 +34,17 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const [busy, setBusy] = useState(false);
   const q = Number(qty) || 0;
   const px = type === "limit" ? Number(price) || 0 : last;
+  const bal = useBalances();
+  const freeOf = (a: string) => Number(((bal.data as any)?.items || []).find((x: any) => x.asset === a)?.free) || 0;
+  const avail = side === "buy" ? freeOf("USDT") : freeOf(B);
+  const [pc, setPc] = useState(0);
+  useEffect(() => setPc(0), [side, SYMBOL]);
+  const setByPct = (p: number) => {
+    setPc(p);
+    if (!avail) return;
+    const qn = side === "buy" ? (px ? (avail * p) / 100 / px : 0) : (avail * p) / 100;
+    setQty(qn ? (Math.floor(qn * 10 ** pair.qp) / 10 ** pair.qp).toFixed(pair.qp) : "");
+  };
   const fee = side === "buy" ? `${(q * SPOT_FEE.taker).toFixed(pair.qp + 2)} ${B}` : `${(q * px * SPOT_FEE.taker).toFixed(4)} USDT`;
 
   const submit = async () => {
@@ -54,14 +66,16 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
 
   return (
     <div data-guide="form" className="of">
-      <div className="seg">
-        {(["buy", "sell"] as const).map((s) => <b key={s} className={side === s ? "on" : ""} onClick={() => setSide(s)}>{s === "buy" ? "买入" : "卖出"}</b>)}
+      <div className="sp-side" role="tablist">
+        {(["buy", "sell"] as const).map((s) => <button key={s} role="tab" aria-selected={side === s} className={(side === s ? "on " : "") + s} onClick={() => setSide(s)}>{s === "buy" ? "买入" : "卖出"}</button>)}
       </div>
       <div className="pt sm">
         {(["limit", "market"] as const).map((t) => <b key={t} className={type === t ? "on" : ""} onClick={() => setType(t)}>{t === "limit" ? "限价" : "市价"}</b>)}
       </div>
       {type === "limit" && <div className="inp"><small>价格(USDT)</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(fix(num(e.target.value), pair.pp))} /></div>}
       <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => setQty(fix(num(e.target.value), pair.qp))} /><em>{B}</em></div>
+      <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
+      <div className="kv2 g"><span>可用</span><span>{authed ? `${avail} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
       <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>
       <div className="kv2 g"><span>预估手续费（0.1%）</span><span>{fee}</span></div>
       {msg && <div className={msg.ok ? "fx-ok" : "fx-err"} style={{ fontSize: 12, margin: "6px 0" }}>{msg.t}</div>}

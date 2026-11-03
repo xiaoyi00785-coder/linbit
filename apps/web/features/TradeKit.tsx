@@ -69,7 +69,7 @@ export function PairPicker({ cur, list, pick, fut }: { cur: PairMeta; list: Pair
 
 /* ---------- 点价填单 ---------- */
 const FILL = "lb-fill-price";
-export const fillPrice = (p: string) => window.dispatchEvent(new CustomEvent(FILL, { detail: p }));
+export const fillPrice = (p: string) => { window.dispatchEvent(new CustomEvent(FILL, { detail: p })); toast("已填入价格 " + p, "info"); };
 export function useFillPrice(set: (p: string) => void) {
   const r = useRef(set); r.current = set;
   useEffect(() => { const h = (e: Event) => r.current((e as CustomEvent).detail); window.addEventListener(FILL, h); return () => window.removeEventListener(FILL, h); }, []);
@@ -169,7 +169,7 @@ export function OrderBookPanel({ fut, pair }: { fut: boolean; pair: PairMeta }) 
           </div>
           <div className="obh"><span>价格({pair.quote})</span><span>数量({base})</span><span>累计({base})</span></div>
           {view !== "bids" && <div className={"tk-side" + (view === "asks" ? " full" : "")}>{A.rows.length ? [...A.rows].reverse().map((r) => row(r, A.max, "a")) : empty}</div>}
-          <div className={"obm tk-mid " + (chg >= 0 ? "up" : "down")} onClick={() => mid && fillPrice(Number(mid).toFixed(pp))}>
+          <div className={"obm tk-mid " + (chg >= 0 ? "up" : "down")} onClick={() => mid ? fillPrice(Number(mid).toFixed(pp)) : toast("暂无最新成交价", "info")}>
             {mid != null ? fmtFixed(mid, pp) : "--"} {chg >= 0 ? "↑" : "↓"}
             {fut && ft?.markPrice && <small className="g"> 标记 {fmtFixed(ft.markPrice, pp)}</small>}
           </div>
