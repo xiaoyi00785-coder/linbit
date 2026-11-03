@@ -327,12 +327,33 @@ paths:
   /auth/logout:
     post:
       tags: [Auth]
-      summary: 登出（吊销当前刷新令牌）
+      summary: 登出（吊销该用户全部刷新令牌）
+      description: |
+        需要 `Authorization: Bearer <accessToken>`。服务端按访问令牌识别用户，
+        吊销该用户所有未吊销的刷新令牌（全部设备）。请求体可选：客户端可以带
+        `{refreshToken}`，服务端目前不读取它；已签发的访问令牌在过期前仍然有效。
       operationId: logout
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: 可选，服务端忽略（全部刷新令牌都会被吊销）
       responses:
         "204":
-          description: 已登出
+          description: 已登出，刷新令牌已吊销
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: 服务器内部错误（INTERNAL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /2fa/totp/bind:
     post:
