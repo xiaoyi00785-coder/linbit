@@ -97,9 +97,9 @@ export function withdrawRecords(asset?: string) {
 }
 
 /** 已对接：POST /kyc（基础信息 + documents{front,selfie,back?}，fileId 来自 POST /kyc/documents） */
-export function submitKyc(body: KycSubmission & { documents?: { front: string; selfie: string; back?: string } }) {
+export function submitKyc(body: KycSubmission) {
   return tryApi(
-    () => api.POST("/kyc", { body: body as KycSubmission }),
+    () => api.POST("/kyc", { body }),
     () => ({ level: 0, status: "pending" as const, submittedAt: new Date().toISOString(), reason: null }),
   );
 }
@@ -295,9 +295,9 @@ export async function uploadKycDocument(file: File, side: "front" | "selfie" | "
 /** GET /kyc/status：提交后刷新审核状态 */
 export function getKycStatus() {
   return tryApi(
-    () => api.GET("/kyc/status" as any, {} as any) as any,
-    () => ({ level: 0, status: "pending" as const, submittedAt: new Date().toISOString(), reason: null }),
-  ) as Promise<Result<{ level?: number; status?: string; submittedAt?: string | null; reason?: string | null }>>;
+    () => api.GET("/kyc/status"),
+    (): S["KycStatus"] => ({ level: 0, status: "pending", submittedAt: new Date().toISOString(), reason: null }),
+  );
 }
 
 export interface Coupon {

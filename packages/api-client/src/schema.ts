@@ -1107,7 +1107,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 储备证明（最新快照）；未发布时 available=false */
+        /** 储备证明（后台手动录入的最新快照，不自动计算）；未发布时 available=false */
         get: operations["getProofOfReserves"];
         put?: never;
         post?: never;
@@ -4112,6 +4112,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/proof-of-reserves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 储备证明快照列表（后台手动录入，新→旧；content 权限） */
+        get: operations["adminListPorSnapshots"];
+        put?: never;
+        /** 录入储备证明快照（同一 snapshotAt 已存在 409；totpCode + reason，审计 por_create）。最新快照即 GET /market/proof-of-reserves */
+        post: operations["adminCreatePorSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/proof-of-reserves/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description snapshotAt 的 Unix 毫秒 */
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除整个快照（body：totpCode + reason，审计 por_delete） */
+        delete: operations["adminDeletePorSnapshot"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/chat/config": {
         parameters: {
             query?: never;
@@ -5043,6 +5081,11 @@ export interface components {
              * @example 2026-01-05T08:30:00Z
              */
             createdAt: string;
+            /**
+             * @description 本人的邀请码（来自 growth 服务，首次读取时自动生成）；growth 不可达时为 null
+             * @example LB8K2Q
+             */
+            inviteCode?: string | null;
         };
         /** @description 至少提供一个字段。头像一期只存 URL（http/https，≤512）。 */
         UpdateProfileRequest: {
@@ -5190,11 +5233,11 @@ export interface components {
              *     高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
              *     缺失时返回 400 DOCUMENT_REQUIRED。
              */
-            documents?: {
+            documents: {
                 /** @example doc_1 */
-                front?: string;
+                front: string;
                 /** @example doc_2 */
-                selfie?: string;
+                selfie: string;
                 /** @example doc_3 */
                 back?: string;
                 /**
@@ -5946,15 +5989,16 @@ export interface components {
              * @description UTC RFC3339
              */
             snapshotAt?: string | null;
-            items: {
-                asset: string;
-                /** @description 用户资产总额 */
-                liabilities: string;
-                /** @description 平台储备 */
-                reserves: string;
-                /** @description reserves/liabilities，例如 1.0234；liabilities=0 时为空串 */
-                ratio: string;
-            }[];
+            items: components["schemas"]["ProofOfReservesItem"][];
+        };
+        ProofOfReservesItem: {
+            asset: string;
+            /** @description 用户资产总额 */
+            liabilities: string;
+            /** @description 平台储备 */
+            reserves: string;
+            /** @description reserves/liabilities，例如 1.0234；liabilities=0 时为空串 */
+            ratio: string;
         };
         GrowthConfig: {
             /** @example USDT */
@@ -6589,6 +6633,42 @@ export interface components {
             body?: string;
             /** Format: date-time */
             publishAt?: string;
+        };
+        PorSnapshotInput: {
+            /**
+             * Format: date-time
+             * @description 默认当前时间；不得晚于当前
+             */
+            snapshotAt?: string;
+            note?: string;
+            items: {
+                /** @example USDT */
+                asset: string;
+                /**
+                 * @description 用户资产总额（非负十进制字符串）
+                 * @example 1000000
+                 */
+                liabilities: string;
+                /**
+                 * @description 平台储备（非负十进制字符串）
+                 * @example 1023400
+                 */
+                reserves: string;
+            }[];
+        };
+        PorSnapshot: {
+            /**
+             * Format: int64
+             * @description snapshotAt 的 Unix 毫秒
+             */
+            id: number;
+            /** Format: date-time */
+            snapshotAt: string;
+            note: string;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+            items: components["schemas"]["ProofOfReservesItem"][];
         };
         AdminWriteMeta: {
             /** @example 123456 */
@@ -10654,8 +10734,13 @@ export interface operations {
                             fundingTime?: number;
                             /** @description 十进制字符串 */
                             fundingRate?: string;
-                            /** @description 十进制字符串 */
+                            /** @description 十进制字符串（外部回填且来源无标记价时为 "0"） */
                             markPrice?: string;
+                            /**
+                             * @description settle = 本平台结算；binance/okx = 启动时从公开接口回填的历史（仅展示，不产生资金划转）
+                             * @enum {string}
+                             */
+                            source?: "settle" | "binance" | "okx";
                         }[];
                     };
                 };
@@ -14360,6 +14445,100 @@ export interface operations {
             };
             /** @description TOTP_INVALID */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminListPorSnapshots: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PorSnapshot"][];
+                    };
+                };
+            };
+        };
+    };
+    adminCreatePorSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & components["schemas"]["PorSnapshotInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        snapshot: components["schemas"]["PorSnapshot"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description 该时间点已有快照 (SNAPSHOT_EXISTS) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminDeletePorSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description snapshotAt 的 Unix 毫秒 */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted?: boolean;
+                    };
+                };
+            };
+            /** @description 快照不存在 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
