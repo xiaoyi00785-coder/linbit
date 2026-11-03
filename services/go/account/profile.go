@@ -100,11 +100,7 @@ func (s *Server) handleSendCodeAuthed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.codes.Send(r.Context(), channel, target, req.Purpose); err != nil {
-		if err == ErrRateLimited {
-			common.WriteError(w, http.StatusTooManyRequests, "RATE_LIMITED", "验证码发送过于频繁，请稍后再试")
-			return
-		}
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		writeSendCodeError(w, "account code", err)
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"sent": true, "channel": channel, "ttlSeconds": int(s.codes.ttl.Seconds())})

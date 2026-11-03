@@ -128,6 +128,9 @@ type symbolState struct {
 	recent      []tradeDTO
 	lastTradeID int64
 	lastDepth   uint64
+	// idxSeries holds index-price candles (volume 0), sampled from the
+	// external index feed. Served only while the symbol has no trade candles.
+	idxSeries map[string]*series
 }
 
 // Aggregator consumes engine events and maintains klines, depth, ticker and
@@ -145,6 +148,9 @@ type Aggregator struct {
 	prec    map[string]symPrec
 	now     func() time.Time
 	persist chan persistJob
+	// index returns the external index price (nil = none). Used only as a
+	// display fallback when there are no trades; never feeds trade data.
+	index func(symbol string) (decimal.Decimal, bool)
 }
 
 type persistJob struct {
@@ -172,9 +178,10 @@ func NewAggregator(store *Store, symbols []string) *Aggregator {
 }
 
 func newSymbolState(symbol string) *symbolState {
-	ss := &symbolState{symbol: symbol, book: newBook(), series: map[string]*series{}}
+	ss := &symbolState{symbol: symbol, book: newBook(), series: map[string]*series{}, idxSeries: map[string]*series{}}
 	for _, iv := range Intervals {
 		ss.series[iv.Name] = &series{iv: iv}
+		ss.idxSeries[iv.Name] = &series{iv: iv}
 	}
 	return ss
 }
@@ -449,12 +456,10 @@ func (a *Aggregator) TickerFrame(symbol string) (tickerDTO, bool) {
 // precision), matching the order service's fixed-precision decimal strings.
 func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 	p := a.prec[ss.symbol]
-	last := decimal.Zero
-	if ss.hasLast {
-		last = ss.lastPrice
-	}
+	last, src := a.displayPriceLocked(ss)
 	dto := tickerDTO{
 		Symbol:             ss.symbol,
+		PriceSource:        src,
 		LastPrice:          fmtPrec(last, p.pricePrec, p.ok),
 		PriceChangePercent: "0",
 		High:               fmtPrec(last, p.pricePrec, p.ok),
@@ -504,12 +509,22 @@ func (a *Aggregator) Klines(symbol, interval string, limit int) ([]restKline, bo
 		return nil, false
 	}
 	candles := s.candles
+	fromIndex := false
+	if len(candles) == 0 {
+		if is := ss.idxSeries[interval]; is != nil {
+			candles, fromIndex = is.candles, true
+		}
+	}
 	if limit > 0 && len(candles) > limit {
 		candles = candles[len(candles)-limit:]
 	}
 	out := make([]restKline, 0, len(candles))
 	for _, c := range candles {
-		out = append(out, toRESTKline(c))
+		k := toRESTKline(c)
+		if fromIndex {
+			k.Source = "index"
+		}
+		out = append(out, k)
 	}
 	return out, true
 }
@@ -524,8 +539,17 @@ func (a *Aggregator) KlineFrame(symbol, interval string) (wsKline, bool) {
 		return wsKline{}, false
 	}
 	s := ss.series[interval]
-	if s == nil || len(s.candles) == 0 {
+	if s == nil {
 		return wsKline{}, false
+	}
+	if len(s.candles) == 0 {
+		is := ss.idxSeries[interval]
+		if is == nil || len(is.candles) == 0 {
+			return wsKline{}, false
+		}
+		k := toWSKline(is.candles[len(is.candles)-1])
+		k.Source = "index"
+		return k, true
 	}
 	return toWSKline(s.candles[len(s.candles)-1]), true
 }
@@ -564,4 +588,107 @@ func (a *Aggregator) LastPrice(symbol string) (decimal.Decimal, bool) {
 		return decimal.Zero, false
 	}
 	return ss.lastPrice, true
+}
+
+// SetIndexSource wires the external index price used as a display fallback.
+func (a *Aggregator) SetIndexSource(f func(symbol string) (decimal.Decimal, bool)) {
+	a.mu.Lock()
+	a.index = f
+	a.mu.Unlock()
+}
+
+// bestLocked returns the best price on one side of the book.
+func bestLocked(side map[string]decimal.Decimal, bid bool) (decimal.Decimal, bool) {
+	var best decimal.Decimal
+	found := false
+	for k, q := range side {
+		if !q.IsPositive() {
+			continue
+		}
+		px, err := decimal.NewFromString(k)
+		if err != nil || !px.IsPositive() {
+			continue
+		}
+		if !found || (bid && px.GreaterThan(best)) || (!bid && px.LessThan(best)) {
+			best, found = px, true
+		}
+	}
+	return best, found
+}
+
+// displayPriceLocked picks the ticker's lastPrice: last trade, else mid of the
+// best bid/ask, else the external index. Caller holds mu.
+func (a *Aggregator) displayPriceLocked(ss *symbolState) (decimal.Decimal, string) {
+	if ss.hasLast {
+		return ss.lastPrice, "trade"
+	}
+	bid, okB := bestLocked(ss.book.bids, true)
+	ask, okA := bestLocked(ss.book.asks, false)
+	if okB && okA && ask.GreaterThanOrEqual(bid) {
+		return bid.Add(ask).Div(decimal.NewFromInt(2)), "mid"
+	}
+	if a.index != nil {
+		if px, ok := a.index(ss.symbol); ok && px.IsPositive() {
+			return px, "index"
+		}
+	}
+	return decimal.Zero, "none"
+}
+
+// SampleIndex folds the current index price of every tracked symbol into its
+// index-candle series (volume 0). Call periodically (see StartIndexSampler).
+func (a *Aggregator) SampleIndex(now time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.index == nil {
+		return
+	}
+	ts := now.Unix()
+	for _, ss := range a.states {
+		px, ok := a.index(ss.symbol)
+		if !ok || !px.IsPositive() {
+			continue
+		}
+		for _, iv := range Intervals {
+			s := ss.idxSeries[iv.Name]
+			bucket := iv.bucketStart(ts)
+			n := len(s.candles)
+			switch {
+			case n > 0 && s.candles[n-1].OpenTime == bucket:
+				s.candles[n-1].add(px, decimal.Zero)
+				s.candles[n-1].Trades = 0
+			case n > 0 && s.candles[n-1].OpenTime > bucket:
+				continue
+			default:
+				if n > 0 {
+					s.candles[n-1].Closed = true
+				}
+				c := newCandle(bucket, px, decimal.Zero)
+				c.Trades = 0
+				s.candles = append(s.candles, c)
+				if len(s.candles) > maxCandlesInMemory {
+					s.candles = s.candles[len(s.candles)-maxCandlesInMemory:]
+				}
+			}
+		}
+	}
+}
+
+// StartIndexSampler samples the index every period until ctx is done.
+func (a *Aggregator) StartIndexSampler(ctx context.Context, period time.Duration) {
+	if period <= 0 {
+		period = 2 * time.Second
+	}
+	go func() {
+		t := time.NewTicker(period)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-t.C:
+				a.SampleIndex(now)
+			}
+		}
+	}()
 }

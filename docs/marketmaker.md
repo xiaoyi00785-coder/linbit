@@ -49,3 +49,8 @@ WALLET_CHAIN=testnet，或非 production 的 mock；主网一律 403 SEED_DISABL
 order 迁移 00003 新增三个交易对（TRX 价格 5 位小数、数量整数），marketmaker 迁移 00002 预置各自参数，
 撮合引擎 `SYMBOLS` 追加 `SOLUSDT:3,BNBUSDT:3,TRXUSDT:1`（只能追加，顺序决定成交 id 命名空间）。
 指数价自动来自 Binance `SOLUSDT` 等 / OKX `SOL-USDT` 等全量 ticker，无需映射配置。
+
+## Ticker / kline fallback when there are no trades
+- Ticker `lastPrice` = last trade → mid of best bid/ask → index price (futures: → mark) → `"0"`. `priceSource` tells which (`trade|mid|index|mark|none`). Without trades, 24h change is 0, high/low equal lastPrice, volume 0. No trades are fabricated.
+- Klines: if a symbol has no trade candles, index-sampled candles are returned (spot: sampled every INDEX_POLL; futures: from `fut_mark_history.index_price`), volume 0, each candle `source:"index"`; futures klines response also has top-level `source: trade|index|none`. UI should render them as a dashed/flagged line, not as traded volume.
+- `/futures/market/contracts` items carry `tags` (ids from `market_categories`, same as spot).

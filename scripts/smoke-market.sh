@@ -102,6 +102,18 @@ expect() {
   printf '  ok  %-28s = %s\n' "$1" "$2"
 }
 
+say "0/7 no-trade fallback: ticker priceSource + lastPrice, klines source"
+T0="$(curl -sS "$GATEWAY_URL/market/ticker?symbol=$SYMBOL")"
+echo "ticker (pre-trade): $T0"
+SRC0="$(printf '%s' "$T0" | jq -r '.priceSource')"
+case "$SRC0" in index|mid) awk -v p="$(printf '%s' "$T0" | jq -r '.lastPrice')" 'BEGIN{exit !(p+0>0)}' || fail "pre-trade lastPrice must be >0 when priceSource=$SRC0";;
+  none) awk -v p="$(printf '%s' "$T0" | jq -r '.lastPrice')" 'BEGIN{exit !(p+0==0)}' || fail "none must be 0";;
+  *) fail "unexpected pre-trade priceSource '$SRC0'";; esac
+expect "pre-trade priceChangePercent" "$(printf '%s' "$T0" | jq -r '.priceChangePercent')" "0"
+K0="$(curl -sS "$GATEWAY_URL/market/klines?symbol=$SYMBOL&interval=1m&limit=5")"
+[ "$(printf '%s' "$K0" | jq -r '[.[]|select(.source!="index")]|length')" = "0" ] || fail "pre-trade klines must be index-flagged or empty: $K0"
+echo "  ok  pre-trade priceSource=$SRC0, klines=$(printf '%s' "$K0" | jq length) index candles"
+
 TS="$(date +%s)"
 say "1/7 register two users"
 read -r SELLER_TOKEN SELLER_ID < <(register "msell+$TS@example.com")
@@ -157,6 +169,7 @@ expect "ticker quoteVolume"        "$(printf '%s' "$TICK" | jq -r '.quoteVolume'
 expect "ticker high"               "$(printf '%s' "$TICK" | jq -r '.high')"               "70000.00"
 expect "ticker low"                "$(printf '%s' "$TICK" | jq -r '.low')"                "70000.00"
 expect "ticker priceChangePercent" "$(printf '%s' "$TICK" | jq -r '.priceChangePercent')" "0"
+expect "ticker priceSource"        "$(printf '%s' "$TICK" | jq -r '.priceSource')"        "trade"
 
 # ticker without symbol -> array of all tracked pairs.
 TICK_ALL="$(curl -sS "$GATEWAY_URL/market/ticker")"

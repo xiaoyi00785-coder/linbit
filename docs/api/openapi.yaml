@@ -81,6 +81,12 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: RATE_LIMITED, message: 验证码发送过于频繁，请稍后再试 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /auth/register:
     post:
@@ -2891,6 +2897,10 @@ components:
         low: { type: string, example: "76705.00" }
         volume: { type: string, example: "371.65" }
         quoteVolume: { type: string, example: "28915681.30" }
+        priceSource:
+          type: string
+          enum: [trade, mid, index, none]
+          description: "lastPrice 来源：最近成交 > 盘口中间价 > 指数价；无成交时 24h 涨跌为 0、high/low=lastPrice、volume=0（不伪造成交）。合约行情另有 mark。"
 
     Depth:
       type: object
