@@ -7,6 +7,8 @@ enum FuturesKind: String, CaseIterable { case limit, market, plan, postOnly
          "postOnly": "只挂单不吃单，若会立即成交则自动撤销"][rawValue]!
     }
     var available: Bool { self == .limit || self == .market }
+    /// spec 中 FuturesPlaceOrderRequest 无触发价 / postOnly，界面可选但下单按钮禁用并提示待后端接口
+    var backendMissing: Bool { !available }
 }
 
 @MainActor
@@ -35,6 +37,10 @@ final class FuturesModel: ObservableObject {
     @Published var tpsl = false
     @Published var tpText = ""
     @Published var slText = ""
+    /// 计划委托触发价（仅界面；spec 暂无计划委托接口）
+    @Published var triggerText = ""
+    /// 风险限额档位（/futures/market/risk-tiers），用于杠杆弹窗的最大可持仓
+    @Published var tiers: [APIFuturesRiskTiers200ResponseContractsInnerTiersInner] = []
     @Published var placing = false
     @Published var onlyCurrent = false
     @Published var now = Date()
@@ -110,6 +116,7 @@ final class FuturesModel: ObservableObject {
             contract = list.first { $0.symbol == symbol }
             maxLeverage = contract?.maxLeverage ?? 100
         }
+        tiers = (try? await FuturesAPI.riskTiers(symbol))?.first { $0.symbol == symbol }?.tiers ?? []
     }
 
     func refreshMarket() async {
@@ -146,6 +153,7 @@ final class FuturesModel: ObservableObject {
     }
 
     var validation: String? {
+        if kind.backendMissing { return "\(kind.title)暂未开放（缺少后端接口）" }
         if kind != .market, Dec.parse(priceText) <= 0 { return "请输入价格" }
         if isOpen && cost <= 0 { return "请输入成本" }
         if qty <= 0 || (minQty > 0 && qty < minQty) { return "数量低于最小下单量 \(Dec.plain(minQty, qtyPrec)) \(base)" }
@@ -156,6 +164,7 @@ final class FuturesModel: ObservableObject {
 
     /// long=true：开多 / 平空（买）；false：开空 / 平多（卖）
     func place(long: Bool) async -> Bool {
+        guard !kind.backendMissing else { ToastCenter.shared.show("\(kind.title)暂未开放", .error); return false }
         placing = true; defer { placing = false }
         let side: APIFuturesPlaceOrderRequest.APISide = long ? .buy : .sell
         let req = APIFuturesPlaceOrderRequest(
@@ -199,16 +208,30 @@ final class FuturesModel: ObservableObject {
         do { try await FuturesAPI.cancel(id); ToastCenter.shared.show("已撤销", .success); await refreshAccount() }
         catch { ToastCenter.shared.error(error) }
     }
-    func setTpsl(_ pos: APIFuturesPosition, tp: String, sl: String) async -> Bool {
+    /// 设置 / 修改持仓止盈止损。spec：传 "" 表示清除该项，不传（nil）表示保持不变。
+    func setTpsl(_ pos: APIFuturesPosition, tp: String?, sl: String?, toast: String = "止盈止损已设置") async -> Bool {
         do {
-            try await FuturesAPI.setTpsl(pos.symbol ?? symbol, tp: tp.isEmpty ? nil : tp, sl: sl.isEmpty ? nil : sl)
-            ToastCenter.shared.show("止盈止损已设置", .success); await refreshAccount(); return true
+            try await FuturesAPI.setTpsl(pos.symbol ?? symbol, tp: tp, sl: sl)
+            ToastCenter.shared.show(toast, .success); await refreshAccount(); return true
         } catch { ToastCenter.shared.error(error); return false }
+    }
+    /// 撤销止盈 / 止损（which: 0 全部，1 仅止盈，2 仅止损）
+    func clearTpsl(_ pos: APIFuturesPosition, which: Int = 0) async -> Bool {
+        await setTpsl(pos, tp: which == 2 ? nil : "", sl: which == 1 ? nil : "", toast: "已撤销止盈止损")
     }
     func adjustMargin(_ pos: APIFuturesPosition, amount: Decimal) async -> Bool {
         do {
             try await FuturesAPI.adjustMargin(pos.symbol ?? symbol, amount: NSDecimalNumber(decimal: amount).stringValue)
             ToastCenter.shared.show(amount > 0 ? "保证金已增加" : "保证金已减少", .success); await refreshAccount(); return true
         } catch { ToastCenter.shared.error(error); return false }
+    }
+}
+
+extension FuturesModel {
+    /// 指定杠杆下可持有的最大名义价值：取 maxLeverage ≥ lev 的最高档上限（Decimal）
+    func maxNotional(forLeverage lev: Int) -> Decimal? {
+        let ok = tiers.filter { ($0.maxLeverage ?? 0) >= lev }
+        guard let t = ok.max(by: { Dec.parse($0.maxNotional) < Dec.parse($1.maxNotional) }) else { return nil }
+        return Dec.parse(t.maxNotional)
     }
 }
