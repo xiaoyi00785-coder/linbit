@@ -1,6 +1,7 @@
 import "@linbit/ui/tokens.css";
 import "./globals.css";
 import "./linbit.css";
+import "@/features/features.css";
 import type { Metadata } from "next";
 import { Providers } from "./providers";
 import LegacyChrome from "@/components/LegacyChrome";
