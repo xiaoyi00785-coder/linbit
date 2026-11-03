@@ -27,7 +27,7 @@ func (s *Server) handleAssetGet(path string, keys []string) http.HandlerFunc {
 }
 
 // PUT /admin/v1/convert/config {spreadBps?, minUsdt?, maxUsdt?, depegBps?,
-// hedge?:{enabled?, slippageBps?, maxOrderUsdt?, maxHourUsdt?, unhedgedAlertUsdt?, unhedgedAlertMinutes?},
+// hedge?:{enabled?, slippageBps?, maxOrderUsdt?, maxHourUsdt?, unhedgedAlertUsdt?, unhedgedAlertMinutes?, cancelAfterSeconds?},
 // assets?:[{asset, enabled?, hedgeEnabled?, hedgeMinQty?}], reason, totpCode}
 // Every change (incl. the hedge switches) needs 2FA + a reason and is audited.
 func (s *Server) handleConvertConfig(w http.ResponseWriter, r *http.Request) {

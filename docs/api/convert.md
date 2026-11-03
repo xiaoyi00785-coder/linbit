@@ -53,6 +53,15 @@ user free −from / +to → journal (user ↔ `system:convert`) → order row. T
 solvency liabilities and admin solvency lines (negative = the platform owes
 that asset to users; user balances already include it, so holdings must cover it).
 
+## USDC pricing
+
+USDT is the only asset priced at a fixed 1. USDC is priced at its live
+`USDCUSDT` index for every non-stable pair (USDC↔BTC/ETH/…), so a depeg
+cannot be arbitraged through crypto pairs. If the USDC index is missing or
+stale, quote **and** accept of any pair involving USDC fail with
+`PRICE_UNAVAILABLE` (503); USDC↔USDT instead returns `PAIR_PAUSED_DEPEG`
+(the stable route keeps rate 1 / spread 0 while in range).
+
 ## USDC depeg guard
 
 USDC↔USDT (both directions) is paused while `|USDCUSDT index − 1| > depegBps`
@@ -93,6 +102,19 @@ retried with exponential backoff (`CONVERT_HEDGE_BACKOFF_SECONDS` 5 →
 `CONVERT_HEDGE_BACKOFF_MAX_SECONDS` 300). If unhedged value stays above
 `hedge.unhedgedAlertUsdt` (5000) for more than `hedge.unhedgedAlertMinutes`
 (10) a Telegram alert + `unhedged_alert` event fire once per episode.
+Hedge orders are IOC; if the order service still reports one as `new` /
+`partially_filled` it is stored as `resting` (event `hedge_resting`), no new
+order is placed for that asset meanwhile, and after `hedge.cancelAfterSeconds`
+(default 30, 1–3600) it is canceled (status `canceled`, event
+`hedge_canceled`, Telegram alert). The unfilled remainder is released back
+to the hedge account and so returns to the unhedged net, which later cycles
+re-hedge.
+
+Residual: trading fees, dust below `hedgeMinQty` and rounding are accepted
+and never funded from other accounts; `/admin/v1/convert/position` shows it
+per asset as `residualUsdt` (= netPosition × index; for USDT the desk's
+accumulated USDT net).
+
 Rejected/failed orders write `hedge_rejected`/`hedge_failed` events and alert
 (max once per 10 min per asset).
 
@@ -114,15 +136,20 @@ BNB 0.02, TRX 50.
 
 PUT body: `{spreadBps (0–500)?, minUsdt?, maxUsdt?, depegBps (1–1000)?,
 hedge?:{enabled?, slippageBps (1–500)?, maxOrderUsdt?, maxHourUsdt? (≥ maxOrder),
-unhedgedAlertUsdt?, unhedgedAlertMinutes (1–1440)?},
-assets?:[{asset, enabled?, hedgeEnabled?, hedgeMinQty?}], reason (required), totpCode}`.
+unhedgedAlertUsdt?, unhedgedAlertMinutes (1–1440)?, cancelAfterSeconds (1–3600)?},
+assets?:[{asset, enabled?, hedgeEnabled?, hedgeMinQty?}], reason, totpCode}`.
+
+**`reason` is required** on every config PUT (including hedge switches): a
+missing or blank reason returns `VALIDATION_ERROR` (checked after 2FA, so a bad
+`totpCode` still returns `TOTP_INVALID`). The reason is stored in the
+high-level admin audit log.
 
 `/convert/hedges` → `{items:[{id, asset, symbol, side, quantity, limitPrice,
 indexPrice, netBefore, orderId, filledQty, quoteAmount,
-status: pending|filled|partial|unfilled|rejected|failed, error, createdAt}], total,
+status: pending|resting|filled|partial|unfilled|canceled|rejected|failed, error, createdAt}], total,
 account, state:{<asset>:{failures, nextRetryAt, unhedgedUsdt, unhedgedSince, alerted, lastStatus, lastError}}}`.
 `/convert/position` → `{account, hedgeAccount, hedgeEnabled, depeg, items:[{asset,
-position, hedgeBalance, netPosition, hedge}]}`.
+position, hedgeBalance, netPosition, residualUsdt, hedge}]}`.
 
 Internal (asset service, `X-Internal-Token`): `POST /internal/convert/hedge/run`
 runs one forced cycle (ops / smoke).

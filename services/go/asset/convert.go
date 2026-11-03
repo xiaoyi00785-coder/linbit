@@ -122,7 +122,8 @@ type HedgeConfig struct {
 	MaxHourUSDT          string `json:"maxHourUsdt"`
 	UnhedgedAlertUSDT    string `json:"unhedgedAlertUsdt"`
 	UnhedgedAlertMinutes int    `json:"unhedgedAlertMinutes"`
-	Account              string `json:"account"` // hedge account user id
+	CancelAfterSeconds   int    `json:"cancelAfterSeconds"` // cancel hedge orders still new/partially_filled after this
+	Account              string `json:"account"`            // hedge account user id
 }
 
 type ConvertAssetConf struct {
@@ -145,9 +146,9 @@ func (s *Store) convertConfig(ctx context.Context, def ConvertDefaults) (Convert
 	var ho, hh, ha string
 	h := &c.Hedge
 	if err := s.db.QueryRowContext(ctx, `SELECT spread_bps, min_usdt::text, max_usdt::text, updated_by, updated_at, depeg_bps, hedge_enabled,
-		hedge_slippage_bps, hedge_max_order_usdt::text, hedge_max_hour_usdt::text, hedge_unhedged_alert_usdt::text, hedge_unhedged_alert_minutes
+		hedge_slippage_bps, hedge_max_order_usdt::text, hedge_max_hour_usdt::text, hedge_unhedged_alert_usdt::text, hedge_unhedged_alert_minutes, hedge_cancel_after_seconds
 		FROM convert_config WHERE id=1`).
-		Scan(&c.SpreadBps, &mn, &mx, &c.UpdatedBy, &at, &c.DepegBps, &hen, &h.SlippageBps, &ho, &hh, &ha, &h.UnhedgedAlertMinutes); err != nil {
+		Scan(&c.SpreadBps, &mn, &mx, &c.UpdatedBy, &at, &c.DepegBps, &hen, &h.SlippageBps, &ho, &hh, &ha, &h.UnhedgedAlertMinutes, &h.CancelAfterSeconds); err != nil {
 		return c, err
 	}
 	c.MinUSDT, c.MaxUSDT, c.UpdatedAt = decimal.RequireFromString(mn).String(), decimal.RequireFromString(mx).String(), at.UnixMilli()
@@ -219,9 +220,11 @@ func marketIndexSource(base string) PriceSource {
 	}
 }
 
-// usdtPrice: stablecoins are 1; others need a fresh index or fail closed.
+// usdtPrice: USDT is 1; everything else (USDC included) needs a fresh index or
+// fails closed with PRICE_UNAVAILABLE. USDC is priced at its real USDCUSDT
+// index so a depeg cannot be arbitraged through USDC<->crypto pairs.
 func (s *Server) usdtPrice(ctx context.Context, asset string) (decimal.Decimal, error) {
-	if stablecoins[asset] {
+	if asset == "USDT" {
 		return decimal.NewFromInt(1), nil
 	}
 	p, at, err := s.prices(ctx, asset)
@@ -594,7 +597,19 @@ func (s *Server) handleConvertAccept(w http.ResponseWriter, r *http.Request) {
 		return decimal.Zero
 	}
 	o, replay, err := s.store.AcceptQuote(r.Context(), uid, req.QuoteID, s.now(), value,
-		func(from, to string) error { return s.pairGuard(r.Context(), from, to) })
+		func(from, to string) error {
+			if err := s.pairGuard(r.Context(), from, to); err != nil {
+				return err
+			}
+			for _, a := range []string{from, to} {
+				if a != "USDT" {
+					if _, err := s.usdtPrice(r.Context(), a); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
 	if err != nil {
 		writeConvertErr(w, "accept", err)
 		return
@@ -664,6 +679,7 @@ func (s *Server) handleConvertConfigPut(w http.ResponseWriter, r *http.Request) 
 			MaxHourUSDT          *string `json:"maxHourUsdt"`
 			UnhedgedAlertUSDT    *string `json:"unhedgedAlertUsdt"`
 			UnhedgedAlertMinutes *int    `json:"unhedgedAlertMinutes"`
+			CancelAfterSeconds   *int    `json:"cancelAfterSeconds"`
 		} `json:"hedge"`
 		Assets []struct {
 			Asset        string  `json:"asset"`
@@ -726,6 +742,9 @@ func (s *Server) handleConvertConfigPut(w http.ResponseWriter, r *http.Request) 
 		if hq.UnhedgedAlertMinutes != nil {
 			h.UnhedgedAlertMinutes = *hq.UnhedgedAlertMinutes
 		}
+		if hq.CancelAfterSeconds != nil {
+			h.CancelAfterSeconds = *hq.CancelAfterSeconds
+		}
 		if !parse(hq.MaxOrderUSDT, &hmo) || !parse(hq.MaxHourUSDT, &hmh) || !parse(hq.UnhedgedAlertUSDT, &hal) || hmo.GreaterThan(hmh) {
 			bad("hedge 限额不合法（maxOrderUsdt ≤ maxHourUsdt，均 > 0）")
 			return
@@ -737,6 +756,10 @@ func (s *Server) handleConvertConfigPut(w http.ResponseWriter, r *http.Request) 
 	}
 	if h.UnhedgedAlertMinutes < 1 || h.UnhedgedAlertMinutes > 1440 {
 		bad("hedge.unhedgedAlertMinutes 必须在 1–1440 之间")
+		return
+	}
+	if h.CancelAfterSeconds < 1 || h.CancelAfterSeconds > 3600 {
+		bad("hedge.cancelAfterSeconds 必须在 1–3600 之间")
 		return
 	}
 	for _, a := range req.Assets {
@@ -767,8 +790,8 @@ func (s *Server) handleConvertConfigPut(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(), `UPDATE convert_config SET depeg_bps=$1, hedge_enabled=COALESCE($2, hedge_enabled), hedge_slippage_bps=$3,
-		hedge_max_order_usdt=$4, hedge_max_hour_usdt=$5, hedge_unhedged_alert_usdt=$6, hedge_unhedged_alert_minutes=$7 WHERE id=1`,
-		depeg, hen, h.SlippageBps, hmo.String(), hmh.String(), hal.String(), h.UnhedgedAlertMinutes); err != nil {
+		hedge_max_order_usdt=$4, hedge_max_hour_usdt=$5, hedge_unhedged_alert_usdt=$6, hedge_unhedged_alert_minutes=$7, hedge_cancel_after_seconds=$8 WHERE id=1`,
+		depeg, hen, h.SlippageBps, hmo.String(), hmh.String(), hal.String(), h.UnhedgedAlertMinutes, h.CancelAfterSeconds); err != nil {
 		writeConvertErr(w, "config update", err)
 		return
 	}
@@ -812,8 +835,16 @@ func (s *Server) handleConvertPosition(w http.ResponseWriter, r *http.Request) {
 	state := s.hedger().snapshot()
 	items := []map[string]any{}
 	for _, a := range assets {
+		net := pos[a].Add(hedgeBal[a])
+		// residualUsdt: USDT value of what is left unhedged (fees, dust below
+		// hedgeMinQty, rounding). Accepted, never funded from other accounts.
+		// For USDT itself it is the desk's accumulated USDT net (spread − fees).
+		residual := ""
+		if p, err := s.usdtPrice(r.Context(), a); err == nil {
+			residual = net.Mul(p).Round(8).String()
+		}
 		it := map[string]any{"asset": a, "position": pos[a].String(), "hedgeBalance": hedgeBal[a].String(),
-			"netPosition": pos[a].Add(hedgeBal[a]).String()}
+			"netPosition": net.String(), "residualUsdt": residual}
 		if st, ok := state[a]; ok {
 			it["hedge"] = st
 		}

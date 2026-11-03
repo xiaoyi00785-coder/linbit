@@ -165,6 +165,9 @@ ok "$(api "$TOK" POST /convert/quote '{"from":"USDC","to":"USDT","fromAmount":"2
 tg_wait "闪兑恢复"
 EV="$(A "$SA" GET '/admin/v1/convert/events?pageSize=50')"
 jq -e '[.items[].kind] | index("pair_paused") and index("pair_resumed")' <<<"$EV" >/dev/null || fail "depeg audit events: $EV"
+idx USDCUSDT 0.98   # outside the band: USDC<->crypto still trades, at the real index
+Q="$(ok "$(api "$TOK" POST /convert/quote '{"from":"USDC","to":"BTC","fromAmount":"100"}')" usdc-real-index)"
+eq "$(jq -r .indexRate <<<"$Q")" 0.0000196 "USDC priced at its index" 0.0000000001
 idx USDCUSDT 1
 echo "  ok"
 
@@ -200,6 +203,7 @@ jq -e '.items | all(.limitPrice|tonumber <= 50250)' <<<"$HG" >/dev/null || fail 
 PZ="$(A "$SA" GET /admin/v1/convert/position)"
 NET="$(jq -r '.items[] | select(.asset=="BTC") | .netPosition' <<<"$PZ")"
 python3 -c "import sys;from decimal import Decimal as D;sys.exit(0 if abs(D(sys.argv[1]))<D('0.0002') else 1)" "$NET" || fail "BTC net after hedge: $PZ"
+jq -e '.items[] | select(.asset=="BTC") | .residualUsdt | tonumber | fabs < 10' <<<"$PZ" >/dev/null || fail "residualUsdt: $PZ"
 SV="$(A "$SA" POST /admin/v1/solvency/run '{}')"
 HB="$(jq -r '.lines[] | select(.asset=="BTC") | .hedgeBalance' <<<"$SV")"
 python3 -c "import sys;from decimal import Decimal as D;sys.exit(0 if D(sys.argv[1])>0 else 1)" "$HB" || fail "solvency hedgeBalance: $SV"

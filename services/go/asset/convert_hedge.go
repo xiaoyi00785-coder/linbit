@@ -33,6 +33,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -57,6 +58,7 @@ type HedgeOrderResult struct {
 	OrderID string
 	Status  string // order-service status
 	Filled  decimal.Decimal
+	Quote   decimal.Decimal // filled quote amount when known (0 = unknown)
 }
 
 // errHedgeRejected: the order service refused the order (4xx).
@@ -68,7 +70,13 @@ func (e *errHedgeRejected) Error() string { return e.code + ": " + e.msg }
 type HedgeVenue interface {
 	Rules(ctx context.Context, symbol string) (SymbolRules, error)
 	PlaceIOC(ctx context.Context, userID, symbol, side string, price, qty decimal.Decimal, clientID string) (HedgeOrderResult, error)
+	// Order reads an order's current status / fills (Quote = filled quote amount).
+	Order(ctx context.Context, userID, orderID string) (HedgeOrderResult, error)
+	// Cancel cancels a resting order; the result is the final state.
+	Cancel(ctx context.Context, userID, orderID string) (HedgeOrderResult, error)
 }
+
+func orderOpen(status string) bool { return status == "new" || status == "partially_filled" }
 
 // ---- pure planning ----
 
@@ -336,6 +344,77 @@ func scanHedge(sc interface{ Scan(...any) error }) (HedgeRecord, error) {
 
 // runHedgeCycle performs one pass over every hedgeable asset. force ignores
 // the retry backoff (manual trigger).
+// sweepResting resolves hedge orders that did not finish immediately: once the
+// order service reports them done they are finalised; if they are still
+// new/partially_filled after cfg.Hedge.CancelAfterSeconds they are canceled.
+// Either way the unfilled remainder (released back to the hedge account by
+// the cancel) shows up again in net = convert position + hedge balance and is
+// re-hedged by later cycles. Returns the assets that still have a live order.
+func (s *Server) sweepResting(ctx context.Context, h *Hedger, cfg ConvertConfig) (map[string]bool, []HedgeRecord) {
+	live := map[string]bool{}
+	rows, err := s.store.db.QueryContext(ctx, `SELECT `+hedgeCols+` FROM convert_hedges WHERE status='resting' ORDER BY id`)
+	if err != nil {
+		log.Printf("hedge sweep: %v", err)
+		return live, nil
+	}
+	var recs []HedgeRecord
+	for rows.Next() {
+		r, err := scanHedge(rows)
+		if err != nil {
+			log.Printf("hedge sweep scan: %v", err)
+			continue
+		}
+		recs = append(recs, r)
+	}
+	rows.Close()
+	hedgeUser := s.cfg.Convert.HedgeUserID
+	after := time.Duration(cfg.Hedge.CancelAfterSeconds) * time.Second
+	var out []HedgeRecord
+	for _, r := range recs {
+		res, err := h.venue.Order(ctx, hedgeUser, r.OrderID)
+		canceled := false
+		if err == nil && orderOpen(res.Status) && s.now().Sub(time.UnixMilli(r.CreatedAt)) >= after {
+			res, err = h.venue.Cancel(ctx, hedgeUser, r.OrderID)
+			canceled = err == nil
+		}
+		if err != nil {
+			log.Printf("hedge sweep %d: %v", r.ID, err)
+			live[r.Asset] = true
+			continue
+		}
+		if orderOpen(res.Status) {
+			live[r.Asset] = true
+			continue
+		}
+		qty := decimal.RequireFromString(r.Quantity)
+		status := "filled"
+		switch {
+		case canceled:
+			status = "canceled"
+		case res.Filled.Sign() == 0:
+			status = "unfilled"
+		case res.Filled.LessThan(qty):
+			status = "partial"
+		}
+		quote := res.Quote
+		if quote.Sign() == 0 {
+			quote = res.Filled.Mul(decimal.RequireFromString(r.LimitPrice))
+		}
+		r.Status, r.FilledQty, r.QuoteAmount = status, res.Filled.String(), quote.String()
+		if _, err := s.store.db.ExecContext(ctx, `UPDATE convert_hedges SET filled_qty=$2, quote_amount=$3, status=$4, updated_at=now() WHERE id=$1 AND status='resting'`,
+			r.ID, r.FilledQty, r.QuoteAmount, status); err != nil {
+			log.Printf("hedge sweep update %d: %v", r.ID, err)
+		}
+		if canceled {
+			s.store.convertEvent(ctx, "hedge_canceled", r.Asset, r)
+			convertAlert(fmt.Sprintf("闪兑对冲撤单：%s 对冲单 %s 超过 %d 秒未完成已撤销，成交 %s / %s，未成交部分回到未对冲敞口",
+				r.Asset, r.OrderID, cfg.Hedge.CancelAfterSeconds, r.FilledQty, r.Quantity))
+		}
+		out = append(out, r)
+	}
+	return live, out
+}
+
 func (s *Server) runHedgeCycle(ctx context.Context, force bool) ([]HedgeRecord, error) {
 	h := s.hedger()
 	h.run.Lock()
@@ -344,6 +423,7 @@ func (s *Server) runHedgeCycle(ctx context.Context, force bool) ([]HedgeRecord, 
 	if err != nil {
 		return nil, err
 	}
+	live, swept := s.sweepResting(ctx, h, cfg)
 	hedgeUser := s.cfg.Convert.HedgeUserID
 	pos, err := s.store.ConvertPosition(ctx)
 	if err != nil {
@@ -377,7 +457,7 @@ func (s *Server) runHedgeCycle(ctx context.Context, force bool) ([]HedgeRecord, 
 	// Sells first: they raise USDT that later buys can use.
 	sort.SliceStable(items, func(i, j int) bool { return items[i].net.Sign() > items[j].net.Sign() })
 
-	out := []HedgeRecord{}
+	out := append([]HedgeRecord{}, swept...)
 	for _, it := range items {
 		a, net := it.a, it.net
 		st := h.state(a.Asset)
@@ -395,7 +475,12 @@ func (s *Server) runHedgeCycle(ctx context.Context, force bool) ([]HedgeRecord, 
 			continue
 		}
 		enabled := cfg.Hedge.Enabled && a.HedgeEnabled
-		if enabled && net.Sign() != 0 && (force || !now.Before(st.next)) {
+		if live[a.Asset] {
+			// one live order per asset: its locked funds are not yet reflected in net
+			h.mu.Lock()
+			st.LastSkip = "order_resting"
+			h.mu.Unlock()
+		} else if enabled && net.Sign() != 0 && (force || !now.Before(st.next)) {
 			rec, filled := s.hedgeAsset(ctx, h, st, cfg, a, net, index, hourLeft, maxOrder, pos, free)
 			if rec != nil {
 				out = append(out, *rec)
@@ -501,6 +586,9 @@ func (s *Server) hedgeAsset(ctx context.Context, h *Hedger, st *HedgeAssetState,
 	after, _ := s.store.accountTotals(ctx, hedgeUser)
 	quote := after["USDT"].Sub(before["USDT"]).Abs()
 
+	if orderOpen(res.Status) && res.Quote.Sign() > 0 {
+		quote = res.Quote
+	}
 	status := "filled"
 	var rej *errHedgeRejected
 	switch {
@@ -508,6 +596,8 @@ func (s *Server) hedgeAsset(ctx context.Context, h *Hedger, st *HedgeAssetState,
 		status, rec.Error = "rejected", rej.Error()
 	case placeErr != nil:
 		status, rec.Error = "failed", placeErr.Error()
+	case orderOpen(res.Status):
+		status = "resting"
 	case res.Filled.Sign() == 0:
 		status = "unfilled"
 	case res.Filled.LessThan(plan.Qty):
@@ -534,10 +624,10 @@ func (s *Server) hedgeAsset(ctx context.Context, h *Hedger, st *HedgeAssetState,
 				a.Asset, plan.Side, plan.Qty, plan.Price, map[string]string{"rejected": "被拒绝", "failed": "下单失败"}[status], rec.Error, st.Failures))
 		}
 	}
-	// An IOC must never rest; if it did, alert (it could self-trade later).
-	if res.Status == "new" || res.Status == "partially_filled" {
+	// An IOC should never rest; if it does it is tracked as "resting" and
+	// canceled by sweepResting after hedge.cancelAfterSeconds.
+	if status == "resting" {
 		s.store.convertEvent(ctx, "hedge_resting", a.Asset, rec)
-		convertAlert(fmt.Sprintf("闪兑对冲异常：对冲单 %s 未立即结束（status=%s），请人工检查", res.OrderID, res.Status))
 	}
 	return rec, res.Filled
 }
@@ -639,6 +729,42 @@ func (v *orderVenue) PlaceIOC(ctx context.Context, userID, symbol, side string, 
 	}
 	f, _ := decimal.NewFromString(o.FilledQuantity)
 	return HedgeOrderResult{OrderID: o.OrderID, Status: o.Status, Filled: f}, nil
+}
+
+type venueOrder struct {
+	Order struct {
+		OrderID string `json:"orderId"`
+		Status  string `json:"status"`
+	} `json:"order"`
+	FilledQuantity string `json:"filledQuantity"`
+	FilledQuote    string `json:"filledQuote"`
+}
+
+func (v *orderVenue) Order(ctx context.Context, userID, orderID string) (HedgeOrderResult, error) {
+	var o venueOrder
+	code, b, err := v.do(ctx, "GET", "/internal/orders/"+url.PathEscape(orderID)+"?userId="+url.QueryEscape(userID),
+		map[string]string{"X-Internal-Token": v.token}, nil, &o)
+	if err != nil {
+		return HedgeOrderResult{}, err
+	}
+	if code != http.StatusOK {
+		return HedgeOrderResult{}, fmt.Errorf("order %s: http %d %s", orderID, code, truncate(b))
+	}
+	f, _ := decimal.NewFromString(o.FilledQuantity)
+	q, _ := decimal.NewFromString(o.FilledQuote)
+	return HedgeOrderResult{OrderID: o.Order.OrderID, Status: o.Order.Status, Filled: f, Quote: q}, nil
+}
+
+func (v *orderVenue) Cancel(ctx context.Context, userID, orderID string) (HedgeOrderResult, error) {
+	code, b, err := v.do(ctx, "DELETE", "/spot/orders/"+url.PathEscape(orderID), map[string]string{"X-User-Id": userID}, nil, nil)
+	if err != nil {
+		return HedgeOrderResult{}, err
+	}
+	// ORDER_NOT_CANCELABLE (already done) is fine: read the final state either way.
+	if code >= 300 && code != http.StatusBadRequest {
+		return HedgeOrderResult{}, fmt.Errorf("cancel %s: http %d %s", orderID, code, truncate(b))
+	}
+	return v.Order(ctx, userID, orderID)
 }
 
 func truncate(b []byte) string {

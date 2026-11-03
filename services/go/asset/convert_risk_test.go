@@ -183,6 +183,19 @@ type fakeVenue struct {
 	reject string
 	orders []string
 	prices []decimal.Decimal
+	rest   bool // leave the order "new" (resting) after its immediate fill
+	open   map[string]HedgeOrderResult
+}
+
+func (f *fakeVenue) Order(ctx context.Context, uid, id string) (HedgeOrderResult, error) {
+	return f.open[id], nil
+}
+
+func (f *fakeVenue) Cancel(ctx context.Context, uid, id string) (HedgeOrderResult, error) {
+	o := f.open[id]
+	o.Status = "canceled"
+	f.open[id] = o
+	return o, nil
 }
 
 func (f *fakeVenue) Rules(ctx context.Context, symbol string) (SymbolRules, error) {
@@ -217,7 +230,15 @@ func (f *fakeVenue) PlaceIOC(ctx context.Context, uid, symbol, side string, pric
 			}
 		}
 	}
-	return HedgeOrderResult{OrderID: "o" + cid, Status: "canceled", Filled: fill}, nil
+	res := HedgeOrderResult{OrderID: "o" + cid, Status: "canceled", Filled: fill, Quote: fill.Mul(px)}
+	if f.rest {
+		res.Status = "partially_filled"
+		if f.open == nil {
+			f.open = map[string]HedgeOrderResult{}
+		}
+		f.open[res.OrderID] = res
+	}
+	return res, nil
 }
 
 func hedgeTestServer(t *testing.T) (*Server, *fakeVenue, *time.Time) {
@@ -442,5 +463,81 @@ func TestDepegPauseResumeDB(t *testing.T) {
 	s.store.db.QueryRow(`SELECT count(*) FILTER (WHERE kind='pair_paused'), count(*) FILTER (WHERE kind='pair_resumed') FROM convert_events WHERE created_at > now() - interval '1 minute'`).Scan(&paused, &resumed) //nolint:errcheck
 	if paused < 1 || resumed < 1 {
 		t.Fatalf("events paused=%d resumed=%d", paused, resumed)
+	}
+}
+
+func TestHedgeRestingCancelDB(t *testing.T) {
+	s, fv, clock := hedgeTestServer(t)
+	alerts := captureAlerts(t)
+	ctx := context.Background()
+	mustExec(t, s.store, `UPDATE convert_hedges SET status='canceled' WHERE status='resting'`)
+	if err := s.store.EnsureAccount(ctx, s.cfg.Convert.HedgeUserID); err != nil {
+		t.Fatal(err)
+	}
+	userBuysBTC(t, s, "5000")
+	fv.rest, fv.depth = true, d("0.02")
+	recs, _ := s.runHedgeCycle(ctx, true)
+	if len(recs) != 1 || recs[0].Status != "resting" {
+		t.Fatalf("want resting, got %+v", recs)
+	}
+	n := len(fv.orders)
+	// before cancelAfterSeconds (30): no cancel, no second order for the asset
+	*clock = clock.Add(10 * time.Second)
+	if recs, _ := s.runHedgeCycle(ctx, true); len(recs) != 0 || len(fv.orders) != n {
+		t.Fatalf("must wait on the live order: %+v", recs)
+	}
+	if st := s.hedger().snapshot()["BTC"]; st.LastSkip != "order_resting" {
+		t.Fatalf("skip %q", st.LastSkip)
+	}
+	// after 30s: canceled, remainder re-hedged in the same cycle
+	*clock = clock.Add(25 * time.Second)
+	fv.rest, fv.depth = false, d("1000")
+	recs, _ = s.runHedgeCycle(ctx, true)
+	if len(recs) != 2 || recs[0].Status != "canceled" || !d(recs[0].FilledQty).Equal(d("0.02")) || recs[1].Status != "filled" {
+		t.Fatalf("cancel + rehedge: %+v", recs)
+	}
+	if !alerts.has("闪兑对冲撤单") {
+		t.Fatalf("cancel alert: %v", alerts.msgs)
+	}
+	var st string
+	s.store.db.QueryRow(`SELECT status FROM convert_hedges WHERE id=$1`, recs[0].ID).Scan(&st) //nolint:errcheck
+	if st != "canceled" {
+		t.Fatalf("db status %q", st)
+	}
+}
+
+func TestUSDCRealIndexPricingDB(t *testing.T) {
+	s, _, clock := hedgeTestServer(t)
+	ctx := context.Background()
+	mustExec(t, s.store, `DELETE FROM convert_pair_state`)
+	s.depeg = depegGuard{}
+	usdc, at := d("0.98"), *clock
+	s.prices = func(ctx context.Context, a string) (decimal.Decimal, time.Time, error) {
+		if a == "USDC" {
+			return usdc, at, nil
+		}
+		return d("50000"), *clock, nil
+	}
+	uid := testUser()
+	q, err := s.quote(ctx, uid, quoteReq{From: "USDC", To: "BTC", FromAmount: "1000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1000 USDC * 0.98 / 50000 * (1 - 20bps) = 0.0195608
+	if !d(q.IndexRate).Equal(d("0.0000196")) || !d(q.ToAmount).Equal(d("0.0195608")) {
+		t.Fatalf("USDC must use its index: %+v", q)
+	}
+	at = clock.Add(-time.Minute) // stale
+	for _, p := range [][2]string{{"USDC", "BTC"}, {"BTC", "USDC"}} {
+		_, err := s.quote(ctx, uid, quoteReq{From: p[0], To: p[1], FromAmount: "1"})
+		var ce *convertErr
+		if !errors.As(err, &ce) || ce.code != "PRICE_UNAVAILABLE" {
+			t.Fatalf("%v stale USDC: %v", p, err)
+		}
+	}
+	_, err = s.quote(ctx, uid, quoteReq{From: "USDC", To: "USDT", FromAmount: "100"})
+	var ce *convertErr
+	if !errors.As(err, &ce) || ce.code != "PAIR_PAUSED_DEPEG" {
+		t.Fatalf("USDC/USDT keeps depeg pause: %v", err)
 	}
 }
