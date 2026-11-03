@@ -47,6 +47,14 @@ func main() {
 	log.Printf("market-data tracking symbols: %v", symbols)
 
 	agg := NewAggregator(store, symbols)
+	// Load per-symbol precision from the shared `symbols` table (same source the
+	// order service uses) so REST/WS depth and ticker strings are padded to each
+	// pair's price/quantity rules.
+	if infos, err := store.Symbols(ctx); err != nil {
+		log.Printf("load symbol precision: %v", err) // non-fatal; falls back to raw strings
+	} else {
+		agg.SetPrecisions(infos)
+	}
 	if err := agg.Recover(ctx); err != nil {
 		log.Printf("recover klines: %v", err) // non-fatal; start empty
 	}

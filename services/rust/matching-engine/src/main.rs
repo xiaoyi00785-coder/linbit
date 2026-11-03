@@ -12,13 +12,21 @@
 //! * `INTERNAL_TOKEN`  — shared token required on `/engine/*` (empty = open).
 //! * `EVENT_SINK_URL`  — if set, engine events are also POSTed here (the local
 //!                       pub/sub stand-in); otherwise events are logged.
+//! * `WAL_FSYNC`       — durability policy: `group` (default) group-commits a
+//!                       batch with a single fsync; `per_command` fsyncs every
+//!                       command on its own.
+//! * `WAL_BATCH_MAX`   — group commit: max commands coalesced per fsync
+//!                       (default 1024).
+//! * `WAL_BATCH_WINDOW_US` — group commit: max microseconds a command waits for
+//!                       batch-mates before the fsync fires (default 1000 = 1ms).
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use matching_engine::book::SymbolEngine;
 use matching_engine::bus::{EventSink, HttpSink, LogSink, MultiSink};
-use matching_engine::server::{serve, Dispatcher};
+use matching_engine::server::{serve, CommitMode, Dispatcher};
 
 fn main() {
     let bind = env("BIND", "0.0.0.0:8083");
@@ -26,6 +34,7 @@ fn main() {
     let snapshot_every: u64 = env("SNAPSHOT_EVERY", "1000").parse().unwrap_or(1000);
     let token = env("INTERNAL_TOKEN", "");
     let symbols = parse_symbols(&env("SYMBOLS", "BTCUSDT:6,ETHUSDT:5"));
+    let commit_mode = parse_commit_mode();
 
     let sink: Arc<dyn EventSink> = match std::env::var("EVENT_SINK_URL") {
         Ok(url) if !url.is_empty() => Arc::new(MultiSink(vec![
@@ -54,10 +63,30 @@ fn main() {
         engines.push(engine);
     }
 
-    let dispatcher = Dispatcher::spawn(engines);
+    match commit_mode {
+        CommitMode::PerCommand => println!("WAL durability: per-command fsync"),
+        CommitMode::Group { max_batch, window } => println!(
+            "WAL durability: group commit (max_batch={max_batch}, window={}µs)",
+            window.as_micros()
+        ),
+    }
+
+    let dispatcher = Dispatcher::spawn(engines, commit_mode);
     if let Err(e) = serve(&bind, token, dispatcher) {
         eprintln!("serve: {e}");
         std::process::exit(1);
+    }
+}
+
+/// Read the WAL durability policy from the environment (see module docs).
+fn parse_commit_mode() -> CommitMode {
+    match env("WAL_FSYNC", "group").to_ascii_lowercase().as_str() {
+        "per_command" | "per-command" | "each" | "sync" => CommitMode::PerCommand,
+        _ => {
+            let max_batch: usize = env("WAL_BATCH_MAX", "1024").parse().unwrap_or(1024).max(1);
+            let window_us: u64 = env("WAL_BATCH_WINDOW_US", "1000").parse().unwrap_or(1000);
+            CommitMode::Group { max_batch, window: Duration::from_micros(window_us) }
+        }
     }
 }
 

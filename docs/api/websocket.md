@@ -5,10 +5,13 @@
 
 ## 连接
 
+WebSocket 经 gateway 的 `/ws` 路由转发到 market-data 服务，与 REST 同一入口。
+
 | 环境 | 地址 |
 | --- | --- |
+| 本地（devstack / gateway） | `ws://localhost:8080/ws` |
+| 生产 | `wss://<host>/ws` |
 | 本地 mock（占位，Prism 不提供 WS） | `ws://localhost:4010/ws` |
-| 生产 | `wss://ws.linbit.example.com/v1` |
 
 - 单条连接可订阅多个频道。
 - 公开行情频道无需鉴权；用户频道（`orders`、`balances`）需在订阅时携带有效 `accessToken`。
@@ -106,7 +109,7 @@
 
 ### `kline:<symbol>:<interval>` — K 线
 
-`interval` 取值同 REST：`1m,5m,15m,1h,4h,1d,1w`。
+`interval` 取值：`1m,5m,15m,30m,1h,4h,1d,1w`（与服务端实现一致）。
 
 ```json
 {

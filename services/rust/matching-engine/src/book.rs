@@ -153,30 +153,102 @@ impl SymbolEngine {
         }
     }
 
-    /// Process a command: write-ahead to the WAL, apply it, emit events, and
-    /// snapshot if due. Returns the authoritative execution report.
+    /// Process a command with per-command durability: write-ahead to the WAL and
+    /// `fsync` it, then apply it, emit events, and snapshot if due. Returns the
+    /// authoritative execution report.
+    ///
+    /// [`process_batch`](Self::process_batch) is the group-commit equivalent for
+    /// many commands at once; this single-command path remains for the
+    /// per-command fsync policy, tests, and recovery replay drivers.
     pub fn process(&mut self, cmd: &Command) -> ExecReport {
         self.seq += 1;
         if let Some(wal) = self.wal.as_mut() {
             let rec = WalRecord { seq: self.seq, command: cmd.clone() };
             if let Err(e) = wal.append(&rec) {
                 // A durable WAL is a hard requirement; refuse the command.
+                self.seq -= 1;
                 return reject(cmd, format!("wal append failed: {e}"));
             }
         }
 
-        let mut touched = Vec::new();
-        let report = self.apply(cmd, &mut touched);
-
-        for t in &report.trades {
-            self.sink.publish(&EngineEvent::Trade(t.clone()));
-        }
-        self.emit_depth(&touched);
+        let report = self.apply_and_emit(cmd);
 
         self.since_snapshot += 1;
         if self.snapshot_every > 0 && self.since_snapshot >= self.snapshot_every {
             self.maybe_snapshot();
         }
+        report
+    }
+
+    /// Process a batch of commands under **group commit**: stage every command's
+    /// WAL record, issue a single `fsync` for the whole batch, and only then
+    /// apply the commands, emit their events, and build their reports. Reports
+    /// are returned in the same order as `cmds`.
+    ///
+    /// Durability is identical to [`process`](Self::process): no command in the
+    /// batch is applied, emitted, or (by the caller) acknowledged until the one
+    /// `fsync` has made the entire batch durable. A crash before that `fsync`
+    /// loses the whole (unacknowledged) batch — the torn tail is dropped on
+    /// recovery; a crash after it recovers every command exactly.
+    ///
+    /// If the WAL write or `fsync` fails, the batch is rejected as a unit: the
+    /// sequence counter is rolled back and every command gets a rejection
+    /// report, leaving the book untouched.
+    pub fn process_batch(&mut self, cmds: &[Command]) -> Vec<ExecReport> {
+        if cmds.is_empty() {
+            return Vec::new();
+        }
+
+        // Phase 1 — stage all records, then one fsync. On any WAL error the
+        // batch never touches the book and seq is left unchanged.
+        if let Some(wal) = self.wal.as_mut() {
+            let base = self.seq;
+            let mut err: Option<String> = None;
+            for (i, cmd) in cmds.iter().enumerate() {
+                let rec = WalRecord { seq: base + i as u64 + 1, command: cmd.clone() };
+                if let Err(e) = wal.append_buffered(&rec) {
+                    err = Some(format!("wal append failed: {e}"));
+                    break;
+                }
+            }
+            if err.is_none() {
+                if let Err(e) = wal.sync() {
+                    err = Some(format!("wal sync failed: {e}"));
+                }
+            }
+            if let Some(msg) = err {
+                return cmds.iter().map(|c| reject(c, msg.clone())).collect();
+            }
+        }
+
+        // Phase 2 — the batch is durable: apply, emit, and report each command.
+        let mut reports = Vec::with_capacity(cmds.len());
+        for cmd in cmds {
+            self.seq += 1;
+            reports.push(self.apply_and_emit(cmd));
+        }
+
+        // One snapshot check per batch: it captures the effects of every command
+        // just applied (all already fsynced), so truncating the WAL afterwards is
+        // safe. The overshoot past `snapshot_every` is bounded by the batch size.
+        self.since_snapshot += cmds.len() as u64;
+        if self.snapshot_every > 0 && self.since_snapshot >= self.snapshot_every {
+            self.maybe_snapshot();
+        }
+        reports
+    }
+
+    /// Apply one already-durable command to the book and publish its events.
+    /// Shared by [`process`](Self::process) and
+    /// [`process_batch`](Self::process_batch); it assumes `self.seq` was already
+    /// advanced for this command and performs no WAL write or snapshot.
+    fn apply_and_emit(&mut self, cmd: &Command) -> ExecReport {
+        let mut touched = Vec::new();
+        let report = self.apply(cmd, &mut touched);
+        for t in &report.trades {
+            self.sink.publish(&EngineEvent::Trade(t.clone()));
+        }
+        self.emit_depth(&touched);
         report
     }
 

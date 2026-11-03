@@ -135,15 +135,24 @@ else
 fi
 
 say "7/7 REST queries via gateway (public /market/*)"
-# ticker
+# ticker (with symbol -> single object; prices/quoteVolume padded to pair precision:
+# BTCUSDT pricePrecision=2, quantityPrecision=6, quoteVolume to quote precision=2).
 TICK="$(curl -sS "$GATEWAY_URL/market/ticker?symbol=$SYMBOL")"
 echo "ticker: $TICK"
-expect "ticker lastPrice"          "$(printf '%s' "$TICK" | jq -r '.[0].lastPrice')"          "70000"
-expect "ticker volume"             "$(printf '%s' "$TICK" | jq -r '.[0].volume')"             "0.01"
-expect "ticker quoteVolume"        "$(printf '%s' "$TICK" | jq -r '.[0].quoteVolume')"        "700"
-expect "ticker high"               "$(printf '%s' "$TICK" | jq -r '.[0].high')"               "70000"
-expect "ticker low"                "$(printf '%s' "$TICK" | jq -r '.[0].low')"                "70000"
-expect "ticker priceChangePercent" "$(printf '%s' "$TICK" | jq -r '.[0].priceChangePercent')" "0"
+expect "ticker type (single)"      "$(printf '%s' "$TICK" | jq -r 'type')"                "object"
+expect "ticker symbol"             "$(printf '%s' "$TICK" | jq -r '.symbol')"             "$SYMBOL"
+expect "ticker lastPrice"          "$(printf '%s' "$TICK" | jq -r '.lastPrice')"          "70000.00"
+expect "ticker volume"             "$(printf '%s' "$TICK" | jq -r '.volume')"             "0.010000"
+expect "ticker quoteVolume"        "$(printf '%s' "$TICK" | jq -r '.quoteVolume')"        "700.00"
+expect "ticker high"               "$(printf '%s' "$TICK" | jq -r '.high')"               "70000.00"
+expect "ticker low"                "$(printf '%s' "$TICK" | jq -r '.low')"                "70000.00"
+expect "ticker priceChangePercent" "$(printf '%s' "$TICK" | jq -r '.priceChangePercent')" "0"
+
+# ticker without symbol -> array of all tracked pairs.
+TICK_ALL="$(curl -sS "$GATEWAY_URL/market/ticker")"
+echo "ticker-all: $TICK_ALL"
+expect "ticker-all type (array)"   "$(printf '%s' "$TICK_ALL" | jq -r 'type')"            "array"
+expect "ticker-all has symbol"     "$(printf '%s' "$TICK_ALL" | jq -r "[.[]|select(.symbol==\"$SYMBOL\")]|length")" "1"
 
 # klines (1m)
 KL="$(curl -sS "$GATEWAY_URL/market/klines?symbol=$SYMBOL&interval=1m&limit=10")"
@@ -153,11 +162,12 @@ expect "kline close"    "$(printf '%s' "$KL" | jq -r '.[-1].close')"  "70000"
 expect "kline volume"   "$(printf '%s' "$KL" | jq -r '.[-1].volume')" "0.01"
 expect "kline open"     "$(printf '%s' "$KL" | jq -r '.[-1].open')"   "70000"
 
-# depth (0.01 remains on the ask after the partial fill)
+# depth (0.01 remains on the ask after the partial fill); price/qty padded to
+# pair precision (pricePrecision=2, quantityPrecision=6).
 DEPTH="$(curl -sS "$GATEWAY_URL/market/depth?symbol=$SYMBOL&limit=20")"
 echo "depth: $DEPTH"
-expect "depth best ask price" "$(printf '%s' "$DEPTH" | jq -r '.asks[0][0]')" "70000"
-expect "depth best ask qty"   "$(printf '%s' "$DEPTH" | jq -r '.asks[0][1]')" "0.01"
+expect "depth best ask price" "$(printf '%s' "$DEPTH" | jq -r '.asks[0][0]')" "70000.00"
+expect "depth best ask qty"   "$(printf '%s' "$DEPTH" | jq -r '.asks[0][1]')" "0.010000"
 expect "depth bids empty"     "$(printf '%s' "$DEPTH" | jq -r '.bids | length')" "0"
 
 # recent trades

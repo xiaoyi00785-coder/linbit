@@ -144,8 +144,18 @@ Rust 的 `matching-engine` 负责撮合，二者通过**可替换的消息接口
 
 - 单一 `SymbolEngine` 拥有某交易对的完整内存订单簿，由该交易对唯一的撮合线程驱动，撮合路径**无锁**。
 - 价格/时间优先：买盘取最高价、卖盘取最低价，同价位 FIFO。支持限价/市价、GTC/IOC/FOK/PostOnly 与撤单。
-- **WAL 先落盘再处理**：每条被接受的命令先 `fsync` 到 `DATA_DIR/<symbol>/wal.log` 再应用；按
+- **WAL 先落盘再处理**：被接受的命令先写入 `DATA_DIR/<symbol>/wal.log` 并 `fsync` 后才应用；按
   `SNAPSHOT_EVERY` 周期写快照并截断 WAL；启动时加载快照并重放 WAL 尾部，精确复现崩溃前状态（含 tradeId）。
+- **WAL fsync 策略（可配置，durability 语义不变）**：`fsync` 通常是整条写入链路的瓶颈，因此支持两种落盘方式，
+  **二者都保证“命令只有在其字节已落盘后才被处理/确认”**，已确认的命令崩溃后必可恢复：
+  - `per_command`（每条 fsync）：每条命令单独 `fsync`，最简单、延迟最低但吞吐受单次 fsync 限制。
+  - `group`（组提交，**默认**）：命令先追加进缓冲，按**批大小上限**（`WAL_BATCH_MAX`）或**时间窗口**
+    （`WAL_BATCH_WINDOW_US`，默认 1ms）合并成一批，对整批只做**一次** `fsync`；`fsync` 成功后才统一应用并确认这批命令。
+    一次 fsync 的开销被整批摊薄，吞吐显著提升。崩溃时：fsync 前的半写尾部在恢复时被整体丢弃（该批从未被确认），
+    fsync 后则整批可精确恢复——因此组提交与每条 fsync 在可恢复性上完全等价。
+  - 组提交在撮合线程内完成：单交易对仍单线程、无锁；深度查询会先冲刷已缓冲的命令，保证观察到它们的效果（顺序与每条 fsync 一致）。
+  - 环境变量：`WAL_FSYNC=group|per_command`、`WAL_BATCH_MAX`（默认 1024）、`WAL_BATCH_WINDOW_US`（默认 1000µs）。
+    低负载下单条命令至多等待一个时间窗口即落盘；高负载下批会很快填满 `WAL_BATCH_MAX`，窗口不再是瓶颈。
 - 输出成交（Trade）与深度（Depth）事件。价格/数量在引擎内用定点 `i128` 整数运算，杜绝浮点误差。
 
 ### 可替换的服务间消息接口
@@ -202,12 +212,37 @@ bash scripts/test-all.sh
 # 连同需要 DB 的测试（asset 结算幂等 settle_test、order store 集成测试）在 devstack 真实 PG 上执行
 cd tools/devstack && go run . -root ../.. -exec "bash scripts/test-all.sh"
 
-# 撮合引擎单元 + 集成测试（价格时间优先、部分成交、各 TIF、撤单、WAL 恢复一致性）
+# 撮合引擎单元 + 集成测试（价格时间优先、部分成交、各 TIF、撤单、WAL 恢复一致性；
+# 另含组提交专项：组提交崩溃恢复、快照+WAL 尾部恢复、组提交与每条 fsync 结果完全一致、
+# 批跨快照边界、半写尾部被整体丢弃）
 cd services/rust/matching-engine && cargo test
 
-# release 性能基准（输出每秒订单数、延迟 p50/p99/p999）
+# release 性能基准：先跑纯内存基线，再带真实写盘（临时目录，fsync 开启）对比
+# “每条 fsync” 与不同批大小的组提交；输出每秒订单数与 p50/p99/p999，并打印核数/文件系统/裸 fsync 延迟
 cd services/rust/matching-engine && cargo run --release --bin bench
+# 自定义规模：cargo run --release --bin bench -- <内存订单数> <写盘订单数>
 ```
+
+#### 基准结果（示例，一次具体运行）
+
+> 环境：**8 核**（`available_parallelism`），临时目录位于 `/dev/vdb`（**ext4**），裸 fsync ≈ **94µs/次**
+> （128B 追加 + `fdatasync` 实测）。内存 100 万单、写盘各 3 万单，撮合 1000 档深度盘口。
+> 延迟列为**每条命令**口径；组提交行按“命令所在整批的服务时间”计入每条命令（即客户端从入批到确认看到的延迟），
+> 故批越大单条延迟越高、吞吐越高——正是组提交的取舍。`per-command` 即批大小为 1。具体数字随机器/磁盘波动。
+
+| 运行 | 订单数 | 吞吐(orders/sec) | p50 | p99 | p999 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| memory（无 WAL，基线） | 1,000,000 | 678,475 | 885ns | 3.7µs | 11.1µs |
+| disk 每条 fsync | 30,000 | 12,364 | 73.0µs | 269.7µs | 863.4µs |
+| disk 组提交（批 8） | 30,000 | 76,668 | 89.2µs | 190.0µs | 568.0µs |
+| disk 组提交（批 32） | 30,000 | 138,222 | 153.5µs | 1.04ms | 1.45ms |
+| disk 组提交（批 128） | 30,000 | 216,393 | 365.5µs | 1.45ms | 1.58ms |
+| disk 组提交（批 1024） | 30,000 | 362,114 | 2.66ms | 3.83ms | 3.83ms |
+
+- 纯内存撮合约 68 万单/秒，证明瓶颈在 `fsync` 而非撮合本身。
+- 每条 fsync 的吞吐（≈1.2 万单/秒）基本被单次 fsync 延迟（≈94µs）锁死。
+- 组提交把一次 fsync 摊给整批：批 8 已把吞吐提升约 **6×** 且 p50/p99 反而更低；批越大吞吐越高（批 1024 ≈ **30×**），
+  代价是单条延迟随批增大而上升。`WAL_BATCH_MAX` / `WAL_BATCH_WINDOW_US` 即在吞吐与尾延迟之间调节的旋钮。
 
 ### Docker
 

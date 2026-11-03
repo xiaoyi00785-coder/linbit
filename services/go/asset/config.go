@@ -63,8 +63,9 @@ func intptr(n int) *int { return &n }
 func defaultWithdrawNetworks() map[string][]WithdrawNetwork {
 	return map[string][]WithdrawNetwork{
 		"USDT": {
-			{Network: "TRC20", MinWithdraw: "10.00000000", GasFeeEstimate: "1.00000000", GasFeeAsset: "USDT", EstimatedArrivalMinutes: intptr(5)},
-			{Network: "ERC20", MinWithdraw: "20.00000000", GasFeeEstimate: "6.50000000", GasFeeAsset: "USDT", EstimatedArrivalMinutes: intptr(10)},
+			// All USDT networks share the same 12 USDT minimum withdrawal.
+			{Network: "TRC20", MinWithdraw: "12.00000000", GasFeeEstimate: "1.00000000", GasFeeAsset: "USDT", EstimatedArrivalMinutes: intptr(5)},
+			{Network: "ERC20", MinWithdraw: "12.00000000", GasFeeEstimate: "6.50000000", GasFeeAsset: "USDT", EstimatedArrivalMinutes: intptr(10)},
 		},
 		"BTC": {
 			{Network: "BTC", MinWithdraw: "0.00050000", GasFeeEstimate: "0.00010000", GasFeeAsset: "BTC", EstimatedArrivalMinutes: intptr(30)},
