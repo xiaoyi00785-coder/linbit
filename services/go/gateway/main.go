@@ -21,6 +21,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("build gateway: %v", err)
 	}
+	if accessLogEnabled() {
+		gw.accessLog = newAccessLogger(nil)
+	}
 	addr := ":" + cfg.Port
 	log.Printf("gateway listening on %s (account=%s asset=%s order=%s market=%s)", addr, cfg.AccountURL, cfg.AssetURL, cfg.OrderURL, cfg.MarketURL)
 	if err := http.ListenAndServe(addr, gw.Handler()); err != nil {
