@@ -196,7 +196,8 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
 
 /** 借贷订单：GET /loans/records?type=borrow|repay|collateral|renew|liquidate */
 const RT = [["borrow", "借款记录"], ["repay", "还款记录"], ["collateral", "质押率调整记录"], ["renew", "续借记录"], ["liquidate", "强平记录"]] as const;
-type Rec = { id: number; loanId: number; type: string; amount: string; interest: string; penalty: string; collateral: string; term: string; asset: string; collateralAsset: string; time: number; ltv?: string; price?: string };
+type Rec = { id: number; loanId: number; type: string; amount: string; interest: string; penalty: string; collateral: string; term: string; asset: string; collateralAsset: string; time: number; ltv?: string; price?: string; detail?: { dueAt?: number } | null };
+const ymd = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 export function LoanRecords() {
   const authed = !!useAuthStore((s) => s.accessToken);
   const [t, setT] = useState<(typeof RT)[number][0]>("borrow");
@@ -211,9 +212,9 @@ export function LoanRecords() {
         {!authed ? <div className="lg fx-empty">登录后查看借贷订单</div> : r.loading ? <div className="fx-skel" style={{ height: 40 }} /> : r.error ? <div className="fx-err">{r.error}</div> : rows.length === 0 ? <div className="lg fx-empty">暂无记录</div> : rows.map((x) => (
           <div key={x.id} className="fx-tr">
             <span>{dt(x.time)}</span><span>#{x.loanId}</span><span>{tn(x.term).split(" · ")[0]}</span>
-            <span><CoinIcon s={x.asset} size={16} /> {x.asset}</span><span>{n(x.amount, 6)}</span>
+            <span><CoinIcon s={x.asset} size={16} /> {x.asset}</span><span>{x.type === "renew" ? (x.detail?.dueAt ? `新到期 ${ymd(x.detail.dueAt)}` : "--") : n(x.amount, 6)}</span>
             <span>{n(x.interest, 6)} / {n(x.penalty, 6)}</span>
-            <span><CoinIcon s={x.collateralAsset} size={16} /> {x.collateralAsset}</span><span>{n(x.collateral, 8)}</span><span>{pc(x.ltv)}</span>
+            <span><CoinIcon s={x.collateralAsset} size={16} /> {x.collateralAsset}</span><span>{!x.collateral || (x.type === "renew" && !(Number(x.collateral) > 0)) ? "--" : n(x.collateral, 8)}</span><span>{pc(x.ltv)}</span>
           </div>
         ))}
       </div>
