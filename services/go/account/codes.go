@@ -24,6 +24,7 @@ const (
 	purposeReset    = "reset_password"
 	purposeAddress  = "address"
 	purposeBind     = "bind"
+	purposeWithdraw = "withdraw"
 )
 
 // EmailSender delivers a verification code to an email address. The local

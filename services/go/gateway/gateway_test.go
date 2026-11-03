@@ -32,7 +32,12 @@ func newUpstream() *upstream {
 
 func newTestGateway(t *testing.T, accountURL, assetURL string) http.Handler {
 	t.Helper()
-	gw, err := NewGateway(Config{JWTSecret: "test-secret", AccountURL: accountURL, AssetURL: assetURL})
+	gw, err := NewGateway(Config{
+		JWTSecret:  "test-secret",
+		AccountURL: accountURL,
+		AssetURL:   assetURL,
+		WalletURL:  assetURL, // reuse the echo upstream for /wallet route tests
+	})
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}

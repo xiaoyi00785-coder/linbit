@@ -86,6 +86,12 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /2fa/totp/verify", s.auth(http.HandlerFunc(s.handleTOTPVerify)))
 	mux.Handle("POST /2fa/totp/disable", s.auth(http.HandlerFunc(s.handleTOTPDisable)))
 
+	// Service-to-service endpoints (internal token; never proxied by the gateway).
+	// Used by the wallet service to gate withdrawals: verify the second factor and
+	// check the destination against the user's withdrawal whitelist.
+	mux.HandleFunc("POST /internal/withdraw/verify", s.handleInternalWithdrawVerify)
+	mux.HandleFunc("GET /internal/withdraw/whitelist", s.handleInternalWithdrawWhitelist)
+
 	// Dev-only internal endpoint: read the most recent verification code so tests
 	// and smoke scripts can complete flows without a real email/SMS provider.
 	// Guarded by DEV_MODE + the shared internal token; never proxied by the gateway.

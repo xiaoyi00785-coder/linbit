@@ -47,6 +47,7 @@ var (
 	enginePort  = envOr("DEVSTACK_ENGINE_PORT", "8083")
 	orderPort   = envOr("DEVSTACK_ORDER_PORT", "8084")
 	marketPort  = envOr("DEVSTACK_MARKET_PORT", "8085")
+	walletPort  = envOr("DEVSTACK_WALLET_PORT", "8086")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -125,7 +126,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -205,11 +206,23 @@ func run(root, execCmd string) int {
 			// smoke scripts can complete code-gated flows without a real provider.
 			"DEV_MODE=true",
 		},
+		"wallet": {
+			"PORT=" + walletPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"REDIS_URL=" + redisURL,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			// Dev mode exposes the mock-chain injection/advance endpoints so smoke
+			// scripts can simulate deposits and block confirmations.
+			"DEV_MODE=true",
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
 			"ACCOUNT_URL=http://localhost:" + accountPort,
 			"ASSET_URL=http://localhost:" + assetPort,
+			"WALLET_URL=http://localhost:" + walletPort,
 			"ORDER_URL=http://localhost:" + orderPort,
 			"MARKET_URL=http://localhost:" + marketPort,
 			"REDIS_URL=" + redisURL,
@@ -218,9 +231,9 @@ func run(root, execCmd string) int {
 
 	// Start order matters: asset first (account/order call it), then the engine,
 	// then the order service (migrates the spot schema, needs asset+engine), then
-	// market-data (reads the symbols table order seeded), then account, then
-	// gateway. Each is started and awaited healthy before the next so their
-	// startup migrations run sequentially, not concurrently.
+	// market-data (reads the symbols table order seeded), then account, wallet
+	// (calls account+asset), then gateway. Each is started and awaited healthy
+	// before the next so their startup migrations run sequentially.
 	startOrder := []struct {
 		name   string
 		health string
@@ -230,6 +243,7 @@ func run(root, execCmd string) int {
 		{"order", "http://localhost:" + orderPort + "/healthz"},
 		{"market-data", "http://localhost:" + marketPort + "/healthz"},
 		{"account", "http://localhost:" + accountPort + "/healthz"},
+		{"wallet", "http://localhost:" + walletPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 
@@ -270,6 +284,7 @@ func run(root, execCmd string) int {
 		"GATEWAY_URL=" + gatewayURL,
 		"ACCOUNT_URL=http://localhost:" + accountPort,
 		"ASSET_URL=http://localhost:" + assetPort,
+		"WALLET_URL=http://localhost:" + walletPort,
 		"ORDER_URL=http://localhost:" + orderPort,
 		"ENGINE_URL=http://localhost:" + enginePort,
 		"MARKET_URL=http://localhost:" + marketPort,

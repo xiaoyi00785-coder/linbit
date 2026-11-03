@@ -51,6 +51,34 @@ services:
       redis:
         condition: service_healthy
 
+  wallet:
+    build:
+      context: .
+      dockerfile: services/go/wallet/Dockerfile
+    environment:
+      PORT: "8086"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      ASSET_INTERNAL_URL: http://asset:8082
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Chains are simulated by default (no real node/keys). Set DEV_MODE=true only
+      # in local/CI environments to enable the mock-chain injection endpoints.
+      DEV_MODE: ${WALLET_DEV_MODE:-false}
+      # Where the on-chain gas is charged: "extra" (default) adds it on top of the
+      # amount; "amount" deducts it from the transferred amount.
+      WALLET_GAS_DEDUCT_MODE: ${WALLET_GAS_DEDUCT_MODE:-extra}
+      WALLET_FEE_ACCOUNT: ${WALLET_FEE_ACCOUNT:-platform:gas}
+      # Optional JSON array override for the network registry (empty = built-in).
+      WALLET_NETWORKS_JSON: ${WALLET_NETWORKS_JSON:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      account:
+        condition: service_started
+
   account:
     build:
       context: .

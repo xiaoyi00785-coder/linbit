@@ -33,15 +33,15 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /assets/balances", s.handleBalances)
 
-	// Minimal user-facing wallet read endpoints (routed via the gateway under
-	// /wallet/*; the gateway injects X-User-Id after validating the JWT).
-	mux.HandleFunc("GET /wallet/withdraw/networks", s.handleWithdrawNetworks)
-	mux.HandleFunc("GET /wallet/withdraw/records", s.handleWithdrawRecords)
+	// Wallet user-facing endpoints (/wallet/*) live in the wallet service; this
+	// service exposes only the internal double-entry operations it drives.
 
 	mux.HandleFunc("POST /internal/accounts", s.internal(s.handleInitAccount))
 	mux.HandleFunc("POST /internal/credit", s.internal(s.handleCredit))
 	mux.HandleFunc("POST /internal/freeze", s.internal(s.handleFreeze))
 	mux.HandleFunc("POST /internal/unfreeze", s.internal(s.handleUnfreeze))
+	mux.HandleFunc("POST /internal/deposit", s.internal(s.handleDeposit))
+	mux.HandleFunc("POST /internal/withdraw-complete", s.internal(s.handleWithdrawComplete))
 	mux.HandleFunc("POST /internal/settle", s.internal(s.handleSettle))
 	mux.HandleFunc("GET /internal/balances", s.internal(s.handleInternalBalances))
 	return mux
@@ -152,6 +152,71 @@ func (s *Server) handleFreeze(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUnfreeze(w http.ResponseWriter, r *http.Request) {
 	s.handleMovement(w, r, s.store.Unfreeze)
+}
+
+type walletMovementRequest struct {
+	UserID     string `json:"userId"`
+	Asset      string `json:"asset"`
+	Amount     string `json:"amount"`
+	Gas        string `json:"gas"`
+	FeeAccount string `json:"feeAccount"`
+	Ref        string `json:"ref"`
+}
+
+// handleDeposit credits a confirmed on-chain deposit (idempotent on ref).
+func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
+	var req walletMovementRequest
+	if err := common.DecodeJSON(r, &req); err != nil || req.UserID == "" || req.Asset == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	amount, err := decimal.NewFromString(req.Amount)
+	if err != nil || amount.Sign() <= 0 {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
+		return
+	}
+	err = s.store.Deposit(r.Context(), req.UserID, req.Asset, amount, req.Ref)
+	switch {
+	case errors.Is(err, ErrAlreadyApplied):
+		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "already_applied"})
+	case err != nil:
+		log.Printf("deposit: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+	default:
+		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
+// handleWithdrawComplete debits a confirmed withdrawal from locked and books the
+// gas to the platform account (idempotent on ref).
+func (s *Server) handleWithdrawComplete(w http.ResponseWriter, r *http.Request) {
+	var req walletMovementRequest
+	if err := common.DecodeJSON(r, &req); err != nil || req.UserID == "" || req.Asset == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	amount, err1 := decimal.NewFromString(req.Amount)
+	gas := decimal.Zero
+	var err2 error
+	if req.Gas != "" {
+		gas, err2 = decimal.NewFromString(req.Gas)
+	}
+	if err1 != nil || err2 != nil || amount.Sign() <= 0 || gas.Sign() < 0 {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
+		return
+	}
+	err := s.store.WithdrawComplete(r.Context(), req.UserID, req.Asset, amount, gas, req.FeeAccount, req.Ref)
+	switch {
+	case errors.Is(err, ErrAlreadyApplied):
+		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "already_applied"})
+	case errors.Is(err, ErrInsufficient):
+		common.WriteError(w, http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")
+	case err != nil:
+		log.Printf("withdraw-complete: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+	default:
+		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
 }
 
 type movementFn func(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error

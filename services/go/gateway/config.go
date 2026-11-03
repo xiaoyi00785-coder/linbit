@@ -8,6 +8,7 @@ type Config struct {
 	JWTSecret  string
 	AccountURL string
 	AssetURL   string
+	WalletURL  string
 	OrderURL   string
 	MarketURL  string
 	RedisURL   string
@@ -22,6 +23,7 @@ func LoadConfig() Config {
 		JWTSecret:      common.MustEnv("JWT_SECRET"),
 		AccountURL:     common.Env("ACCOUNT_URL", "http://localhost:8081"),
 		AssetURL:       common.Env("ASSET_URL", "http://localhost:8082"),
+		WalletURL:      common.Env("WALLET_URL", "http://localhost:8086"),
 		OrderURL:       common.Env("ORDER_URL", "http://localhost:8084"),
 		MarketURL:      common.Env("MARKET_URL", "http://localhost:8085"),
 		RedisURL:       common.Env("REDIS_URL", ""),

@@ -95,7 +95,7 @@ func (s *Server) handleSendCodeAuthed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Purpose {
-	case purposeAddress, purposeBind, purposeReset:
+	case purposeAddress, purposeBind, purposeReset, purposeWithdraw:
 	default:
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "不支持的 purpose")
 		return

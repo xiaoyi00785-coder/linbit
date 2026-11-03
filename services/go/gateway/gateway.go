@@ -39,6 +39,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	wallet, err := url.Parse(cfg.WalletURL)
+	if err != nil {
+		return nil, err
+	}
 	order, err := url.Parse(cfg.OrderURL)
 	if err != nil {
 		return nil, err
@@ -49,6 +53,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	}
 	accountProxy := httputil.NewSingleHostReverseProxy(account)
 	assetProxy := httputil.NewSingleHostReverseProxy(asset)
+	walletProxy := httputil.NewSingleHostReverseProxy(wallet)
 	orderProxy := httputil.NewSingleHostReverseProxy(order)
 	// ReverseProxy transparently tunnels WebSocket upgrades (used by /ws).
 	marketProxy := httputil.NewSingleHostReverseProxy(market)
@@ -61,7 +66,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/2fa", proxy: accountProxy},
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
-			{prefix: "/wallet", proxy: assetProxy},
+			{prefix: "/wallet", proxy: walletProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/ws", proxy: marketProxy},

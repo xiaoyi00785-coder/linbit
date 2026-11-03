@@ -18,7 +18,7 @@
 | `gateway` | API 网关：鉴权、限流、路由、聚合、WebSocket 接入 | 全部（统一入口） |
 | `account` | 手机号/邮箱注册（验证码）、二次验证登录、找回密码、设备管理、2FA(TOTP)、提现地址簿/白名单、昵称头像、账户信息 | Auth、2FA、Account |
 | `kyc` | KYC 资料提交与审核状态 | KYC |
-| `wallet` | 充值地址、充值记录、提现申请与记录、链上交互 | Wallet |
+| `wallet` | 充值地址、充值记录、提现申请/审核/撤销、链上 Gas 估算、可替换链适配层与签名层 | Wallet |
 | `asset` | 资产余额、冻结/解冻、内部划转、估值 | Assets |
 | `order` | 现货下单/撤单、当前委托、历史订单、成交查询 | Spot |
 | `market-data` | 行情聚合：ticker/depth/kline/trades、交易对列表、WS 推送 | Market |
@@ -218,15 +218,16 @@ Rust 的 `matching-engine` 负责撮合，二者通过**可替换的消息接口
 | 合约 maker | `CONTRACT_MAKER_FEE_RATE` | `0.0005` | 0.05%，开/平仓各收一次、按仓位价值（合约服务未落地，费率位已预留） |
 | 合约 taker | `CONTRACT_TAKER_FEE_RATE` | `0.0005` | 0.05%，同上 |
 
-> **提现费用**：提现不收平台手续费，仅收链上 Gas。`docs/api/openapi.yaml` 已预留
-> `GET /wallet/withdraw/networks`（返回 `networks[].gasFeeEstimate` 等 Gas 估算）与 `Withdrawal.gasFee` 字段；
-> 钱包服务尚未实现，此处仅为契约与配置占位。
+> **提现费用**：提现不收平台手续费，仅收链上 Gas。`GET /wallet/withdraw/networks` 返回
+> `networks[].gasFeeEstimate` 等 Gas 估算，`Withdrawal.gasFee` 为实际结算的 Gas。Gas 的收取方式
+> （额外扣 / 从金额中扣）由 `WALLET_GAS_DEDUCT_MODE` 配置，默认 `extra`（额外扣）。详见下方“钱包模块”。
 
 ### 本机运行（无需 Docker）
 
 `tools/devstack` 现额外编译并拉起 **Rust 撮合引擎**（`cargo build`，WAL/快照写入临时目录，退出即清理）与
-`order` 服务，启动顺序 asset → engine → order → account → gateway，并把 `ORDER_URL`、`ENGINE_URL`、
-`INTERNAL_TOKEN`（仅本地开发用的固定令牌）导出给 `-exec` 的命令使用。
+`order` 服务，并在其后拉起 `wallet`（`DEVSTACK_WALLET_PORT`，默认 8086），启动顺序
+asset → engine → order → market-data → account → wallet → gateway，并把 `ORDER_URL`、`ENGINE_URL`、
+`WALLET_URL`、`INTERNAL_TOKEN`（仅本地开发用的固定令牌）导出给 `-exec` 的命令使用。
 
 ```bash
 # 现货交易端到端冒烟：两用户注册登录 → 内部入账充值 → 一卖一买限价成交 →
@@ -342,4 +343,60 @@ bash scripts/smoke-account.sh
 `tools/wsprobe` 是一个零依赖的最小 WebSocket 客户端，供冒烟脚本验证推送。`scripts/test-all.sh` 已含 `market-data`
 模块（含 K 线持久化/恢复的 DB 测试，在无 `DATABASE_URL` 时自动 skip）。
 
-> 其余子目录（kyc/wallet/admin/risk）仍为占位，后续落地。
+## 钱包模块 · 充提（已落地：`wallet`）
+
+`wallet` 是独立 Go module（`services/go/wallet`，端口 8086），通过网关 `/wallet/*` 对外；内部与
+`account`（二次验证、白名单）和 `asset`（复式记账）通过 `X-Internal-Token` 保护的 `/internal/*` 协作。
+**不接真实节点、不持有真实私钥**：链与签名均为可替换接口的本地模拟实现。
+
+### 可替换层
+
+| 抽象 | 本实现 | 说明 |
+| --- | --- | --- |
+| `ChainAdapter` | `MockChain`（DB 模拟链） | 地址生成、Gas 估算、广播、确认数查询、充值扫描；充值/出块仅通过 dev-only 内部接口注入 |
+| `Signer`（热钱包） | `HotMPCSigner` | MPC 热钱包只留接口与 mock（单签名输出） |
+| `Signer`（冷钱包） | `MultisigSigner` | 2/3 多签 mock：**必须 3 方中至少 2 个不同方有效签名**才可组装，重复方去重、伪造签名忽略 |
+| `RiskScorer` | `LocalRiskScorer` | 本地规则打分（金额、新地址、新设备、24h 频次）；阈值可配置 |
+
+### 充值
+
+- 按 `(user, asset, network)` 复用充值地址（`UNIQUE(user_id, asset, network)`）。
+- 扫描模拟链到账，达到该网络确认数才入账；`deposits(network, tx_hash, log_index)` 唯一约束 +
+  asset `/internal/deposit` 的 `wallet_ops(ref)` 幂等，重复扫描/重复注入都不会重复入账。
+- 低于最小充值额默认仍入账（规则文件只说明“小额不满足提现条件”，未说丢弃）——`WALLET_CREDIT_BELOW_MIN_DEPOSIT`。
+
+### 提现
+
+- **不收平台手续费，只收链上 Gas**。USDT 各网络单笔 12–20000。
+- 二次验证：复用 `account`（TOTP 或 `purpose=withdraw` 验证码），经 `/internal/withdraw/verify` 校验。
+- 白名单：开启时只能提到地址簿中 `whitelisted=true` 的地址，经 `/internal/withdraw/whitelist` 校验。
+- 提交即冻结：`extra` 模式冻结 `金额+Gas`；`amount` 模式冻结金额、Gas 从金额中扣。
+- 风控：`≤1000U 且 分≤20` 自动放行；`>5000U 或 分>40` 人工复核；中间区间默认人工复核（可配）。
+- 状态机：`pending_review → approved → processing → completed`；`pending_review → rejected/canceled`；
+  `approved/processing → failed`。审核通过后才签名广播；确认数足够后从冻结扣减，Gas 记入 `WALLET_FEE_ACCOUNT`；
+  拒绝/撤销/广播失败则解冻。
+- 管理员接口：`GET /internal/admin/withdrawals?status=…`、`POST /internal/admin/withdrawals/{id}/approve|reject`。
+  用户撤销：`POST /wallet/withdraw/{id}/cancel`（仅待审核可撤销）。
+
+### 关键配置（`wallet`）
+
+| 环境变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `WALLET_GAS_DEDUCT_MODE` | `extra` | Gas 额外扣（`extra`）或从金额中扣（`amount`） |
+| `WALLET_FEE_ACCOUNT` | `platform:gas` | Gas 记入的复式记账科目 |
+| `WALLET_RISK_AUTO_MAX_AMOUNT` / `WALLET_RISK_AUTO_MAX_SCORE` | `1000` / `20` | 自动放行上限 |
+| `WALLET_RISK_REVIEW_MIN_AMOUNT` / `WALLET_RISK_REVIEW_MAX_SCORE` | `5000` / `40` | 强制人工复核阈值 |
+| `WALLET_RISK_MIDDLE_ACTION` | `review` | 中间区间动作（`review`/`auto`） |
+| `WALLET_CREDIT_BELOW_MIN_DEPOSIT` | `true` | 低于最小充值额是否入账 |
+| `WALLET_NETWORKS_JSON` | 空 | JSON 数组整体覆盖网络注册表（确认数/最小最大/Gas） |
+| `DEV_MODE` | `false` | 开启模拟链注入/推进区块接口（仅本地/CI） |
+
+### 钱包冒烟
+
+```bash
+# 分配地址 → 注入充值 → 确认数不足不入账 → 够数入账 → 重复注入不重复入账 →
+# 小额提现自动放行并结算 → 大额进入复核 → 拒绝解冻 → 白名单拦截 → 余额/流水对账
+bash scripts/smoke-wallet.sh
+```
+
+> 其余子目录（kyc/admin/risk）仍为占位，后续落地。

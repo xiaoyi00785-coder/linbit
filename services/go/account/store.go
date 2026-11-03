@@ -494,6 +494,22 @@ func (s *Store) ListWithdrawAddresses(ctx context.Context, userID int64) ([]With
 	return out, rows.Err()
 }
 
+// IsWhitelistedAddress reports whether (asset, network, address) is an entry in
+// the user's address book flagged as whitelisted. Used by the wallet service to
+// enforce the withdrawal whitelist when it is enabled.
+func (s *Store) IsWhitelistedAddress(ctx context.Context, userID int64, asset, network, address string) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM withdraw_addresses
+		 WHERE user_id = $1 AND asset = $2 AND network = $3 AND address = $4 AND whitelisted = TRUE
+		 LIMIT 1`,
+		userID, strings.ToUpper(asset), strings.ToUpper(network), address).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // DeleteWithdrawAddress removes an address-book entry and reports success.
 func (s *Store) DeleteWithdrawAddress(ctx context.Context, userID int64, id string) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
