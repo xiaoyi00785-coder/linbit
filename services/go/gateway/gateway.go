@@ -77,6 +77,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	growthProxy := httputil.NewSingleHostReverseProxy(growth)
+	earn, err := url.Parse(cfg.EarnURL)
+	if err != nil {
+		return nil, err
+	}
+	earnProxy := httputil.NewSingleHostReverseProxy(earn)
 
 	return &Gateway{
 		cfg: cfg,
@@ -96,6 +101,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/rewards", proxy: growthProxy},
 			{prefix: "/activities", proxy: growthProxy},
 			{prefix: "/coupons", proxy: growthProxy},
+			{prefix: "/loans", proxy: earnProxy},
+			{prefix: "/earn", proxy: earnProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/ws", proxy: marketProxy},
@@ -122,6 +129,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/points/campaigns"},
 			{method: http.MethodGet, path: "/points/campaign"},
 			{method: http.MethodGet, path: "/activities"},
+			{method: http.MethodGet, path: "/loans/market"},
+			{method: http.MethodGet, path: "/loans/quote"},
 			{method: "", path: "/ws"}, // public market WebSocket
 		},
 	}, nil

@@ -54,6 +54,7 @@ services/go/kyc/kyc
 services/go/futures/futures
 services/go/strategy/strategy
 services/go/growth/growth
+services/go/earn/earn
 services/go/admin/admin
 services/go/gateway/gateway
 services/go/order/order

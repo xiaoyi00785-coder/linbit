@@ -54,6 +54,7 @@ var (
 	kycPort      = envOr("DEVSTACK_KYC_PORT", "8087")
 	strategyPort = envOr("DEVSTACK_STRATEGY_PORT", "8090")
 	growthPort   = envOr("DEVSTACK_GROWTH_PORT", "8091")
+	earnPort     = envOr("DEVSTACK_EARN_PORT", "8092")
 	adminPort    = envOr("DEVSTACK_ADMIN_PORT", "8088")
 	futuresPort  = envOr("DEVSTACK_FUTURES_PORT", "8089")
 )
@@ -134,7 +135,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth", "earn"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -311,6 +312,16 @@ func run(root, execCmd string) int {
 			// Dev mode exposes the manual sync / settle endpoints.
 			"DEV_MODE=true",
 		},
+		"earn": {
+			"PORT=" + earnPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+			"EARN_TICK_MS=1000",
+			// Dev mode exposes the clock-advance endpoint.
+			"DEV_MODE=true",
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
@@ -324,6 +335,7 @@ func run(root, execCmd string) int {
 			"FUTURES_URL=http://localhost:" + futuresPort,
 			"STRATEGY_URL=http://localhost:" + strategyPort,
 			"GROWTH_URL=http://localhost:" + growthPort,
+			"EARN_URL=http://localhost:" + earnPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
@@ -348,6 +360,7 @@ func run(root, execCmd string) int {
 		{"futures", "http://localhost:" + futuresPort + "/healthz"},
 		{"strategy", "http://localhost:" + strategyPort + "/healthz"},
 		{"growth", "http://localhost:" + growthPort + "/healthz"},
+		{"earn", "http://localhost:" + earnPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 

@@ -15,6 +15,7 @@ type Config struct {
 	FuturesURL  string
 	StrategyURL string
 	GrowthURL   string
+	EarnURL     string
 	RedisURL    string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string
@@ -34,6 +35,7 @@ func LoadConfig() Config {
 		FuturesURL:     common.Env("FUTURES_URL", "http://localhost:8089"),
 		StrategyURL:    common.Env("STRATEGY_URL", "http://localhost:8090"),
 		GrowthURL:      common.Env("GROWTH_URL", "http://localhost:8091"),
+		EarnURL:        common.Env("EARN_URL", "http://localhost:8092"),
 		RedisURL:       common.Env("REDIS_URL", ""),
 		AllowedOrigins: splitOrigins(common.Env("CORS_ALLOWED_ORIGINS", "")),
 	}

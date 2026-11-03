@@ -303,6 +303,25 @@ services:
       futures:
         condition: service_started
 
+  earn:
+    build:
+      context: .
+      dockerfile: services/go/earn/Dockerfile
+    environment:
+      PORT: "8092"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      FUTURES_INTERNAL_URL: http://futures:8089
+      LOAN_EARLY_REPAY_PENALTY_RATE: ${LOAN_EARLY_REPAY_PENALTY_RATE:-0.0005}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      futures:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -319,6 +338,7 @@ services:
       FUTURES_URL: http://futures:8089
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
+      EARN_URL: http://earn:8092
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
@@ -342,6 +362,8 @@ services:
       strategy:
         condition: service_started
       growth:
+        condition: service_started
+      earn:
         condition: service_started
 
 volumes:
