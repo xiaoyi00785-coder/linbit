@@ -152,7 +152,7 @@ export function Convert() {
         <h1>闪兑，一步完成币币兑换</h1>
         <p>零手续费，锁定报价 {cfg?.quoteTtlSeconds ?? 10} 秒，即时到账。</p>
         <div className="cvbox">
-          <div className="lrow"><b>闪兑 <em className="new">零手续费</em></b><button type="button" className="cv-ref" title="刷新报价" onClick={getQuote}>⟳</button></div>
+          <div className="lrow"><b>闪兑 <em className="new">零手续费</em></b><button type="button" className="cv-ref" title="刷新报价" onClick={() => { if (!authed) return toast("请先登录后获取报价", "info"); if (!(n > 0)) return toast("请输入兑换数量", "info"); getQuote(); toast("报价已刷新", "info"); }}>⟳</button></div>
           {avail === "no" && <div className="cv-warn">闪兑暂未开放，以下为行情参考价，暂不支持下单。</div>}
           <div className="cvi">
             <div className="lrow"><span className="lg">从</span>{authed && <span className="lg">可用 {free} {from} <button type="button" className="cv-max" onClick={() => setAmt(String(free))}>最大</button></span>}</div>

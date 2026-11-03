@@ -3,6 +3,7 @@
 import { openTransfer } from "@/components/Transfer";
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { CoinIcon } from "@/components/CoinIcon";
 import { toast, copyText } from "@/lib/ui";
 import { rest, rget } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
@@ -78,13 +79,13 @@ export function ModalHost() {
 const DEF: [RegExp, string[]][] = [[/限价 \| 市价/, ["限价 | 市价", "限价", "市价"]], [/最近 7 天/, ["最近 7 天", "最近 30 天", "最近 90 天"]], [/链上充值/, ["链上充值", "内部转账"]], [/链上提现/, ["链上提现", "内部转账"]], [/^活期$/, ["活期", "定期"]], [/^CNY$|^USD$/, ["USD", "CNY", "EUR", "JPY", "KRW", "HKD"]], [/USDT/, ["USDT", "BTC", "ETH"]]];
 const defOpts = (v: string, k?: string) => (DEF.find(([r]) => r.test(v))?.[1]) || (k && /币|资产|合约|交易对|品种/.test(k) ? [v, "BTC", "ETH", "USDT"] : k && /状态/.test(k) ? [v, "处理中", "已完成", "已失败"] : [v, "买入", "卖出"]);
 /** 下拉选择：点击展开，选中后回写并派发 lb-filter 事件。 */
-export function Dropdown({ k, v, opts, onChange, cls = "lsel", store }: { k?: string; v: string; opts?: string[]; onChange?: (x: string) => void; cls?: string; store?: string }) {
+export function Dropdown({ k, v, opts, onChange, cls = "lsel", store, icons }: { k?: string; v: string; opts?: string[]; onChange?: (x: string) => void; cls?: string; store?: string; icons?: boolean }) {
   const [val, setVal] = useState(() => (store && typeof localStorage !== "undefined" && localStorage.getItem(store)) || v); const [o, setO] = useState(false); const r = useRef<HTMLDivElement>(null);
   useEffect(() => setVal((store && localStorage.getItem(store)) || v), [v, store]);
   useEffect(() => { if (!o) return; const h = (e: MouseEvent) => !r.current?.contains(e.target as Node) && setO(false); document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, [o]);
   const list = opts || defOpts(v, k);
-  return <div ref={r} className={cls + " kit-dd"} role="combobox" aria-expanded={o} onClick={() => setO(!o)}>{val} <em>▾</em>
-    {o && <div className="kit-menu" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{x}</div>)}</div>}
+  return <div ref={r} className={cls + " kit-dd"} role="combobox" aria-expanded={o} onClick={() => setO(!o)}>{icons && <CoinIcon s={val} size={20} className="kit-ci" />}{val} <em>▾</em>
+    {o && <div className="kit-menu" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{icons && <CoinIcon s={x} size={18} className="kit-ci" />}{x}</div>)}</div>}
   </div>;
 }
 const iso = (d: Date) => d.toISOString().slice(0, 10);

@@ -1,4 +1,5 @@
 "use client";
+import { Dropdown } from "@/features/Kit";
 import { useEffect, useState } from "react";
 import { goto, toast } from "@/lib/ui";
 import { MSG_TOTP_MISSING, MSG_TWOFA_REQUIRED, TWOFA_BIND, twofaBound, twofaKind } from "@/lib/twofa";
@@ -50,7 +51,7 @@ export function TransferHost() {
           <button className="trx" title="交换" onClick={() => { setFrom(to); setTo(from); }}>⇅</button>
           <label>到<select className="fsel" value={to} onChange={(e) => setTo(e.target.value)}>{ACCTS.filter((a) => a !== from).map((a) => <option key={a}>{a}</option>)}</select></label>
         </div>
-        <label className="trl">币种<select className="fsel" value={coin} onChange={(e) => setCoin(e.target.value)}>{["USDT", "BTC", "ETH"].map((a) => <option key={a}>{a}</option>)}</select></label>
+        <div className="trl"><span>币种</span><Dropdown cls="fsel" icons v={coin} opts={["USDT", "BTC", "ETH"]} onChange={setCoin} /></div>
         <label className="trl">数量<span className="wamt"><input inputMode="decimal" placeholder="请输入划转数量" value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt(avail)}>全部</a><em>{coin}</em></span></label>
         <div className="lg trv">可用 {avail} {coin}</div>
         {hist.length > 0 && <div className="trhist"><div className="lg">最近划转</div>{hist.map((h) => <div key={h.id}><span>{ACCT_NAME[h.from] ?? h.from} → {ACCT_NAME[h.to] ?? h.to}</span><span>{h.amount} {h.asset}</span><span className="lg">{{ pending: "处理中", done: "已完成", failed: "失败" }[h.status]}</span></div>)}</div>}

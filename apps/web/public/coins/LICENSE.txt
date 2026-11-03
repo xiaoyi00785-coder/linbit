@@ -1,2 +1,3 @@
 Coin icons: cryptocurrency-icons 0.18.1 (spothq, icons CC0-1.0 / code MIT) — https://github.com/spothq/cryptocurrency-icons
 arb.svg, ton.svg: @web3icons/core 4.0.58 (MIT) — https://github.com/0xa3k5/web3icons
+aapl, googl, meta, nvda, tsla, coin.svg: brand glyphs from simple-icons (CC0-1.0) — https://github.com/simple-icons/simple-icons; xaut.svg: @web3icons/core 4.0.58 (MIT). msft, amzn, spy, xau, xag, xpt, wti, brent, ngas, copper.svg: simple drawn badges (project-authored). Trademarks belong to their owners.
