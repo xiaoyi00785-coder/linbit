@@ -22,6 +22,8 @@ export interface Result<T> {
   ok: boolean;
   data?: T;
   error?: string;
+  /** 后端业务错误码（APIError.code），如 TWOFA_REQUIRED / INVALID_TOTP */
+  code?: string;
   source: "api" | "mock";
 }
 
@@ -44,7 +46,7 @@ async function tryApi<T>(
     const msg =
       (error as { message?: string } | undefined)?.message ?? `HTTP ${response.status}`;
     // 4xx 视为业务错误，直接返回；5xx 回退 mock
-    if (response.status >= 400 && response.status < 500) return { ok: false, error: msg, source: "api" };
+    if (response.status >= 400 && response.status < 500) return { ok: false, error: msg, code: (error as { code?: string } | undefined)?.code, source: "api" };
   } catch {
     /* 网络错误 → mock */
   }

@@ -5,6 +5,7 @@ import { useBalances } from "@/lib/queries";
 import { listWithdrawNetworks, getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type Withdrawal } from "@/lib/services";
 import { Src } from "./common";
 import { toast } from "@/lib/ui";
+import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
 import { Ico } from "@/legacy/App";
@@ -37,6 +38,7 @@ export function Withdraw() {
   const [cfgSrc, setCfgSrc] = useState<"api" | "mock">();
   const [confirm, setConfirm] = useState(false);
   const [totp, setTotp] = useState("");
+  const [tfa, setTfa] = useState<TwofaKind>(null);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<Withdrawal>();
   const [records, setRecords] = useState<Withdrawal[]>([]);
@@ -195,6 +197,7 @@ export function Withdraw() {
                 <span>到账数量</span><b>{tab === "inner" ? (amt || "--") : receive} {asset}</b>
                 <span>预计到账时间</span><b>{tab === "inner" ? "实时到账" : eta}</b>
               </div>
+              {tfa === "required" && <TwofaRequired />}
               {err && <div className="fx-err">{err}</div>}
               {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
               <button className="lb dark wide" disabled={!amt} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) setConfirm(true); }}>
@@ -233,22 +236,30 @@ export function Withdraw() {
             <p className="lg">{tab === "inner" ? `站内转账 ${amt} ${asset} 至 ${to}，免手续费，实时到账` : `提现 ${amt} ${asset}（${net}），到账 ${receive} ${asset}`}</p>
             <div className="fx-field">
               谷歌验证器动态码
-              <input inputMode="numeric" maxLength={6} placeholder="6 位 2FA 动态码" value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} />
+              <input inputMode="numeric" maxLength={6} placeholder="6 位 2FA 动态码" value={totp} onChange={(e) => { setTotp(e.target.value.replace(/\D/g, "")); if (tfa === "invalid") setTfa(null); }} />
+              <TotpErr show={tfa === "invalid"} />
             </div>
             <button
               className="lb lime wide"
               onClick={async () => {
                 if (totp.length !== 6) return setErr("请输入 6 位 2FA 动态码");
+                setTfa(null);
                 if (tab === "inner") {
                   const r = await createInternalTransfer({ clientId: newClientId(), asset, amount: amt, totpCode: totp, ...(toKey === "email" ? { toEmail: to } : { toUid: to }) });
+                  const k = twofaKind(r);
+                  if (k === "invalid") { setTfa("invalid"); setTotp(""); return; }
                   setConfirm(false); setTotp("");
+                  if (k === "required") { setTfa("required"); setErr(""); return; }
                   if (r.ok) { setErr(""); setAmt(""); toast("转账成功", "ok"); setInnerDone((x) => x + 1); ov.reload(); }
                   else { const m = errMsg(r); setErr(m); if (m === SOON) toast(m, "info"); }
                   return;
                 }
                 const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp });
+                const k = twofaKind(r);
+                if (k === "invalid") { setTfa("invalid"); setTotp(""); return; }
                 setConfirm(false);
                 setTotp("");
+                if (k === "required") { setTfa("required"); setErr(""); return; }
                 if (r.ok) { setDone(r.data); setErr(""); } else setErr(r.error ?? "提现失败");
               }}
             >

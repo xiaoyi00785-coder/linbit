@@ -247,7 +247,7 @@ export function Login() {
               setBusy(true);
               const r = await loginVerify(ch.challengeToken, method, code);
               setBusy(false);
-              if (!r.ok || !r.data) return setErr(r.error ?? "验证失败");
+              if (!r.ok || !r.data) return setErr(r.code === "INVALID_TOTP" ? "动态码错误，请重新输入" : r.error ?? "验证失败");
               finish(r.data, tgt);
             }}
           >

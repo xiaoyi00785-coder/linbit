@@ -29,7 +29,7 @@ async function call<T>(
   try {
     const { data, error, response } = await fn();
     if (response.ok) return { ok: true, data: (data ?? (true as unknown)) as T, source: "api" };
-    if (response.status < 500) return { ok: false, error: errMsg(error, response.status), source: "api" };
+    if (response.status < 500) return { ok: false, error: errMsg(error, response.status), code: (error as { code?: string } | undefined)?.code, source: "api" };
   } catch {
     /* 网络错误 → mock */
   }

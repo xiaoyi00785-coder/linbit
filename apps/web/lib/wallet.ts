@@ -19,7 +19,7 @@ export const createInternalTransfer = (b: InternalTransferReq) => rest<InternalT
 export const listInternalTransfers = (page = 1, pageSize = 20) => rest<Page<InternalTransfer>>("GET", `/wallet/internal-transfers?page=${page}&pageSize=${pageSize}`);
 
 const ERR: Record<string, string> = {
-  VALIDATION_ERROR: "参数有误，请检查", TWOFA_REQUIRED: "请先绑定谷歌验证器（2FA）", INVALID_TOTP: "2FA 动态码错误",
+  VALIDATION_ERROR: "参数有误，请检查", TWOFA_REQUIRED: "请先绑定谷歌验证", INVALID_TOTP: "动态码错误，请重新输入",
   INTERNAL_TRANSFER_DISABLED: "内部转账暂时关闭", RECIPIENT_NOT_FOUND: "收款方不存在，请核对 UID / 邮箱", SELF_TRANSFER: "不能转给自己",
   RECIPIENT_SUB_ACCOUNT: "不支持转入子账户", RECIPIENT_UNAVAILABLE: "收款方账户状态异常，暂无法收款", PRICE_UNAVAILABLE: "暂无法估值，请稍后再试",
   INTERNAL_TRANSFER_LIMIT_EXCEEDED: "超出 24 小时转账额度（50,000 USDT）", INSUFFICIENT_BALANCE: "可用余额不足", IDEMPOTENCY_CONFLICT: "请求重复，请刷新后重试",
