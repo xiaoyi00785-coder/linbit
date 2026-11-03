@@ -5233,11 +5233,11 @@ export interface components {
              *     高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
              *     缺失时返回 400 DOCUMENT_REQUIRED。
              */
-            documents?: {
+            documents: {
                 /** @example doc_1 */
-                front?: string;
+                front: string;
                 /** @example doc_2 */
-                selfie?: string;
+                selfie: string;
                 /** @example doc_3 */
                 back?: string;
                 /**

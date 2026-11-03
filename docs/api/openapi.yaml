@@ -7135,7 +7135,7 @@ components:
 
     KycSubmission:
       type: object
-      required: [firstName, lastName, country, idType, idNumber, dateOfBirth]
+      required: [firstName, lastName, country, idType, idNumber, dateOfBirth, documents]
       properties:
         firstName: { type: string, example: San }
         lastName: { type: string, example: Zhang }
@@ -7156,6 +7156,7 @@ components:
             由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
             高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
             缺失时返回 400 DOCUMENT_REQUIRED。
+          required: [front, selfie]
           properties:
             front: { type: string, example: doc_1 }
             selfie: { type: string, example: doc_2 }
