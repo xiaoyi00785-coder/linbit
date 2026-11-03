@@ -243,6 +243,9 @@ func run(root, execCmd string) int {
 			"DEV_MODE=true",
 			// Live APR for earn-linked home placements.
 			"EARN_URL=http://localhost:" + earnPort,
+			// Chat: KYC level for posting, futures contracts for rooms.
+			"ACCOUNT_URL=http://localhost:" + accountPort,
+			"FUTURES_URL=http://localhost:" + futuresPort,
 		},
 		"account": {
 			"PORT=" + accountPort,

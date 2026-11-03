@@ -4567,6 +4567,224 @@ paths:
       security: [{ bearerAuth: [] }]
       responses:
         '200': { description: OK }
+  /chat/rooms:
+    get:
+      tags: [Chat]
+      summary: 聊天室列表（公开；general + spot.{SYM} + futures.{SYM}，含在线人数与发言规则；功能开关 chat 关闭时 403 FEATURE_DISABLED）
+      description: |
+        实时推送：在现有 /ws 上订阅频道 `chat:{room}`（如 `chat:spot.BTCUSDT`）。
+        帧 data 为 `{type:"message", message: ChatMessage}` 或 `{type:"delete", id}`。
+      operationId: listChatRooms
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rooms: { type: array, items: { $ref: "#/components/schemas/ChatRoom" } }
+                  rules: { $ref: "#/components/schemas/ChatRules" }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /chat/rooms/{room}/messages:
+    parameters:
+      - { name: room, in: path, required: true, schema: { type: string, example: spot.BTCUSDT } }
+    get:
+      tags: [Chat]
+      summary: 历史消息（公开，新→旧；before=消息 id 游标，limit 默认 50，上限 historyLimitMax）
+      operationId: listChatMessages
+      security: []
+      parameters:
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ChatMessage" } }
+                  hasMore: { type: boolean }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Chat]
+      summary: 发言（需登录 + KYC ≥ minKycLevel；服务端拦截链接/联系方式/屏蔽词；频率与长度限制；clientId 幂等）
+      description: |
+        错误码：CHAT_KYC_REQUIRED/CHAT_MUTED(含 mutedUntil)/CHAT_BANNED/FEATURE_DISABLED (403)，
+        CHAT_RATE_LIMITED (429，含 retryAfterMs 与 Retry-After)，CHAT_TOO_LONG/CHAT_LINK_BLOCKED/CHAT_CONTACT_BLOCKED/CHAT_WORD_BLOCKED/VALIDATION_ERROR (400)，
+        CHAT_UNAVAILABLE (503)。相同 clientId 重放返回 200 与原消息。
+      operationId: postChatMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, text]
+              properties:
+                clientId: { type: string, maxLength: 64 }
+                text: { type: string, maxLength: 200 }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ChatMessage" } } } }
+        "200": { description: 幂等重放, content: { application/json: { schema: { $ref: "#/components/schemas/ChatMessage" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: CHAT_RATE_LIMITED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /chat/messages/{id}/report:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      tags: [Chat]
+      summary: 举报消息（需登录；不可举报自己；同一人重复举报幂等）
+      operationId: reportChatMessage
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { reason: { type: string, maxLength: 200 } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/v1/chat/config:
+    get:
+      tags: [Admin]
+      summary: 聊天配置（content 权限）
+      operationId: adminGetChatConfig
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatConfig" } } } }
+    put:
+      tags: [Admin]
+      summary: 部分更新聊天配置（未知 key 400；totpCode + reason，审计 chat_config_update）
+      operationId: adminUpdateChatConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { $ref: "#/components/schemas/ChatConfig" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/chat/messages:
+    get:
+      tags: [Admin]
+      summary: 消息检索（room/uid/status/q/before/limit；含完整 uid 与举报数）
+      operationId: adminListChatMessages
+      parameters:
+        - { name: room, in: query, required: false, schema: { type: string } }
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [visible, deleted] } }
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ChatAdminMessage" } }, hasMore: { type: boolean } } } } } }
+  /admin/v1/chat/messages/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    delete:
+      tags: [Admin]
+      summary: 删除消息（WS 推送 delete；关联未处理举报置为 resolved；totpCode + reason）
+      operationId: adminDeleteChatMessage
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/v1/chat/sanctions:
+    get:
+      tags: [Admin]
+      summary: 禁言/封禁名单
+      operationId: adminListChatSanctions
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ChatSanction" } } } } } } }
+  /admin/v1/chat/mutes:
+    post:
+      tags: [Admin]
+      summary: 禁言（durationMinutes 1-525600；totpCode + reason）
+      operationId: adminMuteChatUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  required: [uid, durationMinutes]
+                  properties:
+                    uid: { type: string }
+                    durationMinutes: { type: integer, minimum: 1, maximum: 525600 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/chat/mutes/{uid}:
+    parameters:
+      - { name: uid, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Admin]
+      summary: 解除禁言（totpCode + reason）
+      operationId: adminUnmuteChatUser
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+  /admin/v1/chat/bans:
+    post:
+      tags: [Admin]
+      summary: 封禁发言（永久，直至解除；totpCode + reason）
+      operationId: adminBanChatUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { type: object, required: [uid], properties: { uid: { type: string } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/chat/bans/{uid}:
+    parameters:
+      - { name: uid, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Admin]
+      summary: 解除封禁（totpCode + reason）
+      operationId: adminUnbanChatUser
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+  /admin/v1/chat/reports:
+    get:
+      tags: [Admin]
+      summary: 举报列表（status=open|resolved|dismissed|all，默认 open）
+      operationId: adminListChatReports
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [open, resolved, dismissed, all] } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ChatReport" } } } } } } }
+  /admin/v1/chat/reports/{id}/resolve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      tags: [Admin]
+      summary: 处理举报（action=resolve|dismiss；totpCode + reason）
+      operationId: adminResolveChatReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { type: object, required: [action], properties: { action: { type: string, enum: [resolve, dismiss] } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ChatChange" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     bearerAuth:
@@ -6668,5 +6886,78 @@ components:
         ipAllowlist: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
         lastUsedAt: { type: string, format: date-time, nullable: true }
+    ChatRoom:
+      type: object
+      properties:
+        id: { type: string, example: spot.BTCUSDT }
+        kind: { type: string, enum: [general, spot, futures] }
+        symbol: { type: string }
+        online: { type: integer }
+    ChatRules:
+      type: object
+      properties:
+        maxLength: { type: integer }
+        minIntervalMs: { type: integer }
+        minKycLevel: { type: integer }
+        blockLinks: { type: boolean }
+        blockContacts: { type: boolean }
+    ChatMessage:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        room: { type: string }
+        sender: { type: string, description: 脱敏昵称，如 用户***1234 }
+        text: { type: string }
+        mine: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ChatAdminMessage:
+      allOf:
+        - { $ref: "#/components/schemas/ChatMessage" }
+        - type: object
+          properties:
+            uid: { type: string }
+            clientId: { type: string }
+            status: { type: string, enum: [visible, deleted] }
+            deletedBy: { type: string, nullable: true }
+            deletedReason: { type: string, nullable: true }
+            reports: { type: integer }
+    ChatConfig:
+      type: object
+      properties:
+        minIntervalMs: { type: integer, default: 3000 }
+        maxLength: { type: integer, default: 200 }
+        minKycLevel: { type: integer, default: 1, minimum: 0, maximum: 3 }
+        blockLinks: { type: boolean, default: true }
+        blockContacts: { type: boolean, default: true }
+        bannedWords: { type: array, items: { type: string } }
+        historyLimitMax: { type: integer, default: 100 }
+        generalRoom: { type: boolean, default: true }
+        futuresRooms: { type: boolean, default: true }
+        reportsToHide: { type: integer, default: 0, description: 达到该举报数自动隐藏（0=关闭） }
+    ChatSanction:
+      type: object
+      properties:
+        uid: { type: string }
+        mutedUntil: { type: string, format: date-time, nullable: true }
+        banned: { type: boolean }
+        reason: { type: string }
+        updatedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+    ChatReport:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        messageId: { type: integer, format: int64 }
+        reporter: { type: string }
+        reason: { type: string }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        handledBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        message: { $ref: "#/components/schemas/ChatAdminMessage" }
+    ChatChange:
+      type: object
+      properties:
+        before: { type: object, additionalProperties: true, nullable: true }
+        after: { type: object, additionalProperties: true, nullable: true }
 security:
   - bearerAuth: []

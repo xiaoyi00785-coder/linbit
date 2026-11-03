@@ -64,3 +64,4 @@ services/go/wallet/wallet
 secrets/
 *keystore*.json
 sol-deposit-addresses.txt
+services/go/market-data/market-data

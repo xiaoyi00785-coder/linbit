@@ -17,6 +17,7 @@ type Server struct {
 	hub    *Hub
 	ingest *HTTPEventSource
 	feed   *IndexFeed
+	chat   *Chat
 }
 
 // NewServer constructs a Server.
@@ -41,6 +42,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /market/index", s.handleIndex)
 
 	s.homeInternalRoutes(mux)
+	s.chatRoutes(mux)
 
 	mux.HandleFunc("GET /ws", s.hub.ServeHTTP)
 	mux.HandleFunc("POST /internal/events", s.ingest.Handler())
