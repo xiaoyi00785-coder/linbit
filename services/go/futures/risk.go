@@ -1,0 +1,303 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"log"
+	"time"
+
+	"github.com/shopspring/decimal"
+)
+
+// risk.go: the tick loop — prices, funding, TP/SL triggers, liquidation into the
+// insurance fund and negative-balance cover.
+
+func (s *Server) RunTicker(ctx context.Context) {
+	t := time.NewTicker(s.cfg.TickInterval)
+	defer t.Stop()
+	for {
+		s.Tick(ctx, false)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (s *Server) Tick(ctx context.Context, forceSample bool) {
+	s.tickMu.Lock()
+	defer s.tickMu.Unlock()
+	s.refreshPrices(ctx)
+	s.sampleMarks(ctx, forceSample)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fundingDue(ctx)
+	s.liquidations(ctx)
+	s.triggerTPSL(ctx)
+	s.coverNegative(ctx)
+}
+
+func (s *Server) liqFeeRate(c Contract) decimal.Decimal {
+	if s.cfg.LiqFeeRate.Sign() >= 0 {
+		return s.cfg.LiqFeeRate
+	}
+	return c.MMR
+}
+
+// liquidations scans every user with open positions. Caller holds s.mu.
+func (s *Server) liquidations(ctx context.Context) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT user_id FROM fut_positions WHERE qty <> 0 AND user_id NOT LIKE 'system:%'`)
+	if err != nil {
+		return
+	}
+	var users []string
+	for rows.Next() {
+		var u string
+		if rows.Scan(&u) == nil {
+			users = append(users, u)
+		}
+	}
+	rows.Close()
+	for _, uid := range users {
+		if err := s.checkUser(ctx, uid); err != nil {
+			log.Printf("futures: liquidation check %s: %v", uid, err)
+		}
+	}
+}
+
+func (s *Server) checkUser(ctx context.Context, uid string) error {
+	st, err := s.state(ctx, s.db, uid)
+	if err != nil {
+		return err
+	}
+	for _, v := range st.Positions {
+		if v.pos.Mode == "isolated" && !v.markMissing && v.pos.Iso.Add(v.upnl).LessThanOrEqual(v.mm) {
+			if err := s.txLocked(ctx, func(tx *sql.Tx) error { return s.liquidateIsolated(ctx, tx, uid, v.pos.Symbol, v.mark) }); err != nil {
+				return err
+			}
+		}
+	}
+	st, err = s.state(ctx, s.db, uid)
+	if err != nil {
+		return err
+	}
+	if st.CrossMM.Sign() > 0 && st.Balance.Add(st.CrossUPnL).LessThanOrEqual(st.CrossMM) {
+		for _, v := range st.Positions {
+			if v.pos.Mode == "cross" && v.markMissing {
+				return nil // never liquidate on a stale price
+			}
+		}
+		return s.txLocked(ctx, func(tx *sql.Tx) error { return s.liquidateCross(ctx, tx, uid) })
+	}
+	return nil
+}
+
+// takeover closes uid's position at mark and hands it to the insurance fund.
+func (s *Server) takeover(ctx context.Context, tx *sql.Tx, uid string, c Contract, mark decimal.Decimal) (Position, error) {
+	p, _, err := loadPosition(ctx, tx, uid, c.Symbol, true)
+	if err != nil || p.Qty.IsZero() {
+		return p, err
+	}
+	if _, _, err := s.fill(ctx, tx, c, uid, p.Qty.Neg(), mark, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		return p, err
+	}
+	if _, _, err := s.fill(ctx, tx, c, insuranceUser, p.Qty, mark, dZero, 1, "cross", decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		return p, err
+	}
+	side := "sell"
+	if p.Qty.Sign() < 0 {
+		side = "buy"
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, price, qty, filled, filled_quote, status, reduce_only, leverage, margin_mode, source)
+		VALUES ($1,$2,$3,'market',$4,$5,$5,$6,'filled',true,$7,$8,'liquidation')`, uid, c.Symbol, side, mark, p.Qty.Abs(), p.Qty.Abs().Mul(mark), p.Leverage, p.Mode)
+	return p, err
+}
+
+func (s *Server) liquidateIsolated(ctx context.Context, tx *sql.Tx, uid, sym string, mark decimal.Decimal) error {
+	c := s.contracts[sym]
+	bal0, _, err := lockAccount(ctx, tx, uid)
+	if err != nil {
+		return err
+	}
+	if err := cancelUserOrders(ctx, tx, uid, sym, "liquidation"); err != nil {
+		return err
+	}
+	p, err := s.takeover(ctx, tx, uid, c, mark)
+	if err != nil || p.Qty.IsZero() {
+		return err
+	}
+	bal1, _, err := readAccount(ctx, tx, uid)
+	if err != nil {
+		return err
+	}
+	equity := bal1.Sub(bal0) // iso margin + PnL returned by the close
+	fee, shortfall := dZero, dZero
+	if equity.Sign() > 0 {
+		fee = dmin(equity, money(p.Qty.Abs().Mul(mark).Mul(s.liqFeeRate(c))))
+	} else {
+		shortfall = equity.Neg()
+	}
+	return s.settleLiq(ctx, tx, uid, c, p, mark, fee, shortfall)
+}
+
+func (s *Server) liquidateCross(ctx context.Context, tx *sql.Tx, uid string) error {
+	if _, _, err := lockAccount(ctx, tx, uid); err != nil {
+		return err
+	}
+	if err := cancelUserOrders(ctx, tx, uid, "", "liquidation"); err != nil {
+		return err
+	}
+	ps, err := openPositions(ctx, tx, uid)
+	if err != nil {
+		return err
+	}
+	type done struct {
+		p    Position
+		mark decimal.Decimal
+	}
+	var closed []done
+	notional := dZero
+	for _, p := range ps {
+		if p.Mode != "cross" {
+			continue
+		}
+		c := s.contracts[p.Symbol]
+		m, ok := s.mark(p.Symbol)
+		if !ok {
+			return errMarkUnavail
+		}
+		if _, err := s.takeover(ctx, tx, uid, c, m); err != nil {
+			return err
+		}
+		closed = append(closed, done{p, m})
+		notional = notional.Add(p.Qty.Abs().Mul(m).Mul(s.liqFeeRate(c)))
+	}
+	bal, _, err := readAccount(ctx, tx, uid)
+	if err != nil {
+		return err
+	}
+	fee, shortfall := dZero, dZero
+	if bal.Sign() > 0 {
+		fee = dmin(bal, money(notional))
+	} else {
+		shortfall = bal.Neg()
+	}
+	for i, d := range closed {
+		f, sf := dZero, dZero
+		if i == 0 {
+			f, sf = fee, shortfall // booked once, on the first contract
+		}
+		if err := s.settleLiq(ctx, tx, uid, s.contracts[d.p.Symbol], d.p, d.mark, f, sf); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) settleLiq(ctx context.Context, tx *sql.Tx, uid string, c Contract, p Position, mark, fee, shortfall decimal.Decimal) error {
+	ref := newRef("liq")
+	if fee.Sign() > 0 {
+		if err := addBalance(ctx, tx, uid, c.Symbol, "liquidation_fee", fee.Neg(), ref); err != nil {
+			return err
+		}
+		if err := addBalance(ctx, tx, insuranceUser, c.Symbol, "liquidation_fee", fee, ref); err != nil {
+			return err
+		}
+	}
+	if shortfall.Sign() > 0 {
+		if err := addBalance(ctx, tx, uid, c.Symbol, "insurance_cover", shortfall, ref); err != nil {
+			return err
+		}
+		if err := addBalance(ctx, tx, insuranceUser, c.Symbol, "insurance_cover", shortfall.Neg(), ref); err != nil {
+			return err
+		}
+	}
+	log.Printf("futures: liquidated %s %s %s qty=%s mark=%s fee=%s shortfall=%s", uid, c.Symbol, p.Mode, p.Qty, mark, fee, shortfall)
+	_, err := tx.ExecContext(ctx, `INSERT INTO fut_liquidations (user_id, symbol, margin_mode, qty, mark_price, fee, shortfall) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		uid, c.Symbol, p.Mode, p.Qty, mark, fee, shortfall)
+	if err == nil {
+		var ins decimal.Decimal
+		_ = tx.QueryRowContext(ctx, `SELECT balance FROM fut_accounts WHERE user_id=$1`, insuranceUser).Scan(&ins)
+		if ins.Sign() < 0 {
+			log.Printf("ALERT futures: insurance fund balance negative: %s", ins)
+		}
+	}
+	return err
+}
+
+// triggerTPSL closes positions whose mark crossed TP or SL. Caller holds s.mu.
+func (s *Server) triggerTPSL(ctx context.Context) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+posCols+` FROM fut_positions WHERE qty <> 0 AND (tp_price IS NOT NULL OR sl_price IS NOT NULL)`)
+	if err != nil {
+		return
+	}
+	var ps []Position
+	for rows.Next() {
+		if p, err := scanPos(rows); err == nil {
+			ps = append(ps, p)
+		}
+	}
+	rows.Close()
+	now := s.now()
+	for _, p := range ps {
+		m, ok := s.mark(p.Symbol)
+		if !ok {
+			continue
+		}
+		long := p.Qty.Sign() > 0
+		src := ""
+		if p.TP.Valid && ((long && m.GreaterThanOrEqual(p.TP.Decimal)) || (!long && m.LessThanOrEqual(p.TP.Decimal))) {
+			src = "tp"
+		} else if p.SL.Valid && ((long && m.LessThanOrEqual(p.SL.Decimal)) || (!long && m.GreaterThanOrEqual(p.SL.Decimal))) {
+			src = "sl"
+		}
+		if src == "" {
+			continue
+		}
+		key := p.UserID + "|" + p.Symbol
+		if t, ok := s.tpslRetry[key]; ok && now.Sub(t) < s.cfg.TPSLRetry {
+			continue
+		}
+		s.tpslRetry[key] = now
+		o, _, err := s.closeLocked(ctx, p.UserID, p.Symbol, src)
+		if err != nil {
+			log.Printf("futures: %s trigger %s %s: %v", src, p.UserID, p.Symbol, err)
+			continue
+		}
+		if o.Status == "filled" {
+			delete(s.tpslRetry, key)
+		}
+	}
+}
+
+// coverNegative lets the insurance fund absorb negative wallet balances of users
+// with no open cross positions (e.g. after rounding or funding on a closed book).
+func (s *Server) coverNegative(ctx context.Context) {
+	rows, err := s.db.QueryContext(ctx, `SELECT a.user_id FROM fut_accounts a WHERE a.balance < 0 AND a.user_id NOT LIKE 'system:%'
+		AND NOT EXISTS (SELECT 1 FROM fut_positions p WHERE p.user_id=a.user_id AND p.qty<>0 AND p.margin_mode='cross')`)
+	if err != nil {
+		return
+	}
+	var users []string
+	for rows.Next() {
+		var u string
+		if rows.Scan(&u) == nil {
+			users = append(users, u)
+		}
+	}
+	rows.Close()
+	for _, uid := range users {
+		_ = s.txLocked(ctx, func(tx *sql.Tx) error {
+			bal, _, err := lockAccount(ctx, tx, uid)
+			if err != nil || bal.Sign() >= 0 {
+				return err
+			}
+			ref := newRef("cover")
+			if err := addBalance(ctx, tx, uid, "", "insurance_cover", bal.Neg(), ref); err != nil {
+				return err
+			}
+			return addBalance(ctx, tx, insuranceUser, "", "insurance_cover", bal, ref)
+		})
+	}
+}
