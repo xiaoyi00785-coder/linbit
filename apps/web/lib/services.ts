@@ -1,3 +1,4 @@
+import { fmtLocal } from "./time";
 /**
  * 业务服务适配层。
  *
@@ -355,8 +356,7 @@ export interface Notice {
 /** 已对接：GET /notifications、POST /notifications/read、GET /notifications/unread-count、GET|PUT /notifications/settings（account 服务） */
 export async function listNotifications(kind?: string): Promise<Result<Notice[]>> {
   const r = await rest<{ items: { id: string; kind: Notice["kind"]; title: string; body: string; time: number; read: boolean }[] }>("GET", `/notifications?pageSize=50${kind ? `&kind=${kind}` : ""}`);
-  if (r.source === "api") return r.ok && r.data ? { ok: true, source: "api", data: r.data.items.map((n) => ({ ...n, time: new Date(n.time).toLocaleString("zh-CN", { hour12: false }) })) } : { ok: false, error: r.error, source: "api", data: [] };
-  if (!MOCK_ENABLED) return { ok: false, error: r.error ?? NET_ERR, code: "NETWORK", source: "api", data: [] };
+  if (r.source === "api") return r.ok && r.data ? { ok: true, source: "api", data: r.data.items.map((n) => ({ ...n, time: fmtLocal(n.time) })) } : { ok: false, error: r.error, source: "api", data: [] };
   await delay();
   return { ok: true, source: "mock", data: [
       { id: "n1", kind: "security", title: "新设备登录提醒", body: "你的账户于 Chrome · macOS 登录，如非本人操作请立即修改密码。", time: "2026-11-02 09:12", read: false },

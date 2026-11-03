@@ -1,4 +1,5 @@
 "use client";
+import { fmtLocal } from "@/lib/time";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
@@ -118,7 +119,7 @@ export function Announcements() {
   );
 }
 
-const fmtTime = (t?: string) => (t ? new Date(t).toLocaleString("zh-CN", { hour12: false }) : "-");
+const fmtTime = (t?: string) => fmtLocal(t);
 
 export function Devices() {
   return (
