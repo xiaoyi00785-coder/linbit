@@ -105,7 +105,7 @@ Dev (account): `POST /internal/dev/account/bind-phone {uid, phone}`.
 | GROWTH_DAY_UTC_OFFSET_HOURS | 8 |
 | GROWTH_PAYOUT_ASSET | USDT |
 | GROWTH_USD_QUOTES | USDT,USDC |
-| GROWTH_INVITE_BASE_URL | https://linbit.example.com/r/ |
+| GROWTH_INVITE_BASE_URL | https://www.cowa.click/r/ (mainnet). Invite link = base + code; web serves /r/{code} → /register?inviteCode={code}, and registerUrl = base minus "r/" + "register?inviteCode=" |
 | GROWTH_PARTNER_TIERS | normal:0:0.30:0.20,silver:5000000:0.40:0.25,gold:20000000:0.45:0.30,diamond:50000000:0.50:0.35 (key:minFutures30dVolume:futuresRate:spotRate) |
 | GROWTH_TIER_WINDOW_DAYS | 30 |
 | GROWTH_PARTNER_OVERRIDE_RATE | 0.10 |

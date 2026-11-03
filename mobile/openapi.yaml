@@ -1737,7 +1737,7 @@ paths:
   /market/proof-of-reserves:
     get:
       tags: [Market]
-      summary: 储备证明（最新快照）；未发布时 available=false
+      summary: 储备证明（后台手动录入的最新快照，不自动计算）；未发布时 available=false
       operationId: getProofOfReserves
       security: [{}]
       responses:
@@ -6155,6 +6155,44 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MMBaseline" } } } }
         "400": { description: VALIDATION_ERROR / INVALID_PARAM }
         "401": { description: TOTP_INVALID }
+  /admin/v1/proof-of-reserves:
+    get:
+      tags: [Admin]
+      summary: 储备证明快照列表（后台手动录入，新→旧；content 权限）
+      operationId: adminListPorSnapshots
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/PorSnapshot" } } } } } } }
+    post:
+      tags: [Admin]
+      summary: 录入储备证明快照（同一 snapshotAt 已存在 409；totpCode + reason，审计 por_create）。最新快照即 GET /market/proof-of-reserves
+      operationId: adminCreatePorSnapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { $ref: "#/components/schemas/PorSnapshotInput" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [snapshot], properties: { snapshot: { $ref: "#/components/schemas/PorSnapshot" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: 该时间点已有快照 (SNAPSHOT_EXISTS) }
+  /admin/v1/proof-of-reserves/{id}:
+    parameters:
+      - { name: id, in: path, required: true, description: snapshotAt 的 Unix 毫秒, schema: { type: integer, format: int64 } }
+    delete:
+      tags: [Admin]
+      summary: 删除整个快照（body：totpCode + reason，审计 por_delete）
+      operationId: adminDeletePorSnapshot
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AdminWriteMeta" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { deleted: { type: boolean } } } } } }
+        "404": { description: 快照不存在 }
   /admin/v1/chat/config:
     get:
       tags: [Admin]
@@ -7836,16 +7874,15 @@ components:
       properties:
         available: { type: boolean }
         snapshotAt: { type: string, format: date-time, nullable: true, description: UTC RFC3339 }
-        items:
-          type: array
-          items:
-            type: object
-            required: [asset, liabilities, reserves, ratio]
-            properties:
-              asset: { type: string }
-              liabilities: { type: string, description: 用户资产总额 }
-              reserves: { type: string, description: 平台储备 }
-              ratio: { type: string, description: "reserves/liabilities，例如 1.0234；liabilities=0 时为空串" }
+        items: { type: array, items: { $ref: "#/components/schemas/ProofOfReservesItem" } }
+    ProofOfReservesItem:
+      type: object
+      required: [asset, liabilities, reserves, ratio]
+      properties:
+        asset: { type: string }
+        liabilities: { type: string, description: 用户资产总额 }
+        reserves: { type: string, description: 平台储备 }
+        ratio: { type: string, description: "reserves/liabilities，例如 1.0234；liabilities=0 时为空串" }
     GrowthConfig:
       type: object
       properties:
@@ -8790,6 +8827,33 @@ components:
           type: string
           format: date-time
 
+    PorSnapshotInput:
+      type: object
+      required: [items]
+      properties:
+        snapshotAt: { type: string, format: date-time, description: 默认当前时间；不得晚于当前 }
+        note: { type: string }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            required: [asset, liabilities, reserves]
+            properties:
+              asset: { type: string, example: USDT }
+              liabilities: { type: string, description: 用户资产总额（非负十进制字符串）, example: "1000000" }
+              reserves: { type: string, description: 平台储备（非负十进制字符串）, example: "1023400" }
+    PorSnapshot:
+      type: object
+      required: [id, snapshotAt, note, createdBy, createdAt, items]
+      properties:
+        id: { type: integer, format: int64, description: snapshotAt 的 Unix 毫秒 }
+        snapshotAt: { type: string, format: date-time }
+        note: { type: string }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        items: { type: array, items: { $ref: "#/components/schemas/ProofOfReservesItem" } }
     AdminWriteMeta:
       type: object
       required: [totpCode, reason]

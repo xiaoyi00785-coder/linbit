@@ -94,7 +94,7 @@ export function Register() {
   const a = useAcct();
   const [step, setStep] = useState(0);
   const [pwd, setPwd] = useState("");
-  const [invite, setInvite] = useState("");
+  const [invite, setInvite] = useState(() => (typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("inviteCode") || "").trim().slice(0, 32)));
   const [agree, setAgree] = useState(false);
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
