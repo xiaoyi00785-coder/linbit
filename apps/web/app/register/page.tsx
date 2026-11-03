@@ -1,5 +1,10 @@
-import { AuthForm } from "@/components/AuthForm";
+"use client";
+// 原型页面读取 localStorage（演示登录态），在客户端渲染
+import dynamic from "next/dynamic";
+import type { ComponentType } from "react";
 
-export default function RegisterPage() {
-  return <AuthForm mode="register" />;
+const View = dynamic(() => import("@/legacy/App").then((m) => m.Auth as ComponentType<any>), { ssr: false });
+
+export default function Page() {
+  return <View reg />;
 }
