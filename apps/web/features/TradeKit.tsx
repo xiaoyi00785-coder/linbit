@@ -225,7 +225,10 @@ function Opt({ on, t, d, onClick }: { on: boolean; t: string; d?: string; onClic
   return <div className={"tk-opt2" + (on ? " on" : "")} onClick={onClick}><b>{t}</b>{d && <small>{d}</small>}{on && <i className="tk-ck">✓</i>}</div>;
 }
 
-type PlaceReq = components["schemas"]["FuturesPlaceOrderRequest"];
+// tp/slTriggerPriceType 依赖 feat/futures-order-amend2 的 openapi（FuturesPlaceOrderRequest 新增字段，默认 MARK）；
+// 该分支合入并重新生成 schema 后，删掉这里的补充字段，直接用生成的类型。
+type TrigType = "LAST" | "MARK";
+type PlaceReq = components["schemas"]["FuturesPlaceOrderRequest"] & { tpTriggerPriceType?: TrigType; slTriggerPriceType?: TrigType };
 type Tif = "GTC" | "IOC" | "POST_ONLY";
 const TIF: [Tif, string][] = [["GTC", "GTC"], ["IOC", "IOC"], ["POST_ONLY", "只做 Maker"]];
 
@@ -249,6 +252,8 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const [tpsl, setTpsl] = useState(false);
   const [tp, setTp] = useState("");
   const [sl, setSl] = useState("");
+  const [tpTT, setTpTT] = useState<"LAST" | "MARK">("MARK");
+  const [slTT, setSlTT] = useState<"LAST" | "MARK">("MARK");
   useFillPrice((p) => { setPrice(p); if (ty === "market") setTy("limit"); });
   useEffect(() => { setSt(readLocal(pair.symbol)); setPrice(""); }, [pair.symbol]);
   const save = (n: typeof st) => { setSt(n); localStorage.setItem(LS(pair.symbol), JSON.stringify(n)); };
@@ -303,6 +308,8 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       triggerPriceType: ty === "plan" ? trigType : undefined,
       tpPrice: act === 0 && tpsl && tp ? tp : undefined,
       slPrice: act === 0 && tpsl && sl ? sl : undefined,
+      tpTriggerPriceType: act === 0 && tpsl && tp ? tpTT : undefined,
+      slTriggerPriceType: act === 0 && tpsl && sl ? slTT : undefined,
     };
     setBusy(true);
     const r = await rest<any>("POST", "/futures/orders", body);
@@ -340,7 +347,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       <div className="slider lb-sl"><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="比例" /></div>
       {ty === "limit" && <div className="tk-tif">{TIF.map(([k, x]) => <b key={k} className={tif === k ? "on" : ""} onClick={() => setTif(k)}>{x}</b>)}</div>}
       {act === 0 && <label className="tk-ck2"><input type="checkbox" checked={tpsl} onChange={(e) => setTpsl(e.target.checked)} />止盈/止损</label>}
-      {act === 0 && tpsl && <div className="tk-tp2"><div className="inp"><small>止盈</small><input inputMode="decimal" placeholder="触发价" value={tp} onChange={(e) => setTp(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div><div className="inp"><small>止损</small><input inputMode="decimal" placeholder="触发价" value={sl} onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div></div>}
+      {act === 0 && tpsl && <div className="tk-tp2"><div className="inp"><small>止盈</small><input inputMode="decimal" placeholder="触发价" value={tp} onChange={(e) => setTp(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止盈触发价类型" value={tpTT} onChange={(e) => setTpTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div><div className="inp"><small>止损</small><input inputMode="decimal" placeholder="触发价" value={sl} onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止损触发价类型" value={slTT} onChange={(e) => setSlTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div></div>}
       <div className="kv2 g"><span>保证金</span><span>{fmtFixed(margin, 4)} USDT</span></div>
       <div className="kv2 g"><span>预估手续费（{(Number(c?.takerFeeRate ?? 0.0005) * 100).toFixed(2)}%）</span><span>{fmtFixed(fee, 4)} USDT</span></div>
       {authed ? (
