@@ -96,11 +96,11 @@ func (s *Server) deleverage(ctx context.Context, tx *sql.Tx, uid string, c Contr
 		}
 		x := dmin(rem, cd.p.Qty.Abs())
 		s.histStatus = "liquidated"
-		if _, _, _, err := s.fill(ctx, tx, c, uid, p.Side, decimal.NewFromInt(int64(-p.Qty.Sign())).Mul(x), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		if _, _, _, err := s.fill(ctx, tx, c, uid, p.Side, decimal.NewFromInt(int64(-p.Qty.Sign())).Mul(x), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}, "", ""); err != nil {
 			return rem, err
 		}
 		s.histStatus = "adl"
-		_, cpnl, _, err := s.fill(ctx, tx, c, cd.p.UserID, cd.p.Side, decimal.NewFromInt(int64(p.Qty.Sign())).Mul(x), px, dZero, cd.p.Leverage, cd.p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{})
+		_, cpnl, _, err := s.fill(ctx, tx, c, cd.p.UserID, cd.p.Side, decimal.NewFromInt(int64(p.Qty.Sign())).Mul(x), px, dZero, cd.p.Leverage, cd.p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}, "", "")
 		s.histStatus = "liquidated"
 		if err != nil {
 			return rem, err

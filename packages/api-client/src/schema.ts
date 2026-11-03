@@ -2927,7 +2927,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /** 修改止盈止损委托（触发价/价格/数量/触发价类型） */
+        put: operations["futuresAmendTpslOrder"];
         post?: never;
         /** 撤销止盈止损委托（可部分仓位，单次可同时建 TP 与 SL） */
         delete: operations["futuresCancelTpslOrders"];
@@ -2962,7 +2963,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /** 修改计划委托（触发价/价格/数量/触发价类型） */
+        put: operations["futuresAmendPlanOrder"];
         post?: never;
         /** 撤销计划委托（条件单，触发后以限价/市价下单） */
         delete: operations["futuresCancelPlanOrders"];
@@ -6253,6 +6255,10 @@ export interface components {
             liquidationPrice?: string;
             tpPrice?: string | null;
             slPrice?: string | null;
+            /** @enum {string} */
+            tpTriggerPriceType?: "LAST" | "MARK";
+            /** @enum {string} */
+            slTriggerPriceType?: "LAST" | "MARK";
             adlRank?: number;
             /** @enum {string} */
             positionSide?: "BOTH" | "LONG" | "SHORT";
@@ -6300,6 +6306,16 @@ export interface components {
             tpPrice?: string;
             slPrice?: string;
             /**
+             * @description 附带止盈的触发价类型，默认 MARK
+             * @enum {string}
+             */
+            tpTriggerPriceType?: "LAST" | "MARK";
+            /**
+             * @description 附带止损的触发价类型，默认 MARK
+             * @enum {string}
+             */
+            slTriggerPriceType?: "LAST" | "MARK";
+            /**
              * @description 双向模式必填 LONG/SHORT；单向模式可省略或 BOTH
              * @enum {string}
              */
@@ -6340,6 +6356,20 @@ export interface components {
             slPrice?: string;
             /** @enum {string} */
             slTriggerPriceType?: "LAST" | "MARK";
+        };
+        /** @description 修改条件委托；省略/空字段保持原值，至少修改一项 */
+        FuturesAlgoAmendRequest: {
+            triggerPrice?: string;
+            /** @enum {string} */
+            triggerPriceType?: "LAST" | "MARK";
+            /**
+             * @description 填 price 即为 limit；market 会清除 price
+             * @enum {string}
+             */
+            orderType?: "limit" | "market";
+            price?: string;
+            /** @description 止盈止损不能超过持仓数量 */
+            qty?: string;
         };
         FuturesAlgoOrder: {
             /** Format: int64 */
@@ -6427,6 +6457,10 @@ export interface components {
             source?: string;
             tpPrice?: string | null;
             slPrice?: string | null;
+            /** @enum {string} */
+            tpTriggerPriceType?: "LAST" | "MARK";
+            /** @enum {string} */
+            slTriggerPriceType?: "LAST" | "MARK";
             cancelReason?: string;
             positionSide?: string;
             amendCount?: number;
@@ -11583,6 +11617,53 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    futuresAmendTpslOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesAlgoAmendRequest"];
+            };
+        };
+        responses: {
+            /** @description OK（PATCH 同义） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesAlgoOrder"];
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / INVALID_TRIGGER / INVALID_TPSL / NO_POSITION / ORDER_NOT_OPEN */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     futuresCancelTpslOrders: {
         parameters: {
             query?: never;
@@ -11694,6 +11775,53 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    futuresAmendPlanOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesAlgoAmendRequest"];
+            };
+        };
+        responses: {
+            /** @description OK（PATCH 同义） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesAlgoOrder"];
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / INVALID_TRIGGER / INVALID_TPSL / NO_POSITION / ORDER_NOT_OPEN */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     futuresCancelPlanOrders: {
         parameters: {
             query?: never;
@@ -11756,6 +11884,16 @@ export interface operations {
                     slPrice?: string | null;
                     /** @enum {string} */
                     positionSide?: "BOTH" | "LONG" | "SHORT";
+                    /**
+                     * @description 不填 = 保持当前（默认 MARK）
+                     * @enum {string}
+                     */
+                    tpTriggerPriceType?: "LAST" | "MARK";
+                    /**
+                     * @description 不填 = 保持当前（默认 MARK）
+                     * @enum {string}
+                     */
+                    slTriggerPriceType?: "LAST" | "MARK";
                 };
             };
         };

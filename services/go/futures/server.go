@@ -54,9 +54,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /futures/tpsl-orders", s.user(s.hCreateTPSL))
 	mux.HandleFunc("GET /futures/tpsl-orders", s.user(s.listAlgo("tp", "sl")))
 	mux.HandleFunc("DELETE /futures/tpsl-orders/{id}", s.user(s.cancelAlgo("tp", "sl")))
+	mux.HandleFunc("PUT /futures/tpsl-orders/{id}", s.user(s.amendAlgo("tp", "sl")))
+	mux.HandleFunc("PATCH /futures/tpsl-orders/{id}", s.user(s.amendAlgo("tp", "sl")))
 	mux.HandleFunc("POST /futures/plan-orders", s.user(s.hCreatePlan))
 	mux.HandleFunc("GET /futures/plan-orders", s.user(s.listAlgo("plan")))
 	mux.HandleFunc("DELETE /futures/plan-orders/{id}", s.user(s.cancelAlgo("plan")))
+	mux.HandleFunc("PUT /futures/plan-orders/{id}", s.user(s.amendAlgo("plan")))
+	mux.HandleFunc("PATCH /futures/plan-orders/{id}", s.user(s.amendAlgo("plan")))
 	s.orderConfigRoutes(mux)
 	mux.HandleFunc("GET /futures/positions", s.user(s.hPositions))
 	mux.HandleFunc("POST /futures/positions/{symbol}/tpsl", s.user(s.hTPSL))
@@ -314,6 +318,8 @@ func (s *Server) hTPSL(w http.ResponseWriter, r *http.Request, uid string) {
 		TP      *string `json:"tpPrice"`
 		SL      *string `json:"slPrice"`
 		PosSide string  `json:"positionSide"`
+		TPType  string  `json:"tpTriggerPriceType"`
+		SLType  string  `json:"slTriggerPriceType"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -335,7 +341,7 @@ func (s *Server) hTPSL(w http.ResponseWriter, r *http.Request, uid string) {
 		}
 		clearSL = !sl.Valid
 	}
-	if err := s.SetTPSL(r.Context(), uid, r.PathValue("symbol"), sideParam(r, req.PosSide), tp, sl, clearTP, clearSL); err != nil {
+	if err := s.SetTPSL(r.Context(), uid, r.PathValue("symbol"), sideParam(r, req.PosSide), tp, sl, clearTP, clearSL, req.TPType, req.SLType); err != nil {
 		writeErr(w, err)
 		return
 	}

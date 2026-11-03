@@ -115,10 +115,10 @@ func (s *Server) takeover(ctx context.Context, tx *sql.Tx, uid, posSide string, 
 	}
 	if rem.Sign() > 0 {
 		d := rem.Mul(decimal.NewFromInt(int64(p.Qty.Sign())))
-		if _, _, _, err := s.fill(ctx, tx, c, uid, p.Side, d.Neg(), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		if _, _, _, err := s.fill(ctx, tx, c, uid, p.Side, d.Neg(), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}, "", ""); err != nil {
 			return p, err
 		}
-		if _, _, _, err := s.fill(ctx, tx, c, insuranceUser, "BOTH", d, px, dZero, 1, "cross", decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		if _, _, _, err := s.fill(ctx, tx, c, insuranceUser, "BOTH", d, px, dZero, 1, "cross", decimal.NullDecimal{}, decimal.NullDecimal{}, "", ""); err != nil {
 			return p, err
 		}
 	}
@@ -287,15 +287,11 @@ func (s *Server) triggerTPSL(ctx context.Context) {
 	rows.Close()
 	now := s.now()
 	for _, p := range ps {
-		m, ok := s.mark(p.Symbol)
-		if !ok {
-			continue
-		}
 		long := p.Qty.Sign() > 0
 		src := ""
-		if p.TP.Valid && ((long && m.GreaterThanOrEqual(p.TP.Decimal)) || (!long && m.LessThanOrEqual(p.TP.Decimal))) {
+		if mt, ok := s.triggerRef(p.Symbol, trigOr(p.TPType)); ok && p.TP.Valid && ((long && mt.GreaterThanOrEqual(p.TP.Decimal)) || (!long && mt.LessThanOrEqual(p.TP.Decimal))) {
 			src = "tp"
-		} else if p.SL.Valid && ((long && m.LessThanOrEqual(p.SL.Decimal)) || (!long && m.GreaterThanOrEqual(p.SL.Decimal))) {
+		} else if ms, ok := s.triggerRef(p.Symbol, trigOr(p.SLType)); ok && p.SL.Valid && ((long && ms.LessThanOrEqual(p.SL.Decimal)) || (!long && ms.GreaterThanOrEqual(p.SL.Decimal))) {
 			src = "sl"
 		}
 		if src == "" {

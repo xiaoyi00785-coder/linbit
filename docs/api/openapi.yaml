@@ -3918,6 +3918,48 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
   /futures/tpsl-orders/{id}:
+    put:
+      tags:
+      - Futures
+      summary: 修改止盈止损委托（触发价/价格/数量/触发价类型）
+      operationId: futuresAmendTpslOrder
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesAlgoAmendRequest'
+      responses:
+        '200':
+          description: OK（PATCH 同义）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesAlgoOrder'
+        '400':
+          description: VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / INVALID_TRIGGER / INVALID_TPSL / NO_POSITION / ORDER_NOT_OPEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     delete:
       tags:
       - Futures
@@ -4036,6 +4078,48 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
   /futures/plan-orders/{id}:
+    put:
+      tags:
+      - Futures
+      summary: 修改计划委托（触发价/价格/数量/触发价类型）
+      operationId: futuresAmendPlanOrder
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesAlgoAmendRequest'
+      responses:
+        '200':
+          description: OK（PATCH 同义）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesAlgoOrder'
+        '400':
+          description: VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / INVALID_TRIGGER / INVALID_TPSL / NO_POSITION / ORDER_NOT_OPEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     delete:
       tags:
       - Futures
@@ -4107,6 +4191,14 @@ paths:
                 positionSide:
                   type: string
                   enum: [BOTH, LONG, SHORT]
+                tpTriggerPriceType:
+                  type: string
+                  enum: [LAST, MARK]
+                  description: 不填 = 保持当前（默认 MARK）
+                slTriggerPriceType:
+                  type: string
+                  enum: [LAST, MARK]
+                  description: 不填 = 保持当前（默认 MARK）
       responses:
         '200':
           description: OK
@@ -8214,6 +8306,12 @@ components:
         slPrice:
           type: string
           nullable: true
+        tpTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+        slTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
         adlRank:
           type: integer
           minimum: 0
@@ -8294,6 +8392,14 @@ components:
           type: string
         slPrice:
           type: string
+        tpTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+          description: 附带止盈的触发价类型，默认 MARK
+        slTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+          description: 附带止损的触发价类型，默认 MARK
         positionSide:
           type: string
           enum: [BOTH, LONG, SHORT]
@@ -8356,6 +8462,24 @@ components:
           enum: [LAST, MARK]
       required:
       - symbol
+    FuturesAlgoAmendRequest:
+      type: object
+      description: 修改条件委托；省略/空字段保持原值，至少修改一项
+      properties:
+        triggerPrice:
+          type: string
+        triggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+        orderType:
+          type: string
+          enum: [limit, market]
+          description: 填 price 即为 limit；market 会清除 price
+        price:
+          type: string
+        qty:
+          type: string
+          description: 止盈止损不能超过持仓数量
     FuturesAlgoOrder:
       type: object
       properties:
@@ -8506,6 +8630,12 @@ components:
         slPrice:
           type: string
           nullable: true
+        tpTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+        slTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
         cancelReason:
           type: string
         positionSide:
