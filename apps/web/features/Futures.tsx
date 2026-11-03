@@ -1,6 +1,6 @@
 "use client";
-// 合约下单区底部：仓位 / 当前委托 / 计划委托 / 止盈止损 / 历史委托 / 历史仓位
-// 对接 GET /futures/positions、/futures/orders、/futures/plan-orders、/futures/tpsl-orders、/futures/positions/history；
+// 合约下单区底部：仓位 / 当前委托 / 计划委托 / 止盈止损 / 历史委托 / 历史仓位 / 成交明细（可只看当前合约）
+// 对接 GET /futures/positions、/futures/orders、/futures/plan-orders、/futures/tpsl-orders、/futures/positions/history、/futures/trades；
 // 改单 PUT /futures/orders/{id}，持仓止盈止损 POST /futures/tpsl-orders。
 import { useEffect, useState } from "react";
 import type { components } from "@linbit/api-client";
@@ -15,7 +15,8 @@ type Algo = S["FuturesAlgoOrder"];
 type PosHist = S["FuturesPositionHistory"];
 type Pos = { symbol: string; side: string; positionSide?: string; qty: string; entryPrice: string; markPrice: string; unrealizedPnl: string; roe: string; leverage: number; margin: string; liquidationPrice: string; marginMode: string };
 type Ord = { orderId: string; symbol: string; side: string; positionSide?: string; type: string; timeInForce?: string; price: string; qty: string; filledQty: string; status: string; leverage: number; reduceOnly?: boolean; createdAt: number | string };
-const T = ["仓位", "当前委托", "计划委托", "止盈止损", "历史委托", "历史仓位"] as const;
+const T = ["仓位", "当前委托", "计划委托", "止盈止损", "历史委托", "历史仓位", "成交明细"] as const;
+type Fill = { tradeId: number; symbol: string; side: "buy" | "sell"; price: string; qty: string; fee: string; role: "maker" | "taker"; time: string };
 const sideTxt = (s: string) => (/buy|long/i.test(s) ? "多" : "空");
 const num = (v: string) => v.replace(/[^\d.]/g, "");
 const TT: Record<string, string> = { LAST: "最新价", MARK: "标记价" };
@@ -28,20 +29,23 @@ const dir = (o: { side?: string; positionSide?: string; reduceOnly?: boolean }) 
   return [o.reduceOnly ? (buy ? "平空" : "平多") : buy ? "买入" : "卖出", buy] as const;
 };
 
-export function FutOrders() {
+export function FutOrders({ symbol }: { symbol?: string }) {
   const authed = !!useAuthStore((s) => s.accessToken);
   const [tab, setTab] = useState(0);
   const [edit, setEdit] = useState<Ord | null>(null);
   const [tp, setTp] = useState<Pos | null>(null);
+  const [only, setOnly] = useState(false);
   const pos = useRest<{ positions: Pos[] }>(authed ? "/futures/positions" : null);
   const open = useRest<{ orders: Ord[] }>(authed ? "/futures/orders?status=open" : null);
   const plan = useRest<{ orders: Algo[] }>(authed ? "/futures/plan-orders?status=active" : null);
   const tpsl = useRest<{ orders: Algo[] }>(authed ? "/futures/tpsl-orders?status=active" : null);
   const hist = useRest<{ orders: Ord[] }>(authed && tab === 4 ? "/futures/orders" : null);
   const ph = useRest<{ positions: PosHist[] }>(authed && tab === 5 ? "/futures/positions/history" : null);
-  const P = pos.data?.positions ?? [], O = open.data?.orders ?? [], PL = plan.data?.orders ?? [], TS = tpsl.data?.orders ?? [];
-  const H = (hist.data?.orders ?? []).filter((o) => o.status !== "NEW" && o.status !== "PARTIALLY_FILLED"), PH = ph.data?.positions ?? [];
-  const cur = [pos, open, plan, tpsl, hist, ph][tab];
+  const fills = useRest<{ trades: Fill[] }>(authed && tab === 6 ? "/futures/trades?limit=100" : null);
+  const mine = <X extends { symbol?: string }>(L: X[] | undefined) => (L ?? []).filter((x) => !only || !symbol || x.symbol === symbol);
+  const P = mine(pos.data?.positions), O = mine(open.data?.orders), PL = mine(plan.data?.orders), TS = mine(tpsl.data?.orders);
+  const H = mine(hist.data?.orders).filter((o) => o.status !== "NEW" && o.status !== "PARTIALLY_FILLED"), PH = mine(ph.data?.positions), FL = mine(fills.data?.trades);
+  const cur = [pos, open, plan, tpsl, hist, ph, fills][tab];
   const reloadAll = () => { pos.reload(); open.reload(); plan.reload(); tpsl.reload(); };
   const del = async (path: string, ok: string) => {
     const r = await rest("DELETE", path);
@@ -54,14 +58,14 @@ export function FutOrders() {
     toast("已提交市价平仓"); pos.reload();
   };
   useEffect(() => { window.addEventListener("lb-fut-orders", reloadAll); return () => window.removeEventListener("lb-fut-orders", reloadAll); }); // eslint-disable-line
-  const labels = [`仓位(${P.length})`, `当前委托(${O.length})`, `计划委托(${PL.length})`, `止盈止损(${TS.length})`, "历史委托", "历史仓位"];
+  const labels = [`仓位(${P.length})`, `当前委托(${O.length})`, `计划委托(${PL.length})`, `止盈止损(${TS.length})`, "历史委托", "历史仓位", "成交明细"];
   const empty = <p className="empty">暂无数据</p>;
   const algoTable = (L: Algo[], kind: "plan" | "tpsl") => L.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>{kind === "plan" ? "方向" : "类型"}</th><th>触发条件</th><th>委托价</th><th>数量</th><th>状态</th><th /></tr></thead><tbody>
     {L.map((o) => { const [d, b] = dir(o); return <tr key={o.algoId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td className={kind === "plan" ? (b ? "up" : "down") : o.algoType === "tp" ? "up" : "down"}>{kind === "plan" ? d : o.algoType === "tp" ? "止盈" : "止损"}</td><td>{TT[o.triggerPriceType ?? "LAST"]} {o.triggerDirection === "down" ? "≤" : "≥"} {o.triggerPrice}</td><td>{o.price || "市价"}</td><td>{o.qty || "全部仓位"}</td><td>{ST[o.status ?? ""] ?? o.status}</td><td><a className="lime2" onClick={() => del(`/futures/${kind === "plan" ? "plan" : "tpsl"}-orders/${o.algoId}`, "已撤销")}>撤销</a></td></tr>; })}
   </tbody></table> : empty;
   return (
     <div className="orders" data-guide="orders">
-      <div className="pt sm">{labels.map((x, i) => <b key={x} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}<span className="sp" />{cur.source === "demo" && <span className="fx-src">接口不可达</span>}</div>
+      <div className="pt sm">{labels.map((x, i) => <b key={x} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}<span className="sp" />{cur.source === "demo" && <span className="fx-src">接口不可达</span>}{symbol && <label className="tk-only"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} />只看当前合约</label>}</div>
       {!authed ? <p className="empty">登录后查看{T[tab]}</p>
         : cur.loading ? <div style={{ padding: 12 }}><div className="lb-skel" style={{ height: 80 }} /></div>
         : tab === 0 ? (P.length ? <table className="sotbl"><thead><tr><th>合约</th><th>数量</th><th>开仓价</th><th>标记价</th><th>强平价</th><th>保证金</th><th>未实现盈亏(ROE)</th><th>止盈/止损</th><th /></tr></thead><tbody>
@@ -70,6 +74,9 @@ export function FutOrders() {
           </tbody></table> : <p className="empty">暂无仓位</p>)
         : tab === 2 ? algoTable(PL, "plan")
         : tab === 3 ? algoTable(TS, "tpsl")
+        : tab === 6 ? (FL.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>方向</th><th>成交价</th><th>成交量</th><th>手续费</th><th>角色</th></tr></thead><tbody>
+            {FL.map((t) => <tr key={t.tradeId}><td>{fmtLocal(t.time)}</td><td>{t.symbol}</td><td className={t.side === "buy" ? "up" : "down"}>{t.side === "buy" ? "买入" : "卖出"}</td><td>{t.price}</td><td>{t.qty}</td><td>{t.fee}</td><td>{t.role === "maker" ? "Maker" : "Taker"}</td></tr>)}
+          </tbody></table> : empty)
         : tab === 5 ? (PH.length ? <table className="sotbl"><thead><tr><th>平仓时间</th><th>合约</th><th>方向</th><th>开仓均价</th><th>平仓均价</th><th>最大持仓</th><th>已实现盈亏</th><th>手续费 / 资金费</th><th>状态</th></tr></thead><tbody>
             {PH.map((p) => <tr key={p.id}><td>{fmtLocal(p.closeTime)}</td><td>{p.symbol}</td><td className={p.side === "long" ? "up" : "down"}>{p.side === "long" ? "多" : "空"} {p.leverage}x</td><td>{p.entryPrice}</td><td>{p.closePrice}</td><td>{p.maxQty}</td><td className={+(p.netPnl ?? p.realizedPnl ?? 0) >= 0 ? "up" : "down"}>{p.netPnl ?? p.realizedPnl}</td><td>{p.fee} / {p.fundingFee}</td><td>{ST[p.status ?? ""] ?? p.status}</td></tr>)}
           </tbody></table> : empty)
