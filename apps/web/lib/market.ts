@@ -188,34 +188,66 @@ export function useTicker(symbol: string) {
   return { ticker: t, source: src };
 }
 
-/** 全部交易对 ticker：REST（30s 轮询兜底）+ 每个交易对的 ticker 频道。 */
+/**
+ * 全部交易对 ticker：模块级共享 store（所有组件共用一个轮询 + 一组 WS 订阅）。
+ * - WS 在线时不轮询；WS 不在线时 REST 兜底，间隔 30s（>=5s）。
+ * - 页面隐藏（document.hidden）时暂停轮询，回到前台立即补拉一次再恢复。
+ */
+const TICKER_POLL_MS = 30_000;
+const tickerStore = {
+  map: {} as Record<string, Ticker>,
+  src: "loading" as Source,
+  subs: new Set<() => void>(),
+  wsUns: new Map<string, () => void>(),
+  timer: null as ReturnType<typeof setInterval> | null,
+  inflight: false,
+  emit() { this.subs.forEach((f) => f()); },
+  load() {
+    if (this.inflight) return;
+    this.inflight = true;
+    rest<Ticker[]>("/market/ticker")
+      .then((l) => {
+        this.map = { ...Object.fromEntries(l.map((x) => [x.symbol, x])), ...this.map };
+        this.src = "api";
+        l.forEach((x) => {
+          const ch = `ticker:${x.symbol}`;
+          if (!this.wsUns.has(ch)) this.wsUns.set(ch, marketWS.subscribe(ch, (d) => { this.map = { ...this.map, [d.symbol]: d }; this.emit(); }));
+        });
+        this.emit();
+      })
+      .catch(() => { if (this.src !== "api") { this.src = "mock"; this.emit(); } })
+      .finally(() => { this.inflight = false; });
+  },
+  schedule() {
+    const want = this.subs.size > 0 && typeof document !== "undefined" && !document.hidden && marketWS.status !== "open";
+    if (want && !this.timer) this.timer = setInterval(() => this.load(), TICKER_POLL_MS);
+    if (!want && this.timer) { clearInterval(this.timer); this.timer = null; }
+  },
+  onVis: () => { if (!document.hidden && tickerStore.subs.size) tickerStore.load(); tickerStore.schedule(); },
+  onWs: () => tickerStore.schedule(),
+  add(f: () => void) {
+    if (this.subs.size === 0) {
+      document.addEventListener("visibilitychange", this.onVis);
+      marketWS.statusListeners.add(this.onWs);
+      this.load();
+    }
+    this.subs.add(f);
+    this.schedule();
+    return () => {
+      this.subs.delete(f);
+      if (this.subs.size === 0) {
+        document.removeEventListener("visibilitychange", this.onVis);
+        marketWS.statusListeners.delete(this.onWs);
+        this.wsUns.forEach((u) => u()); this.wsUns.clear();
+      }
+      this.schedule();
+    };
+  },
+};
 export function useTickers() {
-  const [map, setMap] = useState<Record<string, Ticker>>({});
-  const [src, setSrc] = useState<Source>("loading");
-  useEffect(() => {
-    let live = true;
-    const uns: Array<() => void> = [];
-    const load = () =>
-      rest<Ticker[]>("/market/ticker")
-        .then((l) => {
-          if (!live) return;
-          setMap((m) => ({ ...Object.fromEntries(l.map((x) => [x.symbol, x])), ...m }));
-          setSrc("api");
-          l.forEach((x) => {
-            const ch = `ticker:${x.symbol}`;
-            if (!uns.find((u: any) => u.ch === ch)) {
-              const u: any = marketWS.subscribe(ch, (d) => setMap((m) => ({ ...m, [d.symbol]: d })));
-              u.ch = ch;
-              uns.push(u);
-            }
-          });
-        })
-        .catch(() => live && setSrc((s) => (s === "api" ? s : "mock")));
-    load();
-    const i = setInterval(load, 30_000);
-    return () => { live = false; clearInterval(i); uns.forEach((u) => u()); };
-  }, []);
-  return { tickers: map, source: src };
+  const [, force] = useState(0);
+  useEffect(() => tickerStore.add(() => force((x) => x + 1)), []);
+  return { tickers: tickerStore.map, source: tickerStore.src };
 }
 
 function applyLevels(side: Level[], upd: Level[], desc: boolean): Level[] {

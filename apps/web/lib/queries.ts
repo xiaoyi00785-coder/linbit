@@ -29,6 +29,7 @@ export function useTickers() {
       return (Array.isArray(data) ? data : data ? [data] : []) as Ticker[];
     },
     refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
   });
 }
 
