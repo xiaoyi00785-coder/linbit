@@ -2855,7 +2855,11 @@ paths:
                           description: 十进制字符串
                         markPrice:
                           type: string
-                          description: 十进制字符串
+                          description: 十进制字符串（外部回填且来源无标记价时为 "0"）
+                        source:
+                          type: string
+                          enum: [settle, binance, okx]
+                          description: settle = 本平台结算；binance/okx = 启动时从公开接口回填的历史（仅展示，不产生资金划转）
   /futures/market/mark-history:
     get:
       tags:
@@ -7004,6 +7008,7 @@ components:
         phoneVerified: { type: boolean, example: true }
         withdrawWhitelistEnabled: { type: boolean, example: false }
         createdAt: { type: string, format: date-time, example: "2026-01-05T08:30:00Z" }
+        inviteCode: { type: string, nullable: true, description: 本人的邀请码（来自 growth 服务，首次读取时自动生成）；growth 不可达时为 null, example: LB8K2Q }
 
     UpdateProfileRequest:
       type: object

@@ -19,6 +19,9 @@ type Config struct {
 	// OrderInternalURL lets a parent read its sub-accounts' spot orders.
 	OrderInternalURL string
 	InternalToken    string
+	// GrowthInternalURL: growth service base URL; GET /account reads the
+	// user's own invite code from it (empty -> inviteCode null).
+	GrowthInternalURL string
 	RedisURL         string
 	// DevMode exposes the internal "last verification code" endpoint and records
 	// plaintext codes in memory. Never enable in production.
@@ -68,6 +71,7 @@ func LoadConfig() Config {
 		AssetInternalURL:  common.Env("ASSET_INTERNAL_URL", ""),
 		OrderInternalURL:  common.Env("ORDER_INTERNAL_URL", ""),
 		InternalToken:     common.Env("INTERNAL_TOKEN", ""),
+		GrowthInternalURL: common.Env("GROWTH_INTERNAL_URL", ""),
 		RedisURL:          common.Env("REDIS_URL", ""),
 		DevMode:           common.Env("DEV_MODE", "") == "true",
 		SMSEnabled:        common.Env("SMS_ENABLED", "") == "true",

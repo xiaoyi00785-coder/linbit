@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -336,6 +337,8 @@ type accountResponse struct {
 	PhoneVerified            bool      `json:"phoneVerified"`
 	WithdrawWhitelistEnabled bool      `json:"withdrawWhitelistEnabled"`
 	CreatedAt                time.Time `json:"createdAt"`
+	// InviteCode is the user's own referral code (from growth); null when unavailable.
+	InviteCode *string `json:"inviteCode"`
 }
 
 func toAccountResponse(u *User) accountResponse {
@@ -372,7 +375,30 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, toAccountResponse(u))
+	resp := toAccountResponse(u)
+	resp.InviteCode = s.ownInviteCode(r.Context(), u.UID)
+	common.WriteJSON(w, http.StatusOK, resp)
+}
+
+// ownInviteCode asks growth for the user's own invite code (growth creates it
+// on first sync if missing). Best effort: any failure yields nil.
+func (s *Server) ownInviteCode(ctx context.Context, uid string) *string {
+	if s.cfg.GrowthInternalURL == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	code, body, err := s.internalCall(ctx, http.MethodGet, s.cfg.GrowthInternalURL, "/internal/growth/invite-code?uid="+url.QueryEscape(uid), nil, nil)
+	if err != nil || code != http.StatusOK {
+		return nil
+	}
+	var out struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(body, &out) != nil || out.Code == "" {
+		return nil
+	}
+	return &out.Code
 }
 
 // handleDevLastCode returns the most recent verification code for a target

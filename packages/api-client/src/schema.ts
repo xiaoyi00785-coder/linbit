@@ -5043,6 +5043,11 @@ export interface components {
              * @example 2026-01-05T08:30:00Z
              */
             createdAt: string;
+            /**
+             * @description 本人的邀请码（来自 growth 服务，首次读取时自动生成）；growth 不可达时为 null
+             * @example LB8K2Q
+             */
+            inviteCode?: string | null;
         };
         /** @description 至少提供一个字段。头像一期只存 URL（http/https，≤512）。 */
         UpdateProfileRequest: {
@@ -10654,8 +10659,13 @@ export interface operations {
                             fundingTime?: number;
                             /** @description 十进制字符串 */
                             fundingRate?: string;
-                            /** @description 十进制字符串 */
+                            /** @description 十进制字符串（外部回填且来源无标记价时为 "0"） */
                             markPrice?: string;
+                            /**
+                             * @description settle = 本平台结算；binance/okx = 启动时从公开接口回填的历史（仅展示，不产生资金划转）
+                             * @enum {string}
+                             */
+                            source?: "settle" | "binance" | "okx";
                         }[];
                     };
                 };

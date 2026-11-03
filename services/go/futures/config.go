@@ -50,6 +50,13 @@ type Config struct {
 	EventRequireFlag     bool          // EVENT_REQUIRE_FEATURE_FLAG (true): POST /event/orders needs /app/features eventContracts=true
 	EventSettleTolerance time.Duration // EVENT_SETTLE_TOLERANCE_SECONDS (5): first index sample within expiry+N s is the settle price
 	EventWorker          bool          // EVENT_WORKER (true): run the sampler/settlement loop in this replica
+
+	// Funding-history backfill at startup (public data, display only; never settles).
+	FundingBackfill        bool   // FUTURES_FUNDING_BACKFILL (true)
+	FundingBackfillSources string // FUTURES_FUNDING_BACKFILL_SOURCES (binance,okx): tried in order
+	FundingBackfillDays    int    // FUTURES_FUNDING_BACKFILL_DAYS (90)
+	BinanceFAPIURL         string // FUTURES_BINANCE_FAPI_URL (https://fapi.binance.com)
+	OKXAPIURL              string // FUTURES_OKX_API_URL (https://www.okx.com)
 }
 
 func decEnv(key, def string) decimal.Decimal {
@@ -100,6 +107,11 @@ func LoadConfig() Config {
 		EventRequireFlag:     strings.ToLower(common.Env("EVENT_REQUIRE_FEATURE_FLAG", "true")) != "false",
 		EventSettleTolerance: time.Duration(common.EnvInt("EVENT_SETTLE_TOLERANCE_SECONDS", 5)) * time.Second,
 		EventWorker:          strings.ToLower(common.Env("EVENT_WORKER", "true")) != "false",
+		FundingBackfill:        strings.ToLower(common.Env("FUTURES_FUNDING_BACKFILL", "true")) != "false",
+		FundingBackfillSources: common.Env("FUTURES_FUNDING_BACKFILL_SOURCES", "binance,okx"),
+		FundingBackfillDays:    common.EnvInt("FUTURES_FUNDING_BACKFILL_DAYS", 90),
+		BinanceFAPIURL:         common.Env("FUTURES_BINANCE_FAPI_URL", "https://fapi.binance.com"),
+		OKXAPIURL:              common.Env("FUTURES_OKX_API_URL", "https://www.okx.com"),
 	}
 	if v := strings.TrimSpace(common.Env("FUTURES_LIQUIDATION_FEE_RATE", "")); v != "" {
 		if d, err := decimal.NewFromString(v); err == nil && d.Sign() >= 0 {

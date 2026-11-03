@@ -153,7 +153,7 @@ func (s *Server) hFundingHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lim := limitParam(r, 100, 1000)
-	rows, err := s.db.QueryContext(r.Context(), `SELECT funding_time, rate, mark_price FROM fut_funding_history
+	rows, err := s.db.QueryContext(r.Context(), `SELECT funding_time, rate, mark_price, source FROM fut_funding_history
 		WHERE symbol=$1 AND ($2::timestamptz IS NULL OR funding_time >= $2) AND ($3::timestamptz IS NULL OR funding_time <= $3)
 		ORDER BY funding_time DESC LIMIT $4`, c.Symbol, st, en, lim)
 	if err != nil {
@@ -166,9 +166,10 @@ func (s *Server) hFundingHistory(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var at time.Time
 		var rate, mark decimal.Decimal
-		if rows.Scan(&at, &rate, &mark) == nil {
+		var src string
+		if rows.Scan(&at, &rate, &mark, &src) == nil {
 			last = at
-			out = append(out, map[string]any{"fundingTime": at.UnixMilli(), "fundingRate": rate, "markPrice": mark})
+			out = append(out, map[string]any{"fundingTime": at.UnixMilli(), "fundingRate": rate, "markPrice": mark, "source": src})
 		}
 	}
 	res := map[string]any{"symbol": c.Symbol, "fundingIntervalHours": c.FundingH, "history": out}

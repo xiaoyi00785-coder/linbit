@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -127,12 +128,52 @@ func TestLocalStorageServeHTTP(t *testing.T) {
 	}
 }
 
-func TestS3SkeletonNotImplemented(t *testing.T) {
-	s := NewS3Storage(S3Config{Bucket: "b", PublicBase: "https://cdn"})
-	if _, err := s.Put(context.Background(), "k", "image/png", []byte("x")); err != ErrNotImplemented {
-		t.Fatalf("s3 put err = %v, want ErrNotImplemented", err)
+func TestS3PutOpenRoundTrip(t *testing.T) {
+	objs := map[string][]byte{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256 Credential=AK/") || r.Header.Get("X-Amz-Content-Sha256") == "" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		switch r.Method {
+		case http.MethodPut:
+			b, _ := io.ReadAll(r.Body)
+			objs[r.URL.Path] = b
+		case http.MethodGet:
+			b, ok := objs[r.URL.Path]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(b)
+		}
+	}))
+	defer srv.Close()
+	s := NewS3Storage(S3Config{Bucket: "b", Endpoint: srv.URL, AccessKeyID: "AK", SecretAccessKey: "SK"})
+	ref, err := s.Put(context.Background(), "kyc/u1/a b.png", "image/png", []byte("img"))
+	if err != nil || ref != "kyc/u1/a b.png" {
+		t.Fatalf("put = %q, %v", ref, err)
 	}
-	if _, _, err := s.Open(context.Background(), "k"); err != ErrNotImplemented {
-		t.Fatalf("s3 open err = %v, want ErrNotImplemented", err)
+	rc, ct, err := s.Open(context.Background(), "kyc/u1/a b.png")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	b, _ := io.ReadAll(rc)
+	rc.Close()
+	if string(b) != "img" || ct != "image/png" {
+		t.Fatalf("got %q %q", b, ct)
+	}
+	if _, _, err := s.Open(context.Background(), "missing"); err != ErrNotFound {
+		t.Fatalf("missing err = %v", err)
+	}
+}
+
+func TestS3Unconfigured(t *testing.T) {
+	t.Setenv("S3_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	s := NewS3Storage(S3Config{Bucket: "b"})
+	if _, err := s.Put(context.Background(), "k", "image/png", []byte("x")); err == nil {
+		t.Fatal("want error without credentials")
 	}
 }

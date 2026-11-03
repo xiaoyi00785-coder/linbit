@@ -42,6 +42,9 @@ func main() {
 		log.Printf("load fee overrides: %v", err)
 	}
 	ctx := context.Background()
+	if cfg.FundingBackfill {
+		go srv.BackfillFunding(ctx)
+	}
 	go srv.RunTicker(ctx)
 	go srv.RunTransferRetry(ctx)
 	if cfg.EventWorker {
