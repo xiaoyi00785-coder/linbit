@@ -84,13 +84,19 @@ func (s *Server) handleMMRun(action string) http.HandlerFunc {
 	}
 }
 
-// POST /admin/v1/mm/testnet-seed {ref, reason, totpCode} — testnet/mock only.
+// POST /admin/v1/mm/testnet-seed {ref, assets?, usdtValue?, amounts?, reason, totpCode}
+// — testnet/mock only. Without assets: MM_SEED_AMOUNT USDT. With assets
+// (e.g. ["BTC","ETH","SOL"]): each credited ~usdtValue (default 1,000,000) of
+// the base asset at the current index, idempotent per ref+asset.
 func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
 	a := actorOf(r)
 	var req struct {
-		Ref      string `json:"ref"`
-		Reason   string `json:"reason"`
-		TOTPCode string `json:"totpCode"`
+		Ref       string            `json:"ref"`
+		Assets    []string          `json:"assets"`
+		USDTValue string            `json:"usdtValue"`
+		Amounts   map[string]string `json:"amounts"`
+		Reason    string            `json:"reason"`
+		TOTPCode  string            `json:"totpCode"`
 	}
 	_ = common.DecodeJSON(r, &req)
 	if ok, why := common.TestnetSeedAllowed(); !ok {
@@ -106,13 +112,31 @@ func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
 	if !s.verify2FA(w, a, req.TOTPCode) {
 		return
 	}
-	u, err := s.call(r.Context(), http.MethodPost, s.cfg.MMURL, "/internal/mm/seed", map[string]string{"ref": req.Ref})
+	payload := map[string]any{"ref": req.Ref}
+	if len(req.Assets) > 0 {
+		payload["assets"] = req.Assets
+		if req.USDTValue != "" {
+			payload["usdtValue"] = req.USDTValue
+		}
+		if len(req.Amounts) > 0 {
+			payload["amounts"] = req.Amounts
+		}
+	}
+	u, err := s.call(r.Context(), http.MethodPost, s.cfg.MMURL, "/internal/mm/seed", payload)
 	if err != nil {
 		upstreamErr(w, "mm seed", err)
 		return
 	}
-	s.audit(r, a, "mm", "testnet_seed", "mm:"+s.cfg.MMUserID, levelHigh, resultOf(u), nil,
-		map[string]string{"ref": req.Ref, "txType": "mm_testnet_seed"}, req.Reason)
+	after := map[string]any{"ref": req.Ref, "txType": "mm_testnet_seed", "assets": req.Assets, "usdtValue": req.USDTValue, "amounts": req.Amounts}
+	if u.ok() && len(req.Assets) > 0 {
+		var res struct {
+			Items json.RawMessage `json:"items"`
+		}
+		if json.Unmarshal(u.Body, &res) == nil {
+			after["items"] = res.Items
+		}
+	}
+	s.audit(r, a, "mm", "testnet_seed", "mm:"+s.cfg.MMUserID, levelHigh, resultOf(u), nil, after, req.Reason)
 	relay(w, u)
 }
 

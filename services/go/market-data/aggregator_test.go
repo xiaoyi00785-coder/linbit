@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/shopspring/decimal"
 	"strings"
 	"sync"
 	"testing"
@@ -271,5 +272,55 @@ func TestDepthLimit(t *testing.T) {
 	d, _ := agg.DepthFrame("BTCUSDT", 2)
 	if len(d.Bids) != 2 || d.Bids[0][0] != "70000" || d.Bids[1][0] != "69990" {
 		t.Fatalf("limited bids = %+v", d.Bids)
+	}
+}
+
+func TestTickerFallbackMidThenIndex(t *testing.T) {
+	a := NewAggregator(nil, []string{"BTCUSDT"})
+	idx := decimal.NewFromInt(77000)
+	a.SetIndexSource(func(string) (decimal.Decimal, bool) { return idx, true })
+	tk, _ := a.TickerFrame("BTCUSDT")
+	if tk.PriceSource != "index" || tk.LastPrice != "77000" || tk.PriceChangePercent != "0" || tk.Volume != "0" {
+		t.Fatalf("index fallback: %+v", tk)
+	}
+	a.OnDepth(DepthEvent{Symbol: "BTCUSDT", Snapshot: true, Sequence: 1,
+		Bids: []Level{{Price: decimal.NewFromInt(77500), Quantity: decimal.NewFromInt(1)}, {Price: decimal.NewFromInt(77400), Quantity: decimal.NewFromInt(1)}},
+		Asks: []Level{{Price: decimal.NewFromInt(77700), Quantity: decimal.NewFromInt(1)}}})
+	tk, _ = a.TickerFrame("BTCUSDT")
+	if tk.PriceSource != "mid" || tk.LastPrice != "77600" || tk.High != "77600" {
+		t.Fatalf("mid fallback: %+v", tk)
+	}
+	a.OnTrade(TradeEvent{Symbol: "BTCUSDT", TradeID: "1", Price: decimal.NewFromInt(77650), Quantity: decimal.NewFromInt(1), TakerSide: "buy", Time: time.Now()})
+	tk, _ = a.TickerFrame("BTCUSDT")
+	if tk.PriceSource != "trade" || tk.LastPrice != "77650" {
+		t.Fatalf("trade: %+v", tk)
+	}
+}
+
+func TestIndexCandlesWhenNoTrades(t *testing.T) {
+	a := NewAggregator(nil, []string{"BTCUSDT"})
+	k, _ := a.Klines("BTCUSDT", "1m", 10)
+	if len(k) != 0 {
+		t.Fatal("expected empty without index")
+	}
+	px := decimal.NewFromInt(100)
+	a.SetIndexSource(func(string) (decimal.Decimal, bool) { return px, true })
+	base := time.Unix(1700000040, 0)
+	a.SampleIndex(base)
+	px = decimal.NewFromInt(105)
+	a.SampleIndex(base.Add(10 * time.Second))
+	px = decimal.NewFromInt(99)
+	a.SampleIndex(base.Add(70 * time.Second))
+	k, _ = a.Klines("BTCUSDT", "1m", 10)
+	if len(k) != 2 || k[0].Source != "index" || k[0].High != "105" || k[0].Close != "105" || k[1].Open != "99" || k[0].Volume != "0" {
+		t.Fatalf("index candles: %+v", k)
+	}
+	if f, ok := a.KlineFrame("BTCUSDT", "1m"); !ok || f.Source != "index" {
+		t.Fatalf("frame: %+v", f)
+	}
+	a.OnTrade(TradeEvent{Symbol: "BTCUSDT", TradeID: "1", Price: decimal.NewFromInt(101), Quantity: decimal.NewFromInt(1), TakerSide: "buy", Time: base.Add(80 * time.Second)})
+	k, _ = a.Klines("BTCUSDT", "1m", 10)
+	if len(k) != 1 || k[0].Source != "" {
+		t.Fatalf("trade candles should win: %+v", k)
 	}
 }

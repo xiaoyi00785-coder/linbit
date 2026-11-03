@@ -102,6 +102,18 @@ expect() {
   printf '  ok  %-28s = %s\n' "$1" "$2"
 }
 
+say "0/7 no-trade fallback: ticker priceSource + lastPrice, klines source"
+T0="$(curl -sS "$GATEWAY_URL/market/ticker?symbol=$SYMBOL")"
+echo "ticker (pre-trade): $T0"
+SRC0="$(printf '%s' "$T0" | jq -r '.priceSource')"
+case "$SRC0" in index|mid) awk -v p="$(printf '%s' "$T0" | jq -r '.lastPrice')" 'BEGIN{exit !(p+0>0)}' || fail "pre-trade lastPrice must be >0 when priceSource=$SRC0";;
+  none) awk -v p="$(printf '%s' "$T0" | jq -r '.lastPrice')" 'BEGIN{exit !(p+0==0)}' || fail "none must be 0";;
+  *) fail "unexpected pre-trade priceSource '$SRC0'";; esac
+expect "pre-trade priceChangePercent" "$(printf '%s' "$T0" | jq -r '.priceChangePercent')" "0"
+K0="$(curl -sS "$GATEWAY_URL/market/klines?symbol=$SYMBOL&interval=1m&limit=5")"
+[ "$(printf '%s' "$K0" | jq -r '[.[]|select(.source!="index")]|length')" = "0" ] || fail "pre-trade klines must be index-flagged or empty: $K0"
+echo "  ok  pre-trade priceSource=$SRC0, klines=$(printf '%s' "$K0" | jq length) index candles"
+
 TS="$(date +%s)"
 say "1/7 register two users"
 read -r SELLER_TOKEN SELLER_ID < <(register "msell+$TS@example.com")
@@ -157,6 +169,7 @@ expect "ticker quoteVolume"        "$(printf '%s' "$TICK" | jq -r '.quoteVolume'
 expect "ticker high"               "$(printf '%s' "$TICK" | jq -r '.high')"               "70000.00"
 expect "ticker low"                "$(printf '%s' "$TICK" | jq -r '.low')"                "70000.00"
 expect "ticker priceChangePercent" "$(printf '%s' "$TICK" | jq -r '.priceChangePercent')" "0"
+expect "ticker priceSource"        "$(printf '%s' "$TICK" | jq -r '.priceSource')"        "trade"
 
 # ticker without symbol -> array of all tracked pairs.
 TICK_ALL="$(curl -sS "$GATEWAY_URL/market/ticker")"
@@ -186,6 +199,28 @@ echo "trades: $TR"
 expect "trade price"    "$(printf '%s' "$TR" | jq -r '.[0].price')"    "70000"
 expect "trade quantity" "$(printf '%s' "$TR" | jq -r '.[0].quantity')" "0.01"
 expect "trade side"     "$(printf '%s' "$TR" | jq -r '.[0].side')"     "buy"
+
+# categories + tags + new spot listings
+CATS="$(curl -sS "$GATEWAY_URL/market/categories")"
+echo "categories: $CATS"
+expect "layer1 has SOLUSDT" "$(printf '%s' "$CATS" | jq -r '[.[] | select(.id=="layer1") | .symbols[] | select(.=="SOLUSDT")] | length')" "1"
+expect "metals empty list"  "$(printf '%s' "$CATS" | jq -r '.[] | select(.id=="metals") | .symbols | length')" "0"
+SYMS="$(curl -sS "$GATEWAY_URL/market/symbols")"
+expect "TRXUSDT pricePrecision" "$(printf '%s' "$SYMS" | jq -r '.[] | select(.symbol=="TRXUSDT") | .pricePrecision')" "5"
+expect "BNBUSDT listed"         "$(printf '%s' "$SYMS" | jq -r '[.[] | select(.symbol=="BNBUSDT")] | length')" "1"
+expect "BTCUSDT tags layer1"    "$(printf '%s' "$SYMS" | jq -r '.[] | select(.symbol=="BTCUSDT") | .tags | index("layer1") != null')" "true"
+
+# TRXUSDT tiny-price precision: 5 decimals accepted end to end, 6 rejected
+credit "$SELLER_ID" TRX 1000
+credit "$BUYER_ID"  USDT 1000
+TS1="$(place "$SELLER_TOKEN" '{"symbol":"TRXUSDT","side":"sell","type":"limit","price":"0.12345","quantity":"100","timeInForce":"GTC"}')"
+expect "TRX sell @0.12345 rests" "$(printf '%s' "$TS1" | jq -r '.status')" "new"
+TB1="$(place "$BUYER_TOKEN" '{"symbol":"TRXUSDT","side":"buy","type":"limit","price":"0.12345","quantity":"100","timeInForce":"GTC"}')"
+expect "TRX buy @0.12345 fills" "$(printf '%s' "$TB1" | jq -r '.status')" "filled"
+TB2="$(place "$BUYER_TOKEN" '{"symbol":"TRXUSDT","side":"buy","type":"limit","price":"0.123456","quantity":"100","timeInForce":"GTC"}')"
+[ "$(printf '%s' "$TB2" | jq -r '.code // empty')" != "" ] || fail "TRX 6-decimal price accepted: $TB2"
+sleep 1
+expect "TRX trade price" "$(curl -sS "$GATEWAY_URL/market/trades?symbol=TRXUSDT&limit=1" | jq -r '.[0].price')" "0.12345"
 
 rm -f "$PROBE_BIN" "$PROBE_OUT"
 printf '\n\033[1;32mSMOKE-MARKET PASSED\033[0m — match -> engine events -> WS pushes + REST ticker/kline/depth/trades\n'

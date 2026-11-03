@@ -785,6 +785,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 行情分类标签（公链、贵金属…）
+         * @description 按 sort 排序。symbols 只包含当前已上线的现货交易对；暂无交易对的分类
+         *     （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
+         *     commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
+         *     layer2 Layer 2, ecosystem 生态。「全部」由前端自行处理。
+         */
+        get: operations["listMarketCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/market/ticker": {
         parameters: {
             query?: never;
@@ -2977,6 +3000,26 @@ export interface components {
              * @enum {string}
              */
             status: "trading" | "halted" | "delisted";
+            /**
+             * @description 所属分类 id（见 /market/categories）
+             * @example [
+             *       "layer1"
+             *     ]
+             */
+            tags?: string[];
+        };
+        MarketCategory: {
+            /** @example layer1 */
+            id: string;
+            /** @example 公链 */
+            name: string;
+            /**
+             * @example [
+             *       "BTCUSDT",
+             *       "ETHUSDT"
+             *     ]
+             */
+            symbols: string[];
         };
         Ticker: {
             /** @example BTCUSDT */
@@ -5174,11 +5217,54 @@ export interface operations {
                      *         "pricePrecision": 2,
                      *         "quantityPrecision": 5,
                      *         "minQuantity": "0.00100",
-                     *         "status": "trading"
+                     *         "status": "trading",
+                     *         "tags": [
+                     *           "layer1"
+                     *         ]
                      *       }
                      *     ]
                      */
                     "application/json": components["schemas"]["Symbol"][];
+                };
+            };
+        };
+    };
+    listMarketCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分类列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example [
+                     *       {
+                     *         "id": "layer1",
+                     *         "name": "公链",
+                     *         "symbols": [
+                     *           "BNBUSDT",
+                     *           "BTCUSDT",
+                     *           "ETHUSDT",
+                     *           "SOLUSDT",
+                     *           "TRXUSDT"
+                     *         ]
+                     *       },
+                     *       {
+                     *         "id": "metals",
+                     *         "name": "贵金属",
+                     *         "symbols": []
+                     *       }
+                     *     ]
+                     */
+                    "application/json": components["schemas"]["MarketCategory"][];
                 };
             };
         };

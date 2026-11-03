@@ -212,6 +212,7 @@ func run(root, execCmd string) int {
 			"INTERNAL_TOKEN=" + internalTok,
 			"DATA_DIR=" + engineData,
 			"SNAPSHOT_EVERY=1000",
+			"SYMBOLS=BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1",
 			// Stream trade/depth events to market-data (local pub/sub stand-in).
 			"EVENT_SINK_URL=http://localhost:" + marketPort + "/internal/events",
 		},

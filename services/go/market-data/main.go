@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/linbit/platform/services/go/common"
+	"github.com/shopspring/decimal"
 )
 
 func main() {
@@ -70,6 +71,17 @@ func main() {
 	ingest := NewHTTPEventSource(agg, cfg.InternalToken)
 	feed := NewIndexFeed(cfg, agg.LastPrice)
 	feed.Start(ctx)
+	// Display fallback only (ticker lastPrice / index candles when no trades).
+	// Uses the external sources only: never the local last price (circular).
+	agg.SetIndexSource(func(sym string) (decimal.Decimal, bool) {
+		r, ok := feed.IndexNoLocal(sym)
+		if !ok {
+			return decimal.Zero, false
+		}
+		px, err := decimal.NewFromString(r.Price)
+		return px, err == nil
+	})
+	agg.StartIndexSampler(ctx, cfg.IndexPoll)
 	log.Printf("index feed sources: %v (stale after %s)", cfg.IndexFeed, cfg.IndexStale)
 	srv := NewServer(cfg, store, agg, hub, ingest)
 	srv.feed = feed

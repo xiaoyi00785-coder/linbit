@@ -71,6 +71,7 @@ type Contract struct {
 	Margin      string          `json:"marginAsset"`
 	FundingH    int             `json:"fundingIntervalHours"`
 	Tiers       []Tier          `json:"riskTiers"`
+	Tags        []string        `json:"tags"` // market_categories ids (same as spot Symbol.tags)
 }
 
 func loadContracts(ctx context.Context, db queryer) ([]Contract, error) {

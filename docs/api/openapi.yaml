@@ -74,13 +74,24 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SendCodeResponse" }
               example: { sent: true, channel: sms, ttlSeconds: 600 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "429":
           description: 发送过于频繁
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: RATE_LIMITED, message: 验证码发送过于频繁，请稍后再试 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /auth/register:
     post:
@@ -205,9 +216,20 @@ paths:
             example: { challengeToken: 3kZ9...challenge }
       responses:
         "200": { description: 已发送 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /auth/password/verify-code:
     post:
@@ -493,9 +515,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SendCodeResponse" }
               example: { sent: true, channel: sms, ttlSeconds: 600 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /account/devices:
     get:
@@ -1294,6 +1327,30 @@ paths:
                   quantityPrecision: 5
                   minQuantity: "0.00100"
                   status: trading
+                  tags: [layer1]
+
+  /market/categories:
+    get:
+      tags: [Market]
+      summary: 行情分类标签（公链、贵金属…）
+      description: |
+        按 sort 排序。symbols 只包含当前已上线的现货交易对；暂无交易对的分类
+        （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
+        commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
+        layer2 Layer 2, ecosystem 生态。「全部」由前端自行处理。
+      operationId: listMarketCategories
+      security: []
+      responses:
+        "200":
+          description: 分类列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MarketCategory" }
+              example:
+                - { id: layer1, name: 公链, symbols: [BNBUSDT, BTCUSDT, ETHUSDT, SOLUSDT, TRXUSDT] }
+                - { id: metals, name: 贵金属, symbols: [] }
 
   /market/ticker:
     get:
@@ -2842,6 +2899,19 @@ components:
           type: string
           enum: [trading, halted, delisted]
           example: trading
+        tags:
+          type: array
+          items: { type: string }
+          description: 所属分类 id（见 /market/categories）
+          example: [layer1]
+
+    MarketCategory:
+      type: object
+      required: [id, name, symbols]
+      properties:
+        id: { type: string, example: layer1 }
+        name: { type: string, example: 公链 }
+        symbols: { type: array, items: { type: string }, example: [BTCUSDT, ETHUSDT] }
 
     Ticker:
       type: object
@@ -2854,6 +2924,10 @@ components:
         low: { type: string, example: "76705.00" }
         volume: { type: string, example: "371.65" }
         quoteVolume: { type: string, example: "28915681.30" }
+        priceSource:
+          type: string
+          enum: [trade, mid, index, none]
+          description: "lastPrice 来源：最近成交 > 盘口中间价 > 指数价；无成交时 24h 涨跌为 0、high/low=lastPrice、volume=0（不伪造成交）。合约行情另有 mark。"
 
     Depth:
       type: object

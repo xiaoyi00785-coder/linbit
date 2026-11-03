@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/shopspring/decimal"
 )
@@ -50,6 +51,40 @@ func (s *Store) Symbols(ctx context.Context) ([]SymbolInfo, error) {
 		}
 		si.MinQuantity = decimal.RequireFromString(minQty)
 		out = append(out, si)
+	}
+	return out, rows.Err()
+}
+
+// Category is one market-page tab (GET /market/categories).
+type Category struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Symbols []string `json:"symbols"`
+}
+
+// Categories returns the market_categories rows by sort order. Symbols are
+// returned as stored (callers filter to listed pairs).
+func (s *Store) Categories(ctx context.Context) ([]Category, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, array_to_string(symbols, ',') FROM market_categories ORDER BY sort, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Category{}
+	for rows.Next() {
+		var c Category
+		var syms string
+		if err := rows.Scan(&c.ID, &c.Name, &syms); err != nil {
+			return nil, err
+		}
+		c.Symbols = []string{}
+		for _, x := range strings.Split(syms, ",") {
+			if x = strings.ToUpper(strings.TrimSpace(x)); x != "" {
+				c.Symbols = append(c.Symbols, x)
+			}
+		}
+		out = append(out, c)
 	}
 	return out, rows.Err()
 }

@@ -131,6 +131,17 @@ type IndexResult struct {
 
 // Index returns the freshest usable index for symbol, honouring source order.
 func (f *IndexFeed) Index(symbol string) (IndexResult, bool) {
+	return f.index(symbol, true)
+}
+
+// IndexNoLocal is Index without the INDEX_FEED=off local-last-price fallback.
+// Safe to call while holding the aggregator lock (the local fallback re-enters
+// the aggregator).
+func (f *IndexFeed) IndexNoLocal(symbol string) (IndexResult, bool) {
+	return f.index(symbol, false)
+}
+
+func (f *IndexFeed) index(symbol string, allowLocal bool) (IndexResult, bool) {
 	symbol = strings.ToUpper(symbol)
 	f.mu.Lock()
 	ov, hasOv := f.override[symbol]
@@ -143,7 +154,7 @@ func (f *IndexFeed) Index(symbol string) (IndexResult, bool) {
 		return IndexResult{Symbol: symbol, Price: ov.String(), Source: "dev-override", UpdatedAt: time.Now().UTC()}, true
 	}
 	if !f.External() {
-		if f.local != nil {
+		if allowLocal && f.local != nil {
 			if p, ok := f.local(symbol); ok && p.IsPositive() {
 				return IndexResult{Symbol: symbol, Price: p.String(), Source: "local", UpdatedAt: time.Now().UTC()}, true
 			}

@@ -98,8 +98,9 @@ type scanTx struct {
 // ---- deposit addresses ----
 
 // UpsertDepositAddress allocates (or returns the existing) reusable deposit
-// address for a (user, asset, network). generate is only called when no address
-// exists yet, so HD indexes are not consumed on every request.
+// address for a (user, asset, network). If the user already holds an address on
+// the same network (another token on that chain) it is reused; generate is only
+// called when the user has no address on the network yet.
 func (s *Store) UpsertDepositAddress(ctx context.Context, userID, asset, network string, generate func() (addr, memo string, hdIndex *int64, err error)) (DepositAddress, error) {
 	var out DepositAddress
 	sel := func() error {
@@ -112,8 +113,28 @@ func (s *Store) UpsertDepositAddress(ctx context.Context, userID, asset, network
 	if err == nil || !errors.Is(err, sql.ErrNoRows) {
 		return out, err
 	}
-	addr, memo, idx, err := generate()
-	if err != nil {
+	// Reuse the user's existing address on this network (one address per user
+	// per chain, shared across tokens). Earliest-issued address wins.
+	var (
+		addr, memo string
+		idx        *int64
+	)
+	var hd sql.NullInt64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT address, memo, hd_index FROM deposit_addresses
+		 WHERE user_id = $1 AND network = $2 ORDER BY id LIMIT 1`,
+		userID, network).Scan(&addr, &memo, &hd)
+	switch {
+	case err == nil:
+		if hd.Valid {
+			v := hd.Int64
+			idx = &v
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		if addr, memo, idx, err = generate(); err != nil {
+			return DepositAddress{}, err
+		}
+	default:
 		return DepositAddress{}, err
 	}
 	if _, err := s.db.ExecContext(ctx,
@@ -203,7 +224,7 @@ func (s *Store) ConfirmableChainTxs(ctx context.Context, network string, confirm
 		        (cs.height - ct.block_height + 1) AS confs
 		 FROM chain_txs ct
 		 JOIN chain_state cs ON cs.network = ct.network
-		 JOIN deposit_addresses da ON da.network = ct.network AND da.address = ct.address
+		 JOIN (SELECT DISTINCT network, address, user_id FROM deposit_addresses) da ON da.network = ct.network AND da.address = ct.address
 		 WHERE ct.network = $1
 		   AND (cs.height - ct.block_height + 1) >= $2
 		   AND NOT EXISTS (
@@ -238,7 +259,7 @@ func (s *Store) MatchedChainTxs(ctx context.Context, network string) ([]scanTx, 
 		        GREATEST(cs.height - ct.block_height + 1, 0) AS confs
 		 FROM chain_txs ct
 		 JOIN chain_state cs ON cs.network = ct.network
-		 JOIN deposit_addresses da ON da.network = ct.network AND da.address = ct.address
+		 JOIN (SELECT DISTINCT network, address, user_id FROM deposit_addresses) da ON da.network = ct.network AND da.address = ct.address
 		 WHERE ct.network = $1`, network)
 	if err != nil {
 		return nil, err
