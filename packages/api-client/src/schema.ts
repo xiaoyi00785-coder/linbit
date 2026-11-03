@@ -878,7 +878,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 获取资产余额列表 */
+        /**
+         * 获取资产余额列表
+         * @description 列出一个钱包的余额。account=spot（默认）为现货账户，account=funding 为资金账户；
+         *     大小写不敏感，其他值返回 400 VALIDATION_ERROR。合约账户余额请用 /futures 接口。
+         *     默认资产（USDT、USDC、BTC、ETH、SOL、BNB、TRX）即使余额为 0 也会列出。
+         */
         get: operations["getBalances"];
         put?: never;
         post?: never;
@@ -5053,6 +5058,11 @@ export interface components {
         };
         PaginatedBalances: components["schemas"]["Pagination"] & {
             items: components["schemas"]["Balance"][];
+            /**
+             * @description 本次列出的钱包
+             * @enum {string}
+             */
+            account?: "spot" | "funding";
         };
         DepositAddress: {
             /** @example USDT */
@@ -8781,6 +8791,8 @@ export interface operations {
                 page?: components["parameters"]["Page"];
                 /** @description 每页条数 */
                 pageSize?: components["parameters"]["PageSize"];
+                /** @description 钱包：spot（默认）或 funding */
+                account?: "spot" | "funding";
             };
             header?: never;
             path?: never;
@@ -8814,12 +8826,14 @@ export interface operations {
                      *       ],
                      *       "page": 1,
                      *       "pageSize": 20,
-                     *       "total": 2
+                     *       "total": 2,
+                     *       "account": "spot"
                      *     }
                      */
                     "application/json": components["schemas"]["PaginatedBalances"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };

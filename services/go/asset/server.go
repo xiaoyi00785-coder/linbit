@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,6 +96,18 @@ type paginatedBalances struct {
 	Page     int          `json:"page"`
 	PageSize int          `json:"pageSize"`
 	Total    int          `json:"total"`
+	Account  string       `json:"account"` // which wallet was listed: spot | funding
+}
+
+// balancesAccount normalises ?account= (case/space-insensitive; "" = spot).
+func balancesAccount(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", AcctSpot:
+		return AcctSpot, true
+	case AcctFunding:
+		return AcctFunding, true
+	}
+	return "", false
 }
 
 type accountRequest struct {
@@ -127,11 +140,12 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	page := atoiDefault(r.URL.Query().Get("page"), 1, 1, 1<<30)
 	pageSize := atoiDefault(r.URL.Query().Get("pageSize"), 20, 1, 100)
 
-	if acct := r.URL.Query().Get("account"); acct != "" && acct != AcctSpot {
-		if acct != AcctFunding {
-			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 必须为 spot 或 funding")
-			return
-		}
+	acct, ok := balancesAccount(r.URL.Query().Get("account"))
+	if !ok {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 必须为 spot 或 funding")
+		return
+	}
+	if acct == AcctFunding {
 		all, err := s.store.WalletBalances(r.Context(), AcctFunding, userID)
 		if err != nil {
 			log.Printf("balances: funding: %v", err)
@@ -142,7 +156,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 		for i := (page - 1) * pageSize; i < len(all) && i < page*pageSize; i++ {
 			items = append(items, toBalanceDTO(all[i]))
 		}
-		common.WriteJSON(w, http.StatusOK, paginatedBalances{Items: items, Page: page, PageSize: pageSize, Total: len(all)})
+		common.WriteJSON(w, http.StatusOK, paginatedBalances{Items: items, Page: page, PageSize: pageSize, Total: len(all), Account: AcctFunding})
 		return
 	}
 
@@ -166,6 +180,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 		Page:     page,
 		PageSize: pageSize,
 		Total:    total,
+		Account:  AcctSpot,
 	})
 }
 

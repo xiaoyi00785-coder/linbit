@@ -1248,9 +1248,18 @@ paths:
       tags: [Assets]
       summary: 获取资产余额列表
       operationId: getBalances
+      description: |
+        列出一个钱包的余额。account=spot（默认）为现货账户，account=funding 为资金账户；
+        大小写不敏感，其他值返回 400 VALIDATION_ERROR。合约账户余额请用 /futures 接口。
+        默认资产（USDT、USDC、BTC、ETH、SOL、BNB、TRX）即使余额为 0 也会列出。
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - name: account
+          in: query
+          required: false
+          description: 钱包：spot（默认）或 funding
+          schema: { type: string, enum: [spot, funding], default: spot }
       responses:
         "200":
           description: 余额列表
@@ -1272,6 +1281,8 @@ paths:
                 page: 1
                 pageSize: 20
                 total: 2
+                account: spot
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /wallet/deposit/address:
@@ -6301,6 +6312,7 @@ components:
             items:
               type: array
               items: { $ref: "#/components/schemas/Balance" }
+            account: { type: string, enum: [spot, funding], description: 本次列出的钱包 }
 
     DepositAddress:
       type: object

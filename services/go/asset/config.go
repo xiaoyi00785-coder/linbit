@@ -30,5 +30,9 @@ func LoadConfig() Config {
 	}
 }
 
-// defaultAssets are seeded (at zero) when an asset account is initialised.
-var defaultAssets = []string{"USDT", "BTC", "ETH"}
+// defaultAssets are seeded (at zero) when an asset account is initialised and
+// always listed by GET /assets/balances (spot and funding), so every listed
+// asset shows up even before the user holds any. Keep in sync with the
+// convert_assets seed (00005_convert.sql) and the wallet's deposit assets.
+// USDC is only removed from lending (earn); it stays a normal spot asset.
+var defaultAssets = []string{"USDT", "USDC", "BTC", "ETH", "SOL", "BNB", "TRX"}
