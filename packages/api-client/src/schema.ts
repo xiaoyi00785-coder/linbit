@@ -2405,6 +2405,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tradfi/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * TradFi 资产目录（公开；按开关 + active 过滤；只返回已配置合约地址的发行方代币；含参考价与偏离）
+         * @description 参考价 = Binance USDⓈ-M 永续（OKX SWAP 备用），不回退现货。现货偏离参考价超过阈值（默认 200 bps，可在后台按资产配置）时
+         *     做市自动放宽价差（widened=true）并发送 Telegram 告警。
+         *     网关拦截：两个开关都关 → 403 FEATURE_DISABLED；CF-IPCountry 或 KYC 国家在受限列表（默认 US + 美属地区 + OFAC：CU IR KP SY）→ 403 REGION_RESTRICTED。
+         *     同样的拦截作用于 POST /spot/orders、POST /futures/orders（TradFi 标的）、GET /wallet/deposit/address 与 POST /wallet/withdraw（TradFi 资产）；
+         *     撤单与平仓不受影响。
+         */
+        get: operations["listTradFiAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TradFi 资产、发行方代币与全局设置（symbol:view） */
+        get: operations["adminListTradFiAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/assets/{asset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新资产（symbol:edit；totpCode + reason，审计 tradfi_asset） */
+        put: operations["adminUpdateTradFiAsset"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 新增/更新发行方代币（symbol:edit；totpCode + reason，审计 tradfi_token）
+         * @description 开启充值或提现必须先填合约地址，否则 400 ADDRESS_REQUIRED。新开启的代币需重启 wallet 生效；关闭即时生效。
+         */
+        put: operations["adminUpsertTradFiToken"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TradFi 全局设置（symbol:view） */
+        get: operations["adminGetTradFiSettings"];
+        /** 更新受限地区 / 偏离阈值 / 放宽倍数 / 告警冷却（symbol:edit；totpCode + reason，审计 tradfi_settings） */
+        put: operations["adminUpdateTradFiSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/tradfi/deviation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 偏离监控状态（每个 TradFi 现货标的：lastPrice、referencePrice、deviationBps、widened）（symbol:view） */
+        get: operations["adminGetTradFiDeviation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/event/products": {
         parameters: {
             query?: never;
@@ -2716,6 +2829,88 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        TradFiToken: {
+            asset?: string;
+            /** @enum {string} */
+            issuer?: "xstocks" | "ondo" | "paxos" | "tether";
+            network?: string;
+            contractAddress?: string;
+            decimals?: number;
+            depositEnabled?: boolean;
+            withdrawEnabled?: boolean;
+            minWithdraw?: string;
+            withdrawFee?: string;
+        };
+        TradFiAsset: {
+            /** @example AAPL */
+            asset?: string;
+            /** @enum {string} */
+            kind?: "stock" | "metal" | "commodity";
+            name?: string;
+            /** @example Apple Inc. (NASDAQ: AAPL) */
+            underlying?: string;
+            /** @enum {string} */
+            market?: "spot" | "futures";
+            /** @example AAPLUSDT */
+            symbol?: string;
+            /** @description 仅后台返回 */
+            refBinance?: string;
+            /** @description 仅后台返回 */
+            refOkx?: string;
+            /** @description 仅后台返回；null = 全局阈值 */
+            deviationBps?: number | null;
+            /** @enum {string} */
+            status?: "active" | "suspended";
+            sort?: number;
+            tokens?: components["schemas"]["TradFiToken"][];
+            /** @description 仅公开接口 */
+            referencePrice?: string;
+            /** @example binance-tradfi */
+            referenceSource?: string;
+            lastPrice?: string;
+            currentDeviationBps?: string;
+            widened?: boolean;
+        };
+        TradFiSettings: {
+            /**
+             * @example [
+             *       "US",
+             *       "PR",
+             *       "GU",
+             *       "VI",
+             *       "AS",
+             *       "MP",
+             *       "UM",
+             *       "CU",
+             *       "IR",
+             *       "KP",
+             *       "SY"
+             *     ]
+             */
+            restrictedCountries?: string[];
+            /** @example 200 */
+            deviationBps?: number;
+            /**
+             * @description 1–20
+             * @example 3
+             */
+            widenFactor?: string;
+            /** @example 900 */
+            alertCooldownSec?: number;
+        };
+        TradFiDeviation: {
+            symbol?: string;
+            lastPrice?: string;
+            referencePrice?: string;
+            deviationBps?: string;
+            thresholdBps?: number;
+            widened?: boolean;
+            widenFactor?: string;
+        };
+        TradFiBeforeAfter: {
+            before?: Record<string, never> | null;
+            after?: Record<string, never>;
+        };
         EventProducts: {
             enabled?: boolean;
             /** @example USDT */
@@ -7465,6 +7660,228 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listTradFiAssets: {
+        parameters: {
+            query?: {
+                kind?: "stock" | "metal" | "commodity";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["TradFiAsset"][];
+                    };
+                };
+            };
+            /** @description FEATURE_DISABLED | REGION_RESTRICTED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description SERVICE_UNAVAILABLE（风控门禁不可用，fail closed） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminListTradFiAssets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["TradFiAsset"][];
+                        settings?: components["schemas"]["TradFiSettings"];
+                    };
+                };
+            };
+        };
+    };
+    adminUpdateTradFiAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @enum {string} */
+                    status?: "active" | "suspended";
+                    name?: string;
+                    /** @description 单资产偏离阈值（覆盖全局） */
+                    deviationBps?: number;
+                    /** @description true = 恢复使用全局阈值 */
+                    clearDeviationBps?: boolean;
+                    /** @example AAPLUSDT */
+                    refBinance?: string;
+                    /** @example AAPL-USDT-SWAP */
+                    refOkx?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiBeforeAfter"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUpsertTradFiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @example AAPL */
+                    asset: string;
+                    /** @enum {string} */
+                    issuer: "xstocks" | "ondo" | "paxos" | "tether";
+                    /**
+                     * @description 钱包网络名（SOL / ERC20 / TRC20 …）
+                     * @example SOL
+                     */
+                    network: string;
+                    contractAddress?: string;
+                    decimals?: number;
+                    depositEnabled?: boolean;
+                    withdrawEnabled?: boolean;
+                    /** @example 0.05 */
+                    minWithdraw?: string;
+                    /** @example 0.02 */
+                    withdrawFee?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiBeforeAfter"];
+                };
+            };
+            /** @description VALIDATION_ERROR | ADDRESS_REQUIRED | REASON_REQUIRED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminGetTradFiSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiSettings"];
+                };
+            };
+        };
+    };
+    adminUpdateTradFiSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & components["schemas"]["TradFiSettings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradFiBeforeAfter"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminGetTradFiDeviation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["TradFiDeviation"][];
+                    };
+                };
+            };
         };
     };
     listEventProducts: {

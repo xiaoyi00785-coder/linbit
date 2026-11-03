@@ -102,7 +102,7 @@ c="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$GATEWAY_URL/internal/dev/
 
 say "contracts"
 C="$(curl -sS "$GATEWAY_URL/futures/market/contracts")"
-[ "$(jq '.contracts|length' <<<"$C")" = "10" ] || fail "want 10 contracts"
+[ "$(jq '.contracts|length' <<<"$C")" = "12" ] || fail "want 12 contracts"
 [ "$(jq -r '.contracts[]|select(.symbol=="BTCUSDT").maxLeverage' <<<"$C")" = "200" ] || fail "BTC max lev"
 [ "$(jq -r '.contracts[]|select(.symbol=="AVAXUSDT").maxLeverage' <<<"$C")" = "75" ] || fail "AVAX max lev"
 eq "$(jq -r '.contracts[]|select(.symbol=="BTCUSDT").takerFeeRate' <<<"$C")" 0.0005 "taker fee"

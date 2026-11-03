@@ -170,6 +170,9 @@ func NewRealChain(ctx context.Context, mode string, store *Store, reg NetworkReg
 				continue
 			}
 			spec := common.Env(envKey("WALLET_TOKEN", a, name), "")
+			if spec == "" {
+				spec = tradfiTokenSpecs[pairKey(a, name)]
+			}
 			if spec == "" && testnet {
 				spec = d.testnetTokens[a]
 			}

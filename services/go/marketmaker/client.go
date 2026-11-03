@@ -62,18 +62,34 @@ func (m *Maker) internalHdr() map[string]string {
 
 // index reads the external index price; any failure means "unavailable".
 func (m *Maker) index(ctx context.Context, sym string) (decimal.Decimal, string, error) {
+	p, src, _, err := m.indexWiden(ctx, sym)
+	return p, src, err
+}
+
+// indexWiden also returns the spread multiplier market-data reports for
+// TradFi symbols whose spot price deviates from the reference (1 otherwise).
+func (m *Maker) indexWiden(ctx context.Context, sym string) (decimal.Decimal, string, decimal.Decimal, error) {
 	var t struct {
-		IndexPrice string `json:"indexPrice"`
-		Source     string `json:"source"`
+		IndexPrice  string `json:"indexPrice"`
+		Source      string `json:"source"`
+		WidenFactor string `json:"widenFactor"`
 	}
+	one := decimal.NewFromInt(1)
 	if err := call(ctx, "GET", m.cfg.MarketURL+"/market/index?symbol="+url.QueryEscape(sym), nil, nil, &t); err != nil {
-		return decimal.Zero, "", err
+		return decimal.Zero, "", one, err
 	}
 	p, err := decimal.NewFromString(t.IndexPrice)
 	if err != nil || !p.IsPositive() {
-		return decimal.Zero, "", fmt.Errorf("bad index for %s", sym)
+		return decimal.Zero, "", one, fmt.Errorf("bad index for %s", sym)
 	}
-	return p, t.Source, nil
+	w, err := decimal.NewFromString(t.WidenFactor)
+	if err != nil || w.LessThan(one) {
+		w = one
+	}
+	if w.GreaterThan(decimal.NewFromInt(20)) {
+		w = decimal.NewFromInt(20)
+	}
+	return p, t.Source, w, nil
 }
 
 // Market rules for one tradable pair.

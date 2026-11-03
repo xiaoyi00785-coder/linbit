@@ -212,7 +212,7 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       DATA_DIR: /data
       SNAPSHOT_EVERY: "1000"
-      SYMBOLS: "BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1"
+      SYMBOLS: "BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1,AAPLUSDT:4,TSLAUSDT:4,NVDAUSDT:4,MSFTUSDT:4,GOOGLUSDT:4,AMZNUSDT:4,METAUSDT:4,COINUSDT:4,SPYUSDT:4,PAXGUSDT:5,XAUTUSDT:5"
       # Stream trade/depth events to market-data (local pub/sub stand-in).
       EVENT_SINK_URL: http://market-data:8085/internal/events
     volumes:
@@ -258,6 +258,10 @@ services:
       INDEX_STALE_SECONDS: ${INDEX_STALE_SECONDS:-10}
       BINANCE_API_URL: ${BINANCE_API_URL:-https://data-api.binance.vision}
       OKX_API_URL: ${OKX_API_URL:-https://www.okx.com}
+      # TradFi reference (tokenized stocks / metals): Binance USDⓈ-M perps, OKX SWAP backup.
+      BINANCE_FAPI_URL: ${BINANCE_FAPI_URL:-https://fapi.binance.com}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -483,6 +487,7 @@ services:
       MARKET_URL: http://market-data:8085
       WALLET_URL: http://wallet:8086
       KYC_URL: http://kyc:8087
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       FUTURES_URL: http://futures:8089
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091

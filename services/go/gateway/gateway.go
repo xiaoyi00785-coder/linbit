@@ -30,6 +30,7 @@ type Gateway struct {
 	cfg    Config
 	routes []route
 	public []publicRoute
+	tradfi *tradfiGuard
 }
 
 // NewGateway builds a Gateway. It returns an error if an upstream URL is bad.
@@ -87,7 +88,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	earnProxy := httputil.NewSingleHostReverseProxy(earn)
 
 	return &Gateway{
-		cfg: cfg,
+		cfg:    cfg,
+		tradfi: newTradFiGuard(cfg),
 		// Order matters: longest/most-specific prefixes first.
 		routes: []route{
 			{prefix: "/auth", proxy: accountProxy},
@@ -120,6 +122,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/app/features", proxy: marketProxy},  // app feature switches (market-data)
 			{prefix: "/home", proxy: marketProxy},          // home placements/banners + hot list (market-data)
 			{prefix: "/chat", proxy: marketProxy},          // trading chat rooms (market-data)
+			{prefix: "/tradfi", proxy: marketProxy},        // tokenized stocks / metals catalogue (market-data)
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -151,11 +154,12 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
 			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
-			{method: http.MethodGet, path: "/home/hot"},       // home hot list (read-only)
-			{method: "", path: "/ws", optionalAuth: true},     // market WebSocket; a token unlocks private channels (event:orders)
-			{method: http.MethodGet, path: "/event/products"}, // event contract products (public)
-			{method: http.MethodGet, path: "/chat/rooms"},     // chat: anyone can read
-			{method: http.MethodGet, path: "/chat/rooms/"},    // chat history (prefix); posting needs auth
+			{method: http.MethodGet, path: "/home/hot"},                          // home hot list (read-only)
+			{method: "", path: "/ws", optionalAuth: true},                        // market WebSocket; a token unlocks private channels (event:orders)
+			{method: http.MethodGet, path: "/event/products"},                    // event contract products (public)
+			{method: http.MethodGet, path: "/chat/rooms"},                        // chat: anyone can read
+			{method: http.MethodGet, path: "/chat/rooms/"},                       // chat history (prefix); posting needs auth
+			{method: http.MethodGet, path: "/tradfi/assets", optionalAuth: true}, // TradFi catalogue (flag + region gated)
 		},
 	}, nil
 }
@@ -219,6 +223,9 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 	proxy := g.match(r.URL.Path)
 	if proxy == nil {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
+		return
+	}
+	if g.tradfi != nil && !g.tradfi.check(w, r) {
 		return
 	}
 	proxy.ServeHTTP(w, r)

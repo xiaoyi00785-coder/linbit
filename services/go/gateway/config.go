@@ -17,6 +17,8 @@ type Config struct {
 	GrowthURL   string
 	EarnURL     string
 	RedisURL    string
+	// InternalToken authenticates gateway -> market-data/kyc internal lookups (TradFi gate).
+	InternalToken string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string
 }
@@ -37,6 +39,7 @@ func LoadConfig() Config {
 		GrowthURL:      common.Env("GROWTH_URL", "http://localhost:8091"),
 		EarnURL:        common.Env("EARN_URL", "http://localhost:8092"),
 		RedisURL:       common.Env("REDIS_URL", ""),
+		InternalToken:  common.Env("INTERNAL_TOKEN", ""),
 		AllowedOrigins: splitOrigins(common.Env("CORS_ALLOWED_ORIGINS", "")),
 	}
 }

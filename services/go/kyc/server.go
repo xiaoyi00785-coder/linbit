@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -69,6 +70,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /admin/kyc/applications/{id}/reject", s.internal(s.handleAdminReject))
 	mux.HandleFunc("GET /admin/kyc/documents/{id}", s.internal(s.handleAdminDocument))
 	mux.HandleFunc("GET /admin/kyc/level-sync", s.internal(s.handleAdminLevelSync))
+	mux.HandleFunc("GET /internal/kyc/country", s.internal(s.handleInternalCountry))
 	return mux
 }
 
@@ -108,4 +110,26 @@ func strptr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// handleInternalCountry: GET /internal/kyc/country?userId= -> {userId, country, status}.
+// Uses the latest application whatever its status (a declared country is a
+// compliance signal even before approval). country "" = never submitted.
+func (s *Server) handleInternalCountry(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.URL.Query().Get("userId"))
+	if uid == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "userId 必填")
+		return
+	}
+	a, err := s.store.LatestApplication(r.Context(), uid)
+	if errors.Is(err, ErrNotFound) {
+		common.WriteJSON(w, http.StatusOK, map[string]string{"userId": uid, "country": "", "status": "none"})
+		return
+	}
+	if err != nil {
+		log.Printf("kyc country: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]string{"userId": uid, "country": strings.ToUpper(strings.TrimSpace(a.Country)), "status": a.Status})
 }

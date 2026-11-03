@@ -59,6 +59,9 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 	if !ok {
 		return nil, errf(http.StatusBadRequest, "UNSUPPORTED_NETWORK", "不支持的提现网络")
 	}
+	if !s.tradfiAllowed(ctx, in.Asset, in.Network, true) {
+		return nil, errTradFiDisabled
+	}
 	if in.Amount.Sign() <= 0 {
 		return nil, errf(http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
 	}

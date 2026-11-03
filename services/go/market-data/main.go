@@ -85,6 +85,8 @@ func main() {
 	log.Printf("index feed sources: %v (stale after %s)", cfg.IndexFeed, cfg.IndexStale)
 	srv := NewServer(cfg, store, agg, hub, ingest)
 	srv.feed = feed
+	srv.tradfi = NewTradFi(db, feed, agg.LastPrice)
+	srv.tradfi.Start(ctx)
 
 	addr := ":" + cfg.Port
 	log.Printf("market-data service listening on %s (engine=%s)", addr, cfg.EngineURL)
