@@ -80,3 +80,43 @@ func TestStepAndBucket(t *testing.T) {
 		t.Fatalf("next funding %s", got)
 	}
 }
+
+func TestTiersContinuous(t *testing.T) {
+	c := Contract{MMR: d("0.004"), MaxLeverage: 200, Tiers: []Tier{
+		{1, d("50000"), d("0.004"), d("0"), 200}, {2, d("500000"), d("0.005"), d("50"), 100}, {3, d("2000000"), d("0.01"), d("2550"), 50}}}
+	for _, n := range []string{"50000", "500000"} {
+		lo := c.maintMargin(d(n))
+		hi := c.maintMargin(d(n).Add(d("0.00000001")))
+		if hi.Sub(lo).Abs().GreaterThan(d("0.0001")) {
+			t.Fatalf("discontinuous at %s: %s vs %s", n, lo, hi)
+		}
+	}
+	if got := c.maintMargin(d("100000")); !got.Equal(d("450")) {
+		t.Fatalf("mm=%s", got)
+	}
+	if got := c.maxNotional(150); !got.Equal(d("50000")) {
+		t.Fatalf("maxN(150)=%s", got)
+	}
+	if got := c.maxNotional(50); !got.Equal(d("2000000")) {
+		t.Fatalf("maxN(50)=%s", got)
+	}
+}
+
+func TestADL(t *testing.T) {
+	// long 1 @52000 bankrupt at mark 45000, uncovered 5956.6 -> closes at 50956.6
+	if got := bankruptPrice(d("1"), d("45000"), d("5956.6")); !got.Equal(d("50956.6")) {
+		t.Fatalf("px=%s", got)
+	}
+	if got := bankruptPrice(d("-2"), d("100"), d("10")); !got.Equal(d("95")) {
+		t.Fatalf("px=%s", got)
+	}
+	a := adlScore(d("-1"), d("52000"), d("45000"), 20) // ROE 2.69 * 20
+	b := adlScore(d("-1"), d("50000"), d("45000"), 20)
+	l := adlScore(d("1"), d("40000"), d("45000"), 100) // losing short side n/a: long in profit
+	if !a.GreaterThan(b) || !l.GreaterThan(a) {
+		t.Fatalf("scores %s %s %s", a, b, l)
+	}
+	if s := adlScore(d("1"), d("50000"), d("45000"), 10); s.Sign() >= 0 {
+		t.Fatalf("losing score %s", s)
+	}
+}

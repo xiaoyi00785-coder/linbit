@@ -113,6 +113,7 @@ func (s *Server) hAccount(w http.ResponseWriter, r *http.Request, uid string) {
 		writeErr(w, err)
 		return
 	}
+	s.adlRanks(r.Context(), st.Positions)
 	common.WriteJSON(w, http.StatusOK, map[string]any{
 		"asset": "USDT", "walletBalance": money(st.Balance), "orderMargin": money(st.Frozen),
 		"crossPositionMargin": money(st.CrossIM), "crossMaintenanceMargin": money(st.CrossMM),
@@ -128,6 +129,7 @@ func (s *Server) hPositions(w http.ResponseWriter, r *http.Request, uid string) 
 		writeErr(w, err)
 		return
 	}
+	s.adlRanks(r.Context(), st.Positions)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"positions": st.Positions})
 }
 

@@ -36,7 +36,7 @@ Gateway: `/futures/market/*` is public. The rest of `/futures/*` needs a Bearer 
 
 - **Cross:**
   - available = balance − order margin − Σ IM + min(0, Σ uPnL)
-  - Liquidation happens when balance + Σ uPnL ≤ Σ MM, where MM = |qty| × mark × MMR.
+  - Liquidation happens when balance + Σ uPnL ≤ Σ MM (tiered MM, see below).
 - **Isolated:**
   - Liquidation happens when isolated margin + uPnL ≤ MM.
   - Adding margin is always allowed. Removing it must leave margin + min(0, uPnL) ≥ IM at the mark price.
@@ -44,7 +44,20 @@ Gateway: `/futures/market/*` is public. The rest of `/futures/*` needs a Bearer 
   - The position is taken over by `system:insurance` at the mark price.
   - The liquidation fee is min(remaining equity, value × liquidation fee rate) and goes to the insurance fund.
   - Any loss beyond the remaining equity is covered by the insurance fund. If the fund goes negative, the service logs an ALERT.
-  - ADL and position tiers are not implemented yet.
+- **Tiered maintenance margin** (`fut_risk_tiers`, migration 00002; returned as `riskTiers` on each contract):
+  - MM = notional × mmr(tier) − maintenanceAmount(tier), where the tier is picked by the position's notional at mark. maintenanceAmount keeps MM continuous across tiers.
+  - Each tier has a max leverage. An order (non reduce-only) is rejected with `POSITION_LIMIT` when |position + same-side open orders + order| × price exceeds the largest notional allowed at the current leverage. Raising leverage on an open position is rejected the same way.
+  - Liquidation prices use the tier at the current notional.
+  - Seeded brackets (USDT notional / MMR / max leverage):
+    - 200x contracts (BTC, ETH): ≤50k 0.4% 200x; ≤500k 0.5% 100x; ≤2M 1% 50x; ≤10M 2.5% 20x; ≤50M 5% 10x; ≤200M 10% 5x.
+    - 100x contracts (BNB, SOL, XRP, DOGE): ≤20k 0.4% 100x; ≤200k 1% 50x; ≤1M 2.5% 20x; ≤5M 5% 10x; ≤20M 10% 5x.
+    - 75x contracts (ARB, TON, LINK, AVAX): ≤10k 0.4% 75x; ≤100k 1% 50x; ≤500k 2.5% 20x; ≤2M 5% 10x; ≤10M 10% 5x.
+- **ADL (auto-deleveraging)**, `FUTURES_ADL_ENABLED=true`:
+  - Triggered when a liquidated position is bankrupt (equity < 0 at mark) and the deficit is larger than the insurance fund balance.
+  - The uncovered part is pushed into the close price: the position is closed at the bankruptcy price (mark shifted by uncovered / |qty|; for cross, the deficit is split across positions by notional) against opposing user positions, in order of score = ROE × leverage (in profit) or ROE ÷ leverage (in loss).
+  - Counterparties get a filled reduce-only order with `source="adl"` (no fee); remaining reduce-only orders are cancelled if their position is gone. Rows go to `fut_adl`; `recentAdl` is shown on `/futures/market/insurance-fund`.
+  - Any quantity with no opposing user position falls back to the insurance fund.
+  - Positions carry `adlRank` 1–5 (5 = first in the queue).
 - **TP/SL:**
   - You can attach TP/SL to an order, or set it on a position.
   - When the mark price crosses the trigger, a reduce-only market close is sent. If there is no liquidity, it retries every `FUTURES_TPSL_RETRY_SECONDS`.
@@ -108,6 +121,7 @@ These need `DEV_MODE=true` and the `X-Internal-Token` header.
 | FUTURES_FUNDING_INTEREST | 0.0001 | Interest rate per period |
 | FUTURES_FUNDING_CLAMP | 0.0005 | Clamp |
 | FUTURES_FUNDING_CAP | 0.0075 | Rate cap per period |
+| FUTURES_ADL_ENABLED | true | Auto-deleveraging when the insurance fund cannot cover a bankruptcy |
 | FUTURES_LIQUIDATION_FEE_RATE | (empty = contract MMR) | Liquidation fee rate |
 | FUTURES_MIN_TRANSFER | 0.01 | Minimum transfer |
 | FUTURES_TPSL_RETRY_SECONDS | 5 | TP/SL retry interval when there is no liquidity |

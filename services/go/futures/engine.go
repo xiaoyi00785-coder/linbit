@@ -101,6 +101,7 @@ type PosView struct {
 	Liq         string  `json:"liquidationPrice"`
 	TP          *string `json:"tpPrice"`
 	SL          *string `json:"slPrice"`
+	ADLRank     int     `json:"adlRank"`
 	pos         Position
 	mark, upnl  decimal.Decimal
 	im, mm      decimal.Decimal
@@ -148,7 +149,7 @@ func (s *Server) state(ctx context.Context, q queryer, uid string) (AcctState, e
 		v.mark = m
 		v.upnl = upnl(p.Qty, p.Entry, m)
 		lev := decimal.NewFromInt(int64(max(p.Leverage, 1)))
-		v.mm = p.Qty.Abs().Mul(m).Mul(c.MMR)
+		v.mm = c.maintMargin(p.Qty.Abs().Mul(m))
 		if p.Mode == "isolated" {
 			v.im = p.Iso
 			st.IsoMargin = st.IsoMargin.Add(p.Iso)
@@ -189,7 +190,8 @@ func (s *Server) state(ctx context.Context, q queryer, uid string) (AcctState, e
 		v.Realized = money(p.Realized).String()
 		v.Margin = money(v.im).String()
 		v.MM = money(v.mm).String()
-		v.Liq = liqPrice(p.Qty, p.Entry, M, c.MMR).Round(8).String()
+		t := c.tierFor(p.Qty.Abs().Mul(v.mark))
+		v.Liq = liqPrice(p.Qty, p.Entry, M.Add(t.MaintAmount), t.MMR).Round(8).String()
 		v.TP, v.SL = nullStr(p.TP), nullStr(p.SL)
 	}
 	if st.Positions == nil {
@@ -392,6 +394,20 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 			return err
 		}
 		reserve := dZero
+		if !r.ReduceOnly {
+			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, false)
+			if err != nil {
+				return err
+			}
+			var pend decimal.Decimal
+			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(qty-filled),0) FROM fut_orders WHERE user_id=$1 AND symbol=$2 AND side=$3 AND NOT reduce_only AND status IN ('new','partially_filled')`, uid, c.Symbol, r.Side).Scan(&pend); err != nil {
+				return err
+			}
+			proj := p.Qty.Add(signed(r.Side, qty.Add(pend))).Abs().Mul(ref)
+			if lim := c.maxNotional(lev); proj.GreaterThan(lim) {
+				return bad("POSITION_LIMIT", fmt.Sprintf("超过 %dx 杠杆可持有的最大仓位价值 %s USDT，请降低杠杆或数量", lev, lim))
+			}
+		}
 		if r.ReduceOnly {
 			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, false)
 			if err != nil {
@@ -637,6 +653,11 @@ func (s *Server) SetLeverage(ctx context.Context, uid, sym string, lev int, mode
 		}
 		if (lev != curLev || mode != curMode) && openOrders > 0 {
 			return bad("HAS_OPEN_ORDERS", "请先撤销该合约的挂单")
+		}
+		if !p.Qty.IsZero() && lev != curLev {
+			if m, ok := s.mark(c.Symbol); ok && p.Qty.Abs().Mul(m).GreaterThan(c.maxNotional(lev)) {
+				return bad("POSITION_LIMIT", fmt.Sprintf("当前仓位价值超过 %dx 杠杆的上限 %s USDT", lev, c.maxNotional(lev)))
+			}
 		}
 		if mode != curMode && !p.Qty.IsZero() {
 			return bad("HAS_POSITION", "持仓期间不能切换保证金模式")

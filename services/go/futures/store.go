@@ -70,6 +70,7 @@ type Contract struct {
 	Type        string          `json:"contractType"`
 	Margin      string          `json:"marginAsset"`
 	FundingH    int             `json:"fundingIntervalHours"`
+	Tiers       []Tier          `json:"riskTiers"`
 }
 
 func loadContracts(ctx context.Context, db queryer) ([]Contract, error) {
@@ -87,7 +88,17 @@ func loadContracts(ctx context.Context, db queryer) ([]Contract, error) {
 		c.Type, c.Margin = "perpetual", "USDT"
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		t, err := loadTiers(ctx, db, out[i].Symbol)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Tiers = t
+	}
+	return out, nil
 }
 
 // ---- accounts / bills ----

@@ -31,6 +31,7 @@ type Config struct {
 	FundingClamp    decimal.Decimal // FUTURES_FUNDING_CLAMP (0.0005)
 	FundingCap      decimal.Decimal // FUTURES_FUNDING_CAP (0.0075): |rate| ceiling
 
+	ADLEnabled    bool            // FUTURES_ADL_ENABLED (true): auto-deleverage when the insurance fund cannot cover a bankruptcy
 	LiqFeeRate    decimal.Decimal // FUTURES_LIQUIDATION_FEE_RATE ("" = contract MMR): to the insurance fund
 	MinTransfer   decimal.Decimal // FUTURES_MIN_TRANSFER (0.01 USDT)
 	TPSLRetry     time.Duration   // FUTURES_TPSL_RETRY_SECONDS (5): retry a TP/SL that found no liquidity
@@ -72,6 +73,7 @@ func LoadConfig() Config {
 		MinTransfer:       decEnv("FUTURES_MIN_TRANSFER", "0.01"),
 		TPSLRetry:         time.Duration(common.EnvInt("FUTURES_TPSL_RETRY_SECONDS", 5)) * time.Second,
 		TransferRetry:     time.Duration(common.EnvInt("FUTURES_TRANSFER_RETRY_SECONDS", 5)) * time.Second,
+		ADLEnabled:        strings.ToLower(common.Env("FUTURES_ADL_ENABLED", "true")) != "false",
 	}
 	if v := strings.TrimSpace(common.Env("FUTURES_LIQUIDATION_FEE_RATE", "")); v != "" {
 		if d, err := decimal.NewFromString(v); err == nil && d.Sign() >= 0 {

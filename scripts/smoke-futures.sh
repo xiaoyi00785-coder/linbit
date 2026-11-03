@@ -3,7 +3,8 @@
 # End-to-end smoke for USDT-margined perpetual futures (services/go/futures):
 #   spot -> futures transfer, leverage / margin mode, limit + market fills with
 #   0.05% fees on both sides, isolated margin adjust, TP trigger, funding,
-#   isolated liquidation with insurance shortfall, cross liquidation fee,
+#   isolated liquidation with ADL (fund empty), cross liquidation fee,
+#   insurance-covered shortfall, tiered margin / position limits,
 #   market data, conservation audit, futures -> spot transfer, gateway access.
 #
 #   bash scripts/smoke-futures.sh                       # boots devstack
@@ -106,16 +107,18 @@ C="$(curl -sS "$GATEWAY_URL/futures/market/contracts")"
 [ "$(jq -r '.contracts[]|select(.symbol=="AVAXUSDT").maxLeverage' <<<"$C")" = "75" ] || fail "AVAX max lev"
 eq "$(jq -r '.contracts[]|select(.symbol=="BTCUSDT").takerFeeRate' <<<"$C")" 0.0005 "taker fee"
 eq "$(jq -r '.contracts[]|select(.symbol=="BTCUSDT").makerFeeRate' <<<"$C")" 0.0005 "maker fee"
+[ "$(jq '.contracts[]|select(.symbol=="BTCUSDT").riskTiers|length' <<<"$C")" = "6" ] || fail "BTC risk tiers"
+eq "$(jq -r '.contracts[]|select(.symbol=="BTCUSDT").riskTiers[1].maintenanceAmount' <<<"$C")" 50 "tier2 maint amount"
 [ "$(jq -r '.defaults.leverage' <<<"$C")" = "20" ] && [ "$(jq -r '.defaults.marginMode' <<<"$C")" = "cross" ] || fail "defaults $C"
 
 say "users + transfer in"
 declare -A TOK UID_
-for u in A B C D E F G H I; do
+for u in A B C D E F G H I K; do
   read -r t s < <(register "fut-${u,,}-$TS@example.com")
   TOK[$u]="$t"; UID_[$u]="$s"
   credit "$s" 100000
 done
-for u in A B C D E F G I; do
+for u in A B C D E F G I K; do
   r="$(ok "$(api "${TOK[$u]}" POST /futures/transfer '{"direction":"in","amount":"20000"}')" "transfer $u")"
   [ "$(jq -r .status <<<"$r")" = "done" ] || fail "transfer $u: $r"
 done
@@ -150,6 +153,17 @@ PA="$(pos "${TOK[A]}")"
 eq "$(jq -r .margin <<<"$PA")" 2500 "A cross IM"
 r="$(api "${TOK[A]}" POST /futures/leverage '{"symbol":"BTCUSDT","leverage":10,"marginMode":"isolated"}')"
 [ "$(errcode "$r")" = "HAS_POSITION" ] || fail "mode switch with position: $r"
+
+say "tiered limits: 200x caps notional at 50000"
+lev "${TOK[I]}" 200 cross
+r="$(api "${TOK[I]}" POST /futures/orders '{"symbol":"BTCUSDT","side":"buy","type":"limit","price":"40000","qty":"2"}')"
+[ "$(errcode "$r")" = "POSITION_LIMIT" ] || fail "200x 80000 notional accepted: $r"
+lev "${TOK[I]}" 20 cross
+ok "$(api "${TOK[I]}" POST /futures/orders '{"symbol":"BTCUSDT","side":"buy","type":"limit","price":"40000","qty":"2"}')" "20x 2 BTC" | jq -r .order.orderId > /tmp/fut-i-oid.$$
+ok "$(api "${TOK[I]}" DELETE "/futures/orders/$(cat /tmp/fut-i-oid.$$)")" cancel >/dev/null; rm -f /tmp/fut-i-oid.$$
+r="$(api "${TOK[A]}" POST /futures/leverage '{"symbol":"BTCUSDT","leverage":200,"marginMode":"cross"}')"
+[ "$(code "$r")" = "200" ] || fail "A 200x with 50000 notional: $r"
+lev "${TOK[A]}" 20 cross
 
 say "resting order freezes and cancel releases"
 R="$(order "${TOK[A]}" '{"symbol":"BTCUSDT","side":"sell","type":"limit","price":"60000","qty":"0.1","reduceOnly":false}')"
@@ -192,18 +206,26 @@ eq "$(ok "$(api "${TOK[E]}" GET '/futures/bills?kind=funding')" b | jq -r '.bill
 eq "$(ok "$(api "${TOK[A]}" GET '/futures/bills?kind=funding')" b | jq -r '.bills[0].amount')" 5.2 "A short receives"
 [ "$(curl -sS "$GATEWAY_URL/futures/market/funding-history?symbol=BTCUSDT" | jq '.items // .history // . | length')" != "0" ] || fail "funding history empty"
 
-say "isolated liquidation with shortfall: F long 1 @52000 50x, gap to 45000"
+say "ADL: F long 1 @52000 50x iso, gap to 45000 with an empty insurance fund"
 lev "${TOK[F]}" 50 isolated
 order "${TOK[G]}" '{"symbol":"BTCUSDT","side":"sell","type":"limit","price":"52000","qty":"1"}' >/dev/null
 order "${TOK[F]}" '{"symbol":"BTCUSDT","side":"buy","type":"market","qty":"1"}' >/dev/null
 eq "$(pos "${TOK[F]}" | jq -r .margin)" 1040 "F iso margin"
 FB="$(bal "${TOK[F]}")"; eq "$FB" 18934 "F balance (20000-1040-26)"
+eq "$(pos "${TOK[G]}" | jq -r .adlRank)" 5 "G (best short score) first in ADL queue"
+eq "$(curl -sS "$GATEWAY_URL/futures/market/insurance-fund" | jq -r .balance)" 0 "insurance empty"
 dev POST /internal/dev/index '{"symbol":"BTCUSDT","price":"45000"}' >/dev/null
 [ -z "$(pos "${TOK[F]}")" ] || fail "F not liquidated"
 eq "$(bal "${TOK[F]}")" 18934 "F loss capped at isolated margin"
+[ -z "$(pos "${TOK[G]}")" ] || fail "G not deleveraged: $(pos "${TOK[G]}")"
+# G closed at F's bankruptcy price 52000-1040 = 50960: 20000 - 26 + 1040
+eq "$(bal "${TOK[G]}")" 21014 "G ADL pnl at bankruptcy price"
+ok "$(api "${TOK[G]}" GET /futures/orders)" o | jq -e '.orders[] | select(.source=="adl" and .status=="filled")' >/dev/null || fail "no adl order for G"
 INS="$(curl -sS "$GATEWAY_URL/futures/market/insurance-fund")"
-lt 0 "$(jq -r '.recentLiquidations[0].shortfall' <<<"$INS")" "shortfall recorded"
-lt "$(jq -r .balance <<<"$INS")" 0 "insurance absorbed shortfall"
+eq "$(jq -r '.recentLiquidations[0].shortfall' <<<"$INS")" 0 "no shortfall left after ADL"
+eq "$(jq -r .balance <<<"$INS")" 0 "insurance untouched"
+eq "$(jq -r '.recentAdl[0].price' <<<"$INS")" 50960 "ADL price"
+[ -n "$(pos "${TOK[A]}")" ] || fail "A should not be deleveraged"
 
 say "cross liquidation fee: H short 1 @45000 100x with 600 USDT"
 lev "${TOK[H]}" 100 cross
@@ -216,8 +238,21 @@ eq "$(bal "${TOK[H]}")" 0 "H cross equity taken"
 INS="$(curl -sS "$GATEWAY_URL/futures/market/insurance-fund")"
 eq "$(jq -r '.recentLiquidations[0].fee' <<<"$INS")" 77.5 "liquidation fee = remaining equity"
 eq "$(jq -r '.recentLiquidations[0].shortfall' <<<"$INS")" 0 "no shortfall"
-# insurance balance delta also includes PnL on the taken-over F long, so only
-# the fee row is asserted here; the audit below checks conservation overall.
+eq "$(jq -r .balance <<<"$INS")" 77.5 "insurance = H fee"
+
+say "insurance covers a small shortfall: K long 0.1 @45500 100x iso, gap to 44500"
+lev "${TOK[K]}" 100 isolated
+order "${TOK[I]}" '{"symbol":"BTCUSDT","side":"sell","type":"limit","price":"45500","qty":"0.1"}' >/dev/null
+order "${TOK[K]}" '{"symbol":"BTCUSDT","side":"buy","type":"market","qty":"0.1"}' >/dev/null
+eq "$(pos "${TOK[K]}" | jq -r .margin)" 45.5 "K iso margin"
+KB="$(bal "${TOK[K]}")"
+dev POST /internal/dev/index '{"symbol":"BTCUSDT","price":"44500"}' >/dev/null
+[ -z "$(pos "${TOK[K]}")" ] || fail "K not liquidated"
+eq "$(bal "${TOK[K]}")" "$KB" "K loss capped"
+INS="$(curl -sS "$GATEWAY_URL/futures/market/insurance-fund")"
+lt 0 "$(jq -r '.recentLiquidations[0].shortfall' <<<"$INS")" "K shortfall"
+lt 0 "$(jq -r .balance <<<"$INS")" "insurance covered K (no ADL, balance still positive)"
+[ "$(jq '.recentAdl|length' <<<"$INS")" = "1" ] || fail "unexpected ADL: $INS"
 
 say "market data"
 T="$(curl -sS "$GATEWAY_URL/futures/market/ticker?symbol=BTCUSDT")"

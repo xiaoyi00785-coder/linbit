@@ -93,24 +93,35 @@ func (s *Server) checkUser(ctx context.Context, uid string) error {
 	return nil
 }
 
-// takeover closes uid's position at mark and hands it to the insurance fund.
-func (s *Server) takeover(ctx context.Context, tx *sql.Tx, uid string, c Contract, mark decimal.Decimal) (Position, error) {
+// takeover closes uid's position at px. When px differs from mark (a bankrupt
+// position the fund cannot cover) it is first auto-deleveraged against opposing
+// positions; whatever is left is handed to the insurance fund.
+func (s *Server) takeover(ctx context.Context, tx *sql.Tx, uid string, c Contract, mark, px decimal.Decimal) (Position, error) {
 	p, _, err := loadPosition(ctx, tx, uid, c.Symbol, true)
 	if err != nil || p.Qty.IsZero() {
 		return p, err
 	}
-	if _, _, err := s.fill(ctx, tx, c, uid, p.Qty.Neg(), mark, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
-		return p, err
+	rem := p.Qty.Abs()
+	if !px.Equal(mark) {
+		if rem, err = s.deleverage(ctx, tx, uid, c, p, px, mark); err != nil {
+			return p, err
+		}
 	}
-	if _, _, err := s.fill(ctx, tx, c, insuranceUser, p.Qty, mark, dZero, 1, "cross", decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
-		return p, err
+	if rem.Sign() > 0 {
+		d := rem.Mul(decimal.NewFromInt(int64(p.Qty.Sign())))
+		if _, _, err := s.fill(ctx, tx, c, uid, d.Neg(), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+			return p, err
+		}
+		if _, _, err := s.fill(ctx, tx, c, insuranceUser, d, px, dZero, 1, "cross", decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+			return p, err
+		}
 	}
 	side := "sell"
 	if p.Qty.Sign() < 0 {
 		side = "buy"
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, price, qty, filled, filled_quote, status, reduce_only, leverage, margin_mode, source)
-		VALUES ($1,$2,$3,'market',$4,$5,$5,$6,'filled',true,$7,$8,'liquidation')`, uid, c.Symbol, side, mark, p.Qty.Abs(), p.Qty.Abs().Mul(mark), p.Leverage, p.Mode)
+		VALUES ($1,$2,$3,'market',$4,$5,$5,$6,'filled',true,$7,$8,'liquidation')`, uid, c.Symbol, side, px, p.Qty.Abs(), p.Qty.Abs().Mul(px), p.Leverage, p.Mode)
 	return p, err
 }
 
@@ -123,7 +134,13 @@ func (s *Server) liquidateIsolated(ctx context.Context, tx *sql.Tx, uid, sym str
 	if err := cancelUserOrders(ctx, tx, uid, sym, "liquidation"); err != nil {
 		return err
 	}
-	p, err := s.takeover(ctx, tx, uid, c, mark)
+	px := mark
+	if p0, _, err := loadPosition(ctx, tx, uid, sym, true); err != nil {
+		return err
+	} else if eq := p0.Iso.Add(upnl(p0.Qty, p0.Entry, mark)); s.cfg.ADLEnabled && eq.Sign() < 0 {
+		px = bankruptPrice(p0.Qty, mark, eq.Neg().Sub(insuranceAvailable(ctx, tx)))
+	}
+	p, err := s.takeover(ctx, tx, uid, c, mark, px)
 	if err != nil || p.Qty.IsZero() {
 		return err
 	}
@@ -156,6 +173,28 @@ func (s *Server) liquidateCross(ctx context.Context, tx *sql.Tx, uid string) err
 		p    Position
 		mark decimal.Decimal
 	}
+	bal0, _, err := readAccount(ctx, tx, uid)
+	if err != nil {
+		return err
+	}
+	marks := map[string]decimal.Decimal{}
+	eq, totN := bal0, dZero
+	for _, p := range ps {
+		if p.Mode != "cross" {
+			continue
+		}
+		m, ok := s.mark(p.Symbol)
+		if !ok {
+			return errMarkUnavail
+		}
+		marks[p.Symbol] = m
+		eq = eq.Add(upnl(p.Qty, p.Entry, m))
+		totN = totN.Add(p.Qty.Abs().Mul(m))
+	}
+	unc := dZero
+	if s.cfg.ADLEnabled && eq.Sign() < 0 && totN.Sign() > 0 {
+		unc = eq.Neg().Sub(insuranceAvailable(ctx, tx))
+	}
 	var closed []done
 	notional := dZero
 	for _, p := range ps {
@@ -163,11 +202,12 @@ func (s *Server) liquidateCross(ctx context.Context, tx *sql.Tx, uid string) err
 			continue
 		}
 		c := s.contracts[p.Symbol]
-		m, ok := s.mark(p.Symbol)
-		if !ok {
-			return errMarkUnavail
+		m := marks[p.Symbol]
+		px := m
+		if unc.Sign() > 0 {
+			px = bankruptPrice(p.Qty, m, unc.Mul(p.Qty.Abs().Mul(m)).Div(totN))
 		}
-		if _, err := s.takeover(ctx, tx, uid, c, m); err != nil {
+		if _, err := s.takeover(ctx, tx, uid, c, m, px); err != nil {
 			return err
 		}
 		closed = append(closed, done{p, m})

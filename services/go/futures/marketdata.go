@@ -218,5 +218,17 @@ func (s *Server) hInsurance(w http.ResponseWriter, r *http.Request) {
 			liqs = append(liqs, map[string]any{"symbol": sym, "marginMode": mode, "qty": q, "markPrice": m, "fee": f, "shortfall": sf, "time": at.UnixMilli()})
 		}
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"asset": "USDT", "balance": money(bal), "equity": money(st.Equity), "positions": st.Positions, "recentLiquidations": liqs})
+	adl := []map[string]any{}
+	if ar, err := s.db.QueryContext(r.Context(), `SELECT symbol, qty, price, created_at FROM fut_adl ORDER BY id DESC LIMIT 50`); err == nil {
+		for ar.Next() {
+			var sym string
+			var q, px decimal.Decimal
+			var at time.Time
+			if ar.Scan(&sym, &q, &px, &at) == nil {
+				adl = append(adl, map[string]any{"symbol": sym, "qty": q, "price": px, "time": at.UnixMilli()})
+			}
+		}
+		ar.Close()
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"asset": "USDT", "balance": money(bal), "equity": money(st.Equity), "positions": st.Positions, "recentLiquidations": liqs, "recentAdl": adl})
 }
