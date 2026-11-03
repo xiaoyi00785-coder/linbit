@@ -123,6 +123,10 @@ func (s *Server) Routes() http.Handler {
 	a("POST /admin/v1/notifications/broadcast", permContentEdit, s.handleNotifyBroadcast)
 	a("POST /admin/v1/users/{uid}/notifications", permContentEdit, s.handleNotifyUser)
 
+	a("GET /admin/v1/vip/applications", permVIPView, s.handleVIPApplications)
+	a("POST /admin/v1/vip/applications/{id}/approve", permVIPReview, s.handleVIPReview("approve"))
+	a("POST /admin/v1/vip/applications/{id}/reject", permVIPReview, s.handleVIPReview("reject"))
+
 	s.registerEarnRoutes(a)
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)

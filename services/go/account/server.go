@@ -123,6 +123,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/notifications", s.handleInternalNotify)
 	mux.HandleFunc("POST /internal/notifications/broadcast", s.handleInternalBroadcast)
 
+	// VIP application (manual review; no fee tiers).
+	mux.Handle("GET /vip/application", s.auth(http.HandlerFunc(s.handleGetVIP)))
+	mux.Handle("POST /vip/applications", s.auth(http.HandlerFunc(s.handleApplyVIP)))
+	mux.HandleFunc("GET /internal/vip/applications", s.handleInternalListVIP)
+	mux.HandleFunc("POST /internal/vip/applications/{id}/review", s.handleInternalReviewVIP)
+
 	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))
 	mux.Handle("POST /2fa/totp/verify", s.auth(http.HandlerFunc(s.handleTOTPVerify)))
