@@ -17,9 +17,9 @@
 - 指数不可用：撤单、暂停，并发 Telegram「做市暂停」；恢复后发「做市恢复」。
 
 ## 资金规则（严格）
-- 仅当 `WALLET_CHAIN` 为 testnet/mock 且 `LINBIT_ENV` 非 production 时，后台可给做市账户虚拟入账
+- `WALLET_CHAIN=testnet` 时（即使 `LINBIT_ENV=production`）或 `WALLET_CHAIN=mock` 且非 production 时，后台可给做市账户虚拟入账
   10,000,000 USDT（`mm_testnet_seed`，2FA + 审计，ref 幂等，上限 `MM_SEED_MAX`）。
-- production 或 mainnet：该功能在 admin / marketmaker / asset 三层都直接拒绝，做市账户只能使用真实充值资产。
+- `WALLET_CHAIN=mainnet`（或任何非 testnet/mock 值）：无论 LINBIT_ENV 如何，admin / marketmaker / asset 三层都直接拒绝，做市账户只能使用真实充值资产。每次入账/拒绝都会以 `!!!` 打印日志；对账（solvency）把虚拟入账从应付中剔除并单列 `virtualSeed`。
 
 ## 每日偿付对账（admin）
 - `SOLVENCY_HOUR_UTC=1`（每天 01:00 UTC；-1 关闭）。也可 `/admin/v1/solvency/run` 手动触发。

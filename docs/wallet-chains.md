@@ -20,13 +20,29 @@
 
 可用 `WALLET_RPC_<NET>`、`WALLET_CHAINID_<NET>`、`WALLET_TOKEN_<ASSET>_<NET>=合约:精度` 覆盖。`WALLET_CHAIN=mainnet` 时 RPC 和代币合约必须显式配置。默认 `WALLET_CHAIN=mock`（模拟链）。
 
+### 测试网默认代币合约与水龙头
+仅 `WALLET_CHAIN=testnet` 时生效；主网没有任何默认值，必须显式设置 `WALLET_TOKEN_<ASSET>_<NET>`，否则该币种/网络禁用。
+
+| 币种/网络 | 默认合约:精度 | 水龙头 |
+|---|---|---|
+| USDT-TRC20 (Nile) | `TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf:6` | https://nileex.io/join/getJoinPage （TRX 和 USDT） |
+| USDT-ERC20 (Sepolia) | `0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0:6`（Aave V3 测试 USDT） | https://app.aave.com/faucet/ （开启 Testnet mode，选 Sepolia → USDT）；Sepolia ETH：https://cloud.google.com/application/web3/faucet/ethereum/sepolia |
+| USDC-ERC20 (Sepolia) | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238:6`（Circle） | https://faucet.circle.com/ |
+| USDT-BEP20 (BSC testnet) | `0x337610d27c682E347C9cD60BD4b3b107C9d34dDd:18` | https://www.bnbchain.org/en/testnet-faucet （tBNB 与测试 USDT） |
+| USDC-ARBITRUM (Arb Sepolia) | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d:6`（Circle） | https://faucet.circle.com/ ；ETH 可从 Sepolia 通过 https://bridge.arbitrum.io 跨链 |
+| USDT-ARBITRUM (Arb Sepolia) | **无默认**（没有公认的可领取测试 USDT），测试时用 USDC 或设置 `WALLET_TOKEN_USDT_ARBITRUM` | — |
+| USDC-SOL (devnet) | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU:6`（Circle） | https://faucet.circle.com/ ；SOL：https://faucet.solana.com |
+| BTC testnet | 原生 | https://coinfaucet.eu/en/btc-testnet/ |
+
 ## 初始化步骤
+0. `solexport`/`signerdata` 卷需属主 65532（signer 镜像为 distroless nonroot）。compose 中的一次性 `solexport-init` 容器会在 wallet-signer 启动/`run` 前自动 `chown`；手动处理：`docker compose --profile chain run --rm solexport-init`。
 1. 准备口令文件 `./secrets/signer_passphrase`（已在 .gitignore），设置 `WALLET_SIGNER_TOKEN`（≥24 位随机串）。
 2. `docker compose --profile chain run --rm wallet-signer init`（测试网；主网加 `-mainnet`）。备份 keystore 卷与口令（分开保存）。
 3. `docker compose --profile chain run --rm wallet-signer xpub` → 将输出的 `WALLET_XPUB_EVM/TRON/BTC` 写入 .env。
 4. `docker compose --profile chain run --rm wallet-signer sol-addresses -n 10000 -o /export/sol.txt`（写入共享卷 `solexport`，只含公开地址），并设置 `WALLET_SOL_ADDRESSES_FILE=/data/sol/sol.txt`（wallet 以只读方式挂载该卷）。
 5. 设置 `WALLET_CHAIN=testnet`、热钱包上限 `WALLET_HOT_CAP_<ASSET>_<NET>`，可选 `WALLET_SWEEP_ENABLED=true`、`WALLET_SWEEP_MIN_<ASSET>_<NET>`。
-6. 启动时 wallet 会校验 xpub 与 signer 公钥一致，不一致拒绝启动。
+6. SOL 派生分支：0=充值，1=热钱包，2=储备（`WALLET_COLD_FROM_HD`，默认开启），均由 signer 派生；`sol.txt` 只需充值地址（储备/热钱包公钥由 wallet 启动时向 signer 获取）。
+6b. 启动时 wallet 会校验 xpub 与 signer 公钥一致，不一致拒绝启动。
 7. 用水龙头给 signer 日志里打印的热钱包地址充测试币（gas 补充需要）。
 
 私钥/助记词永远不会被打印；`xpub` 只输出公钥。

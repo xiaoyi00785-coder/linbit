@@ -111,7 +111,15 @@ services:
       WALLET_RPC_ARBITRUM: ${WALLET_RPC_ARBITRUM:-}
       WALLET_RPC_BTC: ${WALLET_RPC_BTC:-}
       WALLET_RPC_SOL: ${WALLET_RPC_SOL:-}
+      # "contract:decimals". Empty on testnet = built-in faucet token default
+      # (see docs/wallet-chains.md); mainnet has NO default and must be set.
       WALLET_TOKEN_USDT_ERC20: ${WALLET_TOKEN_USDT_ERC20:-}
+      WALLET_TOKEN_USDT_TRC20: ${WALLET_TOKEN_USDT_TRC20:-}
+      WALLET_TOKEN_USDT_BEP20: ${WALLET_TOKEN_USDT_BEP20:-}
+      WALLET_TOKEN_USDT_ARBITRUM: ${WALLET_TOKEN_USDT_ARBITRUM:-}
+      WALLET_TOKEN_USDC_ERC20: ${WALLET_TOKEN_USDC_ERC20:-}
+      WALLET_TOKEN_USDC_ARBITRUM: ${WALLET_TOKEN_USDC_ARBITRUM:-}
+      WALLET_TOKEN_USDC_SOL: ${WALLET_TOKEN_USDC_SOL:-}
       # No multisig yet: empty cold address = reserve address from the same HD
       # seed (branch 2). WALLET_COLD_FROM_HD=false keeps everything hot.
       WALLET_COLD_FROM_HD: ${WALLET_COLD_FROM_HD:-true}
@@ -137,8 +145,23 @@ services:
   # own server by changing WALLET_SIGNER_URL. One-time setup:
   #   docker compose --profile chain run --rm wallet-signer init
   #   docker compose --profile chain run --rm wallet-signer xpub
+  # One-shot: the signer image runs as uid 65532 (distroless nonroot); a fresh
+  # named volume is root-owned, so chown it before the signer writes sol.txt.
+  solexport-init:
+    profiles: ["chain"]
+    image: busybox:1.36
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 65532:65532 /export /data && chmod 0755 /export"]
+    volumes:
+      - solexport:/export
+      - signerdata:/data
+    restart: "no"
+
   wallet-signer:
     profiles: ["chain"]
+    depends_on:
+      solexport-init:
+        condition: service_completed_successfully
     build:
       context: .
       dockerfile: services/go/wallet/Dockerfile.signer

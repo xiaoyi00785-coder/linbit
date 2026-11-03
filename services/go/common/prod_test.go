@@ -42,7 +42,7 @@ func TestTestnetSeedAllowed(t *testing.T) {
 		want       bool
 	}{
 		{"", "", true}, {"", "mock", true}, {"development", "testnet", true},
-		{"", "mainnet", false}, {"production", "testnet", false}, {"production", "mock", false}, {"", "weird", false},
+		{"", "mainnet", false}, {"production", "testnet", true}, {"production", "mainnet", false}, {"development", "mainnet", false}, {"production", "", false}, {"production", "mock", false}, {"", "weird", false},
 	}
 	for _, c := range cases {
 		t.Setenv("LINBIT_ENV", c.env)

@@ -11,8 +11,8 @@ import (
 
 // mm.go: market-maker controls. Reads need mm:view; every write needs mm:edit,
 // a fresh 2FA code and is audited (high). The virtual testnet seed is refused
-// here as well as in marketmaker and asset whenever LINBIT_ENV=production or
-// WALLET_CHAIN is not testnet/mock.
+// here as well as in marketmaker and asset unless WALLET_CHAIN=testnet (any
+// LINBIT_ENV) or WALLET_CHAIN=mock outside production; mainnet always refuses.
 
 func (s *Server) handleMMGet(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

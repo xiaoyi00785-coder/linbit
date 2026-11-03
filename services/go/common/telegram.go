@@ -66,16 +66,20 @@ func AlertTelegram(text string) {
 }
 
 // TestnetSeedAllowed reports whether the virtual market-maker seed
-// (mm_testnet_seed) may be used: never in production, only with
-// WALLET_CHAIN=mock|testnet (default mock). The reason explains a refusal.
+// (mm_testnet_seed) may be used. The gate is the chain, not LINBIT_ENV:
+// WALLET_CHAIN=testnet is allowed even with LINBIT_ENV=production (the
+// testnet server runs hardened); WALLET_CHAIN=mock only outside production;
+// anything else (mainnet or unknown) is always refused. The reason explains.
 func TestnetSeedAllowed() (bool, string) {
-	if IsProduction() {
-		return false, "LINBIT_ENV=production"
-	}
-	switch strings.ToLower(strings.TrimSpace(Env("WALLET_CHAIN", "mock"))) {
-	case "mock", "testnet":
-		return true, ""
+	switch c := strings.ToLower(strings.TrimSpace(Env("WALLET_CHAIN", "mock"))); c {
+	case "testnet":
+		return true, "WALLET_CHAIN=testnet (virtual, unbacked)"
+	case "mock":
+		if IsProduction() {
+			return false, "WALLET_CHAIN=mock with LINBIT_ENV=production"
+		}
+		return true, "WALLET_CHAIN=mock"
 	default:
-		return false, "WALLET_CHAIN is not mock/testnet"
+		return false, "WALLET_CHAIN=" + c + " is not testnet: virtual seed is forbidden on mainnet"
 	}
 }
