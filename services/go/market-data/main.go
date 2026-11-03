@@ -82,6 +82,9 @@ func main() {
 		return px, err == nil
 	})
 	agg.StartIndexSampler(ctx, cfg.IndexPoll)
+	if hasSource(cfg.IndexFeed, "binance") && common.Env("INDEX_BACKFILL", "true") == "true" {
+		go agg.BackfillIndex(ctx, cfg.BinanceURL)
+	}
 	log.Printf("index feed sources: %v (stale after %s)", cfg.IndexFeed, cfg.IndexStale)
 	srv := NewServer(cfg, store, agg, hub, ingest)
 	srv.feed = feed
@@ -163,4 +166,13 @@ func waitForDB(db *sql.DB) error {
 		time.Sleep(time.Second)
 	}
 	return err
+}
+
+func hasSource(list []string, name string) bool {
+	for _, s := range list {
+		if s == name {
+			return true
+		}
+	}
+	return false
 }

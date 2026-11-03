@@ -119,12 +119,15 @@ type tickItem struct {
 
 // symbolState holds all per-symbol aggregated state.
 type symbolState struct {
-	symbol      string
-	book        *book
-	series      map[string]*series
-	window      []tickItem
-	lastPrice   decimal.Decimal
-	hasLast     bool
+	symbol    string
+	book      *book
+	series    map[string]*series
+	window    []tickItem
+	lastPrice decimal.Decimal
+	hasLast   bool
+	// lastTs is the unix time of the last trade (or the recovered candle's
+	// open time). A last trade older than ticker24h is stale for display.
+	lastTs      int64
 	recent      []tradeDTO
 	lastTradeID int64
 	lastDepth   uint64
@@ -216,9 +219,10 @@ func (a *Aggregator) Recover(ctx context.Context) error {
 				return err
 			}
 			ss.series[iv.Name].candles = candles
-			if n := len(candles); n > 0 {
+			if n := len(candles); n > 0 && candles[n-1].OpenTime >= ss.lastTs {
 				ss.lastPrice = candles[n-1].Close
 				ss.hasLast = true
+				ss.lastTs = candles[n-1].OpenTime
 			}
 		}
 	}
@@ -283,6 +287,7 @@ func (a *Aggregator) OnTrade(ev TradeEvent) {
 
 	ss.lastPrice = ev.Price
 	ss.hasLast = true
+	ss.lastTs = ev.Time.Unix()
 
 	// Recent trades ring + 24h ticker window.
 	side := ev.TakerSide
@@ -468,6 +473,42 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		QuoteVolume:        fmtPrec(decimal.Zero, p.pricePrec, p.ok),
 	}
 	if len(ss.window) == 0 {
+		// No local trades in 24h: derive change/high/low from the external
+		// index candles (volume stays 0 — no fabricated volume).
+		if src == "index" || src == "mid" {
+			if is := ss.idxSeries["1m"]; is != nil {
+				from := a.now().Add(-ticker24h).Unix()
+				var open, hi, lo decimal.Decimal
+				found := false
+				for _, c := range is.candles {
+					if c.OpenTime < from {
+						continue
+					}
+					if !found {
+						open, hi, lo, found = c.Open, c.High, c.Low, true
+					}
+					if c.High.GreaterThan(hi) {
+						hi = c.High
+					}
+					if c.Low.LessThan(lo) {
+						lo = c.Low
+					}
+				}
+				if found {
+					if last.GreaterThan(hi) {
+						hi = last
+					}
+					if last.LessThan(lo) {
+						lo = last
+					}
+					dto.High = fmtPrec(hi, p.pricePrec, p.ok)
+					dto.Low = fmtPrec(lo, p.pricePrec, p.ok)
+					if open.Sign() > 0 {
+						dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
+					}
+				}
+			}
+		}
 		return dto
 	}
 	high := ss.window[0].price
@@ -508,25 +549,40 @@ func (a *Aggregator) Klines(symbol, interval string, limit int) ([]restKline, bo
 	if s == nil {
 		return nil, false
 	}
-	candles := s.candles
-	fromIndex := false
-	if len(candles) == 0 {
-		if is := ss.idxSeries[interval]; is != nil {
-			candles, fromIndex = is.candles, true
-		}
-	}
-	if limit > 0 && len(candles) > limit {
-		candles = candles[len(candles)-limit:]
-	}
-	out := make([]restKline, 0, len(candles))
-	for _, c := range candles {
-		k := toRESTKline(c)
-		if fromIndex {
-			k.Source = "index"
-		}
-		out = append(out, k)
+	out := mergeKlines(s.candles, ss.idxSeries[interval])
+	if limit > 0 && len(out) > limit {
+		out = out[len(out)-limit:]
 	}
 	return out, true
+}
+
+// mergeKlines unions trade candles with index-price candles by open time.
+// Trade candles win; index candles (source "index", volume 0) fill buckets
+// with no local trades so a thin market still renders a continuous chart.
+func mergeKlines(trade []Candle, idx *series) []restKline {
+	var ic []Candle
+	if idx != nil {
+		ic = idx.candles
+	}
+	out := make([]restKline, 0, len(trade)+len(ic))
+	i, j := 0, 0
+	for i < len(trade) || j < len(ic) {
+		switch {
+		case j >= len(ic) || (i < len(trade) && trade[i].OpenTime < ic[j].OpenTime):
+			out = append(out, toRESTKline(trade[i]))
+			i++
+		case i >= len(trade) || ic[j].OpenTime < trade[i].OpenTime:
+			k := toRESTKline(ic[j])
+			k.Source = "index"
+			out = append(out, k)
+			j++
+		default: // same bucket: trade wins
+			out = append(out, toRESTKline(trade[i]))
+			i++
+			j++
+		}
+	}
+	return out
 }
 
 // KlineFrame returns the current (live) candle for a symbol/interval, for the
@@ -542,9 +598,10 @@ func (a *Aggregator) KlineFrame(symbol, interval string) (wsKline, bool) {
 	if s == nil {
 		return wsKline{}, false
 	}
-	if len(s.candles) == 0 {
-		is := ss.idxSeries[interval]
-		if is == nil || len(is.candles) == 0 {
+	is := ss.idxSeries[interval]
+	hasIdx := is != nil && len(is.candles) > 0
+	if len(s.candles) == 0 || (hasIdx && is.candles[len(is.candles)-1].OpenTime > s.candles[len(s.candles)-1].OpenTime) {
+		if !hasIdx {
 			return wsKline{}, false
 		}
 		k := toWSKline(is.candles[len(is.candles)-1])
@@ -619,7 +676,8 @@ func bestLocked(side map[string]decimal.Decimal, bid bool) (decimal.Decimal, boo
 // displayPriceLocked picks the ticker's lastPrice: last trade, else mid of the
 // best bid/ask, else the external index. Caller holds mu.
 func (a *Aggregator) displayPriceLocked(ss *symbolState) (decimal.Decimal, string) {
-	if ss.hasLast {
+	fresh := ss.hasLast && a.now().Unix()-ss.lastTs < int64(ticker24h/time.Second)
+	if fresh {
 		return ss.lastPrice, "trade"
 	}
 	bid, okB := bestLocked(ss.book.bids, true)
@@ -632,14 +690,27 @@ func (a *Aggregator) displayPriceLocked(ss *symbolState) (decimal.Decimal, strin
 			return px, "index"
 		}
 	}
+	if ss.hasLast {
+		return ss.lastPrice, "trade"
+	}
 	return decimal.Zero, "none"
 }
 
 // SampleIndex folds the current index price of every tracked symbol into its
 // index-candle series (volume 0). Call periodically (see StartIndexSampler).
 func (a *Aggregator) SampleIndex(now time.Time) {
+	type push struct {
+		ch   string
+		data any
+	}
+	var pushes []push
 	a.mu.Lock()
-	defer a.mu.Unlock()
+	defer func() {
+		a.mu.Unlock()
+		for _, p := range pushes {
+			a.bc.Broadcast(p.ch, p.data)
+		}
+	}()
 	if a.index == nil {
 		return
 	}
@@ -649,6 +720,7 @@ func (a *Aggregator) SampleIndex(now time.Time) {
 		if !ok || !px.IsPositive() {
 			continue
 		}
+		noTrades := len(ss.window) == 0
 		for _, iv := range Intervals {
 			s := ss.idxSeries[iv.Name]
 			bucket := iv.bucketStart(ts)
@@ -670,6 +742,17 @@ func (a *Aggregator) SampleIndex(now time.Time) {
 					s.candles = s.candles[len(s.candles)-maxCandlesInMemory:]
 				}
 			}
+		}
+		if noTrades {
+			for _, iv := range Intervals {
+				if s := ss.idxSeries[iv.Name]; len(s.candles) > 0 && len(ss.series[iv.Name].candles) == 0 ||
+					len(s.candles) > 0 && s.candles[len(s.candles)-1].OpenTime > ss.series[iv.Name].candles[len(ss.series[iv.Name].candles)-1].OpenTime {
+					k := toWSKline(s.candles[len(s.candles)-1])
+					k.Source = "index"
+					pushes = append(pushes, push{"kline:" + ss.symbol + ":" + iv.Name, k})
+				}
+			}
+			pushes = append(pushes, push{"ticker:" + ss.symbol, a.tickerDTOLocked(ss)})
 		}
 	}
 }
