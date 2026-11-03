@@ -1,0 +1,92 @@
+# Linbit iOS CI：生成工程 → 模拟器编译（无签名）→ 启动截图 → 上传产物
+# 放置位置：仓库根目录 .github/workflows/ios.yml；IOS_DIR 指向 project.yml 所在目录
+#
+# macos-14 已于 2026-11-02 下线，且其上的 iPhone 15 模拟器不在现行镜像里。
+# 使用 macos-15 + Xcode 16.4（默认）+ iOS 18.5 的 iPhone 16。
+name: iOS
+
+on:
+  push:
+    branches: [main, "feat/ios-*"]
+    paths: ["mobile/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["mobile/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IOS_DIR: mobile/ios
+  SIM_NAME: iPhone 16
+  SIM_OS: "18.5"
+  DERIVED: ${{ github.workspace }}/build
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Install XcodeGen
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+
+      - name: Generate project
+        working-directory: ${{ env.IOS_DIR }}
+        run: xcodegen generate
+
+      - name: Build for simulator
+        working-directory: ${{ env.IOS_DIR }}
+        run: |
+          set -o pipefail
+          DEST="platform=iOS Simulator,name=${SIM_NAME},OS=${SIM_OS}"
+          if command -v xcbeautify >/dev/null 2>&1; then
+            xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Debug \
+              -destination "$DEST" \
+              -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build | xcbeautify
+          else
+            xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Debug \
+              -destination "$DEST" \
+              -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build
+          fi
+
+      - name: Launch & screenshot (light / dark)
+        run: |
+          set -euo pipefail
+          APP=$(find "$DERIVED/Build/Products" -name "Linbit.app" -maxdepth 3 | head -1)
+          echo "APP=$APP"
+          UDID=$(xcrun simctl list devices "iOS ${SIM_OS}" | sed -n 's/^[[:space:]]*iPhone 16 (\([A-F0-9-]*\)).*/\1/p' | head -1)
+          echo "UDID=$UDID"
+          test -n "$UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p shots
+          # 首页 / 行情 / 现货 / 资产 / 登录，日间与夜间各一张。lb.shot 只在 CI 写入。
+          for screen in home markets spot assets login; do
+            for mode in light dark; do
+              xcrun simctl ui "$UDID" appearance "$mode"
+              xcrun simctl terminate "$UDID" click.cowa.linbit || true
+              xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
+              xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.shot "$screen"
+              xcrun simctl launch "$UDID" click.cowa.linbit
+              sleep 6
+              xcrun simctl io "$UDID" screenshot "shots/${screen}-${mode}.png"
+            done
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linbit-ios-${{ github.sha }}
+          path: shots/
+          retention-days: 14
+          if-no-files-found: warn

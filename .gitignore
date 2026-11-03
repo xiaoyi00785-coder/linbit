@@ -65,3 +65,4 @@ secrets/
 *keystore*.json
 sol-deposit-addresses.txt
 services/go/market-data/market-data
+mobile/ios/Linbit/Resources/Assets.xcassets/AppIcon.appiconset/*.png

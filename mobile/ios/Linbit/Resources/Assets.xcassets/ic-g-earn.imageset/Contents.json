@@ -1,0 +1,25 @@
+{
+ "images": [
+  {
+   "idiom": "universal",
+   "filename": "g-earn.svg"
+  },
+  {
+   "idiom": "universal",
+   "filename": "g-earn-dark.svg",
+   "appearances": [
+    {
+     "appearance": "luminosity",
+     "value": "dark"
+    }
+   ]
+  }
+ ],
+ "info": {
+  "author": "xcode",
+  "version": 1
+ },
+ "properties": {
+  "preserves-vector-representation": true
+ }
+}

@@ -1,0 +1,28 @@
+name: Linbit
+options:
+  bundleIdPrefix: click.cowa
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""   # TODO: TestFlight 前填 Apple Team ID
+targets:
+  Linbit:
+    type: application
+    platform: iOS
+    sources: [Linbit]
+    info:
+      path: Linbit/Info.plist
+      properties:
+        CFBundleDisplayName: Linbit
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        LBAPIBase: https://api.cowa.click
+        LBWSURL: wss://api.cowa.click/ws
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: click.cowa.linbit
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

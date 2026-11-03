@@ -1,0 +1,25 @@
+{
+ "images": [
+  {
+   "idiom": "universal",
+   "filename": "avatar.svg"
+  },
+  {
+   "idiom": "universal",
+   "filename": "avatar-dark.svg",
+   "appearances": [
+    {
+     "appearance": "luminosity",
+     "value": "dark"
+    }
+   ]
+  }
+ ],
+ "info": {
+  "author": "xcode",
+  "version": 1
+ },
+ "properties": {
+  "preserves-vector-representation": true
+ }
+}
