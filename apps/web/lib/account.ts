@@ -110,11 +110,11 @@ export const sendAuthCode = (purpose: "register" | "reset_password", t: Target) 
   call(() => api.POST("/auth/code/send", { body: { purpose, ...t } }), () => ({ sent: true, channel: t.email ? "email" : "sms", ttlSeconds: 60 }) as SendCodeRes);
 
 export const register = (b: Target & { password: string; code: string; inviteCode?: string | null }) =>
-  call(() => api.POST("/auth/register", { body: { ...b, deviceId: deviceId(), deviceName: deviceName() } as never }), () => MOCK_TOKENS);
+  call(() => api.POST("/auth/register", { body: { ...b, deviceId: deviceId(), deviceName: deviceName() } }), () => MOCK_TOKENS);
 
 export const login = (b: Target & { password: string }) =>
   call<AuthTokens | LoginChallenge>(
-    () => api.POST("/auth/login", { body: { email: b.email, phone: b.phone, password: b.password, deviceId: deviceId(), deviceName: deviceName() } }) as never,
+    () => api.POST("/auth/login", { body: { email: b.email, phone: b.phone, password: b.password, deviceId: deviceId(), deviceName: deviceName() } }),
     () => MOCK_TOKENS,
   );
 export const isChallenge = (x: unknown): x is LoginChallenge => !!x && typeof (x as LoginChallenge).challengeToken === "string";
@@ -122,14 +122,14 @@ export const isChallenge = (x: unknown): x is LoginChallenge => !!x && typeof (x
 export const loginVerify = (challengeToken: string, method: string, code: string) =>
   call(() => api.POST("/auth/login/verify", { body: method === "totp" ? { challengeToken, totpCode: code } : { challengeToken, code } }), () => MOCK_TOKENS);
 export const loginResend = (challengeToken: string) =>
-  call(() => api.POST("/auth/login/code", { body: { challengeToken } }) as never, () => true);
+  call(() => api.POST("/auth/login/code", { body: { challengeToken } }), () => true);
 
 /** 找回密码第一步：校验验证码，换取一次性 resetToken（默认 600 秒有效） */
 export const verifyResetCode = (b: Target & { code: string }) =>
-  call<{ resetToken: string; expiresIn: number }>(() => (api as any).POST("/auth/password/verify-code", { body: b }), () => ({ resetToken: "mock-reset-token", expiresIn: 600 }));
+  call<{ resetToken: string; expiresIn: number }>(() => api.POST("/auth/password/verify-code", { body: b }), () => ({ resetToken: "mock-reset-token", expiresIn: 600 }));
 /** 找回密码第二步：用 resetToken 设置新密码（令牌一次性） */
 export const resetPassword = (b: { resetToken: string; newPassword: string }) =>
-  call(() => (api as any).POST("/auth/password/reset", { body: b }) as never, () => true);
+  call(() => api.POST("/auth/password/reset", { body: b }), () => true);
 
 /* ---------- 账户资料 ---------- */
 const isMockToken = () => (useAuthStore.getState().accessToken ?? "").startsWith("mock-");
@@ -180,10 +180,10 @@ let mockDevices: DeviceItem[] = [
 export const listDevices = () =>
   call(async () => {
     const r = await api.GET("/account/devices");
-    return { ...r, data: r.data?.items } as never;
+    return { ...r, data: r.data?.items };
   }, () => mockDevices) as Promise<Result<DeviceItem[]>>;
 export const removeDevice = (id: string) =>
-  call(() => api.DELETE("/account/devices/{deviceId}", { params: { path: { deviceId: id } } }) as never, () => {
+  call(() => api.DELETE("/account/devices/{deviceId}", { params: { path: { deviceId: id } } }), () => {
     mockDevices = mockDevices.filter((d) => d.deviceId !== id);
     return true;
   });
@@ -194,11 +194,11 @@ let mockAddr: AddressItem[] = [
 ];
 let mockWl = false;
 export const sendAccountCode = (purpose: "address" | "bind" | "reset_password" | "security" | "withdraw" = "address") =>
-  call(() => api.POST("/account/code/send", { body: { purpose } as never }) as never, () => ({ sent: true, channel: "sms", ttlSeconds: 60 }) as SendCodeRes);
+  call(() => api.POST("/account/code/send", { body: { purpose } }), () => ({ sent: true, channel: "sms", ttlSeconds: 60 }) as SendCodeRes);
 export const listAddresses = () =>
   call(async () => {
     const r = await api.GET("/account/withdraw-addresses");
-    return { ...r, data: r.data?.items } as never;
+    return { ...r, data: r.data?.items };
   }, () => mockAddr) as Promise<Result<AddressItem[]>>;
 export const addAddress = (b: S["CreateWithdrawAddressRequest"]) =>
   call(() => api.POST("/account/withdraw-addresses", { body: b }), () => {
@@ -207,13 +207,13 @@ export const addAddress = (b: S["CreateWithdrawAddressRequest"]) =>
     return a;
   });
 export const deleteAddress = (id: string, code: { code?: string; totpCode?: string }) =>
-  call(() => api.DELETE("/account/withdraw-addresses/{id}", { params: { path: { id }, query: code } }) as never, () => {
+  call(() => api.DELETE("/account/withdraw-addresses/{id}", { params: { path: { id }, query: code } }), () => {
     mockAddr = mockAddr.filter((a) => a.id !== id);
     return true;
   });
 export const getWhitelist = () => call(() => api.GET("/account/withdraw-whitelist"), () => ({ enabled: mockWl }));
 export const setWhitelist = (b: S["SetWhitelistRequest"]) =>
-  call(() => api.PUT("/account/withdraw-whitelist", { body: b }) as never, () => {
+  call(() => api.PUT("/account/withdraw-whitelist", { body: b }), () => {
     mockWl = b.enabled;
     return { enabled: mockWl };
   });

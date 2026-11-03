@@ -206,7 +206,7 @@ export function Withdraw() {
                 <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : minS ? `最小提现数量：${minS}` : "加载中…"} value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
               </div>
               <div className="wkv">
-                <span>可用</span><b>{free} {asset}</b>
+                <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{free} {asset}</b>
                 {tab === "inner" ? <><span>24 小时额度</span><b>50,000 USDT</b></> : <>
                 <span>单笔最小提现</span><b>{minS ?? "--"} {asset}</b>
                 <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
@@ -285,7 +285,7 @@ export function Withdraw() {
                   else { const m = errMsg(r); setErr(m); if (m === SOON) toast(m, "info"); }
                   return;
                 }
-                const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp, ...fpw } as WithdrawRequest);
+                const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp, ...fpw });
                 const k = twofaKind(r);
                 if (fundErr(r)) return;
                 if (k === "invalid") { setTfa("invalid"); setTotp(""); return; }

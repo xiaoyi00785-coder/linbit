@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { goto, toast } from "@/lib/ui";
-import { TWOFA_BIND, twofaKind } from "@/lib/twofa";
+import { MSG_TOTP_MISSING, MSG_TWOFA_REQUIRED, TWOFA_BIND, twofaBound, twofaKind } from "@/lib/twofa";
 import { ACCT_KEY, ACCT_NAME, createTransfer, listTransfers, newClientId, type TransferRec } from "@/lib/transfer";
 import { errMsg, useOverview, type AcctKey } from "@/lib/wallet";
 
@@ -32,7 +32,7 @@ export function TransferHost() {
     const r = await createTransfer({ clientId: newClientId(), asset: coin, amount: amt, from: f as AcctKey, to: t as AcctKey });
     setBusy(false);
     if (r.ok) { toast("划转成功", "ok"); setOpen(false); ov.reload(); window.dispatchEvent(new Event("lb:balances")); window.dispatchEvent(new Event("lb-refresh")); }
-    else if (twofaKind(r) === "required") { toast("请先绑定谷歌验证", "err"); setOpen(false); goto(TWOFA_BIND); }
+    else if (twofaKind(r) === "required") { if (await twofaBound()) toast(MSG_TOTP_MISSING, "err"); else { toast(MSG_TWOFA_REQUIRED, "err"); setOpen(false); goto(TWOFA_BIND); } }
     else toast(errMsg(r), "err");
   };
   useEffect(() => {

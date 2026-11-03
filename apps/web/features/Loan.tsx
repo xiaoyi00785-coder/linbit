@@ -1,4 +1,5 @@
 "use client";
+import { G } from "@/components/Glyph";
 /**
  * 质押借币：对接 earn 服务 /loans/*（gateway 前缀 /loans；market、quote 公开，其余需登录）。
  * 仅移除 USDC 作为可借 / 质押币种；初始质押率以后端 initialLtv 为准（默认 80%）。
@@ -177,13 +178,13 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
       </div></div>
       <div className="light"><div className="ewrap">
         <div className="lsteps">{["01 提交申请", "02 收到借款", "03 还款付息", "04 回收质押物"].map((x, i) => <span key={x}><i>{i + 1}</i>{x}</span>)}</div>
-        <div className="lrow"><h2 className="lh2">借贷市场</h2>{source === "demo" && <span className="fx-src">演示数据（服务不可达）</span>}<span className="lg">▤ 初始质押率 {pc(market?.initialLtv ?? 0.8, 0)} · 质押物 {market?.collaterals.map((c) => c.asset).join(" / ") ?? "--"}</span></div>
+        <div className="lrow"><h2 className="lh2">借贷市场</h2>{source === "demo" && <span className="fx-src">演示数据（服务不可达）</span>}<span className="lg"><G n="info" s={13}/> 初始质押率 {pc(market?.initialLtv ?? 0.8, 0)} · 质押物 {market?.collaterals.map((c) => c.asset).join(" / ") ?? "--"}</span></div>
         <div className="lth"><span>可借币种</span>{(market?.terms ?? DEMO.terms).map((t) => <span key={t.term}>{tn(t.term)}</span>)}<span className="r">操作</span></div>
         {loading && !market ? <div className="fx-skel" style={{ height: 48 }} /> : market ? (
           <div className="ltr e5">
             <span><CoinIcon s={market.asset} size={22} /> {market.asset}</span>
             {market.terms.map((t) => <span key={t.term}>{(Number(t.hourlyRate) * 100).toFixed(6)}% / <b>{pc(t.annualRate)}</b></span>)}
-            <span className="r"><button className="lb lime sm" onClick={() => setB(market.terms[0]?.term ?? "flexible")}>⚡ 借贷</button></span>
+            <span className="r"><button className="lb lime sm" onClick={() => setB(market.terms[0]?.term ?? "flexible")}><G n="bolt" s={14} /> 借贷</button></span>
           </div>
         ) : <div className="lg fx-empty">暂无可借币种</div>}
         {faq}
@@ -213,7 +214,7 @@ export function LoanRecords() {
       <div className="lnfr">{sel("term", "订单类型", [["", "全部"], ["flexible", "活期"], ["fixed", "定期"]])}{sel("asset", "借款币种", [["", "全部"], ["USDT", "USDT"], ["USDC", "USDC"]])}{sel("col", "质押币种", [["", "全部"], ["BTC", "BTC"], ["ETH", "ETH"]])}{sel("days", "时间", [["7", "近 7 天"], ["30", "近 30 天"], ["90", "近 90 天"]])}<button className="lb sm lnrf" onClick={() => r.reload()}>⟳ 刷新</button></div>
       <div className="fx-tbl">
         <div className="fx-tr th">{cols.map((c) => <span key={c}>{c}</span>)}</div>
-        {!authed ? <div className="lg fx-empty">登录后查看借贷订单</div> : r.loading ? <div className="fx-skel" style={{ height: 40 }} /> : r.error ? <div className="fx-err">{r.error}</div> : rows.length === 0 ? <div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div> : rows.map((x) => (
+        {!authed ? <div className="lg fx-empty">登录后查看借贷订单</div> : r.loading ? <div className="fx-skel" style={{ height: 40 }} /> : r.error ? <div className="fx-err">{r.error}</div> : rows.length === 0 ? <div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div> : rows.map((x) => (
           <div key={x.id} className="fx-tr">
             <span>{dt(x.time)}</span><span>#{x.loanId}</span><span>{tn(x.term).split(" · ")[0]}</span>
             <span><CoinIcon s={x.asset} size={16} /> {x.asset}</span><span>{x.type === "renew" ? (x.detail?.dueAt ? `新到期 ${ymd(x.detail.dueAt)}` : "--") : n(x.amount, 6)}</span>

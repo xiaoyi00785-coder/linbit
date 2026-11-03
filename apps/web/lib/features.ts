@@ -35,13 +35,13 @@ export function loadFeatures(base = API_BASE): Promise<void> {
   return loading;
 }
 export const SOON: Record<FeatureKey, { slug: string; name: string; intro: string; icon: string }> = {
-  tokenizedStocks: { slug: "stocks", name: "股票合约 · 代币化股票", intro: "用 USDT 交易美股等真实资产的永续合约与代币化股票现货，即将上线。", icon: "▤" },
-  metals: { slug: "metals", name: "贵金属", intro: "黄金、白银等贵金属合约与代币化资产，即将上线。", icon: "◆" },
-  tradfi: { slug: "tradfi", name: "传统金融", intro: "用 USDT 连接全球股票、指数与大宗商品，即将上线。", icon: "◉" },
-  eventContracts: { slug: "events", name: "事件合约", intro: "预测市场方向，以固定收益结构轻松交易，即将上线。", icon: "◎" },
-  chatRoom: { slug: "chat", name: "聊天室", intro: "与全球交易者实时交流行情观点，即将上线。", icon: "✉" },
-  convert: { slug: "convert", name: "闪兑", intro: "一键兑换数字资产，零手续费，即将上线。", icon: "⇆" },
-  subAccounts: { slug: "sub-accounts", name: "子账户", intro: "为不同策略或团队成员创建独立子账户，统一管理资产，即将上线。", icon: "◫" },
+  tokenizedStocks: { slug: "stocks", name: "股票合约 · 代币化股票", intro: "用 USDT 交易美股等真实资产的永续合约与代币化股票现货，即将上线。", icon: "chart" },
+  metals: { slug: "metals", name: "贵金属", intro: "黄金、白银等贵金属合约与代币化资产，即将上线。", icon: "coin" },
+  tradfi: { slug: "tradfi", name: "传统金融", intro: "用 USDT 连接全球股票、指数与大宗商品，即将上线。", icon: "flag" },
+  eventContracts: { slug: "events", name: "事件合约", intro: "预测市场方向，以固定收益结构轻松交易，即将上线。", icon: "star" },
+  chatRoom: { slug: "chat", name: "聊天室", intro: "与全球交易者实时交流行情观点，即将上线。", icon: "mail" },
+  convert: { slug: "convert", name: "闪兑", intro: "一键兑换数字资产，零手续费，即将上线。", icon: "link" },
+  subAccounts: { slug: "sub-accounts", name: "子账户", intro: "为不同策略或团队成员创建独立子账户，统一管理资产，即将上线。", icon: "gear" },
 };
 const LABELS: [RegExp, FeatureKey][] = [[/股票|美股|代币化股票/, "tokenizedStocks"], [/贵金属|黄金|白银/, "metals"], [/传统金融|TradFi/i, "tradfi"], [/事件合约/, "eventContracts"], [/聊天室/, "chatRoom"], [/子账户/, "subAccounts"], [/^闪兑$/, "convert"]];
 /** 入口文案 → 未上线功能 key（已开启的功能返回 null） */
