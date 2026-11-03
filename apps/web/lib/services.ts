@@ -10,6 +10,7 @@
 import type { components } from "@linbit/api-client";
 import { api } from "./api";
 import { rest } from "./rest";
+import { MOCK_ENABLED, NET_ERR } from "./mockFlag";
 
 type S = components["schemas"];
 export type AuthTokens = S["AuthTokens"];
@@ -52,6 +53,7 @@ async function tryApi<T>(
   } catch {
     /* 网络错误 → mock */
   }
+  if (!MOCK_ENABLED) return { ok: false, error: NET_ERR, code: "NETWORK", source: "api" };
   return { ok: true, data: await fallback(), source: "mock" };
 }
 
@@ -161,6 +163,7 @@ export async function listWithdrawNetworks(asset: string): Promise<Result<S["Wit
   } catch {
     /* 网络错误 → mock */
   }
+  if (!MOCK_ENABLED) return { ok: false, error: "提现网络暂时无法获取，请稍后再试", source: "api" };
   await delay(150);
   return { ok: true, data: mockNetworks(asset), source: "mock" };
 }

@@ -6,6 +6,7 @@
 import { API_BASE } from "./api";
 import { useAuthStore } from "./store";
 import { useEffect, useState, useCallback } from "react";
+import { MOCK_ENABLED } from "./mockFlag";
 
 export interface RestResult<T> { ok: boolean; data?: T; error?: string; code?: string; status?: number; source: "api" | "demo" }
 
@@ -23,7 +24,7 @@ export async function rest<T>(method: string, path: string, body?: unknown, demo
     // 4xx 或带业务 code 的 5xx（如 503 PRICE_UNAVAILABLE）原样返回，不回退演示数据
     if (r.status < 500 || j?.code) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
   } catch { /* 网络错误 → demo */ }
-  return demo ? { ok: true, data: demo(), source: "demo" } : { ok: false, error: "服务暂不可用", source: "demo" };
+  return demo && MOCK_ENABLED ? { ok: true, data: demo(), source: "demo" } : { ok: false, error: "服务暂不可用", source: "demo" };
 }
 export const rget = <T,>(p: string, demo?: () => T) => rest<T>("GET", p, undefined, demo);
 

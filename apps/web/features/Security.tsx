@@ -7,7 +7,7 @@ import { Shell, Side, ACC } from "./layout";
 import { CodeInput } from "./common";
 import { Skel } from "./Account";
 import { toast, goto } from "@/lib/ui";
-import { sendAccountCode } from "@/lib/account";
+import { maskEmail, sendAccountCode } from "@/lib/account";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import {
   changeContact, changePassword, createPasskey, deletePasskey, fmtUntil, fundPassword, listPasskeys, listSessions, revokeOthers, revokeSession,
@@ -66,7 +66,7 @@ function SecModal({ kind, sec, onClose }: { kind: Kind; sec: SecurityOverview; o
   }
 
   const pw = (k: string, ph: string, d = false) => <input type="password" inputMode={d ? "numeric" : undefined} maxLength={d ? 6 : 128} placeholder={ph} value={v(k)} onChange={set(k, d)} />;
-  const oldLabel = kind === "email" ? (sec.email ? `原邮箱验证码（${sec.email}）` : "原联系方式验证码") : (sec.phone ? `原手机验证码（${sec.phone}）` : "原联系方式验证码");
+  const oldLabel = kind === "email" ? (sec.email ? `原邮箱验证码（${maskEmail(sec.email)}）` : "原联系方式验证码") : (sec.phone ? `原手机验证码（${sec.phone}）` : "原联系方式验证码");
   return (
     <div className="fx-modal" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}>
@@ -176,7 +176,7 @@ export function SecurityCenter() {
         <div className="lcard"><div className="slv"><div className="sring"><b>{score}/{checks.length}</b></div><div><b className={lvl[1]}>{lvl[0]}</b><div className="lg">安全等级</div></div><div className="schk">{checks.map(([x, ok]) => <span key={x} className={ok ? "ok" : ""}><i>✓</i>{x}</span>)}</div></div></div>
         <div className="lcard"><h3>基础安全设置</h3>
           <Row icon={<G n="lock" s={18} />} t="登录密码" d="用于登录账户，修改后其他设备将退出登录" ok s="已设置"><button className="lb sm" onClick={() => setM("password")}>修改</button></Row>
-          <Row icon={<G n="mail" s={18} />} t="邮箱验证" d="用于登录、提币、修改安全设置" ok={!!s.emailVerified} s={s.email || "未绑定"}><button className="lb sm" onClick={() => setM("email")}>{s.email ? "更换" : "绑定"}</button></Row>
+          <Row icon={<G n="mail" s={18} />} t="邮箱验证" d="用于登录、提币、修改安全设置" ok={!!s.emailVerified} s={s.email ? maskEmail(s.email) : "未绑定"}><button className="lb sm" onClick={() => setM("email")}>{s.email ? "更换" : "绑定"}</button></Row>
           <Row icon={<G n="phone" s={18} />} t="手机验证" d="用于登录、提币、修改安全设置" ok={!!s.phoneVerified} s={s.phone || "未绑定"}><button className="lb sm" onClick={() => setM("phone")}>{s.phone ? "更换" : "绑定"}</button></Row>
           <Row icon={<G n="key" s={18} />} t="通行密钥" d="使用设备生物识别安全登录" ok={(s.passkeysCount ?? 0) > 0} s={(s.passkeysCount ?? 0) > 0 ? `已添加 ${s.passkeysCount} 个` : "未开启"}><button className="lb sm" onClick={() => document.getElementById("passkey")?.scrollIntoView({ behavior: "smooth", block: "center" })}>管理</button></Row>
         </div>

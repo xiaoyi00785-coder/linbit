@@ -77,7 +77,7 @@ export function BorrowModal({ m, term0, onClose, onDone }: { m: Market; term0: s
     setBusy(true);
     const r = await rest("POST", "/loans", { collateralAsset: col, amount: amt, term, ...(q ? { collateralAmount: q.collateral } : {}) });
     setBusy(false);
-    if (!r.ok) return setErr(r.source === "demo" ? "服务暂不可用（演示环境）" : r.error ?? "借款失败");
+    if (!r.ok) return setErr(r.source === "demo" ? "服务暂不可用，请稍后再试" : r.error ?? "借款失败");
     toast(`借款成功：${amt} ${m.asset}`);
     onDone();
   };

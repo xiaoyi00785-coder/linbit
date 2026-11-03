@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { goto, toast } from "@/lib/ui";
 import { MSG_TOTP_MISSING, MSG_TWOFA_REQUIRED, TWOFA_BIND, twofaBound, twofaKind } from "@/lib/twofa";
 import { ACCT_KEY, ACCT_NAME, createTransfer, listTransfers, newClientId, type TransferRec } from "@/lib/transfer";
+import { amountError, cleanNum } from "@/lib/validate";
 import { errMsg, useOverview, type AcctKey } from "@/lib/wallet";
 
 const ACCTS = ["资金账户", "现货账户", "合约账户", "理财账户"];
@@ -23,7 +24,10 @@ export function TransferHost() {
   const loadH = () => listTransfers("?page=1&pageSize=5").then((r) => setHist(r.ok ? r.data?.items ?? [] : []));
   const fk = ACCT_KEY[from];
   const avail = ov.data?.accounts?.find((a) => a.account === fk)?.balances?.find((b) => b.asset === coin)?.free ?? "0";
+  const amtE = amountError(amt, { dp: 8 }) || (amt && Number(amt) > Number(avail) ? `可用余额不足（可用 ${avail} ${coin}）` : "");
+  const canSubmit = !busy && !!amt && !amtE;
   const submit = async () => {
+    if (!canSubmit) return;
     if (!Number(amt)) return toast("请输入划转数量", "err");
     const f = ACCT_KEY[from], t = ACCT_KEY[to];
     if (f === "earn" || t === "earn") return toast("理财账户不支持划转，请使用申购 / 赎回", "info");
@@ -52,10 +56,11 @@ export function TransferHost() {
           <label>到<select className="fsel" value={to} onChange={(e) => setTo(e.target.value)}>{ACCTS.filter((a) => a !== from).map((a) => <option key={a}>{a}</option>)}</select></label>
         </div>
         <div className="trl"><span>币种</span><Dropdown cls="fsel" icons v={coin} opts={["USDT", "BTC", "ETH"]} onChange={setCoin} /></div>
-        <label className="trl">数量<span className="wamt"><input inputMode="decimal" placeholder="请输入划转数量" value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt(avail)}>全部</a><em>{coin}</em></span></label>
+        <label className="trl">数量<span className="wamt"><input inputMode="decimal" placeholder="请输入划转数量" value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(avail)}>全部</a><em>{coin}</em></span></label>
+        {amtE && <div className="fx-err fe-inline">{amtE}</div>}
         <div className="lg trv">可用 {avail} {coin}</div>
         {hist.length > 0 && <div className="trhist"><div className="lg">最近划转</div>{hist.map((h) => <div key={h.id}><span>{ACCT_NAME[h.from] ?? h.from} → {ACCT_NAME[h.to] ?? h.to}</span><span>{h.amount} {h.asset}</span><span className="lg">{{ pending: "处理中", done: "已完成", failed: "失败" }[h.status]}</span></div>)}</div>}
-        <button className="lb dark wide" disabled={busy} onClick={submit}>{busy ? "划转中…" : "确认划转"}</button>
+        <button className={"lb dark wide" + (canSubmit ? "" : " dis")} disabled={!canSubmit} onClick={submit}>{busy ? "划转中…" : "确认划转"}</button>
       </div>
     </div>
   );

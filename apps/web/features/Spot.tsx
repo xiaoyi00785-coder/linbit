@@ -60,7 +60,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       clientOrderId: `web-${Date.now()}`,
     });
     setBusy(false);
-    setMsg(r.ok ? { ok: true, t: `下单成功 #${r.data?.orderId}（${r.data?.status}）${r.source === "mock" ? " · Mock" : ""}` } : { ok: false, t: r.error ?? "下单失败" });
+    setMsg(r.ok ? { ok: true, t: `下单成功 #${r.data?.orderId}（${r.data?.status}）` } : { ok: false, t: r.error ?? "下单失败" });
     if (r.ok) { setQty(""); bump(); }
   };
 

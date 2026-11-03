@@ -7,6 +7,8 @@ import { Src } from "./common";
 import { toast } from "@/lib/ui";
 import { useSecurity, fmtUntil } from "@/lib/security";
 import { goto } from "@/lib/ui";
+import { maskEmail } from "@/lib/account";
+import { addressError, amountError, cleanNum, DEFAULT_MIN_WITHDRAW } from "@/lib/validate";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
@@ -127,25 +129,38 @@ export function Withdraw() {
   const feeS = ni?.withdrawFee ?? cfg?.gasFeeEstimate;
   const eta = ni?.estimatedArrivalMinutes ? `约 ${ni.estimatedArrivalMinutes} 分钟` : "约 5 分钟";
   const memoReq = ni?.memoRequired ?? cfg?.memoRequired;
-  const min = Number(minS ?? 0);
+  const min = Math.max(Number(minS ?? 0) || 0, DEFAULT_MIN_WITHDRAW[asset] ?? 0);
   const max = Number(maxS ?? Infinity);
   const fee = Number(feeS ?? 0);
   const toKey = /^\S+@\S+\.\S+$/.test(to) ? "email" : /^\d{5,20}$/.test(to) ? "uid" : "";
   const checkInner = () => {
     if (!toKey) return "请输入正确的收款方 UID 或邮箱";
-    if (!n) return "请输入转账数量";
-    return "";
+    if (!amt) return "请输入转账数量";
+    return amtE;
   };
-  const receive = n > fee ? String(+(n - fee).toFixed(8)) : "0";
+  const freeN = Number(free) || 0;
+  // 实时校验（输入即提示），任一错误时禁用提交
+  const addrE = tab === "chain" ? addressError(net, addr) : "";
+  const fmtE = amountError(amt, { dp: 8 });
+  const amtE = fmtE || (!amt ? "" :
+    n > freeN ? `可用余额不足（可用 ${free} ${asset}）` :
+    tab === "chain" && n < min ? `最小提现数量 ${min} ${asset}` :
+    tab === "chain" && n > max ? `单笔最大提现 ${maxS} ${asset}` :
+    tab === "chain" && n <= fee ? `提现数量需大于网络手续费 ${fee} ${asset}` : "");
+  const amtOk = !!amt && !amtE;
+  // 到账数量：数量无效或不足以覆盖手续费时显示 --，绝不显示负数或误导性的 0
+  const receive = amtOk && n > fee ? String(+(n - fee).toFixed(8)) : "--";
 
   const check = () => {
-    if (addr.length < 20) return "请输入正确的提现地址";
-    if (!n) return "请输入提现数量";
-    if (n < min) return `最小提现数量 ${cfg?.minAmount} ${asset}`;
-    if (n > max) return `单笔最大提现 ${cfg?.maxAmount} ${asset}`;
+    if (!addr) return "请输入提现地址";
+    if (addrE) return addrE;
+    if (!amt) return "请输入提现数量";
+    if (amtE) return amtE;
     if (memoReq && !memo) return "该网络需要填写 Memo / Tag";
     return "";
   };
+
+  const submitOk = !wLockUntil && (tab === "inner" ? !!toKey && amtOk : !!addr && !addrE && amtOk && (!memoReq || !!memo));
 
   return (
     <main className="light">
@@ -186,7 +201,8 @@ export function Withdraw() {
                 </div>
                 <div className="fx-field">
                   <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>
-                  <input placeholder="输入或粘贴地址" value={addr} onChange={(e) => setAddr(e.target.value.trim())} />
+                  <input placeholder="输入或粘贴地址" value={addr} onChange={(e) => setAddr(e.target.value.trim())} aria-invalid={!!addrE} />
+                  {addrE && <div className="fx-err fe-inline">{addrE}</div>}
                 </div>
                 <div className="fx-field">
                   Memo / Tag{memoReq ? "（必填）" : "（选填）"}
@@ -203,24 +219,25 @@ export function Withdraw() {
             </St>
             <St n="3" t={tab === "inner" ? "转账数量" : "提现数量"}>
               <div className="fx-field">
-                <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : minS ? `最小提现数量：${minS}` : "加载中…"} value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
+                <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : minS ? `最小提现数量：${minS}` : "加载中…"} value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
+                {amtE && <div className="fx-err fe-inline">{amtE}</div>}
               </div>
               <div className="wkv">
                 <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{free} {asset}</b>
                 {tab === "inner" ? <><span>24 小时额度</span><b>50,000 USDT</b></> : <>
-                <span>单笔最小提现</span><b>{minS ?? "--"} {asset}</b>
+                <span>单笔最小提现</span><b>{min || "--"} {asset}</b>
                 <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
               </div>
               <div className="wkv wdiv">
                 <span>手续费 <Src s={cfgSrc} /></span><b>{tab === "inner" ? "0" : feeS ?? "--"} {asset}</b>
-                <span>到账数量</span><b>{tab === "inner" ? (amt || "--") : receive} {asset}</b>
+                <span>到账数量</span><b>{tab === "inner" ? (amtOk ? amt : "--") : receive} {asset}</b>
                 <span>预计到账时间</span><b>{tab === "inner" ? "实时到账" : eta}</b>
               </div>
               {tfa === "required" && <TwofaRequired />}
               {wLockUntil && !err && <div className="sec-lock"><b>!</b>{WLOCK}，预计 {fmtUntil(wLockUntil)} 解除。</div>}
               {err && <div className="fx-err">{err}</div>}
               {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
-              <button className="lb dark wide" disabled={!amt} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) { setFpe(null); setTfa(null); setConfirm(true); } }}>
+              <button className={"lb dark wide" + (submitOk ? "" : " dis")} disabled={!submitOk} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) { setFpe(null); setTfa(null); setConfirm(true); } }}>
                 {tab === "inner" ? "转账" : "提现"}
               </button>
             </St>
@@ -240,7 +257,7 @@ export function Withdraw() {
           {tab === "inner" ? (<>
             <h3>站内转账记录 <Src s={innerSrc} /></h3>
             {innerSoon ? <div className="lg">{SOON}</div> : inner.length === 0 ? <div className="lg">暂无数据</div> : inner.map((r) => (
-              <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.direction === "out" ? "转出" : "转入"} {r.amount} {r.asset} · {r.direction === "out" ? (r.toMaskedEmail || `UID ${r.toUid}`) : `UID ${r.fromUid}`}</span><span>{{ pending: "处理中", completed: "已完成", failed: "失败" }[r.status]}</span></div>
+              <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.direction === "out" ? "转出" : "转入"} {r.amount} {r.asset} · {r.direction === "out" ? (r.toMaskedEmail ? maskEmail(r.toMaskedEmail) : `UID ${r.toUid}`) : `UID ${r.fromUid}`}</span><span>{{ pending: "处理中", completed: "已完成", failed: "失败" }[r.status]}</span></div>
             ))}
           </>) : (<>
           <h3>提现记录 <Src s={recSrc} /></h3>
