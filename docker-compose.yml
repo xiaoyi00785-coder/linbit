@@ -47,6 +47,11 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Optional JSON override for GET /wallet/withdraw/networks (empty = defaults).
       WITHDRAW_NETWORKS_JSON: ${WITHDRAW_NETWORKS_JSON:-}
+      # mm_testnet_seed is only accepted when WALLET_CHAIN is mock/testnet and
+      # LINBIT_ENV != production.
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      MM_USER_ID: ${MM_USER_ID:-mm:main}
+      MM_SEED_MAX: ${MM_SEED_MAX:-10000000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -281,6 +286,13 @@ services:
       FUTURES_INTERNAL_URL: http://futures:8089
       GROWTH_INTERNAL_URL: http://growth:8091
       EARN_INTERNAL_URL: http://earn:8092
+      MM_INTERNAL_URL: http://marketmaker:8093
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      MM_USER_ID: ${MM_USER_ID:-mm:main}
+      # Daily solvency reconciliation hour (UTC, -1 = off); alerts go to Telegram.
+      SOLVENCY_HOUR_UTC: ${SOLVENCY_HOUR_UTC:-1}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       # First super admin, created only when the admin_users table is empty.
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
@@ -404,6 +416,34 @@ services:
       asset:
         condition: service_started
       futures:
+        condition: service_started
+
+  marketmaker:
+    build:
+      context: .
+      dockerfile: services/go/marketmaker/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8093"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ORDER_URL: http://order:8084
+      FUTURES_URL: http://futures:8089
+      MARKET_URL: http://market-data:8085
+      ASSET_URL: http://asset:8082
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      MM_USER_ID: ${MM_USER_ID:-mm:main}
+      MM_SEED_AMOUNT: ${MM_SEED_AMOUNT:-10000000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      order:
+        condition: service_started
+      futures:
+        condition: service_started
+      market-data:
         condition: service_started
 
   gateway:

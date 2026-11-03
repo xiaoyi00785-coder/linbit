@@ -57,6 +57,9 @@ var (
 	earnPort     = envOr("DEVSTACK_EARN_PORT", "8092")
 	adminPort    = envOr("DEVSTACK_ADMIN_PORT", "8088")
 	futuresPort  = envOr("DEVSTACK_FUTURES_PORT", "8089")
+	mmPort       = envOr("DEVSTACK_MM_PORT", "8093")
+	// Fake Telegram API for alert smokes (smoke-mm listens here); real tokens are never used.
+	tgAPI = envOr("DEVSTACK_TELEGRAM_API_URL", "http://127.0.0.1:18099")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -135,7 +138,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth", "earn"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth", "earn", "marketmaker"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -280,9 +283,27 @@ func run(root, execCmd string) int {
 			"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
 			"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
 			"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,
+			"MM_INTERNAL_URL=http://localhost:" + mmPort,
+			"SOLVENCY_HOUR_UTC=-1",
+			"TELEGRAM_API_URL=" + tgAPI,
+			"TELEGRAM_BOT_TOKEN=devstack-telegram-token",
+			"TELEGRAM_CHAT_ID=devstack-chat",
 			// Dev mode exposes the scheduler "run at now=X" endpoint so the smoke
 			// can exercise the 24h fee-change notice without waiting.
 			"DEV_MODE=true",
+		},
+		"marketmaker": {
+			"PORT=" + mmPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ORDER_URL=http://localhost:" + orderPort,
+			"FUTURES_URL=http://localhost:" + futuresPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			"ASSET_URL=http://localhost:" + assetPort,
+			"WALLET_CHAIN=mock",
+			"TELEGRAM_API_URL=" + tgAPI,
+			"TELEGRAM_BOT_TOKEN=devstack-telegram-token",
+			"TELEGRAM_CHAT_ID=devstack-chat",
 		},
 		"futures": {
 			"PORT=" + futuresPort,
@@ -366,6 +387,7 @@ func run(root, execCmd string) int {
 		{"strategy", "http://localhost:" + strategyPort + "/healthz"},
 		{"growth", "http://localhost:" + growthPort + "/healthz"},
 		{"earn", "http://localhost:" + earnPort + "/healthz"},
+		{"marketmaker", "http://localhost:" + mmPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 
@@ -416,6 +438,9 @@ func run(root, execCmd string) int {
 		// (e.g. seed balances). Not a real credential; never used in production.
 		"INTERNAL_TOKEN=" + internalTok,
 		"ADMIN_URL=http://localhost:" + adminPort,
+		"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+		"MM_URL=http://localhost:" + mmPort,
+		"DEVSTACK_TELEGRAM_API_URL=" + tgAPI,
 	}
 	// Bootstrap super-admin credentials go only to exec'd commands (smokes),
 	// never to stdout.

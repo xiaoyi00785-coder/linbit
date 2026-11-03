@@ -19,6 +19,7 @@ MODULES=(
   services/go/strategy
   services/go/growth
   services/go/earn
+  services/go/marketmaker
   services/go/admin
   services/go/order
   services/go/market-data
