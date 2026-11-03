@@ -194,8 +194,8 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
   );
 }
 
-/** 借贷订单：GET /loans/records?type=borrow|repay|collateral|liquidate */
-const RT = [["borrow", "借款记录"], ["repay", "还款记录"], ["collateral", "质押率调整记录"], ["liquidate", "强平记录"]] as const;
+/** 借贷订单：GET /loans/records?type=borrow|repay|collateral|renew|liquidate */
+const RT = [["borrow", "借款记录"], ["repay", "还款记录"], ["collateral", "质押率调整记录"], ["renew", "续借记录"], ["liquidate", "强平记录"]] as const;
 type Rec = { id: number; loanId: number; type: string; amount: string; interest: string; penalty: string; collateral: string; term: string; asset: string; collateralAsset: string; time: number; ltv?: string; price?: string };
 export function LoanRecords() {
   const authed = !!useAuthStore((s) => s.accessToken);
@@ -205,7 +205,7 @@ export function LoanRecords() {
   const rows = r.data?.items ?? [];
   return (
     <div className="lcard">
-      <div className="pt">{RT.map(([k, l]) => <b key={k} className={t === k ? "on" : ""} onClick={() => setT(k)}>{l}</b>)}</div>
+      <div className="pt fx-rt">{RT.map(([k, l]) => <b key={k} className={t === k ? "on" : ""} onClick={() => setT(k)}>{l}</b>)}</div>
       <div className="fx-tbl">
         <div className="fx-tr th">{cols.map((c) => <span key={c}>{c}</span>)}</div>
         {!authed ? <div className="lg fx-empty">登录后查看借贷订单</div> : r.loading ? <div className="fx-skel" style={{ height: 40 }} /> : r.error ? <div className="fx-err">{r.error}</div> : rows.length === 0 ? <div className="lg fx-empty">暂无记录</div> : rows.map((x) => (
