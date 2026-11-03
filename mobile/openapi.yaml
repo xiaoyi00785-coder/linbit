@@ -5200,6 +5200,7 @@ paths:
                   total: { type: integer }
                   page: { type: integer }
                   size: { type: integer }
+                  limit: { type: integer, description: 每个母账户可创建的子账户上限（管理员可调，默认 20） }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: SUB_ACCOUNT_FORBIDDEN（子账户调用）, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     post:

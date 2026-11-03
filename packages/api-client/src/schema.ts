@@ -12712,6 +12712,8 @@ export interface operations {
                         total?: number;
                         page?: number;
                         size?: number;
+                        /** @description 每个母账户可创建的子账户上限（管理员可调，默认 20） */
+                        limit?: number;
                     };
                 };
             };
