@@ -2405,6 +2405,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/event/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 事件合约产品（公开；标的、周期、赔率、限额与当前指数价；功能开关 eventContracts 关闭时 enabled=false） */
+        get: operations["listEventProducts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的事件合约订单（新→旧；status=open|settled|rejected|all，before=id 游标） */
+        get: operations["listEventOrders"];
+        put?: never;
+        /**
+         * 下单（猜涨跌；clientId 幂等，重放返回原订单）
+         * @description 开仓价 = 下单时指数价（同合约：Binance，OKX 备用）；到期按到期时刻指数结算。
+         *     赢：返还本金 + stake×payoutRatio；输：没收本金；平（到期价 = 开仓价）：退还本金；宽限期内无结算价：退还本金（result=refunded）。
+         *     错误码：FEATURE_DISABLED(403) SYMBOL_NOT_SUPPORTED SYMBOL_PAUSED PERIOD_NOT_SUPPORTED STAKE_OUT_OF_RANGE
+         *     DAILY_LIMIT_EXCEEDED EXPOSURE_LIMIT INSUFFICIENT_BALANCE INDEX_UNAVAILABLE(503)。
+         *     结算实时推送：/ws?token=<accessToken>（或 Authorization: Bearer）后订阅 `event:orders`，帧 data 为 EventOrder。
+         */
+        post: operations["placeEventOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/event/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 订单详情（仅本人） */
+        get: operations["getEventOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 事件合约配置与标的（symbol:view） */
+        get: operations["adminGetEventConfig"];
+        /** 部分更新配置（symbol:edit；totpCode + reason，审计 event_config） */
+        put: operations["adminUpdateEventConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/symbols/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 暂停/恢复标的、设置单标的敞口上限（symbol:edit；totpCode + reason，审计 event_symbol_pause/resume/event_symbol） */
+        put: operations["adminUpdateEventSymbol"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 订单检索（symbol:view；uid/symbol/status/before/limit） */
+        get: operations["adminListEventOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/event/exposure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 平台敞口（按 symbol×period 的未结算净额）与今日盈亏（symbol:view） */
+        get: operations["adminEventExposure"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/chat/config": {
         parameters: {
             query?: never;
@@ -2588,6 +2716,123 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        EventProducts: {
+            enabled?: boolean;
+            /** @example USDT */
+            stakeAsset?: string;
+            /** @example 0.8 */
+            payoutRatio?: string;
+            /** @example 5 */
+            minStake?: string;
+            /** @example 1000 */
+            maxStake?: string;
+            /** @example 10000 */
+            dailyLimit?: string;
+            /** @enum {string} */
+            tieRule?: "refund";
+            periods?: {
+                /** @example 5m */
+                period?: string;
+                seconds?: number;
+            }[];
+            products?: {
+                /** @example BTCUSDT */
+                symbol?: string;
+                baseAsset?: string;
+                quoteAsset?: string;
+                paused?: boolean;
+                indexPrice?: string | null;
+                priceAvailable?: boolean;
+            }[];
+        };
+        EventOrder: {
+            id?: string;
+            clientId?: string;
+            /** @description 仅管理端 */
+            userId?: string;
+            symbol?: string;
+            period?: string;
+            /** @enum {string} */
+            direction?: "up" | "down";
+            stake?: string;
+            payoutRatio?: string;
+            openPrice?: string;
+            /**
+             * Format: int64
+             * @description ms
+             */
+            openTime?: number;
+            /**
+             * Format: int64
+             * @description ms
+             */
+            expiryTime?: number;
+            /** @enum {string} */
+            status?: "pending" | "open" | "settling" | "settled" | "rejected";
+            /** @enum {string|null} */
+            result?: "won" | "lost" | "tie" | "refunded" | null;
+            settlePrice?: string | null;
+            payout?: string | null;
+            pnl?: string | null;
+            /** Format: int64 */
+            settledAt?: number | null;
+            /** @description 若赢可得（本金 + 收益） */
+            expectedPayout?: string;
+            rejectReason?: string | null;
+            /**
+             * Format: int64
+             * @description 仅管理端
+             */
+            createdAt?: number;
+        };
+        EventConfig: {
+            /**
+             * @example [
+             *       "5m",
+             *       "15m",
+             *       "30m",
+             *       "1h",
+             *       "4h",
+             *       "1d"
+             *     ]
+             */
+            periods?: string[];
+            payoutRatio?: string;
+            minStake?: string;
+            maxStake?: string;
+            dailyLimit?: string;
+            /** @description 默认每 symbol×period 净敞口上限 */
+            exposureLimit?: string;
+            settleGraceSeconds?: number;
+            readonly updatedBy?: string;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+        };
+        EventSymbol: {
+            symbol?: string;
+            paused?: boolean;
+            exposureLimit?: string | null;
+            updatedBy?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        EventExposure: {
+            books?: {
+                symbol?: string;
+                period?: string;
+                paused?: boolean;
+                upStake?: string;
+                downStake?: string;
+                netExposure?: string;
+                limit?: string;
+                openOrders?: number;
+                utilization?: string;
+            }[];
+            todayStakeSettled?: string;
+            todayPayout?: string;
+            todayPlatformPnl?: string;
+            unfinishedOrders?: number;
+        };
         ChatRoom: {
             /** @example spot.BTCUSDT */
             id?: string;
@@ -7220,6 +7465,279 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listEventProducts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventProducts"];
+                };
+            };
+        };
+    };
+    listEventOrders: {
+        parameters: {
+            query?: {
+                status?: "open" | "settled" | "rejected" | "all";
+                symbol?: string;
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["EventOrder"][];
+                        nextBefore?: string | null;
+                        /** @description 今日（UTC）已用下单额 */
+                        dailyUsed?: string;
+                    };
+                };
+            };
+        };
+    };
+    placeEventOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example BTCUSDT */
+                    symbol: string;
+                    /** @example 5m */
+                    period: string;
+                    /** @enum {string} */
+                    direction: "up" | "down";
+                    /** @example 10 */
+                    stake: string;
+                    /** @example ev-1730600000-1 */
+                    clientId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventOrder"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description FEATURE_DISABLED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description INDEX_UNAVAILABLE */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEventOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventOrder"];
+                };
+            };
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminGetEventConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        config?: components["schemas"]["EventConfig"];
+                        symbols?: components["schemas"]["EventSymbol"][];
+                    };
+                };
+            };
+        };
+    };
+    adminUpdateEventConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & components["schemas"]["EventConfig"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        config?: components["schemas"]["EventConfig"];
+                        before?: components["schemas"]["EventConfig"];
+                        after?: components["schemas"]["EventConfig"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUpdateEventSymbol: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    paused?: boolean;
+                    /** @description 覆盖全局 exposureLimit */
+                    exposureLimit?: string;
+                    /** @description true=恢复使用全局上限 */
+                    clearExposureLimit?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: components["schemas"]["EventSymbol"];
+                        before?: components["schemas"]["EventSymbol"];
+                        after?: components["schemas"]["EventSymbol"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminListEventOrders: {
+        parameters: {
+            query?: {
+                uid?: string;
+                symbol?: string;
+                status?: "pending" | "open" | "settling" | "settled" | "rejected";
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["EventOrder"][];
+                        nextBefore?: string | null;
+                    };
+                };
+            };
+        };
+    };
+    adminEventExposure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExposure"];
+                };
+            };
         };
     };
     adminGetChatConfig: {

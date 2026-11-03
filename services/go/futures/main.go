@@ -41,6 +41,11 @@ func main() {
 	ctx := context.Background()
 	go srv.RunTicker(ctx)
 	go srv.RunTransferRetry(ctx)
+	if cfg.EventWorker {
+		go srv.RunEvents(ctx)
+	} else if err := srv.ensureEventConfig(ctx); err != nil {
+		log.Printf("event: config: %v", err)
+	}
 	addr := ":" + cfg.Port
 	log.Printf("futures service listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

@@ -24,6 +24,8 @@ servers:
   - url: https://api.linbit.example.com/v1
     description: 生产环境
 tags:
+  - name: Event
+    description: 事件合约（猜涨跌）
   - name: Auth
     description: 注册、登录、令牌刷新与登出
   - name: 2FA
@@ -2447,6 +2449,145 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /event/products:
+    get:
+      tags: [Event]
+      summary: 事件合约产品（公开；标的、周期、赔率、限额与当前指数价；功能开关 eventContracts 关闭时 enabled=false）
+      operationId: listEventProducts
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventProducts" } } } }
+  /event/orders:
+    post:
+      tags: [Event]
+      summary: 下单（猜涨跌；clientId 幂等，重放返回原订单）
+      description: |
+        开仓价 = 下单时指数价（同合约：Binance，OKX 备用）；到期按到期时刻指数结算。
+        赢：返还本金 + stake×payoutRatio；输：没收本金；平（到期价 = 开仓价）：退还本金；宽限期内无结算价：退还本金（result=refunded）。
+        错误码：FEATURE_DISABLED(403) SYMBOL_NOT_SUPPORTED SYMBOL_PAUSED PERIOD_NOT_SUPPORTED STAKE_OUT_OF_RANGE
+        DAILY_LIMIT_EXCEEDED EXPOSURE_LIMIT INSUFFICIENT_BALANCE INDEX_UNAVAILABLE(503)。
+        结算实时推送：/ws?token=<accessToken>（或 Authorization: Bearer）后订阅 `event:orders`，帧 data 为 EventOrder。
+      operationId: placeEventOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol, period, direction, stake, clientId]
+              properties:
+                symbol: { type: string, example: BTCUSDT }
+                period: { type: string, example: 5m }
+                direction: { type: string, enum: [up, down] }
+                stake: { type: string, example: "10" }
+                clientId: { type: string, example: ev-1730600000-1 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventOrder" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: INDEX_UNAVAILABLE, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [Event]
+      summary: 我的事件合约订单（新→旧；status=open|settled|rejected|all，before=id 游标）
+      operationId: listEventOrders
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [open, settled, rejected, all] } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders: { type: array, items: { $ref: "#/components/schemas/EventOrder" } }
+                  nextBefore: { type: string, nullable: true }
+                  dailyUsed: { type: string, description: 今日（UTC）已用下单额 }
+  /event/orders/{id}:
+    get:
+      tags: [Event]
+      summary: 订单详情（仅本人）
+      operationId: getEventOrder
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventOrder" } } } }
+        "404": { description: NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /admin/v1/event/config:
+    get:
+      tags: [Admin]
+      summary: 事件合约配置与标的（symbol:view）
+      operationId: adminGetEventConfig
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config: { $ref: "#/components/schemas/EventConfig" }
+                  symbols: { type: array, items: { $ref: "#/components/schemas/EventSymbol" } }
+    put:
+      tags: [Admin]
+      summary: 部分更新配置（symbol:edit；totpCode + reason，审计 event_config）
+      operationId: adminUpdateEventConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - { $ref: "#/components/schemas/EventConfig" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { config: { $ref: "#/components/schemas/EventConfig" }, before: { $ref: "#/components/schemas/EventConfig" }, after: { $ref: "#/components/schemas/EventConfig" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/event/symbols/{symbol}:
+    put:
+      tags: [Admin]
+      summary: 暂停/恢复标的、设置单标的敞口上限（symbol:edit；totpCode + reason，审计 event_symbol_pause/resume/event_symbol）
+      operationId: adminUpdateEventSymbol
+      parameters:
+        - { name: symbol, in: path, required: true, schema: { type: string, example: BTCUSDT } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  properties:
+                    paused: { type: boolean }
+                    exposureLimit: { type: string, description: 覆盖全局 exposureLimit }
+                    clearExposureLimit: { type: boolean, description: true=恢复使用全局上限 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { symbol: { $ref: "#/components/schemas/EventSymbol" }, before: { $ref: "#/components/schemas/EventSymbol" }, after: { $ref: "#/components/schemas/EventSymbol" } } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/v1/event/orders:
+    get:
+      tags: [Admin]
+      summary: 订单检索（symbol:view；uid/symbol/status/before/limit）
+      operationId: adminListEventOrders
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [pending, open, settling, settled, rejected] } }
+        - { name: before, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { orders: { type: array, items: { $ref: "#/components/schemas/EventOrder" } }, nextBefore: { type: string, nullable: true } } } } } }
+  /admin/v1/event/exposure:
+    get:
+      tags: [Admin]
+      summary: 平台敞口（按 symbol×period 的未结算净额）与今日盈亏（symbol:view）
+      operationId: adminEventExposure
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/EventExposure" } } } }
   /admin/v1/chat/config:
     get:
       tags: [Admin]
@@ -2646,6 +2787,94 @@ components:
             requestId: req_404demo
 
   schemas:
+    EventProducts:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        stakeAsset: { type: string, example: USDT }
+        payoutRatio: { type: string, example: "0.8" }
+        minStake: { type: string, example: "5" }
+        maxStake: { type: string, example: "1000" }
+        dailyLimit: { type: string, example: "10000" }
+        tieRule: { type: string, enum: [refund] }
+        periods:
+          type: array
+          items: { type: object, properties: { period: { type: string, example: 5m }, seconds: { type: integer } } }
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string, example: BTCUSDT }
+              baseAsset: { type: string }
+              quoteAsset: { type: string }
+              paused: { type: boolean }
+              indexPrice: { type: string, nullable: true }
+              priceAvailable: { type: boolean }
+    EventOrder:
+      type: object
+      properties:
+        id: { type: string }
+        clientId: { type: string }
+        userId: { type: string, description: 仅管理端 }
+        symbol: { type: string }
+        period: { type: string }
+        direction: { type: string, enum: [up, down] }
+        stake: { type: string }
+        payoutRatio: { type: string }
+        openPrice: { type: string }
+        openTime: { type: integer, format: int64, description: ms }
+        expiryTime: { type: integer, format: int64, description: ms }
+        status: { type: string, enum: [pending, open, settling, settled, rejected] }
+        result: { type: string, nullable: true, enum: [won, lost, tie, refunded] }
+        settlePrice: { type: string, nullable: true }
+        payout: { type: string, nullable: true }
+        pnl: { type: string, nullable: true }
+        settledAt: { type: integer, format: int64, nullable: true }
+        expectedPayout: { type: string, description: 若赢可得（本金 + 收益） }
+        rejectReason: { type: string, nullable: true }
+        createdAt: { type: integer, format: int64, description: 仅管理端 }
+    EventConfig:
+      type: object
+      properties:
+        periods: { type: array, items: { type: string }, example: [5m, 15m, 30m, 1h, 4h, 1d] }
+        payoutRatio: { type: string }
+        minStake: { type: string }
+        maxStake: { type: string }
+        dailyLimit: { type: string }
+        exposureLimit: { type: string, description: 默认每 symbol×period 净敞口上限 }
+        settleGraceSeconds: { type: integer }
+        updatedBy: { type: string, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    EventSymbol:
+      type: object
+      properties:
+        symbol: { type: string }
+        paused: { type: boolean }
+        exposureLimit: { type: string, nullable: true }
+        updatedBy: { type: string }
+        updatedAt: { type: string, format: date-time }
+    EventExposure:
+      type: object
+      properties:
+        books:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              period: { type: string }
+              paused: { type: boolean }
+              upStake: { type: string }
+              downStake: { type: string }
+              netExposure: { type: string }
+              limit: { type: string }
+              openOrders: { type: integer }
+              utilization: { type: string }
+        todayStakeSettled: { type: string }
+        todayPayout: { type: string }
+        todayPlatformPnl: { type: string }
+        unfinishedOrders: { type: integer }
     ChatRoom:
       type: object
       properties:

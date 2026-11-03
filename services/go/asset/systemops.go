@@ -22,6 +22,7 @@ import (
 var systemAccounts = map[string]bool{
 	"rebate": true, "marketing": true, "earn": true, "earn_interest": true,
 	"loan": true, "loan_collateral": true, "loan_interest": true,
+	"event": true, // event contracts (futures service): stakes in, payouts/refunds out
 }
 
 func (s *Store) SystemTransfer(ctx context.Context, userID, asset, account, direction string, amount decimal.Decimal, ref string) error {
