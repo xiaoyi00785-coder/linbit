@@ -38,6 +38,14 @@ tags:
     description: 充值与提现
   - name: Spot
     description: 现货交易
+  - name: Notifications
+    description: 站内信 / 消息中心（account 服务）
+  - name: Coupons
+    description: 卡券中心（体验金、抵扣金；growth 服务）
+  - name: Partner
+    description: 合伙人（返佣 4 档 + 上级额外返佣最多两级；growth 服务）
+  - name: Copy Trading
+    description: 合约跟单（仅合约，带单分润 0–50%，按天结算；futures 服务）
   - name: Market
     description: 行情数据（公开）
 
@@ -1423,6 +1431,417 @@ paths:
                   close: "76771.90"
                   volume: "98.76"
 
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: 消息列表（新→旧）
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [system, trade, activity, security] } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: 未读数
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UnreadCount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /notifications/read:
+    post:
+      tags: [Notifications]
+      summary: 标记已读（ids 或 all[+kind]）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReadNotificationsRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpdatedCount" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /notifications/settings:
+    get:
+      tags: [Notifications]
+      summary: 邮件通知偏好
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotifyPrefs" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [Notifications]
+      summary: 更新邮件通知偏好（emailSecurity 不可关闭 → SECURITY_EMAIL_REQUIRED）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotifyPrefsPatch" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotifyPrefs" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /coupons:
+    get:
+      tags: [Coupons]
+      summary: 我的卡券
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [issued, active, expired] } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CouponList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /coupons/summary:
+    get:
+      tags: [Coupons]
+      summary: 卡券统计
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CouponSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /coupons/{id}/activate:
+    post:
+      tags: [Coupons]
+      summary: 激活卡券（体验金需合约自有资金 ≥ 面额，INSUFFICIENT_OWN_FUNDS；COUPON_NOT_FOUND / COUPON_NOT_ACTIVATABLE）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CouponActivateResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /partner/rules:
+    get:
+      tags: [Partner]
+      summary: 返佣规则（公开）
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerRules" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /partner/apply:
+    post:
+      tags: [Partner]
+      summary: 申请成为合伙人（INVALID_APPLICATION / PARTNER_EXISTS）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PartnerApplyRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerMe" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /partner/me:
+    get:
+      tags: [Partner]
+      summary: 我的合伙人状态
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerMe" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /partner/summary:
+    get:
+      tags: [Partner]
+      summary: 合伙人概览
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /partner/commissions:
+    get:
+      tags: [Partner]
+      summary: 已结算佣金明细（按来源用户/日）
+      parameters:
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [futures, spot, override, referral] } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerCommissions" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /partner/commissions/daily:
+    get:
+      tags: [Partner]
+      summary: 按日汇总
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerDaily" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /partner/team:
+    get:
+      tags: [Partner]
+      summary: 直推团队
+      parameters:
+        - { name: type, in: query, required: false, schema: { type: string, enum: [all, user, partner] } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerTeam" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /partner/links:
+    get:
+      tags: [Partner]
+      summary: 推广链接
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerLinks" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /futures/copy/summary:
+    get:
+      tags: [Copy Trading]
+      summary: 跟单广场概览（公开）
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopySummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /futures/copy/traders:
+    get:
+      tags: [Copy Trading]
+      summary: 交易员列表（公开）
+      security: []
+      parameters:
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [composite, roi, followers, winrate, aum] } }
+        - { name: days, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyTraderList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /futures/copy/traders/{id}:
+    get:
+      tags: [Copy Trading]
+      summary: 交易员详情（公开）
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: days, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyTraderDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /futures/copy/trader:
+    get:
+      tags: [Copy Trading]
+      summary: 我的带单资料
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyTrader" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Copy Trading]
+      summary: 申请带单（需人工审核）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CopyTraderRequest" }
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyTrader" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [Copy Trading]
+      summary: 更新分润比例(0–0.5)/简介
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CopyTraderRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyTrader" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /futures/copy/trader/close:
+    post:
+      tags: [Copy Trading]
+      summary: 关闭带单
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /futures/copy/trader/followers:
+    get:
+      tags: [Copy Trading]
+      summary: 我的跟随者
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyFollowers" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /futures/copy/follows:
+    get:
+      tags: [Copy Trading]
+      summary: 我的跟单（默认仅 active）
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [all] } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyFollowList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Copy Trading]
+      summary: 跟单
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CopyFollowRequest" }
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyFollow" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /futures/copy/follows/{id}:
+    patch:
+      tags: [Copy Trading]
+      summary: 修改跟单参数
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CopyFollowRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyFollow" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    delete:
+      tags: [Copy Trading]
+      summary: 停止跟单
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyFollow" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /futures/copy/follows/{id}/trades:
+    get:
+      tags: [Copy Trading]
+      summary: 跟单成交与分润结算
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CopyFollowTrades" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2163,6 +2582,302 @@ components:
         low: { type: string, example: "76410.00" }
         close: { type: string, example: "76768.40" }
         volume: { type: string, example: "123.45" }
+
+    UnreadCount:
+      type: object
+      properties:
+        unread: { type: integer }
+        unreadByKind: { type: object, additionalProperties: { type: integer } }
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [system, trade, activity, security] }
+        title: { type: string }
+        body: { type: string }
+        time: { type: integer, format: int64, description: 毫秒时间戳 }
+        read: { type: boolean }
+        emailStatus: { type: string }
+    NotificationList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        unread: { type: integer }
+        unreadByKind: { type: object, additionalProperties: { type: integer } }
+    ReadNotificationsRequest:
+      type: object
+      properties:
+        ids: { type: array, items: { type: string } }
+        all: { type: boolean }
+        kind: { type: string }
+    UpdatedCount:
+      type: object
+      properties:
+        updated: { type: integer }
+    NotifyPrefs:
+      type: object
+      properties:
+        emailSystem: { type: boolean }
+        emailTrade: { type: boolean }
+        emailActivity: { type: boolean }
+        emailSecurity: { type: boolean }
+    NotifyPrefsPatch:
+      type: object
+      properties:
+        emailSystem: { type: boolean }
+        emailTrade: { type: boolean }
+        emailActivity: { type: boolean }
+        emailSecurity: { type: boolean }
+    Coupon:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [trial, deduction] }
+        amount: { type: string, description: 十进制字符串 }
+        asset: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [issued, active, expired, revoked] }
+        activateBy: { type: integer, format: int64 }
+        validDays: { type: integer }
+        activatedAt: { type: integer, format: int64 }
+        createdAt: { type: integer, format: int64 }
+        bonus:
+          type: object
+          properties:
+            remaining: { type: string, description: 十进制字符串 }
+            status: { type: string }
+            expiresAt: { type: integer, format: int64 }
+    CouponList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Coupon" } }
+    CouponSummary:
+      type: object
+      properties:
+        available: { type: integer }
+        active: { type: integer }
+    CouponActivateResult:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        status: { type: string }
+    PartnerTier:
+      type: object
+      properties:
+        key: { type: string }
+        name: { type: string }
+        minVolume30d: { type: string, description: 十进制字符串 }
+        futuresRate: { type: string, description: 十进制字符串 }
+        spotRate: { type: string, description: 十进制字符串 }
+    PartnerRules:
+      type: object
+      properties:
+        tiers: { type: array, items: { $ref: "#/components/schemas/PartnerTier" } }
+        tierBasis: { type: string }
+        overrideRate: { type: string, description: 十进制字符串 }
+        overrideLevels: { type: integer, description: 上级额外返佣层数（最多 2） }
+        overrideFunding: { type: string }
+        settlement: { type: string }
+        settleHourUtc: { type: integer }
+        payoutAsset: { type: string }
+        validity: { type: string }
+        rebateBase: { type: string }
+        autoApprove: { type: boolean }
+    PartnerApplyRequest:
+      type: object
+      required: [contact]
+      properties:
+        contact: { type: string }
+        channel: { type: string }
+        scale: { type: string }
+    PartnerMe:
+      type: object
+      properties:
+        uid: { type: string }
+        status: { type: string, enum: [none, pending, active, rejected, disabled] }
+        partner:
+          type: object
+          properties:
+            status: { type: string }
+            reviewNote: { type: string }
+            appliedAt: { type: integer, format: int64 }
+        tier: { type: string }
+        tierName: { type: string }
+        futuresRate: { type: string, description: 十进制字符串 }
+        spotRate: { type: string, description: 十进制字符串 }
+    PartnerSummary:
+      type: object
+      properties:
+        tier: { type: string }
+        tierName: { type: string }
+        futuresRate: { type: string, description: 十进制字符串 }
+        spotRate: { type: string, description: 十进制字符串 }
+        volume30d: { type: string, description: 十进制字符串 }
+        nextTier:
+          type: object
+          nullable: true
+          properties:
+            tier: { type: string }
+            name: { type: string }
+            minVolume30d: { type: string, description: 十进制字符串 }
+            gap: { type: string, description: 十进制字符串 }
+        directs: { type: integer }
+        directPartners: { type: integer }
+        unsettledEstimate: { type: string, description: 十进制字符串 }
+        yesterday: { type: string, description: 十进制字符串 }
+        month: { type: string, description: 十进制字符串 }
+        total: { type: string, description: 十进制字符串 }
+        overrideTotal: { type: string, description: 十进制字符串 }
+        pendingPayout: { type: string, description: 十进制字符串 }
+        payoutAsset: { type: string }
+    PartnerCommissions:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              settlementId: { type: integer }
+              sourceUid: { type: string }
+              kind: { type: string, enum: [futures, spot, override, referral] }
+              tier: { type: string }
+              rate: { type: string, description: 十进制字符串 }
+              base: { type: string, description: 十进制字符串 }
+              amount: { type: string, description: 十进制字符串 }
+              day: { type: string, format: date }
+              settledAt: { type: integer, format: int64 }
+              asset: { type: string }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+    PartnerDaily:
+      type: object
+      properties:
+        days: { type: integer }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string, format: date }
+              futures: { type: string, description: 十进制字符串 }
+              spot: { type: string, description: 十进制字符串 }
+              override: { type: string, description: 十进制字符串 }
+              referral: { type: string, description: 十进制字符串 }
+              total: { type: string, description: 十进制字符串 }
+    PartnerTeam:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              uid: { type: string }
+              joinedAt: { type: integer, format: int64 }
+              kycLevel: { type: integer }
+              isPartner: { type: boolean }
+              tier: { type: string }
+              futuresVolume30d: { type: string, description: 十进制字符串 }
+              spotVolume30d: { type: string, description: 十进制字符串 }
+              fee30d: { type: string, description: 十进制字符串 }
+              commission: { type: string, description: 十进制字符串 }
+    PartnerLinks:
+      type: object
+      properties:
+        code: { type: string }
+        url: { type: string }
+        registerUrl: { type: string }
+    StatusResult:
+      type: object
+      properties:
+        status: { type: string }
+    CopyTrader:
+      type: object
+      properties:
+        traderId: { type: string }
+        nickname: { type: string }
+        bio: { type: string }
+        profitShare: { type: string, description: 分润比例 0–0.5 }
+        status: { type: string }
+        reviewNote: { type: string }
+        createdAt: { type: string, format: date-time }
+    CopyTraderRequest:
+      type: object
+      properties:
+        nickname: { type: string }
+        bio: { type: string }
+        profitShare: { type: string, description: 0–0.5 }
+    CopyTraderStats:
+      type: object
+      additionalProperties: true
+      description: 交易员 + 统计（roi、winRate、followers、aum 等，随 days 窗口）
+    CopySummary:
+      type: object
+      additionalProperties: true
+      properties:
+        traders: { type: integer }
+        totalFollowers: { type: integer }
+        followerProfit: { type: string, description: 十进制字符串 }
+        aum: { type: string, description: 十进制字符串 }
+    CopyTraderList:
+      type: object
+      properties:
+        traders: { type: array, items: { $ref: "#/components/schemas/CopyTraderStats" } }
+        days: { type: integer }
+        sort: { type: string }
+    CopyTraderDetail:
+      type: object
+      properties:
+        trader: { $ref: "#/components/schemas/CopyTraderStats" }
+        positions: { type: array, items: { type: object, additionalProperties: true } }
+    CopyFollowers:
+      type: object
+      properties:
+        followers: { type: array, items: { type: object, additionalProperties: true } }
+    CopyFollowRequest:
+      type: object
+      description: POST 时 traderId、amount 必填；PATCH 只传要改的字段。比例均为 0–1 小数（slRatio 0.2 = 单笔保证金亏损 20% 止损，≤1）
+      properties:
+        traderId: { type: string }
+        amount: { type: string, description: 十进制字符串 }
+        mode: { type: string, enum: [ratio, fixed], default: ratio }
+        fixedMargin: { type: string, description: 十进制字符串 }
+        ratio: { type: string, description: 十进制字符串 }
+        maxPerTrade: { type: string, description: 十进制字符串 }
+        tpRatio: { type: string, description: 十进制字符串 }
+        slRatio: { type: string, description: 十进制字符串 }
+    CopyFollow:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: integer, format: int64 }
+        traderId: { type: string }
+        status: { type: string }
+        mode: { type: string, enum: [ratio, fixed] }
+        fixedMargin: { type: string, description: 十进制字符串 }
+        ratio: { type: string, description: 十进制字符串 }
+        maxPerTrade: { type: string, description: 十进制字符串 }
+        tpRatio: { type: string, description: 十进制字符串 }
+        slRatio: { type: string, description: 十进制字符串 }
+        principal: { type: string, description: 十进制字符串 }
+        returned: { type: string, description: 十进制字符串 }
+        sharePaid: { type: string, description: 十进制字符串 }
+        createdAt: { type: string, format: date-time }
+        stoppedAt: { type: string, format: date-time }
+    CopyFollowList:
+      type: object
+      properties:
+        follows: { type: array, items: { $ref: "#/components/schemas/CopyFollow" } }
+    CopyFollowTrades:
+      type: object
+      properties:
+        trades: { type: array, items: { type: object, additionalProperties: true } }
+        settlements: { type: array, items: { type: object, additionalProperties: true } }
 
 security:
   - bearerAuth: []
