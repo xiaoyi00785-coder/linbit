@@ -6,8 +6,8 @@ import { NETNAME, coupons, fmt, liqs, partners, pushes, sweeps, wallets } from '
 export function Wallets() {
   const [t, setT] = useState('bal'); const [m, setM] = useState(null); const loading = useLoading()
   const hot = wallets.filter(w => w.kind === '热'), hotSum = hot.reduce((a, b) => a + b.bal, 0), coldSum = wallets.filter(w => w.kind === '冷').reduce((a, b) => a + b.bal, 0)
-  return <><PageHead title="钱包管理" desc="热钱包按网络独立、低于阈值告警；冷钱包 3/5 多签离线；热→冷归集与冷→热补充均需多签确认"><button className="btn" onClick={() => setM('sweep')}>热→冷 归集</button><button className="btn p" onClick={() => setM('refill')}>冷→热 补充</button></PageHead>
-    <div className="grid g4" style={{ marginBottom: 12 }}><Kpi l="热钱包合计" v={'$' + fmt(hotSum / 1e6) + 'M'} d={'占比 ' + (hotSum / (hotSum + coldSum) * 100).toFixed(2) + '%（目标 ≤ 2%）'} up /><Kpi l="冷钱包合计" v={'$' + fmt(coldSum / 1e9) + 'B'} d="多签 3/5" />
+  return <><PageHead title="钱包管理" desc="热钱包按网络独立、低于阈值告警；冷钱包 2/3 多签离线；热→冷归集与冷→热补充均需多签确认"><button className="btn" onClick={() => setM('sweep')}>热→冷 归集</button><button className="btn p" onClick={() => setM('refill')}>冷→热 补充</button></PageHead>
+    <div className="grid g4" style={{ marginBottom: 12 }}><Kpi l="热钱包合计" v={'$' + fmt(hotSum / 1e6) + 'M'} d={'占比 ' + (hotSum / (hotSum + coldSum) * 100).toFixed(2) + '%（目标 ≤ 2%）'} up /><Kpi l="冷钱包合计" v={'$' + fmt(coldSum / 1e9) + 'B'} d="多签 2/3" />
       <Kpi l="用户总负债" v="$1.84B" d="储备率 101.6%" up /><Kpi l="告警" v="1" d="Ethereum 热钱包低于阈值" up={false} /></div>
     <div className="card"><Tabs value={t} onChange={setT} items={[['bal', '钱包余额'], ['sw', '归集 / 补充记录', sweeps.length]]} /></div>
     {loading ? <Skeleton /> : t === 'bal' ? <DataTable rows={wallets} cols={[{ t: '钱包', k: 'name', render: r => <b>{r.name}</b> }, { t: '类型', render: r => <Tag k={r.kind === '热' ? 'wn' : 'in'}>{r.kind}钱包</Tag> }, { t: '网络', render: r => NETNAME[r.net] || '多链' },
@@ -16,7 +16,7 @@ export function Wallets() {
       { t: '状态', render: r => <Tag k={r.st === '正常' ? 'ok' : 'bad'}>{r.st}</Tag> }]} />
       : <DataTable rows={sweeps} cols={[{ t: '单号', k: 'id', render: r => <span className="pri">{r.id}</span> }, { t: '类型', k: 'type' }, { t: '网络', render: r => NETNAME[r.net] }, { t: '金额 USDT', r: 1, num: 1, render: r => fmt(r.amt, 0) },
         { t: '签名进度', k: 'signers' }, { t: '发起人', k: 'by' }, { t: '状态', render: r => <Tag k={r.status === '已完成' ? 'ok' : r.status === '待签名' ? 'wn' : 'in'}>{r.status}</Tag> }, { t: '时间', k: 'time' }]} />}
-    {m && <Confirm title={m === 'sweep' ? '发起热→冷归集' : '发起冷→热补充'} rows={[['网络', 'Ethereum (ERC20)'], ['金额', m === 'sweep' ? '500,000 USDT' : '1,000,000 USDT'], ['目标', m === 'sweep' ? '冷钱包 A（多签 3/5）' : 'Ethereum 热钱包'], ['签名', '需 3 / 5 签名人确认']]}
+    {m && <Confirm title={m === 'sweep' ? '发起热→冷归集' : '发起冷→热补充'} rows={[['网络', 'Ethereum (ERC20)'], ['金额', m === 'sweep' ? '500,000 USDT' : '1,000,000 USDT'], ['目标', m === 'sweep' ? '冷钱包 A（多签 2/3）' : 'Ethereum 热钱包'], ['签名', '需 2 / 3 签名人确认']]}
       okText="提交多签请求" onClose={() => setM(null)} />}</>
 }
 

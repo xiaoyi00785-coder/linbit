@@ -117,11 +117,11 @@ export const feeChanges = [
 export const wallets = [
   ['TRON 热钱包', 'TRC20', '热', 3820410, 2000000, 'T9yD…4kQe', '正常'], ['Ethereum 热钱包', 'ERC20', '热', 812300, 1000000, '0x7a2…91cF', '低于阈值'],
   ['BNB Chain 热钱包', 'BEP20', '热', 2210400, 1000000, '0x3c1…a07B', '正常'], ['Arbitrum 热钱包', 'Arbitrum', '热', 1430000, 800000, '0x5e9…22dA', '正常'],
-  ['Solana 热钱包', 'Solana', '热', 620300, 500000, '7xKq…pL2m', '正常'], ['冷钱包 A（多签 3/5）', 'Multi', '冷', 812400000, 0, '多签 · 离线', '正常'],
-  ['冷钱包 B（多签 3/5）', 'Multi', '冷', 1021500000, 0, '多签 · 离线', '正常']]
+  ['Solana 热钱包', 'Solana', '热', 620300, 500000, '7xKq…pL2m', '正常'], ['冷钱包 A（多签 2/3）', 'Multi', '冷', 812400000, 0, '多签 · 离线', '正常'],
+  ['冷钱包 B（多签 2/3）', 'Multi', '冷', 1021500000, 0, '多签 · 离线', '正常']]
   .map(([n, net, k, bal, th, addr, st]) => ({ id: n, name: n, net, kind: k, bal, th, addr, st }))
 export const sweeps = Array.from({ length: 24 }, (_, i) => ({ id: 'SW' + (77000 + i), type: pick(['热→冷 归集', '冷→热 补充', '充值地址归集']), net: pick(NETS), amt: ri(20, 900) * 1000,
-  status: i < 2 ? '待签名' : pick(['已完成', '已完成', '已完成', '广播中']), signers: i < 2 ? '1 / 3' : '3 / 3', by: pick(['fin_zhao', 'fin_qian']), time: ts(i * 47 + ri(0, 30)) }))
+  status: i < 2 ? '待签名' : pick(['已完成', '已完成', '已完成', '广播中']), signers: i < 2 ? '1 / 2' : '2 / 2', by: pick(['fin_zhao', 'fin_qian']), time: ts(i * 47 + ri(0, 30)) }))
 // 强平
 export const liqs = Array.from({ length: 40 }, (_, i) => ({ id: 'LQ' + (610000 + i), uid: uid(ri(0, 85)), sym: pick(SYMS.slice(0, 8)) + 'USDT', side: pick(['多', '空']), lev: pick([10, 20, 50, 100, 125]),
   size: ri(1, 400) * 100, price: +(rnd() * 60000).toFixed(2), loss: +(rnd() * 3000).toFixed(2), ins: +((rnd() - .3) * 200).toFixed(2), type: pick(['强平', '强平', '强平', 'ADL 减仓']), time: ts(i * 11 + ri(0, 9)) }))
