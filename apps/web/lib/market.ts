@@ -9,24 +9,21 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE } from "./api";
 
 export type Source = "api" | "mock" | "loading";
-export type SymbolMeta = { symbol: string; base: string; quote: string; pricePrecision: number; quantityPrecision: number; minQuantity?: string; status?: string };
+export type SymbolMeta = { symbol: string; base: string; quote: string; pricePrecision: number; quantityPrecision: number; minQuantity?: string; status?: string; tags?: string[] };
 export type Ticker = { symbol: string; lastPrice: string; priceChangePercent: string; high: string; low: string; volume: string; quoteVolume: string };
 export type Level = [string, string];
 export type Book = { lastUpdateId: number; bids: Level[]; asks: Level[] };
 export type Trade = { tradeId: string; price: string; quantity: string; side: "buy" | "sell"; time: number };
 export type Bar = { time: number; open: number; high: number; low: number; close: number; v: number };
 
-const isAbs = (u: string) => /^https?:\/\//.test(u);
 export function restBase(): string {
   return API_BASE.replace(/\/$/, "");
 }
+export const WS_DEFAULT = "wss://api.cowa.click/ws";
+/** 行情 WS 地址：始终为绝对 wss://；NEXT_PUBLIC_WS_URL 仅在是绝对 wss:// 时生效（www/partner 同源 /ws 为 404）。 */
 export function wsUrl(): string {
-  const env = process.env.NEXT_PUBLIC_WS_URL;
-  if (env) return env;
-  const b = restBase();
-  if (isAbs(b)) return b.replace(/^http/, "ws") + "/ws";
-  if (typeof location === "undefined") return "";
-  return location.origin.replace(/^http/, "ws") + b + "/ws";
+  const env = process.env.NEXT_PUBLIC_WS_URL ?? "";
+  return /^wss:\/\//.test(env) ? env : WS_DEFAULT;
 }
 
 async function rest<T>(path: string): Promise<T> {
