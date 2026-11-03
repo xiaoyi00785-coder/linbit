@@ -43,9 +43,15 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	market, err := url.Parse(cfg.MarketURL)
+	if err != nil {
+		return nil, err
+	}
 	accountProxy := httputil.NewSingleHostReverseProxy(account)
 	assetProxy := httputil.NewSingleHostReverseProxy(asset)
 	orderProxy := httputil.NewSingleHostReverseProxy(order)
+	// ReverseProxy transparently tunnels WebSocket upgrades (used by /ws).
+	marketProxy := httputil.NewSingleHostReverseProxy(market)
 
 	return &Gateway{
 		cfg: cfg,
@@ -55,7 +61,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/2fa", proxy: accountProxy},
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
+			{prefix: "/wallet", proxy: assetProxy},
 			{prefix: "/spot", proxy: orderProxy},
+			{prefix: "/market", proxy: marketProxy},
+			{prefix: "/ws", proxy: marketProxy},
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -63,13 +72,14 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/login"},
 			{method: http.MethodPost, path: "/auth/refresh"},
 			{method: "", path: "/market/"}, // public market data (prefix)
+			{method: "", path: "/ws"},      // public market WebSocket
 		},
 	}, nil
 }
 
-// Handler returns the gateway HTTP handler.
+// Handler returns the gateway HTTP handler (CORS wraps auth + routing).
 func (g *Gateway) Handler() http.Handler {
-	return http.HandlerFunc(g.serve)
+	return g.withCORS(http.HandlerFunc(g.serve))
 }
 
 func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {

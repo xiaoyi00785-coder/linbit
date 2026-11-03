@@ -33,6 +33,11 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /assets/balances", s.handleBalances)
 
+	// Minimal user-facing wallet read endpoints (routed via the gateway under
+	// /wallet/*; the gateway injects X-User-Id after validating the JWT).
+	mux.HandleFunc("GET /wallet/withdraw/networks", s.handleWithdrawNetworks)
+	mux.HandleFunc("GET /wallet/withdraw/records", s.handleWithdrawRecords)
+
 	mux.HandleFunc("POST /internal/accounts", s.internal(s.handleInitAccount))
 	mux.HandleFunc("POST /internal/credit", s.internal(s.handleCredit))
 	mux.HandleFunc("POST /internal/freeze", s.internal(s.handleFreeze))

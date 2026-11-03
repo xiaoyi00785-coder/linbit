@@ -214,4 +214,63 @@ cd services/rust/matching-engine && cargo run --release --bin bench
 `docker-compose.yml` 增加了 `matching-engine`（Rust 镜像，WAL/快照挂载 `enginedata` 卷）与 `order`
 服务，网关通过 `ORDER_URL` 暴露 `/spot/*`。
 
-> 其余子目录（kyc/wallet/market-data/admin/risk）仍为占位，后续落地。
+## 现货链路 · 第三步（已落地：market-data / 行情服务）
+
+第三步接上行情链路：Go 的 `market-data` 服务消费撮合引擎输出的成交/深度事件，聚合各周期 K 线、
+订单簿深度、24h ticker 与近期成交，提供 REST 查询与 WebSocket 推送。
+
+| 模块 | 路径 | 端口 | 职责 |
+| --- | --- | --- | --- |
+| `market-data` | `services/go/market-data` | 8085 | 消费引擎成交/深度事件 → K 线/深度/ticker/成交聚合；REST（`/market/*`）+ WebSocket（`/ws`）；K 线落 PostgreSQL、重启可恢复 |
+
+### 消费引擎事件（可替换消息接口，消费侧）
+
+- 撮合引擎通过 `EventSink` trait 输出 `Trade`/`Depth` 事件（见第二步）。本服务是其**消费侧**的本地实现：
+  引擎的 `HttpSink` 将每条事件以 JSON POST 到 `EVENT_SINK_URL`，由 `market-data` 的 `POST /internal/events`
+  摄取（`Sink` 接口 + `HTTPEventSource` 本地实现）。生产环境可换成从 Kafka 同一事件流消费、调用同一 `Sink`，
+  无需改动聚合逻辑。事件为尽力而为（引擎不重试、结算不依赖此路径），并按单调 `tradeId`/`sequence` 去重。
+- 时序保证：引擎在 `process()` 内**同步**发布事件（阻塞到消费方返回），故订单接口返回时行情状态已更新。
+
+### 聚合与查询
+
+- **K 线**：支持 `1m/5m/15m/30m/1h/4h/1d/1w`（openapi `KlineInterval` 的超集，额外含 `30m`）。按成交时间分桶，
+  同桶更新、跨桶收线；`1d` 对齐 UTC 零点、`1w` 对齐周一零点。
+- **深度**：从引擎深度增量重建聚合盘口（量为 0 即删除该价位），REST 返回按价排序的买/卖盘与 `lastUpdateId`。
+- **24h ticker**：滚动 24h 窗口计算最高/最低/成交量/成交额与涨跌幅，`lastPrice` 取最新成交价。
+- **近期成交**：每交易对保留最近成交环形缓冲。
+- **交易对列表**：读取 `order` 维护的共享 `symbols` 表（只读）。
+
+### REST（与 openapi.yaml 一致，公开）
+
+经网关 `/market/*`（公开路由，无需鉴权）：`GET /market/symbols`、`GET /market/ticker`、
+`GET /market/depth`、`GET /market/klines`，以及与 WS `trades` 频道同形的 `GET /market/trades`（近期成交）。
+
+### WebSocket（按 docs/api/websocket.md，公开）
+
+经网关 `/ws`（`httputil.ReverseProxy` 透明转发 Upgrade）。标准库手写最小 RFC 6455 服务端，支持：
+`subscribe`/`unsubscribe`（公开频道 `ticker:`、`depth:`、`kline:<sym>:<interval>`、`trades:`）、
+订阅即下发首帧快照、心跳（应用层 `ping`/`pong` 双向 + 60s 空闲断开）。用户频道（orders/balances）由账户/订单服务提供，本服务拒绝。
+
+### K 线持久化与重启恢复
+
+- 每笔成交以 `(symbol, interval, open_time)` 为主键**异步 upsert** K 线（含进行中的当前 K 线），goose 迁移建表
+  （独立版本表 `goose_market_version`）。启动时按交易对/周期回载最近 K 线到内存，REST/WS 立即可用；深度另从引擎
+  `GET /engine/depth` 拉取全量快照以尽快恢复盘口。
+
+### 本机运行与冒烟
+
+```bash
+# 行情端到端冒烟：两用户成交 → 引擎事件 → WebSocket 客户端(tools/wsprobe)收到
+# ticker/depth/kline/trades 推送 → REST 精确校验 ticker/K线/深度/成交
+bash scripts/smoke-market.sh
+
+# 第一、二步冒烟仍可用
+bash scripts/smoke.sh
+bash scripts/smoke-trade.sh
+```
+
+`tools/devstack` 现额外编译并拉起 `market-data`，并给引擎注入 `EVENT_SINK_URL` 指向其 `/internal/events`；
+`tools/wsprobe` 是一个零依赖的最小 WebSocket 客户端，供冒烟脚本验证推送。`scripts/test-all.sh` 已含 `market-data`
+模块（含 K 线持久化/恢复的 DB 测试，在无 `DATABASE_URL` 时自动 skip）。
+
+> 其余子目录（kyc/wallet/admin/risk）仍为占位，后续落地。

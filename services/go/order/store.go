@@ -182,10 +182,23 @@ func (s *Store) OpenOrders(ctx context.Context, userID, symbol string, page, siz
 	return s.queryOrders(ctx, where, args, page, size)
 }
 
-// OrderHistory returns a page of the user's orders, optionally filtered.
+// terminalStatuses are the final order states surfaced by order history. Live
+// orders (new / partially_filled) are returned by OpenOrders, never here.
+var terminalStatuses = []string{"filled", "canceled", "rejected", "expired"}
+
+// OrderHistory returns a page of the user's terminal orders (filled / canceled /
+// rejected / expired), optionally filtered by symbol and by one terminal status.
+// A non-terminal status filter matches nothing by design.
 func (s *Store) OrderHistory(ctx context.Context, userID, symbol, status string, page, size int) ([]Order, int, error) {
-	where := `user_id = $1`
 	args := []any{userID}
+	// Fixed terminal set, expanded to a ($2,$3,...) IN list so live orders can
+	// never leak into history regardless of the caller's status filter.
+	in := make([]string, 0, len(terminalStatuses))
+	for _, st := range terminalStatuses {
+		in = append(in, `$`+itoa(len(args)+1))
+		args = append(args, st)
+	}
+	where := `user_id = $1 AND status IN (` + join(in, ",") + `)`
 	if symbol != "" {
 		where += ` AND symbol = $` + itoa(len(args)+1)
 		args = append(args, symbol)
@@ -334,3 +347,15 @@ func nullDecimal(d decimal.Decimal, ok bool) interface{} {
 }
 
 func itoa(n int) string { return decimal.NewFromInt(int64(n)).String() }
+
+// join concatenates parts with sep (small local helper to avoid importing strings).
+func join(parts []string, sep string) string {
+	out := ""
+	for i, p := range parts {
+		if i > 0 {
+			out += sep
+		}
+		out += p
+	}
+	return out
+}

@@ -43,6 +43,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Optional JSON override for GET /wallet/withdraw/networks (empty = defaults).
+      WITHDRAW_NETWORKS_JSON: ${WITHDRAW_NETWORKS_JSON:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +77,8 @@ services:
       DATA_DIR: /data
       SNAPSHOT_EVERY: "1000"
       SYMBOLS: "BTCUSDT:6,ETHUSDT:5"
+      # Stream trade/depth events to market-data (local pub/sub stand-in).
+      EVENT_SINK_URL: http://market-data:8085/internal/events
     volumes:
       - enginedata:/data
 
@@ -99,6 +103,24 @@ services:
       matching-engine:
         condition: service_started
 
+  market-data:
+    build:
+      context: .
+      dockerfile: services/go/market-data/Dockerfile
+    environment:
+      PORT: "8085"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ENGINE_URL: http://matching-engine:8083
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      order:
+        condition: service_started
+      matching-engine:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -109,7 +131,10 @@ services:
       ACCOUNT_URL: http://account:8081
       ASSET_URL: http://asset:8082
       ORDER_URL: http://order:8084
+      MARKET_URL: http://market-data:8085
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     depends_on:
@@ -118,6 +143,8 @@ services:
       asset:
         condition: service_started
       order:
+        condition: service_started
+      market-data:
         condition: service_started
 
 volumes:

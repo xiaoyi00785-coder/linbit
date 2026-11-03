@@ -171,7 +171,7 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request, userID stri
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	common.WriteJSON(w, http.StatusCreated, toOrderDTO(fresh))
+	common.WriteJSON(w, http.StatusCreated, toOrderDTO(fresh, sym))
 }
 
 // buildOrder validates the request against the symbol rules and computes the
@@ -360,7 +360,13 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request, userID str
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, toOrderDTO(fresh))
+	sym, err := s.store.Symbol(r.Context(), fresh.Symbol)
+	if err != nil {
+		log.Printf("cancel: symbol: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, toOrderDTO(fresh, sym))
 }
 
 // ---- queries ----
@@ -373,7 +379,13 @@ func (s *Server) handleOpenOrders(w http.ResponseWriter, r *http.Request, userID
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, paginated{Items: toOrderDTOs(orders), Page: page, PageSize: size, Total: total})
+	syms, err := s.symbolMap(r.Context())
+	if err != nil {
+		log.Printf("open orders: symbols: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, paginated{Items: toOrderDTOs(orders, syms), Page: page, PageSize: size, Total: total})
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, userID string) {
@@ -384,7 +396,13 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, userID st
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, paginated{Items: toOrderDTOs(orders), Page: page, PageSize: size, Total: total})
+	syms, err := s.symbolMap(r.Context())
+	if err != nil {
+		log.Printf("history: symbols: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, paginated{Items: toOrderDTOs(orders, syms), Page: page, PageSize: size, Total: total})
 }
 
 func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request, userID string) {
@@ -395,11 +413,31 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request, userID str
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
+	syms, err := s.symbolMap(r.Context())
+	if err != nil {
+		log.Printf("trades: symbols: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
 	items := make([]tradeDTO, 0, len(trades))
 	for _, t := range trades {
-		items = append(items, toTradeDTO(t))
+		items = append(items, toTradeDTO(t, syms[t.Symbol]))
 	}
 	common.WriteJSON(w, http.StatusOK, paginated{Items: items, Page: page, PageSize: size, Total: total})
+}
+
+// symbolMap loads all trading-pair configs keyed by symbol, so list responses
+// can format each row's price/quantity to that pair's precision.
+func (s *Server) symbolMap(ctx context.Context) (map[string]*SymbolConfig, error) {
+	syms, err := s.store.Symbols(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]*SymbolConfig, len(syms))
+	for i := range syms {
+		m[syms[i].Symbol] = &syms[i]
+	}
+	return m, nil
 }
 
 // ---- settlement ----
@@ -562,14 +600,49 @@ func atoiDefault(s string, def, min, max int) int {
 	return n
 }
 
-func toOrderDTO(o *Order) orderDTO {
+// Price/quantity amounts are rendered as fixed-precision decimal strings scaled
+// to the trading pair's rules (never floats): prices and quote-denominated
+// amounts to price_precision, base quantities to quantity_precision. When the
+// symbol config is unavailable (should not happen for a valid order) the raw
+// decimal string is used so no information is lost.
+
+func fmtQty(d decimal.Decimal, sym *SymbolConfig) string {
+	if sym == nil {
+		return d.String()
+	}
+	return d.StringFixed(int32(sym.QuantityPrecision))
+}
+
+func fmtPrice(d decimal.Decimal, sym *SymbolConfig) string {
+	if sym == nil {
+		return d.String()
+	}
+	return d.StringFixed(int32(sym.PricePrecision))
+}
+
+// fmtFee scales a fee to the precision of its charging asset: base fees to
+// quantity_precision, quote fees to price_precision.
+func fmtFee(d decimal.Decimal, feeAsset string, sym *SymbolConfig) string {
+	switch {
+	case sym == nil:
+		return d.String()
+	case feeAsset == sym.Base:
+		return d.StringFixed(int32(sym.QuantityPrecision))
+	case feeAsset == sym.Quote:
+		return d.StringFixed(int32(sym.PricePrecision))
+	default:
+		return d.String()
+	}
+}
+
+func toOrderDTO(o *Order, sym *SymbolConfig) orderDTO {
 	d := orderDTO{
 		OrderID:        o.OrderID,
 		Symbol:         o.Symbol,
 		Side:           o.Side,
 		Type:           o.Type,
-		Quantity:       o.Quantity.String(),
-		FilledQuantity: o.FilledQuantity.String(),
+		Quantity:       fmtQty(o.Quantity, sym),
+		FilledQuantity: fmtQty(o.FilledQuantity, sym),
 		Status:         o.Status,
 		TimeInForce:    o.TimeInForce,
 		CreatedAt:      o.CreatedAt.UTC().Format(rfc3339),
@@ -579,36 +652,36 @@ func toOrderDTO(o *Order) orderDTO {
 		d.ClientOrderID = &c
 	}
 	if o.HasPrice {
-		p := o.Price.String()
+		p := fmtPrice(o.Price, sym)
 		d.Price = &p
 	}
 	if o.HasQuoteQty {
-		q := o.QuoteOrderQty.String()
+		q := fmtPrice(o.QuoteOrderQty, sym) // quote-denominated budget
 		d.QuoteOrderQty = &q
 	}
 	return d
 }
 
-func toOrderDTOs(orders []Order) []orderDTO {
+func toOrderDTOs(orders []Order, syms map[string]*SymbolConfig) []orderDTO {
 	out := make([]orderDTO, 0, len(orders))
 	for i := range orders {
-		out = append(out, toOrderDTO(&orders[i]))
+		out = append(out, toOrderDTO(&orders[i], syms[orders[i].Symbol]))
 	}
 	return out
 }
 
-func toTradeDTO(t TradeRow) tradeDTO {
+func toTradeDTO(t TradeRow, sym *SymbolConfig) tradeDTO {
 	d := tradeDTO{
 		TradeID:   t.TradeID,
 		OrderID:   t.OrderID,
 		Symbol:    t.Symbol,
 		Side:      t.Side,
-		Price:     t.Price.String(),
-		Quantity:  t.Quantity.String(),
+		Price:     fmtPrice(t.Price, sym),
+		Quantity:  fmtQty(t.Quantity, sym),
 		Role:      t.Role,
 		CreatedAt: t.CreatedAt.UTC().Format(rfc3339),
 	}
-	fee := t.Fee.String()
+	fee := fmtFee(t.Fee, t.FeeAsset, sym)
 	d.Fee = &fee
 	if t.FeeAsset != "" {
 		fa := t.FeeAsset
