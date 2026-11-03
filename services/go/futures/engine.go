@@ -31,11 +31,13 @@ type Server struct {
 	devIndex       map[string]decimal.Decimal
 	lastMarkSample time.Time
 	tpslRetry      map[string]time.Time
+	traders        map[string]bool // active copy traders (their fills emit copy events)
+	lastCopySettle string
 }
 
 func NewServer(cfg Config, db *sql.DB) (*Server, error) {
 	s := &Server{cfg: cfg, db: db, asset: NewAssetClient(cfg.AssetURL, cfg.InternalToken), market: NewMarketClient(cfg.MarketURL),
-		now: time.Now, contracts: map[string]Contract{}, prices: map[string]*priceState{}, devIndex: map[string]decimal.Decimal{}, tpslRetry: map[string]time.Time{}}
+		now: time.Now, contracts: map[string]Contract{}, prices: map[string]*priceState{}, devIndex: map[string]decimal.Decimal{}, tpslRetry: map[string]time.Time{}, traders: map[string]bool{}}
 	ctx := context.Background()
 	cs, err := loadContracts(ctx, db)
 	if err != nil {
@@ -51,6 +53,9 @@ func NewServer(cfg Config, db *sql.DB) (*Server, error) {
 		_ = db.QueryRowContext(ctx, `SELECT funding_time, rate FROM fut_funding_history WHERE symbol=$1 ORDER BY funding_time DESC LIMIT 1`, c.Symbol).Scan(&ft, &ps.LastRate)
 		ps.Bucket = s.bucket(s.now())
 		s.prices[c.Symbol] = ps
+	}
+	if err := s.loadTraders(ctx); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -263,6 +268,11 @@ func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid string, d
 	if err = savePosition(ctx, tx, p); err != nil {
 		return
 	}
+	if s.traders[uid] && !oldQ.Equal(nq) {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO fut_copy_events (trader, symbol, old_qty, new_qty, price) VALUES ($1,$2,$3,$4,$5)`, uid, c.Symbol, oldQ, nq, px); err != nil {
+			return
+		}
+	}
 	// Isolated-margin moves are internal (balance <-> position) and not billed;
 	// realized PnL and fees are.
 	if _, err = tx.ExecContext(ctx, `UPDATE fut_accounts SET balance = balance + $2, updated_at=now() WHERE user_id=$1`, uid, balDelta.Sub(rp)); err != nil {
@@ -313,7 +323,9 @@ func optDec(v string) (decimal.NullDecimal, error) {
 func (s *Server) PlaceOrder(ctx context.Context, uid string, r PlaceReq) (Order, []Trade, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.placeLocked(ctx, uid, r)
+	o, t, err := s.placeLocked(ctx, uid, r)
+	s.processCopy(ctx)
+	return o, t, err
 }
 
 func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order, []Trade, error) {
@@ -774,7 +786,9 @@ func (s *Server) SetTPSL(ctx context.Context, uid, sym string, tp, sl decimal.Nu
 func (s *Server) ClosePosition(ctx context.Context, uid, sym, source string) (Order, []Trade, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.closeLocked(ctx, uid, sym, source)
+	o, t, err := s.closeLocked(ctx, uid, sym, source)
+	s.processCopy(ctx)
+	return o, t, err
 }
 
 func (s *Server) closeLocked(ctx context.Context, uid, sym, source string) (Order, []Trade, error) {

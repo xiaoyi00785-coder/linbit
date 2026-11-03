@@ -36,6 +36,8 @@ func (s *Server) Tick(ctx context.Context, forceSample bool) {
 	s.liquidations(ctx)
 	s.triggerTPSL(ctx)
 	s.coverNegative(ctx)
+	s.processCopy(ctx)
+	s.copyHousekeeping(ctx)
 }
 
 func (s *Server) liqFeeRate(c Contract) decimal.Decimal {

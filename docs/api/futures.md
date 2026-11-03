@@ -106,6 +106,37 @@ These need `DEV_MODE=true` and the `X-Internal-Token` header.
 - `POST /internal/dev/funding {symbol, rate}`
 - `GET /internal/dev/audit` (checks that Σ equity = net transfers)
 
+## Copy trading (futures only)
+
+- **Trader**: any user with futures equity ≥ `FUTURES_COPY_TRADER_MIN_EQUITY` can apply with a profit share in **0–50%** (`profitShare` "0.2" or "20%"). Status `pending → active → closed`. Closing stops every follow.
+- **Follow**: `amount` moves from the follower's futures wallet into an isolated sub-account `copy:<followId>` (bill `copy_transfer_out/in`). Modes:
+  - `ratio` (default 1): mirror qty = trader Δqty × ratio × follow equity / trader equity.
+  - `fixed`: each open uses `fixedMargin` × leverage / price.
+  - `maxPerTrade` caps margin per open; opens are also capped by what the sub-account can afford, and floored to the contract step (skips are logged with a reason).
+  - `tpRatio` / `slRatio` are ROE ratios turned into TP/SL prices `entry·(1±ratio/leverage)` on each mirrored position.
+- **Sync**: every trader fill that changes a position writes `fut_copy_events`; followers mirror opens/adds, proportional reduces and full closes/flips with market orders. Leverage and margin mode are copied when the follower position is flat.
+- **Unfollow**: closes mirrored positions, settles any outstanding share, and returns the remaining balance.
+- **Profit share**: settled **daily** at `FUTURES_COPY_SETTLE_HOUR_UTC` per follow with a high-water mark: share = max(0, net realized − HWM) × rate, where net realized = realized PnL + fees + funding + liquidation items. Losses are never charged and must be earned back first. Paid to the trader's **spot** account (`fut_transfers.kind = copy_profit_share`). Idempotent per (follow, day). **Profit share is not rebate-eligible**: it is a transfer, not a fee, so it is never part of any fee/rebate base.
+- **Stats** (`days` = 7/30/90): pnl, roi, winRate, closedTrades, maxDrawdown, followers, aum, followerProfit, profitShareEarned, composite score and an equity curve.
+
+Endpoints:
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | /futures/copy/summary | public |
+| GET | /futures/copy/traders?sort=composite\|roi\|followers\|winrate\|aum&days= | public |
+| GET | /futures/copy/traders/{id}?days= | public |
+| GET / POST / PATCH | /futures/copy/trader | user (my trader profile / apply / update share, bio) |
+| POST | /futures/copy/trader/close | user |
+| GET | /futures/copy/trader/followers | user |
+| GET / POST | /futures/copy/follows (?status=all) | user |
+| PATCH / DELETE | /futures/copy/follows/{id} | user (update params / unfollow) |
+| GET | /futures/copy/follows/{id}/trades | user (mirrored trades + settlements) |
+| POST | /internal/copy/traders/{id}/status {status} | internal token |
+| POST | /internal/dev/copy/settle {period} | dev |
+
+Errors: INVALID_PROFIT_SHARE, INVALID_NICKNAME, INVALID_BIO, ALREADY_TRADER, TRADER_EQUITY_TOO_LOW, TRADER_NOT_FOUND, TRADER_CLOSED, TRADER_NOT_ACTIVE, TRADER_FULL, CANNOT_FOLLOW_SELF, INVALID_AMOUNT, AMOUNT_TOO_SMALL, INSUFFICIENT_BALANCE, INVALID_COPY_MODE, INVALID_FIXED_MARGIN, INVALID_RATIO, INVALID_MAX_PER_TRADE, INVALID_TP_RATIO, INVALID_SL_RATIO, ALREADY_FOLLOWING, FOLLOW_NOT_FOUND, FOLLOW_NOT_ACTIVE, OPPOSITE_POSITION, INVALID_STATUS.
+
 ## Configurable defaults (environment variables)
 
 | Variable | Default | Meaning |
@@ -126,5 +157,12 @@ These need `DEV_MODE=true` and the `X-Internal-Token` header.
 | FUTURES_MIN_TRANSFER | 0.01 | Minimum transfer |
 | FUTURES_TPSL_RETRY_SECONDS | 5 | TP/SL retry interval when there is no liquidity |
 | FUTURES_TRANSFER_RETRY_SECONDS | 5 | Transfer outbox retry interval |
+| FUTURES_COPY_MIN_AMOUNT | 50 | Minimum copy amount (USDT) moved into a follow sub-account |
+| FUTURES_COPY_MAX_FOLLOWERS | 2000 | Max live followers per trader |
+| FUTURES_COPY_DEFAULT_SHARE | 0.10 | Profit share when a trader does not set one (product range fixed at 0–50%) |
+| FUTURES_COPY_TRADER_MIN_EQUITY | 100 | Futures equity required to apply as a trader |
+| FUTURES_COPY_AUTO_APPROVE | true | Applications become active immediately (false = pending, approve via internal API) |
+| FUTURES_COPY_SETTLE_HOUR_UTC | 16 | Daily profit-share settlement hour (UTC; 16 = 00:00 UTC+8) |
+| FUTURES_COPY_MAX_RATIO | 10 | Max ratio for ratio-mode follows |
 
 The insurance fund starts at 0. Fee income accumulates in `system:fee` and is not swept automatically.

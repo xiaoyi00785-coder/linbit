@@ -46,6 +46,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /futures/bills", s.user(s.hBills))
 	mux.HandleFunc("GET /futures/trades", s.user(s.hMyTrades))
 	// dev
+	s.copyRoutes(mux)
 	mux.HandleFunc("POST /internal/dev/index", s.dev(s.hDevIndex))
 	mux.HandleFunc("POST /internal/dev/tick", s.dev(s.hDevTick))
 	mux.HandleFunc("POST /internal/dev/funding", s.dev(s.hDevFunding))
@@ -58,7 +59,7 @@ type userHandler func(w http.ResponseWriter, r *http.Request, uid string)
 func (s *Server) user(h userHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uid := r.Header.Get("X-User-Id")
-		if uid == "" || strings.HasPrefix(uid, "system:") {
+		if uid == "" || strings.HasPrefix(uid, "system:") || strings.HasPrefix(uid, "copy:") {
 			common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
 			return
 		}
@@ -163,7 +164,7 @@ func (s *Server) hTransfer(w http.ResponseWriter, r *http.Request, uid string) {
 }
 
 func (s *Server) hTransfers(w http.ResponseWriter, r *http.Request, uid string) {
-	rows, err := s.db.QueryContext(r.Context(), `SELECT ref, direction, amount, status, created_at FROM fut_transfers WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`, uid, limitParam(r, 50, 200))
+	rows, err := s.db.QueryContext(r.Context(), `SELECT ref, direction, amount, status, created_at, kind FROM fut_transfers WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`, uid, limitParam(r, 50, 200))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -171,11 +172,11 @@ func (s *Server) hTransfers(w http.ResponseWriter, r *http.Request, uid string) 
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var ref, dir, st string
+		var ref, dir, st, kind string
 		var amt decimal.Decimal
 		var at time.Time
-		if rows.Scan(&ref, &dir, &amt, &st, &at) == nil {
-			out = append(out, map[string]any{"ref": ref, "direction": dir, "amount": amt, "status": st, "createdAt": at})
+		if rows.Scan(&ref, &dir, &amt, &st, &at, &kind) == nil {
+			out = append(out, map[string]any{"ref": ref, "direction": dir, "amount": amt, "status": st, "createdAt": at, "kind": kind})
 		}
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"transfers": out})
