@@ -23,6 +23,13 @@ servers:
     description: 测试网 / 生产网关（无 /v1 前缀）
 tags:
   - { name: Convert, description: 闪兑 }
+  - { name: Home, description: 首页聚合 }
+  - { name: App, description: 客户端功能开关 }
+  - { name: SubAccount, description: 子账户 }
+  - { name: Chat, description: 聊天室 }
+  - { name: Event, description: 事件合约 }
+  - { name: TradFi, description: 传统金融资产 }
+  - { name: Admin, description: 运营后台 }
   - name: Auth
     description: 注册、登录、令牌刷新与登出
   - name: 2FA
@@ -4866,7 +4873,7 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: TWO_FACTOR_REQUIRED / SUB_ACCOUNT_DISABLED / SUB_ACCOUNT_FORBIDDEN / ACCOUNT_FROZEN, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: TWOFA_REQUIRED / SUB_ACCOUNT_DISABLED / SUB_ACCOUNT_FORBIDDEN / ACCOUNT_FROZEN, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { description: SUB_ACCOUNT_LIMIT / SUB_ACCOUNT_EXISTS, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /sub-accounts/assets:
     get:
@@ -4988,7 +4995,8 @@ paths:
                     properties:
                       secret: { type: string }
                       otpauthUri: { type: string }
-        '403': { description: TOTP_INVALID / SUB_LOGIN_NOT_ALLOWED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: INVALID_TOTP（动态码错误）, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: TWOFA_REQUIRED（未绑定或未提供 TOTP）/ SUB_LOGIN_NOT_ALLOWED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /sub-accounts/{id}/freeze:
     parameters:
     - { name: id, in: path, required: true, schema: { type: string } }
@@ -5079,6 +5087,8 @@ paths:
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubApiKey' } } } }
         '400': { description: PERMISSION_NOT_ALLOWED / VALIDATION_ERROR, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: INVALID_TOTP, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: TWOFA_REQUIRED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { description: API_KEY_LIMIT, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /sub-accounts/{id}/api-keys/{apiKey}:
     parameters:
@@ -6028,7 +6038,7 @@ components:
       required: [purpose]
       description: 向当前登录用户自己的邮箱/手机发送验证码，用于敏感操作前置校验。
       properties:
-        purpose: { type: string, enum: [address, bind, reset_password], example: address }
+        purpose: { type: string, enum: [address, bind, reset_password, withdraw, security], example: address }
         channel: { type: string, nullable: true, enum: [email, sms], description: 缺省按账户已绑定的联系方式, example: sms }
 
     Device:
