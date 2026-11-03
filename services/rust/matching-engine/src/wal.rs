@@ -5,6 +5,15 @@
 //! Periodically the full book is written out as a snapshot and the WAL is
 //! truncated; on startup the engine loads the latest snapshot and replays the
 //! WAL tail, reproducing the exact pre-crash state (including trade ids).
+//!
+//! Durability can use one of two fsync policies, both of which guarantee that a
+//! command is only acknowledged after its bytes are durable:
+//!
+//! * **Per-command** — [`Wal::append`] writes one record and `fsync`s it.
+//! * **Group commit** — [`Wal::append_buffered`] stages several records with no
+//!   `fsync`, then a single [`Wal::sync`] makes the whole batch durable at once,
+//!   amortizing the (dominant) fsync cost across the batch. Callers apply and
+//!   acknowledge a batch only after its `sync` returns.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -36,13 +45,29 @@ impl Wal {
     }
 
     /// Append a record and fsync it. Returns only after the bytes are durable.
+    /// This is the per-command policy (one fsync per record).
     pub fn append(&mut self, rec: &WalRecord) -> std::io::Result<()> {
+        self.append_buffered(rec)?;
+        self.sync()
+    }
+
+    /// Stage a record into the WAL file *without* an fsync. The bytes reach the
+    /// OS but are not yet guaranteed durable; a subsequent [`Wal::sync`] makes
+    /// every record staged since the last sync durable in one call. This is the
+    /// group-commit write path — never acknowledge a command whose record was
+    /// only `append_buffered`'d until a `sync` has returned.
+    pub fn append_buffered(&mut self, rec: &WalRecord) -> std::io::Result<()> {
         let mut line = serde_json::to_vec(rec).map_err(to_io)?;
         line.push(b'\n');
         self.file.write_all(&line)?;
-        self.file.flush()?;
-        self.file.sync_data()?;
         Ok(())
+    }
+
+    /// Flush and fsync everything staged by prior [`Wal::append_buffered`] calls.
+    /// Returns only after the batch is durable.
+    pub fn sync(&mut self) -> std::io::Result<()> {
+        self.file.flush()?;
+        self.file.sync_data()
     }
 
     /// Read every record currently in the WAL, in order.
