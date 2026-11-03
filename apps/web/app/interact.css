@@ -271,3 +271,5 @@ select.fsel:focus{border-color:#121212}
 .rtask .pill.rbtn{min-width:96px;width:auto;height:34px;padding:0 20px;font-size:13px}
 .rtask .rprog{display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:12px}.rtask .rbar{display:block;width:260px;height:4px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}.rtask .rbar s{display:block;height:100%;background:#abe127}
 .sqk{margin-bottom:40px}.lsub{padding:16px 0 10px}.lsub b{color:#4a4f55;background:#f1f2f3}.lsub b.on{color:#fff;background:#070808}
+.wto{display:block;font-size:12px;margin-top:6px}
+.trhist{margin:4px 0 14px;font-size:12px}.trhist>div:not(.lg){display:flex;justify-content:space-between;padding:4px 0}

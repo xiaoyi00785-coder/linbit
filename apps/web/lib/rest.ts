@@ -7,7 +7,7 @@ import { API_BASE } from "./api";
 import { useAuthStore } from "./store";
 import { useEffect, useState, useCallback } from "react";
 
-export interface RestResult<T> { ok: boolean; data?: T; error?: string; status?: number; source: "api" | "demo" }
+export interface RestResult<T> { ok: boolean; data?: T; error?: string; code?: string; status?: number; source: "api" | "demo" }
 
 export async function rest<T>(method: string, path: string, body?: unknown, demo?: () => T): Promise<RestResult<T>> {
   const tok = useAuthStore.getState().accessToken;
@@ -20,7 +20,7 @@ export async function rest<T>(method: string, path: string, body?: unknown, demo
     const txt = await r.text();
     const j = txt ? JSON.parse(txt) : {};
     if (r.ok) return { ok: true, data: j as T, status: r.status, source: "api" };
-    if (r.status < 500) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, status: r.status, source: "api" };
+    if (r.status < 500) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
   } catch { /* 网络错误 → demo */ }
   return demo ? { ok: true, data: demo(), source: "demo" } : { ok: false, error: "服务暂不可用", source: "demo" };
 }

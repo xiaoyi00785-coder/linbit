@@ -4,6 +4,8 @@ import { Link } from "@/lib/router";
 import { useBalances } from "@/lib/queries";
 import { listWithdrawNetworks, getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type Withdrawal } from "@/lib/services";
 import { Src } from "./common";
+import { toast } from "@/lib/ui";
+import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
 import { Ico } from "@/legacy/App";
 // @ts-ignore
@@ -42,10 +44,26 @@ export function Withdraw() {
   const bal = useBalances();
   const [apiNets, setApiNets] = useState<Record<string, string[]>>({});
   const netsOf = (a: string) => apiNets[a] ?? NETS[a];
+  const [netInfo, setNetInfo] = useState<Record<string, WalletNetwork>>({});
+  const ni = netInfo[`${asset}:${net}`];
+  const ov = useOverview();
+  const [inner, setInner] = useState<InternalTransfer[]>([]);
+  const [innerSrc, setInnerSrc] = useState<"api" | "mock">();
+  const [innerSoon, setInnerSoon] = useState(false);
 
-  // 网络列表来自 GET /wallet/withdraw/networks（失败回退本地列表）
+  // 网络列表：GET /wallet/networks（含开关/最小额/手续费/到账时间）→ 回退 /wallet/withdraw/networks → 本地列表
   useEffect(() => {
-    listWithdrawNetworks(asset).then((r) => {
+    getNetworks(asset).then((r) => {
+      const l = (r.ok && r.source === "api" ? r.data?.networks ?? [] : []).filter((x) => x.withdrawEnabled !== false);
+      if (l.length) {
+        setNetInfo((m) => ({ ...m, ...Object.fromEntries(l.map((x) => [`${asset}:${x.network}`, x])) }));
+        setApiNets((m) => ({ ...m, [asset]: l.map((x) => x.network) }));
+        setNet((cur) => (l.some((x) => x.network === cur) ? cur : l[0].network));
+        return;
+      }
+      fallbackNets();
+    });
+    const fallbackNets = () => listWithdrawNetworks(asset).then((r) => {
       const l = (r.data?.networks ?? []).map((x) => x.network);
       if (r.source === "api" && l.length) {
         setApiNets((m) => ({ ...m, [asset]: l }));
@@ -66,13 +84,37 @@ export function Withdraw() {
       setRecSrc(r.source);
     });
   }, [done]);
+  // 站内转账记录 GET /wallet/internal-transfers
+  const [innerDone, setInnerDone] = useState(0);
+  useEffect(() => {
+    if (tab !== "inner") return;
+    listInternalTransfers().then((r) => {
+      setInner(r.data?.items ?? []);
+      setInnerSrc(r.ok ? "api" : undefined);
+      setInnerSoon(!r.ok && errMsg(r) === SOON);
+    });
+  }, [tab, innerDone]);
 
   const items = (bal.data as { items?: { asset: string; free: string }[] } | undefined)?.items;
-  const free = items?.find((b) => b.asset === asset)?.free ?? "0";
+  // 提现/站内转账从 withdrawAccount（默认资金账户）扣款，余额优先取 /assets/overview
+  const wAcct = ov.data?.withdrawAccount ?? "funding";
+  const ovFree = ov.data?.accounts?.find((a) => a.account === wAcct)?.balances?.find((b) => b.asset === asset)?.free;
+  const free = ovFree ?? items?.find((b) => b.asset === asset)?.free ?? "0";
   const n = Number(amt);
-  const min = Number(cfg?.minAmount ?? 0);
-  const max = Number(cfg?.maxAmount ?? Infinity);
-  const fee = Number(cfg?.gasFeeEstimate ?? 0);
+  const minS = ni?.minWithdraw ?? cfg?.minAmount;
+  const maxS = ni ? ni.maxWithdraw ?? undefined : cfg?.maxAmount;
+  const feeS = ni?.withdrawFee ?? cfg?.gasFeeEstimate;
+  const eta = ni?.estimatedArrivalMinutes ? `约 ${ni.estimatedArrivalMinutes} 分钟` : "约 5 分钟";
+  const memoReq = ni?.memoRequired ?? cfg?.memoRequired;
+  const min = Number(minS ?? 0);
+  const max = Number(maxS ?? Infinity);
+  const fee = Number(feeS ?? 0);
+  const toKey = /^\S+@\S+\.\S+$/.test(to) ? "email" : /^\d{5,20}$/.test(to) ? "uid" : "";
+  const checkInner = () => {
+    if (!toKey) return "请输入正确的收款方 UID 或邮箱";
+    if (!n) return "请输入转账数量";
+    return "";
+  };
   const receive = n > fee ? String(+(n - fee).toFixed(8)) : "0";
 
   const check = () => {
@@ -80,7 +122,7 @@ export function Withdraw() {
     if (!n) return "请输入提现数量";
     if (n < min) return `最小提现数量 ${cfg?.minAmount} ${asset}`;
     if (n > max) return `单笔最大提现 ${cfg?.maxAmount} ${asset}`;
-    if (cfg?.memoRequired && !memo) return "该网络需要填写 Memo / Tag";
+    if (memoReq && !memo) return "该网络需要填写 Memo / Tag";
     return "";
   };
 
@@ -126,35 +168,37 @@ export function Withdraw() {
                   <input placeholder="输入或粘贴地址" value={addr} onChange={(e) => setAddr(e.target.value.trim())} />
                 </div>
                 <div className="fx-field">
-                  Memo / Tag{cfg?.memoRequired ? "（必填）" : "（选填）"}
+                  Memo / Tag{memoReq ? "（必填）" : "（选填）"}
                   <input placeholder="Memo / Tag" value={memo} onChange={(e) => setMemo(e.target.value.trim())} />
                 </div>
               </>) : (<>
-                <div className="wwarn"><b>!</b>内部转账即时到账，不收取任何费用，不上链。</div>
+                <div className="wwarn"><b>!</b>转给 linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器；不支持转入子账户；24 小时额度 50,000 USDT。</div>
                 <div className="fx-field">
                   收款方
-                  <input placeholder="输入对方 UID / 邮箱 / 手机号" value={to} onChange={(e) => setTo(e.target.value.trim())} />
+                  <input placeholder="输入对方 UID 或邮箱" value={to} onChange={(e) => setTo(e.target.value.trim())} />
+                  {to && <span className="lg wto">{toKey === "uid" ? "按 UID 转账" : toKey === "email" ? "按邮箱转账" : "仅支持 UID 或邮箱"}</span>}
                 </div>
               </>)}
             </St>
-            <St n="3" t="提现数量">
+            <St n="3" t={tab === "inner" ? "转账数量" : "提现数量"}>
               <div className="fx-field">
-                <span className="wamt"><input inputMode="decimal" placeholder={cfg ? `最小提现数量：${cfg.minAmount}` : "加载中…"} value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
+                <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : minS ? `最小提现数量：${minS}` : "加载中…"} value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
               </div>
               <div className="wkv">
                 <span>可用</span><b>{free} {asset}</b>
-                <span>单笔最小提现</span><b>{cfg?.minAmount ?? "--"} {asset}</b>
-                <span>单笔最大提现</span><b>{cfg?.maxAmount ?? "--"} {asset}</b>
+                {tab === "inner" ? <><span>24 小时额度</span><b>50,000 USDT</b></> : <>
+                <span>单笔最小提现</span><b>{minS ?? "--"} {asset}</b>
+                <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
               </div>
               <div className="wkv wdiv">
-                <span>手续费 <Src s={cfgSrc} /></span><b>{tab === "inner" ? "0" : cfg?.gasFeeEstimate ?? "--"} {asset}</b>
+                <span>手续费 <Src s={cfgSrc} /></span><b>{tab === "inner" ? "0" : feeS ?? "--"} {asset}</b>
                 <span>到账数量</span><b>{tab === "inner" ? (amt || "--") : receive} {asset}</b>
-                <span>预计到账时间</span><b>{tab === "inner" ? "即时" : "约 5 分钟"}</b>
+                <span>预计到账时间</span><b>{tab === "inner" ? "实时到账" : eta}</b>
               </div>
               {err && <div className="fx-err">{err}</div>}
               {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
-              <button className="lb dark wide" disabled={!amt} onClick={() => { const e = tab === "inner" ? (to.length < 4 ? "请输入收款方 UID / 邮箱 / 手机号" : !n ? "请输入提现数量" : "内部转账暂未开放，请使用链上提现") : check(); setErr(e); if (!e) setConfirm(true); }}>
-                提现
+              <button className="lb dark wide" disabled={!amt} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) setConfirm(true); }}>
+                {tab === "inner" ? "转账" : "提现"}
               </button>
             </St>
           </div>
@@ -170,17 +214,23 @@ export function Withdraw() {
           </div>
         </div>
         <div className="lcard">
+          {tab === "inner" ? (<>
+            <h3>站内转账记录 <Src s={innerSrc} /></h3>
+            {innerSoon ? <div className="lg">{SOON}</div> : inner.length === 0 ? <div className="lg">暂无数据</div> : inner.map((r) => (
+              <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.direction === "out" ? "转出" : "转入"} {r.amount} {r.asset} · {r.direction === "out" ? (r.toMaskedEmail || `UID ${r.toUid}`) : `UID ${r.fromUid}`}</span><span>{{ pending: "处理中", completed: "已完成", failed: "失败" }[r.status]}</span></div>
+            ))}
+          </>) : (<>
           <h3>提现记录 <Src s={recSrc} /></h3>
           {records.length === 0 ? <div className="lg">暂无数据</div> : records.map((r) => (
             <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.amount} {r.asset} · {r.network}</span><span>{r.status}</span></div>
-          ))}
+          ))}</>)}
         </div>
       </div>
       {confirm && (
         <div className="fx-modal" onClick={() => setConfirm(false)}>
           <div onClick={(e) => e.stopPropagation()}>
             <h3>安全验证</h3>
-            <p className="lg">提现 {amt} {asset}（{net}），到账 {receive} {asset}</p>
+            <p className="lg">{tab === "inner" ? `站内转账 ${amt} ${asset} 至 ${to}，免手续费，实时到账` : `提现 ${amt} ${asset}（${net}），到账 ${receive} ${asset}`}</p>
             <div className="fx-field">
               谷歌验证器动态码
               <input inputMode="numeric" maxLength={6} placeholder="6 位 2FA 动态码" value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} />
@@ -189,13 +239,20 @@ export function Withdraw() {
               className="lb lime wide"
               onClick={async () => {
                 if (totp.length !== 6) return setErr("请输入 6 位 2FA 动态码");
+                if (tab === "inner") {
+                  const r = await createInternalTransfer({ clientId: newClientId(), asset, amount: amt, totpCode: totp, ...(toKey === "email" ? { toEmail: to } : { toUid: to }) });
+                  setConfirm(false); setTotp("");
+                  if (r.ok) { setErr(""); setAmt(""); toast("转账成功", "ok"); setInnerDone((x) => x + 1); ov.reload(); }
+                  else { const m = errMsg(r); setErr(m); if (m === SOON) toast(m, "info"); }
+                  return;
+                }
                 const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp });
                 setConfirm(false);
                 setTotp("");
                 if (r.ok) { setDone(r.data); setErr(""); } else setErr(r.error ?? "提现失败");
               }}
             >
-              确认提现
+              {tab === "inner" ? "确认转账" : "确认提现"}
             </button>
           </div>
         </div>
