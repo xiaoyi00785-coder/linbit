@@ -1,20 +1,20 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { rget } from "@/lib/rest";
+import type { paths } from "@linbit/api-client";
 
 /** 合约数据页（仓位档位 / 逐仓参数 / 标记价格历史 / 指数价格 / 资金费率历史 / 保险基金）— 真实公共接口，无需登录 */
 export const FUTURES_INFO = ["仓位档位", "逐仓参数", "标记价格历史", "指数价格", "资金费率历史", "保险基金"] as const;
 
-type Tier = { tier: number; minNotional: string; maxNotional: string; maxLeverage: number; maintenanceMarginRate: string; maintenanceAmount: string };
-type Contract = { symbol: string; tiers?: Tier[]; [k: string]: unknown };
-type Hist<T> = { history: T[]; nextEndTime?: number; [k: string]: unknown };
+/** 响应类型取自 packages/api-client/src/schema.ts（OpenAPI 生成）。 */
+type R<K extends keyof paths> = paths[K] extends { get: { responses: { 200: { content: { "application/json": infer J } } } } } ? J : never;
 type St<T> = { loading: boolean; data?: T; error?: string };
 
 const P = "/futures/market";
 const num = (v: unknown, d = 2) => { const n = Number(v); return Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: 0 }) : "--"; };
-const big = (v: string) => (Number(v) >= 1e17 ? "∞" : num(v, 0));
+const big = (v?: string) => (Number(v) >= 1e17 ? "∞" : num(v, 0));
 const pct = (v: unknown, d = 4) => { const n = Number(v); return Number.isFinite(n) ? (n * 100).toFixed(d) + "%" : "--"; };
-const ts = (ms: number) => { const d = new Date(ms); const p = (x: number) => String(x).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+const ts = (ms?: number) => { if (ms == null) return "--"; const d = new Date(ms); const p = (x: number) => String(x).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
 
 function useGet<T>(path: string | null, nonce = 0): St<T> & { reload: () => void } {
   const [st, set] = useState<St<T>>({ loading: !!path });
@@ -60,8 +60,8 @@ function Spark({ pts }: { pts: number[] }) {
 const LIM = 20;
 
 export function FuturesInfo({ t }: { t: string }) {
-  const cs = useGet<{ contracts: Contract[] }>(P + "/contracts");
-  const syms = useMemo(() => (cs.data?.contracts || []).map((c) => c.symbol), [cs.data]);
+  const cs = useGet<R<"/futures/market/contracts">>(P + "/contracts");
+  const syms = useMemo(() => (cs.data?.contracts || []).map((c) => c.symbol).filter((x): x is string => !!x), [cs.data]);
   const [sym, setSym] = useState("BTCUSDT");
   useEffect(() => { if (syms.length && !syms.includes(sym)) setSym(syms[0]); }, [syms, sym]);
   const needSym = t !== "保险基金";
@@ -77,7 +77,7 @@ export function FuturesInfo({ t }: { t: string }) {
 }
 
 function Tiers({ sym }: { sym: string }) {
-  const st = useGet<{ contracts: Contract[] }>(`${P}/risk-tiers?symbol=${sym}`);
+  const st = useGet<R<"/futures/market/risk-tiers">>(`${P}/risk-tiers?symbol=${sym}`);
   const tiers = st.data?.contracts?.[0]?.tiers || [];
   return <section className="box pgc"><h3>{sym} 永续 · 仓位档位</h3><State st={st} empty={!tiers.length}>
     <table className="pgt"><thead><tr><th>档位</th><th>仓位价值 (USDT)</th><th>最高杠杆</th><th>维持保证金率</th><th>维持保证金速算额 (USDT)</th></tr></thead>
@@ -86,9 +86,9 @@ function Tiers({ sym }: { sym: string }) {
 }
 
 function Isolated({ sym }: { sym: string }) {
-  const st = useGet<{ contracts: Contract[] }>(`${P}/isolated-params?symbol=${sym}`);
-  const c = st.data?.contracts?.[0] as Record<string, any> | undefined;
-  const rows: [string, string][] = c ? [
+  const st = useGet<R<"/futures/market/isolated-params">>(`${P}/isolated-params?symbol=${sym}`);
+  const c = st.data?.contracts?.[0];
+  const rows: [string, string | undefined][] = c ? [
     ["保证金币种", c.marginAsset], ["保证金模式", (c.marginModes || []).map((m: string) => (m === "cross" ? "全仓" : "逐仓")).join(" / ")],
     ["默认杠杆", c.defaultLeverage + "x"], ["最高杠杆", c.maxLeverage + "x"], ["最小下单量", c.minQty], ["最大下单量", c.maxQty], ["价格精度", c.tickSize],
     ["Maker 费率", pct(c.makerFeeRate, 3)], ["Taker 费率", pct(c.takerFeeRate, 3)], ["基础维持保证金率", pct(c.maintenanceMarginRate, 2)],
@@ -103,7 +103,7 @@ const IVS = ["", "1m", "5m", "15m", "1h", "4h", "1d"];
 function Mark({ sym }: { sym: string }) {
   const [iv, setIv] = useState("1h");
   const pg = usePager(sym + iv);
-  const st = useGet<Hist<Record<string, any>>>(`${P}/mark-history?symbol=${sym}&limit=${LIM}${iv ? "&interval=" + iv : ""}${pg.end ? "&endTime=" + pg.end : ""}`);
+  const st = useGet<R<"/futures/market/mark-history">>(`${P}/mark-history?symbol=${sym}&limit=${LIM}${iv ? "&interval=" + iv : ""}${pg.end ? "&endTime=" + pg.end : ""}`);
   const h = st.data?.history || [];
   const k = !!iv;
   const pts = [...h].reverse().map((r) => Number(k ? r.close : r.markPrice));
@@ -116,8 +116,8 @@ function Mark({ sym }: { sym: string }) {
 }
 
 function Index({ sym }: { sym: string }) {
-  const st = useGet<Record<string, any>>(`${P}/index?symbol=${sym}`);
-  const d = st.data; const comps: Record<string, any>[] = d?.components || [];
+  const st = useGet<R<"/futures/market/index">>(`${P}/index?symbol=${sym}`);
+  const d = st.data; const comps = d?.components || [];
   const has = d && Number(d.indexPrice) > 0;
   return <>
     <section className="box pgc"><h3>{sym} 指数价格</h3><State st={st} empty={!has}>
@@ -133,7 +133,7 @@ function Index({ sym }: { sym: string }) {
 
 function Funding({ sym }: { sym: string }) {
   const pg = usePager(sym);
-  const st = useGet<Hist<Record<string, any>>>(`${P}/funding-history?symbol=${sym}&limit=${LIM}${pg.end ? "&endTime=" + pg.end : ""}`);
+  const st = useGet<R<"/futures/market/funding-history">>(`${P}/funding-history?symbol=${sym}&limit=${LIM}${pg.end ? "&endTime=" + pg.end : ""}`);
   const h = st.data?.history || [];
   return <section className="box pgc"><h3>{sym} 永续 · 资金费率历史{st.data?.fundingIntervalHours ? <small> · 每 {String(st.data.fundingIntervalHours)} 小时结算</small> : null}</h3>
     <State st={st} empty={!h.length}>
@@ -143,9 +143,9 @@ function Funding({ sym }: { sym: string }) {
 }
 
 function Insurance() {
-  const cur = useGet<Record<string, any>>(`${P}/insurance-fund`);
+  const cur = useGet<R<"/futures/market/insurance-fund">>(`${P}/insurance-fund`);
   const pg = usePager("ins");
-  const hs = useGet<Hist<Record<string, any>>>(`${P}/insurance-fund/history?limit=${LIM}${pg.end ? "&endTime=" + pg.end : ""}`);
+  const hs = useGet<R<"/futures/market/insurance-fund/history">>(`${P}/insurance-fund/history?limit=${LIM}${pg.end ? "&endTime=" + pg.end : ""}`);
   const h = hs.data?.history || []; const d = cur.data;
   return <>
     <section className="box pgc"><h3>当前余额</h3><State st={cur} empty={!d}>
@@ -154,7 +154,7 @@ function Insurance() {
     <section className="box pgc"><h3>余额历史{hs.data?.snapshotMinutes ? <small> · 每 {String(hs.data.snapshotMinutes)} 分钟快照</small> : null}</h3>
       {!hs.loading && !hs.error && !h.length ? <div className="fi-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6" /></svg>暂无历史快照，系统将按周期自动记录余额</div> :
         <State st={hs} empty={false}><table className="pgt"><thead><tr><th>时间</th><th>币种</th><th>余额</th><th>权益</th></tr></thead>
-          <tbody>{h.map((r) => <tr key={r.time + r.asset}><td>{ts(r.time)}</td><td>{r.asset}</td><td>{num(r.balance)}</td><td>{num(r.equity)}</td></tr>)}</tbody></table>
+          <tbody>{h.map((r) => <tr key={`${r.time}-${r.asset}`}><td>{ts(r.time)}</td><td>{r.asset}</td><td>{num(r.balance)}</td><td>{num(r.equity)}</td></tr>)}</tbody></table>
           <Pager pg={pg} next={hs.data?.nextEndTime} /></State>}
     </section>
   </>;
