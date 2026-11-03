@@ -263,7 +263,8 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const fee = notional * Number(c?.takerFeeRate ?? 0.0005);
   const submit = async (side: "buy" | "sell") => {
     if (!authed) return nav("/login");
-    if (!qn) return toast("请输入数量", "err");
+    if (!qty.trim()) return toast("请输入数量", "err");
+    if (!(qn > 0) || !isFinite(qn)) return toast("数量必须大于 0", "err");
     if (ty !== "market" && !Number(price)) return toast("请输入价格", "err");
     if (ty === "plan") return toast("计划委托暂未开放（后端缺少接口）", "err");
     setBusy(true);
@@ -293,7 +294,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       <div className="kv2"><span>可用</span><b>{avail != null ? fmtFixed(avail, 4) : "--"} USDT</b></div>
       {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div>}
       {ty !== "market" ? <div className="inp"><small>价格</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
-      <div className="inp"><small>数量</small><input inputMode="decimal" value={qty} onChange={(e) => { setQty(e.target.value.replace(/[^\d.]/g, "")); setPc(0); }} /><em>{pair.base}</em></div>
+      <div className="inp"><small>数量</small><input inputMode="decimal" value={qty} onChange={(e) => { if (/-/.test(e.target.value)) { toast("数量不能为负数", "err"); return; } setQty(e.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1")); setPc(0); }} aria-invalid={qty !== "" && !(qn > 0)} /><em>{pair.base}</em></div>
       <div className="slider lb-sl"><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="比例" /></div>
       <div className="kv2 g"><span>保证金</span><span>{fmtFixed(margin, 4)} USDT</span></div>
       <div className="kv2 g"><span>预估手续费（{(Number(c?.takerFeeRate ?? 0.0005) * 100).toFixed(2)}%）</span><span>{fmtFixed(fee, 4)} USDT</span></div>

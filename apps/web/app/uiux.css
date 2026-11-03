@@ -1,0 +1,42 @@
+/* QA 第二轮 UI/UX 修正 */
+html{scrollbar-gutter:stable}
+body{overflow-x:clip}
+.ava-s{padding:0!important;display:inline-grid;place-items:center}
+.hbg{display:none;background:none;border:0;color:var(--lb-text);padding:6px;margin-right:8px;cursor:pointer;border-radius:6px}
+.hbg:hover{background:var(--lb-card-2)}
+.hib:focus-visible,.hbg:focus-visible{outline:2px solid var(--lb-primary);outline-offset:2px}
+/* 统一容器宽度 */
+.lwrap{margin:0 auto;width:100%}
+/* 小于 1024：汉堡菜单 + 抽屉导航 */
+@media (max-width:1023px){
+  .hbg{display:inline-grid;place-items:center}
+  .hdr{padding:0 12px;flex-wrap:nowrap}
+  .hdr .logo{margin-right:12px}
+  .hdr nav{display:none}
+  .hdr.mopen nav{display:flex;flex-direction:column;gap:0;position:fixed;top:65px;left:0;bottom:0;width:min(300px,86vw);background:var(--lb-bg);border-right:1px solid var(--lb-border);padding:8px 0;overflow-y:auto;z-index:40;box-shadow:8px 0 24px rgba(0,0,0,.5)}
+  .hdr.mopen nav .ni>a{display:block;padding:14px 20px}
+  .hdr.mopen nav .ni>div{display:none}
+  .hdr .sep,.hdr .hi{display:none}
+  .wrap,.lwrap,main{max-width:100%}
+  .lwrap{flex-direction:column;padding:12px}
+  .lwrap>aside{width:100%!important;border-right:0}
+  table{display:block;overflow-x:auto}
+}
+/* /earn：推荐专区箭头不再溢出产生横向滚动条 */
+.ecards{position:relative;max-width:100%}
+.ecards .arr{position:static;flex:none}
+.lsel.w{color:var(--lb-card)}
+/* 行情卡片与首页大图在窄屏下自适应 */
+@media (max-width:1023px){
+  .mcards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .box.mc,.mch,.mcb{min-width:0}
+  main img{max-width:100%;height:auto}
+}
+/* 现货/合约：去掉底部空白，选中态更明显，数量输入更宽松 */
+.sp-side button.on.buy{background:var(--lb-up);color:var(--lb-on-primary);font-weight:700}
+.sp-side button.on.sell{background:var(--lb-down);color:#fff;font-weight:700}
+.sp-side button:not(.on){background:var(--lb-card-2);color:var(--lb-text-2)}
+.of .pt.sm b{padding:4px 2px;border-bottom:2px solid transparent;color:var(--lb-text-2);cursor:pointer}
+.of .pt.sm b.on{color:var(--lb-text);border-bottom-color:var(--lb-primary);font-weight:600}
+.inp input[aria-invalid=true]{color:var(--lb-down)}
+.inp input{min-height:40px;font-size:14px}

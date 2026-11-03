@@ -32,8 +32,8 @@
   --lb-white: #ffffff;
   --lb-text: #ffffff;               /* 正文主色（globals.css、tailwind-preset 使用） */
   --lb-text-2: #a8aaad;
-  --lb-text-3: #6b6e70;
-  --lb-text-4: #777777;
+  --lb-text-3: #8d9093;
+  --lb-text-4: #8f8f8f;
 
   /* ===== 中性灰阶（插画、图标、指标线） ===== */
   --lb-neutral-50: #f2f4f5;
@@ -75,3 +75,25 @@
   --lb-warn: #f59e0b;
   --lb-usdt: #26a17b;
 }
+
+/* 全站统一深色：原白底区块（.light / 资产·订单·设置·出入金·闪兑·买币等）改用深色令牌。
+   通过在作用域内重映射令牌实现，组件无需改动。 */
+.light, .lfoot, body.lb-dk main, body.lb-dk .lfoot, .lmodal, .ff-modal, .trm, .tk-modal, .fx-modal {
+  --lb-white: #070808;          /* 原白底 → 深色底 */
+  --lb-card: #eaecef;           /* 原深色正文 → 浅色正文 */
+  --lb-light-border: #28292a;
+  --lb-light-border-2: #37393a;
+  --lb-light-fill: #17181a;
+  --lb-light-fill-2: #131415;
+  --lb-light-fill-3: #2b2d2e;
+  --lb-light-fill-hover: #1d1d1d;
+  --lb-light-fill-active: #222324;
+  --lb-light-text-2: #c4c6c9;
+  --lb-light-primary-bg: #1a2108;
+  --lb-light-primary-tint: #2a3510;
+  --lb-light-down-bg: #3a1219;
+  --si-d: #5a5d5f;
+  color-scheme: dark;
+}
+.hdr, .avm, .dd { --si-d: #5a5d5f; }
+

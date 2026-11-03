@@ -49,7 +49,8 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
 
   const submit = async () => {
     if (!authed) return nav("/login");
-    if (!q) return setMsg({ ok: false, t: "请输入数量" });
+    if (!qty.trim()) return setMsg({ ok: false, t: "请输入数量" });
+    if (!(q > 0) || !isFinite(q)) return setMsg({ ok: false, t: "数量必须大于 0" });
     if (type === "market" && !last) return setMsg({ ok: false, t: "暂无市价，请使用限价单" });
     if (type === "limit" && !Number(price)) return setMsg({ ok: false, t: "请输入价格" });
     setBusy(true);
@@ -73,7 +74,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
         {(["limit", "market"] as const).map((t) => <b key={t} className={type === t ? "on" : ""} onClick={() => setType(t)}>{t === "limit" ? "限价" : "市价"}</b>)}
       </div>
       {type === "limit" && <div className="inp"><small>价格(USDT)</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(fix(num(e.target.value), pair.pp))} /></div>}
-      <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => setQty(fix(num(e.target.value), pair.qp))} /><em>{B}</em></div>
+      <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "数量不能为负数" }); return; } setMsg(undefined); setQty(fix(num(v), pair.qp)); }} aria-invalid={qty !== "" && !(q > 0)} /><em>{B}</em></div>
       <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
       <div className="kv2 g"><span>可用</span><span>{authed ? `${avail} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
       <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>
