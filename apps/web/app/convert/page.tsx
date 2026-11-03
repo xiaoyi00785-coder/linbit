@@ -5,7 +5,7 @@ import { useEffect, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import { isOn, loadFeatures } from "@/lib/features";
 
-const View = dynamic(() => import("@/legacy/Pages").then((m) => m.Convert as ComponentType<any>), { ssr: false });
+const View = dynamic(() => import("@/features/Convert").then((m) => m.Convert as ComponentType<any>), { ssr: false });
 
 /** 闪兑入口受 features.convert 控制：关闭（或开关接口失败）⇒ /coming-soon/convert */
 export default function Page() {
