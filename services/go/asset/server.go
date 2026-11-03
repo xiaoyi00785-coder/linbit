@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
@@ -13,13 +14,15 @@ import (
 
 // Server wires configuration, storage and HTTP handlers for the asset service.
 type Server struct {
-	cfg   Config
-	store *Store
+	cfg    Config
+	store  *Store
+	prices PriceSource
+	now    func() time.Time
 }
 
 // NewServer constructs a Server.
 func NewServer(cfg Config, store *Store) *Server {
-	return &Server{cfg: cfg, store: store}
+	return &Server{cfg: cfg, store: store, prices: marketIndexSource(cfg.MarketURL), now: time.Now}
 }
 
 // Routes returns the asset service HTTP handler.
@@ -52,6 +55,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /internal/ops/feed", s.internal(s.handleOpsFeed))
 	mux.HandleFunc("POST /internal/mm/testnet-seed", s.internal(s.handleMMSeed))
 	mux.HandleFunc("GET /internal/solvency/liabilities", s.internal(s.handleLiabilities))
+	s.convertRoutes(mux)
 	return mux
 }
 

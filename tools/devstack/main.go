@@ -206,6 +206,7 @@ func run(root, execCmd string) int {
 			"DATABASE_URL=" + databaseURL,
 			"INTERNAL_TOKEN=" + internalTok,
 			"REDIS_URL=" + redisURL,
+			"MARKET_URL=http://localhost:" + marketPort,
 		},
 		"engine": {
 			"BIND=127.0.0.1:" + enginePort,

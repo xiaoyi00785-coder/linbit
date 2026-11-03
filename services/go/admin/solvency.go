@@ -27,9 +27,13 @@ type SolvencyLine struct {
 	Users       string `json:"userBalances"` // all accounts incl. MM
 	MarketMaker string `json:"marketMaker"`
 	VirtualSeed string `json:"virtualSeed"`
-	Required    string `json:"required"`
-	Surplus     string `json:"surplus"`
-	OK          bool   `json:"ok"`
+	// ConvertPosition: platform 闪兑 net position (system:convert). Negative =
+	// users received this asset from the platform; user balances (and so
+	// Required) already include it, holdings must cover it (hedge/rebalance).
+	ConvertPosition string `json:"convertPosition"`
+	Required        string `json:"required"`
+	Surplus         string `json:"surplus"`
+	OK              bool   `json:"ok"`
 }
 
 type SolvencyReport struct {
@@ -41,10 +45,11 @@ type SolvencyReport struct {
 }
 
 type liabItem struct {
-	Asset       string `json:"asset"`
-	Total       string `json:"total"`
-	MarketMaker string `json:"marketMaker"`
-	VirtualSeed string `json:"virtualSeed"`
+	Asset           string `json:"asset"`
+	Total           string `json:"total"`
+	MarketMaker     string `json:"marketMaker"`
+	VirtualSeed     string `json:"virtualSeed"`
+	ConvertPosition string `json:"convertPosition"`
 }
 
 func dz(s string) decimal.Decimal { v, _ := decimal.NewFromString(s); return v }
@@ -62,7 +67,7 @@ func (s *Server) fetchJSON(ctx context.Context, base, path string, out any) erro
 
 // ComputeSolvency is the pure comparison (unit tested).
 func ComputeSolvency(holdings map[string]string, liabs []liabItem, errs []string) SolvencyReport {
-	type agg struct{ users, mm, seed decimal.Decimal }
+	type agg struct{ users, mm, seed, conv decimal.Decimal }
 	by := map[string]*agg{}
 	for _, l := range liabs {
 		a := strings.ToUpper(l.Asset)
@@ -72,6 +77,7 @@ func ComputeSolvency(holdings map[string]string, liabs []liabItem, errs []string
 		by[a].users = by[a].users.Add(dz(l.Total))
 		by[a].mm = by[a].mm.Add(dz(l.MarketMaker))
 		by[a].seed = by[a].seed.Add(dz(l.VirtualSeed))
+		by[a].conv = by[a].conv.Add(dz(l.ConvertPosition))
 	}
 	h := map[string]decimal.Decimal{}
 	for k, v := range holdings {
@@ -100,7 +106,7 @@ func ComputeSolvency(holdings map[string]string, liabs []liabItem, errs []string
 		}
 		req := decimal.Max(g.users.Sub(g.seed), decimal.Zero)
 		line := SolvencyLine{Asset: a, Holdings: h[a].String(), Users: g.users.String(), MarketMaker: g.mm.String(),
-			VirtualSeed: g.seed.String(), Required: req.String(), Surplus: h[a].Sub(req).String(), OK: h[a].GreaterThanOrEqual(req)}
+			VirtualSeed: g.seed.String(), ConvertPosition: g.conv.String(), Required: req.String(), Surplus: h[a].Sub(req).String(), OK: h[a].GreaterThanOrEqual(req)}
 		if !line.OK {
 			rep.OK = false
 		}

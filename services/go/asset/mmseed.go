@@ -66,6 +66,9 @@ type Liability struct {
 	Total       string `json:"total"`       // all balances (free+locked), every account
 	MarketMaker string `json:"marketMaker"` // part held by MM_USER_ID
 	VirtualSeed string `json:"virtualSeed"` // mm_testnet_seed credited (unbacked by design)
+	// ConvertPosition: net system:convert position (platform, not user funds).
+	// Negative = the platform paid this asset out via convert and must cover it.
+	ConvertPosition string `json:"convertPosition"`
 }
 
 // Liabilities sums every account-holder balance per asset (platform system:*
@@ -90,9 +93,28 @@ func (s *Store) Liabilities(ctx context.Context, mmUser string) ([]Liability, er
 		for _, p := range []*string{&l.Total, &l.MarketMaker, &l.VirtualSeed} {
 			*p = decimal.RequireFromString(*p).String()
 		}
+		l.ConvertPosition = "0"
 		out = append(out, l)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	pos, err := s.ConvertPosition(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for a, v := range pos {
+		found := false
+		for i := range out {
+			if out[i].Asset == a {
+				out[i].ConvertPosition, found = v.String(), true
+			}
+		}
+		if !found {
+			out = append(out, Liability{Asset: a, Total: "0", MarketMaker: "0", VirtualSeed: "0", ConvertPosition: v.String()})
+		}
+	}
+	return out, nil
 }
 
 func mmUserID() string { return common.Env("MM_USER_ID", "mm:main") }
