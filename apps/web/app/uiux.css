@@ -58,4 +58,4 @@ body{overflow-x:clip}
 .dtips .lcard.sm b{font-size:14px}
 /* spot/futures: no blank band under order panel */
 main.trade{display:flex;flex-direction:column}main.trade>.tgrid{flex:1 0 auto;grid-template-rows:520px minmax(0,1fr)}main.trade .orders{min-height:224px}
-.cvh{align-content:center}.cvh h1{margin:0}
+.cvh{align-content:center;row-gap:14px}.cvh h1{margin:0}
