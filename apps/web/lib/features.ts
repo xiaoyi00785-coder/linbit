@@ -51,3 +51,5 @@ export function soonOf(label: string): FeatureKey | null {
 }
 export const soonPath = (label: string) => { const k = soonOf(label); return k ? "/coming-soon/" + SOON[k].slug : null; };
 export const bySlug = (slug: string) => (Object.keys(SOON) as FeatureKey[]).find((k) => SOON[k].slug === slug);
+/** 功能开启后对应的真实页面（coming-soon 页据此跳转；入口文案无需改动） */
+export const LIVE: Partial<Record<FeatureKey, string>> = { tokenizedStocks: "/tradfi/assets?kind=stock", metals: "/tradfi/assets?kind=metal", tradfi: "/tradfi/assets", eventContracts: "/events", chatRoom: "/chat", subAccounts: "/sub-accounts", convert: "/convert" };
