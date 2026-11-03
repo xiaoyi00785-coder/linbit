@@ -102,6 +102,8 @@ type registerRequest struct {
 	Password    string `json:"password"`
 	Code        string `json:"code"`
 	InviteCode  string `json:"inviteCode"`
+	DeviceID    string `json:"deviceId"`
+	DeviceName  string `json:"deviceName"`
 }
 
 type loginRequest struct {
@@ -257,7 +259,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// Trust the registering device so an immediate login from it is not treated
 	// as a new device.
-	dev := deviceFrom(r, "", "注册设备")
+	name := req.DeviceName
+	if strings.TrimSpace(name) == "" {
+		name = "注册设备"
+	}
+	// Same key derivation as login (body deviceId > X-Device-Id > UA hash), so
+	// the first login from the registering browser is recognised.
+	dev := deviceFrom(r, req.DeviceID, name)
 	if err := s.store.UpsertDevice(r.Context(), u.ID, dev, s.now()); err != nil {
 		log.Printf("register: upsert device: %v", err)
 	}

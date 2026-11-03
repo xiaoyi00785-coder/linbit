@@ -89,6 +89,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/password/verify-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 找回密码-校验验证码并换取重置令牌
+         * @description 找回密码第一步：校验邮箱/短信验证码，成功后返回短期有效（默认 10 分钟）、 一次性的 resetToken，随后用它调用 /auth/password/reset 设置新密码。
+         */
+        post: operations["verifyPasswordResetCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/password/reset": {
         parameters: {
             query?: never;
@@ -98,7 +118,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 校验验证码并重置密码（撤销全部会话） */
+        /**
+         * 使用重置令牌设置新密码（撤销全部会话）
+         * @description 找回密码第二步：用 /auth/password/verify-code 返回的 resetToken 设置新密码。
+         */
         post: operations["resetPassword"];
         delete?: never;
         options?: never;
@@ -223,6 +246,46 @@ export interface paths {
         head?: never;
         /** 修改昵称 / 头像 */
         patch: operations["updateProfile"];
+        trace?: never;
+    };
+    "/account/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传头像（multipart）
+         * @description 以 multipart/form-data 上传头像图片（字段名 file）。服务端按内容嗅探类型 （仅支持 jpeg/png/webp），并限制大小（默认 2MB，可配置）。存储后返回更新后的 账户信息，其中 avatarUrl 指向受控访问路由 /account/avatars/{file}。
+         */
+        post: operations["uploadAvatar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/avatars/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取已上传头像（受控访问路由，公开）
+         * @description 由本地存储后端通过受控路由提供头像访问；仅服务存储目录内文件，阻止路径穿越。
+         */
+        get: operations["getAvatar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/account/code/send": {
@@ -363,6 +426,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kyc/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传 KYC 证件图片
+         * @description multipart/form-data。按文件内容识别类型，仅支持 JPEG/PNG；默认上限 10MB
+         *     （KYC_DOC_MAX_BYTES 可配）。文件只属于上传者，提交 /kyc 时校验归属与 side。
+         */
+        post: operations["uploadKycDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 审核列表 */
+        get: operations["adminListKycApplications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/applications/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 申请详情（含证件受控读取地址） */
+        get: operations["adminGetKycApplication"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/applications/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 审核通过（同步账户 kycLevel，只升不降） */
+        post: operations["adminApproveKyc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/applications/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 驳回（reason 必填，用户可重新提交） */
+        post: operations["adminRejectKyc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 受控读取证件图片 */
+        get: operations["adminGetKycDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/level-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 待同步到账户服务的认证等级（失败自动重试队列）
+         * @description 审核通过后先持久化同步任务再立即尝试；失败按指数退避（默认 5s 起翻倍，
+         *     上限 1h，KYC_SYNC_BASE_SECONDS / KYC_SYNC_MAX_SECONDS）自动重试直至成功。
+         */
+        get: operations["adminListKycLevelSync"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/balances": {
         parameters: {
             query?: never;
@@ -423,7 +613,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 发起提现申请 */
+        /**
+         * 发起提现申请
+         * @description Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
+         *     amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
+         *     未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
+         */
         post: operations["createWithdrawal"];
         delete?: never;
         options?: never;
@@ -462,6 +657,26 @@ export interface paths {
         get: operations["listWithdrawals"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/wallet/withdraw/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 撤销提现申请
+         * @description 仅可撤销处于待人工审核（pending）状态的提现；撤销后冻结金额解冻退回可用余额。
+         */
+        post: operations["cancelWithdrawal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -624,10 +839,1405 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 消息列表（新→旧） */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "system" | "trade" | "activity" | "security";
+                    /** @description 页码，从 1 开始 */
+                    page?: components["parameters"]["Page"];
+                    /** @description 每页条数 */
+                    pageSize?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationList"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 未读数 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnreadCount"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 标记已读（ids 或 all[+kind]） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReadNotificationsRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UpdatedCount"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 邮件通知偏好 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotifyPrefs"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        /** 更新邮件通知偏好（emailSecurity 不可关闭 → SECURITY_EMAIL_REQUIRED） */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["NotifyPrefsPatch"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotifyPrefs"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的卡券 */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "issued" | "active" | "expired";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CouponList"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupons/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 卡券统计 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CouponSummary"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coupons/{id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 激活卡券（体验金需合约自有资金 ≥ 面额，INSUFFICIENT_OWN_FUNDS；COUPON_NOT_FOUND / COUPON_NOT_ACTIVATABLE） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CouponActivateResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 返佣规则（公开） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerRules"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 申请成为合伙人（INVALID_APPLICATION / PARTNER_EXISTS） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PartnerApplyRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerMe"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的合伙人状态 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerMe"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合伙人概览 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerSummary"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/commissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 已结算佣金明细（按来源用户/日） */
+        get: {
+            parameters: {
+                query?: {
+                    kind?: "futures" | "spot" | "override" | "referral";
+                    /** @description 页码，从 1 开始 */
+                    page?: components["parameters"]["Page"];
+                    /** @description 每页条数 */
+                    pageSize?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerCommissions"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/commissions/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按日汇总 */
+        get: {
+            parameters: {
+                query?: {
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerDaily"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 直推团队 */
+        get: {
+            parameters: {
+                query?: {
+                    type?: "all" | "user" | "partner";
+                    /** @description 页码，从 1 开始 */
+                    page?: components["parameters"]["Page"];
+                    /** @description 每页条数 */
+                    pageSize?: components["parameters"]["PageSize"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerTeam"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/partner/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 推广链接 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PartnerLinks"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/copy/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 跟单广场概览（公开） */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopySummary"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/copy/traders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 交易员列表（公开） */
+        get: {
+            parameters: {
+                query?: {
+                    sort?: "composite" | "roi" | "followers" | "winrate" | "aum";
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyTraderList"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/copy/traders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 交易员详情（公开） */
+        get: {
+            parameters: {
+                query?: {
+                    days?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyTraderDetail"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/copy/trader": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的带单资料 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyTrader"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /** 申请带单（需人工审核） */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CopyTraderRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyTrader"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 更新分润比例(0–0.5)/简介 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CopyTraderRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyTrader"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        trace?: never;
+    };
+    "/futures/copy/trader/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 关闭带单 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StatusResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/copy/trader/followers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的跟随者 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyFollowers"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/copy/follows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的跟单（默认仅 active） */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "all";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyFollowList"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /** 跟单 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CopyFollowRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyFollow"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/copy/follows/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 停止跟单 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyFollow"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /** 修改跟单参数 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CopyFollowRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyFollow"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        trace?: never;
+    };
+    "/futures/copy/follows/{id}/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 跟单成交与分润结算 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CopyFollowTrades"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/market": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 借贷市场（期限、利率、质押币种、LTV 参数） */
+        get: operations["getLoanMarket"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 借款试算（所需质押、LTV、利息、强平价） */
+        get: operations["getLoanQuote"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的借款订单 */
+        get: operations["listLoans"];
+        put?: never;
+        /** 借款（锁定质押，USDT 入资金账户） */
+        post: operations["borrowLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 借款汇总 */
+        get: operations["getLoanSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 借贷流水（借款/还款/补仓/续借/强平等） */
+        get: operations["listLoanRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 借款订单详情 */
+        get: operations["getLoan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/{id}/repay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 还款（先息后本；all=true 全部还清并释放质押） */
+        post: operations["repayLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/{id}/collateral": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 追加质押 */
+        post: operations["addLoanCollateral"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/loans/{id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 续借（定期，结清当期利息后按原期限续期） */
+        post: operations["renewLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        LoanMarket: {
+            /** @example USDT */
+            asset?: string;
+            terms?: ({
+                term?: string;
+                /** @description 十进制字符串 */
+                hourlyRate?: string;
+                status?: string;
+            } & {
+                [key: string]: unknown;
+            })[];
+            collaterals?: {
+                asset?: string;
+                /** @description 十进制字符串 */
+                cap?: string;
+                /** @description 十进制字符串 */
+                price?: string;
+            }[];
+            /** @description 十进制字符串 */
+            initialLtv?: string;
+            /** @description 十进制字符串 */
+            warnLtv?: string;
+            /** @description 十进制字符串 */
+            liquidationLtv?: string;
+            /** @description 十进制字符串 */
+            userLimit?: string;
+            /** @description 十进制字符串 */
+            minAmount?: string;
+            /** @description 十进制字符串 */
+            overdueMultiplier?: string;
+            overdueLiquidationDays?: number;
+            /** @description 十进制字符串 */
+            liquidationFeeRate?: string;
+            /** @description 十进制字符串 */
+            earlyRepayPenaltyRate?: string;
+        };
+        LoanQuote: {
+            /** @description 十进制字符串 */
+            amount?: string;
+            /** @description 十进制字符串 */
+            collateral?: string;
+            /** @description 十进制字符串 */
+            price?: string;
+            /** @description 十进制字符串 */
+            ltv?: string;
+            /** @description 十进制字符串 */
+            hourlyRate?: string;
+            /** @description 十进制字符串 */
+            hourlyInterest?: string;
+            /** @description 十进制字符串 */
+            termInterest?: string;
+            /** @description 十进制字符串 */
+            liquidationPrice?: string;
+        };
+        BorrowRequest: {
+            /** @example BTC */
+            collateralAsset: string;
+            /** @example 1000 */
+            amount: string;
+            /** @description 不填则按初始质押率 */
+            collateralAmount?: string;
+            /** @example flexible */
+            term: string;
+        };
+        Loan: {
+            id?: number;
+            asset?: string;
+            collateralAsset?: string;
+            term?: string;
+            /** @description 十进制字符串 */
+            hourlyRate?: string;
+            /** @description 十进制字符串 */
+            initialPrincipal?: string;
+            /** @description 十进制字符串 */
+            initialCollateral?: string;
+            /** @description 十进制字符串 */
+            principal?: string;
+            /** @description 十进制字符串 */
+            collateral?: string;
+            /** @description 十进制字符串 */
+            interest?: string;
+            /** @description 十进制字符串 */
+            interestPaid?: string;
+            /** @description 十进制字符串 */
+            debt?: string;
+            /** @example active */
+            status?: string;
+            hoursCharged?: number;
+            /** Format: int64 */
+            startedAt?: number;
+            /** Format: int64 */
+            dueAt?: number;
+            /** Format: int64 */
+            closedAt?: number;
+            overdue?: boolean;
+            /** @description 十进制字符串 */
+            price?: string;
+            /** @description 十进制字符串 */
+            ltv?: string;
+            /** @description 十进制字符串 */
+            liquidationPrice?: string;
+            warning?: boolean;
+        };
+        LoanList: {
+            items?: components["schemas"]["Loan"][];
+        };
+        LoanRepayResult: components["schemas"]["Loan"] & {
+            repaid?: {
+                /** @description 十进制字符串 */
+                principal?: string;
+                /** @description 十进制字符串 */
+                interest?: string;
+                /** @description 十进制字符串 */
+                penalty?: string;
+                /** @description 十进制字符串 */
+                total?: string;
+                /** @description 十进制字符串 */
+                collateralReleased?: string;
+            };
+        };
+        LoanSummary: {
+            active?: number;
+            /** @description 十进制字符串 */
+            totalDebt?: string;
+            /** @description 十进制字符串 */
+            totalCollateralValue?: string;
+            asset?: string;
+        };
+        LoanRecord: {
+            id?: number;
+            loanId?: number;
+            type?: string;
+            /** @description 十进制字符串 */
+            amount?: string;
+            /** @description 十进制字符串 */
+            interest?: string;
+            /** @description 十进制字符串 */
+            penalty?: string;
+            /** @description 十进制字符串 */
+            collateral?: string;
+            /** @description 十进制字符串 */
+            price?: string;
+            /** @description 十进制字符串 */
+            ltv?: string;
+            term?: string;
+            asset?: string;
+            collateralAsset?: string;
+            /** Format: int64 */
+            time?: number;
+            detail?: {
+                [key: string]: unknown;
+            };
+        };
+        LoanRecordList: {
+            items?: components["schemas"]["LoanRecord"][];
+        };
         Error: {
             /**
              * @description 业务错误码
@@ -681,6 +2291,21 @@ export interface components {
              */
             countryCode?: string | null;
         };
+        /** @description 发送验证码的统一响应（/auth/code/send 与 /account/code/send 共用）。 */
+        SendCodeResponse: {
+            /** @example true */
+            sent: boolean;
+            /**
+             * @example sms
+             * @enum {string}
+             */
+            channel: "email" | "sms";
+            /**
+             * @description 验证码有效期（秒）
+             * @example 600
+             */
+            ttlSeconds?: number;
+        };
         /** @description 邮箱或手机号二选一；注册需验证码（先调用 /auth/code/send）。 */
         RegisterRequest: {
             /**
@@ -713,10 +2338,15 @@ export interface components {
              */
             email?: string | null;
             /**
-             * @description E.164
+             * @description E.164 或本地号
              * @example +8613800138000
              */
             phone?: string | null;
+            /**
+             * @description 手机号为本地号时提供国家拨号码（如 86）
+             * @example 86
+             */
+            countryCode?: string | null;
             /**
              * Format: password
              * @example Str0ng-Passw0rd!
@@ -761,8 +2391,8 @@ export interface components {
              */
             code?: string | null;
         };
-        /** @description 校验验证码后重置密码，并撤销该用户全部会话（refresh token）。 */
-        PasswordResetRequest: {
+        /** @description 找回密码第一步请求：邮箱或手机号二选一 + 验证码。 */
+        VerifyResetCodeRequest: {
             /**
              * Format: email
              * @example trader@example.com
@@ -774,6 +2404,24 @@ export interface components {
             countryCode?: string | null;
             /** @example 123456 */
             code: string;
+        };
+        /** @description 一次性重置令牌（默认 10 分钟有效），用于 /auth/password/reset。 */
+        VerifyResetCodeResponse: {
+            /** @example 3kZ9...resetTok */
+            resetToken: string;
+            /**
+             * @description resetToken 有效期（秒）
+             * @example 600
+             */
+            expiresIn: number;
+        };
+        /** @description 校验验证码后重置密码，并撤销该用户全部会话（refresh token）。 */
+        PasswordResetRequest: {
+            /**
+             * @description 由 /auth/password/verify-code 返回
+             * @example 3kZ9...resetTok
+             */
+            resetToken: string;
             /**
              * Format: password
              * @example N3w-Passw0rd!
@@ -878,6 +2526,11 @@ export interface components {
             /** @example 203.0.113.7 */
             ip?: string;
             /**
+             * @description 是否为当前请求所在设备
+             * @example true
+             */
+            current?: boolean;
+            /**
              * Format: date-time
              * @example 2026-11-01T10:00:00Z
              */
@@ -975,6 +2628,65 @@ export interface components {
              * @example 1992-04-18
              */
             dateOfBirth: string;
+            /**
+             * @description 1 = 基础认证（不填默认 1）；2 = 高级认证（需基础认证已通过）
+             * @enum {integer}
+             */
+            level?: 1 | 2;
+            /**
+             * @description 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
+             *     高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
+             *     缺失时返回 400 DOCUMENT_REQUIRED。
+             */
+            documents?: {
+                /** @example doc_1 */
+                front?: string;
+                /** @example doc_2 */
+                selfie?: string;
+                /** @example doc_3 */
+                back?: string;
+                /**
+                 * @description 地址证明（level 2 必填）
+                 * @example doc_4
+                 */
+                proofOfAddress?: string;
+            };
+        };
+        KycDocument: {
+            /** @example doc_1 */
+            fileId: string;
+            /** @enum {string} */
+            side: "front" | "selfie" | "back" | "proof_of_address";
+        };
+        KycApplication: {
+            /** @example app_1 */
+            id: string;
+            userId: string;
+            /** @enum {integer} */
+            level: 1 | 2;
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected";
+            firstName?: string;
+            lastName?: string;
+            country?: string;
+            /** @enum {string} */
+            idType?: "passport" | "id_card" | "driver_license";
+            idNumber?: string;
+            /** Format: date */
+            dateOfBirth?: string;
+            reason?: string | null;
+            /** Format: date-time */
+            submittedAt: string;
+            /** Format: date-time */
+            reviewedAt?: string | null;
+            /** @description 仅详情接口返回；url 为受控读取地址（同样需要内部令牌） */
+            documents?: {
+                /** @enum {string} */
+                side?: "front" | "selfie" | "back" | "proof_of_address";
+                fileId?: string;
+                /** @example /admin/kyc/documents/doc_1 */
+                url?: string;
+            }[];
         };
         KycStatus: {
             /** @example 1 */
@@ -1065,6 +2777,11 @@ export interface components {
              * @example 123456
              */
             totpCode?: string | null;
+            /**
+             * @description 未开启 2FA 时必填：发到用户邮箱/手机的验证码（purpose=withdraw）。 与 totpCode 二选一，由服务端按账户状态校验。
+             * @example 123456
+             */
+            code?: string | null;
         };
         Withdrawal: {
             /** @example wd_0001 */
@@ -1109,6 +2826,11 @@ export interface components {
             /** @example 12.00000000 */
             minWithdraw?: string | null;
             /**
+             * @description 单笔最大提现数量；USDT 各网络为 20000。为空表示无上限。
+             * @example 20000.00000000
+             */
+            maxWithdraw?: string | null;
+            /**
              * @description 预估链上 Gas 费（提现唯一费用，无平台手续费）。实现前可为 null。
              * @example 1.00000000
              */
@@ -1118,6 +2840,11 @@ export interface components {
              * @example USDT
              */
             gasFeeAsset?: string | null;
+            /**
+             * @description 该网络的到账确认数（充值需达到该确认数才入账；提现完成后等待该确认数结算）。
+             * @example 19
+             */
+            confirmations?: number | null;
             /**
              * @description 预计到账时间（分钟）。
              * @example 5
@@ -1296,6 +3023,349 @@ export interface components {
             /** @example 123.45 */
             volume: string;
         };
+        UnreadCount: {
+            unread?: number;
+            unreadByKind?: {
+                [key: string]: number;
+            };
+        };
+        Notification: {
+            id?: string;
+            /** @enum {string} */
+            kind?: "system" | "trade" | "activity" | "security";
+            title?: string;
+            body?: string;
+            /**
+             * Format: int64
+             * @description 毫秒时间戳
+             */
+            time?: number;
+            read?: boolean;
+            emailStatus?: string;
+        };
+        NotificationList: {
+            items?: components["schemas"]["Notification"][];
+            total?: number;
+            page?: number;
+            pageSize?: number;
+            unread?: number;
+            unreadByKind?: {
+                [key: string]: number;
+            };
+        };
+        ReadNotificationsRequest: {
+            ids?: string[];
+            all?: boolean;
+            kind?: string;
+        };
+        UpdatedCount: {
+            updated?: number;
+        };
+        NotifyPrefs: {
+            emailSystem?: boolean;
+            emailTrade?: boolean;
+            emailActivity?: boolean;
+            emailSecurity?: boolean;
+        };
+        NotifyPrefsPatch: {
+            emailSystem?: boolean;
+            emailTrade?: boolean;
+            emailActivity?: boolean;
+            emailSecurity?: boolean;
+        };
+        Coupon: {
+            /** Format: int64 */
+            id?: number;
+            /** @enum {string} */
+            kind?: "trial" | "deduction";
+            /** @description 十进制字符串 */
+            amount?: string;
+            asset?: string;
+            title?: string;
+            /** @enum {string} */
+            status?: "issued" | "active" | "expired" | "revoked";
+            /** Format: int64 */
+            activateBy?: number;
+            validDays?: number;
+            /** Format: int64 */
+            activatedAt?: number;
+            /** Format: int64 */
+            createdAt?: number;
+            bonus?: {
+                /** @description 十进制字符串 */
+                remaining?: string;
+                status?: string;
+                /** Format: int64 */
+                expiresAt?: number;
+            };
+        };
+        CouponList: {
+            items?: components["schemas"]["Coupon"][];
+        };
+        CouponSummary: {
+            available?: number;
+            active?: number;
+        };
+        CouponActivateResult: {
+            /** Format: int64 */
+            id?: number;
+            status?: string;
+        };
+        PartnerTier: {
+            key?: string;
+            name?: string;
+            /** @description 十进制字符串 */
+            minVolume30d?: string;
+            /** @description 十进制字符串 */
+            futuresRate?: string;
+            /** @description 十进制字符串 */
+            spotRate?: string;
+        };
+        PartnerRules: {
+            tiers?: components["schemas"]["PartnerTier"][];
+            tierBasis?: string;
+            /** @description 十进制字符串 */
+            overrideRate?: string;
+            /** @description 上级额外返佣层数（最多 2） */
+            overrideLevels?: number;
+            overrideFunding?: string;
+            settlement?: string;
+            settleHourUtc?: number;
+            payoutAsset?: string;
+            validity?: string;
+            rebateBase?: string;
+            autoApprove?: boolean;
+        };
+        PartnerApplyRequest: {
+            contact: string;
+            channel?: string;
+            scale?: string;
+        };
+        PartnerMe: {
+            uid?: string;
+            /** @enum {string} */
+            status?: "none" | "pending" | "active" | "rejected" | "disabled";
+            partner?: {
+                status?: string;
+                reviewNote?: string;
+                /** Format: int64 */
+                appliedAt?: number;
+            };
+            tier?: string;
+            tierName?: string;
+            /** @description 十进制字符串 */
+            futuresRate?: string;
+            /** @description 十进制字符串 */
+            spotRate?: string;
+        };
+        PartnerSummary: {
+            tier?: string;
+            tierName?: string;
+            /** @description 十进制字符串 */
+            futuresRate?: string;
+            /** @description 十进制字符串 */
+            spotRate?: string;
+            /** @description 十进制字符串 */
+            volume30d?: string;
+            nextTier?: {
+                tier?: string;
+                name?: string;
+                /** @description 十进制字符串 */
+                minVolume30d?: string;
+                /** @description 十进制字符串 */
+                gap?: string;
+            } | null;
+            directs?: number;
+            directPartners?: number;
+            /** @description 十进制字符串 */
+            unsettledEstimate?: string;
+            /** @description 十进制字符串 */
+            yesterday?: string;
+            /** @description 十进制字符串 */
+            month?: string;
+            /** @description 十进制字符串 */
+            total?: string;
+            /** @description 十进制字符串 */
+            overrideTotal?: string;
+            /** @description 十进制字符串 */
+            pendingPayout?: string;
+            payoutAsset?: string;
+        };
+        PartnerCommissions: {
+            items?: {
+                settlementId?: number;
+                sourceUid?: string;
+                /** @enum {string} */
+                kind?: "futures" | "spot" | "override" | "referral";
+                tier?: string;
+                /** @description 十进制字符串 */
+                rate?: string;
+                /** @description 十进制字符串 */
+                base?: string;
+                /** @description 十进制字符串 */
+                amount?: string;
+                /** Format: date */
+                day?: string;
+                /** Format: int64 */
+                settledAt?: number;
+                asset?: string;
+            }[];
+            total?: number;
+            page?: number;
+            pageSize?: number;
+        };
+        PartnerDaily: {
+            days?: number;
+            items?: {
+                /** Format: date */
+                day?: string;
+                /** @description 十进制字符串 */
+                futures?: string;
+                /** @description 十进制字符串 */
+                spot?: string;
+                /** @description 十进制字符串 */
+                override?: string;
+                /** @description 十进制字符串 */
+                referral?: string;
+                /** @description 十进制字符串 */
+                total?: string;
+            }[];
+        };
+        PartnerTeam: {
+            items?: {
+                uid?: string;
+                /** Format: int64 */
+                joinedAt?: number;
+                kycLevel?: number;
+                isPartner?: boolean;
+                tier?: string;
+                /** @description 十进制字符串 */
+                futuresVolume30d?: string;
+                /** @description 十进制字符串 */
+                spotVolume30d?: string;
+                /** @description 十进制字符串 */
+                fee30d?: string;
+                /** @description 十进制字符串 */
+                commission?: string;
+            }[];
+        };
+        PartnerLinks: {
+            code?: string;
+            url?: string;
+            registerUrl?: string;
+        };
+        StatusResult: {
+            status?: string;
+        };
+        CopyTrader: {
+            traderId?: string;
+            nickname?: string;
+            bio?: string;
+            /** @description 分润比例 0–0.5 */
+            profitShare?: string;
+            status?: string;
+            reviewNote?: string;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        CopyTraderRequest: {
+            nickname?: string;
+            bio?: string;
+            /** @description 0–0.5 */
+            profitShare?: string;
+        };
+        /** @description 交易员 + 统计（roi、winRate、followers、aum 等，随 days 窗口） */
+        CopyTraderStats: {
+            [key: string]: unknown;
+        };
+        CopySummary: {
+            traders?: number;
+            totalFollowers?: number;
+            /** @description 十进制字符串 */
+            followerProfit?: string;
+            /** @description 十进制字符串 */
+            aum?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CopyTraderList: {
+            traders?: components["schemas"]["CopyTraderStats"][];
+            days?: number;
+            sort?: string;
+        };
+        CopyTraderDetail: {
+            trader?: components["schemas"]["CopyTraderStats"];
+            positions?: {
+                [key: string]: unknown;
+            }[];
+        };
+        CopyFollowers: {
+            followers?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** @description POST 时 traderId、amount 必填；PATCH 只传要改的字段。比例均为 0–1 小数（slRatio 0.2 = 单笔保证金亏损 20% 止损，≤1） */
+        CopyFollowRequest: {
+            traderId?: string;
+            /** @description 十进制字符串 */
+            amount?: string;
+            /**
+             * @default ratio
+             * @enum {string}
+             */
+            mode: "ratio" | "fixed";
+            /** @description 十进制字符串 */
+            fixedMargin?: string;
+            /** @description 十进制字符串 */
+            ratio?: string;
+            /** @description 十进制字符串 */
+            maxPerTrade?: string;
+            /** @description 十进制字符串 */
+            tpRatio?: string;
+            /** @description 十进制字符串 */
+            slRatio?: string;
+        };
+        CopyFollow: {
+            /** Format: int64 */
+            id?: number;
+            traderId?: string;
+            status?: string;
+            /** @enum {string} */
+            mode?: "ratio" | "fixed";
+            /** @description 十进制字符串 */
+            fixedMargin?: string;
+            /** @description 十进制字符串 */
+            ratio?: string;
+            /** @description 十进制字符串 */
+            maxPerTrade?: string;
+            /** @description 十进制字符串 */
+            tpRatio?: string;
+            /** @description 十进制字符串 */
+            slRatio?: string;
+            /** @description 十进制字符串 */
+            principal?: string;
+            /** @description 十进制字符串 */
+            returned?: string;
+            /** @description 十进制字符串 */
+            sharePaid?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            stoppedAt?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CopyFollowList: {
+            follows?: components["schemas"]["CopyFollow"][];
+        };
+        CopyFollowTrades: {
+            trades?: {
+                [key: string]: unknown;
+            }[];
+            settlements?: {
+                [key: string]: unknown;
+            }[];
+        };
     };
     responses: {
         /** @description 请求参数错误 */
@@ -1392,12 +3462,7 @@ export interface operations {
                      *       "ttlSeconds": 600
                      *     }
                      */
-                    "application/json": {
-                        sent?: boolean;
-                        /** @enum {string} */
-                        channel?: "email" | "sms";
-                        ttlSeconds?: number;
-                    };
+                    "application/json": components["schemas"]["SendCodeResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -1578,7 +3643,7 @@ export interface operations {
             };
         };
     };
-    resetPassword: {
+    verifyPasswordResetCode: {
         parameters: {
             query?: never;
             header?: never;
@@ -1591,7 +3656,43 @@ export interface operations {
                  * @example {
                  *       "phone": "13800138000",
                  *       "countryCode": "86",
-                 *       "code": "123456",
+                 *       "code": "123456"
+                 *     }
+                 */
+                "application/json": components["schemas"]["VerifyResetCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description 验证码正确，返回重置令牌 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "resetToken": "3kZ9...resetTok",
+                     *       "expiresIn": 600
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VerifyResetCodeResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "resetToken": "3kZ9...resetTok",
                  *       "newPassword": "N3w-Passw0rd!"
                  *     }
                  */
@@ -1837,6 +3938,94 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    uploadAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description 头像图片（jpeg/png/webp，≤2MB）
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 上传成功，返回更新后的账户信息 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 文件过大 */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "FILE_TOO_LARGE",
+                     *       "message": "头像超过大小限制"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 不支持的图片类型 */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "UNSUPPORTED_MEDIA_TYPE",
+                     *       "message": "仅支持 JPEG/PNG/WEBP 图片"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 相对存储键（如 80000001/ab12cd.png） */
+                file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 头像图片 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
     sendAccountCode: {
         parameters: {
             query?: never;
@@ -1861,7 +4050,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    /**
+                     * @example {
+                     *       "sent": true,
+                     *       "channel": "sms",
+                     *       "ttlSeconds": 600
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SendCodeResponse"];
+                };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
@@ -2108,8 +4306,24 @@ export interface operations {
                     "application/json": components["schemas"]["KycStatus"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /**
+             * @description 参数错误：VALIDATION_ERROR、UNDERAGE（默认未满 18 岁，KYC_MIN_AGE 可配）、
+             *     KYC_LEVEL_REQUIRED（高级认证需先通过基础认证）、DOCUMENT_NOT_FOUND、DOCUMENT_SIDE_MISMATCH
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
+            /** @description KYC_PENDING（已有审核中的申请）或 ID_NUMBER_TAKEN（证件已被其他账户认证） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     getKycStatus: {
@@ -2136,6 +4350,223 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["KycStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    uploadKycDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    /** @enum {string} */
+                    side: "front" | "selfie" | "back" | "proof_of_address";
+                };
+            };
+        };
+        responses: {
+            /** @description 已上传 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KycDocument"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 文件过大（FILE_TOO_LARGE） */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 不支持的文件类型（UNSUPPORTED_MEDIA_TYPE） */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminListKycApplications: {
+        parameters: {
+            query?: {
+                status?: "pending" | "approved" | "rejected";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 申请列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["KycApplication"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    adminGetKycApplication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 申请详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KycApplication"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminApproveKyc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已通过 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KycApplication"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description 不在待审核状态（NOT_PENDING）或证件已被他人认证（ID_NUMBER_TAKEN） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminRejectKyc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example 证件照片模糊 */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已驳回 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KycApplication"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 不在待审核状态（NOT_PENDING） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminGetKycDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 图片内容 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminListKycLevelSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 未完成的同步任务 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            userId?: string;
+                            level?: number;
+                            attempts?: number;
+                            /** Format: date-time */
+                            nextAttemptAt?: string;
+                            lastError?: string | null;
+                        }[];
+                    };
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -2316,8 +4747,32 @@ export interface operations {
                     "application/json": components["schemas"]["Withdrawal"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /**
+             * @description 参数错误；MIN_WITHDRAW 表示低于最小提现数量或 amount 不大于 Gas；
+             *     WITHDRAW_LIMIT_EXCEEDED 表示超过当前 KYC 等级的 24 小时提现额度
+             *     （USDT 等值，默认 level1=50000、level2=200000，可配置）；非 USDT 资产按
+             *     market-data 实时价格（{ASSET}USDT 最新成交价）折算，无可用价格时拒绝提现并返回
+             *     PRICE_UNAVAILABLE。
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
+            /**
+             * @description KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
+             *     但目标地址不在白名单内
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listWithdrawNetworks: {
@@ -2409,6 +4864,39 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    cancelWithdrawal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example wd_0001 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已撤销 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Withdrawal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description 该提现无法撤销（不存在或已进入处理） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     placeSpotOrder: {
@@ -2813,6 +5301,296 @@ export interface operations {
                      *     ]
                      */
                     "application/json": components["schemas"]["Kline"][];
+                };
+            };
+        };
+    };
+    getLoanMarket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanMarket"];
+                };
+            };
+        };
+    };
+    getLoanQuote: {
+        parameters: {
+            query: {
+                collateralAsset: string;
+                amount: string;
+                /** @description 不填则按初始质押率计算 */
+                collateralAmount?: string;
+                term?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanQuote"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description 指数价格不可用（PRICE_UNAVAILABLE） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listLoans: {
+        parameters: {
+            query?: {
+                status?: "active" | "closed";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    borrowLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BorrowRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 指数价格不可用（PRICE_UNAVAILABLE） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getLoanSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanSummary"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listLoanRecords: {
+        parameters: {
+            query?: {
+                /** @description borrow | repay | add_collateral | renew | interest | liquidate ... */
+                type?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanRecordList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    repayLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    amount?: string;
+                    all?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanRepayResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    addLoanCollateral: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    amount: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 指数价格不可用（PRICE_UNAVAILABLE） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    renewLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 指数价格不可用（PRICE_UNAVAILABLE） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

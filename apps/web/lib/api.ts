@@ -8,4 +8,6 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? DEFAULT_BASE_URL;
 export const api = createApiClient({
   baseUrl: API_BASE,
   getAccessToken: () => useAuthStore.getState().accessToken,
+  // 与登录时提交的 deviceId 一致（lb_device_id），让设备列表能标出当前设备
+  getDeviceId: () => (typeof window === "undefined" ? null : localStorage.getItem("lb_device_id")),
 });

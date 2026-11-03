@@ -48,6 +48,8 @@ tags:
     description: 合约跟单（仅合约，带单分润 0–50%，按天结算；futures 服务）
   - name: Market
     description: 行情数据（公开）
+  - name: Loans
+    description: 质押借币（借 USDT，质押 BTC/ETH 等；earn 服务；USDC 不可借）
 
 paths:
   /auth/code/send:
@@ -1842,6 +1844,196 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /loans/market:
+    get:
+      tags: [Loans]
+      summary: 借贷市场（期限、利率、质押币种、LTV 参数）
+      operationId: getLoanMarket
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoanMarket" }
+  /loans/quote:
+    get:
+      tags: [Loans]
+      summary: 借款试算（所需质押、LTV、利息、强平价）
+      operationId: getLoanQuote
+      security: []
+      parameters:
+        - { name: collateralAsset, in: query, required: true, schema: { type: string, example: BTC } }
+        - { name: amount, in: query, required: true, schema: { type: string, example: "1000" } }
+        - { name: collateralAmount, in: query, required: false, description: 不填则按初始质押率计算, schema: { type: string } }
+        - { name: term, in: query, required: false, schema: { type: string, default: flexible, example: "7d" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoanQuote" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503":
+          description: 指数价格不可用（PRICE_UNAVAILABLE）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /loans:
+    get:
+      tags: [Loans]
+      summary: 我的借款订单
+      operationId: listLoans
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [active, closed] } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoanList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Loans]
+      summary: 借款（锁定质押，USDT 入资金账户）
+      operationId: borrowLoan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BorrowRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Loan" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: 指数价格不可用（PRICE_UNAVAILABLE）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /loans/summary:
+    get:
+      tags: [Loans]
+      summary: 借款汇总
+      operationId: getLoanSummary
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoanSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /loans/records:
+    get:
+      tags: [Loans]
+      summary: 借贷流水（借款/还款/补仓/续借/强平等）
+      operationId: listLoanRecords
+      parameters:
+        - { name: type, in: query, required: false, schema: { type: string, example: repay }, description: "borrow | repay | add_collateral | renew | interest | liquidate ..." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoanRecordList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /loans/{id}:
+    get:
+      tags: [Loans]
+      summary: 借款订单详情
+      operationId: getLoan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Loan" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /loans/{id}/repay:
+    post:
+      tags: [Loans]
+      summary: 还款（先息后本；all=true 全部还清并释放质押）
+      operationId: repayLoan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: string }
+                all: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoanRepayResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /loans/{id}/collateral:
+    post:
+      tags: [Loans]
+      summary: 追加质押
+      operationId: addLoanCollateral
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Loan" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: 指数价格不可用（PRICE_UNAVAILABLE）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /loans/{id}/renew:
+    post:
+      tags: [Loans]
+      summary: 续借（定期，结清当期利息后按原期限续期）
+      operationId: renewLoan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Loan" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: 指数价格不可用（PRICE_UNAVAILABLE）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1904,6 +2096,125 @@ components:
             requestId: req_404demo
 
   schemas:
+    LoanMarket:
+      type: object
+      properties:
+        asset: { type: string, example: USDT }
+        terms:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              term: { type: string }
+              hourlyRate: { type: string, description: 十进制字符串 }
+              status: { type: string }
+        collaterals:
+          type: array
+          items:
+            type: object
+            properties:
+              asset: { type: string }
+              cap: { type: string, description: 十进制字符串 }
+              price: { type: string, description: 十进制字符串 }
+        initialLtv: { type: string, description: 十进制字符串 }
+        warnLtv: { type: string, description: 十进制字符串 }
+        liquidationLtv: { type: string, description: 十进制字符串 }
+        userLimit: { type: string, description: 十进制字符串 }
+        minAmount: { type: string, description: 十进制字符串 }
+        overdueMultiplier: { type: string, description: 十进制字符串 }
+        overdueLiquidationDays: { type: integer }
+        liquidationFeeRate: { type: string, description: 十进制字符串 }
+        earlyRepayPenaltyRate: { type: string, description: 十进制字符串 }
+    LoanQuote:
+      type: object
+      properties:
+        amount: { type: string, description: 十进制字符串 }
+        collateral: { type: string, description: 十进制字符串 }
+        price: { type: string, description: 十进制字符串 }
+        ltv: { type: string, description: 十进制字符串 }
+        hourlyRate: { type: string, description: 十进制字符串 }
+        hourlyInterest: { type: string, description: 十进制字符串 }
+        termInterest: { type: string, description: 十进制字符串 }
+        liquidationPrice: { type: string, description: 十进制字符串 }
+    BorrowRequest:
+      type: object
+      required: [collateralAsset, amount, term]
+      properties:
+        collateralAsset: { type: string, example: BTC }
+        amount: { type: string, example: "1000" }
+        collateralAmount: { type: string, description: 不填则按初始质押率 }
+        term: { type: string, example: flexible }
+    Loan:
+      type: object
+      properties:
+        id: { type: integer }
+        asset: { type: string }
+        collateralAsset: { type: string }
+        term: { type: string }
+        hourlyRate: { type: string, description: 十进制字符串 }
+        initialPrincipal: { type: string, description: 十进制字符串 }
+        initialCollateral: { type: string, description: 十进制字符串 }
+        principal: { type: string, description: 十进制字符串 }
+        collateral: { type: string, description: 十进制字符串 }
+        interest: { type: string, description: 十进制字符串 }
+        interestPaid: { type: string, description: 十进制字符串 }
+        debt: { type: string, description: 十进制字符串 }
+        status: { type: string, example: active }
+        hoursCharged: { type: integer }
+        startedAt: { type: integer, format: int64 }
+        dueAt: { type: integer, format: int64 }
+        closedAt: { type: integer, format: int64 }
+        overdue: { type: boolean }
+        price: { type: string, description: 十进制字符串 }
+        ltv: { type: string, description: 十进制字符串 }
+        liquidationPrice: { type: string, description: 十进制字符串 }
+        warning: { type: boolean }
+    LoanList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Loan" } }
+    LoanRepayResult:
+      allOf:
+        - $ref: "#/components/schemas/Loan"
+        - type: object
+          properties:
+            repaid:
+              type: object
+              properties:
+                principal: { type: string, description: 十进制字符串 }
+                interest: { type: string, description: 十进制字符串 }
+                penalty: { type: string, description: 十进制字符串 }
+                total: { type: string, description: 十进制字符串 }
+                collateralReleased: { type: string, description: 十进制字符串 }
+    LoanSummary:
+      type: object
+      properties:
+        active: { type: integer }
+        totalDebt: { type: string, description: 十进制字符串 }
+        totalCollateralValue: { type: string, description: 十进制字符串 }
+        asset: { type: string }
+    LoanRecord:
+      type: object
+      properties:
+        id: { type: integer }
+        loanId: { type: integer }
+        type: { type: string }
+        amount: { type: string, description: 十进制字符串 }
+        interest: { type: string, description: 十进制字符串 }
+        penalty: { type: string, description: 十进制字符串 }
+        collateral: { type: string, description: 十进制字符串 }
+        price: { type: string, description: 十进制字符串 }
+        ltv: { type: string, description: 十进制字符串 }
+        term: { type: string }
+        asset: { type: string }
+        collateralAsset: { type: string }
+        time: { type: integer, format: int64 }
+        detail: { type: object, additionalProperties: true }
+    LoanRecordList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/LoanRecord" } }
     Error:
       type: object
       required: [code, message]
@@ -2184,8 +2495,7 @@ components:
         level:
           type: integer
           enum: [1, 2]
-          default: 1
-          description: 1 = 基础认证；2 = 高级认证（需基础认证已通过）
+          description: 1 = 基础认证（不填默认 1）；2 = 高级认证（需基础认证已通过）
         documents:
           type: object
           description: |

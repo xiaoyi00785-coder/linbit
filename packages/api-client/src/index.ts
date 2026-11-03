@@ -29,6 +29,8 @@ export interface CreateApiClientOptions {
   baseUrl?: string;
   /** 返回当前 accessToken，用于自动附加 Authorization 头。 */
   getAccessToken?: () => string | null | undefined;
+  /** 返回本机设备 ID，自动附加 X-Device-Id 头（设备列表据此标记当前设备）。 */
+  getDeviceId?: () => string | null | undefined;
 }
 
 /** 默认指向本地 Prism mock server。 */
@@ -41,7 +43,7 @@ export const DEFAULT_BASE_URL = "http://localhost:4010";
 export function createApiClient(
   options: CreateApiClientOptions = {},
 ): LinbitClient {
-  const { baseUrl = DEFAULT_BASE_URL, getAccessToken } = options;
+  const { baseUrl = DEFAULT_BASE_URL, getAccessToken, getDeviceId } = options;
   const client = createClient<paths>({ baseUrl });
 
   if (getAccessToken) {
@@ -50,6 +52,10 @@ export function createApiClient(
         const token = getAccessToken();
         if (token) {
           request.headers.set("Authorization", `Bearer ${token}`);
+        }
+        const dev = getDeviceId?.();
+        if (dev) {
+          request.headers.set("X-Device-Id", dev);
         }
         return request;
       },

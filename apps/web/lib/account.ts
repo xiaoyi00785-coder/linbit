@@ -98,7 +98,7 @@ export const sendAuthCode = (purpose: "register" | "reset_password", t: Target) 
   call(() => api.POST("/auth/code/send", { body: { purpose, ...t } }), () => ({ sent: true, channel: t.email ? "email" : "sms", ttlSeconds: 60 }) as SendCodeRes);
 
 export const register = (b: Target & { password: string; code: string; inviteCode?: string | null }) =>
-  call(() => api.POST("/auth/register", { body: b }), () => MOCK_TOKENS);
+  call(() => api.POST("/auth/register", { body: { ...b, deviceId: deviceId(), deviceName: deviceName() } as never }), () => MOCK_TOKENS);
 
 export const login = (b: Target & { password: string }) =>
   call<AuthTokens | LoginChallenge>(

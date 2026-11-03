@@ -169,3 +169,41 @@ func TestPhoneValidationReturns400(t *testing.T) {
 		t.Fatalf("login unknown account = %d, want 401", w.Code)
 	}
 }
+
+// The web client registers and logs in with the same body deviceId; the first
+// login from the registering browser must not require a second factor, and
+// removing a different device must keep it trusted.
+func TestRegisterDeviceIDTrustedOnLogin(t *testing.T) {
+	srv := newTestServer(t)
+	h := srv.Routes()
+	email := uniqueEmail()
+	if w := doJSON(t, h, "POST", "/auth/code/send", "", map[string]string{"purpose": purposeRegister, "email": email}); w.Code != http.StatusOK {
+		t.Fatalf("send code: %d", w.Code)
+	}
+	code := srv.recorder.Last(strings.ToLower(email), purposeRegister)
+	pw := "Str0ng-Passw0rd!"
+	w := doJSON(t, h, "POST", "/auth/register", "", map[string]string{"email": email, "password": pw, "code": code, "deviceId": "web-reg1", "deviceName": "Chrome on macOS"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("register: %d %s", w.Code, w.Body.String())
+	}
+	var tok authTokens
+	_ = json.Unmarshal(w.Body.Bytes(), &tok)
+	login := func() *httptest.ResponseRecorder {
+		return doJSON(t, h, "POST", "/auth/login", "", map[string]string{"email": email, "password": pw, "deviceId": "web-reg1"})
+	}
+	var lt authTokens
+	if w := login(); w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &lt) != nil || lt.AccessToken == "" {
+		t.Fatalf("first login from registering device should skip challenge: %d %s", w.Code, w.Body.String())
+	}
+	// Device list with X-Device-Id flags exactly that device as current.
+	r := httptest.NewRequest("GET", "/account/devices", nil)
+	r.Header.Set("Authorization", "Bearer "+lt.AccessToken)
+	r.Header.Set("X-Device-Id", "web-reg1")
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, r)
+	var dl devicesResponse
+	_ = json.Unmarshal(w2.Body.Bytes(), &dl)
+	if len(dl.Items) != 1 || !dl.Items[0].Current || dl.Items[0].DeviceKey != "cid:web-reg1" {
+		t.Fatalf("devices = %s, want single current cid:web-reg1", w2.Body.String())
+	}
+}

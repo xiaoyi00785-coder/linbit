@@ -27,6 +27,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -451,6 +452,13 @@ func run(root, execCmd string) int {
 	}
 
 	if execCmd == "" {
+		// Standalone mode (manual / frontend testing): INDEX_FEED=off means
+		// index = local last trade, which is empty on a fresh stack, so loan
+		// quotes and futures fail with PRICE_UNAVAILABLE. Pin dev index prices
+		// for the default collateral/futures pairs. DEVSTACK_INDEX_SEED="none"
+		// disables; format "BTCUSDT=50000,ETHUSDT=2500". Smokes (-exec) pin
+		// their own prices and are not affected.
+		seedDevIndex("http://localhost:"+marketPort, envOr("DEVSTACK_INDEX_SEED", "BTCUSDT=50000,ETHUSDT=2500,SOLUSDT=150,BNBUSDT=600,TRXUSDT=0.12"))
 		// Standalone mode: block until interrupted.
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -542,4 +550,28 @@ func randBase32(n int) string {
 		panic(err)
 	}
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
+}
+
+// seedDevIndex pins dev index prices on market-data (DEV_MODE only).
+func seedDevIndex(marketURL, spec string) {
+	if spec == "" || spec == "none" {
+		return
+	}
+	for _, kv := range strings.Split(spec, ",") {
+		sym, px, ok := strings.Cut(strings.TrimSpace(kv), "=")
+		if !ok {
+			continue
+		}
+		body := fmt.Sprintf(`{"symbol":%q,"price":%q}`, strings.ToUpper(sym), px)
+		req, _ := http.NewRequest(http.MethodPost, marketURL+"/internal/dev/index", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Internal-Token", internalTok)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("devstack: index seed %s: %v", sym, err)
+			continue
+		}
+		resp.Body.Close()
+		log.Printf("devstack: dev index %s=%s (%d)", sym, px, resp.StatusCode)
+	}
 }
