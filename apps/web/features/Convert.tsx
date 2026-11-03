@@ -26,6 +26,7 @@ type Order = { id: number; quoteId: string; from: string; to: string; fromAmount
 const ERR: Record<string, string> = {
   VALIDATION_ERROR: "请求参数不合法", PAIR_NOT_SUPPORTED: "暂不支持该币对", PRICE_UNAVAILABLE: "价格暂不可用，请稍后再试",
   QUOTE_NOT_FOUND: "报价不存在，已重新报价", QUOTE_EXPIRED: "报价已过期，已重新报价", INSUFFICIENT_BALANCE: "可用余额不足",
+  PAIR_PAUSED_DEPEG: "USDC 脱锚，该兑换对已暂停", // 503
 };
 const PAGE = 10;
 
