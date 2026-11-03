@@ -21,14 +21,14 @@ export function KycUpload({ label, side, onDone }: { label: string; side: "front
     else setS({ file, preview, status: "error", msg: r.error ?? "上传失败" });
   };
   return (
-    <label className="fx-field">
+    <div className="fx-field">
       {label}
       <div className="fx-upl" onClick={() => ref.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); pick(e.dataTransfer.files[0]); }}>
         {s.preview ? <img src={s.preview} alt="" /> : <><span className="upi">▭</span><a className="lime2">点击或拖拽上传 ⤒</a><span>JPG / PNG，≤ 10MB</span></>}
         {s.status !== "idle" && <div className="st">{s.status === "uploading" ? "上传中…" : s.status === "done" ? "✓ 已上传（Mock）" : s.msg}</div>}
       </div>
       <input ref={ref} type="file" accept="image/jpeg,image/png" hidden onChange={(e) => pick(e.target.files?.[0])} />
-    </label>
+    </div>
   );
 }
 

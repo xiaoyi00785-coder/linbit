@@ -19,8 +19,19 @@ export type AddressItem = S["WithdrawAddress"];
 type SendCodeRes = { sent: boolean; channel: "email" | "sms"; ttlSeconds?: number };
 
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
-const errMsg = (e: unknown, status: number) =>
-  (e as { message?: string } | undefined)?.message ?? `HTTP ${status}`;
+const CODE_MSG: Record<string, string> = {
+  RATE_LIMITED: "发送太频繁，请稍后再试",
+  EMAIL_UNAVAILABLE: "邮件暂时无法发送",
+  SMS_UNAVAILABLE: "短信暂时无法发送",
+  INVALID_EMAIL: "邮箱格式不正确",
+};
+const errMsg = (e: unknown, status: number) => {
+  const x = e as { code?: string; message?: string } | undefined;
+  if (x?.code === "INVALID_EMAIL" && x.message) return x.message; // 后端文案优先
+  if (x?.code && CODE_MSG[x.code]) return CODE_MSG[x.code];
+  if (status === 429) return CODE_MSG.RATE_LIMITED;
+  return x?.message ?? `HTTP ${status}`;
+};
 
 async function call<T>(
   fn: () => Promise<{ data?: T; error?: unknown; response: Response }>,
@@ -29,7 +40,8 @@ async function call<T>(
   try {
     const { data, error, response } = await fn();
     if (response.ok) return { ok: true, data: (data ?? (true as unknown)) as T, source: "api" };
-    if (response.status < 500) return { ok: false, error: errMsg(error, response.status), source: "api" };
+    // 网关可达时的 4xx/5xx 都如实返回（之前 5xx 会落到 mock，导致"验证码已发送"误报）
+    return { ok: false, error: errMsg(error, response.status), source: "api" };
   } catch {
     /* 网络错误 → mock */
   }

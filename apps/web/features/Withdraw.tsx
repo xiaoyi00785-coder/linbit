@@ -102,7 +102,7 @@ export function Withdraw() {
                 </div>
               )}
               <div className="chips">
-                {ASSETS.map((a) => <span key={a} onClick={() => { setAsset(a); setNet(netsOf(a)[0]); }}>{a}</span>)}
+                {ASSETS.map((a) => <span key={a} className={a === asset ? "on" : ""} onClick={() => { setAsset(a); setNet(netsOf(a)[0]); }}>{a}</span>)}
               </div>
             </div>
             <div className="fx-field">

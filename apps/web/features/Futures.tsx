@@ -1,6 +1,6 @@
 "use client";
 // 合约下单区底部：仓位 / 当前委托 / 历史委托 —— 对接 GET /futures/positions、GET /futures/orders
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRest, rest } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 import { toast } from "@/lib/ui";
@@ -29,6 +29,7 @@ export function FutOrders() {
     if (!r.ok) return toast(r.error || "平仓失败", "err");
     toast("已提交市价平仓"); pos.reload();
   };
+  useEffect(() => { const h = () => { pos.reload(); open.reload(); }; window.addEventListener("lb-fut-orders", h); return () => window.removeEventListener("lb-fut-orders", h); }); // eslint-disable-line
   const labels = [`仓位(${P.length})`, `当前委托(${O.length})`, "历史委托"];
   return (
     <div className="orders" data-guide="orders">
