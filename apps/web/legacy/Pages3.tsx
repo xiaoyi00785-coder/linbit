@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import {G,SOCIAL} from "@/components/Glyph";
 import { MenuIcon } from "../components/MenuIcon";
 import { SideIcon } from "../components/SideIcon";
 import { CoinIcon } from '@/components/CoinIcon'
@@ -11,7 +12,7 @@ import { MOCK } from './auth'
 import { useProfile } from './Pages'
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div>
-const Eye=()=><span className="eye">◉</span>
+const Eye=()=><span className="eye"><G n="eye" s={14}/></span>
 const U=()=><CoinIcon s="USDT" size={22}/>
 const ACCTS=[['/assets/overview','overview','资产总览'],['/assets/funding-account','funding','资金账户'],['/assets/trading-account','futures','合约账户'],['/assets/spot-account','spot','现货账户'],['/assets/earn-account','earn','理财账户'],['/assets/tradfi-account','tradfi','传统金融账户'],['/assets/bots-account','bots','策略账户']]
 export const RECS=[['funding','资金记录'],['futures','合约记录'],['spot','现货记录'],['tradfi','传统金融记录']]
@@ -22,7 +23,7 @@ return <aside className="lside a2">{ACCTS.map(([to,i,t])=><NavLink key={to} to={
 <div className="lsi" onClick={()=>setO(!o)}><span className="lsic"><SideIcon n="orders"/></span>订单中心<em>{o?'▴':'▾'}</em></div>{o&&ORDS.map(([k,t])=><NavLink key={k} to={'/orders/'+k} className="lsi sub">{t}</NavLink>)}</aside>}
 const AS=({children})=><main className="light"><div className="lwrap">{<ASide/>}<section className="lmain a2">{children}</section></div></main>
 const Head=({t,btns})=>{const n=useNavigate();return <div className="lhead"><h2>{t}</h2><div className="lbtns">{btns.map(([b,to],i)=><button key={b} className={i?'lb':'lb dark'} onClick={()=>to&&n(to)}>{b}</button>)}</div></div>}
-const Val=({t='资产估值',children,set})=><div className="lcard v"><div className="lg">{t}(USDT) <Eye/>{set&&<span className="vset">⚙</span>}</div><div className="big">0 <small>USDT ▾</small></div><div className="lg">≈ $0</div>{children}</div>
+const Val=({t='资产估值',children,set})=><div className="lcard v"><div className="lg">{t}(USDT) <Eye/>{set&&<span className="vset"><G n="gear" s={14}/></span>}</div><div className="big">0 <small>USDT ▾</small></div><div className="lg">≈ $0</div>{children}</div>
 const TH=({c,s})=><div className="lth t2">{c.map((x,i)=><span key={x}>{x}{s&&i>0&&i<c.length-1&&<em className="srt">⇅</em>}</span>)}</div>
 const Srch=()=><><span className="sp"/><span className="lsearch">⌕ 搜索币种</span><label className="lchk"><i/>隐藏小于 1 USD 的资产</label></>
 const URow=({v})=><div className="ltr"><span><U/> USDT</span>{v.map((x,i)=><span key={i} className={x.lime?'lime2 act':''}>{x.lime?x.lime.map(l=><a key={l}>{l}</a>):x==='u'?<>0<small className="lg d">≈ $0</small></>:x}</span>)}</div>
