@@ -74,7 +74,12 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SendCodeResponse" }
               example: { sent: true, channel: sms, ttlSeconds: 600 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "429":
           description: 发送过于频繁
           content:
@@ -211,9 +216,20 @@ paths:
             example: { challengeToken: 3kZ9...challenge }
       responses:
         "200": { description: 已发送 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /auth/password/verify-code:
     post:
@@ -499,9 +515,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SendCodeResponse" }
               example: { sent: true, channel: sms, ttlSeconds: 600 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /account/devices:
     get:

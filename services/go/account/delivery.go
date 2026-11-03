@@ -24,7 +24,8 @@ func (e *DeliveryError) Error() string {
 
 // writeSendCodeError maps a CodeService.Send error to an API response and logs
 // the cause (without secrets). Delivery failures are 503 *_UNAVAILABLE so the
-// client can show "try later" instead of a generic 500.
+// client can show "try later" instead of a generic 500. A provider 4xx that
+// blames the recipient address (reason invalid_recipient) is 400 INVALID_EMAIL.
 func writeSendCodeError(w http.ResponseWriter, where string, err error) {
 	if errors.Is(err, ErrRateLimited) {
 		common.WriteError(w, http.StatusTooManyRequests, "RATE_LIMITED", "验证码发送过于频繁，请稍后再试")
@@ -33,6 +34,10 @@ func writeSendCodeError(w http.ResponseWriter, where string, err error) {
 	log.Printf("%s: send code: %v", where, err)
 	var de *DeliveryError
 	if errors.As(err, &de) {
+		if de.Channel == channelEmail && de.Reason == "invalid_recipient" {
+			common.WriteError(w, http.StatusBadRequest, "INVALID_EMAIL", "邮箱地址无效或无法接收邮件，请检查后重试")
+			return
+		}
 		if de.Channel == channelSMS {
 			common.WriteError(w, http.StatusServiceUnavailable, "SMS_UNAVAILABLE", "短信服务暂不可用，请稍后再试")
 			return

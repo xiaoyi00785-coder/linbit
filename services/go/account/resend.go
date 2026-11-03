@@ -85,6 +85,8 @@ func resendReason(status int, body []byte) string {
 	switch {
 	case status == 401 || strings.Contains(msg, "missing_api_key") || strings.Contains(msg, "invalid_api_key") || strings.Contains(msg, "api key is invalid"):
 		return "invalid_api_key"
+	case status/100 == 4 && status != 401 && status != 403 && status != 429 && isRecipientError(msg):
+		return "invalid_recipient"
 	case strings.Contains(msg, "domain") && (strings.Contains(msg, "verif") || strings.Contains(msg, "not")):
 		return "from_domain_not_verified"
 	case strings.Contains(msg, "testing emails") || strings.Contains(msg, "own email"):
@@ -104,6 +106,20 @@ func resendReason(status int, body []byte) string {
 		return "provider_error"
 	}
 	return fmt.Sprintf("http_%d", status)
+}
+
+// isRecipientError reports whether a Resend 4xx message blames the "to"
+// address (bad syntax, example.com / reserved domain, undeliverable).
+func isRecipientError(msg string) bool {
+	if strings.Contains(msg, "from") && !strings.Contains(msg, "`to`") && !strings.Contains(msg, " to ") {
+		return false
+	}
+	for _, k := range []string{"`to`", "to field", "invalid_to", "recipient", "invalid email address", "email address", "example.com", "undeliverable", "not deliverable"} {
+		if strings.Contains(msg, k) {
+			return true
+		}
+	}
+	return false
 }
 
 func redactKey(s, key string) string {
