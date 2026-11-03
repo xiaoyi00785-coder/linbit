@@ -95,6 +95,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/points", proxy: growthProxy},
 			{prefix: "/rewards", proxy: growthProxy},
 			{prefix: "/activities", proxy: growthProxy},
+			{prefix: "/coupons", proxy: growthProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/ws", proxy: marketProxy},
@@ -118,6 +119,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/strategy/config"},
 			{method: http.MethodGet, path: "/strategy/grid/square"}, // public strategy square
 			{method: http.MethodGet, path: "/partner/rules"},
+			{method: http.MethodGet, path: "/points/campaigns"},
+			{method: http.MethodGet, path: "/points/campaign"},
 			{method: "", path: "/ws"}, // public market WebSocket
 		},
 	}, nil

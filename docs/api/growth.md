@@ -68,6 +68,21 @@ Copy-trading profit share is not a fee and earns nothing.
 - `POST /internal/dev/growth/sync`, `POST /internal/dev/growth/settle[?cutoff=RFC3339]` (DEV_MODE only).
 
 ## Configuration
+## Points carnival (积分嘉年华)
+
+Public: `GET /points/campaigns`, `GET /points/campaign[?campaign=key]` (active, else next upcoming, else latest ended; includes rules and redeem table).
+User: `POST /points/enroll {campaign?}`, `GET /points/me` (balance, today's task progress, redeemed tiers; tasks reset 00:00 UTC),
+`GET /points/history`, `POST /points/redeem {points}`, `GET /points/redemptions`.
+Errors: CAMPAIGN_ENDED, CAMPAIGN_NOT_STARTED, NOT_ENROLLED, INVALID_TIER, ALREADY_REDEEMED (each tier once per period), INSUFFICIENT_POINTS.
+Points are earned only while enrolled and inside the period; balance shows 0 after the period ends.
+Internal: `GET|POST /internal/points/campaigns` (admin `points/campaigns`, reward:edit + 2FA).
+
+## Coupon center (卡券中心)
+
+`GET /coupons[?status=issued|active|expired]` (active vouchers carry the live futures bonus `bonus.remaining`), `GET /coupons/summary`,
+`POST /coupons/{id}/activate` → futures `POST /internal/bonus/grant` (ref `coupon:<id>`). Trial vouchers need futures own funds ≥ amount (INSUFFICIENT_OWN_FUNDS).
+Errors: COUPON_NOT_FOUND, COUPON_NOT_ACTIVATABLE. Internal: `GET /internal/coupons?userId=`.
+
 | Env | Default |
 |---|---|
 | GROWTH_SYNC_MS | 2000 |
@@ -83,3 +98,13 @@ Copy-trading profit share is not a fee and earns nothing.
 | GROWTH_PARTNER_AUTO_APPROVE | false |
 | GROWTH_REFERRAL_RATE | 0.10 |
 | GROWTH_REFERRAL_DAYS | 365 |
+| GROWTH_COUPON_ACTIVATE_DAYS | 30 |
+| GROWTH_COUPON_VALID_DAYS | 14 |
+| GROWTH_COUPON_REQUIRE_OWN_FUNDS | true |
+| GROWTH_VALID_INVITEE_FEES | 100 |
+| GROWTH_POINTS_VOLUME_TIERS | 2000:1,10000:1,100000:3,200000:3,300000:5,500000:8,1000000:12,3000000:35,10000000:100 |
+| GROWTH_POINTS_DEPOSIT_UNIT | 100 |
+| GROWTH_POINTS_DEPOSIT_DAILY_CAP | 10 |
+| GROWTH_POINTS_INVITE_POINTS | 8 |
+| GROWTH_POINTS_INVITE_DAILY_CAP | 80 |
+| GROWTH_POINTS_REDEEM | 10:deduction:3,20:deduction:6,35:trial:10,50:deduction:10,75:trial:20,100:trial:30,200:deduction:75,300:trial:100 |

@@ -5,7 +5,12 @@ import (
 	"net/http"
 )
 
-// Hooks for later growth programs (points, gifts, activities, coupons).
-func (s *Server) extraRoutes(mux *http.ServeMux)            {}
-func (s *Server) afterSyncLocked(ctx context.Context) error { return nil }
-func (s *Server) Housekeeping(ctx context.Context)          {}
+// Hooks for the reward programs (points, coupons, gifts, activities).
+func (s *Server) extraRoutes(mux *http.ServeMux) {
+	s.couponRoutes(mux)
+	s.pointsRoutes(mux)
+}
+
+func (s *Server) afterSyncLocked(ctx context.Context) error { return s.accruePoints(ctx) }
+
+func (s *Server) Housekeeping(ctx context.Context) { s.expireCoupons(ctx) }

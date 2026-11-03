@@ -95,10 +95,10 @@ func (s *Server) deleverage(ctx context.Context, tx *sql.Tx, uid string, c Contr
 			break
 		}
 		x := dmin(rem, cd.p.Qty.Abs())
-		if _, _, err := s.fill(ctx, tx, c, uid, decimal.NewFromInt(int64(-p.Qty.Sign())).Mul(x), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		if _, _, _, err := s.fill(ctx, tx, c, uid, decimal.NewFromInt(int64(-p.Qty.Sign())).Mul(x), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
 			return rem, err
 		}
-		_, cpnl, err := s.fill(ctx, tx, c, cd.p.UserID, decimal.NewFromInt(int64(p.Qty.Sign())).Mul(x), px, dZero, cd.p.Leverage, cd.p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{})
+		_, cpnl, _, err := s.fill(ctx, tx, c, cd.p.UserID, decimal.NewFromInt(int64(p.Qty.Sign())).Mul(x), px, dZero, cd.p.Leverage, cd.p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{})
 		if err != nil {
 			return rem, err
 		}

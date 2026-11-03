@@ -116,6 +116,9 @@ func (s *Server) Routes() http.Handler {
 	a("POST /admin/v1/partners/{uid}/approve", permPartnerReview, s.handlePartnerReview("approve"))
 	a("POST /admin/v1/partners/{uid}/reject", permPartnerReview, s.handlePartnerReview("reject"))
 	a("POST /admin/v1/partners/{uid}/disable", permPartnerReview, s.handlePartnerReview("disable"))
+	a("GET /admin/v1/points/campaigns", permRewardView, s.handlePointsCampaigns)
+	a("POST /admin/v1/points/campaigns", permRewardEdit, s.handlePointsCampaignCreate)
+	a("GET /admin/v1/users/{uid}/coupons", permUserView, s.handleUserCoupons)
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
 

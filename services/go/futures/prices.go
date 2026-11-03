@@ -192,6 +192,10 @@ func (s *Server) settleFunding(ctx context.Context, sym string, rate, mark decim
 				}
 			} else if err := addBalance(ctx, tx, p.UserID, sym, "funding", pay.Neg(), ref); err != nil {
 				return err
+			} else if pay.Sign() > 0 {
+				if _, err := useBonus(ctx, tx, p.UserID, sym, "bonus_funding", pay, "trial"); err != nil {
+					return err
+				}
 			}
 		}
 		return nil

@@ -219,7 +219,7 @@ type Trade struct {
 // fill applies a signed quantity d at price px to uid's position and wallet:
 // realized PnL, isolated-margin movement, and fee = |d|*px*feeRate (by position
 // value, on open and on close alike) moved to the fee account.
-func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid string, d, px, feeRate decimal.Decimal, lev int, mode string, tp, sl decimal.NullDecimal) (fee, pnl decimal.Decimal, err error) {
+func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid string, d, px, feeRate decimal.Decimal, lev int, mode string, tp, sl decimal.NullDecimal) (fee, pnl, bonus decimal.Decimal, err error) {
 	if _, _, err = lockAccount(ctx, tx, uid); err != nil {
 		return
 	}
@@ -289,8 +289,11 @@ func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid string, d
 		if _, err = tx.ExecContext(ctx, `UPDATE fut_accounts SET balance = balance + $2 WHERE user_id=$1`, feeUser, fee); err != nil {
 			return
 		}
+		if bonus, err = useBonus(ctx, tx, uid, c.Symbol, "bonus_fee", fee, "deduction", "trial"); err != nil {
+			return
+		}
 	}
-	return fee, rp, nil
+	return fee, rp, bonus, nil
 }
 
 // ---- orders ----
@@ -565,11 +568,11 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 			}
 			qty = dmin(qty, cl)
 		}
-		mfee, _, err := s.fill(ctx, tx, c, maker.UserID, signed(maker.Side, qty), px, c.MakerFee, maker.Leverage, maker.Mode, maker.TP, maker.SL)
+		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, signed(maker.Side, qty), px, c.MakerFee, maker.Leverage, maker.Mode, maker.TP, maker.SL)
 		if err != nil {
 			return nil, err
 		}
-		tfee, _, err := s.fill(ctx, tx, c, taker.UserID, signed(taker.Side, qty), px, c.TakerFee, taker.Leverage, taker.Mode, taker.TP, taker.SL)
+		tfee, _, tbonus, err := s.fill(ctx, tx, c, taker.UserID, signed(taker.Side, qty), px, c.TakerFee, taker.Leverage, taker.Mode, taker.TP, taker.SL)
 		if err != nil {
 			return nil, err
 		}
@@ -587,8 +590,8 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 			return nil, err
 		}
 		t := Trade{Symbol: c.Symbol, Price: px, Qty: qty, TakerSide: taker.Side}
-		if err := tx.QueryRowContext(ctx, `INSERT INTO fut_trades (symbol, price, qty, taker_side, maker_order, taker_order, maker_user, taker_user, maker_fee, taker_fee)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, created_at`, c.Symbol, px, qty, taker.Side, maker.ID, taker.ID, maker.UserID, taker.UserID, mfee, tfee).Scan(&t.ID, &t.Time); err != nil {
+		if err := tx.QueryRowContext(ctx, `INSERT INTO fut_trades (symbol, price, qty, taker_side, maker_order, taker_order, maker_user, taker_user, maker_fee, taker_fee, maker_bonus_fee, taker_bonus_fee)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id, created_at`, c.Symbol, px, qty, taker.Side, maker.ID, taker.ID, maker.UserID, taker.UserID, mfee, tfee, mbonus, tbonus).Scan(&t.ID, &t.Time); err != nil {
 			return nil, err
 		}
 		trades = append(trades, t)

@@ -18,6 +18,8 @@ Every write (and failed/forbidden attempts) is written to the append-only `audit
 | Rewards | `GET/POST rewards`, `POST rewards/{id}/approve\|reject` (2FA) | reward:edit / reward:approve |
 | Copy trading | `GET copy/applications?status=pending\|active\|rejected\|closed\|all&page&pageSize`, `POST copy/applications/{uid}/approve` (2FA), `…/reject` (reason + 2FA); proxied to futures `/internal/copy/applications`, audited as module `copy` (high) | copy:view / copy:review |
 | Referrals | `GET referrals/{uid}` – inviter, invite code, invited count, referral window end, partner record, commission totals by kind | user:view |
+| Points campaigns | `GET points/campaigns`; `POST points/campaigns {key,title,startsAt,endsAt,rules?,totpCode}` (2FA, high audit, overlap rejected) | reward:view / reward:edit |
+| User coupons | `GET users/{uid}/coupons` – vouchers with live bonus balance | user:view |
 | Partners | `GET partners?status=pending\|active\|rejected\|disabled&page&pageSize`, `POST partners/{uid}/approve` (2FA), `…/reject`, `…/disable` (reason + 2FA); proxied to growth `/internal/partners`, audited as module `partner` (high) | partner:view / partner:review |
 | Content | `GET/POST announcements`; public `GET /announcements` | content:edit |
 | Audit | `GET audit-logs?adminId&module&action&level&result&target&from&to&page&size` | audit:view |

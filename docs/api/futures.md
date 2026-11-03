@@ -166,3 +166,8 @@ Errors: INVALID_PROFIT_SHARE, INVALID_NICKNAME, INVALID_BIO, ALREADY_TRADER, TRA
 | FUTURES_COPY_MAX_RATIO | 10 | Max ratio for ratio-mode follows |
 
 The insurance fund starts at 0. Fee income accumulates in `system:fee` and is not swept automatically.
+
+## Bonus (体验金 / 抵扣金)
+
+`GET /futures/bonus` → `{items, available:{trial, deduction}}`. Internal: `GET /internal/bonus?userId=`, `POST /internal/bonus/grant {userId, ref, kind, amount, validDays, source, requireOwnFunds}` (idempotent on ref; INSUFFICIENT_OWN_FUNDS when the futures wallet balance < amount).
+Trade fees are paid from active bonuses first (deduction before trial, earliest expiry first; bills `bonus_fee`); funding paid by cross positions is covered by trial bonuses (`bonus_funding`). Bonus is not margin and cannot be withdrawn; the bonus-paid fee part (`bonusFee` in the trade feed) earns no rebate.

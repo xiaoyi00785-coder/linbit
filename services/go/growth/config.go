@@ -42,6 +42,12 @@ type Config struct {
 	PartnerAutoOK  bool            // GROWTH_PARTNER_AUTO_APPROVE (false)
 	ReferralRate   decimal.Decimal // GROWTH_REFERRAL_RATE (0.10)
 	ReferralPeriod time.Duration   // GROWTH_REFERRAL_DAYS (365)
+
+	CouponActivateDays int             // GROWTH_COUPON_ACTIVATE_DAYS (30): issued voucher must be activated within
+	CouponValidDays    int             // GROWTH_COUPON_VALID_DAYS (14): bonus lifetime after activation
+	CouponOwnFunds     bool            // GROWTH_COUPON_REQUIRE_OWN_FUNDS (true): trial needs own futures funds >= amount
+	ValidInviteeFees   decimal.Decimal // GROWTH_VALID_INVITEE_FEES (100): cumulative fees of a "valid" invitee
+	Points             PointsRules     // GROWTH_POINTS_* defaults for new carnival periods
 }
 
 func dec(key, def string) decimal.Decimal {
@@ -113,6 +119,12 @@ func LoadConfig() Config {
 		PartnerAutoOK:  common.Env("GROWTH_PARTNER_AUTO_APPROVE", "false") == "true",
 		ReferralRate:   dec("GROWTH_REFERRAL_RATE", "0.10"),
 		ReferralPeriod: time.Duration(common.EnvInt("GROWTH_REFERRAL_DAYS", 365)) * 24 * time.Hour,
+
+		CouponActivateDays: common.EnvInt("GROWTH_COUPON_ACTIVATE_DAYS", 30),
+		CouponValidDays:    common.EnvInt("GROWTH_COUPON_VALID_DAYS", 14),
+		CouponOwnFunds:     common.Env("GROWTH_COUPON_REQUIRE_OWN_FUNDS", "true") == "true",
+		ValidInviteeFees:   dec("GROWTH_VALID_INVITEE_FEES", "100"),
+		Points:             loadPointsRules(),
 	}
 }
 

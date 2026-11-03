@@ -111,10 +111,10 @@ func (s *Server) takeover(ctx context.Context, tx *sql.Tx, uid string, c Contrac
 	}
 	if rem.Sign() > 0 {
 		d := rem.Mul(decimal.NewFromInt(int64(p.Qty.Sign())))
-		if _, _, err := s.fill(ctx, tx, c, uid, d.Neg(), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		if _, _, _, err := s.fill(ctx, tx, c, uid, d.Neg(), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
 			return p, err
 		}
-		if _, _, err := s.fill(ctx, tx, c, insuranceUser, d, px, dZero, 1, "cross", decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		if _, _, _, err := s.fill(ctx, tx, c, insuranceUser, d, px, dZero, 1, "cross", decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
 			return p, err
 		}
 	}
