@@ -67,6 +67,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	futuresProxy := httputil.NewSingleHostReverseProxy(futures)
+	strategy, err := url.Parse(cfg.StrategyURL)
+	if err != nil {
+		return nil, err
+	}
+	strategyProxy := httputil.NewSingleHostReverseProxy(strategy)
 
 	return &Gateway{
 		cfg: cfg,
@@ -79,6 +84,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/wallet", proxy: walletProxy},
 			{prefix: "/kyc", proxy: kycProxy},
 			{prefix: "/futures", proxy: futuresProxy},
+			{prefix: "/strategy", proxy: strategyProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/ws", proxy: marketProxy},
@@ -96,7 +102,12 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
 			{method: "", path: "/market/"},                      // public market data (prefix)
 			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
-			{method: "", path: "/ws"},                           // public market WebSocket
+			{method: http.MethodGet, path: "/futures/copy/summary"},
+			{method: http.MethodGet, path: "/futures/copy/traders"},
+			{method: http.MethodGet, path: "/futures/copy/traders/"}, // public trader profiles (prefix)
+			{method: http.MethodGet, path: "/strategy/config"},
+			{method: http.MethodGet, path: "/strategy/grid/square"}, // public strategy square
+			{method: "", path: "/ws"},                               // public market WebSocket
 		},
 	}, nil
 }

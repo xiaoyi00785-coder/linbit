@@ -4,16 +4,17 @@ import "github.com/linbit/platform/services/go/common"
 
 // Config holds the gateway runtime configuration.
 type Config struct {
-	Port       string
-	JWTSecret  string
-	AccountURL string
-	AssetURL   string
-	WalletURL  string
-	OrderURL   string
-	MarketURL  string
-	KycURL     string
-	FuturesURL string
-	RedisURL   string
+	Port        string
+	JWTSecret   string
+	AccountURL  string
+	AssetURL    string
+	WalletURL   string
+	OrderURL    string
+	MarketURL   string
+	KycURL      string
+	FuturesURL  string
+	StrategyURL string
+	RedisURL    string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string
 }
@@ -30,6 +31,7 @@ func LoadConfig() Config {
 		MarketURL:      common.Env("MARKET_URL", "http://localhost:8085"),
 		KycURL:         common.Env("KYC_URL", "http://localhost:8087"),
 		FuturesURL:     common.Env("FUTURES_URL", "http://localhost:8089"),
+		StrategyURL:    common.Env("STRATEGY_URL", "http://localhost:8090"),
 		RedisURL:       common.Env("REDIS_URL", ""),
 		AllowedOrigins: splitOrigins(common.Env("CORS_ALLOWED_ORIGINS", "")),
 	}

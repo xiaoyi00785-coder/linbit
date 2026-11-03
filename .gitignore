@@ -52,6 +52,7 @@ services/go/account/account
 services/go/asset/asset
 services/go/kyc/kyc
 services/go/futures/futures
+services/go/strategy/strategy
 services/go/admin/admin
 services/go/gateway/gateway
 services/go/order/order

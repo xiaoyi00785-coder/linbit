@@ -240,10 +240,35 @@ services:
       FUTURES_FUNDING_CAP: ${FUTURES_FUNDING_CAP:-0.0075}
       # Empty = use each contract's maintenance margin rate.
       FUTURES_LIQUIDATION_FEE_RATE: ${FUTURES_LIQUIDATION_FEE_RATE:-}
+      # Copy trading (profit share 0–50% fixed by product rules; settled daily).
+      FUTURES_COPY_MIN_AMOUNT: ${FUTURES_COPY_MIN_AMOUNT:-50}
+      FUTURES_COPY_DEFAULT_SHARE: ${FUTURES_COPY_DEFAULT_SHARE:-0.10}
+      FUTURES_COPY_SETTLE_HOUR_UTC: ${FUTURES_COPY_SETTLE_HOUR_UTC:-16}
     depends_on:
       postgres:
         condition: service_healthy
       asset:
+        condition: service_started
+      market-data:
+        condition: service_started
+
+  strategy:
+    build:
+      context: .
+      dockerfile: services/go/strategy/Dockerfile
+    environment:
+      PORT: "8090"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ORDER_URL: http://order:8084
+      MARKET_URL: http://market-data:8085
+      GRID_POLL_MS: ${GRID_POLL_MS:-1000}
+      GRID_MAX_BOTS_PER_USER: ${GRID_MAX_BOTS_PER_USER:-10}
+      GRID_MIN_INVESTMENT: ${GRID_MIN_INVESTMENT:-10}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      order:
         condition: service_started
       market-data:
         condition: service_started
@@ -262,6 +287,7 @@ services:
       WALLET_URL: http://wallet:8086
       KYC_URL: http://kyc:8087
       FUTURES_URL: http://futures:8089
+      STRATEGY_URL: http://strategy:8090
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
@@ -281,6 +307,8 @@ services:
       kyc:
         condition: service_started
       futures:
+        condition: service_started
+      strategy:
         condition: service_started
 
 volumes:

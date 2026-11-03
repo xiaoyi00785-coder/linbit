@@ -43,17 +43,18 @@ const (
 // Ports are overridable via environment so two devstacks (e.g. two parallel
 // smoke runs) can coexist without colliding. Set DEVSTACK_*_PORT to change them.
 var (
-	pgPort      = envInt("DEVSTACK_PG_PORT", 5433)
-	gatewayPort = envOr("DEVSTACK_GATEWAY_PORT", "8080")
-	accountPort = envOr("DEVSTACK_ACCOUNT_PORT", "8081")
-	assetPort   = envOr("DEVSTACK_ASSET_PORT", "8082")
-	enginePort  = envOr("DEVSTACK_ENGINE_PORT", "8083")
-	orderPort   = envOr("DEVSTACK_ORDER_PORT", "8084")
-	marketPort  = envOr("DEVSTACK_MARKET_PORT", "8085")
-	walletPort  = envOr("DEVSTACK_WALLET_PORT", "8086")
-	kycPort     = envOr("DEVSTACK_KYC_PORT", "8087")
-	adminPort   = envOr("DEVSTACK_ADMIN_PORT", "8088")
-	futuresPort = envOr("DEVSTACK_FUTURES_PORT", "8089")
+	pgPort       = envInt("DEVSTACK_PG_PORT", 5433)
+	gatewayPort  = envOr("DEVSTACK_GATEWAY_PORT", "8080")
+	accountPort  = envOr("DEVSTACK_ACCOUNT_PORT", "8081")
+	assetPort    = envOr("DEVSTACK_ASSET_PORT", "8082")
+	enginePort   = envOr("DEVSTACK_ENGINE_PORT", "8083")
+	orderPort    = envOr("DEVSTACK_ORDER_PORT", "8084")
+	marketPort   = envOr("DEVSTACK_MARKET_PORT", "8085")
+	walletPort   = envOr("DEVSTACK_WALLET_PORT", "8086")
+	kycPort      = envOr("DEVSTACK_KYC_PORT", "8087")
+	strategyPort = envOr("DEVSTACK_STRATEGY_PORT", "8090")
+	adminPort    = envOr("DEVSTACK_ADMIN_PORT", "8088")
+	futuresPort  = envOr("DEVSTACK_FUTURES_PORT", "8089")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -132,7 +133,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -283,6 +284,18 @@ func run(root, execCmd string) int {
 			// Dev mode exposes index override / forced tick / funding endpoints.
 			"DEV_MODE=true",
 		},
+		"strategy": {
+			"PORT=" + strategyPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ORDER_URL=http://localhost:" + orderPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			// Fast polling / sampling and an open strategy square for the smoke.
+			"GRID_POLL_MS=300",
+			"GRID_SNAPSHOT_SECONDS=1",
+			"GRID_SQUARE_MIN_RUN_SECONDS=0",
+			"DEV_MODE=true",
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
@@ -294,6 +307,7 @@ func run(root, execCmd string) int {
 			"KYC_URL=http://localhost:" + kycPort,
 			"ADMIN_URL=http://localhost:" + adminPort,
 			"FUTURES_URL=http://localhost:" + futuresPort,
+			"STRATEGY_URL=http://localhost:" + strategyPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
@@ -316,6 +330,7 @@ func run(root, execCmd string) int {
 		{"kyc", "http://localhost:" + kycPort + "/healthz"},
 		{"admin", "http://localhost:" + adminPort + "/healthz"},
 		{"futures", "http://localhost:" + futuresPort + "/healthz"},
+		{"strategy", "http://localhost:" + strategyPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 

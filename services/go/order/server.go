@@ -39,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /spot/orders/history", s.withUser(s.handleHistory))
 	mux.HandleFunc("GET /spot/trades", s.withUser(s.handleTrades))
 	s.adminRoutes(mux)
+	s.internalRoutes(mux)
 	return mux
 }
 
