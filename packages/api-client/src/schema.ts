@@ -388,7 +388,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 24 小时行情 ticker（单个或全部） */
+        /**
+         * 24 小时行情 ticker（单个或全部）
+         * @description 传入 `symbol` 时返回该交易对的单个 Ticker 对象；不传 `symbol` 时返回全部 交易对的 Ticker 数组。响应为二者之一（见 oneOf）。价格、quoteVolume 按交易对 计价币精度，base 成交量按数量精度，均为十进制字符串。
+         */
         get: operations["getTicker"];
         put?: never;
         post?: never;
@@ -699,7 +702,7 @@ export interface components {
         WithdrawNetwork: {
             /** @example TRC20 */
             network: string;
-            /** @example 10.00000000 */
+            /** @example 12.00000000 */
             minWithdraw?: string | null;
             /**
              * @description 预估链上 Gas 费（提现唯一费用，无平台手续费）。实现前可为 null。
@@ -871,7 +874,7 @@ export interface components {
             asks: string[][];
         };
         /** @enum {string} */
-        KlineInterval: "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "1w";
+        KlineInterval: "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d" | "1w";
         Kline: {
             /**
              * @description 秒级时间戳（K 线开始时间）
@@ -1521,14 +1524,14 @@ export interface operations {
                      *       "networks": [
                      *         {
                      *           "network": "TRC20",
-                     *           "minWithdraw": "10.00000000",
+                     *           "minWithdraw": "12.00000000",
                      *           "gasFeeEstimate": "1.00000000",
                      *           "gasFeeAsset": "USDT",
                      *           "estimatedArrivalMinutes": 5
                      *         },
                      *         {
                      *           "network": "ERC20",
-                     *           "minWithdraw": "20.00000000",
+                     *           "minWithdraw": "12.00000000",
                      *           "gasFeeEstimate": "6.50000000",
                      *           "gasFeeAsset": "USDT",
                      *           "estimatedArrivalMinutes": 10
@@ -1876,7 +1879,7 @@ export interface operations {
         parameters: {
             query?: {
                 /**
-                 * @description 不传则返回全部交易对
+                 * @description 传入则返回单个对象；不传则返回全部交易对的数组
                  * @example BTCUSDT
                  */
                 symbol?: string;
@@ -1887,35 +1890,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 行情数据 */
+            /** @description 行情数据。带 `symbol` 为单个 Ticker 对象；不带为 Ticker 数组。 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example [
-                     *       {
-                     *         "symbol": "BTCUSDT",
-                     *         "lastPrice": "76771.90",
-                     *         "priceChangePercent": "-1.71",
-                     *         "high": "78878.00",
-                     *         "low": "76705.00",
-                     *         "volume": "371.65",
-                     *         "quoteVolume": "28915681.30"
-                     *       },
-                     *       {
-                     *         "symbol": "ETHUSDT",
-                     *         "lastPrice": "2252.77",
-                     *         "priceChangePercent": "-0.82",
-                     *         "high": "2301.10",
-                     *         "low": "2230.00",
-                     *         "volume": "12850.40",
-                     *         "quoteVolume": "28996512.10"
-                     *       }
-                     *     ]
-                     */
-                    "application/json": components["schemas"]["Ticker"][];
+                    "application/json": components["schemas"]["Ticker"] | components["schemas"]["Ticker"][];
                 };
             };
         };

@@ -52,8 +52,8 @@
 - 合约页仍为演示数据（后端尚无合约行情频道）。
 - 提现：网络列表与 Gas 估算来自 `GET /wallet/withdraw/networks`，记录来自 `GET /wallet/withdraw/records`；USDT 最低 12（前端取 max(接口, 12)），仅收链上 Gas。
 
-### 与文档不一致（待后端确认）
-- `GET /market/depth` 价格未按精度补零（如 `"76390.7"`，pricePrecision=2），`quoteVolume` 返回 7 位小数，未按精度格式化。
-- `GET /market/ticker?symbol=X` 返回数组而非单对象（前端已兼容）。
-- `/wallet/withdraw/networks` 的 USDT `minWithdraw` 为 TRC20 10 / ERC20 20，与业务规则「USDT 最低 12」不一致（前端兜底取 12）；且仅 TRC20/ERC20 两个网络。
-- websocket.md 仍写 `ws://localhost:4010/ws`（Prism 占位），实际为网关 `/ws`；K 线周期实际额外支持 `30m`。
+### 与文档不一致（已于 main c5143eb 修复 ✅）
+- ✅ `GET /market/depth` / ticker 价格与成交额已按交易对精度补零。
+- ✅ `GET /market/ticker?symbol=X` 返回单对象（前端仍兼容数组）。
+- ✅ `/wallet/withdraw/networks` USDT 各网络 `minWithdraw` 统一为 12；前端已改为直接使用接口值（12 仅作 mock 回退）。
+- ✅ websocket.md 已更新连接地址与周期。

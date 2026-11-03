@@ -135,8 +135,6 @@ const WD_CONFIG: Record<string, { min: string; max: string }> = {
   BTC: { min: "0.001", max: "2" },
   ETH: { min: "0.01", max: "50" },
 };
-/** linbit 规则：USDT 最小提现 12 */
-const MIN_FLOOR: Record<string, number> = { USDT: 12 };
 /** mock：各网络链上 Gas 预估（USDT 计），实际以接口实时返回为准 */
 const GAS_USDT: Record<string, number> = {
   "Arbitrum One": 1,
@@ -185,7 +183,8 @@ export async function getWithdrawConfig(asset: string, network: string): Promise
   const n = nets.find((x) => x.network === network) ?? nets[0];
   const c = WD_CONFIG[asset] ?? WD_CONFIG.USDT;
   const apiMin = Number(n?.minWithdraw ?? c.min);
-  const min = String(Math.max(apiMin, MIN_FLOOR[asset] ?? 0));
+  // 直接使用接口 minWithdraw；mock 回退时取 WD_CONFIG（USDT 12）
+  const min = String(apiMin);
   const gas = n?.gasFeeEstimate ?? estimateGas(asset, network);
   return {
     ok: true,
