@@ -1,17 +1,20 @@
 import Foundation
 
 enum APIFailure: Error, LocalizedError {
-    case server(status: Int, error: APIError?)
+    /// retryAfter：响应头 Retry-After（秒），429 RATE_LIMITED 时用于倒计时
+    case server(status: Int, error: APIError?, retryAfter: Int? = nil)
     case decoding(Error)
     case transport(Error)
     var errorDescription: String? {
         switch self {
-        case let .server(s, e): return e?.message ?? "HTTP \(s)"
+        case let .server(s, e, _): return e?.message ?? "HTTP \(s)"
         case let .decoding(e): return "数据解析失败：\(e)"
         case let .transport(e): return e.localizedDescription
         }
     }
-    var code: String? { if case let .server(_, e) = self { return e?.code }; return nil }
+    var code: String? { if case let .server(_, e, _) = self { return e?.code }; return nil }
+    var status: Int? { if case let .server(s, _, _) = self { return s }; return nil }
+    var retryAfter: Int? { if case let .server(_, _, r) = self { return r }; return nil }
 }
 
 /// 令牌存储（Keychain）。
@@ -22,6 +25,8 @@ final class TokenStore {
     var isLoggedIn: Bool { accessToken != nil }
     /// 仅当 refresh token 刷新失败时置为 true（区分“未登录”与“登录过期”）
     var sessionExpired = false
+    /// 退出登录进行中 / 刚退出：旧访问令牌返回 401 属预期，不提示「登录已过期」
+    var loggingOut = false
     func save(_ t: APIAuthTokens) { accessToken = t.accessToken; refreshToken = t.refreshToken; sessionExpired = false }
     func clear() { accessToken = nil; refreshToken = nil }
 }
@@ -50,6 +55,11 @@ actor APIClient {
 
     func post<T: Decodable, B: Encodable>(_ path: String, body: B?, auth: Bool = true) async throws -> T {
         try await send(path, method: "POST", query: [:], body: body, auth: auth)
+    }
+
+    /// 不在 401 时自动刷新令牌（用于退出登录：访问令牌过期时服务端凭请求体 refreshToken 识别用户）
+    func postNoRefresh<T: Decodable, B: Encodable>(_ path: String, body: B?) async throws -> T {
+        try await send(path, method: "POST", query: [:], body: body, auth: true, retried: true)
     }
 
     func put<T: Decodable, B: Encodable>(_ path: String, body: B?) async throws -> T {
@@ -91,7 +101,8 @@ actor APIClient {
             return try await send(path, method: method, query: query, body: body, auth: auth, retried: true)
         }
         guard (200..<300).contains(status) else {
-            throw APIFailure.server(status: status, error: try? CodableHelper.jsonDecoder.decode(APIError.self, from: data))
+            let ra = ((resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")).flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            throw APIFailure.server(status: status, error: try? CodableHelper.jsonDecoder.decode(APIError.self, from: data), retryAfter: ra)
         }
         if T.self == EmptyResponse.self { return EmptyResponse() as! T }
         do { return try CodableHelper.jsonDecoder.decode(T.self, from: data) } catch { throw APIFailure.decoding(error) }
@@ -111,6 +122,7 @@ actor APIClient {
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let t = try? CodableHelper.jsonDecoder.decode(APIAuthTokens.self, from: data) else {
                 tokens.clear()
+                if tokens.loggingOut { return false }
                 tokens.sessionExpired = true
                 NotificationCenter.default.post(name: .lbSessionExpired, object: nil)
                 return false

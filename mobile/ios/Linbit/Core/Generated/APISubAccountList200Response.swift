@@ -13,12 +13,15 @@ public struct APISubAccountList200Response: Codable, JSONEncodable, Hashable {
     public var total: Int?
     public var page: Int?
     public var size: Int?
+    /** 每个母账户可创建的子账户上限（管理员可调，默认 20） */
+    public var limit: Int?
 
-    public init(items: [APISubAccount]? = nil, total: Int? = nil, page: Int? = nil, size: Int? = nil) {
+    public init(items: [APISubAccount]? = nil, total: Int? = nil, page: Int? = nil, size: Int? = nil, limit: Int? = nil) {
         self.items = items
         self.total = total
         self.page = page
         self.size = size
+        self.limit = limit
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -26,6 +29,7 @@ public struct APISubAccountList200Response: Codable, JSONEncodable, Hashable {
         case total
         case page
         case size
+        case limit
     }
 
     // Encodable protocol methods
@@ -36,6 +40,7 @@ public struct APISubAccountList200Response: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(total, forKey: .total)
         try container.encodeIfPresent(page, forKey: .page)
         try container.encodeIfPresent(size, forKey: .size)
+        try container.encodeIfPresent(limit, forKey: .limit)
     }
 }
 
