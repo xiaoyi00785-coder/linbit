@@ -53,7 +53,7 @@ export async function copy(text: string) {
 
 /* ---- 接口类型（services/go/growth/partner.go） ---- */
 export type ApiTier = { key: string; name: string; minVolume30d: string; futuresRate: string; spotRate: string };
-export type Rules = { tiers: ApiTier[]; tierBasis: string; overrideRate: string; overrideLevels: number; overrideFunding: string; settlement: string; settleHourUtc: number; payoutAsset: string; validity: string; rebateBase: string; autoApprove: boolean };
+export type Rules = { tiers: ApiTier[]; tierBasis: string; overrideRate: string; overrideLevels: number; /** 上级可拿额外奖励的层数（不含直推层），后端默认 2 */ overrideDepth?: number; overrideFunding: string; settlement: string; settleHourUtc: number; payoutAsset: string; validity: string; rebateBase: string; autoApprove: boolean };
 export type Me = { uid: string; status: string; partner?: { status: string; reviewNote: string; appliedAt: number }; tier?: string; tierName?: string; futuresRate?: string; spotRate?: string };
 export type Summary = { tier: string; tierName: string; futuresRate: string; spotRate: string; volume30d: string; nextTier?: { tier: string; name: string; minVolume30d: string; gap: string } | null; directs: number; directPartners: number; unsettledEstimate: string; yesterday: string; month: string; total: string; overrideTotal: string; pendingPayout: string; payoutAsset: string };
 export type Daily = { items: { day: string; futures: string; spot: string; override: string; referral: string; total: string }[]; days: number };

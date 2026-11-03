@@ -4,7 +4,7 @@ import { call, toast, useApi, useToken, type Me, type Rules } from "@/lib/api";
 import { OVERRIDE, RULE_NOTES, TIERS } from "@/lib/rules";
 import { Demo, Skel, num, pct } from "../ui";
 
-const demo = (): Rules => ({ tiers: TIERS.map((t) => ({ key: t.key, name: t.name, minVolume30d: String(t.minVolume30d), futuresRate: String(t.futuresRate), spotRate: String(t.spotRate) })), tierBasis: "直推用户近30日合约交易额", overrideRate: String(OVERRIDE.rate), overrideLevels: OVERRIDE.maxLevels, overrideFunding: "平台出资，不扣减下级合伙人佣金", settlement: "每日结算至资金账户", settleHourUtc: 0, payoutAsset: "USDT", validity: "终身有效", rebateBase: "实际支付手续费（不含体验金及手续费抵扣券抵扣部分）", autoApprove: false });
+const demo = (): Rules => ({ tiers: TIERS.map((t) => ({ key: t.key, name: t.name, minVolume30d: String(t.minVolume30d), futuresRate: String(t.futuresRate), spotRate: String(t.spotRate) })), tierBasis: "直推用户近30日合约交易额", overrideRate: String(OVERRIDE.rate), overrideLevels: OVERRIDE.maxLevels + 1, overrideDepth: OVERRIDE.maxLevels, overrideFunding: "平台出资，不扣减下级合伙人佣金", settlement: "每日结算至资金账户", settleHourUtc: 0, payoutAsset: "USDT", validity: "终身有效", rebateBase: "实际支付手续费（不含体验金及手续费抵扣券抵扣部分）", autoApprove: false });
 const ST: Record<string, string> = { pending: "审核中", active: "已是合伙人", rejected: "未通过", suspended: "已暂停" };
 
 export default function Apply() {
@@ -34,8 +34,8 @@ export default function Apply() {
         ))}
       </div>
       <h2>二级奖励</h2>
-      {/* 产品确认：最多 2 级（与后端 overrideLevels 对照见报告） */}
-      <div className="card">上级额外获得下级合伙人佣金的 <b className="lime">{pct(R?.overrideRate ?? OVERRIDE.rate)}</b>（{R?.overrideFunding ?? "平台出资"}），最多 {OVERRIDE.maxLevels} 级。</div>
+      {/* 最多 N 级读 overrideDepth（不含直推层）；overrideLevels 含直推层，不用于此文案 */}
+      <div className="card">上级额外获得下级合伙人佣金的 <b className="lime">{pct(R?.overrideRate ?? OVERRIDE.rate)}</b>（{R?.overrideFunding ?? "平台出资"}），最多 {R?.overrideDepth ?? 2} 级。</div>
       <h2>规则说明</h2>
       <ol>
         {R && !r.demo ? <>

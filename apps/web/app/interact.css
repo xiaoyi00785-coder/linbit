@@ -126,3 +126,4 @@ input[type=range]{accent-color:#abe127;cursor:pointer}
 .fx-tbl{margin-top:12px}.fx-tr{display:grid;grid-template-columns:1.4fr .7fr .7fr .9fr 1fr 1.2fr .9fr 1fr .7fr;gap:8px;padding:12px 4px;border-bottom:1px solid rgba(128,128,128,.15);font-size:13px;transition:background .3s}
 .fx-tr.th{color:#8a8d91;font-size:12px}.fx-tr:not(.th):hover{background:rgba(171,225,39,.06)}
 .fx-empty{padding:28px;text-align:center}
+.fx-loanm{display:flex;flex-direction:column;gap:8px}.fx-loanm .lrow{display:flex;align-items:center}.fx-loanm .lbtns{display:flex;gap:8px;justify-content:flex-end}

@@ -40,10 +40,11 @@ export function useLoanMarket() {
 
 function Mask({ title, sub, onClose, children }: { title: string; sub?: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="lmask fx-mask" onClick={onClose}>
-      <div className="lmodal fx-modal lt" onClick={(e) => e.stopPropagation()}>
-        <div className="lrow"><h3>{title}</h3><span className="sp" /><a className="lg" style={{ cursor: "pointer" }} onClick={onClose}>✕</a></div>
-        {sub && <p className="lg">{sub}</p>}
+    <div className="xmask" onClick={onClose}>
+      <div className="xmodal lt fx-loanm" onClick={(e) => e.stopPropagation()}>
+        <span className="xx" onClick={onClose}>×</span>
+        <h3>{title}</h3>
+        {sub && <p className="xsub">{sub}</p>}
         {children}
       </div>
     </div>
