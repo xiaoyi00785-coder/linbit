@@ -10,7 +10,8 @@ import { soonPath } from '@/lib/features'
 import { CoinIcon } from '@/components/CoinIcon'
 import { MenuIcon } from '@/components/MenuIcon'
 import { Link, NavLink } from '@/lib/router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useDismiss } from '@/lib/dismiss'
 import { useParams, useLocation } from '@/lib/router'
 import { QRCodeSVG } from 'qrcode.react'
 import { coins } from './data'
@@ -41,7 +42,7 @@ return <header className="hdr"><Link to="/" className="logo"><svg width="22" hei
 <span className="hib" onClick={()=>setLang(true)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg></span>{lang&&<LangModal close={()=>setLang(false)}/>}</header>}
 export function Cookie(){const[s,setS]=useState(()=>!localStorage.getItem('lb_ck'));if(!s)return null;const ok=()=>{localStorage.setItem('lb_ck',1);setS(false)}
 return <div className="cookie"><h4>Cookie 设置</h4><p>我们使用 Cookie 来改善你的浏览体验并提供个性化服务。你可以随时调整偏好，详见 <a>Cookie 政策</a>。</p><button className="cw" onClick={ok}>全部接受</button><button className="ckrej" onClick={ok}>全部拒绝</button><a className="cs" onClick={ok}>Cookie 偏好设置</a></div>}
-export function Service(){const[o,setO]=useState(false);return <><button className="svc" onClick={()=>setO(!o)} title="在线客服"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" style={{stroke:'var(--lb-on-primary)'}} strokeWidth="2"><path d="M4 13v-1a8 8 0 0116 0v1"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M19 19c0 2-2 3-5 3"/></svg></button>{o&&<div className="svcp"><b>在线客服</b><p>你好！有什么可以帮你？</p><input placeholder="输入你的问题…"/></div>}</>}
+export function Service(){const[o,setO]=useState(false);const rb=useRef(null),rp=useRef(null);useDismiss(o,()=>setO(false),rb,rp);return <><button ref={rb} className="svc" onClick={()=>setO(!o)} title="在线客服"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" style={{stroke:'var(--lb-on-primary)'}} strokeWidth="2"><path d="M4 13v-1a8 8 0 0116 0v1"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M19 19c0 2-2 3-5 3"/></svg></button>{o&&<div ref={rp} className="svcp"><b>在线客服</b><p>你好！有什么可以帮你？</p><input placeholder="输入你的问题…"/></div>}</>}
 
 const ALL=Object.values(M).flatMap(m=>m.items||(m.groups||[]).flatMap(g=>g[1]).concat((m.cols||[]).flat().filter(x=>Array.isArray(x)).flat()))
 export function Page(){const{t:raw}=useParams();let t=raw||'';try{t=decodeURIComponent(t)}catch{}const it=ALL.find(x=>x[1]===t)||['doc',t,'该功能即将上线'];const doc=DOCS[t];return <main className="pg"><div className="wrap"><div className="pgh"><span className="pgi"><MenuIcon n={it[0]} size={40}/></span><div><h1>{it[1]}</h1><p>{doc?.intro||it[2]}</p></div></div>{(FUTURES_INFO as readonly string[]).includes(t)&&<FuturesInfo t={t}/>}{doc?<div className="pgdoc">{doc.sections.map(sec=><section className="box pgc" key={sec.h}><h3>{sec.h}</h3>{sec.p&&<ul>{sec.p.map(x=><li key={x}>{x}</li>)}</ul>}{sec.table&&<table className="pgt"><thead><tr>{sec.table.head.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{sec.table.rows.map((r,i)=><tr key={i}>{r.map((c,j)=><td key={j}>{c}</td>)}</tr>)}</tbody></table>}</section>)}</div>:<div className="pgg">{['功能介绍','使用指南','常见问题'].map(x=><div className="box pgc" key={x}><h3>{x}</h3><p>「{it[1]}」相关内容正在建设中，敬请期待。</p></div>)}</div>}<Link to="/register" className="pill white pgb">立即注册</Link></div></main>}

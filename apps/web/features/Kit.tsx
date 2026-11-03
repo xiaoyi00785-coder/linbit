@@ -8,6 +8,7 @@ import { toast, copyText } from "@/lib/ui";
 import { rest, rget } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 import { useAuth } from "@/legacy/auth";
+import { useDismiss } from "@/lib/dismiss";
 const authed = () => !!useAuthStore.getState().accessToken;
 
 type MP = Record<string, any>;
@@ -83,7 +84,7 @@ const defOpts = (v: string, k?: string) => (DEF.find(([r]) => r.test(v))?.[1]) |
 export function Dropdown({ k, v, opts, onChange, cls = "lsel", store, icons }: { k?: string; v: string; opts?: string[]; onChange?: (x: string) => void; cls?: string; store?: string; icons?: boolean }) {
   const [val, setVal] = useState(() => (store && typeof localStorage !== "undefined" && localStorage.getItem(store)) || v); const [o, setO] = useState(false); const r = useRef<HTMLDivElement>(null);
   useEffect(() => setVal((store && localStorage.getItem(store)) || v), [v, store]);
-  useEffect(() => { if (!o) return; const h = (e: MouseEvent) => !r.current?.contains(e.target as Node) && setO(false); document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, [o]);
+  useDismiss(o, () => setO(false), r);
   const list = opts || defOpts(v, k);
   return <div ref={r} className={cls + " kit-dd"} role="combobox" aria-expanded={o} onClick={() => setO(!o)}>{icons && <CoinIcon s={val} size={20} className="kit-ci" />}{val} <em>▾</em>
     {o && <div className="kit-menu" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{icons && <CoinIcon s={x} size={18} className="kit-ci" />}{x}</div>)}</div>}
@@ -93,7 +94,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 /** 日期区间：点击展开两个日期输入 + 快捷范围。 */
 export function DateRange({ preset }: { preset?: boolean }) {
   const now = new Date(); const [a, setA] = useState(preset ? iso(new Date(+now - 6 * 864e5)) : ""); const [b, setB] = useState(preset ? iso(now) : ""); const [o, setO] = useState(false); const r = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (!o) return; const h = (e: MouseEvent) => !r.current?.contains(e.target as Node) && setO(false); document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, [o]);
+  useDismiss(o, () => setO(false), r);
   const q = (n: number) => { setA(iso(new Date(+now - (n - 1) * 864e5))); setB(iso(now)); };
   return <div ref={r} className="lsel date kit-dd" onClick={() => setO(!o)}>{a ? <span>{a}</span> : <span className="lg">开始日期</span>}<span className="lg">→</span>{b ? <span>{b}</span> : <span className="lg">结束日期</span>}<em>▦</em>
     {o && <div className="kit-menu kit-date" onClick={(e) => e.stopPropagation()}><div className="tk-sel">{[7, 30, 90].map((n) => <button key={n} className="tk-chip" onClick={() => q(n)}>近{n}天</button>)}</div>
