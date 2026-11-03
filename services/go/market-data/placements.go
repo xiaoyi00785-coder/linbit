@@ -89,6 +89,13 @@ var (
 	reTracking = regexp.MustCompile(`^[A-Za-z0-9_\-:.]{0,64}$`)
 )
 
+// imageRequired: slots whose client rendering needs an image (banners,
+// splash, popup, grid tiles). Rows in these slots without imageUrl are
+// rejected on write and hidden on public read.
+func imageRequired(slot string) bool {
+	return slot == "carousel" || slot == "splash" || slot == "popup" || slot == "grid"
+}
+
 func okURL(u string, required bool) bool {
 	if u == "" {
 		return !required
@@ -129,7 +136,7 @@ func (in *placementInput) validate() string {
 		return "slot 必须为 popup/splash/grid/carousel/promo_bar/search_hint"
 	case in.Title == "" || len([]rune(in.Title)) > 120:
 		return "title 必填且不超过 120 字"
-	case !okURL(in.ImageURL, in.Slot == "carousel" || in.Slot == "splash" || in.Slot == "popup"):
+	case !okURL(in.ImageURL, imageRequired(in.Slot)):
 		return "imageUrl 不合法（该位置必填）"
 	case !okURL(in.ImageDarkURL, false):
 		return "imageDarkUrl 不合法"
@@ -426,6 +433,9 @@ func (s *Server) visiblePlacements(r *http.Request, slots []string) (map[string]
 	for _, p := range all {
 		if _, want := out[p.Slot]; !want || !placementVisible(p, q) {
 			continue
+		}
+		if p.ImageURL == "" && imageRequired(p.Slot) {
+			continue // legacy row without an image: never ship a blank banner
 		}
 		p.UpdatedBy = ""
 		if p.EarnProductID != "" {

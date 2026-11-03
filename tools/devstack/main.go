@@ -489,7 +489,11 @@ func run(root, execCmd string) int {
 		// for the default collateral/futures pairs. DEVSTACK_INDEX_SEED="none"
 		// disables; format "BTCUSDT=50000,ETHUSDT=2500". Smokes (-exec) pin
 		// their own prices and are not affected.
-		seedDevIndex("http://localhost:"+marketPort, envOr("DEVSTACK_INDEX_SEED", "BTCUSDT=50000,ETHUSDT=2500,SOLUSDT=150,BNBUSDT=600,TRXUSDT=0.12,USDCUSDT=1"))
+		// With a real external feed (DEVSTACK_INDEX_FEED=okx,...) the seed
+		// would override live prices, so only seed when the feed is off.
+		if f := envOr("DEVSTACK_INDEX_FEED", "off"); f == "off" || f == "none" {
+			seedDevIndex("http://localhost:"+marketPort, envOr("DEVSTACK_INDEX_SEED", "BTCUSDT=50000,ETHUSDT=2500,SOLUSDT=150,BNBUSDT=600,TRXUSDT=0.12,USDCUSDT=1"))
+		}
 		// Standalone mode: block until interrupted.
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
