@@ -785,6 +785,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 行情分类标签（公链、贵金属…）
+         * @description 按 sort 排序。symbols 只包含当前已上线的现货交易对；暂无交易对的分类
+         *     （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
+         *     commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
+         *     layer2 Layer 2, ecosystem 生态, solana Solana 生态, gamefi GameFi,
+         *     depin DePIN, nft NFT, ton TON, lsd LSD, web3 Web3, platform 平台币,
+         *     payment 支付。「全部」由前端自行处理。
+         */
+        get: operations["listMarketCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/market/ticker": {
         parameters: {
             query?: never;
@@ -1924,6 +1949,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/convert/pairs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 闪兑可兑换币对、限额与点差 */
+        get: operations["getConvertPairs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/convert/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 闪兑询价（报价 10 秒有效） */
+        post: operations["createConvertQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/convert/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 确认闪兑（原子、幂等；同一 quoteId 重复提交返回同一订单 replay=true） */
+        post: operations["acceptConvertQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/convert/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 闪兑历史（分页） */
+        get: operations["listConvertOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/loans/market": {
         parameters: {
             query?: never;
@@ -2078,10 +2171,772 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/futures/market/contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约列表（含风险档位、标签） */
+        get: operations["futuresContracts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/ticker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 合约行情（单个或全部）
+         * @description 传 symbol 返回单个 FuturesTicker，否则返回 {tickers:[...]}。
+         */
+        get: operations["futuresTicker"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/depth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约盘口 */
+        get: operations["futuresDepth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约最近成交 */
+        get: operations["futuresMarketTrades"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/klines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约 K 线（无成交时以指数价补齐，source 标注） */
+        get: operations["futuresKlines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/funding-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 资金费率历史 */
+        get: operations["futuresFundingHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/mark-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 标记价 / 指数价历史 */
+        get: operations["futuresMarkHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/insurance-fund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 保险基金（余额、最近强平与 ADL） */
+        get: operations["futuresInsuranceFund"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约账户（USDT 保证金） */
+        get: operations["futuresAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 现货 ↔ 合约划转（USDT） */
+        post: operations["futuresTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 划转记录 */
+        get: operations["futuresTransfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/leverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询杠杆与保证金模式 */
+        get: operations["futuresGetLeverage"];
+        put?: never;
+        /** 设置杠杆与保证金模式 */
+        post: operations["futuresSetLeverage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的合约委托 */
+        get: operations["futuresOrders"];
+        put?: never;
+        /** 合约下单（可附带止盈止损） */
+        post: operations["futuresPlaceOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤单 */
+        delete: operations["futuresCancelOrder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前持仓 */
+        get: operations["futuresPositions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/positions/{symbol}/tpsl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 设置持仓止盈止损（传 "" 清除） */
+        post: operations["futuresSetTpsl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/positions/{symbol}/margin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 逐仓调整保证金（正数追加，负数减少） */
+        post: operations["futuresAdjustMargin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/positions/{symbol}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 市价全平 */
+        post: operations["futuresClosePosition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/bills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约账单流水 */
+        get: operations["futuresBills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的合约成交 */
+        get: operations["futuresMyTrades"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/bonus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 合约体验金 / 赠金
+         * @description 体验金只能用于保证金和手续费抵扣，不可转出。
+         */
+        get: operations["futuresBonus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 理财产品列表 */
+        get: operations["earnProducts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/products/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 理财产品详情 */
+        get: operations["earnProduct"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/products/{id}/subscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 申购 */
+        post: operations["earnSubscribe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/products/{id}/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 赎回（活期；有解锁期时进入 unlocking） */
+        post: operations["earnRedeem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/products/{id}/auto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 开关自动申购（仅活期） */
+        post: operations["earnAuto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 理财资产汇总 */
+        get: operations["earnSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 活期持仓与解锁中 */
+        get: operations["earnPositions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 定期订单 */
+        get: operations["earnOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/earn/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 理财流水（申购、赎回、利息、到期、解锁） */
+        get: operations["earnRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 网格参数限制与默认值 */
+        get: operations["strategyConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/grid/square": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 策略广场（运行中的网格，匿名） */
+        get: operations["strategySquare"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/grid/square/{id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 一键复制广场策略 */
+        post: operations["strategyCopy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/grid/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 网格试算 */
+        get: operations["strategyPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/grid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的网格 */
+        get: operations["strategyListGrids"];
+        put?: never;
+        /** 创建网格 */
+        post: operations["strategyCreateGrid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/grid/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 网格详情 */
+        get: operations["strategyGetGrid"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/grid/{id}/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 网格委托 */
+        get: operations["strategyGridOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/strategy/grid/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 停止网格 */
+        post: operations["strategyStopGrid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 公告列表（已发布，最多 100 条）
+         * @description 公开只读，网关仅转发 GET/HEAD；其他方法返回 405。/admin/* 仍不经网关暴露。
+         */
+        get: operations["listAnnouncements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ConvertPairs: {
+            assets?: {
+                asset?: string;
+                precision?: number;
+                enabled?: boolean;
+            }[];
+            pairs?: {
+                from?: string;
+                to?: string;
+                fromPrecision?: number;
+                toPrecision?: number;
+                spreadBps?: number;
+                /** @enum {string} */
+                route?: "direct" | "via_usdt" | "stable";
+                /** @description 仅 USDC↔USDT 出现；true 表示脱锚保护暂停中 */
+                paused?: boolean;
+                /**
+                 * @description paused=true 时的原因
+                 * @enum {string}
+                 */
+                pauseReason?: "depeg" | "price_unavailable";
+            }[];
+            /** @example 10 */
+            minUsdt?: string;
+            /** @example 50000 */
+            maxUsdt?: string;
+            /** @example 20 */
+            spreadBps?: number;
+            /** @example 0 */
+            fee?: string;
+            /** @example 10 */
+            quoteTtlSeconds?: number;
+        };
+        /** @description fromAmount 与 toAmount 二选一 */
+        ConvertQuoteRequest: {
+            /** @example USDT */
+            from: string;
+            /** @example BTC */
+            to: string;
+            /** @example 1000 */
+            fromAmount?: string;
+            toAmount?: string;
+        };
+        ConvertQuote: {
+            quoteId?: string;
+            from?: string;
+            to?: string;
+            fromAmount?: string;
+            toAmount?: string;
+            /** @description 1 from = rate to（已含点差） */
+            rate?: string;
+            inverseRate?: string;
+            /** @description 不含点差的指数汇率 */
+            indexRate?: string;
+            spreadBps?: number;
+            /** @example 0 */
+            fee?: string;
+            feeAsset?: string;
+            /**
+             * Format: int64
+             * @description 毫秒时间戳
+             */
+            expiresAt?: number;
+            ttlSeconds?: number;
+        };
+        ConvertOrder: {
+            /** Format: int64 */
+            id?: number;
+            quoteId?: string;
+            from?: string;
+            to?: string;
+            fromAmount?: string;
+            toAmount?: string;
+            rate?: string;
+            indexRate?: string;
+            spreadBps?: number;
+            fee?: string;
+            /** @description 按成交时 USDT 估值 */
+            usdtValue?: string;
+            /** @example filled */
+            status?: string;
+            /**
+             * Format: int64
+             * @description 毫秒时间戳
+             */
+            createdAt?: number;
+        };
         LoanMarket: {
             /** @example USDT */
             asset?: string;
@@ -2977,6 +3832,26 @@ export interface components {
              * @enum {string}
              */
             status: "trading" | "halted" | "delisted";
+            /**
+             * @description 所属分类 id（见 /market/categories）
+             * @example [
+             *       "layer1"
+             *     ]
+             */
+            tags?: string[];
+        };
+        MarketCategory: {
+            /** @example layer1 */
+            id: string;
+            /** @example 公链 */
+            name: string;
+            /**
+             * @example [
+             *       "BTCUSDT",
+             *       "ETHUSDT"
+             *     ]
+             */
+            symbols: string[];
         };
         Ticker: {
             /** @example BTCUSDT */
@@ -2993,6 +3868,11 @@ export interface components {
             volume: string;
             /** @example 28915681.30 */
             quoteVolume: string;
+            /**
+             * @description lastPrice 来源：最近成交 > 盘口中间价 > 指数价；无成交时 24h 涨跌为 0、high/low=lastPrice、volume=0（不伪造成交）。合约行情另有 mark。
+             * @enum {string}
+             */
+            priceSource?: "trade" | "mid" | "index" | "none";
         };
         Depth: {
             /** @example BTCUSDT */
@@ -3366,6 +4246,384 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        FuturesRiskTier: {
+            tier?: number;
+            /** @description 十进制字符串 */
+            maxNotional?: string;
+            /** @description 十进制字符串 */
+            maintenanceMarginRate?: string;
+            /** @description 十进制字符串 */
+            maintenanceAmount?: string;
+            maxLeverage?: number;
+        };
+        FuturesContract: {
+            /** @example BTCUSDT */
+            symbol?: string;
+            baseAsset?: string;
+            quoteAsset?: string;
+            maxLeverage?: number;
+            /** @description 十进制字符串 */
+            maintenanceMarginRate?: string;
+            /** @description 十进制字符串 */
+            tickSize?: string;
+            /** @description 十进制字符串 */
+            minQty?: string;
+            /** @description 十进制字符串 */
+            maxQty?: string;
+            /** @description 十进制字符串 */
+            makerFeeRate?: string;
+            /** @description 十进制字符串 */
+            takerFeeRate?: string;
+            status?: string;
+            /** @example perpetual */
+            contractType?: string;
+            marginAsset?: string;
+            fundingIntervalHours?: number;
+            riskTiers?: components["schemas"]["FuturesRiskTier"][];
+            tags?: string[];
+        };
+        FuturesContractList: {
+            contracts?: components["schemas"]["FuturesContract"][];
+            defaults?: {
+                leverage?: number;
+                marginMode?: string;
+                positionMode?: string;
+            };
+        };
+        FuturesTicker: {
+            symbol?: string;
+            /** @description 十进制字符串 */
+            lastPrice?: string;
+            /** @description last / mark / index：无成交时的回退来源 */
+            priceSource?: string;
+            /** @description 十进制字符串 */
+            markPrice?: string;
+            /** @description 十进制字符串 */
+            indexPrice?: string;
+            /** @description 十进制字符串 */
+            fundingRate?: string;
+            /** @description 十进制字符串 */
+            lastFundingRate?: string;
+            /** Format: int64 */
+            nextFundingTime?: number;
+            /** @description 十进制字符串 */
+            openPrice24h?: string;
+            /** @description 十进制字符串 */
+            highPrice24h?: string;
+            /** @description 十进制字符串 */
+            lowPrice24h?: string;
+            /** @description 十进制字符串 */
+            volume24h?: string;
+            /** @description 十进制字符串 */
+            turnover24h?: string;
+            /** @description 十进制字符串 */
+            priceChangePercent24h?: string;
+            /** @description 十进制字符串 */
+            openInterest?: string;
+            priceAvailable?: boolean;
+        };
+        /** @description bids/asks 为 [price, qty] */
+        FuturesDepth: {
+            symbol?: string;
+            bids?: string[][];
+            asks?: string[][];
+            /** Format: int64 */
+            time?: number;
+        };
+        FuturesPublicTrade: {
+            /** Format: int64 */
+            tradeId?: number;
+            symbol?: string;
+            /** @description 十进制字符串 */
+            price?: string;
+            /** @description 十进制字符串 */
+            qty?: string;
+            /** @enum {string} */
+            takerSide?: "buy" | "sell";
+            /** Format: date-time */
+            time?: string;
+        };
+        FuturesKlines: {
+            symbol?: string;
+            interval?: string;
+            /** @description trades / index */
+            source?: string;
+            klines?: {
+                /** Format: int64 */
+                openTime?: number;
+                /** @description 十进制字符串 */
+                open?: string;
+                /** @description 十进制字符串 */
+                high?: string;
+                /** @description 十进制字符串 */
+                low?: string;
+                /** @description 十进制字符串 */
+                close?: string;
+                /** @description 十进制字符串 */
+                volume?: string;
+                /** @description 十进制字符串 */
+                turnover?: string;
+            }[];
+        };
+        FuturesPosition: {
+            symbol?: string;
+            /** @enum {string} */
+            side?: "long" | "short";
+            /** @description 十进制字符串 */
+            qty?: string;
+            /** @description 十进制字符串 */
+            entryPrice?: string;
+            /** @description 十进制字符串 */
+            markPrice?: string;
+            /** @description 十进制字符串 */
+            notional?: string;
+            /** @description 十进制字符串 */
+            unrealizedPnl?: string;
+            /** @description 十进制字符串 */
+            roe?: string;
+            /** @description 十进制字符串 */
+            realizedPnl?: string;
+            /** @enum {string} */
+            marginMode?: "cross" | "isolated";
+            leverage?: number;
+            /** @description 十进制字符串 */
+            margin?: string;
+            /** @description 十进制字符串 */
+            maintenanceMargin?: string;
+            /** @description 十进制字符串 */
+            liquidationPrice?: string;
+            tpPrice?: string | null;
+            slPrice?: string | null;
+            adlRank?: number;
+        };
+        FuturesAccount: {
+            /** @example USDT */
+            asset?: string;
+            /** @description 十进制字符串 */
+            walletBalance?: string;
+            /** @description 十进制字符串 */
+            orderMargin?: string;
+            /** @description 十进制字符串 */
+            crossPositionMargin?: string;
+            /** @description 十进制字符串 */
+            crossMaintenanceMargin?: string;
+            /** @description 十进制字符串 */
+            crossUnrealizedPnl?: string;
+            /** @description 十进制字符串 */
+            isolatedMargin?: string;
+            /** @description 十进制字符串 */
+            isolatedUnrealizedPnl?: string;
+            /** @description 十进制字符串 */
+            availableBalance?: string;
+            /** @description 十进制字符串 */
+            marginBalance?: string;
+            positions?: components["schemas"]["FuturesPosition"][];
+        };
+        FuturesPlaceOrderRequest: {
+            /** @example BTCUSDT */
+            symbol: string;
+            /** @enum {string} */
+            side: "buy" | "sell";
+            /** @enum {string} */
+            type: "limit" | "market";
+            /** @enum {string} */
+            timeInForce?: "GTC" | "IOC";
+            /** @description 限价单必填 */
+            price?: string;
+            /** @description 十进制字符串 */
+            qty: string;
+            reduceOnly?: boolean;
+            tpPrice?: string;
+            slPrice?: string;
+        };
+        FuturesOrder: {
+            /** Format: int64 */
+            orderId?: number;
+            symbol?: string;
+            side?: string;
+            type?: string;
+            timeInForce?: string;
+            price?: string | null;
+            /** @description 十进制字符串 */
+            qty?: string;
+            /** @description 十进制字符串 */
+            filledQty?: string;
+            /** @description 十进制字符串 */
+            filledQuote?: string;
+            /** @description 十进制字符串 */
+            reservedMargin?: string;
+            /** @description 十进制字符串 */
+            fee?: string;
+            /** @example open */
+            status?: string;
+            reduceOnly?: boolean;
+            leverage?: number;
+            marginMode?: string;
+            /** @description user / tpsl / liquidation / adl / copy */
+            source?: string;
+            tpPrice?: string | null;
+            slPrice?: string | null;
+            cancelReason?: string;
+            /** @description 十进制字符串 */
+            avgPrice?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        FuturesBonus: {
+            /** Format: int64 */
+            id?: number;
+            ref?: string;
+            kind?: string;
+            source?: string;
+            /** @description 十进制字符串 */
+            amount?: string;
+            /** @description 十进制字符串 */
+            remaining?: string;
+            status?: string;
+            /** Format: int64 */
+            expiresAt?: number;
+            /** Format: int64 */
+            createdAt?: number;
+        };
+        EarnProduct: {
+            id?: string;
+            /** @enum {string} */
+            kind?: "flexible" | "fixed";
+            asset?: string;
+            title?: string;
+            /** @description 十进制字符串 */
+            apr?: string;
+            /** @description 十进制字符串 */
+            bonusApr?: string;
+            /** @description 十进制字符串 */
+            bonusQuota?: string;
+            termDays?: number;
+            unlockDays?: number;
+            /** @description 十进制字符串 */
+            minAmount?: string;
+            /** @description 十进制字符串 */
+            perUserMax?: string;
+            /** @description 十进制字符串 */
+            totalQuota?: string;
+            /** @description 十进制字符串 */
+            sold?: string;
+            newcomer?: boolean;
+            hot?: boolean;
+            status?: string;
+            sort?: number;
+            /** @description 十进制字符串 */
+            aprMax?: string;
+            /** @description 十进制字符串 */
+            remaining?: string;
+            redeemRule?: string;
+        };
+        GridCreateRequest: {
+            symbol: string;
+            /** @enum {string} */
+            mode: "arithmetic" | "geometric";
+            /** @description 十进制字符串 */
+            lowerPrice: string;
+            /** @description 十进制字符串 */
+            upperPrice: string;
+            gridCount: number;
+            /** @description 十进制字符串 */
+            investment: string;
+            stopLossPrice?: string;
+            takeProfitPrice?: string;
+            sellBaseOnStop?: boolean;
+        };
+        GridBot: {
+            /** @description 十进制字符串 */
+            lowerPrice?: string;
+            /** @description 十进制字符串 */
+            upperPrice?: string;
+            /** @description 十进制字符串 */
+            investment?: string;
+            /** @description 十进制字符串 */
+            qtyPerGrid?: string;
+            /** @description 十进制字符串 */
+            startPrice?: string;
+            /** @description 十进制字符串 */
+            currentPrice?: string;
+            /** @description 十进制字符串 */
+            baseHeld?: string;
+            /** @description 十进制字符串 */
+            quoteBalance?: string;
+            /** @description 十进制字符串 */
+            value?: string;
+            /** @description 十进制字符串 */
+            gridProfit?: string;
+            /** @description 十进制字符串 */
+            unrealizedPnl?: string;
+            /** @description 十进制字符串 */
+            totalProfit?: string;
+            /** @description 十进制字符串 */
+            profitRate?: string;
+            /** @description 十进制字符串 */
+            gridApr?: string;
+            /** @description 十进制字符串 */
+            maxDrawdown?: string;
+            /** @description 十进制字符串 */
+            maxDrawdown7d?: string;
+            /** @description 十进制字符串 */
+            feesQuote?: string;
+            /** @description 十进制字符串 */
+            feesBase?: string;
+            id?: string;
+            symbol?: string;
+            mode?: string;
+            gridCount?: number;
+            stopLossPrice?: string | null;
+            takeProfitPrice?: string | null;
+            sellBaseOnStop?: boolean;
+            /** @enum {string} */
+            status?: "running" | "stopping" | "stopped";
+            stopReason?: string | null;
+            /** Format: date-time */
+            stoppedAt?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            cycles?: number;
+            runtimeSeconds?: number;
+            baseAsset?: string;
+            quoteAsset?: string;
+            openOrders?: number;
+            /** @description 仅复制创建时返回 */
+            copiedFrom?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        GridSquareItem: {
+            id?: string;
+            symbol?: string;
+            mode?: string;
+            /** @description 十进制字符串 */
+            lowerPrice?: string;
+            /** @description 十进制字符串 */
+            upperPrice?: string;
+            gridCount?: number;
+            /** @description 十进制字符串 */
+            profitRate?: string;
+            runtimeSeconds?: number;
+            /** @description 十进制字符串 */
+            maxDrawdown7d?: string;
+            cycles?: number;
+            copyCount?: number;
+        } & {
+            [key: string]: unknown;
+        };
+        Announcement: {
+            /** Format: int64 */
+            id?: number;
+            /** @example general */
+            category?: string;
+            title?: string;
+            body?: string;
+            /** Format: date-time */
+            publishAt?: string;
+        };
     };
     responses: {
         /** @description 请求参数错误 */
@@ -3465,7 +4723,21 @@ export interface operations {
                     "application/json": components["schemas"]["SendCodeResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_EMAIL",
+                     *       "message": "邮箱地址无效或无法接收邮件，请检查后重试"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description 发送过于频繁 */
             429: {
                 headers: {
@@ -3476,6 +4748,21 @@ export interface operations {
                      * @example {
                      *       "code": "RATE_LIMITED",
                      *       "message": "验证码发送过于频繁，请稍后再试"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "EMAIL_UNAVAILABLE",
+                     *       "message": "email delivery unavailable"
                      *     }
                      */
                     "application/json": components["schemas"]["Error"];
@@ -3632,7 +4919,21 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["BadRequest"];
+            /** @description 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_EMAIL",
+                     *       "message": "邮箱地址无效或无法接收邮件，请检查后重试"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             /** @description 发送过于频繁 */
             429: {
@@ -3640,6 +4941,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "EMAIL_UNAVAILABLE",
+                     *       "message": "email delivery unavailable"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -4061,7 +5377,21 @@ export interface operations {
                     "application/json": components["schemas"]["SendCodeResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_EMAIL",
+                     *       "message": "邮箱地址无效或无法接收邮件，请检查后重试"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             /** @description 发送过于频繁 */
             429: {
@@ -4069,6 +5399,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "EMAIL_UNAVAILABLE",
+                     *       "message": "email delivery unavailable"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -5174,11 +6519,54 @@ export interface operations {
                      *         "pricePrecision": 2,
                      *         "quantityPrecision": 5,
                      *         "minQuantity": "0.00100",
-                     *         "status": "trading"
+                     *         "status": "trading",
+                     *         "tags": [
+                     *           "layer1"
+                     *         ]
                      *       }
                      *     ]
                      */
                     "application/json": components["schemas"]["Symbol"][];
+                };
+            };
+        };
+    };
+    listMarketCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分类列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example [
+                     *       {
+                     *         "id": "layer1",
+                     *         "name": "公链",
+                     *         "symbols": [
+                     *           "BNBUSDT",
+                     *           "BTCUSDT",
+                     *           "ETHUSDT",
+                     *           "SOLUSDT",
+                     *           "TRXUSDT"
+                     *         ]
+                     *       },
+                     *       {
+                     *         "id": "metals",
+                     *         "name": "贵金属",
+                     *         "symbols": []
+                     *       }
+                     *     ]
+                     */
+                    "application/json": components["schemas"]["MarketCategory"][];
                 };
             };
         };
@@ -5303,6 +6691,133 @@ export interface operations {
                     "application/json": components["schemas"]["Kline"][];
                 };
             };
+        };
+    };
+    getConvertPairs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvertPairs"];
+                };
+            };
+        };
+    };
+    createConvertQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConvertQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvertQuote"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description PRICE_UNAVAILABLE（无指数价格或价格过期）；PAIR_PAUSED_DEPEG（USDC 偏离 1 超过 depegBps，USDC↔USDT 自动暂停；价格缺失/过期同样视为暂停） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    acceptConvertQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    quoteId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["ConvertOrder"];
+                        replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description QUOTE_EXPIRED */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listConvertOrders: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+                /** @description 按币种过滤（from 或 to） */
+                asset?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ConvertOrder"][];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     getLoanMarket: {
@@ -5586,6 +7101,1689 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description 指数价格不可用（PRICE_UNAVAILABLE） */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresContracts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FuturesContractList"];
+                };
+            };
+        };
+    };
+    futuresTicker: {
+        parameters: {
+            query?: {
+                /** @description 不填返回全部 */
+                symbol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FuturesTicker"] | {
+                        tickers?: components["schemas"]["FuturesTicker"][];
+                    };
+                };
+            };
+            /** @description UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresDepth: {
+        parameters: {
+            query: {
+                symbol: unknown;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FuturesDepth"];
+                };
+            };
+            /** @description UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresMarketTrades: {
+        parameters: {
+            query: {
+                symbol: unknown;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        trades?: components["schemas"]["FuturesPublicTrade"][];
+                    };
+                };
+            };
+            /** @description UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresKlines: {
+        parameters: {
+            query: {
+                symbol: unknown;
+                interval: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FuturesKlines"];
+                };
+            };
+            /** @description UNKNOWN_SYMBOL / VALIDATION_ERROR */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresFundingHistory: {
+        parameters: {
+            query: {
+                symbol: unknown;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: string;
+                        history?: {
+                            /** Format: int64 */
+                            fundingTime?: number;
+                            /** @description 十进制字符串 */
+                            fundingRate?: string;
+                            /** @description 十进制字符串 */
+                            markPrice?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    futuresMarkHistory: {
+        parameters: {
+            query: {
+                symbol: unknown;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: string;
+                        history?: {
+                            /** Format: int64 */
+                            time?: number;
+                            /** @description 十进制字符串 */
+                            indexPrice?: string;
+                            /** @description 十进制字符串 */
+                            markPrice?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    futuresInsuranceFund: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        asset?: string;
+                        /** @description 十进制字符串 */
+                        balance?: string;
+                        /** @description 十进制字符串 */
+                        equity?: string;
+                        positions?: components["schemas"]["FuturesPosition"][];
+                        recentLiquidations?: {
+                            symbol?: string;
+                            marginMode?: string;
+                            /** @description 十进制字符串 */
+                            qty?: string;
+                            /** @description 十进制字符串 */
+                            markPrice?: string;
+                            /** @description 十进制字符串 */
+                            fee?: string;
+                            /** @description 十进制字符串 */
+                            shortfall?: string;
+                            /** Format: int64 */
+                            time?: number;
+                        }[];
+                        recentAdl?: {
+                            symbol?: string;
+                            /** @description 十进制字符串 */
+                            qty?: string;
+                            /** @description 十进制字符串 */
+                            price?: string;
+                            /** Format: int64 */
+                            time?: number;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    futuresAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FuturesAccount"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description in = 现货→合约，out = 合约→现货
+                     * @enum {string}
+                     */
+                    direction: "in" | "out";
+                    /** @description 十进制字符串 */
+                    amount: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ref?: string;
+                        /** @description completed 或 pending（202） */
+                        status?: string;
+                    };
+                };
+            };
+            /** @description 已受理，异步完成 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ref?: string;
+                        status?: string;
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_AMOUNT / AMOUNT_TOO_SMALL / INSUFFICIENT_BALANCE / INSUFFICIENT_MARGIN / INSUFFICIENT_OWN_FUNDS */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresTransfers: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        transfers?: {
+                            ref?: string;
+                            direction?: string;
+                            /** @description 十进制字符串 */
+                            amount?: string;
+                            status?: string;
+                            /** Format: date-time */
+                            createdAt?: string;
+                            kind?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresGetLeverage: {
+        parameters: {
+            query: {
+                symbol: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: string;
+                        leverage?: number;
+                        /** @enum {string} */
+                        marginMode?: "cross" | "isolated";
+                        maxLeverage?: number;
+                        /** @enum {string} */
+                        positionMode?: "one_way";
+                    };
+                };
+            };
+            /** @description UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresSetLeverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    symbol: string;
+                    leverage?: number;
+                    /** @enum {string} */
+                    marginMode?: "cross" | "isolated";
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: string;
+                        leverage?: number;
+                        /** @enum {string} */
+                        marginMode?: "cross" | "isolated";
+                        maxLeverage?: number;
+                        /** @enum {string} */
+                        positionMode?: "one_way";
+                    };
+                };
+            };
+            /** @description UNKNOWN_SYMBOL / INVALID_LEVERAGE / POSITION_LIMIT / INSUFFICIENT_MARGIN */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description HAS_OPEN_ORDERS / HAS_POSITION（切换模式被阻止） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresOrders: {
+        parameters: {
+            query?: {
+                /** @description 不填返回全部 */
+                symbol?: string;
+                /** @description open = 仅当前委托 */
+                status?: "open";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["FuturesOrder"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresPlaceOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesPlaceOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesOrder"];
+                        trades?: components["schemas"]["FuturesPublicTrade"][];
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / UNKNOWN_SYMBOL / INVALID_PRICE / INVALID_QTY / INVALID_TPSL / INSUFFICIENT_MARGIN / POSITION_LIMIT / REDUCE_ONLY_REJECTED / CONTRACT_HALTED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description MARK_PRICE_UNAVAILABLE（指数价不可用，拒绝开仓） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresCancelOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesOrder"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description ORDER_NOT_OPEN */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresPositions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        positions?: components["schemas"]["FuturesPosition"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresSetTpsl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    tpPrice?: string | null;
+                    slPrice?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        positions?: components["schemas"]["FuturesPosition"][];
+                    };
+                };
+            };
+            /** @description INVALID_TPSL / UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NO_POSITION */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresAdjustMargin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 十进制字符串 */
+                    amount: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        positions?: components["schemas"]["FuturesPosition"][];
+                    };
+                };
+            };
+            /** @description INVALID_AMOUNT / NOT_ISOLATED / MARGIN_TOO_LOW / INSUFFICIENT_MARGIN */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NO_POSITION */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresClosePosition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesOrder"];
+                        trades?: components["schemas"]["FuturesPublicTrade"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NO_POSITION */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description MARK_PRICE_UNAVAILABLE */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresBills: {
+        parameters: {
+            query?: {
+                /** @description transfer_in / transfer_out / fee / realized_pnl / funding / liquidation_fee / insurance_cover / copy_transfer_in / copy_transfer_out */
+                kind?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bills?: {
+                            /** Format: int64 */
+                            id?: number;
+                            symbol?: string;
+                            kind?: string;
+                            /** @description 十进制字符串 */
+                            amount?: string;
+                            ref?: string;
+                            /** Format: date-time */
+                            time?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresMyTrades: {
+        parameters: {
+            query?: {
+                /** @description 不填返回全部 */
+                symbol?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        trades?: {
+                            /** Format: int64 */
+                            tradeId?: number;
+                            symbol?: string;
+                            /** @enum {string} */
+                            side?: "buy" | "sell";
+                            /** @description 十进制字符串 */
+                            price?: string;
+                            /** @description 十进制字符串 */
+                            qty?: string;
+                            /** @description 十进制字符串 */
+                            fee?: string;
+                            /** @enum {string} */
+                            role?: "maker" | "taker";
+                            /** Format: date-time */
+                            time?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresBonus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["FuturesBonus"][];
+                        /** @description 十进制字符串 */
+                        available?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    earnProducts: {
+        parameters: {
+            query?: {
+                /** @description flexible / fixed */
+                kind?: "flexible" | "fixed";
+                asset?: unknown;
+                /** @description true = 仅热门 */
+                hot?: "true";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["EarnProduct"][];
+                    };
+                };
+            };
+        };
+    };
+    earnProduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EarnProduct"];
+                };
+            };
+            /** @description PRODUCT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    earnSubscribe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 十进制字符串 */
+                    amount: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        productId?: string;
+                        asset?: string;
+                        /** @description 十进制字符串 */
+                        amount?: string;
+                        /** @description 仅定期 */
+                        orderId?: number;
+                        /** @description 十进制字符串 */
+                        expectedInterest?: string;
+                        /**
+                         * Format: int64
+                         * @description 仅定期，毫秒
+                         */
+                        maturityAt?: number;
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / AMOUNT_TOO_SMALL / QUOTA_EXCEEDED / USER_LIMIT_EXCEEDED / NEWCOMER_ONLY / INSUFFICIENT_BALANCE */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description PRODUCT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description PRODUCT_OFFLINE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    earnRedeem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 十进制字符串 */
+                    amount?: string;
+                    /** @description true = 全部赎回 */
+                    all?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        productId?: string;
+                        /** @description 十进制字符串 */
+                        amount?: string;
+                        /** @enum {string} */
+                        status?: "redeemed" | "unlocking";
+                        /** Format: int64 */
+                        releaseAt?: number;
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / REDEEM_NOT_ALLOWED / INSUFFICIENT_POSITION */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description PRODUCT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    earnAuto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        productId?: string;
+                        auto?: boolean;
+                    };
+                };
+            };
+            /** @description AUTO_NOT_SUPPORTED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description PRODUCT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    earnSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description 十进制字符串 */
+                        totalValueUsdt?: string;
+                        /** @description 十进制字符串 */
+                        totalInterestUsdt?: string;
+                        /** @description 十进制字符串 */
+                        recentInterestUsdt?: string;
+                        assets?: {
+                            asset?: string;
+                            /** @description 十进制字符串 */
+                            amount?: string;
+                            /** @description 十进制字符串 */
+                            totalInterest?: string;
+                            /** @description 十进制字符串 */
+                            recentInterest?: string;
+                            /** @description 十进制字符串 */
+                            valueUsdt?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    earnPositions: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            productId?: string;
+                            kind?: string;
+                            asset?: string;
+                            title?: string;
+                            /** @description 十进制字符串 */
+                            amount?: string;
+                            /** @description 十进制字符串 */
+                            earning?: string;
+                            /** @description 十进制字符串 */
+                            pending?: string;
+                            /** @description 十进制字符串 */
+                            totalInterest?: string;
+                            auto?: boolean;
+                            /** @description 十进制字符串 */
+                            estDailyInterest?: string;
+                        }[];
+                        unlocking?: {
+                            id?: number;
+                            productId?: string;
+                            asset?: string;
+                            /** @description 十进制字符串 */
+                            amount?: string;
+                            /** Format: int64 */
+                            releaseAt?: number;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    earnOrders: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: ({
+                            id?: number;
+                            productId?: string;
+                            title?: string;
+                            asset?: string;
+                            /** @description 十进制字符串 */
+                            amount?: string;
+                            /** @description 十进制字符串 */
+                            apr?: string;
+                            termDays?: number;
+                            /** @description 十进制字符串 */
+                            interest?: string;
+                            status?: string;
+                            /** Format: int64 */
+                            startAt?: number;
+                            /** Format: int64 */
+                            maturityAt?: number;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    earnRecords: {
+        parameters: {
+            query?: {
+                type?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            id?: number;
+                            productId?: string;
+                            /** @enum {string} */
+                            type?: "subscribe" | "redeem" | "interest" | "maturity" | "unlock";
+                            asset?: string;
+                            /** @description 十进制字符串 */
+                            amount?: string;
+                            detail?: {
+                                [key: string]: unknown;
+                            };
+                            /** Format: int64 */
+                            time?: number;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    strategyConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        modes?: string[];
+                        minGrids?: number;
+                        maxGrids?: number;
+                        /** @description 十进制字符串 */
+                        minInvestment?: string;
+                        maxBotsPerUser?: number;
+                        /** @description 十进制字符串 */
+                        feeRate?: string;
+                        sellBaseOnStop?: boolean;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    strategySquare: {
+        parameters: {
+            query?: {
+                sort?: "default" | "roi" | "runtime" | "copies";
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["GridSquareItem"][];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    };
+                };
+            };
+        };
+    };
+    strategyCopy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 十进制字符串 */
+                    investment: string;
+                    stopLossPrice?: string;
+                    takeProfitPrice?: string;
+                    sellBaseOnStop?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridBot"];
+                };
+            };
+            /** @description INVALID_MODE / SYMBOL_NOT_FOUND / SYMBOL_NOT_TRADING / INVALID_RANGE / INVALID_GRID_COUNT / INVALID_INVESTMENT / INVESTMENT_TOO_LOW / GRID_TOO_DENSE / NO_PRICE / PRICE_OUT_OF_RANGE / INVALID_STOP_LOSS / INVALID_TAKE_PROFIT / TOO_MANY_BOTS / INSUFFICIENT_BALANCE / ORDER_REJECTED / NO_LIQUIDITY */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description 不在广场上（BOT_NOT_FOUND） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description SELF_COPY */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    strategyPreview: {
+        parameters: {
+            query: {
+                symbol: unknown;
+                mode: "arithmetic" | "geometric";
+                lowerPrice: string;
+                upperPrice: string;
+                gridCount: number;
+                investment: string;
+                stopLossPrice?: string;
+                takeProfitPrice?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: string;
+                        mode?: string;
+                        /** @description 十进制字符串 */
+                        currentPrice?: string;
+                        levels?: string[];
+                        /** @description 十进制字符串 */
+                        qtyPerGrid?: string;
+                        buyOrders?: number;
+                        sellOrders?: number;
+                        /** @description 十进制字符串 */
+                        initialBuyQuote?: string;
+                        /** @description 十进制字符串 */
+                        profitPerGridMin?: string;
+                        /** @description 十进制字符串 */
+                        profitPerGridMax?: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description INVALID_MODE / SYMBOL_NOT_FOUND / SYMBOL_NOT_TRADING / INVALID_RANGE / INVALID_GRID_COUNT / INVALID_INVESTMENT / INVESTMENT_TOO_LOW / GRID_TOO_DENSE / NO_PRICE / PRICE_OUT_OF_RANGE / INVALID_STOP_LOSS / INVALID_TAKE_PROFIT / TOO_MANY_BOTS / INSUFFICIENT_BALANCE / ORDER_REJECTED / NO_LIQUIDITY */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    strategyListGrids: {
+        parameters: {
+            query?: {
+                status?: "running" | "stopped" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["GridBot"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    strategyCreateGrid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GridCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridBot"];
+                };
+            };
+            /** @description INVALID_MODE / SYMBOL_NOT_FOUND / SYMBOL_NOT_TRADING / INVALID_RANGE / INVALID_GRID_COUNT / INVALID_INVESTMENT / INVESTMENT_TOO_LOW / GRID_TOO_DENSE / NO_PRICE / PRICE_OUT_OF_RANGE / INVALID_STOP_LOSS / INVALID_TAKE_PROFIT / TOO_MANY_BOTS / INSUFFICIENT_BALANCE / ORDER_REJECTED / NO_LIQUIDITY */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    strategyGetGrid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridBot"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description BOT_NOT_FOUND（含他人策略） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    strategyGridOrders: {
+        parameters: {
+            query?: {
+                status?: "open" | "filled" | "canceled";
+            };
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            level?: number;
+                            side?: string;
+                            kind?: string;
+                            /** @description 十进制字符串 */
+                            quantity?: string;
+                            orderId?: string;
+                            /** @enum {string} */
+                            status?: "open" | "filled" | "canceled";
+                            /** @description 十进制字符串 */
+                            filledQuantity?: string;
+                            /** @description 十进制字符串 */
+                            filledQuote?: string;
+                            /** @description 十进制字符串 */
+                            baseFee?: string;
+                            /** @description 十进制字符串 */
+                            quoteFee?: string;
+                            /** Format: date-time */
+                            createdAt?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description BOT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    strategyStopGrid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: unknown;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 是否市价卖出底仓，默认取 sellBaseOnStop */
+                    sellBase?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridBot"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description BOT_NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description BOT_NOT_RUNNING */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAnnouncements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Announcement"][];
+                    };
+                };
+            };
+            /** @description METHOD_NOT_ALLOWED */
+            405: {
                 headers: {
                     [name: string]: unknown;
                 };

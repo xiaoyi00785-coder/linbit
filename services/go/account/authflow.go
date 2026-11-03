@@ -182,12 +182,7 @@ func (s *Server) handleSendCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.codes.Send(r.Context(), id.channel, id.target, req.Purpose); err != nil {
-		if errors.Is(err, ErrRateLimited) {
-			common.WriteError(w, http.StatusTooManyRequests, "RATE_LIMITED", "验证码发送过于频繁，请稍后再试")
-			return
-		}
-		log.Printf("send code: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		writeSendCodeError(w, "code/send", err)
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"sent": true, "channel": id.channel, "ttlSeconds": int(s.codes.ttl.Seconds())})
@@ -451,11 +446,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.codes.Send(r.Context(), c.Method, s.contactTarget(u, c.Method), purposeLogin); err != nil {
-		if errors.Is(err, ErrRateLimited) {
-			common.WriteError(w, http.StatusTooManyRequests, "RATE_LIMITED", "验证码发送过于频繁，请稍后再试")
-			return
-		}
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		writeSendCodeError(w, "challenge resend", err)
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"sent": true, "channel": c.Method})

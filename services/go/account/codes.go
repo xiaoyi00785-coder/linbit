@@ -139,7 +139,7 @@ func NewCodeService(store *Store, email EmailSender, sms SmsSender, rec *CodeRec
 func (c *CodeService) Send(ctx context.Context, channel, target, purpose string) error {
 	ok, err := c.allowSend(ctx, target, purpose)
 	if err != nil {
-		return err
+		return fmt.Errorf("rate-limit check (redis/db): %w", err)
 	}
 	if !ok {
 		return ErrRateLimited
@@ -150,7 +150,7 @@ func (c *CodeService) Send(ctx context.Context, channel, target, purpose string)
 	}
 	expires := c.now().Add(c.ttl)
 	if err := c.store.InsertCode(ctx, target, channel, purpose, hashToken(code), c.maxAttempts, expires); err != nil {
-		return err
+		return fmt.Errorf("insert code (db): %w", err)
 	}
 	switch channel {
 	case channelEmail:

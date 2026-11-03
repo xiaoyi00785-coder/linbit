@@ -206,12 +206,20 @@ func run(root, execCmd string) int {
 			"DATABASE_URL=" + databaseURL,
 			"INTERNAL_TOKEN=" + internalTok,
 			"REDIS_URL=" + redisURL,
+			"MARKET_URL=http://localhost:" + marketPort,
+			// 闪兑 hedge IOC orders + depeg/hedge alerts.
+			"ORDER_URL=http://localhost:" + orderPort,
+			"TELEGRAM_API_URL=" + tgAPI,
+			"TELEGRAM_BOT_TOKEN=devstack-telegram-token",
+			"TELEGRAM_CHAT_ID=devstack-chat",
+			"CONVERT_HEDGE_INTERVAL_SECONDS=" + envOr("DEVSTACK_CONVERT_HEDGE_INTERVAL_SECONDS", "5"),
 		},
 		"engine": {
 			"BIND=127.0.0.1:" + enginePort,
 			"INTERNAL_TOKEN=" + internalTok,
 			"DATA_DIR=" + engineData,
 			"SNAPSHOT_EVERY=1000",
+			"SYMBOLS=BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1",
 			// Stream trade/depth events to market-data (local pub/sub stand-in).
 			"EVENT_SINK_URL=http://localhost:" + marketPort + "/internal/events",
 		},
@@ -441,6 +449,13 @@ func run(root, execCmd string) int {
 		"ADMIN_URL=http://localhost:" + adminPort,
 		"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
 		"MM_URL=http://localhost:" + mmPort,
+		// Remaining service URLs so smokes follow shifted DEVSTACK_*_PORTs
+		// instead of falling back to the default ports.
+		"FUTURES_URL=http://localhost:" + futuresPort,
+		"KYC_URL=http://localhost:" + kycPort,
+		"STRATEGY_URL=http://localhost:" + strategyPort,
+		"GROWTH_URL=http://localhost:" + growthPort,
+		"EARN_URL=http://localhost:" + earnPort,
 		"DEVSTACK_TELEGRAM_API_URL=" + tgAPI,
 	}
 	// Bootstrap super-admin credentials go only to exec'd commands (smokes),
@@ -458,7 +473,7 @@ func run(root, execCmd string) int {
 		// for the default collateral/futures pairs. DEVSTACK_INDEX_SEED="none"
 		// disables; format "BTCUSDT=50000,ETHUSDT=2500". Smokes (-exec) pin
 		// their own prices and are not affected.
-		seedDevIndex("http://localhost:"+marketPort, envOr("DEVSTACK_INDEX_SEED", "BTCUSDT=50000,ETHUSDT=2500,SOLUSDT=150,BNBUSDT=600,TRXUSDT=0.12"))
+		seedDevIndex("http://localhost:"+marketPort, envOr("DEVSTACK_INDEX_SEED", "BTCUSDT=50000,ETHUSDT=2500,SOLUSDT=150,BNBUSDT=600,TRXUSDT=0.12,USDCUSDT=1"))
 		// Standalone mode: block until interrupted.
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

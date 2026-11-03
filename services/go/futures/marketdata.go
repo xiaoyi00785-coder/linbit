@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -12,9 +13,15 @@ import (
 // marketdata.go: public futures market data.
 
 func (s *Server) hContracts(w http.ResponseWriter, r *http.Request) {
+	tags := loadSymbolTags(r.Context(), s.db)
 	out := make([]Contract, 0, len(s.symbols))
 	for _, sym := range s.symbols {
-		out = append(out, s.contracts[sym])
+		c := s.contracts[sym]
+		c.Tags = tags[sym]
+		if c.Tags == nil {
+			c.Tags = []string{}
+		}
+		out = append(out, c)
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"contracts": out, "defaults": map[string]any{
 		"leverage": s.cfg.DefaultLeverage, "marginMode": s.cfg.DefaultMarginMode, "positionMode": "one_way"}})
@@ -27,22 +34,31 @@ func (s *Server) ticker(r *http.Request, sym string) map[string]any {
 		FROM fut_trades WHERE symbol=$1 AND created_at > now() - interval '24 hours'`, sym).Scan(&open, &high, &low, &vol, &turn)
 	var oi decimal.Decimal
 	_ = s.db.QueryRowContext(r.Context(), `SELECT COALESCE(sum(qty),0) FROM fut_positions WHERE symbol=$1 AND qty > 0`, sym).Scan(&oi)
+	last, src := s.displayPrice(r, sym, ps)
 	change := dZero
-	if open.Valid && open.Decimal.Sign() > 0 && ps.Last.Sign() > 0 {
-		change = ps.Last.Sub(open.Decimal).Div(open.Decimal).Round(6)
+	if open.Valid && open.Decimal.Sign() > 0 && last.Sign() > 0 {
+		change = last.Sub(open.Decimal).Div(open.Decimal).Round(6)
 	}
+	// No trades in 24h: open/high/low collapse to the display price so the
+	// UI shows a flat 0% day rather than 0 prices / nonsense percentages.
 	z := func(n decimal.NullDecimal) decimal.Decimal {
+		if n.Valid {
+			return n.Decimal
+		}
+		return last
+	}
+	zv := func(n decimal.NullDecimal) decimal.Decimal {
 		if n.Valid {
 			return n.Decimal
 		}
 		return dZero
 	}
 	return map[string]any{
-		"symbol": sym, "lastPrice": ps.Last, "markPrice": ps.Mark, "indexPrice": ps.Index,
+		"symbol": sym, "lastPrice": last, "priceSource": src, "markPrice": ps.Mark, "indexPrice": ps.Index,
 		"fundingRate": s.predictedRate(ps), "lastFundingRate": ps.LastRate,
 		"nextFundingTime": s.nextFunding(s.now()).UnixMilli(),
 		"openPrice24h":    z(open), "highPrice24h": z(high), "lowPrice24h": z(low),
-		"volume24h": z(vol), "turnover24h": money(z(turn)), "priceChangePercent24h": change,
+		"volume24h": zv(vol), "turnover24h": money(zv(turn)), "priceChangePercent24h": change,
 		"openInterest": oi, "priceAvailable": ps.Mark.Sign() > 0,
 	}
 }
@@ -147,7 +163,18 @@ func (s *Server) hKlines(w http.ResponseWriter, r *http.Request) {
 			out = append(out, map[string]any{"openTime": b * 1000, "open": o, "high": h, "low": l, "close": cl, "volume": v, "turnover": money(t)})
 		}
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "interval": iv, "klines": out})
+	rows.Close()
+	source := "trade"
+	if len(out) == 0 {
+		// No trades in the window: fall back to index-price candles from
+		// fut_mark_history (volume 0), flagged source=index.
+		out = s.indexKlines(r, c.Symbol, sec, n)
+		source = "index"
+		if len(out) == 0 {
+			source = "none"
+		}
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "interval": iv, "source": source, "klines": out})
 }
 
 func (s *Server) hFundingHistory(w http.ResponseWriter, r *http.Request) {
@@ -231,4 +258,69 @@ func (s *Server) hInsurance(w http.ResponseWriter, r *http.Request) {
 		ar.Close()
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"asset": "USDT", "balance": money(bal), "equity": money(st.Equity), "positions": st.Positions, "recentLiquidations": liqs, "recentAdl": adl})
+}
+
+// displayPrice: last trade, else mid of best bid/ask, else index, else mark.
+func (s *Server) displayPrice(r *http.Request, sym string, ps priceState) (decimal.Decimal, string) {
+	if ps.Last.Sign() > 0 {
+		return ps.Last, "trade"
+	}
+	var bid, ask decimal.NullDecimal
+	_ = s.db.QueryRowContext(r.Context(), `SELECT
+		(SELECT max(price) FROM fut_orders WHERE symbol=$1 AND side='buy' AND type='limit' AND status IN ('new','partially_filled')),
+		(SELECT min(price) FROM fut_orders WHERE symbol=$1 AND side='sell' AND type='limit' AND status IN ('new','partially_filled'))`, sym).Scan(&bid, &ask)
+	if bid.Valid && ask.Valid && bid.Decimal.Sign() > 0 && ask.Decimal.GreaterThanOrEqual(bid.Decimal) {
+		return bid.Decimal.Add(ask.Decimal).Div(decimal.NewFromInt(2)), "mid"
+	}
+	if ps.Index.Sign() > 0 {
+		return ps.Index, "index"
+	}
+	if ps.Mark.Sign() > 0 {
+		return ps.Mark, "mark"
+	}
+	return dZero, "none"
+}
+
+// indexKlines builds OHLC candles from the recorded index price history.
+func (s *Server) indexKlines(r *http.Request, sym string, sec int64, n int) []map[string]any {
+	out := []map[string]any{}
+	rows, err := s.db.QueryContext(r.Context(), `SELECT b, (array_agg(index_price ORDER BY ts))[1], max(index_price), min(index_price), (array_agg(index_price ORDER BY ts DESC))[1]
+		FROM (SELECT ts, index_price, (floor(extract(epoch from ts) / $2) * $2)::bigint AS b FROM fut_mark_history
+		      WHERE symbol=$1 AND index_price > 0 AND ts >= now() - make_interval(secs => $2 * $3)) t
+		GROUP BY b ORDER BY b`, sym, sec, n)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b int64
+		var o, h, l, cl decimal.Decimal
+		if rows.Scan(&b, &o, &h, &l, &cl) == nil {
+			out = append(out, map[string]any{"openTime": b * 1000, "open": o, "high": h, "low": l, "close": cl, "volume": dZero, "turnover": money(dZero), "source": "index"})
+		}
+	}
+	return out
+}
+
+// loadSymbolTags maps symbol -> market_categories ids (table owned by
+// market-data in the shared DB). Missing table / errors -> empty map.
+func loadSymbolTags(ctx context.Context, db queryer) map[string][]string {
+	out := map[string][]string{}
+	rows, err := db.QueryContext(ctx, `SELECT id, array_to_string(symbols, ',') FROM market_categories ORDER BY sort, id`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, syms string
+		if rows.Scan(&id, &syms) != nil {
+			continue
+		}
+		for _, sym := range strings.Split(syms, ",") {
+			if sym = strings.TrimSpace(sym); sym != "" {
+				out[sym] = append(out[sym], id)
+			}
+		}
+	}
+	return out
 }

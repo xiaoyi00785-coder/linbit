@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 // route maps a path prefix to an upstream reverse proxy.
 type route struct {
 	prefix string
+	exact  bool // match only the prefix itself, not sub-paths
 	proxy  *httputil.ReverseProxy
 }
 
@@ -27,7 +29,12 @@ type publicRoute struct {
 type Gateway struct {
 	cfg    Config
 	routes []route
-	public []publicRoute
+	// announcements proxies ONLY the exact public path GET /announcements to
+	// the admin service. No other admin path is reachable through the gateway.
+	announcements *httputil.ReverseProxy
+	public        []publicRoute
+	// accessLog is nil when GATEWAY_ACCESS_LOG is off.
+	accessLog *slog.Logger
 }
 
 // NewGateway builds a Gateway. It returns an error if an upstream URL is bad.
@@ -83,9 +90,32 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	earnProxy := httputil.NewSingleHostReverseProxy(earn)
+	adminURL := cfg.AdminURL
+	if adminURL == "" {
+		adminURL = "http://localhost:8088"
+	}
+	admin, err := url.Parse(adminURL)
+	if err != nil {
+		return nil, err
+	}
+	annProxy := httputil.NewSingleHostReverseProxy(admin)
+	annDirector := annProxy.Director
+	annProxy.Director = func(r *http.Request) {
+		annDirector(r)
+		// Pin the upstream path and strip any credentials: the admin service
+		// only ever sees an anonymous GET /announcements.
+		r.URL.Path = "/announcements"
+		r.URL.RawPath = ""
+		r.Header.Del("Authorization")
+		r.Header.Del("Cookie")
+		r.Header.Del("X-Internal-Token")
+		r.Header.Del("X-User-Id")
+		r.Header.Del("X-Admin-Token")
+	}
 
 	return &Gateway{
-		cfg: cfg,
+		cfg:           cfg,
+		announcements: annProxy,
 		// Order matters: longest/most-specific prefixes first.
 		routes: []route{
 			{prefix: "/auth", proxy: accountProxy},
@@ -94,6 +124,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/notifications", proxy: accountProxy},
 			{prefix: "/vip", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
+			{prefix: "/convert", proxy: assetProxy},
 			{prefix: "/wallet", proxy: walletProxy},
 			{prefix: "/kyc", proxy: kycProxy},
 			{prefix: "/futures", proxy: futuresProxy},
@@ -108,7 +139,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/earn", proxy: earnProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
-			{prefix: "/ws", proxy: marketProxy},
+			// market-data only serves GET /ws; /ws/* is not a route.
+			{prefix: "/ws", exact: true, proxy: marketProxy},
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -132,6 +164,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/points/campaigns"},
 			{method: http.MethodGet, path: "/points/campaign"},
 			{method: http.MethodGet, path: "/activities"},
+			{method: http.MethodGet, path: "/convert/pairs"},
 			{method: http.MethodGet, path: "/loans/market"},
 			{method: http.MethodGet, path: "/loans/quote"},
 			{method: http.MethodGet, path: "/earn/products"},
@@ -141,9 +174,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	}, nil
 }
 
-// Handler returns the gateway HTTP handler (CORS wraps auth + routing).
+// Handler returns the gateway HTTP handler: access log / request id wraps
+// CORS, which wraps auth + routing.
 func (g *Gateway) Handler() http.Handler {
-	return g.withCORS(http.HandlerFunc(g.serve))
+	return withAccessLog(g.accessLog, g.withCORS(http.HandlerFunc(g.serve)))
 }
 
 func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
@@ -158,9 +192,29 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Public, read-only announcements (admin service public handler only).
+	if r.URL.Path == "/announcements" {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			common.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "仅支持 GET")
+			return
+		}
+		g.announcements.ServeHTTP(w, r)
+		return
+	}
+
 	// Never trust a client-supplied identity header; the gateway is the sole
 	// authority that sets it after validating the JWT.
 	r.Header.Del("X-User-Id")
+
+	// Unknown routes answer 404 before auth (scanner noise such as /v1/*, /,
+	// /markets no longer looks like "login required"). Known prefixes keep
+	// their auth requirement below.
+	proxy := g.match(r.URL.Path)
+	if proxy == nil {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
+		return
+	}
 
 	if !g.isPublic(r) {
 		token := bearer(r)
@@ -176,11 +230,6 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-User-Id", claims.Subject)
 	}
 
-	proxy := g.match(r.URL.Path)
-	if proxy == nil {
-		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
-		return
-	}
 	proxy.ServeHTTP(w, r)
 }
 
@@ -202,7 +251,7 @@ func (g *Gateway) isPublic(r *http.Request) bool {
 
 func (g *Gateway) match(path string) *httputil.ReverseProxy {
 	for _, rt := range g.routes {
-		if path == rt.prefix || strings.HasPrefix(path, rt.prefix+"/") {
+		if path == rt.prefix || (!rt.exact && strings.HasPrefix(path, rt.prefix+"/")) {
 			return rt.proxy
 		}
 	}

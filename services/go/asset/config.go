@@ -10,6 +10,9 @@ type Config struct {
 	DatabaseURL   string
 	InternalToken string
 	RedisURL      string
+	MarketURL     string // market-data (index prices for convert)
+	OrderURL      string // order service (convert hedge IOC orders)
+	Convert       ConvertDefaults
 }
 
 // LoadConfig reads configuration from the environment.
@@ -19,6 +22,9 @@ func LoadConfig() Config {
 		DatabaseURL:   common.MustEnv("DATABASE_URL"),
 		InternalToken: common.Env("INTERNAL_TOKEN", ""),
 		RedisURL:      common.Env("REDIS_URL", ""),
+		MarketURL:     common.Env("MARKET_URL", "http://localhost:8085"),
+		OrderURL:      common.Env("ORDER_URL", "http://localhost:8084"),
+		Convert:       loadConvertDefaults(),
 	}
 }
 

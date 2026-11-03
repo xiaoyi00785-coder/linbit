@@ -20,10 +20,12 @@ func (s *Store) NextHDIndex(ctx context.Context) (int64, error) {
 	return n, err
 }
 
-// DepositAddressesFor lists allocated deposit addresses for a (network, asset).
+// DepositAddressesFor lists allocated deposit addresses on a network. Addresses
+// are shared by every asset on the chain, so all of them are watched for asset.
 func (s *Store) DepositAddressesFor(ctx context.Context, network, asset string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT address FROM deposit_addresses WHERE network = $1 AND asset = $2 ORDER BY id`, network, asset)
+		`SELECT address FROM deposit_addresses WHERE network = $1 AND $2 <> ''
+		 GROUP BY address ORDER BY min(id)`, network, asset)
 	if err != nil {
 		return nil, err
 	}
@@ -131,17 +133,19 @@ type SweepCandidate struct {
 // their last finished sweep, no active sweep, and no failure in the last hour.
 func (s *Store) SweepCandidates(ctx context.Context, limit int) ([]SweepCandidate, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT da.network, da.asset, da.address, da.hd_index
-		 FROM deposit_addresses da
+		`SELECT d.network, d.asset, d.address, min(da.hd_index)
+		 FROM (SELECT DISTINCT network, asset, address FROM deposits WHERE status = 'completed') d
+		 JOIN deposit_addresses da ON da.network = d.network AND da.address = d.address
 		 WHERE da.hd_index IS NOT NULL
-		   AND EXISTS (SELECT 1 FROM deposits d
-		               WHERE d.network = da.network AND d.address = da.address AND d.status = 'completed'
-		                 AND d.credited_at > COALESCE((SELECT max(sw.created_at) FROM sweeps sw
-		                     WHERE sw.network = da.network AND sw.address = da.address AND sw.stage = 'done'), '-infinity'))
-		   AND NOT EXISTS (SELECT 1 FROM sweeps sw WHERE sw.network = da.network AND sw.address = da.address
+		   AND EXISTS (SELECT 1 FROM deposits d2
+		               WHERE d2.network = d.network AND d2.address = d.address AND d2.asset = d.asset AND d2.status = 'completed'
+		                 AND d2.credited_at > COALESCE((SELECT max(sw.created_at) FROM sweeps sw
+		                     WHERE sw.network = d.network AND sw.address = d.address AND sw.asset = d.asset AND sw.stage = 'done'), '-infinity'))
+		   AND NOT EXISTS (SELECT 1 FROM sweeps sw WHERE sw.network = d.network AND sw.address = d.address
 		                   AND (sw.stage IN ('topup_sent','sweep_sent')
-		                        OR (sw.stage = 'failed' AND sw.updated_at > now() - interval '1 hour')))
-		 ORDER BY da.id LIMIT $1`, limit)
+		                        OR (sw.stage = 'failed' AND sw.asset = d.asset AND sw.updated_at > now() - interval '1 hour')))
+		 GROUP BY d.network, d.asset, d.address
+		 ORDER BY min(da.id) LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}

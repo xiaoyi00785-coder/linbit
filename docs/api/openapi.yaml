@@ -19,9 +19,10 @@ info:
 servers:
   - url: http://localhost:4010
     description: 本地 Prism mock
-  - url: https://api.linbit.example.com/v1
-    description: 生产环境
+  - url: https://api.cowa.click
+    description: 测试网 / 生产网关（无 /v1 前缀）
 tags:
+  - { name: Convert, description: 闪兑 }
   - name: Auth
     description: 注册、登录、令牌刷新与登出
   - name: 2FA
@@ -50,6 +51,14 @@ tags:
     description: 行情数据（公开）
   - name: Loans
     description: 质押借币（借 USDT，质押 BTC/ETH 等；earn 服务；USDC 不可借）
+  - name: Futures
+    description: U 本位永续合约（futures 服务）；/futures/market/* 公开
+  - name: Earn
+    description: 理财（活期 / 定期；earn 服务）
+  - name: Strategy
+    description: 现货网格策略（strategy 服务）；/strategy/config 与广场公开
+  - name: Announcements
+    description: 公告（公开只读）
 
 paths:
   /auth/code/send:
@@ -74,13 +83,24 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SendCodeResponse" }
               example: { sent: true, channel: sms, ttlSeconds: 600 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "429":
           description: 发送过于频繁
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: RATE_LIMITED, message: 验证码发送过于频繁，请稍后再试 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /auth/register:
     post:
@@ -205,9 +225,20 @@ paths:
             example: { challengeToken: 3kZ9...challenge }
       responses:
         "200": { description: 已发送 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /auth/password/verify-code:
     post:
@@ -493,9 +524,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SendCodeResponse" }
               example: { sent: true, channel: sms, ttlSeconds: 600 }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: INVALID_EMAIL, message: 邮箱地址无效或无法接收邮件，请检查后重试 }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
+        "503":
+          description: 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
   /account/devices:
     get:
@@ -1294,6 +1336,32 @@ paths:
                   quantityPrecision: 5
                   minQuantity: "0.00100"
                   status: trading
+                  tags: [layer1]
+
+  /market/categories:
+    get:
+      tags: [Market]
+      summary: 行情分类标签（公链、贵金属…）
+      description: |
+        按 sort 排序。symbols 只包含当前已上线的现货交易对；暂无交易对的分类
+        （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
+        commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
+        layer2 Layer 2, ecosystem 生态, solana Solana 生态, gamefi GameFi,
+        depin DePIN, nft NFT, ton TON, lsd LSD, web3 Web3, platform 平台币,
+        payment 支付。「全部」由前端自行处理。
+      operationId: listMarketCategories
+      security: []
+      responses:
+        "200":
+          description: 分类列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MarketCategory" }
+              example:
+                - { id: layer1, name: 公链, symbols: [BNBUSDT, BTCUSDT, ETHUSDT, SOLUSDT, TRXUSDT] }
+                - { id: metals, name: 贵金属, symbols: [] }
 
   /market/ticker:
     get:
@@ -1844,6 +1912,94 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /convert/pairs:
+    get:
+      tags: [Convert]
+      summary: 闪兑可兑换币对、限额与点差
+      operationId: getConvertPairs
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConvertPairs" }
+  /convert/quote:
+    post:
+      tags: [Convert]
+      summary: 闪兑询价（报价 10 秒有效）
+      operationId: createConvertQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConvertQuoteRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConvertQuote" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: PRICE_UNAVAILABLE（无指数价格或价格过期）；PAIR_PAUSED_DEPEG（USDC 偏离 1 超过 depegBps，USDC↔USDT 自动暂停；价格缺失/过期同样视为暂停）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /convert/accept:
+    post:
+      tags: [Convert]
+      summary: 确认闪兑（原子、幂等；同一 quoteId 重复提交返回同一订单 replay=true）
+      operationId: acceptConvertQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quoteId]
+              properties: { quoteId: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order: { $ref: "#/components/schemas/ConvertOrder" }
+                  replay: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: QUOTE_EXPIRED
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /convert/orders:
+    get:
+      tags: [Convert]
+      summary: 闪兑历史（分页）
+      operationId: listConvertOrders
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: asset, in: query, required: false, description: 按币种过滤（from 或 to）, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConvertOrder" } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /loans/market:
     get:
       tags: [Loans]
@@ -2033,7 +2189,1846 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-
+  /futures/market/contracts:
+    get:
+      tags:
+      - Futures
+      summary: 合约列表（含风险档位、标签）
+      operationId: futuresContracts
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FuturesContractList'
+  /futures/market/ticker:
+    get:
+      tags:
+      - Futures
+      summary: 合约行情（单个或全部）
+      operationId: futuresTicker
+      description: 传 symbol 返回单个 FuturesTicker，否则返回 {tickers:[...]}。
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 不填返回全部
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/FuturesTicker'
+                - type: object
+                  properties:
+                    tickers:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/FuturesTicker'
+        '400':
+          description: UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /futures/market/depth:
+    get:
+      tags:
+      - Futures
+      summary: 合约盘口
+      operationId: futuresDepth
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          example: BTCUSDT
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FuturesDepth'
+        '400':
+          description: UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /futures/market/trades:
+    get:
+      tags:
+      - Futures
+      summary: 合约最近成交
+      operationId: futuresMarketTrades
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          example: BTCUSDT
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trades:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPublicTrade'
+        '400':
+          description: UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /futures/market/klines:
+    get:
+      tags:
+      - Futures
+      summary: 合约 K 线（无成交时以指数价补齐，source 标注）
+      operationId: futuresKlines
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          example: BTCUSDT
+      - name: interval
+        in: query
+        required: true
+        schema:
+          type: string
+          example: 1m
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FuturesKlines'
+        '400':
+          description: UNKNOWN_SYMBOL / VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /futures/market/funding-history:
+    get:
+      tags:
+      - Futures
+      summary: 资金费率历史
+      operationId: futuresFundingHistory
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          example: BTCUSDT
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fundingTime:
+                          type: integer
+                          format: int64
+                        fundingRate:
+                          type: string
+                          description: 十进制字符串
+                        markPrice:
+                          type: string
+                          description: 十进制字符串
+  /futures/market/mark-history:
+    get:
+      tags:
+      - Futures
+      summary: 标记价 / 指数价历史
+      operationId: futuresMarkHistory
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          example: BTCUSDT
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        time:
+                          type: integer
+                          format: int64
+                        indexPrice:
+                          type: string
+                          description: 十进制字符串
+                        markPrice:
+                          type: string
+                          description: 十进制字符串
+  /futures/market/insurance-fund:
+    get:
+      tags:
+      - Futures
+      summary: 保险基金（余额、最近强平与 ADL）
+      operationId: futuresInsuranceFund
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asset:
+                    type: string
+                  balance:
+                    type: string
+                    description: 十进制字符串
+                  equity:
+                    type: string
+                    description: 十进制字符串
+                  positions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPosition'
+                  recentLiquidations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                        marginMode:
+                          type: string
+                        qty:
+                          type: string
+                          description: 十进制字符串
+                        markPrice:
+                          type: string
+                          description: 十进制字符串
+                        fee:
+                          type: string
+                          description: 十进制字符串
+                        shortfall:
+                          type: string
+                          description: 十进制字符串
+                        time:
+                          type: integer
+                          format: int64
+                  recentAdl:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                        qty:
+                          type: string
+                          description: 十进制字符串
+                        price:
+                          type: string
+                          description: 十进制字符串
+                        time:
+                          type: integer
+                          format: int64
+  /futures/account:
+    get:
+      tags:
+      - Futures
+      summary: 合约账户（USDT 保证金）
+      operationId: futuresAccount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FuturesAccount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/transfer:
+    post:
+      tags:
+      - Futures
+      summary: 现货 ↔ 合约划转（USDT）
+      operationId: futuresTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                direction:
+                  type: string
+                  enum:
+                  - in
+                  - out
+                  description: in = 现货→合约，out = 合约→现货
+                amount:
+                  type: string
+                  description: 十进制字符串
+              required:
+              - direction
+              - amount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ref:
+                    type: string
+                  status:
+                    type: string
+                    description: completed 或 pending（202）
+        '202':
+          description: 已受理，异步完成
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ref:
+                    type: string
+                  status:
+                    type: string
+        '400':
+          description: VALIDATION_ERROR / INVALID_AMOUNT / AMOUNT_TOO_SMALL / INSUFFICIENT_BALANCE / INSUFFICIENT_MARGIN / INSUFFICIENT_OWN_FUNDS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/transfers:
+    get:
+      tags:
+      - Futures
+      summary: 划转记录
+      operationId: futuresTransfers
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transfers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ref:
+                          type: string
+                        direction:
+                          type: string
+                        amount:
+                          type: string
+                          description: 十进制字符串
+                        status:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+                        kind:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/leverage:
+    get:
+      tags:
+      - Futures
+      summary: 查询杠杆与保证金模式
+      operationId: futuresGetLeverage
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          example: BTCUSDT
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  leverage:
+                    type: integer
+                  marginMode:
+                    type: string
+                    enum:
+                    - cross
+                    - isolated
+                  maxLeverage:
+                    type: integer
+                  positionMode:
+                    type: string
+                    enum:
+                    - one_way
+        '400':
+          description: UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+      - Futures
+      summary: 设置杠杆与保证金模式
+      operationId: futuresSetLeverage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                symbol:
+                  type: string
+                leverage:
+                  type: integer
+                  minimum: 1
+                marginMode:
+                  type: string
+                  enum:
+                  - cross
+                  - isolated
+              required:
+              - symbol
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  leverage:
+                    type: integer
+                  marginMode:
+                    type: string
+                    enum:
+                    - cross
+                    - isolated
+                  maxLeverage:
+                    type: integer
+                  positionMode:
+                    type: string
+                    enum:
+                    - one_way
+        '400':
+          description: UNKNOWN_SYMBOL / INVALID_LEVERAGE / POSITION_LIMIT / INSUFFICIENT_MARGIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: HAS_OPEN_ORDERS / HAS_POSITION（切换模式被阻止）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/orders:
+    post:
+      tags:
+      - Futures
+      summary: 合约下单（可附带止盈止损）
+      operationId: futuresPlaceOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesPlaceOrderRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesOrder'
+                  trades:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPublicTrade'
+        '400':
+          description: VALIDATION_ERROR / UNKNOWN_SYMBOL / INVALID_PRICE / INVALID_QTY / INVALID_TPSL / INSUFFICIENT_MARGIN / POSITION_LIMIT / REDUCE_ONLY_REJECTED / CONTRACT_HALTED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: MARK_PRICE_UNAVAILABLE（指数价不可用，拒绝开仓）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - Futures
+      summary: 我的合约委托
+      operationId: futuresOrders
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 不填返回全部
+      - name: status
+        in: query
+        required: false
+        schema:
+          enum:
+          - open
+        description: open = 仅当前委托
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/orders/{id}:
+    delete:
+      tags:
+      - Futures
+      summary: 撤单
+      operationId: futuresCancelOrder
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesOrder'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: ORDER_NOT_OPEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/positions:
+    get:
+      tags:
+      - Futures
+      summary: 当前持仓
+      operationId: futuresPositions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  positions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPosition'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/positions/{symbol}/tpsl:
+    post:
+      tags:
+      - Futures
+      summary: 设置持仓止盈止损（传 "" 清除）
+      operationId: futuresSetTpsl
+      parameters:
+      - name: symbol
+        in: path
+        required: true
+        schema:
+          example: BTCUSDT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tpPrice:
+                  type: string
+                  nullable: true
+                slPrice:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  positions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPosition'
+        '400':
+          description: INVALID_TPSL / UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NO_POSITION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/positions/{symbol}/margin:
+    post:
+      tags:
+      - Futures
+      summary: 逐仓调整保证金（正数追加，负数减少）
+      operationId: futuresAdjustMargin
+      parameters:
+      - name: symbol
+        in: path
+        required: true
+        schema:
+          example: BTCUSDT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: string
+                  description: 十进制字符串
+              required:
+              - amount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  positions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPosition'
+        '400':
+          description: INVALID_AMOUNT / NOT_ISOLATED / MARGIN_TOO_LOW / INSUFFICIENT_MARGIN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NO_POSITION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/positions/{symbol}/close:
+    post:
+      tags:
+      - Futures
+      summary: 市价全平
+      operationId: futuresClosePosition
+      parameters:
+      - name: symbol
+        in: path
+        required: true
+        schema:
+          example: BTCUSDT
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesOrder'
+                  trades:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPublicTrade'
+        '404':
+          description: NO_POSITION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: MARK_PRICE_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/bills:
+    get:
+      tags:
+      - Futures
+      summary: 合约账单流水
+      operationId: futuresBills
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+        description: transfer_in / transfer_out / fee / realized_pnl / funding / liquidation_fee / insurance_cover / copy_transfer_in / copy_transfer_out
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bills:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          format: int64
+                        symbol:
+                          type: string
+                        kind:
+                          type: string
+                        amount:
+                          type: string
+                          description: 十进制字符串
+                        ref:
+                          type: string
+                        time:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/trades:
+    get:
+      tags:
+      - Futures
+      summary: 我的合约成交
+      operationId: futuresMyTrades
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 不填返回全部
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trades:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tradeId:
+                          type: integer
+                          format: int64
+                        symbol:
+                          type: string
+                        side:
+                          type: string
+                          enum:
+                          - buy
+                          - sell
+                        price:
+                          type: string
+                          description: 十进制字符串
+                        qty:
+                          type: string
+                          description: 十进制字符串
+                        fee:
+                          type: string
+                          description: 十进制字符串
+                        role:
+                          type: string
+                          enum:
+                          - maker
+                          - taker
+                        time:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/bonus:
+    get:
+      tags:
+      - Futures
+      summary: 合约体验金 / 赠金
+      operationId: futuresBonus
+      description: 体验金只能用于保证金和手续费抵扣，不可转出。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesBonus'
+                  available:
+                    type: string
+                    description: 十进制字符串
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /earn/products:
+    get:
+      tags:
+      - Earn
+      summary: 理财产品列表
+      operationId: earnProducts
+      security: []
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          enum:
+          - flexible
+          - fixed
+        description: flexible / fixed
+      - name: asset
+        in: query
+        required: false
+        schema:
+          example: USDT
+      - name: hot
+        in: query
+        required: false
+        schema:
+          enum:
+          - 'true'
+        description: true = 仅热门
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EarnProduct'
+  /earn/products/{id}:
+    get:
+      tags:
+      - Earn
+      summary: 理财产品详情
+      operationId: earnProduct
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: usdt-flex
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EarnProduct'
+        '404':
+          description: PRODUCT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /earn/products/{id}/subscribe:
+    post:
+      tags:
+      - Earn
+      summary: 申购
+      operationId: earnSubscribe
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: usdt-flex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: string
+                  description: 十进制字符串
+              required:
+              - amount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  productId:
+                    type: string
+                  asset:
+                    type: string
+                  amount:
+                    type: string
+                    description: 十进制字符串
+                  orderId:
+                    type: integer
+                    description: 仅定期
+                  expectedInterest:
+                    type: string
+                    description: 十进制字符串
+                  maturityAt:
+                    type: integer
+                    format: int64
+                    description: 仅定期，毫秒
+        '400':
+          description: VALIDATION_ERROR / AMOUNT_TOO_SMALL / QUOTA_EXCEEDED / USER_LIMIT_EXCEEDED / NEWCOMER_ONLY / INSUFFICIENT_BALANCE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: PRODUCT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: PRODUCT_OFFLINE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /earn/products/{id}/redeem:
+    post:
+      tags:
+      - Earn
+      summary: 赎回（活期；有解锁期时进入 unlocking）
+      operationId: earnRedeem
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: usdt-flex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: string
+                  description: 十进制字符串
+                all:
+                  type: boolean
+                  description: true = 全部赎回
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  productId:
+                    type: string
+                  amount:
+                    type: string
+                    description: 十进制字符串
+                  status:
+                    type: string
+                    enum:
+                    - redeemed
+                    - unlocking
+                  releaseAt:
+                    type: integer
+                    format: int64
+        '400':
+          description: VALIDATION_ERROR / REDEEM_NOT_ALLOWED / INSUFFICIENT_POSITION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: PRODUCT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /earn/products/{id}/auto:
+    post:
+      tags:
+      - Earn
+      summary: 开关自动申购（仅活期）
+      operationId: earnAuto
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: usdt-flex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required:
+              - enabled
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  productId:
+                    type: string
+                  auto:
+                    type: boolean
+        '400':
+          description: AUTO_NOT_SUPPORTED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: PRODUCT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /earn/summary:
+    get:
+      tags:
+      - Earn
+      summary: 理财资产汇总
+      operationId: earnSummary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalValueUsdt:
+                    type: string
+                    description: 十进制字符串
+                  totalInterestUsdt:
+                    type: string
+                    description: 十进制字符串
+                  recentInterestUsdt:
+                    type: string
+                    description: 十进制字符串
+                  assets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        asset:
+                          type: string
+                        amount:
+                          type: string
+                          description: 十进制字符串
+                        totalInterest:
+                          type: string
+                          description: 十进制字符串
+                        recentInterest:
+                          type: string
+                          description: 十进制字符串
+                        valueUsdt:
+                          type: string
+                          description: 十进制字符串
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /earn/positions:
+    get:
+      tags:
+      - Earn
+      summary: 活期持仓与解锁中
+      operationId: earnPositions
+      parameters:
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        productId:
+                          type: string
+                        kind:
+                          type: string
+                        asset:
+                          type: string
+                        title:
+                          type: string
+                        amount:
+                          type: string
+                          description: 十进制字符串
+                        earning:
+                          type: string
+                          description: 十进制字符串
+                        pending:
+                          type: string
+                          description: 十进制字符串
+                        totalInterest:
+                          type: string
+                          description: 十进制字符串
+                        auto:
+                          type: boolean
+                        estDailyInterest:
+                          type: string
+                          description: 十进制字符串
+                  unlocking:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        productId:
+                          type: string
+                        asset:
+                          type: string
+                        amount:
+                          type: string
+                          description: 十进制字符串
+                        releaseAt:
+                          type: integer
+                          format: int64
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /earn/orders:
+    get:
+      tags:
+      - Earn
+      summary: 定期订单
+      operationId: earnOrders
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        productId:
+                          type: string
+                        title:
+                          type: string
+                        asset:
+                          type: string
+                        amount:
+                          type: string
+                          description: 十进制字符串
+                        apr:
+                          type: string
+                          description: 十进制字符串
+                        termDays:
+                          type: integer
+                        interest:
+                          type: string
+                          description: 十进制字符串
+                        status:
+                          type: string
+                        startAt:
+                          type: integer
+                          format: int64
+                        maturityAt:
+                          type: integer
+                          format: int64
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /earn/records:
+    get:
+      tags:
+      - Earn
+      summary: 理财流水（申购、赎回、利息、到期、解锁）
+      operationId: earnRecords
+      parameters:
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        productId:
+                          type: string
+                        type:
+                          type: string
+                          enum:
+                          - subscribe
+                          - redeem
+                          - interest
+                          - maturity
+                          - unlock
+                        asset:
+                          type: string
+                        amount:
+                          type: string
+                          description: 十进制字符串
+                        detail:
+                          type: object
+                          additionalProperties: true
+                        time:
+                          type: integer
+                          format: int64
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /strategy/config:
+    get:
+      tags:
+      - Strategy
+      summary: 网格参数限制与默认值
+      operationId: strategyConfig
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  modes:
+                    type: array
+                    items:
+                      type: string
+                  minGrids:
+                    type: integer
+                  maxGrids:
+                    type: integer
+                  minInvestment:
+                    type: string
+                    description: 十进制字符串
+                  maxBotsPerUser:
+                    type: integer
+                  feeRate:
+                    type: string
+                    description: 十进制字符串
+                  sellBaseOnStop:
+                    type: boolean
+                additionalProperties: true
+  /strategy/grid/square:
+    get:
+      tags:
+      - Strategy
+      summary: 策略广场（运行中的网格，匿名）
+      operationId: strategySquare
+      security: []
+      parameters:
+      - name: sort
+        in: query
+        required: false
+        schema:
+          enum:
+          - default
+          - roi
+          - runtime
+          - copies
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GridSquareItem'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pageSize:
+                    type: integer
+  /strategy/grid/square/{id}/copy:
+    post:
+      tags:
+      - Strategy
+      summary: 一键复制广场策略
+      operationId: strategyCopy
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: '12'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                investment:
+                  type: string
+                  description: 十进制字符串
+                stopLossPrice:
+                  type: string
+                takeProfitPrice:
+                  type: string
+                sellBaseOnStop:
+                  type: boolean
+              required:
+              - investment
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GridBot'
+        '400':
+          description: INVALID_MODE / SYMBOL_NOT_FOUND / SYMBOL_NOT_TRADING / INVALID_RANGE / INVALID_GRID_COUNT / INVALID_INVESTMENT / INVESTMENT_TOO_LOW / GRID_TOO_DENSE / NO_PRICE / PRICE_OUT_OF_RANGE / INVALID_STOP_LOSS / INVALID_TAKE_PROFIT / TOO_MANY_BOTS / INSUFFICIENT_BALANCE / ORDER_REJECTED / NO_LIQUIDITY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 不在广场上（BOT_NOT_FOUND）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: SELF_COPY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /strategy/grid/preview:
+    get:
+      tags:
+      - Strategy
+      summary: 网格试算
+      operationId: strategyPreview
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          example: BTCUSDT
+      - name: mode
+        in: query
+        required: true
+        schema:
+          enum:
+          - arithmetic
+          - geometric
+      - name: lowerPrice
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: upperPrice
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: gridCount
+        in: query
+        required: true
+        schema:
+          type: integer
+      - name: investment
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: stopLossPrice
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: takeProfitPrice
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  mode:
+                    type: string
+                  currentPrice:
+                    type: string
+                    description: 十进制字符串
+                  levels:
+                    type: array
+                    items:
+                      type: string
+                      description: 十进制字符串
+                  qtyPerGrid:
+                    type: string
+                    description: 十进制字符串
+                  buyOrders:
+                    type: integer
+                  sellOrders:
+                    type: integer
+                  initialBuyQuote:
+                    type: string
+                    description: 十进制字符串
+                  profitPerGridMin:
+                    type: string
+                    description: 十进制字符串
+                  profitPerGridMax:
+                    type: string
+                    description: 十进制字符串
+                additionalProperties: true
+        '400':
+          description: INVALID_MODE / SYMBOL_NOT_FOUND / SYMBOL_NOT_TRADING / INVALID_RANGE / INVALID_GRID_COUNT / INVALID_INVESTMENT / INVESTMENT_TOO_LOW / GRID_TOO_DENSE / NO_PRICE / PRICE_OUT_OF_RANGE / INVALID_STOP_LOSS / INVALID_TAKE_PROFIT / TOO_MANY_BOTS / INSUFFICIENT_BALANCE / ORDER_REJECTED / NO_LIQUIDITY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /strategy/grid:
+    post:
+      tags:
+      - Strategy
+      summary: 创建网格
+      operationId: strategyCreateGrid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GridCreateRequest'
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GridBot'
+        '400':
+          description: INVALID_MODE / SYMBOL_NOT_FOUND / SYMBOL_NOT_TRADING / INVALID_RANGE / INVALID_GRID_COUNT / INVALID_INVESTMENT / INVESTMENT_TOO_LOW / GRID_TOO_DENSE / NO_PRICE / PRICE_OUT_OF_RANGE / INVALID_STOP_LOSS / INVALID_TAKE_PROFIT / TOO_MANY_BOTS / INSUFFICIENT_BALANCE / ORDER_REJECTED / NO_LIQUIDITY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - Strategy
+      summary: 我的网格
+      operationId: strategyListGrids
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          enum:
+          - running
+          - stopped
+          - all
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GridBot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /strategy/grid/{id}:
+    get:
+      tags:
+      - Strategy
+      summary: 网格详情
+      operationId: strategyGetGrid
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: '12'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GridBot'
+        '404':
+          description: BOT_NOT_FOUND（含他人策略）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /strategy/grid/{id}/orders:
+    get:
+      tags:
+      - Strategy
+      summary: 网格委托
+      operationId: strategyGridOrders
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: '12'
+      - name: status
+        in: query
+        required: false
+        schema:
+          enum:
+          - open
+          - filled
+          - canceled
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        level:
+                          type: integer
+                        side:
+                          type: string
+                        kind:
+                          type: string
+                        quantity:
+                          type: string
+                          description: 十进制字符串
+                        orderId:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                          - open
+                          - filled
+                          - canceled
+                        filledQuantity:
+                          type: string
+                          description: 十进制字符串
+                        filledQuote:
+                          type: string
+                          description: 十进制字符串
+                        baseFee:
+                          type: string
+                          description: 十进制字符串
+                        quoteFee:
+                          type: string
+                          description: 十进制字符串
+                        createdAt:
+                          type: string
+                          format: date-time
+        '404':
+          description: BOT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /strategy/grid/{id}/stop:
+    post:
+      tags:
+      - Strategy
+      summary: 停止网格
+      operationId: strategyStopGrid
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          example: '12'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sellBase:
+                  type: boolean
+                  description: 是否市价卖出底仓，默认取 sellBaseOnStop
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GridBot'
+        '404':
+          description: BOT_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: BOT_NOT_RUNNING
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /announcements:
+    get:
+      tags:
+      - Announcements
+      summary: 公告列表（已发布，最多 100 条）
+      operationId: listAnnouncements
+      description: 公开只读，网关仅转发 GET/HEAD；其他方法返回 405。/admin/* 仍不经网关暴露。
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Announcement'
+        '405':
+          description: METHOD_NOT_ALLOWED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   securitySchemes:
     bearerAuth:
@@ -2096,6 +4091,73 @@ components:
             requestId: req_404demo
 
   schemas:
+    ConvertPairs:
+      type: object
+      properties:
+        assets:
+          type: array
+          items:
+            type: object
+            properties: { asset: { type: string }, precision: { type: integer }, enabled: { type: boolean } }
+        pairs:
+          type: array
+          items:
+            type: object
+            properties:
+              from: { type: string }
+              to: { type: string }
+              fromPrecision: { type: integer }
+              toPrecision: { type: integer }
+              spreadBps: { type: integer }
+              route: { type: string, enum: [direct, via_usdt, stable] }
+              paused: { type: boolean, description: 仅 USDC↔USDT 出现；true 表示脱锚保护暂停中 }
+              pauseReason: { type: string, enum: [depeg, price_unavailable], description: paused=true 时的原因 }
+        minUsdt: { type: string, example: "10" }
+        maxUsdt: { type: string, example: "50000" }
+        spreadBps: { type: integer, example: 20 }
+        fee: { type: string, example: "0" }
+        quoteTtlSeconds: { type: integer, example: 10 }
+    ConvertQuoteRequest:
+      type: object
+      required: [from, to]
+      description: fromAmount 与 toAmount 二选一
+      properties:
+        from: { type: string, example: USDT }
+        to: { type: string, example: BTC }
+        fromAmount: { type: string, example: "1000" }
+        toAmount: { type: string }
+    ConvertQuote:
+      type: object
+      properties:
+        quoteId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        fromAmount: { type: string }
+        toAmount: { type: string }
+        rate: { type: string, description: 1 from = rate to（已含点差） }
+        inverseRate: { type: string }
+        indexRate: { type: string, description: 不含点差的指数汇率 }
+        spreadBps: { type: integer }
+        fee: { type: string, example: "0" }
+        feeAsset: { type: string }
+        expiresAt: { type: integer, format: int64, description: 毫秒时间戳 }
+        ttlSeconds: { type: integer }
+    ConvertOrder:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        quoteId: { type: string }
+        from: { type: string }
+        to: { type: string }
+        fromAmount: { type: string }
+        toAmount: { type: string }
+        rate: { type: string }
+        indexRate: { type: string }
+        spreadBps: { type: integer }
+        fee: { type: string }
+        usdtValue: { type: string, description: 按成交时 USDT 估值 }
+        status: { type: string, example: filled }
+        createdAt: { type: integer, format: int64, description: 毫秒时间戳 }
     LoanMarket:
       type: object
       properties:
@@ -2842,6 +4904,19 @@ components:
           type: string
           enum: [trading, halted, delisted]
           example: trading
+        tags:
+          type: array
+          items: { type: string }
+          description: 所属分类 id（见 /market/categories）
+          example: [layer1]
+
+    MarketCategory:
+      type: object
+      required: [id, name, symbols]
+      properties:
+        id: { type: string, example: layer1 }
+        name: { type: string, example: 公链 }
+        symbols: { type: array, items: { type: string }, example: [BTCUSDT, ETHUSDT] }
 
     Ticker:
       type: object
@@ -2854,6 +4929,10 @@ components:
         low: { type: string, example: "76705.00" }
         volume: { type: string, example: "371.65" }
         quoteVolume: { type: string, example: "28915681.30" }
+        priceSource:
+          type: string
+          enum: [trade, mid, index, none]
+          description: "lastPrice 来源：最近成交 > 盘口中间价 > 指数价；无成交时 24h 涨跌为 0、high/low=lastPrice、volume=0（不伪造成交）。合约行情另有 mark。"
 
     Depth:
       type: object
@@ -3188,6 +5267,671 @@ components:
       properties:
         trades: { type: array, items: { type: object, additionalProperties: true } }
         settlements: { type: array, items: { type: object, additionalProperties: true } }
+    FuturesRiskTier:
+      type: object
+      properties:
+        tier:
+          type: integer
+        maxNotional:
+          type: string
+          description: 十进制字符串
+        maintenanceMarginRate:
+          type: string
+          description: 十进制字符串
+        maintenanceAmount:
+          type: string
+          description: 十进制字符串
+        maxLeverage:
+          type: integer
+    FuturesContract:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: BTCUSDT
+        baseAsset:
+          type: string
+        quoteAsset:
+          type: string
+        maxLeverage:
+          type: integer
+        maintenanceMarginRate:
+          type: string
+          description: 十进制字符串
+        tickSize:
+          type: string
+          description: 十进制字符串
+        minQty:
+          type: string
+          description: 十进制字符串
+        maxQty:
+          type: string
+          description: 十进制字符串
+        makerFeeRate:
+          type: string
+          description: 十进制字符串
+        takerFeeRate:
+          type: string
+          description: 十进制字符串
+        status:
+          type: string
+        contractType:
+          type: string
+          example: perpetual
+        marginAsset:
+          type: string
+        fundingIntervalHours:
+          type: integer
+        riskTiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/FuturesRiskTier'
+        tags:
+          type: array
+          items:
+            type: string
+    FuturesContractList:
+      type: object
+      properties:
+        contracts:
+          type: array
+          items:
+            $ref: '#/components/schemas/FuturesContract'
+        defaults:
+          type: object
+          properties:
+            leverage:
+              type: integer
+            marginMode:
+              type: string
+            positionMode:
+              type: string
+    FuturesTicker:
+      type: object
+      properties:
+        symbol:
+          type: string
+        lastPrice:
+          type: string
+          description: 十进制字符串
+        priceSource:
+          type: string
+          description: last / mark / index：无成交时的回退来源
+        markPrice:
+          type: string
+          description: 十进制字符串
+        indexPrice:
+          type: string
+          description: 十进制字符串
+        fundingRate:
+          type: string
+          description: 十进制字符串
+        lastFundingRate:
+          type: string
+          description: 十进制字符串
+        nextFundingTime:
+          type: integer
+          format: int64
+        openPrice24h:
+          type: string
+          description: 十进制字符串
+        highPrice24h:
+          type: string
+          description: 十进制字符串
+        lowPrice24h:
+          type: string
+          description: 十进制字符串
+        volume24h:
+          type: string
+          description: 十进制字符串
+        turnover24h:
+          type: string
+          description: 十进制字符串
+        priceChangePercent24h:
+          type: string
+          description: 十进制字符串
+        openInterest:
+          type: string
+          description: 十进制字符串
+        priceAvailable:
+          type: boolean
+    FuturesDepth:
+      type: object
+      properties:
+        symbol:
+          type: string
+        bids:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+              description: 十进制字符串
+        asks:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+              description: 十进制字符串
+        time:
+          type: integer
+          format: int64
+      description: bids/asks 为 [price, qty]
+    FuturesPublicTrade:
+      type: object
+      properties:
+        tradeId:
+          type: integer
+          format: int64
+        symbol:
+          type: string
+        price:
+          type: string
+          description: 十进制字符串
+        qty:
+          type: string
+          description: 十进制字符串
+        takerSide:
+          type: string
+          enum:
+          - buy
+          - sell
+        time:
+          type: string
+          format: date-time
+    FuturesKlines:
+      type: object
+      properties:
+        symbol:
+          type: string
+        interval:
+          type: string
+        source:
+          type: string
+          description: trades / index
+        klines:
+          type: array
+          items:
+            type: object
+            properties:
+              openTime:
+                type: integer
+                format: int64
+              open:
+                type: string
+                description: 十进制字符串
+              high:
+                type: string
+                description: 十进制字符串
+              low:
+                type: string
+                description: 十进制字符串
+              close:
+                type: string
+                description: 十进制字符串
+              volume:
+                type: string
+                description: 十进制字符串
+              turnover:
+                type: string
+                description: 十进制字符串
+    FuturesPosition:
+      type: object
+      properties:
+        symbol:
+          type: string
+        side:
+          type: string
+          enum:
+          - long
+          - short
+        qty:
+          type: string
+          description: 十进制字符串
+        entryPrice:
+          type: string
+          description: 十进制字符串
+        markPrice:
+          type: string
+          description: 十进制字符串
+        notional:
+          type: string
+          description: 十进制字符串
+        unrealizedPnl:
+          type: string
+          description: 十进制字符串
+        roe:
+          type: string
+          description: 十进制字符串
+        realizedPnl:
+          type: string
+          description: 十进制字符串
+        marginMode:
+          type: string
+          enum:
+          - cross
+          - isolated
+        leverage:
+          type: integer
+        margin:
+          type: string
+          description: 十进制字符串
+        maintenanceMargin:
+          type: string
+          description: 十进制字符串
+        liquidationPrice:
+          type: string
+          description: 十进制字符串
+        tpPrice:
+          type: string
+          nullable: true
+        slPrice:
+          type: string
+          nullable: true
+        adlRank:
+          type: integer
+          minimum: 0
+          maximum: 5
+    FuturesAccount:
+      type: object
+      properties:
+        asset:
+          type: string
+          example: USDT
+        walletBalance:
+          type: string
+          description: 十进制字符串
+        orderMargin:
+          type: string
+          description: 十进制字符串
+        crossPositionMargin:
+          type: string
+          description: 十进制字符串
+        crossMaintenanceMargin:
+          type: string
+          description: 十进制字符串
+        crossUnrealizedPnl:
+          type: string
+          description: 十进制字符串
+        isolatedMargin:
+          type: string
+          description: 十进制字符串
+        isolatedUnrealizedPnl:
+          type: string
+          description: 十进制字符串
+        availableBalance:
+          type: string
+          description: 十进制字符串
+        marginBalance:
+          type: string
+          description: 十进制字符串
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FuturesPosition'
+    FuturesPlaceOrderRequest:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: BTCUSDT
+        side:
+          type: string
+          enum:
+          - buy
+          - sell
+        type:
+          type: string
+          enum:
+          - limit
+          - market
+        timeInForce:
+          type: string
+          enum:
+          - GTC
+          - IOC
+        price:
+          type: string
+          description: 限价单必填
+        qty:
+          type: string
+          description: 十进制字符串
+        reduceOnly:
+          type: boolean
+        tpPrice:
+          type: string
+        slPrice:
+          type: string
+      required:
+      - symbol
+      - side
+      - type
+      - qty
+    FuturesOrder:
+      type: object
+      properties:
+        orderId:
+          type: integer
+          format: int64
+        symbol:
+          type: string
+        side:
+          type: string
+        type:
+          type: string
+        timeInForce:
+          type: string
+        price:
+          type: string
+          nullable: true
+        qty:
+          type: string
+          description: 十进制字符串
+        filledQty:
+          type: string
+          description: 十进制字符串
+        filledQuote:
+          type: string
+          description: 十进制字符串
+        reservedMargin:
+          type: string
+          description: 十进制字符串
+        fee:
+          type: string
+          description: 十进制字符串
+        status:
+          type: string
+          example: open
+        reduceOnly:
+          type: boolean
+        leverage:
+          type: integer
+        marginMode:
+          type: string
+        source:
+          type: string
+          description: user / tpsl / liquidation / adl / copy
+        tpPrice:
+          type: string
+          nullable: true
+        slPrice:
+          type: string
+          nullable: true
+        cancelReason:
+          type: string
+        avgPrice:
+          type: string
+          description: 十进制字符串
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    FuturesBonus:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        ref:
+          type: string
+        kind:
+          type: string
+        source:
+          type: string
+        amount:
+          type: string
+          description: 十进制字符串
+        remaining:
+          type: string
+          description: 十进制字符串
+        status:
+          type: string
+        expiresAt:
+          type: integer
+          format: int64
+        createdAt:
+          type: integer
+          format: int64
+    EarnProduct:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - flexible
+          - fixed
+        asset:
+          type: string
+        title:
+          type: string
+        apr:
+          type: string
+          description: 十进制字符串
+        bonusApr:
+          type: string
+          description: 十进制字符串
+        bonusQuota:
+          type: string
+          description: 十进制字符串
+        termDays:
+          type: integer
+        unlockDays:
+          type: integer
+        minAmount:
+          type: string
+          description: 十进制字符串
+        perUserMax:
+          type: string
+          description: 十进制字符串
+        totalQuota:
+          type: string
+          description: 十进制字符串
+        sold:
+          type: string
+          description: 十进制字符串
+        newcomer:
+          type: boolean
+        hot:
+          type: boolean
+        status:
+          type: string
+        sort:
+          type: integer
+        aprMax:
+          type: string
+          description: 十进制字符串
+        remaining:
+          type: string
+          description: 十进制字符串
+        redeemRule:
+          type: string
+    GridCreateRequest:
+      type: object
+      properties:
+        symbol:
+          type: string
+        mode:
+          type: string
+          enum:
+          - arithmetic
+          - geometric
+        lowerPrice:
+          type: string
+          description: 十进制字符串
+        upperPrice:
+          type: string
+          description: 十进制字符串
+        gridCount:
+          type: integer
+        investment:
+          type: string
+          description: 十进制字符串
+        stopLossPrice:
+          type: string
+        takeProfitPrice:
+          type: string
+        sellBaseOnStop:
+          type: boolean
+      required:
+      - symbol
+      - mode
+      - lowerPrice
+      - upperPrice
+      - gridCount
+      - investment
+    GridBot:
+      type: object
+      properties:
+        lowerPrice:
+          type: string
+          description: 十进制字符串
+        upperPrice:
+          type: string
+          description: 十进制字符串
+        investment:
+          type: string
+          description: 十进制字符串
+        qtyPerGrid:
+          type: string
+          description: 十进制字符串
+        startPrice:
+          type: string
+          description: 十进制字符串
+        currentPrice:
+          type: string
+          description: 十进制字符串
+        baseHeld:
+          type: string
+          description: 十进制字符串
+        quoteBalance:
+          type: string
+          description: 十进制字符串
+        value:
+          type: string
+          description: 十进制字符串
+        gridProfit:
+          type: string
+          description: 十进制字符串
+        unrealizedPnl:
+          type: string
+          description: 十进制字符串
+        totalProfit:
+          type: string
+          description: 十进制字符串
+        profitRate:
+          type: string
+          description: 十进制字符串
+        gridApr:
+          type: string
+          description: 十进制字符串
+        maxDrawdown:
+          type: string
+          description: 十进制字符串
+        maxDrawdown7d:
+          type: string
+          description: 十进制字符串
+        feesQuote:
+          type: string
+          description: 十进制字符串
+        feesBase:
+          type: string
+          description: 十进制字符串
+        id:
+          type: string
+        symbol:
+          type: string
+        mode:
+          type: string
+        gridCount:
+          type: integer
+        stopLossPrice:
+          type: string
+          nullable: true
+        takeProfitPrice:
+          type: string
+          nullable: true
+        sellBaseOnStop:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - running
+          - stopping
+          - stopped
+        stopReason:
+          type: string
+          nullable: true
+        stoppedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        cycles:
+          type: integer
+        runtimeSeconds:
+          type: integer
+        baseAsset:
+          type: string
+        quoteAsset:
+          type: string
+        openOrders:
+          type: integer
+        copiedFrom:
+          type: string
+          description: 仅复制创建时返回
+      additionalProperties: true
+    GridSquareItem:
+      type: object
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+        mode:
+          type: string
+        lowerPrice:
+          type: string
+          description: 十进制字符串
+        upperPrice:
+          type: string
+          description: 十进制字符串
+        gridCount:
+          type: integer
+        profitRate:
+          type: string
+          description: 十进制字符串
+        runtimeSeconds:
+          type: integer
+        maxDrawdown7d:
+          type: string
+          description: 十进制字符串
+        cycles:
+          type: integer
+        copyCount:
+          type: integer
+      additionalProperties: true
+    Announcement:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        category:
+          type: string
+          example: general
+        title:
+          type: string
+        body:
+          type: string
+        publishAt:
+          type: string
+          format: date-time
 
 security:
   - bearerAuth: []

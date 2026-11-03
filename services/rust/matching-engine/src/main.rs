@@ -4,7 +4,7 @@
 //!
 //! * `BIND`            — listen address (default `0.0.0.0:8083`).
 //! * `SYMBOLS`         — comma list of `SYMBOL:qtyPrecision` (default
-//!                       `BTCUSDT:6,ETHUSDT:5`). List order fixes each symbol's
+//!                       `BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1`). Append only: list order fixes each symbol's
 //!                       trade-id namespace.
 //! * `DATA_DIR`        — root for per-symbol WAL + snapshot files (default
 //!                       `./data`). Each symbol gets `DATA_DIR/<symbol>/`.
@@ -39,7 +39,7 @@ fn main() {
         eprintln!("matching-engine: refusing to start in production: INTERNAL_TOKEN is empty or a change-me default");
         std::process::exit(1);
     }
-    let symbols = parse_symbols(&env("SYMBOLS", "BTCUSDT:6,ETHUSDT:5"));
+    let symbols = parse_symbols(&env("SYMBOLS", "BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1"));
     let commit_mode = parse_commit_mode();
 
     let sink: Arc<dyn EventSink> = match std::env::var("EVENT_SINK_URL") {

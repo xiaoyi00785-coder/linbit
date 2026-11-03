@@ -20,7 +20,8 @@ export async function rest<T>(method: string, path: string, body?: unknown, demo
     const txt = await r.text();
     const j = txt ? JSON.parse(txt) : {};
     if (r.ok) return { ok: true, data: j as T, status: r.status, source: "api" };
-    if (r.status < 500) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
+    // 4xx 或带业务 code 的 5xx（如 503 PRICE_UNAVAILABLE）原样返回，不回退演示数据
+    if (r.status < 500 || j?.code) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
   } catch { /* 网络错误 → demo */ }
   return demo ? { ok: true, data: demo(), source: "demo" } : { ok: false, error: "服务暂不可用", source: "demo" };
 }

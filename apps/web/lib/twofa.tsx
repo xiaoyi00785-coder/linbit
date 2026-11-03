@@ -1,4 +1,5 @@
 "use client";
+import { openM } from "@/features/Kit";
 import { goto } from "@/lib/ui";
 /** 2FA 拆分错误码（后端 APIError.code）：
  *  TWOFA_REQUIRED → 未绑定谷歌验证器：提示 + 跳转安全中心绑定；
@@ -13,7 +14,7 @@ export function TwofaRequired({ onGo }: { onGo?: () => void }) {
   return (
     <div className="tfa-req">
       <span><b>!</b>{MSG_TWOFA_REQUIRED}，绑定后才能进行该操作。</span>
-      <button className="lb sm lime" onClick={() => { onGo?.(); goto(TWOFA_BIND); }}>去绑定</button>
+      <button className="lb sm lime" onClick={() => { onGo?.(); if (location.pathname.startsWith("/setting/security")) openM("security", { kind: "totp" }); else goto(TWOFA_BIND); }}>去绑定</button>
     </div>
   );
 }

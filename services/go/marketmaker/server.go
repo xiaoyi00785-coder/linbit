@@ -190,24 +190,116 @@ func (m *Maker) handleRun(run bool) http.HandlerFunc {
 	}
 }
 
-// handleSeed credits the MM account with the virtual testnet USDT via asset.
+// handleSeed credits the MM account with virtual testnet funds via asset.
 // Refused outright in production / on mainnet (asset enforces the same rule).
+//
+//	{ref}                              -> MM_SEED_AMOUNT USDT (unchanged)
+//	{ref, assets:["BTC","ETH","SOL"]}  -> per asset, qty = usdtValue / index(<A>USDT)
+//	                                      (usdtValue default MM_SEED_BASE_USDT=1000000),
+//	                                      or a fixed qty from amounts:{"BTC":"10"}.
+//
+// Each asset uses its own idempotency ref mm_testnet_seed:<ref>:<ASSET>, so a
+// retried call with the same ref is already_applied per asset even if the
+// index moved. Virtual seeds are excluded from solvency (virtualSeed per asset).
 func (m *Maker) handleSeed(w http.ResponseWriter, r *http.Request) {
 	if ok, why := common.TestnetSeedAllowed(); !ok {
 		common.WriteError(w, http.StatusForbidden, "SEED_DISABLED", "虚拟注资已禁用："+why)
 		return
 	}
 	var body struct {
-		Ref string `json:"ref"`
+		Ref       string            `json:"ref"`
+		Assets    []string          `json:"assets"`
+		USDTValue string            `json:"usdtValue"`
+		Amounts   map[string]string `json:"amounts"`
 	}
-	if err := common.DecodeJSON(r, &body); err != nil || body.Ref == "" {
+	if err := common.DecodeJSON(r, &body); err != nil || strings.TrimSpace(body.Ref) == "" {
 		common.WriteError(w, 400, "INVALID_REQUEST", "ref 必填")
 		return
 	}
-	var out map[string]any
-	err := call(r.Context(), "POST", m.cfg.AssetURL+"/internal/mm/testnet-seed", m.internalHdr(), map[string]any{
-		"userId": m.cfg.UserID, "asset": "USDT", "amount": m.cfg.SeedAmount, "ref": "mm_testnet_seed:" + body.Ref}, &out)
-	relayErr(w, err, out)
+	if len(body.Assets) == 0 {
+		var out map[string]any
+		err := call(r.Context(), "POST", m.cfg.AssetURL+"/internal/mm/testnet-seed", m.internalHdr(), map[string]any{
+			"userId": m.cfg.UserID, "asset": "USDT", "amount": m.cfg.SeedAmount, "ref": "mm_testnet_seed:" + body.Ref}, &out)
+		relayErr(w, err, out)
+		return
+	}
+	value, err := decimal.NewFromString(firstNonEmpty(body.USDTValue, m.cfg.SeedBaseUSDT))
+	if err != nil || !value.IsPositive() {
+		common.WriteError(w, 400, "INVALID_REQUEST", "usdtValue 不合法")
+		return
+	}
+	allowed := map[string]bool{}
+	for _, a := range strings.Split(m.cfg.SeedBaseAssets, ",") {
+		allowed[strings.ToUpper(strings.TrimSpace(a))] = true
+	}
+	type result struct {
+		Asset      string `json:"asset"`
+		Amount     string `json:"amount,omitempty"`
+		IndexPrice string `json:"indexPrice,omitempty"`
+		Status     string `json:"status"`
+		Error      string `json:"error,omitempty"`
+	}
+	results := []result{}
+	seen := map[string]bool{}
+	for _, raw := range body.Assets {
+		a := strings.ToUpper(strings.TrimSpace(raw))
+		if a == "" || seen[a] {
+			continue
+		}
+		seen[a] = true
+		if !allowed[a] {
+			results = append(results, result{Asset: a, Status: "failed", Error: "ASSET_NOT_ALLOWED"})
+			continue
+		}
+		res := result{Asset: a}
+		var qty decimal.Decimal
+		if fixed, ok := body.Amounts[a]; ok {
+			qty, err = decimal.NewFromString(fixed)
+			if err != nil || !qty.IsPositive() {
+				results = append(results, result{Asset: a, Status: "failed", Error: "INVALID_AMOUNT"})
+				continue
+			}
+		} else {
+			px, _, err := m.index(r.Context(), a+"USDT")
+			if err != nil || !px.IsPositive() {
+				results = append(results, result{Asset: a, Status: "failed", Error: "PRICE_UNAVAILABLE"})
+				continue
+			}
+			qty = SeedQty(value, px)
+			res.IndexPrice = px.String()
+		}
+		res.Amount = qty.String()
+		var out struct {
+			Status string `json:"status"`
+		}
+		err := call(r.Context(), "POST", m.cfg.AssetURL+"/internal/mm/testnet-seed", m.internalHdr(), map[string]any{
+			"userId": m.cfg.UserID, "asset": a, "amount": res.Amount, "ref": "mm_testnet_seed:" + body.Ref + ":" + a}, &out)
+		var ae *apiErr
+		switch {
+		case errors.As(err, &ae):
+			res.Status, res.Error = "failed", ae.Code
+		case err != nil:
+			res.Status, res.Error = "failed", "UPSTREAM_UNAVAILABLE"
+		default:
+			res.Status = out.Status // ok | already_applied
+		}
+		results = append(results, res)
+	}
+	common.WriteJSON(w, 200, map[string]any{"txType": "mm_testnet_seed", "usdtValue": value.String(), "items": results})
+}
+
+// SeedQty is usdtValue/price truncated to 8 decimals (pure; unit tested).
+func SeedQty(value, price decimal.Decimal) decimal.Decimal {
+	return value.DivRound(price, 16).Truncate(8)
+}
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
 }
 
 func (m *Maker) handleTransfer(w http.ResponseWriter, r *http.Request) {

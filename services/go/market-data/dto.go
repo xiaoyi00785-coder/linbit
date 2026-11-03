@@ -13,6 +13,9 @@ type tickerDTO struct {
 	Low                string `json:"low"`
 	Volume             string `json:"volume"`
 	QuoteVolume        string `json:"quoteVolume"`
+	// PriceSource tells where lastPrice came from: trade | mid (best bid/ask
+	// midpoint, no trades yet) | index (external index, empty book) | none.
+	PriceSource string `json:"priceSource"`
 }
 
 // depthDTO is an order-book snapshot or delta (openapi Depth / ws depth).
@@ -31,6 +34,9 @@ type restKline struct {
 	Low    string `json:"low"`
 	Close  string `json:"close"`
 	Volume string `json:"volume"`
+	// Source is "index" when the candle is an index-price fallback (no trades
+	// yet for the symbol; volume is 0). Omitted for trade candles.
+	Source string `json:"source,omitempty"`
 }
 
 // wsKline is a candle for the kline WebSocket channel (adds `closed`).
@@ -42,6 +48,7 @@ type wsKline struct {
 	Close  string `json:"close"`
 	Volume string `json:"volume"`
 	Closed bool   `json:"closed"`
+	Source string `json:"source,omitempty"`
 }
 
 // tradeDTO is a public trade (ws trades channel + REST recent trades).
@@ -55,13 +62,14 @@ type tradeDTO struct {
 
 // symbolDTO is a trading pair (openapi Symbol).
 type symbolDTO struct {
-	Symbol            string  `json:"symbol"`
-	Base              string  `json:"base"`
-	Quote             string  `json:"quote"`
-	PricePrecision    int     `json:"pricePrecision"`
-	QuantityPrecision int     `json:"quantityPrecision"`
-	MinQuantity       *string `json:"minQuantity,omitempty"`
-	Status            string  `json:"status"`
+	Symbol            string   `json:"symbol"`
+	Base              string   `json:"base"`
+	Quote             string   `json:"quote"`
+	PricePrecision    int      `json:"pricePrecision"`
+	QuantityPrecision int      `json:"quantityPrecision"`
+	MinQuantity       *string  `json:"minQuantity,omitempty"`
+	Status            string   `json:"status"`
+	Tags              []string `json:"tags"` // market_categories ids containing this symbol
 }
 
 func toRESTKline(c Candle) restKline {

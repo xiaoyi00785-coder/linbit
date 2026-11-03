@@ -1,4 +1,5 @@
 "use client";
+import { openM } from "./Kit";
 /** 安全中心：对接 GET /account/security 及各修改接口（feat/security-settings） */
 import { useEffect, useState, type ReactNode } from "react";
 import { G } from "@/components/Glyph";
@@ -180,7 +181,7 @@ export function SecurityCenter() {
           <Row icon={<G n="key" s={18} />} t="通行密钥" d="使用设备生物识别安全登录" ok={(s.passkeysCount ?? 0) > 0} s={(s.passkeysCount ?? 0) > 0 ? `已添加 ${s.passkeysCount} 个` : "未开启"}><button className="lb sm" onClick={() => document.getElementById("passkey")?.scrollIntoView({ behavior: "smooth", block: "center" })}>管理</button></Row>
         </div>
         <div className="lcard"><h3>高级安全设置</h3>
-          <Row id="2fa" icon="G" t={<>谷歌验证器 <em className="srec">推荐</em></>} d="用于登录、提币等敏感操作" ok={!!s.twoFactor?.enabled} s={s.twoFactor?.enabled ? "已开启" : "未设置"}>{s.twoFactor?.enabled ? <button className="lb sm dis" disabled>已绑定</button> : <button className="lb sm lime" onClick={() => goto("/setting/security#2fa")}>去绑定</button>}</Row>
+          <Row id="2fa" icon="G" t={<>谷歌验证器 <em className="srec">推荐</em></>} d="用于登录、提币等敏感操作" ok={!!s.twoFactor?.enabled} s={s.twoFactor?.enabled ? "已开启" : "未设置"}>{s.twoFactor?.enabled ? <button className="lb sm dis" disabled>已绑定</button> : <button className="lb sm lime" onClick={() => openM("security", { kind: "totp" })}>去绑定</button>}</Row>
           <Row id="fund" icon={<G n="shield" s={18} />} t="资金密码" d={s.policy?.fundPasswordForWithdraw ? "提现、站内转账时需输入的 6 位数字密码" : "6 位数字密码，用于提现与站内转账"} ok={!!s.fundPasswordSet && !lockedFp} s={lockedFp ? `已锁定至 ${fmtUntil(s.fundPasswordLockedUntil)}` : s.fundPasswordSet ? "已设置" : "未设置"}>
             {s.fundPasswordSet ? <><button className="lb sm" onClick={() => setM("fund-change")}>修改</button><button className="lb sm" onClick={() => setM("fund-reset")}>忘记 / 重置</button></> : <button className="lb sm lime" onClick={() => setM("fund-set")}>设置</button>}
           </Row>

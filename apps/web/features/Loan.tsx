@@ -152,7 +152,7 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
           <div><span className="g">总质押(USDT)</span><b>{n(sum.data?.totalCollateralValue ?? 0, 2)}</b></div>
           <span className="sp" />
           <button className={"pill " + (tab === "closed" ? "lime" : "white")} onClick={() => setTab("closed")}>历史</button>
-          <button className={"pill " + (tab === "active" ? "lime" : "white")} onClick={() => setTab("active")}>进行中</button>
+          <button className={"pill " + (tab === "active" ? "lime" : "white")} aria-selected={tab === "active"} onClick={() => setTab("active")}>进行中</button>
         </div>
         {authed && (
           <div className="fx-loans">

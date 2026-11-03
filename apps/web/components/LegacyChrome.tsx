@@ -2,7 +2,8 @@
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { loadFeatures } from "@/lib/features";
 import { installUiDelegates } from "@/lib/ui";
 
 const RV = "main section, .wrap > section, section.center, .trader, .pcard, .two > *, .three > *, details.faq, .dl, .promo";
@@ -29,19 +30,26 @@ const Header = nav("Header");
 const Cookie = nav("Cookie");
 const Service = nav("Service");
 const DemoToggle = nav("DemoToggle");
+const ModalHost = dynamic(() => import("@/features/Kit").then((m) => m.ModalHost), { ssr: false });
 
 /** 全站外框：顶部导航 + Cookie 提示 + 在线客服 + 演示开关（API 文档页隐藏导航）。 */
 export default function LegacyChrome({ children }: { children: React.ReactNode }) {
   const p = usePathname();
   useReveal(p);
   useEffect(() => installUiDelegates(), []);
+  // 功能开关变化（/app/features）时重挂载，使入口在「即将上线」与正常路由间切换
+  const [fv, setFv] = useState(0);
+  useEffect(() => { const h = () => setFv((v) => v + 1); window.addEventListener("lb-features", h); loadFeatures(); return () => window.removeEventListener("lb-features", h); }, []);
   return (
     <>
-      {p !== "/api/docs" && <Header />}
-      {children}
+      <Fragment key={fv}>
+        {p !== "/api/docs" && <Header />}
+        {children}
+      </Fragment>
       <Cookie />
       <Service />
       <DemoToggle />
+      <ModalHost />
     </>
   );
 }
