@@ -1,37 +1,77 @@
 /**
  * Linbit 设计令牌（design tokens）。
- * 全部颜色均以 CSS 变量定义，品牌色为蓝色系，深色底。
- * 迁移自原型的 style.css（原为 lime 绿 #abe127），这里改为蓝色 #2f6bff。
- * 修改这里即可整站换肤。
+ * 全部颜色以 CSS 变量定义：lime 绿主色 + 深色底（亮色区块用于资产/账户等白底页面）。
+ * 只允许在此文件出现色值；组件与样式一律通过 var(--lb-*) 引用。修改这里即可整站换肤。
  */
 :root {
-  /* 背景与容器 */
-  --lb-bg: #0b0e15;
-  --lb-bg-deep: #060910;
-  --lb-card: #111724;
-  --lb-card-2: #19202f;
-  --lb-border: #232c3d;
-  --lb-border-2: #303c52;
+  /* ===== 背景 / 容器（深色） ===== */
+  --lb-bg: #070808;
+  --lb-bg-deep: #000000;
+  --lb-card: #101112;
+  --lb-card-2: #1d1d1d;
+  --lb-surface-3: #2b2d2e;          /* 三级面板、默认按钮底、渐变起点 */
+  --lb-surface-grad-end: #0e0f10;   /* 面板竖向渐变终点 */
+  --lb-surface-glow: #1d1f1f;       /* 径向光晕中心 */
+  --lb-mask: rgba(0, 0, 0, .6);     /* 弹窗遮罩 */
 
-  /* 品牌蓝 */
-  --lb-primary: #2f6bff;
-  --lb-primary-dark: #1e50d6;
-  --lb-on-primary: #ffffff;
+  /* ===== 描边 ===== */
+  --lb-border: #28292a;
+  --lb-border-2: #37393a;
+  --lb-border-3: #333333;
 
-  /* 文本 */
-  --lb-text: #eaf0fb;
-  --lb-text-2: #9aa7bd;
-  --lb-text-3: #646f85;
+  /* ===== 品牌主色（lime） ===== */
+  --lb-primary: #abe127;
+  --lb-primary-dark: #7aa60f;       /* hover / 按下 */
+  --lb-primary-soft: #e8ffb0;       /* 渐变高光 */
+  --lb-primary-tint: #2a3510;       /* 深色底上的主色淡底（标签、徽章） */
+  --lb-primary-shade: #2d3a0c;      /* 主色渐变暗端 */
+  --lb-primary-deep: #3b4a12;       /* 主色渐变深端 */
+  --lb-on-primary: #101112;         /* 主色按钮上的文字 */
+
+  /* ===== 文本 ===== */
   --lb-white: #ffffff;
+  --lb-text: #ffffff;               /* 正文主色（globals.css、tailwind-preset 使用） */
+  --lb-text-2: #a8aaad;
+  --lb-text-3: #6b6e70;
+  --lb-text-4: #777777;
 
-  /* 涨跌 */
-  --lb-up: #16c784;
-  --lb-down: #ea3943;
-  --lb-up-vol: #16603f;
-  --lb-down-vol: #7a1f27;
+  /* ===== 中性灰阶（插画、图标、指标线） ===== */
+  --lb-neutral-50: #f2f4f5;
+  --lb-neutral-100: #e9eaeb;
+  --lb-neutral-150: #e9e9e9;
+  --lb-neutral-250: #c8c8c8;
+  --lb-neutral-300: #c4c4c4;
+  --lb-neutral-400: #7d8285;
+  --lb-neutral-500: #5a5d5f;
+  --lb-neutral-600: #44484a;
 
-  /* 图表 / 其它 */
-  --lb-grid: #141a26;
-  --lb-warn: #f5a623;
+  /* ===== 亮色区块（资产/账户/设置白底页面） ===== */
+  --lb-light-border: #eeeeee;
+  --lb-light-border-2: #dddddd;
+  --lb-light-fill: #f4f4f4;
+  --lb-light-fill-2: #f6f6f6;
+  --lb-light-fill-3: #e4e4e4;
+  --lb-light-fill-hover: #f5f5f5;
+  --lb-light-fill-active: #f3f3f3;
+  --lb-light-text-2: #3a3c3e;
+  --lb-light-primary-bg: #fafdf2;   /* 选中卡片底 */
+  --lb-light-primary-tint: #f2fadf; /* 选中标签底 */
+  --lb-light-down-bg: #fdecef;      /* 下跌/风险标签底 */
+
+  /* ===== 金色：VIP 等级、积分/奖励、K 线 MA7 指标线等「荣誉/奖励」语义 ===== */
+  --lb-gold: #f3c77a;
+  --lb-gold-2: #b8862f;
+  --lb-gold-bg: #1a1406;
+  --lb-on-gold: #2a1d05;
+
+  /* ===== 涨跌 / 图表 ===== */
+  --lb-up: #abe127;
+  --lb-down: #f43f5e;
+  --lb-up-vol: #5a7a1e;
+  --lb-down-vol: #8a2236;
+  --lb-grid: #161718;
+
+  /* ===== 其它 ===== */
+  --lb-warn: #f59e0b;
   --lb-usdt: #26a17b;
 }

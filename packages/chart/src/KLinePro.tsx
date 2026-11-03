@@ -1,0 +1,28 @@
+// @ts-nocheck
+"use client";
+import { useEffect, useRef, useState } from 'react'
+import { createChart } from 'lightweight-charts'
+const css=(n)=>getComputedStyle(document.documentElement).getPropertyValue(n).trim()
+// 专业版 K 线：周期切换、MA/EMA/BOL/VOL 指标、水平线/趋势线画线、全屏
+const TF=[['1m',60],['15m',900],['1H',3600],['4H',14400],['1D',86400],['1W',604800]]
+function gen(sec,n=200,end=76768){let s=sec%97+7;const rnd=()=>(s=(s*16807)%2147483647)/2147483647;const vol=Math.min(.03,.0012*Math.sqrt(sec/60));let t=Math.floor(Date.now()/1000/sec)*sec-n*sec,p=end,o=[];for(let i=0;i<n;i++){const op=p,cl=op*(1+(rnd()-.5)*vol*2);o.push({time:t+i*sec,open:op,close:cl,high:Math.max(op,cl)*(1+rnd()*vol*.6),low:Math.min(op,cl)*(1-rnd()*vol*.6),v:rnd()*10});p=cl}const k=end/p;return o.map(c=>({...c,open:c.open*k,close:c.close*k,high:c.high*k,low:c.low*k}))}
+const sma=(d,n)=>d.map((c,i)=>i<n-1?null:{time:c.time,value:d.slice(i-n+1,i+1).reduce((a,b)=>a+b.close,0)/n}).filter(Boolean)
+const ema=(d,n)=>{const k=2/(n+1);let e=d[0].close;return d.map(c=>({time:c.time,value:e=c.close*k+e*(1-k)}))}
+const bol=(d,n=20)=>{const m=sma(d,n);return m.map((x,j)=>{const sl=d.slice(j,j+n);const sd=Math.sqrt(sl.reduce((a,b)=>a+(b.close-x.value)**2,0)/n);return [x.time,x.value,x.value+2*sd,x.value-2*sd]})}
+export function KPro(){const box=useRef(),el=useRef(),api=useRef({});const[tf,setTf]=useState('15m');const[ind,setInd]=useState({MA:true,EMA:false,BOL:false,VOL:true});const[tool,setTool]=useState(null);const[menu,setMenu]=useState(false);const[fs,setFs]=useState(false);const[legend,setLegend]=useState('')
+useEffect(()=>{const sec=TF.find(x=>x[0]===tf)[1];const d=gen(sec);const ch=createChart(el.current,{autoSize:true,layout:{background:{color:css('--lb-bg')},textColor:css('--lb-text-2'),fontSize:11},grid:{vertLines:{color:css('--lb-grid')},horzLines:{color:css('--lb-grid')}},rightPriceScale:{borderColor:css('--lb-card-2')},timeScale:{borderColor:css('--lb-card-2'),timeVisible:sec<86400}})
+const cs=ch.addCandlestickSeries({upColor:css('--lb-up'),downColor:css('--lb-down'),wickUpColor:css('--lb-up'),wickDownColor:css('--lb-down'),borderVisible:false});cs.setData(d)
+ch.priceScale('right').applyOptions({scaleMargins:{top:.08,bottom:ind.VOL?.28:.05}})
+const line=(data,c)=>{const s=ch.addLineSeries({color:css(c),lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});s.setData(data);return s}
+const lg=[]
+if(ind.MA){[[7,'--lb-gold'],[25,'--lb-primary'],[99,'--lb-neutral-300']].forEach(([n,c])=>{const s=sma(d,n);line(s,c);lg.push(`MA${n}:${s.at(-1).value.toFixed(1)}`)})}
+if(ind.EMA){[[12,'--lb-warn'],[26,'--lb-usdt']].forEach(([n,c])=>{const s=ema(d,n);line(s,c);lg.push(`EMA${n}:${s.at(-1).value.toFixed(1)}`)})}
+if(ind.BOL){const b=bol(d);line(b.map(x=>({time:x[0],value:x[1]})),'--lb-gold');line(b.map(x=>({time:x[0],value:x[2]})),'--lb-neutral-400');line(b.map(x=>({time:x[0],value:x[3]})),'--lb-neutral-400');lg.push(`BOLL(20,2) MID:${b.at(-1)[1].toFixed(1)}`)}
+if(ind.VOL){const v=ch.addHistogramSeries({priceScaleId:'v',priceFormat:{type:'volume'}});ch.priceScale('v').applyOptions({scaleMargins:{top:.76,bottom:0}});v.setData(d.map(c=>({time:c.time,value:c.v,color:c.close>=c.open?css('--lb-up-vol'):css('--lb-down-vol')})))}
+setLegend(lg.join('  '));ch.timeScale().fitContent();api.current={ch,cs,lines:[],pend:null};return()=>ch.remove()},[tf,ind])
+useEffect(()=>{const a=api.current;if(!a.ch)return;const h=p=>{if(!tool||!p.point||!p.time)return;const price=a.cs.coordinateToPrice(p.point.y);if(tool==='h'){a.lines.push({pl:a.cs.createPriceLine({price,color:css('--lb-primary'),lineWidth:1,lineStyle:2,axisLabelVisible:true})});setTool(null)}else if(tool==='t'){if(!a.pend){a.pend={time:p.time,value:price}}else{const s=a.ch.addLineSeries({color:css('--lb-gold'),lineWidth:2,priceLineVisible:false,lastValueVisible:false});const pts=[a.pend,{time:p.time,value:price}].sort((x,y)=>x.time-y.time);if(pts[0].time===pts[1].time)pts[1].time+=1;s.setData(pts);a.lines.push({s});a.pend=null;setTool(null)}}};a.ch.subscribeClick(h);return()=>a.ch.unsubscribeClick(h)},[tool,tf,ind])
+const clear=()=>{const a=api.current;a.lines.forEach(l=>l.pl?a.cs.removePriceLine(l.pl):a.ch.removeSeries(l.s));a.lines=[];a.pend=null}
+useEffect(()=>{const f=()=>setFs(!!document.fullscreenElement);document.addEventListener('fullscreenchange',f);return()=>document.removeEventListener('fullscreenchange',f)},[])
+const full=()=>document.fullscreenElement?document.exitFullscreen():box.current.requestFullscreen?.()
+return <div ref={box} className={'kpro'+(fs?' fs':'')} data-guide="chart"><div className="tools">时间 {TF.map(([t])=><b key={t} className={tf===t?'w':''} onClick={()=>setTf(t)}>{t}</b>)}<span className="kind" onClick={()=>setMenu(!menu)}>ƒ 指标 ▾{menu&&<div className="kmenu" onClick={e=>e.stopPropagation()}>{Object.keys(ind).map(k=><label key={k}><input type="checkbox" checked={ind[k]} onChange={()=>setInd({...ind,[k]:!ind[k]})}/>{({MA:'MA 移动平均',EMA:'EMA 指数平均',BOL:'BOLL 布林带',VOL:'VOL 成交量'})[k]}</label>)}</div>}</span>{Object.keys(ind).map(k=><em key={k} className={'kchip'+(ind[k]?' on':'')} onClick={()=>setInd({...ind,[k]:!ind[k]})}>{k}</em>)}<span className="sp"/><span className="kbtn" title="全屏" onClick={full}>{fs?'⤡':'⛶'}</span></div>
+<div className="chwrap"><div className="side">{[['+',null,'十字光标'],['—','h','水平线'],['⟋','t','趋势线'],['🗑','c','清除画线']].map(([x,k,t])=><span key={t} title={t} className={tool&&tool===k?'on':''} onClick={()=>k==='c'?clear():setTool(tool===k?null:k)}>{x}</span>)}</div><div className="kcw"><div className="klg">{legend}{tool&&<b className="lime"> · {tool==='h'?'点击图表放置水平线':'依次点击两点绘制趋势线'}</b>}</div><div ref={el} className="chart"/></div></div></div>}
