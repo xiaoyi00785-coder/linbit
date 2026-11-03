@@ -203,13 +203,17 @@ export function LoanRecords() {
   const [t, setT] = useState<(typeof RT)[number][0]>("borrow");
   const r = useRest<{ items: Rec[] }>(authed ? `/loans/records?type=${t}` : null);
   const cols = ["时间", "订单号", "订单类型", "借款币种", t === "liquidate" ? "偿还本金" : "数量", "利息 / 违约金", "质押币种", "质押数量", "质押率"];
-  const rows = r.data?.items ?? [];
+  const [fk, setFk] = useState({ term: "", asset: "", col: "", days: "7" });
+  const now = Date.now();
+  const rows = (r.data?.items ?? []).filter((x) => (!fk.term || (fk.term === "flexible" ? x.term === "flexible" : x.term !== "flexible")) && (!fk.asset || x.asset === fk.asset) && (!fk.col || x.collateralAsset === fk.col) && now - x.time <= Number(fk.days) * 864e5);
+  const sel = (k: keyof typeof fk, l: string, o: [string, string][]) => <label className="lnf">{l}<select className="fsel" value={fk[k]} onChange={(e) => setFk({ ...fk, [k]: e.target.value })}>{o.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>;
   return (
     <div className="lcard">
       <div className="pt fx-rt">{RT.map(([k, l]) => <b key={k} className={t === k ? "on" : ""} onClick={() => setT(k)}>{l}</b>)}</div>
+      <div className="lnfr">{sel("term", "订单类型", [["", "全部"], ["flexible", "活期"], ["fixed", "定期"]])}{sel("asset", "借款币种", [["", "全部"], ["USDT", "USDT"], ["USDC", "USDC"]])}{sel("col", "质押币种", [["", "全部"], ["BTC", "BTC"], ["ETH", "ETH"]])}{sel("days", "时间", [["7", "近 7 天"], ["30", "近 30 天"], ["90", "近 90 天"]])}<button className="lb sm lnrf" onClick={() => r.reload()}>⟳ 刷新</button></div>
       <div className="fx-tbl">
         <div className="fx-tr th">{cols.map((c) => <span key={c}>{c}</span>)}</div>
-        {!authed ? <div className="lg fx-empty">登录后查看借贷订单</div> : r.loading ? <div className="fx-skel" style={{ height: 40 }} /> : r.error ? <div className="fx-err">{r.error}</div> : rows.length === 0 ? <div className="lg fx-empty">暂无记录</div> : rows.map((x) => (
+        {!authed ? <div className="lg fx-empty">登录后查看借贷订单</div> : r.loading ? <div className="fx-skel" style={{ height: 40 }} /> : r.error ? <div className="fx-err">{r.error}</div> : rows.length === 0 ? <div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div> : rows.map((x) => (
           <div key={x.id} className="fx-tr">
             <span>{dt(x.time)}</span><span>#{x.loanId}</span><span>{tn(x.term).split(" · ")[0]}</span>
             <span><CoinIcon s={x.asset} size={16} /> {x.asset}</span><span>{x.type === "renew" ? (x.detail?.dueAt ? `新到期 ${ymd(x.detail.dueAt)}` : "--") : n(x.amount, 6)}</span>

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { useBalances } from "@/lib/queries";
 import { listWithdrawNetworks, getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type Withdrawal } from "@/lib/services";
@@ -19,6 +19,8 @@ const NETS: Record<string, string[]> = {
   ETH: ["ERC20", "Arbitrum One"],
 };
 
+const St = ({ n, t, children }: { n: string; t: string; children: React.ReactNode }) => <div className="step"><div className="stn"><b>{n}</b>{t}</div><div className="stb">{children}</div></div>;
+
 /** 提现：币种 → 网络 → 地址/memo/数量（最小额、链上网络费来自配置接口，平台不收提现手续费）→ 2FA 确认 */
 export function Withdraw() {
   const [coinOpen, setCoinOpen] = useState(false);
@@ -26,6 +28,8 @@ export function Withdraw() {
   const [net, setNet] = useState("TRC20");
   const [addr, setAddr] = useState("");
   const [memo, setMemo] = useState("");
+  const [tab, setTab] = useState<"chain" | "inner">("chain");
+  const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
   const [cfg, setCfg] = useState<WithdrawConfig>();
   const [cfgSrc, setCfgSrc] = useState<"api" | "mock">();
@@ -86,9 +90,8 @@ export function Withdraw() {
         <div className="crumb lg">资产 / 提现</div>
         <h1 className="dh">提现</h1>
         <div className="dgrid">
-          <div className="lcard">
-            <div className="fx-field">
-              币种
+          <div className="wsteps">
+            <St n="1" t="选择币种">
               <div className="lsel big2" onClick={() => setCoinOpen(!coinOpen)}>
                 <Ico c={coinOf(asset)} s={20} /> {asset} <em>▾</em>
               </div>
@@ -101,46 +104,68 @@ export function Withdraw() {
                   ))}
                 </div>
               )}
-              <div className="chips">
+              <div className="chips cchips">
                 {ASSETS.map((a) => <span key={a} className={asset===a?'on':''} onClick={() => { setAsset(a); setNet(netsOf(a)[0]); }}><Ico c={coinOf(a)} s={14} />{a}</span>)}
               </div>
-            </div>
-            <div className="fx-field">
-              网络
-              <select className="fsel" value={net} onChange={(e) => setNet(e.target.value)}>
-                {netsOf(asset).map((a) => <option key={a}>{a}</option>)}
-              </select>
-            </div>
-            <div className="fx-field">
-              <span>提现地址 <Link to="/setting/address" className="lime2">从地址白名单选择 ›</Link></span>
-              <input placeholder="输入或粘贴地址" value={addr} onChange={(e) => setAddr(e.target.value.trim())} />
-            </div>
-            <div className="fx-field">
-              Memo / Tag{cfg?.memoRequired ? "（必填）" : "（选填，交易所地址请按要求填写）"}
-              <input placeholder="Memo / Tag" value={memo} onChange={(e) => setMemo(e.target.value.trim())} />
-            </div>
-            <div className="fx-field">
-              <span>数量 <Src s={cfgSrc} /></span>
-              <input inputMode="decimal" placeholder={cfg ? `最小提现 ${cfg.minAmount} ${asset}` : "加载中…"} value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
-            </div>
-            <div className="fx-row">
-              <span>可用 {free} {asset} <a className="lime2" onClick={() => setAmt(free)}>全部</a></span>
-              <span>网络费（链上 Gas）≈ {cfg?.gasFeeEstimate ?? "-"} {asset} · 平台手续费 0</span>
-            </div>
-            <div className="fx-row">
-              <span>单笔限额 {cfg?.minAmount ?? "-"} ~ {cfg?.maxAmount ?? "-"} {asset}</span>
-              <span>到账数量 <b>{receive} {asset}</b></span>
-            </div>
-            {err && <div className="fx-err">{err}</div>}
-            {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
-            <button className="lb lime wide" onClick={() => { const e = check(); setErr(e); if (!e) setConfirm(true); }}>
-              提现
-            </button>
+            </St>
+            <St n="2" t={tab === "chain" ? "提现网络" : "收款账户"}>
+              <div className="wtabs">
+                <a className={tab === "chain" ? "on" : ""} onClick={() => { setTab("chain"); setErr(""); }}>链上提现</a>
+                <a className={tab === "inner" ? "on" : ""} onClick={() => { setTab("inner"); setErr(""); }}>内部转账 <i>免费</i></a>
+              </div>
+              {tab === "chain" ? (<>
+                <div className="wwarn"><b>!</b>请确认收款平台支持所选币种与网络，选错币种或网络可能导致资产丢失。</div>
+                <div className="fx-field">
+                  提现网络
+                  <select className="fsel" value={net} onChange={(e) => setNet(e.target.value)}>
+                    {netsOf(asset).map((a) => <option key={a}>{a}</option>)}
+                  </select>
+                </div>
+                <div className="fx-field">
+                  <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>
+                  <input placeholder="输入或粘贴地址" value={addr} onChange={(e) => setAddr(e.target.value.trim())} />
+                </div>
+                <div className="fx-field">
+                  Memo / Tag{cfg?.memoRequired ? "（必填）" : "（选填）"}
+                  <input placeholder="Memo / Tag" value={memo} onChange={(e) => setMemo(e.target.value.trim())} />
+                </div>
+              </>) : (<>
+                <div className="wwarn"><b>!</b>内部转账即时到账，不收取任何费用，不上链。</div>
+                <div className="fx-field">
+                  收款方
+                  <input placeholder="输入对方 UID / 邮箱 / 手机号" value={to} onChange={(e) => setTo(e.target.value.trim())} />
+                </div>
+              </>)}
+            </St>
+            <St n="3" t="提现数量">
+              <div className="fx-field">
+                <span className="wamt"><input inputMode="decimal" placeholder={cfg ? `最小提现数量：${cfg.minAmount}` : "加载中…"} value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
+              </div>
+              <div className="wkv">
+                <span>可用</span><b>{free} {asset}</b>
+                <span>单笔最小提现</span><b>{cfg?.minAmount ?? "--"} {asset}</b>
+                <span>单笔最大提现</span><b>{cfg?.maxAmount ?? "--"} {asset}</b>
+              </div>
+              <div className="wkv wdiv">
+                <span>手续费 <Src s={cfgSrc} /></span><b>{tab === "inner" ? "0" : cfg?.gasFeeEstimate ?? "--"} {asset}</b>
+                <span>到账数量</span><b>{tab === "inner" ? (amt || "--") : receive} {asset}</b>
+                <span>预计到账时间</span><b>{tab === "inner" ? "即时" : "约 5 分钟"}</b>
+              </div>
+              {err && <div className="fx-err">{err}</div>}
+              {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
+              <button className="lb dark wide" disabled={!amt} onClick={() => { const e = tab === "inner" ? (to.length < 4 ? "请输入收款方 UID / 邮箱 / 手机号" : !n ? "请输入提现数量" : "内部转账暂未开放，请使用链上提现") : check(); setErr(e); if (!e) setConfirm(true); }}>
+                提现
+              </button>
+            </St>
           </div>
           <div className="dtips">
             <div className="lcard sm">
               <b>温馨提示</b>
-              <p className="lg">提现需完成谷歌验证器（2FA）验证。修改密码或安全设置后 24 小时内禁止提现。linbit 不收取提现手续费，仅扣除链上网络费（Gas），金额随网络拥堵实时变化：Arbitrum 约 1 USDT、BNB Chain 约 1 USDT、TRON 约 2 USDT、Ethereum 约 10 USDT。请仔细核对地址与网络，错误地址将导致资产无法找回。</p>
+              <p className="lg">请确认设备安全，谨防信息被篡改或泄露。<br/>谨防诈骗！linbit 不会向你索要账户密码等敏感信息，也不会要求私下转账或提现。<br/>linbit 不收取提现手续费，仅扣除链上网络费（Gas）。</p>
+            </div>
+            <div className="lcard sm">
+              <b>常见问题</b>
+              <p className="lg">1. 如何从 linbit 提现？<br/>2. 提现为什么还没到账？</p>
             </div>
           </div>
         </div>
