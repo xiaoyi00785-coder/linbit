@@ -266,7 +266,7 @@ func fakeEVM(t *testing.T, sent *string) *httptest.Server {
 			"eth_estimateGas": "0xc350", "eth_getBalance": "0xde0b6b3a7640000",
 			"eth_getLogs": []map[string]interface{}{{"transactionHash": "0xaa", "logIndex": "0x2", "blockNumber": "0x60",
 				"topics": []string{erc20TransferTopic, "0x" + strings.Repeat("0", 64), "0x000000000000000000000000" + "7e5f4552091a69125d5dfcb7b8c2659029395bdf"},
-				"data": "0x" + strings.Repeat("0", 58) + "0f4240"}},
+				"data":   "0x" + strings.Repeat("0", 58) + "0f4240"}},
 		}[req.Method]
 		if req.Method == "eth_sendRawTransaction" {
 			*sent = req.Params[0].(string)

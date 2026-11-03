@@ -69,6 +69,12 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		return nil, errf(http.StatusBadRequest, "MAX_WITHDRAW", "超过最大提现数量 "+net.MaxWithdraw.String())
 	}
 
+	if v, ok := s.chain.(AddressValidator); ok {
+		if err := v.ValidateAddress(net.Network, in.Address); err != nil {
+			return nil, errf(http.StatusBadRequest, "INVALID_ADDRESS", "提现地址格式不正确")
+		}
+	}
+
 	// KYC-tiered rolling-24h withdrawal limit (checked before any funds are frozen).
 	if apiErr := s.checkDailyLimit(ctx, userID, in.Asset, in.Amount); apiErr != nil {
 		return nil, apiErr
@@ -243,6 +249,9 @@ func (s *Server) broadcastWithdrawal(ctx context.Context, w *Withdrawal) bool {
 		s.failAndRelease(ctx, w, "unknown_network")
 		return false
 	}
+	if sender, ok := s.chain.(ChainSender); ok {
+		return s.sendRealWithdrawal(ctx, w, net, sender)
+	}
 	req := SignRequest{
 		Asset: w.Asset, Network: w.Network,
 		FromAddress: "platform-hot-" + strings.ToLower(w.Network),
@@ -277,13 +286,33 @@ func (s *Server) completeWithdrawal(ctx context.Context, w *Withdrawal) bool {
 	if !ok {
 		return false
 	}
-	bh, err := s.store.BroadcastHeight(ctx, w.ID)
-	if err != nil {
-		return false
-	}
-	confs, err := s.chain.Confirmations(ctx, w.Network, bh)
-	if err != nil {
-		return false
+	var confs int64
+	if tc, ok := s.chain.(TxConfirmer); ok {
+		if w.TxHash.String == "" {
+			// Claimed but the send result was not recorded (crash/timeout): never
+			// resend automatically; ops must reconcile on chain.
+			log.Printf("withdrawal %d: processing without tx hash; manual reconciliation required", w.ID)
+			return false
+		}
+		c, failed, err := tc.TxConfirmations(ctx, w.Network, w.TxHash.String)
+		if err != nil {
+			return false
+		}
+		if failed {
+			// Reverted on chain: nothing left the hot wallet, so release the funds.
+			log.Printf("withdrawal %d: tx %s failed on chain; releasing funds", w.ID, w.TxHash.String)
+			s.failAndRelease(ctx, w, "tx_failed")
+			return false
+		}
+		confs = c
+	} else {
+		bh, err := s.store.BroadcastHeight(ctx, w.ID)
+		if err != nil {
+			return false
+		}
+		if confs, err = s.chain.Confirmations(ctx, w.Network, bh); err != nil {
+			return false
+		}
 	}
 	if confs < int64(net.Confirmations) {
 		return false // not confirmed yet

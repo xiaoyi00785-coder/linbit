@@ -123,8 +123,13 @@ func AddressFromPub(c Chain, pub []byte, btcHRP string) (string, error) {
 		return EVMAddress(pub)
 	case ChainBTC:
 		return BTCP2WPKH(pub, btcHRP)
+	case ChainSol:
+		if len(pub) != 32 {
+			return "", errors.New("chainkit: sol pubkey must be 32 bytes")
+		}
+		return SolAddress(pub), nil
 	}
-	return "", errors.New("chainkit: chain has no secp256k1 address")
+	return "", errors.New("chainkit: unknown chain")
 }
 
 // ValidateAddress checks a user-supplied destination address for a chain.

@@ -83,6 +83,32 @@ services:
       WALLET_KYC_LEVEL2_DAILY_USDT: ${WALLET_KYC_LEVEL2_DAILY_USDT:-200000}
       # Pinned USDT prices (default USDT=1, USDC=1); others use market-data.
       WALLET_KYC_PRICES_JSON: ${WALLET_KYC_PRICES_JSON:-}
+      # Chain backend: mock (default) | testnet | mainnet. Real chains need the
+      # wallet-signer container (docker compose --profile chain up) and the
+      # public deposit-key sources below. See docs/wallet-chains.md.
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      WALLET_SIGNER_URL: ${WALLET_SIGNER_URL:-http://wallet-signer:8095}
+      WALLET_SIGNER_TOKEN: ${WALLET_SIGNER_TOKEN:-}
+      WALLET_XPUB_EVM: ${WALLET_XPUB_EVM:-}
+      WALLET_XPUB_TRON: ${WALLET_XPUB_TRON:-}
+      WALLET_XPUB_BTC: ${WALLET_XPUB_BTC:-}
+      WALLET_SOL_ADDRESSES_FILE: ${WALLET_SOL_ADDRESSES_FILE:-}
+      WALLET_TRON_API_KEY: ${WALLET_TRON_API_KEY:-}
+      # Empty = public testnet RPC defaults (required for mainnet).
+      WALLET_RPC_TRC20: ${WALLET_RPC_TRC20:-}
+      WALLET_RPC_ERC20: ${WALLET_RPC_ERC20:-}
+      WALLET_RPC_BEP20: ${WALLET_RPC_BEP20:-}
+      WALLET_RPC_ARBITRUM: ${WALLET_RPC_ARBITRUM:-}
+      WALLET_RPC_BTC: ${WALLET_RPC_BTC:-}
+      WALLET_RPC_SOL: ${WALLET_RPC_SOL:-}
+      WALLET_TOKEN_USDT_ERC20: ${WALLET_TOKEN_USDT_ERC20:-}
+      WALLET_COLD_ADDRESS_TRC20: ${WALLET_COLD_ADDRESS_TRC20:-}
+      WALLET_COLD_ADDRESS_ERC20: ${WALLET_COLD_ADDRESS_ERC20:-}
+      WALLET_COLD_ADDRESS_BEP20: ${WALLET_COLD_ADDRESS_BEP20:-}
+      WALLET_COLD_ADDRESS_ARBITRUM: ${WALLET_COLD_ADDRESS_ARBITRUM:-}
+      WALLET_COLD_ADDRESS_BTC: ${WALLET_COLD_ADDRESS_BTC:-}
+      WALLET_COLD_ADDRESS_SOL: ${WALLET_COLD_ADDRESS_SOL:-}
+      WALLET_WORKER_INTERVAL: ${WALLET_WORKER_INTERVAL:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,6 +116,27 @@ services:
         condition: service_started
       account:
         condition: service_started
+
+  # Hot-wallet signer: holds the encrypted keystore and signs over HTTP for the
+  # wallet service only (no published port). Same host today; can move to its
+  # own server by changing WALLET_SIGNER_URL. One-time setup:
+  #   docker compose --profile chain run --rm wallet-signer init
+  #   docker compose --profile chain run --rm wallet-signer xpub
+  wallet-signer:
+    profiles: ["chain"]
+    build:
+      context: .
+      dockerfile: services/go/wallet/Dockerfile.signer
+    command: ["serve"]
+    environment:
+      WALLET_KEYSTORE: /data/hot-keystore.json
+      WALLET_KEYSTORE_PASSPHRASE_FILE: /run/secrets/signer_passphrase
+      WALLET_SIGNER_TOKEN: ${WALLET_SIGNER_TOKEN:-}
+    secrets:
+      - signer_passphrase
+    volumes:
+      - signerdata:/data
+    restart: unless-stopped
 
   account:
     build:
@@ -371,7 +418,12 @@ services:
       earn:
         condition: service_started
 
+secrets:
+  signer_passphrase:
+    file: ${WALLET_SIGNER_PASSPHRASE_FILE:-./secrets/signer_passphrase}
+
 volumes:
+  signerdata:
   pgdata:
   enginedata:
   kycdocs:

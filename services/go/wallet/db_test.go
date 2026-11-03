@@ -142,8 +142,8 @@ func TestScannerCreditsOnce(t *testing.T) {
 		MinWithdraw: d("12"), MaxWithdraw: d("20000"), GasFeeEstimate: d("1"), GasFeeAsset: "USDT"}
 	registry := newRegistry([]Network{net})
 
-	addr, _ := store.UpsertDepositAddress(ctx, user, "USDT", netName, func() (string, string) {
-		return "Tscanaddr", ""
+	addr, _ := store.UpsertDepositAddress(ctx, user, "USDT", netName, func() (string, string, *int64, error) {
+		return "Tscanaddr", "", nil, nil
 	})
 	if addr.Address != "Tscanaddr" {
 		t.Fatalf("address = %q", addr.Address)

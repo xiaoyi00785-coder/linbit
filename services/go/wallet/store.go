@@ -98,23 +98,32 @@ type scanTx struct {
 // ---- deposit addresses ----
 
 // UpsertDepositAddress allocates (or returns the existing) reusable deposit
-// address for a (user, asset, network). generate is only consulted on first use.
-func (s *Store) UpsertDepositAddress(ctx context.Context, userID, asset, network string, generate func() (string, string)) (DepositAddress, error) {
-	addr, memo := generate()
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO deposit_addresses (user_id, asset, network, address, memo)
-		 VALUES ($1, $2, $3, $4, $5)
-		 ON CONFLICT (user_id, asset, network) DO NOTHING`,
-		userID, asset, network, addr, memo)
+// address for a (user, asset, network). generate is only called when no address
+// exists yet, so HD indexes are not consumed on every request.
+func (s *Store) UpsertDepositAddress(ctx context.Context, userID, asset, network string, generate func() (addr, memo string, hdIndex *int64, err error)) (DepositAddress, error) {
+	var out DepositAddress
+	sel := func() error {
+		return s.db.QueryRowContext(ctx,
+			`SELECT user_id, asset, network, address, memo FROM deposit_addresses
+			 WHERE user_id = $1 AND asset = $2 AND network = $3`,
+			userID, asset, network).Scan(&out.UserID, &out.Asset, &out.Network, &out.Address, &out.Memo)
+	}
+	err := sel()
+	if err == nil || !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
+	addr, memo, idx, err := generate()
 	if err != nil {
 		return DepositAddress{}, err
 	}
-	var out DepositAddress
-	err = s.db.QueryRowContext(ctx,
-		`SELECT user_id, asset, network, address, memo FROM deposit_addresses
-		 WHERE user_id = $1 AND asset = $2 AND network = $3`,
-		userID, asset, network).Scan(&out.UserID, &out.Asset, &out.Network, &out.Address, &out.Memo)
-	return out, err
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO deposit_addresses (user_id, asset, network, address, memo, hd_index)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (user_id, asset, network) DO NOTHING`,
+		userID, asset, network, addr, memo, idx); err != nil {
+		return DepositAddress{}, err
+	}
+	return out, sel()
 }
 
 // ---- simulated chain ----

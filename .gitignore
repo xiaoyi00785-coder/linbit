@@ -59,3 +59,8 @@ services/go/admin/admin
 services/go/gateway/gateway
 services/go/order/order
 services/go/wallet/wallet
+
+# wallet secrets (never commit)
+secrets/
+*keystore*.json
+sol-deposit-addresses.txt

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -36,6 +37,20 @@ func main() {
 	}
 
 	srv := NewServer(cfg, NewStore(db))
+	if mode := chainMode(); mode != "mock" {
+		if err := srv.UseRealChain(context.Background(), mode); err != nil {
+			log.Fatalf("chain: %v", err)
+		}
+	}
+	// Background worker: always on for real chains (WALLET_WORKER_INTERVAL,
+	// default 30s); opt-in for the mock chain, whose smokes drive it by hand.
+	if iv := common.Env("WALLET_WORKER_INTERVAL", ""); srv.real != nil || iv != "" {
+		d, err := time.ParseDuration(iv)
+		if err != nil || d < time.Second {
+			d = 30 * time.Second
+		}
+		go srv.RunWorker(context.Background(), d)
+	}
 	addr := ":" + cfg.Port
 	log.Printf("wallet service listening on %s (chain=%s dev=%v gasMode=%s)", addr, srv.chain.Kind(), cfg.DevMode, cfg.GasDeductMode)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

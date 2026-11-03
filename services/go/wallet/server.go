@@ -29,6 +29,7 @@ type Server struct {
 	account    *AccountClient
 	market     *MarketClient
 	scanner    *Scanner
+	real       *RealChain // non-nil when WALLET_CHAIN=testnet|mainnet
 }
 
 // NewServer constructs a Server with the mock chain, mock signers and local risk
@@ -72,7 +73,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/admin/withdrawals/{id}/reject", s.internal(s.handleAdminReject))
 
 	// Dev-only simulated-chain control.
-	if s.cfg.DevMode {
+	if s.real != nil {
+		mux.HandleFunc("POST /internal/chain/sync", s.internal(s.handleChainSync))
+		mux.HandleFunc("POST /internal/chain/sweep", s.internal(s.handleChainSweep))
+		mux.HandleFunc("GET /internal/admin/wallet/hot", s.internal(s.handleHotWallets))
+		mux.HandleFunc("GET /internal/admin/wallet/sweeps", s.internal(s.handleSweeps))
+	}
+	if s.cfg.DevMode && s.mock != nil {
 		mux.HandleFunc("POST /internal/dev/chain/deposit", s.internal(s.handleDevInjectDeposit))
 		mux.HandleFunc("POST /internal/dev/chain/advance", s.internal(s.handleDevAdvance))
 	}
@@ -220,8 +227,12 @@ func (s *Server) handleDepositAddress(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "UNSUPPORTED_NETWORK", "不支持的充值网络")
 		return
 	}
-	da, err := s.store.UpsertDepositAddress(r.Context(), uid, asset, network, func() (string, string) {
-		return s.chain.NewAddress(net, uid)
+	da, err := s.store.UpsertDepositAddress(r.Context(), uid, asset, network, func() (string, string, *int64, error) {
+		if a, ok := s.chain.(AddressAllocator); ok {
+			return a.AllocateAddress(r.Context(), net)
+		}
+		addr, memo := s.chain.NewAddress(net, uid)
+		return addr, memo, nil, nil
 	})
 	if err != nil {
 		log.Printf("deposit address: %v", err)
