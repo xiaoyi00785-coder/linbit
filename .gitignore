@@ -27,3 +27,4 @@ pnpm-debug.log*
 
 # test / coverage
 coverage/
+tools/devstack/devstack

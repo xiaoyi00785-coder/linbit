@@ -1,0 +1,88 @@
+# Linbit spot chain — step 1 (gateway + account + asset) with postgres & redis.
+#
+# Note: build contexts are the repository root so each service Dockerfile can
+# COPY the shared services/go/common module.
+#
+#   docker compose --env-file .env up --build
+#
+# (No Docker on this machine — use `bash scripts/smoke.sh` for a Docker-free
+# end-to-end run via the embedded-postgres devstack.)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-linbit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-linbit}
+      POSTGRES_DB: ${POSTGRES_DB:-linbit}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-linbit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  asset:
+    build:
+      context: .
+      dockerfile: services/go/asset/Dockerfile
+    environment:
+      PORT: "8082"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  account:
+    build:
+      context: .
+      dockerfile: services/go/account/Dockerfile
+    environment:
+      PORT: "8081"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/go/gateway/Dockerfile
+    environment:
+      PORT: "8080"
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
+      ACCOUNT_URL: http://account:8081
+      ASSET_URL: http://asset:8082
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      account:
+        condition: service_started
+      asset:
+        condition: service_started
+
+volumes:
+  pgdata:
