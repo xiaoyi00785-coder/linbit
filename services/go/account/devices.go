@@ -25,6 +25,12 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	if devices == nil {
 		devices = []Device{}
 	}
+	// Flag the device making this request (matched by the same fingerprint used
+	// at login: deviceId body/header/query, else a User-Agent hash).
+	current := deviceKeyFor(r, "")
+	for i := range devices {
+		devices[i].Current = devices[i].DeviceKey == current
+	}
 	common.WriteJSON(w, http.StatusOK, devicesResponse{Items: devices})
 }
 

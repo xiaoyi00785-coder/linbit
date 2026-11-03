@@ -242,6 +242,47 @@ func (s *Store) RevokeDeviceRefreshTokens(ctx context.Context, userID int64, dev
 	return err
 }
 
+// ---- password reset tokens ----
+
+// StorePasswordResetToken persists the hash of a short-lived, single-use reset
+// token bound to a user.
+func (s *Store) StorePasswordResetToken(ctx context.Context, userID int64, token string, expiresAt time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES ($1, $2, $3)`,
+		hashToken(token), userID, expiresAt)
+	return err
+}
+
+// ConsumePasswordResetToken validates a reset token and marks it consumed,
+// returning the owning user id. A used or expired token yields ErrNotFound.
+func (s *Store) ConsumePasswordResetToken(ctx context.Context, token string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var id, userID int64
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, user_id FROM password_reset_tokens
+		 WHERE token_hash = $1 AND consumed = FALSE AND expires_at > now()
+		 FOR UPDATE`,
+		hashToken(token)).Scan(&id, &userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE password_reset_tokens SET consumed = TRUE WHERE id = $1`, id); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
 // ---- verification codes ----
 
 // InsertCode stores a hashed verification code.
@@ -331,12 +372,14 @@ func (s *Store) VerifyAndConsumeCode(ctx context.Context, target, purpose, codeH
 
 // ---- devices ----
 
-// Device is a recognised login device.
+// Device is a recognised login device. Current flags the device making the
+// request (set by the list handler, not persisted).
 type Device struct {
 	DeviceKey string    `json:"deviceId"`
 	Name      string    `json:"name"`
 	UserAgent string    `json:"userAgent"`
 	IP        string    `json:"ip"`
+	Current   bool      `json:"current"`
 	FirstSeen time.Time `json:"firstSeen"`
 	LastSeen  time.Time `json:"lastSeen"`
 }

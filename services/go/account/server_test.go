@@ -35,11 +35,16 @@ func newTestServer(t *testing.T) *Server {
 		t.Fatalf("migrate: %v", err)
 	}
 	cfg := Config{
-		JWTSecret:     "test-secret",
-		AccessTTL:     time.Hour,
-		RefreshTTL:    24 * time.Hour,
-		DevMode:       true,
-		InternalToken: "test-internal",
+		JWTSecret:        "test-secret",
+		AccessTTL:        time.Hour,
+		RefreshTTL:       24 * time.Hour,
+		ResetTokenTTL:    10 * time.Minute,
+		DevMode:          true,
+		InternalToken:    "test-internal",
+		StorageBackend:   "local",
+		AvatarDir:        t.TempDir(),
+		AvatarPublicBase: "/account/avatars",
+		AvatarMaxBytes:   2 * 1024 * 1024,
 	}
 	return NewServer(cfg, NewStore(db), nil)
 }
@@ -246,15 +251,35 @@ func TestPasswordResetRevokesSessions(t *testing.T) {
 	email := uniqueEmail()
 	tok := registerWithCode(t, srv, email, "", "")
 
-	// Reset password.
+	// Reset password: step 1 verify-code -> single-use resetToken, step 2 reset.
 	_ = doJSON(t, h, "POST", "/auth/code/send", "", map[string]string{"purpose": purposeReset, "email": email})
 	code := srv.recorder.Last(strings.ToLower(email), purposeReset)
 	if code == "" {
 		t.Fatal("no reset code recorded")
 	}
-	w := doJSON(t, h, "POST", "/auth/password/reset", "", map[string]string{"email": email, "code": code, "newPassword": "N3w-Passw0rd!"})
+	// Wrong code must not mint a token.
+	if w := doJSON(t, h, "POST", "/auth/password/verify-code", "", map[string]string{"email": email, "code": "000000"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("verify-code wrong = %d, want 400", w.Code)
+	}
+	// Need a fresh code (the bad attempt may have incremented attempts).
+	_ = doJSON(t, h, "POST", "/auth/code/send", "", map[string]string{"purpose": purposeReset, "email": email})
+	code = srv.recorder.Last(strings.ToLower(email), purposeReset)
+	vw := doJSON(t, h, "POST", "/auth/password/verify-code", "", map[string]string{"email": email, "code": code})
+	if vw.Code != http.StatusOK {
+		t.Fatalf("verify-code = %d %s", vw.Code, vw.Body.String())
+	}
+	var vr verifyResetCodeResponse
+	_ = json.Unmarshal(vw.Body.Bytes(), &vr)
+	if vr.ResetToken == "" {
+		t.Fatal("verify-code returned no resetToken")
+	}
+	w := doJSON(t, h, "POST", "/auth/password/reset", "", map[string]string{"resetToken": vr.ResetToken, "newPassword": "N3w-Passw0rd!"})
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("reset = %d %s", w.Code, w.Body.String())
+	}
+	// resetToken is single-use: a replay is rejected.
+	if w := doJSON(t, h, "POST", "/auth/password/reset", "", map[string]string{"resetToken": vr.ResetToken, "newPassword": "An0ther-Pass!"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("resetToken replay = %d, want 400", w.Code)
 	}
 
 	// Old refresh token revoked.

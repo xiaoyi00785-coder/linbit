@@ -40,6 +40,11 @@ wal.log
 snapshot.json
 snapshot.json.tmp
 
+# Uploaded object storage (avatars now, KYC docs later) — local ObjectStorage
+# backend default dir; never commit user uploads.
+services/go/account/data/
+data/avatars/
+
 # Compiled Go service binaries (produced by `go build` inside a service dir)
 services/go/account/account
 services/go/asset/asset

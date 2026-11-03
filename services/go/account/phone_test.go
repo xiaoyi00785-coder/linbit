@@ -1,29 +1,32 @@
 package main
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestNormalizePhone(t *testing.T) {
 	cases := []struct {
-		phone, cc    string
-		wantNorm     string
-		wantDial     string
-		wantOK       bool
+		phone, cc string
+		wantNorm  string
+		wantDial  string
+		wantErr   error // nil = success; otherwise the specific sentinel expected
 	}{
-		{"+8613800138000", "", "+8613800138000", "", true},   // already E.164
-		{"13800138000", "86", "+8613800138000", "86", true},  // national + dial code
-		{"138-0013-8000", "86", "+8613800138000", "86", true}, // punctuation stripped
-		{"+1 650 1", "", "", "", false},                      // space inside E.164 -> invalid
-		{"13800138000", "", "", "", false},                   // no dial code
-		{"13800138000", "+86", "+8613800138000", "86", true}, // dial code may carry '+'
-		{"", "86", "", "", false},                            // empty national part
-		{"abc", "86", "", "", false},                         // non-numeric
-		{"+0123", "", "", "", false},                         // E.164 cannot start with 0
+		{"+8613800138000", "", "+8613800138000", "", nil},    // already E.164
+		{"13800138000", "86", "+8613800138000", "86", nil},   // national + dial code
+		{"138-0013-8000", "86", "+8613800138000", "86", nil}, // punctuation stripped
+		{"+1 650 1", "", "", "", ErrPhoneFormat},             // space inside E.164 -> invalid
+		{"13800138000", "", "", "", ErrPhoneCountryCode},     // no dial code
+		{"13800138000", "+86", "+8613800138000", "86", nil},  // dial code may carry '+'
+		{"", "86", "", "", ErrPhoneFormat},                   // empty national part
+		{"abc", "86", "", "", ErrPhoneFormat},                // non-numeric
+		{"+0123", "", "", "", ErrPhoneFormat},                // E.164 cannot start with 0
 	}
 	for _, c := range cases {
-		norm, dial, ok := normalizePhone(c.phone, c.cc)
-		if ok != c.wantOK || norm != c.wantNorm || dial != c.wantDial {
+		norm, dial, err := normalizePhone(c.phone, c.cc)
+		if !errors.Is(err, c.wantErr) || norm != c.wantNorm || dial != c.wantDial {
 			t.Errorf("normalizePhone(%q,%q) = (%q,%q,%v), want (%q,%q,%v)",
-				c.phone, c.cc, norm, dial, ok, c.wantNorm, c.wantDial, c.wantOK)
+				c.phone, c.cc, norm, dial, err, c.wantNorm, c.wantDial, c.wantErr)
 		}
 	}
 }
@@ -68,13 +71,20 @@ func TestGenerateNumericCode(t *testing.T) {
 }
 
 func TestResolveIdentity(t *testing.T) {
-	if id, ok := resolveIdentity("Trader@Example.com", "", ""); !ok || id.channel != channelEmail || id.target != "trader@example.com" {
-		t.Errorf("email identity = %+v ok=%v", id, ok)
+	if id, err := resolveIdentity("Trader@Example.com", "", ""); err != nil || id.channel != channelEmail || id.target != "trader@example.com" {
+		t.Errorf("email identity = %+v err=%v", id, err)
 	}
-	if id, ok := resolveIdentity("", "13800138000", "86"); !ok || id.channel != channelSMS || id.target != "+8613800138000" {
-		t.Errorf("phone identity = %+v ok=%v", id, ok)
+	if id, err := resolveIdentity("", "13800138000", "86"); err != nil || id.channel != channelSMS || id.target != "+8613800138000" {
+		t.Errorf("phone identity = %+v err=%v", id, err)
 	}
-	if _, ok := resolveIdentity("", "", ""); ok {
-		t.Error("empty identity accepted")
+	// Specific errors propagate so callers can give a precise 400 message.
+	if _, err := resolveIdentity("", "", ""); !errors.Is(err, errNoIdentity) {
+		t.Errorf("empty identity err = %v, want errNoIdentity", err)
+	}
+	if _, err := resolveIdentity("", "13800138000", ""); !errors.Is(err, ErrPhoneCountryCode) {
+		t.Errorf("phone without country code err = %v, want ErrPhoneCountryCode", err)
+	}
+	if _, err := resolveIdentity("not-an-email", "", ""); !errors.Is(err, errBadEmail) {
+		t.Errorf("bad email err = %v, want errBadEmail", err)
 	}
 }

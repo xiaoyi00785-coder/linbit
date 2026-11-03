@@ -79,9 +79,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/login/verify"},
 			{method: http.MethodPost, path: "/auth/login/code"},
 			{method: http.MethodPost, path: "/auth/refresh"},
+			{method: http.MethodPost, path: "/auth/password/verify-code"},
 			{method: http.MethodPost, path: "/auth/password/reset"},
-			{method: "", path: "/market/"}, // public market data (prefix)
-			{method: "", path: "/ws"},      // public market WebSocket
+			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
+			{method: "", path: "/market/"},                      // public market data (prefix)
+			{method: "", path: "/ws"},                           // public market WebSocket
 		},
 	}, nil
 }

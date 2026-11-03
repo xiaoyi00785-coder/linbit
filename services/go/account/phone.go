@@ -1,8 +1,20 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strings"
+)
+
+// Phone-validation errors. They are distinct so callers can surface a precise,
+// user-facing 400 message (missing country code vs. malformed number) instead of
+// a generic rejection.
+var (
+	// ErrPhoneCountryCode means a bare national number was given without a valid
+	// dial country code to build an E.164 number.
+	ErrPhoneCountryCode = errors.New("缺少或非法的手机号国家码")
+	// ErrPhoneFormat means the resulting phone number is not a valid E.164 value.
+	ErrPhoneFormat = errors.New("手机号格式不正确")
 )
 
 // e164Re matches an E.164 phone number: a leading '+', a non-zero leading digit,
@@ -17,31 +29,33 @@ var dialCodeRe = regexp.MustCompile(`^[1-9]\d{0,2}$`)
 // Callers may pass the full number already in E.164 ("+8613800138000"), in which
 // case countryCode is optional. Otherwise a bare national number plus a dial
 // countryCode ("86" + "13800138000") is composed into E.164. It returns the
-// normalized "+<digits>" string and the dial code, or ok=false if invalid.
-func normalizePhone(phone, countryCode string) (normalized, dial string, ok bool) {
+// normalized "+<digits>" string and the dial code. On failure it returns a
+// specific error (ErrPhoneCountryCode or ErrPhoneFormat) so the caller can give
+// a clear 400 message.
+func normalizePhone(phone, countryCode string) (normalized, dial string, err error) {
 	phone = strings.TrimSpace(phone)
 	countryCode = strings.TrimSpace(strings.TrimPrefix(countryCode, "+"))
 
 	if strings.HasPrefix(phone, "+") {
 		if !e164Re.MatchString(phone) {
-			return "", "", false
+			return "", "", ErrPhoneFormat
 		}
-		return phone, countryCode, true
+		return phone, countryCode, nil
 	}
 	// Bare national number: a dial code is required to build E.164.
 	if !dialCodeRe.MatchString(countryCode) {
-		return "", "", false
+		return "", "", ErrPhoneCountryCode
 	}
-	// Drop spaces, dashes and a possible leading trunk '0' from the national part.
+	// Drop spaces and dashes from the national part.
 	national := strings.NewReplacer(" ", "", "-", "").Replace(phone)
 	if national == "" || !isAllDigits(national) {
-		return "", "", false
+		return "", "", ErrPhoneFormat
 	}
 	candidate := "+" + countryCode + national
 	if !e164Re.MatchString(candidate) {
-		return "", "", false
+		return "", "", ErrPhoneFormat
 	}
-	return candidate, countryCode, true
+	return candidate, countryCode, nil
 }
 
 func isAllDigits(s string) bool {

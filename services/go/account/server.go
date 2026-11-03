@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/linbit/platform/services/go/common"
+	"github.com/linbit/platform/services/go/common/storage"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -26,6 +27,7 @@ type Server struct {
 	codes    *CodeService
 	recorder *CodeRecorder // non-nil only in dev mode (backs the dev last-code endpoint)
 	http     *http.Client
+	avatars  storage.ObjectStorage // pluggable blob store for avatar uploads
 	now      func() time.Time
 }
 
@@ -50,8 +52,30 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		codes:    codes,
 		recorder: rec,
 		http:     &http.Client{Timeout: 5 * time.Second},
+		avatars:  newAvatarStorage(cfg),
 		now:      now,
 	}
+}
+
+// newAvatarStorage builds the configured ObjectStorage backend for avatars. The
+// local backend stores on disk; "s3" selects the (skeleton) S3 backend. A local
+// backend that fails to initialise (e.g. undeletable dir) leaves avatars nil,
+// and the upload handler reports the feature as unavailable.
+func newAvatarStorage(cfg Config) storage.ObjectStorage {
+	if strings.EqualFold(cfg.StorageBackend, "s3") {
+		return storage.NewS3Storage(storage.S3Config{
+			Bucket:     cfg.S3Bucket,
+			Region:     cfg.S3Region,
+			Endpoint:   cfg.S3Endpoint,
+			PublicBase: cfg.S3PublicBase,
+		})
+	}
+	ls, err := storage.NewLocalStorage(cfg.AvatarDir, cfg.AvatarPublicBase)
+	if err != nil {
+		log.Printf("avatar storage: init local backend: %v (avatar upload disabled)", err)
+		return nil
+	}
+	return ls
 }
 
 // Routes returns the account service HTTP handler.
@@ -66,12 +90,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/login/verify", s.handleLoginVerify)
 	mux.HandleFunc("POST /auth/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
+	mux.HandleFunc("POST /auth/password/verify-code", s.handlePasswordVerifyCode)
 	mux.HandleFunc("POST /auth/password/reset", s.handlePasswordReset)
+
+	// Public avatar retrieval: a controlled route that streams stored avatars
+	// (local backend only) from the configured directory, blocking traversal.
+	mux.HandleFunc("GET /account/avatars/{rest...}", s.handleServeAvatar)
 
 	// Authenticated endpoints.
 	mux.Handle("POST /auth/logout", s.auth(http.HandlerFunc(s.handleLogout)))
 	mux.Handle("GET /account", s.auth(http.HandlerFunc(s.handleAccount)))
 	mux.Handle("PATCH /account/profile", s.auth(http.HandlerFunc(s.handleUpdateProfile)))
+	mux.Handle("POST /account/avatar", s.auth(http.HandlerFunc(s.handleUploadAvatar)))
 	mux.Handle("POST /account/code/send", s.auth(http.HandlerFunc(s.handleSendCodeAuthed)))
 	mux.Handle("GET /account/devices", s.auth(http.HandlerFunc(s.handleListDevices)))
 	mux.Handle("DELETE /account/devices/{deviceId}", s.auth(http.HandlerFunc(s.handleRemoveDevice)))
@@ -155,16 +185,33 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-// deviceFrom builds a Device fingerprint from the request. A client-supplied
-// deviceId is preferred; otherwise the User-Agent is hashed. The key is stable
-// so the same browser/device is recognised across logins.
-func deviceFrom(r *http.Request, deviceID, deviceName string) Device {
-	ua := r.Header.Get("User-Agent")
-	key := "ua:" + hashToken(ua)
+// deviceKeyFor computes the stable device fingerprint key for a request. An
+// explicit client-supplied deviceId wins; otherwise it falls back to the
+// X-Device-Id header or a deviceId query param (so non-login requests such as
+// the device list can identify "this" device), and finally to a User-Agent hash.
+// The key is stable so the same browser/device is recognised across requests.
+func deviceKeyFor(r *http.Request, deviceID string) string {
 	if deviceID = strings.TrimSpace(deviceID); deviceID != "" {
-		key = "cid:" + deviceID
+		return "cid:" + deviceID
 	}
-	return Device{DeviceKey: key, Name: strings.TrimSpace(deviceName), UserAgent: ua, IP: clientIP(r)}
+	if h := strings.TrimSpace(r.Header.Get("X-Device-Id")); h != "" {
+		return "cid:" + h
+	}
+	if q := strings.TrimSpace(r.URL.Query().Get("deviceId")); q != "" {
+		return "cid:" + q
+	}
+	return "ua:" + hashToken(r.Header.Get("User-Agent"))
+}
+
+// deviceFrom builds a Device fingerprint from the request (see deviceKeyFor for
+// the key derivation).
+func deviceFrom(r *http.Request, deviceID, deviceName string) Device {
+	return Device{
+		DeviceKey: deviceKeyFor(r, deviceID),
+		Name:      strings.TrimSpace(deviceName),
+		UserAgent: r.Header.Get("User-Agent"),
+		IP:        clientIP(r),
+	}
 }
 
 // ---- shared DTOs ----

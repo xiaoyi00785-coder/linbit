@@ -161,6 +161,14 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(engineData)
 
+	// Per-run data dir for account avatar uploads (thrown away on exit).
+	avatarData, err := os.MkdirTemp("", "linbit-avatars-*")
+	if err != nil {
+		log.Printf("avatar data dir: %v", err)
+		return 1
+	}
+	defer os.RemoveAll(avatarData)
+
 	// --- Run services -------------------------------------------------------
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -205,6 +213,8 @@ func run(root, execCmd string) int {
 			// Dev mode exposes the internal "last verification code" endpoint so
 			// smoke scripts can complete code-gated flows without a real provider.
 			"DEV_MODE=true",
+			// Avatar uploads land in a per-run temp dir (local ObjectStorage).
+			"AVATAR_STORAGE_DIR=" + avatarData,
 		},
 		"wallet": {
 			"PORT=" + walletPort,
