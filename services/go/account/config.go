@@ -21,6 +21,11 @@ type Config struct {
 	// plaintext codes in memory. Never enable in production.
 	DevMode bool
 
+	// --- email provider (Resend). Both empty -> dev mock sender. ---
+	ResendAPIKey string
+	ResendFrom   string
+	ResendURL    string
+
 	// --- avatar / object storage ---
 	// StorageBackend selects the ObjectStorage backend: "local" (default) stores
 	// avatars on disk; "s3" selects the (skeleton) S3 backend.
@@ -52,6 +57,9 @@ func LoadConfig() Config {
 		InternalToken:    common.Env("INTERNAL_TOKEN", ""),
 		RedisURL:         common.Env("REDIS_URL", ""),
 		DevMode:          common.Env("DEV_MODE", "") == "true",
+		ResendAPIKey:     common.Env("RESEND_API_KEY", ""),
+		ResendFrom:       common.Env("RESEND_FROM", ""),
+		ResendURL:        common.Env("RESEND_API_URL", "https://api.resend.com/emails"),
 
 		StorageBackend:   common.Env("STORAGE_BACKEND", "local"),
 		AvatarDir:        common.Env("AVATAR_STORAGE_DIR", "data/avatars"),

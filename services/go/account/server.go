@@ -41,6 +41,12 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		rec = NewCodeRecorder()
 	}
 	mail := EmailSender(logEmailSender{rec: rec})
+	if cfg.ResendAPIKey != "" && cfg.ResendFrom != "" {
+		mail = newResendSender(cfg.ResendURL, cfg.ResendAPIKey, cfg.ResendFrom, rec)
+		log.Printf("email provider: resend (from=%s)", cfg.ResendFrom)
+	} else {
+		log.Printf("email provider: dev mock (RESEND_API_KEY/RESEND_FROM unset)")
+	}
 	codes := NewCodeService(store, mail, logSmsSender{rec: rec}, rec, rdb, now)
 	if cfg.DevMode {
 		// Dev/test: relax send throttling so smoke scripts can drive several

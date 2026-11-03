@@ -102,6 +102,10 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ASSET_INTERNAL_URL: http://asset:8082
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Email via Resend (https://resend.com). Both unset -> dev mock sender.
+      # RESEND_FROM must use a domain verified in Resend, e.g. "Linbit <no-reply@your-domain>".
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
     depends_on:
       postgres:
         condition: service_healthy
