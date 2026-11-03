@@ -62,6 +62,8 @@ Inviters who are active partners earn partner rates instead – never both.
 Copy-trading profit share is not a fee and earns nothing.
 
 ## Internal / dev
+- `GET /internal/referrals/{uid}` (admin lookup).
+- Dev (DEV_MODE): `POST /internal/dev/growth/backdate {uid, days}` shifts registration back (tests the 1-year window).
 - `GET /internal/partners`, `POST /internal/partners/{uid}/review {decision approve|reject|disable, reason, reviewer}` (admin service).
 - `POST /internal/dev/growth/sync`, `POST /internal/dev/growth/settle[?cutoff=RFC3339]` (DEV_MODE only).
 

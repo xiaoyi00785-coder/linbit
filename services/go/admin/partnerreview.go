@@ -28,6 +28,16 @@ func (s *Server) handlePartnerApplications(w http.ResponseWriter, r *http.Reques
 	relay(w, u)
 }
 
+// GET /admin/v1/referrals/{uid}: inviter, invitees and commission totals.
+func (s *Server) handleReferralLookup(w http.ResponseWriter, r *http.Request) {
+	u, err := s.call(r.Context(), http.MethodGet, s.cfg.GrowthURL, "/internal/referrals/"+url.PathEscape(r.PathValue("uid")), nil)
+	if err != nil {
+		upstreamErr(w, "referral lookup", err)
+		return
+	}
+	relay(w, u)
+}
+
 // POST /admin/v1/partners/{uid}/approve|reject|disable {reason, totpCode}
 func (s *Server) handlePartnerReview(decision string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

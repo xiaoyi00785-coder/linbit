@@ -18,6 +18,56 @@ func (s *Server) referralRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /referral/rewards", s.user(func(w http.ResponseWriter, r *http.Request, uid string) {
 		s.listComm(w, r, uid, []string{"referral"})
 	}))
+	mux.HandleFunc("GET /internal/referrals/{uid}", s.internal(s.handleInternalReferral))
+	// Dev: shift a user's registration time back (tests the referral window).
+	mux.HandleFunc("POST /internal/dev/growth/backdate", s.dev(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			UID  string `json:"uid"`
+			Days int    `json:"days"`
+		}
+		if err := common.DecodeJSON(r, &req); err != nil || req.Days <= 0 {
+			common.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "请求格式错误")
+			return
+		}
+		res, err := s.db.ExecContext(r.Context(), `UPDATE g_users SET registered_at = registered_at - make_interval(days => $2) WHERE uid=$1`, req.UID, req.Days)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		n, _ := res.RowsAffected()
+		common.WriteJSON(w, http.StatusOK, map[string]any{"updated": n})
+	}))
+}
+
+// handleInternalReferral is the support / admin view of one user's invite
+// relationships and commission totals.
+func (s *Server) handleInternalReferral(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	uid := r.PathValue("uid")
+	var code string
+	var inviter *string
+	var reg time.Time
+	if err := s.db.QueryRowContext(ctx, `SELECT invite_code, inviter, registered_at FROM g_users WHERE uid=$1`, uid).Scan(&code, &inviter, &reg); err != nil {
+		writeErr(w, notFound("USER_NOT_FOUND", "用户不存在"))
+		return
+	}
+	var invited int
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM g_users WHERE inviter=$1`, uid).Scan(&invited)
+	totals := map[string]decimal.Decimal{}
+	rows, err := s.db.QueryContext(ctx, `SELECT kind, SUM(amount) FROM g_commissions WHERE beneficiary=$1 GROUP BY kind`, uid)
+	if err == nil {
+		for rows.Next() {
+			var k string
+			var v decimal.Decimal
+			if rows.Scan(&k, &v) == nil {
+				totals[k] = trunc(v, 8)
+			}
+		}
+		rows.Close()
+	}
+	p, _ := s.getPartner(ctx, uid)
+	common.WriteJSON(w, http.StatusOK, map[string]any{"uid": uid, "code": code, "inviter": inviter, "registeredAt": reg.UnixMilli(),
+		"referralUntil": reg.Add(s.cfg.ReferralPeriod).UnixMilli(), "invited": invited, "partner": p, "commissionTotals": totals})
 }
 
 func (s *Server) handleReferralMe(w http.ResponseWriter, r *http.Request, uid string) {
