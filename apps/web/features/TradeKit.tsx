@@ -2,6 +2,7 @@
 /** 交易页组件：交易对切换、订单簿（视图/精度/累计深度/点价填单）、合约下单面板（模式/杠杆/计算器）。
  *  精度一律来自 /market/symbols 或 /futures/market/contracts，不写死。 */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { normSymbol } from "./symbol";
 import { useNavigate } from "@/lib/router";
 import { useAuthStore } from "@/lib/store";
 import { rest } from "@/lib/rest";
@@ -24,18 +25,31 @@ export function useContracts() {
 }
 export type PairMeta = { symbol: string; base: string; quote: string; pp: number; qp: number; contract?: Contract };
 /** 当前交易对：URL ?symbol=，缺省取列表第一个；精度来自接口。 */
-export function useTradePair(fut: boolean): [PairMeta, PairMeta[], (s: string) => void] {
+/** 路径段 /spot/:symbol、/futures/:symbol、/trade/:symbol 的交易对：大小写与 _ - / 分隔符均可（btc_usdt → BTCUSDT）。 */
+const PATH_RE = /^\/(spot|futures|trade)\/[^/]+\/?$/;
+
+export function useTradePair(fut: boolean, initial?: string): [PairMeta, PairMeta[], (s: string) => void] {
   const meta = useSymbols();
   const cts = useContracts();
-  const [sym, setSym] = useState(() => (typeof window === "undefined" ? "" : new URLSearchParams(location.search).get("symbol") || ""));
+  const [sym, setSym] = useState(() => normSymbol(initial) || (typeof window === "undefined" ? "" : normSymbol(new URLSearchParams(location.search).get("symbol"))));
   const list: PairMeta[] = fut
     ? cts.map((c) => ({ symbol: c.symbol, base: c.baseAsset, quote: c.quoteAsset, pp: decOf(c.tickSize), qp: decOf(c.minQty), contract: c }))
     : Object.values(meta).map((m: SymbolMeta) => ({ symbol: m.symbol, base: m.base, quote: m.quote, pp: m.pricePrecision, qp: m.quantityPrecision }));
   const cur = list.find((x) => x.symbol === sym) ?? list.find((x) => x.symbol === "BTCUSDT") ?? list[0] ?? { symbol: sym || "BTCUSDT", base: (sym || "BTCUSDT").replace(/USDT$/, ""), quote: "USDT", pp: 2, qp: 4 };
   const pick = (s: string) => {
     setSym(s);
-    const u = new URL(location.href); u.searchParams.set("symbol", s); history.replaceState(history.state, "", u);
+    const u = new URL(location.href);
+    if (PATH_RE.test(u.pathname)) u.pathname = u.pathname.replace(/[^/]+\/?$/, s);
+    else u.searchParams.set("symbol", s);
+    history.replaceState(history.state, "", u);
   };
+  // 路径里的交易对不存在时（列表已加载），回退到默认交易对并修正地址栏
+  const loaded = list.length > 0;
+  useEffect(() => {
+    if (!loaded || !sym || list.some((x) => x.symbol === sym)) return;
+    const u = new URL(location.href);
+    if (PATH_RE.test(u.pathname)) { u.pathname = u.pathname.replace(/[^/]+\/?$/, cur.symbol); history.replaceState(history.state, "", u); }
+  }, [loaded, sym]); // eslint-disable-line react-hooks/exhaustive-deps
   return [cur, list, pick];
 }
 export function PairPicker({ cur, list, pick, fut }: { cur: PairMeta; list: PairMeta[]; pick: (s: string) => void; fut: boolean }) {

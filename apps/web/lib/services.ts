@@ -24,6 +24,8 @@ export interface Result<T> {
   error?: string;
   /** 后端业务错误码（APIError.code），如 TWOFA_REQUIRED / INVALID_TOTP */
   code?: string;
+  /** 429 时的 Retry-After（秒） */
+  retryAfter?: number;
   source: "api" | "mock";
 }
 

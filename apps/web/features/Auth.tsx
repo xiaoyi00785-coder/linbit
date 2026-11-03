@@ -2,10 +2,10 @@
 import { passkeyLogin, webauthnSupported } from "@/lib/security";
 import { deviceId, deviceName } from "@/lib/account";
 import { G } from "@/components/Glyph";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import {
-  COUNTRIES, displayAccount, isChallenge, login, loginResend, loginVerify, register, resetPassword, verifyResetCode,
+  COUNTRIES, displayAccount, isChallenge, login, loginErrMsg, loginResend, loginVerify, register, resetPassword, verifyResetCode,
   sendAuthCode, setMe, toE164, type AuthTokens, type LoginChallenge, type Target,
 } from "@/lib/account";
 import { useAuthStore } from "@/lib/store";
@@ -179,6 +179,14 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const finish = useFinish();
   const [tgt, setTgt] = useState<Target>({});
+  // 429 RATE_LIMITED：按 Retry-After 倒计时，期间禁用登录按钮
+  const [wait, setWait] = useState(0);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const id = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(id);
+  }, [wait]);
+  useEffect(() => { if (wait === 0) setErr((e) => (e.startsWith("登录尝试过于频繁") ? "" : e)); }, [wait]);
 
   return (
     <Shell title="欢迎来到 linbit" sw={["/register", "立即注册"]}>
@@ -192,14 +200,19 @@ export function Login() {
           </Link>
           {err && <div className="fx-err">{err}</div>}
           <button
-            className={"abtn" + (a.valid && pwd && !busy ? "" : " dis")}
+            className={"abtn" + (a.valid && pwd && !busy && wait <= 0 ? "" : " dis")}
+            disabled={busy || wait > 0}
             onClick={async () => {
+              if (busy || wait > 0) return;
               if (!a.valid || !pwd) return setErr("请输入正确的账户和密码");
               setBusy(true);
               const t = a.target();
               const r = await login({ ...t, password: pwd });
               setBusy(false);
-              if (!r.ok || !r.data) return setErr(r.error ?? "登录失败");
+              if (!r.ok || !r.data) {
+                if (r.code === "RATE_LIMITED") setWait(r.retryAfter ?? 60);
+                return setErr(loginErrMsg(r));
+              }
               setErr("");
               setTgt(t);
               if (isChallenge(r.data)) {
@@ -209,7 +222,7 @@ export function Login() {
               } else finish(r.data, t);
             }}
           >
-            {busy ? "登录中…" : "登录"}
+            {busy ? "登录中…" : wait > 0 ? `请 ${wait} 秒后重试` : "登录"}
           </button>
           <button
             className={"lb wide lpk" + (busy ? " dis" : "")}
