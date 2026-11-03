@@ -218,3 +218,12 @@ img.pimg{background:none;object-fit:contain;opacity:1}img.pimg.big{border-radius
 .mchips-arr:hover{color:#fff;background:#1c1c1c}
 .mchips-arr.l{order:-1}
 .fav-st{background:none;border:0;color:#777;font-size:15px;cursor:pointer;padding:0 4px}.fav-st.on,.fav-st:hover{color:var(--lb-lime,#c6ff00)}
+/* 首页「三重防护」：左文 | 图 | 右文，图不压文案 */
+.sec3{display:grid;grid-template-columns:minmax(0,1fr) clamp(240px,30vw,440px) minmax(0,1fr);grid-template-areas:"a v c" ". b .";column-gap:clamp(24px,4vw,64px);row-gap:8px;align-items:center;text-align:center;margin-top:24px}
+.sec3-a{grid-area:a}.sec3-b{grid-area:b}.sec3-c{grid-area:c}.sec3-v{grid-area:v}
+.sec3-i{position:relative;z-index:1;max-width:340px;justify-self:center}
+.sec3-i h4{font-size:24px;font-weight:600;margin-bottom:12px}.sec3-i p{color:var(--lb-text-2);font-size:16px;line-height:1.6}
+.sec3-v{position:relative;z-index:0;aspect-ratio:1;display:grid;place-items:center;overflow:hidden;contain:paint;-webkit-mask:radial-gradient(closest-side,#000 70%,transparent);mask:radial-gradient(closest-side,#000 70%,transparent)}
+.sec3-v img{width:160%;max-width:none;height:auto;will-change:transform;transform:translateZ(0);animation:lbFloat 6s ease-in-out infinite;backface-visibility:hidden}
+@media (max-width:900px){.sec3{grid-template-columns:1fr;grid-template-areas:"v" "a" "b" "c";row-gap:28px}.sec3-v{width:clamp(200px,60vw,320px);justify-self:center}}
+@media (prefers-reduced-motion:reduce){.sec3-v img{animation:none}}

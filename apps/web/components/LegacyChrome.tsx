@@ -11,16 +11,21 @@ const RV = "main section, .wrap > section, section.center, .trader, .pcard, .two
 /** 滚动入场：元素进入视口时淡入上移（仅首屏外元素）。 */
 function useReveal(path: string) {
   useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("lb-rv-in"); io.unobserve(e.target); } }), { threshold: 0.12 });
+    if (typeof IntersectionObserver === "undefined" || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const show = (el: Element) => el.classList.add("lb-rv-in");
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { show(e.target); io.unobserve(e.target); } }), { threshold: 0, rootMargin: "0px 0px -8% 0px" });
+    // 客户端跳转时，上一页的 MutationObserver 可能先给新页面节点打标记，随后其 IO 被 disconnect；
+    // 因此每次都重新观察所有「已隐藏但未入场」的节点，避免永久 opacity:0。
     const scan = () => document.querySelectorAll<HTMLElement>(RV).forEach((el) => {
+      if (el.classList.contains("lb-rv-in")) return;
+      if (el.classList.contains("lb-rv")) { io.observe(el); return; }
       if (el.dataset.rv) return; el.dataset.rv = "1";
       if (el.getBoundingClientRect().top < innerHeight) return;
       el.classList.add("lb-rv"); io.observe(el);
     });
     scan();
     const mo = new MutationObserver(scan); mo.observe(document.body, { childList: true, subtree: true });
-    return () => { io.disconnect(); mo.disconnect(); };
+    return () => { io.disconnect(); mo.disconnect(); document.querySelectorAll(".lb-rv:not(.lb-rv-in)").forEach(show); };
   }, [path]);
 }
 
