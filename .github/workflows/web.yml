@@ -1,0 +1,54 @@
+# Linbit Web CI：安装依赖 → 类型检查 + 构建 → 校验资源指纹清单已提交
+# 放置位置：仓库根目录 .github/workflows/web.yml；WEB_DIR 指向 Next.js 应用目录
+#
+# predev/prebuild/pretypecheck 会运行 scripts/gen-asset-manifest.mjs 重新生成 lib/asset-manifest.json；
+# 若 public/ 下的图片改了但清单没重新生成并提交，最后一步会失败。
+name: Web
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/web/**", "packages/**", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".github/workflows/web.yml"]
+  pull_request:
+    paths: ["apps/web/**", "packages/**", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".github/workflows/web.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WEB_DIR: apps/web
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck + build
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm run typecheck && npm run build
+
+      - name: Check lib/asset-manifest.json is up to date
+        working-directory: ${{ env.WEB_DIR }}
+        run: |
+          if ! git diff --exit-code lib/asset-manifest.json; then
+            echo "::error file=${WEB_DIR}/lib/asset-manifest.json::资源指纹清单与 public/ 不一致；请在 apps/web 运行 node scripts/gen-asset-manifest.mjs 并提交 lib/asset-manifest.json"
+            exit 1
+          fi
