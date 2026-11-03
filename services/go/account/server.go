@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/linbit/platform/services/go/common"
+	"github.com/redis/go-redis/v9"
 )
 
 // ctxKey is the context key type for request-scoped values.
@@ -20,19 +21,36 @@ const ctxUID ctxKey = "uid"
 
 // Server wires configuration, storage and HTTP handlers for the account service.
 type Server struct {
-	cfg   Config
-	store *Store
-	http  *http.Client
-	now   func() time.Time
+	cfg      Config
+	store    *Store
+	codes    *CodeService
+	recorder *CodeRecorder // non-nil only in dev mode (backs the dev last-code endpoint)
+	http     *http.Client
+	now      func() time.Time
 }
 
-// NewServer constructs a Server.
-func NewServer(cfg Config, store *Store) *Server {
+// NewServer constructs a Server. rdb may be nil (Redis is optional; the code
+// rate-limiter then falls back to database counters).
+func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
+	now := time.Now
+	var rec *CodeRecorder
+	if cfg.DevMode {
+		rec = NewCodeRecorder()
+	}
+	codes := NewCodeService(store, logEmailSender{rec: rec}, logSmsSender{rec: rec}, rec, rdb, now)
+	if cfg.DevMode {
+		// Dev/test: relax send throttling so smoke scripts can drive several
+		// code-gated operations back-to-back. Production keeps the real limits.
+		codes.minInterval = 0
+		codes.hourlyMax = 1 << 30
+	}
 	return &Server{
-		cfg:   cfg,
-		store: store,
-		http:  &http.Client{Timeout: 5 * time.Second},
-		now:   time.Now,
+		cfg:      cfg,
+		store:    store,
+		codes:    codes,
+		recorder: rec,
+		http:     &http.Client{Timeout: 5 * time.Second},
+		now:      now,
 	}
 }
 
@@ -42,16 +60,38 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 
 	// Public auth endpoints.
+	mux.HandleFunc("POST /auth/code/send", s.handleSendCode)
 	mux.HandleFunc("POST /auth/register", s.handleRegister)
 	mux.HandleFunc("POST /auth/login", s.handleLogin)
+	mux.HandleFunc("POST /auth/login/verify", s.handleLoginVerify)
+	mux.HandleFunc("POST /auth/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
+	mux.HandleFunc("POST /auth/password/reset", s.handlePasswordReset)
 
 	// Authenticated endpoints.
 	mux.Handle("POST /auth/logout", s.auth(http.HandlerFunc(s.handleLogout)))
 	mux.Handle("GET /account", s.auth(http.HandlerFunc(s.handleAccount)))
+	mux.Handle("PATCH /account/profile", s.auth(http.HandlerFunc(s.handleUpdateProfile)))
+	mux.Handle("POST /account/code/send", s.auth(http.HandlerFunc(s.handleSendCodeAuthed)))
+	mux.Handle("GET /account/devices", s.auth(http.HandlerFunc(s.handleListDevices)))
+	mux.Handle("DELETE /account/devices/{deviceId}", s.auth(http.HandlerFunc(s.handleRemoveDevice)))
+	mux.Handle("GET /account/withdraw-whitelist", s.auth(http.HandlerFunc(s.handleGetWhitelist)))
+	mux.Handle("PUT /account/withdraw-whitelist", s.auth(http.HandlerFunc(s.handleSetWhitelist)))
+	mux.Handle("GET /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleListAddresses)))
+	mux.Handle("POST /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleCreateAddress)))
+	mux.Handle("DELETE /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handleDeleteAddress)))
+
+	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))
 	mux.Handle("POST /2fa/totp/verify", s.auth(http.HandlerFunc(s.handleTOTPVerify)))
 	mux.Handle("POST /2fa/totp/disable", s.auth(http.HandlerFunc(s.handleTOTPDisable)))
+
+	// Dev-only internal endpoint: read the most recent verification code so tests
+	// and smoke scripts can complete flows without a real email/SMS provider.
+	// Guarded by DEV_MODE + the shared internal token; never proxied by the gateway.
+	if s.cfg.DevMode {
+		mux.HandleFunc("GET /internal/dev/last-code", s.handleDevLastCode)
+	}
 	return mux
 }
 
@@ -73,6 +113,19 @@ func (s *Server) auth(next http.Handler) http.Handler {
 	})
 }
 
+// authedUser resolves the authenticated user from the request context.
+func (s *Server) authedUser(r *http.Request) (*User, bool) {
+	uid, _ := r.Context().Value(ctxUID).(string)
+	if uid == "" {
+		return nil, false
+	}
+	u, err := s.store.UserByUID(r.Context(), uid)
+	if err != nil {
+		return nil, false
+	}
+	return u, true
+}
+
 func bearer(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if strings.HasPrefix(h, "Bearer ") {
@@ -81,27 +134,34 @@ func bearer(r *http.Request) string {
 	return ""
 }
 
-// ---- DTOs ----
-
-type registerRequest struct {
-	Email      string `json:"email"`
-	Password   string `json:"password"`
-	InviteCode string `json:"inviteCode"`
+// clientIP returns the best-effort client IP (honouring X-Forwarded-For set by
+// the gateway), used only for device bookkeeping.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
-type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	TOTPCode string `json:"totpCode"`
+// deviceFrom builds a Device fingerprint from the request. A client-supplied
+// deviceId is preferred; otherwise the User-Agent is hashed. The key is stable
+// so the same browser/device is recognised across logins.
+func deviceFrom(r *http.Request, deviceID, deviceName string) Device {
+	ua := r.Header.Get("User-Agent")
+	key := "ua:" + hashToken(ua)
+	if deviceID = strings.TrimSpace(deviceID); deviceID != "" {
+		key = "cid:" + deviceID
+	}
+	return Device{DeviceKey: key, Name: strings.TrimSpace(deviceName), UserAgent: ua, IP: clientIP(r)}
 }
 
-type refreshRequest struct {
-	RefreshToken string `json:"refreshToken"`
-}
-
-type codeRequest struct {
-	Code string `json:"code"`
-}
+// ---- shared DTOs ----
 
 type authTokens struct {
 	AccessToken  string `json:"accessToken"`
@@ -111,212 +171,83 @@ type authTokens struct {
 }
 
 type accountResponse struct {
-	UID              string    `json:"uid"`
-	Email            string    `json:"email"`
-	Nickname         *string   `json:"nickname"`
-	KYCLevel         int       `json:"kycLevel"`
-	TwoFactorEnabled bool      `json:"twoFactorEnabled"`
-	CreatedAt        time.Time `json:"createdAt"`
+	UID                      string    `json:"uid"`
+	Email                    *string   `json:"email"`
+	Phone                    *string   `json:"phone"`
+	CountryCode              string    `json:"countryCode"`
+	Nickname                 *string   `json:"nickname"`
+	AvatarURL                *string   `json:"avatarUrl"`
+	KYCLevel                 int       `json:"kycLevel"`
+	TwoFactorEnabled         bool      `json:"twoFactorEnabled"`
+	EmailVerified            bool      `json:"emailVerified"`
+	PhoneVerified            bool      `json:"phoneVerified"`
+	WithdrawWhitelistEnabled bool      `json:"withdrawWhitelistEnabled"`
+	CreatedAt                time.Time `json:"createdAt"`
 }
 
-type twoFactorStatus struct {
-	Enabled bool    `json:"enabled"`
-	Method  *string `json:"method"`
+func toAccountResponse(u *User) accountResponse {
+	resp := accountResponse{
+		UID:                      u.UID,
+		CountryCode:              u.CountryCode,
+		KYCLevel:                 u.KYCLevel,
+		TwoFactorEnabled:         u.TOTPEnabled,
+		EmailVerified:            u.EmailVerified,
+		PhoneVerified:            u.PhoneVerified,
+		WithdrawWhitelistEnabled: u.WithdrawWhitelistEnabled,
+		CreatedAt:                u.CreatedAt,
+	}
+	if u.Email.Valid {
+		resp.Email = &u.Email.String
+	}
+	if u.Phone.Valid {
+		resp.Phone = &u.Phone.String
+	}
+	if u.Nickname.Valid {
+		resp.Nickname = &u.Nickname.String
+	}
+	if u.AvatarURL != "" {
+		resp.AvatarURL = &u.AvatarURL
+	}
+	return resp
 }
 
-// ---- Handlers ----
-
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	var req registerRequest
-	if err := common.DecodeJSON(r, &req); err != nil {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
-		return
-	}
-	req.Email = strings.TrimSpace(req.Email)
-	if !strings.Contains(req.Email, "@") || len(req.Password) < 8 {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "邮箱或密码不合法（密码至少 8 位）")
-		return
-	}
-	hash, err := hashPassword(req.Password)
-	if err != nil {
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	u, err := s.store.CreateUser(r.Context(), req.Email, hash)
-	if errors.Is(err, ErrEmailExists) {
-		common.WriteError(w, http.StatusConflict, "AUTH_EMAIL_EXISTS", "该邮箱已被注册")
-		return
-	}
-	if err != nil {
-		log.Printf("register: create user: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	// Initialise the user's asset account (best-effort; balances are also
-	// lazily seeded by the asset service on first read).
-	s.initAssetAccount(r.Context(), u.UID)
-
-	tokens, err := s.issueTokens(r.Context(), u)
-	if err != nil {
-		log.Printf("register: issue tokens: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	common.WriteJSON(w, http.StatusCreated, tokens)
-}
-
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	var req loginRequest
-	if err := common.DecodeJSON(r, &req); err != nil {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
-		return
-	}
-	u, err := s.store.UserByEmail(r.Context(), req.Email)
-	if err != nil || !checkPassword(u.PasswordHash, req.Password) {
-		common.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "邮箱或密码错误")
-		return
-	}
-	if u.TOTPEnabled {
-		if req.TOTPCode == "" || !validateTOTP(u.TOTPSecret, req.TOTPCode) {
-			common.WriteError(w, http.StatusUnauthorized, "AUTH_TOTP_REQUIRED", "需要有效的两步验证码")
-			return
-		}
-	}
-	tokens, err := s.issueTokens(r.Context(), u)
-	if err != nil {
-		log.Printf("login: issue tokens: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	common.WriteJSON(w, http.StatusOK, tokens)
-}
-
-func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	var req refreshRequest
-	if err := common.DecodeJSON(r, &req); err != nil || req.RefreshToken == "" {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
-		return
-	}
-	u, err := s.store.ConsumeRefreshToken(r.Context(), req.RefreshToken)
-	if err != nil {
-		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "刷新令牌无效或已过期")
-		return
-	}
-	tokens, err := s.issueTokens(r.Context(), u)
-	if err != nil {
-		log.Printf("refresh: issue tokens: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	common.WriteJSON(w, http.StatusOK, tokens)
-}
-
-func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	uid := r.Context().Value(ctxUID).(string)
-	u, err := s.store.UserByUID(r.Context(), uid)
-	if err != nil {
-		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
-		return
-	}
-	if err := s.store.RevokeAllRefreshTokens(r.Context(), u.ID); err != nil {
-		log.Printf("logout: revoke: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
+// ---- account handler ----
 
 func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
-	uid := r.Context().Value(ctxUID).(string)
-	u, err := s.store.UserByUID(r.Context(), uid)
-	if err != nil {
+	u, ok := s.authedUser(r)
+	if !ok {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
 		return
 	}
-	var nickname *string
-	if u.Nickname.Valid {
-		nickname = &u.Nickname.String
-	}
-	common.WriteJSON(w, http.StatusOK, accountResponse{
-		UID:              u.UID,
-		Email:            u.Email,
-		Nickname:         nickname,
-		KYCLevel:         u.KYCLevel,
-		TwoFactorEnabled: u.TOTPEnabled,
-		CreatedAt:        u.CreatedAt,
-	})
+	common.WriteJSON(w, http.StatusOK, toAccountResponse(u))
 }
 
-func (s *Server) handleTOTPBind(w http.ResponseWriter, r *http.Request) {
-	uid := r.Context().Value(ctxUID).(string)
-	u, err := s.store.UserByUID(r.Context(), uid)
-	if err != nil {
-		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
+// handleDevLastCode returns the most recent verification code for a target
+// (dev mode only, internal-token protected).
+func (s *Server) handleDevLastCode(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.InternalToken == "" || r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "internal token required")
 		return
 	}
-	secret, uri, err := generateTOTP(u.Email)
-	if err != nil {
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+	target := r.URL.Query().Get("target")
+	purpose := r.URL.Query().Get("purpose")
+	code := s.recorder.Last(target, purpose)
+	if code == "" {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "no code for target/purpose")
 		return
 	}
-	if err := s.store.SetTOTPSecret(r.Context(), uid, secret); err != nil {
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	common.WriteJSON(w, http.StatusOK, map[string]string{"secret": secret, "otpauthUri": uri})
+	common.WriteJSON(w, http.StatusOK, map[string]string{"target": target, "purpose": purpose, "code": code})
 }
 
-func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
-	uid := r.Context().Value(ctxUID).(string)
-	var req codeRequest
-	if err := common.DecodeJSON(r, &req); err != nil || req.Code == "" {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
-		return
-	}
-	u, err := s.store.UserByUID(r.Context(), uid)
-	if err != nil || u.TOTPSecret == "" {
-		common.WriteError(w, http.StatusBadRequest, "TOTP_NOT_BOUND", "请先绑定 TOTP")
-		return
-	}
-	if !validateTOTP(u.TOTPSecret, req.Code) {
-		common.WriteError(w, http.StatusBadRequest, "TOTP_INVALID", "验证码错误")
-		return
-	}
-	if err := s.store.SetTOTPEnabled(r.Context(), uid, true); err != nil {
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	method := "totp"
-	common.WriteJSON(w, http.StatusOK, twoFactorStatus{Enabled: true, Method: &method})
-}
-
-func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
-	uid := r.Context().Value(ctxUID).(string)
-	var req codeRequest
-	if err := common.DecodeJSON(r, &req); err != nil || req.Code == "" {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
-		return
-	}
-	u, err := s.store.UserByUID(r.Context(), uid)
-	if err != nil || !u.TOTPEnabled {
-		common.WriteError(w, http.StatusBadRequest, "TOTP_NOT_ENABLED", "两步验证未启用")
-		return
-	}
-	if !validateTOTP(u.TOTPSecret, req.Code) {
-		common.WriteError(w, http.StatusBadRequest, "TOTP_INVALID", "验证码错误")
-		return
-	}
-	if err := s.store.SetTOTPEnabled(r.Context(), uid, false); err != nil {
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	common.WriteJSON(w, http.StatusOK, twoFactorStatus{Enabled: false, Method: nil})
-}
-
-// issueTokens signs an access token and persists a rotated refresh token.
-func (s *Server) issueTokens(ctx context.Context, u *User) (authTokens, error) {
+// issueTokens signs an access token and persists a rotated refresh token bound
+// to the given device.
+func (s *Server) issueTokens(ctx context.Context, u *User, deviceKey string) (authTokens, error) {
 	now := s.now()
-	access, err := common.SignAccessToken(s.cfg.JWTSecret, u.UID, u.Email, s.cfg.AccessTTL, now)
+	subEmail := ""
+	if u.Email.Valid {
+		subEmail = u.Email.String
+	}
+	access, err := common.SignAccessToken(s.cfg.JWTSecret, u.UID, subEmail, s.cfg.AccessTTL, now)
 	if err != nil {
 		return authTokens{}, err
 	}
@@ -324,7 +255,7 @@ func (s *Server) issueTokens(ctx context.Context, u *User) (authTokens, error) {
 	if err != nil {
 		return authTokens{}, err
 	}
-	if err := s.store.StoreRefreshToken(ctx, u.ID, refresh, now.Add(s.cfg.RefreshTTL)); err != nil {
+	if err := s.store.StoreRefreshToken(ctx, u.ID, refresh, deviceKey, now.Add(s.cfg.RefreshTTL)); err != nil {
 		return authTokens{}, err
 	}
 	return authTokens{

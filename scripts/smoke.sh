@@ -30,6 +30,8 @@ if [ "${SMOKE_INNER:-}" != "1" ]; then
 fi
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
+ACCOUNT_URL="${ACCOUNT_URL:-http://localhost:8081}"
+INTERNAL_TOKEN="${INTERNAL_TOKEN:-}"
 EMAIL="smoke+$(date +%s)@example.com"
 PASSWORD="Str0ng-Passw0rd!"
 
@@ -47,10 +49,24 @@ json_get() {
   fi
 }
 
-say "1/3 register $EMAIL"
+# Registration now requires an email/SMS verification code. The code is read
+# back via the account service's dev-only internal endpoint (DEV_MODE=true),
+# standing in for a real provider.
+[ -n "$INTERNAL_TOKEN" ] || fail "INTERNAL_TOKEN not set (needed to read dev verification code)"
+
+say "1/3 register $EMAIL (request code -> register)"
+CODE_HTTP=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$GATEWAY_URL/auth/code/send" \
+  -H 'Content-Type: application/json' \
+  -d "{\"purpose\":\"register\",\"email\":\"$EMAIL\"}")
+[ "$CODE_HTTP" = "200" ] || fail "send register code returned $CODE_HTTP"
+CODE_JSON=$(curl -sS -G "$ACCOUNT_URL/internal/dev/last-code" \
+  --data-urlencode "target=$EMAIL" --data-urlencode "purpose=register" \
+  -H "X-Internal-Token: $INTERNAL_TOKEN")
+REG_CODE=$(json_get "$CODE_JSON" code)
+[ -n "$REG_CODE" ] || fail "could not read register code ($CODE_JSON)"
 REG=$(curl -sS -X POST "$GATEWAY_URL/auth/register" \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"code\":\"$REG_CODE\"}")
 echo "$REG"
 ACCESS=$(json_get "$REG" accessToken)
 [ -n "$ACCESS" ] || fail "register did not return accessToken"

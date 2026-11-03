@@ -40,6 +40,41 @@ tags:
     description: 行情数据（公开）
 
 paths:
+  /auth/code/send:
+    post:
+      tags: [Auth]
+      summary: 发送注册/找回密码验证码
+      operationId: sendAuthCode
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendCodeRequest" }
+            example:
+              purpose: register
+              phone: "13800138000"
+              countryCode: "86"
+      responses:
+        "200":
+          description: 已发送（reset_password 对不存在账号也返回 200）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: boolean }
+                  channel: { type: string, enum: [email, sms] }
+                  ttlSeconds: { type: integer }
+              example: { sent: true, channel: sms, ttlSeconds: 600 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429":
+          description: 发送过于频繁
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: RATE_LIMITED, message: 验证码发送过于频繁，请稍后再试 }
+
   /auth/register:
     post:
       tags: [Auth]
@@ -55,6 +90,7 @@ paths:
             example:
               email: trader@example.com
               password: "Str0ng-Passw0rd!"
+              code: "123456"
               inviteCode: LB8DEMO
       responses:
         "201":
@@ -94,20 +130,97 @@ paths:
             example:
               email: trader@example.com
               password: "Str0ng-Passw0rd!"
-              totpCode: "123456"
+              deviceId: web-7f3a
       responses:
         "200":
-          description: 登录成功
+          description: >
+            密码正确。若无需二次验证返回 AuthTokens；若需要（已开启 TOTP 或新设备
+            触发邮箱/短信验证）返回 LoginChallenge。
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AuthTokens"
+                  - $ref: "#/components/schemas/LoginChallenge"
+              examples:
+                tokens:
+                  summary: 无需二次验证
+                  value:
+                    accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access
+                    refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh
+                    tokenType: Bearer
+                    expiresIn: 3600
+                challenge:
+                  summary: 需二次验证
+                  value:
+                    challengeToken: 3kZ9...challenge
+                    methods: [sms]
+                    expiresIn: 300
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/login/verify:
+    post:
+      tags: [Auth]
+      summary: 提交二次验证，换取令牌
+      operationId: loginVerify
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginVerifyRequest" }
+            example: { challengeToken: 3kZ9...challenge, code: "123456" }
+      responses:
+        "200":
+          description: 验证通过
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthTokens" }
-              example:
-                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access
-                refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh
-                tokenType: Bearer
-                expiresIn: 3600
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/login/code:
+    post:
+      tags: [Auth]
+      summary: 重新发送登录二次验证码（email/sms）
+      operationId: loginResendCode
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challengeToken]
+              properties:
+                challengeToken: { type: string }
+            example: { challengeToken: 3kZ9...challenge }
+      responses:
+        "200": { description: 已发送 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: 发送过于频繁 }
+
+  /auth/password/reset:
+    post:
+      tags: [Auth]
+      summary: 校验验证码并重置密码（撤销全部会话）
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetRequest" }
+            example:
+              phone: "13800138000"
+              countryCode: "86"
+              code: "123456"
+              newPassword: "N3w-Passw0rd!"
+      responses:
+        "204": { description: 重置成功 }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /auth/refresh:
     post:
@@ -244,6 +357,169 @@ paths:
                 twoFactorEnabled: true
                 createdAt: "2026-01-05T08:30:00Z"
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/profile:
+    patch:
+      tags: [Account]
+      summary: 修改昵称 / 头像
+      operationId: updateProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProfileRequest" }
+            example: { nickname: lb_Trader, avatarUrl: https://cdn.example.com/avatar/lb.png }
+      responses:
+        "200":
+          description: 更新后的账户信息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/code/send:
+    post:
+      tags: [Account]
+      summary: 向本人发送敏感操作验证码
+      operationId: sendAccountCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendCodeAuthedRequest" }
+            example: { purpose: address, channel: sms }
+      responses:
+        "200": { description: 已发送 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: 发送过于频繁 }
+
+  /account/devices:
+    get:
+      tags: [Account]
+      summary: 列出登录设备
+      operationId: listDevices
+      responses:
+        "200":
+          description: 设备列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/devices/{deviceId}:
+    delete:
+      tags: [Account]
+      summary: 移除设备（撤销该设备会话）
+      operationId: removeDevice
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: 已移除 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /account/withdraw-whitelist:
+    get:
+      tags: [Account]
+      summary: 查询提现白名单开关
+      operationId: getWithdrawWhitelist
+      responses:
+        "200":
+          description: 开关状态
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WhitelistStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [Account]
+      summary: 开关提现白名单（需验证码或 2FA）
+      operationId: setWithdrawWhitelist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetWhitelistRequest" }
+            example: { enabled: true, code: "123456" }
+      responses:
+        "200":
+          description: 新状态
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WhitelistStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/withdraw-addresses:
+    get:
+      tags: [Account]
+      summary: 提现地址簿列表
+      operationId: listWithdrawAddresses
+      responses:
+        "200":
+          description: 地址簿
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WithdrawAddressList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Account]
+      summary: 新增提现地址（需验证码或 2FA）
+      operationId: createWithdrawAddress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWithdrawAddressRequest" }
+            example:
+              asset: USDT
+              network: TRC20
+              address: TXy1Z9DemoAddr000000000000000000000
+              label: cold-wallet
+              code: "123456"
+      responses:
+        "201":
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WithdrawAddress" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: 地址已存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: ADDRESS_EXISTS, message: 该地址已在地址簿中 }
+
+  /account/withdraw-addresses/{id}:
+    delete:
+      tags: [Account]
+      summary: 删除提现地址（需验证码或 2FA）
+      operationId: deleteWithdrawAddress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: code
+          in: query
+          required: false
+          description: 未开启 2FA 时提供（purpose=address）
+          schema: { type: string }
+        - name: totpCode
+          in: query
+          required: false
+          description: 已开启 2FA 时提供
+          schema: { type: string }
+      responses:
+        "204": { description: 已删除 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /kyc:
     post:
@@ -940,25 +1216,78 @@ components:
         pageSize: { type: integer, example: 20 }
         total: { type: integer, example: 42 }
 
+    SendCodeRequest:
+      type: object
+      required: [purpose]
+      description: >
+        请求邮箱/短信验证码。register / reset_password 为公开接口；二选一提供
+        email 或 phone（手机号可用 E.164 的 "+8613800138000"，或 phone + countryCode
+        拨号区号组合）。为避免账号枚举，reset_password 对不存在的账号也返回 200。
+      properties:
+        purpose:
+          type: string
+          enum: [register, reset_password]
+          example: register
+        email: { type: string, format: email, nullable: true, example: trader@example.com }
+        phone: { type: string, nullable: true, description: E.164 或本地号, example: "13800138000" }
+        countryCode: { type: string, nullable: true, description: 国家拨号码（如 86）, example: "86" }
+
     RegisterRequest:
       type: object
-      required: [email, password]
+      required: [password, code]
+      description: 邮箱或手机号二选一；注册需验证码（先调用 /auth/code/send）。
       properties:
-        email: { type: string, format: email, example: trader@example.com }
+        email: { type: string, format: email, nullable: true, example: trader@example.com }
+        phone: { type: string, nullable: true, example: "13800138000" }
+        countryCode: { type: string, nullable: true, example: "86" }
         password: { type: string, format: password, minLength: 8, example: "Str0ng-Passw0rd!" }
+        code: { type: string, description: 6 位验证码, example: "123456" }
         inviteCode: { type: string, nullable: true, example: LB8DEMO }
 
     LoginRequest:
       type: object
-      required: [email, password]
+      required: [password]
+      description: >
+        邮箱或手机号二选一 + 密码。密码正确后若需二次验证（已开启 TOTP、或新设备
+        登录触发邮箱/短信验证），返回 LoginChallenge 而非 AuthTokens。
       properties:
-        email: { type: string, format: email, example: trader@example.com }
+        email: { type: string, format: email, nullable: true, example: trader@example.com }
+        phone: { type: string, nullable: true, description: E.164, example: "+8613800138000" }
         password: { type: string, format: password, example: "Str0ng-Passw0rd!" }
-        totpCode:
-          type: string
-          nullable: true
-          description: 已开启 2FA 时必填
-          example: "123456"
+        deviceId: { type: string, nullable: true, description: 客户端稳定设备标识；缺省时按 User-Agent 推断, example: web-7f3a }
+        deviceName: { type: string, nullable: true, example: Chrome on macOS }
+
+    LoginChallenge:
+      type: object
+      required: [challengeToken, methods, expiresIn]
+      description: 二次验证票据。用 challengeToken 调 /auth/login/verify 换取令牌。
+      properties:
+        challengeToken: { type: string, example: 3kZ9...challenge }
+        methods:
+          type: array
+          description: 需要完成的二次验证方式（当前恒为单个）。
+          items: { type: string, enum: [totp, email, sms] }
+          example: [sms]
+        expiresIn: { type: integer, description: 票据有效期（秒）, example: 300 }
+
+    LoginVerifyRequest:
+      type: object
+      required: [challengeToken]
+      properties:
+        challengeToken: { type: string, example: 3kZ9...challenge }
+        totpCode: { type: string, nullable: true, description: method=totp 时必填, example: "123456" }
+        code: { type: string, nullable: true, description: method=email/sms 时必填, example: "123456" }
+
+    PasswordResetRequest:
+      type: object
+      required: [code, newPassword]
+      description: 校验验证码后重置密码，并撤销该用户全部会话（refresh token）。
+      properties:
+        email: { type: string, format: email, nullable: true, example: trader@example.com }
+        phone: { type: string, nullable: true, example: "13800138000" }
+        countryCode: { type: string, nullable: true, example: "86" }
+        code: { type: string, example: "123456" }
+        newPassword: { type: string, format: password, minLength: 8, example: "N3w-Passw0rd!" }
 
     AuthTokens:
       type: object
@@ -991,14 +1320,104 @@ components:
 
     Account:
       type: object
-      required: [uid, email, kycLevel, twoFactorEnabled, createdAt]
+      required: [uid, kycLevel, twoFactorEnabled, createdAt]
       properties:
         uid: { type: string, example: "80000001" }
-        email: { type: string, format: email, example: trader@example.com }
+        email: { type: string, format: email, nullable: true, example: trader@example.com }
+        phone: { type: string, nullable: true, description: E.164, example: "+8613800138000" }
+        countryCode: { type: string, example: "86" }
         nickname: { type: string, nullable: true, example: lb_Trader }
+        avatarUrl: { type: string, nullable: true, example: https://cdn.example.com/avatar/lb.png }
         kycLevel: { type: integer, example: 1 }
         twoFactorEnabled: { type: boolean, example: true }
+        emailVerified: { type: boolean, example: true }
+        phoneVerified: { type: boolean, example: true }
+        withdrawWhitelistEnabled: { type: boolean, example: false }
         createdAt: { type: string, format: date-time, example: "2026-01-05T08:30:00Z" }
+
+    UpdateProfileRequest:
+      type: object
+      description: 至少提供一个字段。头像一期只存 URL（http/https，≤512）。
+      properties:
+        nickname: { type: string, nullable: true, minLength: 1, maxLength: 32, example: lb_Trader }
+        avatarUrl: { type: string, nullable: true, example: https://cdn.example.com/avatar/lb.png }
+
+    SendCodeAuthedRequest:
+      type: object
+      required: [purpose]
+      description: 向当前登录用户自己的邮箱/手机发送验证码，用于敏感操作前置校验。
+      properties:
+        purpose: { type: string, enum: [address, bind, reset_password], example: address }
+        channel: { type: string, nullable: true, enum: [email, sms], description: 缺省按账户已绑定的联系方式, example: sms }
+
+    Device:
+      type: object
+      required: [deviceId, firstSeen, lastSeen]
+      properties:
+        deviceId: { type: string, description: 设备指纹（移除设备时回传）, example: "cid:web-7f3a" }
+        name: { type: string, example: Chrome on macOS }
+        userAgent: { type: string, example: "Mozilla/5.0 ..." }
+        ip: { type: string, example: "203.0.113.7" }
+        firstSeen: { type: string, format: date-time, example: "2026-11-01T10:00:00Z" }
+        lastSeen: { type: string, format: date-time, example: "2026-11-03T08:30:00Z" }
+
+    DeviceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Device" }
+
+    WhitelistStatus:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean, example: false }
+
+    SetWhitelistRequest:
+      type: object
+      required: [enabled]
+      description: 开关提现白名单；需验证码或 2FA（二选一）。
+      properties:
+        enabled: { type: boolean, example: true }
+        totpCode: { type: string, nullable: true, description: 已开启 2FA 时提供, example: "123456" }
+        code: { type: string, nullable: true, description: 未开启 2FA 时提供（purpose=address）, example: "123456" }
+
+    WithdrawAddress:
+      type: object
+      required: [id, asset, network, address, whitelisted, createdAt]
+      properties:
+        id: { type: string, example: "1" }
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
+        memo: { type: string, example: "" }
+        label: { type: string, example: cold-wallet }
+        whitelisted: { type: boolean, example: true }
+        createdAt: { type: string, format: date-time, example: "2026-11-03T08:30:00Z" }
+
+    WithdrawAddressList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/WithdrawAddress" }
+
+    CreateWithdrawAddressRequest:
+      type: object
+      required: [asset, network, address]
+      description: 新增地址簿条目；需验证码或 2FA（二选一）。
+      properties:
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
+        memo: { type: string, nullable: true, example: "" }
+        label: { type: string, nullable: true, example: cold-wallet }
+        whitelisted: { type: boolean, nullable: true, example: true }
+        totpCode: { type: string, nullable: true, example: "123456" }
+        code: { type: string, nullable: true, example: "123456" }
 
     KycSubmission:
       type: object

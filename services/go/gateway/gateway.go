@@ -68,9 +68,13 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
+			{method: http.MethodPost, path: "/auth/code/send"},
 			{method: http.MethodPost, path: "/auth/register"},
 			{method: http.MethodPost, path: "/auth/login"},
+			{method: http.MethodPost, path: "/auth/login/verify"},
+			{method: http.MethodPost, path: "/auth/login/code"},
 			{method: http.MethodPost, path: "/auth/refresh"},
+			{method: http.MethodPost, path: "/auth/password/reset"},
 			{method: "", path: "/market/"}, // public market data (prefix)
 			{method: "", path: "/ws"},      // public market WebSocket
 		},

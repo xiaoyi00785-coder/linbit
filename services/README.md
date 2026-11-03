@@ -16,7 +16,7 @@
 | 服务 | 职责 | 对应 API（openapi.yaml tag） |
 | --- | --- | --- |
 | `gateway` | API 网关：鉴权、限流、路由、聚合、WebSocket 接入 | 全部（统一入口） |
-| `account` | 注册/登录/刷新/登出、2FA(TOTP)、账户信息 | Auth、2FA、Account |
+| `account` | 手机号/邮箱注册（验证码）、二次验证登录、找回密码、设备管理、2FA(TOTP)、提现地址簿/白名单、昵称头像、账户信息 | Auth、2FA、Account |
 | `kyc` | KYC 资料提交与审核状态 | KYC |
 | `wallet` | 充值地址、充值记录、提现申请与记录、链上交互 | Wallet |
 | `asset` | 资产余额、冻结/解冻、内部划转、估值 | Assets |
@@ -56,7 +56,7 @@ client ──HTTP/WS──> gateway ──> account / order / asset / market-dat
 | 模块 | 路径 | 端口 | 职责 |
 | --- | --- | --- | --- |
 | `gateway` | `services/go/gateway` | 8080 | 反向代理 + JWT 鉴权中间件 + 公开路由白名单；拦截 `/internal/*` |
-| `account` | `services/go/account` | 8081 | 注册、登录（JWT HS256）、刷新/登出、2FA(TOTP) 绑定/启用/关闭、`/account` |
+| `account` | `services/go/account` | 8081 | 注册（手机号 E.164 / 邮箱 + 验证码）、二次验证登录、找回密码、设备管理、2FA(TOTP)、提现地址簿/白名单、昵称头像、`/account` |
 | `asset`   | `services/go/asset`   | 8082 | 资产余额、冻结/解冻、复式记账流水（事务 + 行锁、借贷平衡、余额非负），PostgreSQL |
 
 ### 设计要点
@@ -65,9 +65,13 @@ client ──HTTP/WS──> gateway ──> account / order / asset / market-dat
   `gateway` 是统一鉴权入口：校验 Bearer access token，剥离客户端伪造的 `X-User-Id`，再注入
   由令牌 `sub`（即 uid）得到的 `X-User-Id` 转发给上游。`account` 的受保护接口自身也会再次校验
   JWT（纵深防御）；`asset` 仅信任网关注入的 `X-User-Id`，故 **asset 只应部署在网关之后**。
-- **2FA**：`/2fa/totp/bind` 生成密钥与 otpauth URI，`/2fa/totp/verify` 校验并启用；启用后
-  登录必须携带有效 `totpCode`，否则 401。
+- **2FA / 二次验证登录**：`/2fa/totp/bind` 生成密钥与 otpauth URI，`/2fa/totp/verify` 校验并启用。
+  登录改为**两步**：`POST /auth/login` 密码正确后，若需二次验证（已开启 TOTP、或**新设备**触发邮箱/短信
+  验证）返回 `LoginChallenge`（`challengeToken` + `methods`，不签发 access token）；再用
+  `POST /auth/login/verify` 提交 TOTP 或验证码换取令牌。已信任设备且未开 TOTP 则直接签发令牌。
 - **密码**：bcrypt 哈希存储。
+- **账户一期能力**（见下方“账户第一期”小节）：手机号/邮箱注册、验证码、找回密码、设备管理、
+  提现地址簿/白名单、昵称头像。
 - **复式记账**：每笔操作（credit/freeze/unfreeze）在单个数据库事务内完成——先 `SELECT … FOR UPDATE`
   锁定余额行，再更新 `free`/`locked` 并写入**借贷平衡**的日记账（`ledger_transactions` +
   `ledger_entries`）。余额非负由应用层检查与数据库 `CHECK (free >= 0 / locked >= 0)` 双重保证。
@@ -78,11 +82,33 @@ client ──HTTP/WS──> gateway ──> account / order / asset / market-dat
   （`goose_account_version` / `goose_asset_version`），避免并发迁移竞争。
 - **Redis 为可选依赖**：设置 `REDIS_URL` 则连接并 ping，否则直接跳过。
 
+### 账户第一期（手机号注册 / 验证码 / 二次验证 / 设备 / 地址簿）
+
+- **注册**：手机号（E.164，`phone` 可直接传 `+8613800138000`，或 `phone`+`countryCode` 拨号区号组合）
+  或邮箱，二选一；均需验证码。流程：`POST /auth/code/send`（`purpose=register`）→ 收码 →
+  `POST /auth/register`（带 `code`）。注册成功即**信任当前设备**，便于随后同设备直接登录。
+- **验证码**：邮箱/短信通道抽象为可替换接口 `EmailSender` / `SmsSender`；本地实现只打印日志（mock），
+  **不接真实服务商**。验证码**哈希存储**（SHA-256），有默认 **10 分钟**有效期、**5 次**尝试上限、
+  按用途隔离（`register` / `login` / `reset_password` / `address` / `bind`）。**发送频率限制**：同一
+  目标+用途默认 60 秒最短间隔、每小时 ≤5 次；有 Redis 用 Redis 计数，否则降级用数据库计数。
+- **找回密码**：`POST /auth/code/send`（`purpose=reset_password`，对不存在账号也返回 200 以免枚举）→
+  `POST /auth/password/reset`，重置后**撤销该用户全部 refresh token/会话**。
+- **设备管理**：登录/注册记录设备（设备指纹=客户端 `deviceId` 或 UA 哈希；含名称、UA、IP、首次/最近时间）。
+  `GET /account/devices` 列出，`DELETE /account/devices/{deviceId}` 移除并撤销该设备会话。新设备登录触发二次验证。
+- **提现地址簿 / 白名单**：数据模型含 `asset/network/address/memo/label/whitelisted` 与每用户白名单开关。
+  `GET/POST /account/withdraw-addresses`、`DELETE /account/withdraw-addresses/{id}`、
+  `GET/PUT /account/withdraw-whitelist`；**增删与开关需验证码或 2FA**（二选一）。真实提现逻辑待钱包模块。
+- **昵称 / 头像**：`PATCH /account/profile`，昵称 1–32 字符；头像一期只存 URL（http/https，≤512），
+  二进制上传通道留 `AvatarUploader` 接口占位。
+- **Dev 取码接口**：`DEV_MODE=true` 时 account 暴露内部接口 `GET /internal/dev/last-code`
+  （需 `X-Internal-Token`，网关不转发 `/internal/*`），供测试/冒烟读取最近验证码，替代真实收码；
+  生产切勿开启。dev 模式同时放宽验证码发送频率限制，便于脚本连续操作。
+
 ### 环境变量
 
 复制 `.env.example` 为 `.env` 填写真实值（`.env` 已被 `.gitignore` 忽略，**切勿提交**）。关键变量：
-`JWT_SECRET`（gateway 与 account 共享）、`INTERNAL_TOKEN`（保护 asset 的 `/internal/*`）、
-`DATABASE_URL`、可选 `REDIS_URL`。
+`JWT_SECRET`（gateway 与 account 共享）、`INTERNAL_TOKEN`（保护 asset 的 `/internal/*` 与 account 的
+dev 取码接口）、`DATABASE_URL`、可选 `REDIS_URL`、可选 `DEV_MODE=true`（仅本地/测试）。
 
 ### 本机运行（无需 Docker）
 
@@ -90,12 +116,19 @@ client ──HTTP/WS──> gateway ──> account / order / asset / market-dat
 用 `miniredis` 提供内存 Redis，并编译运行三个服务（首次会从 Maven 下载 postgres 二进制并缓存）。
 
 ```bash
-# 端到端冒烟：注册 → 登录 → （经网关）查余额；脚本会自动起/停 devstack
+# 端到端冒烟：注册（取码）→ 登录 → （经网关）查余额；脚本会自动起/停 devstack
 bash scripts/smoke.sh
+
+# 账户功能冒烟：手机号注册 → 二次验证登录 → 设备列表/移除 → 找回密码 → 地址簿增删 → 改昵称头像
+bash scripts/smoke-account.sh
 
 # 手动把整套栈跑起来（Ctrl-C 停止），会打印 GATEWAY_URL 等环境变量
 cd tools/devstack && go run . -root ../..
 ```
+
+> 注册现在需要验证码；`smoke.sh` / `smoke-trade.sh` / `smoke-market.sh` 已更新为“先 `POST /auth/code/send`，
+> 再经 dev 取码接口拿到验证码，最后带 `code` 注册”。前端注册流程相应改为两步（请求验证码 → 提交注册），
+> 登录改为可能返回 `LoginChallenge` 的两步流程。
 
 ### 测试
 
@@ -299,9 +332,10 @@ cd services/rust/matching-engine && cargo run --release --bin bench
 # ticker/depth/kline/trades 推送 → REST 精确校验 ticker/K线/深度/成交
 bash scripts/smoke-market.sh
 
-# 第一、二步冒烟仍可用
+# 第一、二步冒烟与账户冒烟仍可用
 bash scripts/smoke.sh
 bash scripts/smoke-trade.sh
+bash scripts/smoke-account.sh
 ```
 
 `tools/devstack` 现额外编译并拉起 `market-data`，并给引擎注入 `EVENT_SINK_URL` 指向其 `/internal/events`；
