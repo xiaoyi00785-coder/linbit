@@ -117,4 +117,101 @@ cp .env.example .env   # 填入真实密钥
 docker compose --env-file .env up --build
 ```
 
-> 其余子目录（kyc/wallet/order/market-data/admin/risk、Rust 撮合引擎）仍为 `.gitkeep` 占位，后续落地。
+## 现货链路 · 第二步（已落地：order / matching-engine / 成交结算）
+
+第二步接上现货交易主链：Go 的 `order` 服务负责下单/撤单/查询与资金冻结和成交结算，
+Rust 的 `matching-engine` 负责撮合，二者通过**可替换的消息接口**通信。
+
+| 模块 | 路径 | 端口 | 职责 |
+| --- | --- | --- | --- |
+| `order` | `services/go/order` | 8084 | 下单（限价/市价，GTC/IOC/FOK/PostOnly）、撤单、当前/历史委托、成交查询；按交易对校验；冻结/解冻资金；成交结算（含手续费、幂等） |
+| `matching-engine` | `services/rust/matching-engine` | 8083 | 每交易对单线程、内存订单簿、价格/时间优先；WAL（先落盘再处理）+定期快照+启动恢复；输出成交与深度事件 |
+
+### 下单与资金冻结
+
+- 路径与 `docs/api/openapi.yaml` 的 Spot 标签一致：`POST /spot/orders`、`DELETE /spot/orders/{orderId}`、
+  `GET /spot/orders/open`、`GET /spot/orders/history`、`GET /spot/trades`，经网关以 `/spot/*` 转发到 `order`。
+- **交易对配置**存于 `symbols` 表（迁移内置默认 `BTCUSDT`、`ETHUSDT`），含价格精度、数量精度、
+  最小下单数量与最小下单额，下单时据此校验。
+- **下单即冻结**（调用 asset 内部接口，撮合前完成，保证不会用不存在的钱成交）：
+  买入限价冻结报价币 `price×quantity`；卖出冻结基础币 `quantity`；**市价买按金额**冻结
+  `quoteOrderQty`（报价币）；市价卖冻结基础币。
+- **leftover 解冻**：订单到终态（filled/canceled/rejected）时，按已成交实际消耗与冻结额之差一次性解冻
+  （由 `orders.unfrozen` 保证只解冻一次）。**限价买成交价更优**时多冻结的部分即在此释放；IOC/FOK/撤单
+  的未成交剩余同样在此释放。
+
+### 撮合引擎
+
+- 单一 `SymbolEngine` 拥有某交易对的完整内存订单簿，由该交易对唯一的撮合线程驱动，撮合路径**无锁**。
+- 价格/时间优先：买盘取最高价、卖盘取最低价，同价位 FIFO。支持限价/市价、GTC/IOC/FOK/PostOnly 与撤单。
+- **WAL 先落盘再处理**：每条被接受的命令先 `fsync` 到 `DATA_DIR/<symbol>/wal.log` 再应用；按
+  `SNAPSHOT_EVERY` 周期写快照并截断 WAL；启动时加载快照并重放 WAL 尾部，精确复现崩溃前状态（含 tradeId）。
+- 输出成交（Trade）与深度（Depth）事件。价格/数量在引擎内用定点 `i128` 整数运算，杜绝浮点误差。
+
+### 可替换的服务间消息接口
+
+- 事件输出经 `EventSink` trait 抽象：本地默认 `LogSink`/`HttpSink`（HTTP 内存 pub/sub stand-in），
+  生产用 `KafkaSink`（`--features kafka` 的接口骨架，标注 rdkafka 接入点，不需要 broker 即可编译）。
+- 命令通道：本地实现为一个最小阻塞 HTTP 服务（`POST /engine/commands`、`GET /engine/depth`），
+  每交易对一线程 + channel，保证单线程撮合；`order` 侧的 `Matching` 接口（`HTTPMatching`）即对应实现，
+  生产可换成从 Kafka 命令主题消费而不动调用点。
+
+### 成交结算（复式记账 + 幂等）
+
+- 每笔成交由 `order` 调用 asset 的 `POST /internal/settle`，在**单个数据库事务**内完成复式记账：
+  买方锁定的报价币划给卖方、卖方锁定的基础币划给买方，maker/taker 手续费分别计入**平台手续费账户**。
+- **幂等**：asset 侧 `settlements(trade_id)` 主键 + `order` 侧 `trades(trade_id, order_id)` 唯一约束，
+  同一 tradeId 重复投递为无操作。
+- **手续费可配置**（见下）：现货 maker/taker 默认各 0.1%，买方费从买到的基础币中扣、卖方费从卖得的报价币中扣。
+
+### 手续费配置
+
+所有费率均可配置（环境变量 / docker-compose），**不区分 VIP 等级**：
+
+| 产品 | 环境变量 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| 现货 maker | `SPOT_MAKER_FEE_RATE` | `0.001` | 0.1% |
+| 现货 taker | `SPOT_TAKER_FEE_RATE` | `0.001` | 0.1% |
+| 合约 maker | `CONTRACT_MAKER_FEE_RATE` | `0.0005` | 0.05%，开/平仓各收一次、按仓位价值（合约服务未落地，费率位已预留） |
+| 合约 taker | `CONTRACT_TAKER_FEE_RATE` | `0.0005` | 0.05%，同上 |
+
+> **提现费用**：提现不收平台手续费，仅收链上 Gas。`docs/api/openapi.yaml` 已预留
+> `GET /wallet/withdraw/networks`（返回 `networks[].gasFeeEstimate` 等 Gas 估算）与 `Withdrawal.gasFee` 字段；
+> 钱包服务尚未实现，此处仅为契约与配置占位。
+
+### 本机运行（无需 Docker）
+
+`tools/devstack` 现额外编译并拉起 **Rust 撮合引擎**（`cargo build`，WAL/快照写入临时目录，退出即清理）与
+`order` 服务，启动顺序 asset → engine → order → account → gateway，并把 `ORDER_URL`、`ENGINE_URL`、
+`INTERNAL_TOKEN`（仅本地开发用的固定令牌）导出给 `-exec` 的命令使用。
+
+```bash
+# 现货交易端到端冒烟：两用户注册登录 → 内部入账充值 → 一卖一买限价成交 →
+# 用十进制精确校验双方余额与平台手续费账户
+bash scripts/smoke-trade.sh
+
+# 原第一步冒烟（注册 → 登录 → 查余额）仍然可用
+bash scripts/smoke.sh
+```
+
+### 测试与基准
+
+```bash
+# Go 全模块 go vet + go test（含 order；需要 DB 的测试在无 DATABASE_URL 时自动 skip）
+bash scripts/test-all.sh
+# 连同需要 DB 的测试（asset 结算幂等 settle_test、order store 集成测试）在 devstack 真实 PG 上执行
+cd tools/devstack && go run . -root ../.. -exec "bash scripts/test-all.sh"
+
+# 撮合引擎单元 + 集成测试（价格时间优先、部分成交、各 TIF、撤单、WAL 恢复一致性）
+cd services/rust/matching-engine && cargo test
+
+# release 性能基准（输出每秒订单数、延迟 p50/p99/p999）
+cd services/rust/matching-engine && cargo run --release --bin bench
+```
+
+### Docker
+
+`docker-compose.yml` 增加了 `matching-engine`（Rust 镜像，WAL/快照挂载 `enginedata` 卷）与 `order`
+服务，网关通过 `ORDER_URL` 暴露 `/spot/*`。
+
+> 其余子目录（kyc/wallet/market-data/admin/risk）仍为占位，后续落地。

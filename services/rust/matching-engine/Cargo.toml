@@ -1,0 +1,29 @@
+[package]
+name = "matching-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Linbit spot matching engine: per-symbol single-threaded, price-time priority, WAL + snapshot recovery."
+
+[[bin]]
+name = "matching-engine"
+path = "src/main.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Production messaging over Kafka. Local builds use the HTTP/in-memory sink;
+# the `kafka` feature compiles an interface skeleton (see src/bus.rs) that marks
+# where an rdkafka producer/consumer would be wired. It does not require a
+# running Kafka broker.
+kafka = []
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

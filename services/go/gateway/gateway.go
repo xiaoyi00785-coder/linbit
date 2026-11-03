@@ -39,8 +39,13 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	order, err := url.Parse(cfg.OrderURL)
+	if err != nil {
+		return nil, err
+	}
 	accountProxy := httputil.NewSingleHostReverseProxy(account)
 	assetProxy := httputil.NewSingleHostReverseProxy(asset)
+	orderProxy := httputil.NewSingleHostReverseProxy(order)
 
 	return &Gateway{
 		cfg: cfg,
@@ -50,6 +55,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/2fa", proxy: accountProxy},
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
+			{prefix: "/spot", proxy: orderProxy},
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},

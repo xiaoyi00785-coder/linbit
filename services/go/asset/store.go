@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/shopspring/decimal"
 )
@@ -177,6 +178,165 @@ func (s *Store) post(ctx context.Context, userID, asset, txType, ref string, fre
 		}
 	}
 	return tx.Commit()
+}
+
+// ErrAlreadySettled indicates the trade was already settled (idempotent no-op).
+var ErrAlreadySettled = errors.New("trade already settled")
+
+// SettleRequest describes a single matched trade to settle atomically.
+//
+// Buyer pays QuoteAmount from locked quote and receives BaseQty of base (minus
+// BuyerFeeBase). Seller delivers BaseQty from locked base and receives
+// QuoteAmount of quote (minus SellerFeeQuote). Both fees go to FeeAccount.
+type SettleRequest struct {
+	TradeID        string
+	Base           string
+	Quote          string
+	BuyerUserID    string
+	SellerUserID   string
+	FeeAccount     string
+	QuoteAmount    decimal.Decimal // buyer pays / seller receives (gross)
+	BaseQty        decimal.Decimal // seller delivers / buyer receives (gross)
+	BuyerFeeBase   decimal.Decimal // taken from buyer's received base
+	SellerFeeQuote decimal.Decimal // taken from seller's received quote
+}
+
+// balanceDelta accumulates per (user, asset) changes to free/locked.
+type balanceDelta struct {
+	userID string
+	asset  string
+	free   decimal.Decimal
+	locked decimal.Decimal
+}
+
+// Settle applies one matched trade in a single transaction with double-entry
+// bookkeeping, idempotent on TradeID. It returns ErrAlreadySettled (which
+// callers treat as success) if the trade was settled before.
+func (s *Store) Settle(ctx context.Context, req SettleRequest) error {
+	if req.QuoteAmount.Sign() <= 0 || req.BaseQty.Sign() <= 0 {
+		return ErrInvalidAmount
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Idempotency gate: if the trade id is already recorded, do nothing.
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO settlements (trade_id) VALUES ($1) ON CONFLICT DO NOTHING`, req.TradeID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrAlreadySettled
+	}
+
+	buyerRecvBase := req.BaseQty.Sub(req.BuyerFeeBase)
+	sellerRecvQuote := req.QuoteAmount.Sub(req.SellerFeeQuote)
+
+	// Net balance deltas. Quote: buyer locked down, seller free up, platform up.
+	// Base: seller locked down, buyer free up, platform up.
+	deltas := []balanceDelta{
+		{userID: req.BuyerUserID, asset: req.Quote, locked: req.QuoteAmount.Neg()},
+		{userID: req.SellerUserID, asset: req.Quote, free: sellerRecvQuote},
+		{userID: req.FeeAccount, asset: req.Quote, free: req.SellerFeeQuote},
+		{userID: req.SellerUserID, asset: req.Base, locked: req.BaseQty.Neg()},
+		{userID: req.BuyerUserID, asset: req.Base, free: buyerRecvBase},
+		{userID: req.FeeAccount, asset: req.Base, free: req.BuyerFeeBase},
+	}
+	if err := s.applyDeltas(ctx, tx, deltas); err != nil {
+		return err
+	}
+
+	// Double-entry journal. Debit = bucket increases, credit = bucket decreases;
+	// each asset must net to zero. Zero-amount legs (e.g. a zero fee) are skipped
+	// to satisfy the amount > 0 ledger constraint.
+	lines := []ledgerLine{}
+	add := func(acct, asset, dir string, amt decimal.Decimal) {
+		if amt.Sign() > 0 {
+			lines = append(lines, ledgerLine{Account: acct, Asset: asset, Direction: dir, Amount: amt})
+		}
+	}
+	add(userAcct(req.BuyerUserID, "locked"), req.Quote, "credit", req.QuoteAmount)
+	add(userAcct(req.SellerUserID, "free"), req.Quote, "debit", sellerRecvQuote)
+	add(userAcct(req.FeeAccount, "free"), req.Quote, "debit", req.SellerFeeQuote)
+	add(userAcct(req.SellerUserID, "locked"), req.Base, "credit", req.BaseQty)
+	add(userAcct(req.BuyerUserID, "free"), req.Base, "debit", buyerRecvBase)
+	add(userAcct(req.FeeAccount, "free"), req.Base, "debit", req.BuyerFeeBase)
+
+	if err := validateBalanced(lines); err != nil {
+		return err
+	}
+	var txID int64
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO ledger_transactions (user_id, tx_type, ref) VALUES ($1, $2, $3) RETURNING id`,
+		req.BuyerUserID, "settle", nullIfEmpty(req.TradeID)).Scan(&txID); err != nil {
+		return err
+	}
+	for _, l := range lines {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO ledger_entries (tx_id, account, asset, direction, amount)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			txID, l.Account, l.Asset, l.Direction, l.Amount.String()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// applyDeltas locks and updates each (user, asset) balance row inside tx. Rows
+// are touched in a deterministic order (user, then asset) to avoid deadlocks,
+// and the non-negative invariant is enforced per bucket.
+func (s *Store) applyDeltas(ctx context.Context, tx *sql.Tx, deltas []balanceDelta) error {
+	// Merge duplicates and sort for a stable lock order.
+	merged := map[string]*balanceDelta{}
+	for _, d := range deltas {
+		key := d.userID + "\x00" + d.asset
+		if m, ok := merged[key]; ok {
+			m.free = m.free.Add(d.free)
+			m.locked = m.locked.Add(d.locked)
+		} else {
+			cp := d
+			merged[key] = &cp
+		}
+	}
+	keys := make([]string, 0, len(merged))
+	for k := range merged {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		d := merged[k]
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO asset_accounts (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, d.userID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO balances (user_id, asset) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			d.userID, d.asset); err != nil {
+			return err
+		}
+		var freeStr, lockedStr string
+		if err := tx.QueryRowContext(ctx,
+			`SELECT free::text, locked::text FROM balances
+			 WHERE user_id = $1 AND asset = $2 FOR UPDATE`,
+			d.userID, d.asset).Scan(&freeStr, &lockedStr); err != nil {
+			return err
+		}
+		newFree := decimal.RequireFromString(freeStr).Add(d.free)
+		newLocked := decimal.RequireFromString(lockedStr).Add(d.locked)
+		if newFree.IsNegative() || newLocked.IsNegative() {
+			return ErrInsufficient
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE balances SET free = $3, locked = $4 WHERE user_id = $1 AND asset = $2`,
+			d.userID, d.asset, newFree.String(), newLocked.String()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // LedgerBalance recomputes a user's net position for an asset directly from the

@@ -66,6 +66,39 @@ services:
       asset:
         condition: service_started
 
+  matching-engine:
+    build:
+      context: services/rust/matching-engine
+    environment:
+      BIND: "0.0.0.0:8083"
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      DATA_DIR: /data
+      SNAPSHOT_EVERY: "1000"
+      SYMBOLS: "BTCUSDT:6,ETHUSDT:5"
+    volumes:
+      - enginedata:/data
+
+  order:
+    build:
+      context: .
+      dockerfile: services/go/order/Dockerfile
+    environment:
+      PORT: "8084"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      ENGINE_URL: http://matching-engine:8083
+      SPOT_MAKER_FEE_RATE: ${SPOT_MAKER_FEE_RATE:-0.001}
+      SPOT_TAKER_FEE_RATE: ${SPOT_TAKER_FEE_RATE:-0.001}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      matching-engine:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -75,6 +108,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
       ACCOUNT_URL: http://account:8081
       ASSET_URL: http://asset:8082
+      ORDER_URL: http://order:8084
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
@@ -83,6 +117,9 @@ services:
         condition: service_started
       asset:
         condition: service_started
+      order:
+        condition: service_started
 
 volumes:
   pgdata:
+  enginedata:

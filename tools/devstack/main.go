@@ -36,6 +36,8 @@ const (
 	gatewayPort = "8080"
 	accountPort = "8081"
 	assetPort   = "8082"
+	enginePort  = "8083"
+	orderPort   = "8084"
 	jwtSecret   = "devstack-insecure-jwt-secret"
 	internalTok = "devstack-internal-token"
 )
@@ -98,7 +100,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway"}
+	services := []string{"account", "asset", "gateway", "order"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -113,6 +115,26 @@ func run(root, execCmd string) int {
 		bins[name] = bin
 	}
 
+	// --- Build the Rust matching engine (cargo, debug build) ----------------
+	engineDir := filepath.Join(absRoot, "services", "rust", "matching-engine")
+	log.Printf("devstack: building matching-engine (cargo) ...")
+	cargoBuild := exec.Command("cargo", "build", "--bin", "matching-engine")
+	cargoBuild.Dir = engineDir
+	cargoBuild.Stdout, cargoBuild.Stderr = os.Stdout, os.Stderr
+	if err := cargoBuild.Run(); err != nil {
+		log.Printf("build matching-engine: %v", err)
+		return 1
+	}
+	bins["engine"] = filepath.Join(engineDir, "target", "debug", "matching-engine")
+
+	// Per-run data dir for the engine's WAL + snapshots (thrown away on exit).
+	engineData, err := os.MkdirTemp("", "linbit-engine-*")
+	if err != nil {
+		log.Printf("engine data dir: %v", err)
+		return 1
+	}
+	defer os.RemoveAll(engineData)
+
 	// --- Run services -------------------------------------------------------
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -122,6 +144,20 @@ func run(root, execCmd string) int {
 			"PORT=" + assetPort,
 			"DATABASE_URL=" + databaseURL,
 			"INTERNAL_TOKEN=" + internalTok,
+			"REDIS_URL=" + redisURL,
+		},
+		"engine": {
+			"BIND=127.0.0.1:" + enginePort,
+			"INTERNAL_TOKEN=" + internalTok,
+			"DATA_DIR=" + engineData,
+			"SNAPSHOT_EVERY=1000",
+		},
+		"order": {
+			"PORT=" + orderPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"ENGINE_URL=http://localhost:" + enginePort,
 			"REDIS_URL=" + redisURL,
 		},
 		"account": {
@@ -137,18 +173,22 @@ func run(root, execCmd string) int {
 			"JWT_SECRET=" + jwtSecret,
 			"ACCOUNT_URL=http://localhost:" + accountPort,
 			"ASSET_URL=http://localhost:" + assetPort,
+			"ORDER_URL=http://localhost:" + orderPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
 
-	// Start order matters: asset first (account calls it on register), then
-	// account, then gateway. Each is started and awaited healthy before the
-	// next so their startup migrations run sequentially, not concurrently.
+	// Start order matters: asset first (account/order call it), then the engine,
+	// then the order service (migrates the spot schema, needs asset+engine), then
+	// account, then gateway. Each is started and awaited healthy before the next
+	// so their startup migrations run sequentially, not concurrently.
 	startOrder := []struct {
 		name   string
 		health string
 	}{
 		{"asset", "http://localhost:" + assetPort + "/healthz"},
+		{"engine", "http://localhost:" + enginePort + "/healthz"},
+		{"order", "http://localhost:" + orderPort + "/healthz"},
 		{"account", "http://localhost:" + accountPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
@@ -190,8 +230,13 @@ func run(root, execCmd string) int {
 		"GATEWAY_URL=" + gatewayURL,
 		"ACCOUNT_URL=http://localhost:" + accountPort,
 		"ASSET_URL=http://localhost:" + assetPort,
+		"ORDER_URL=http://localhost:" + orderPort,
+		"ENGINE_URL=http://localhost:" + enginePort,
 		"DATABASE_URL=" + databaseURL,
 		"REDIS_URL=" + redisURL,
+		// Dev-only shared secret so smoke scripts can reach asset's /internal/*
+		// (e.g. seed balances). Not a real credential; never used in production.
+		"INTERNAL_TOKEN=" + internalTok,
 	}
 
 	if execCmd == "" {

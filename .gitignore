@@ -28,3 +28,20 @@ pnpm-debug.log*
 # test / coverage
 coverage/
 tools/devstack/devstack
+
+# Rust (matching engine) build output
+target/
+
+# Matching-engine runtime state: WAL + snapshots (per-symbol under DATA_DIR)
+services/rust/matching-engine/data/
+data/
+*.wal
+wal.log
+snapshot.json
+snapshot.json.tmp
+
+# Compiled Go service binaries (produced by `go build` inside a service dir)
+services/go/account/account
+services/go/asset/asset
+services/go/gateway/gateway
+services/go/order/order
