@@ -16,7 +16,7 @@ import { useState } from 'react'
 import { Footer } from './App'
 import { MOCK } from './auth'
 import { useProfile } from './Pages'
-import { setAuthed } from './auth'
+import { signOut } from './auth'
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div>
 const Eye=()=><span className="eye"><G n="eye" s={14}/></span>
@@ -80,4 +80,4 @@ export function Points(){const n=useNavigate();return <main className="pts"><div
 <h2 className="pth2">活动规则</h2><ol className="prul">{['活动仅限 linbit 已注册用户参与，需先点击“立即报名”，报名后完成的任务才计入积分。','积分仅在本期活动内有效，活动结束后清零，不跨期累计。','体验金、抵扣金将发放至卡券中心，激活时需满足合约账户余额要求。','任务进度每天 UTC 0 点重置，每档奖品每人限兑换一次。','奖励仅限体验金 / 抵扣金，不提供实物奖品，不可折现。','如发现刷量、对敲等违规行为，平台有权取消资格并收回奖励。'].map(x=><li key={x}>{x}</li>)}</ol></div><Footer/></main>}
 // —— 头像下拉菜单 ——
 export function AvatarMenu(){const p=useProfile();return <div className="avm"><div className="avc">{p.avatar?<img className="ava" src={p.avatar} alt="" style={{width:44,height:44,borderRadius:'50%',objectFit:'cover'}}/>:<div className="ava" style={{width:44,height:44}}><i/></div>}<div><b>{p.name}</b><small>UID: {p.uid} <G n="copy" s={12}/></small><small className="lg">{p.acct}</small></div><span className="avv">▭ {p.kyc?'已认证':'未认证'}</span></div>
-{[['overview','总览','/setting/dashboard'],['lock','账户与安全','/setting/security'],['kyc','身份认证','/setting/kyc',1],['gift','福利中心','/rewards'],['invite','邀请好友','/invite'],['settings','设置','/setting/settings'],['api','API 管理','/setting/api']].map(([i,t,to,k])=><Link key={t} to={to} className="avi"><span><SideIcon n={i}/></span>{t}{k&&<em>未认证</em>}</Link>)}<Link to="/login" className="avo" onClick={()=>setAuthed(false)}>退出登录</Link></div>}
+{[['overview','总览','/setting/dashboard'],['lock','账户与安全','/setting/security'],['kyc','身份认证','/setting/kyc',1],['gift','福利中心','/rewards'],['invite','邀请好友','/invite'],['settings','设置','/setting/settings'],['api','API 管理','/setting/api']].map(([i,t,to,k])=><Link key={t} to={to} className="avi"><span><SideIcon n={i}/></span>{t}{k&&<em>未认证</em>}</Link>)}<a href="/login" className="avo" onClick={async e=>{e.preventDefault();await signOut();location.href='/login'}}>退出登录</a></div>}

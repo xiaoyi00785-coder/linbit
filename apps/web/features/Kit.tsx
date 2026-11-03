@@ -7,6 +7,7 @@ import { CoinIcon } from "@/components/CoinIcon";
 import { toast, copyText } from "@/lib/ui";
 import { rest, rget } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
+import { useAuth } from "@/legacy/auth";
 const authed = () => !!useAuthStore.getState().accessToken;
 
 type MP = Record<string, any>;
@@ -55,7 +56,7 @@ function Security({ kind = "other", label, close }: MP) {
 const GERR: Record<string, string> = { INVALID_RANGE: "价格区间无效", INVALID_GRID_COUNT: "网格数量无效", INVESTMENT_TOO_LOW: "投资额过低", GRID_TOO_DENSE: "网格过密", INSUFFICIENT_BALANCE: "余额不足", PRICE_OUT_OF_RANGE: "当前价格不在区间内", TOO_MANY_BOTS: "运行中的策略过多", NO_PRICE: "暂无价格" };
 function Grid({ symbol = "BTCUSDT", close }: MP) {
   const [v, setV] = useState({ lowerPrice: "70000", upperPrice: "85000", gridCount: "20", investment: "100" }); const [pv, setPv] = useState<any>(null); const [busy, setBusy] = useState(false);
-  const authed = !!useAuthStore.getState().accessToken;
+  const authed = useAuth();
   useEffect(() => { const t = setTimeout(async () => { const q = new URLSearchParams({ symbol, mode: "arithmetic", ...v }).toString(); const r = await rest<any>("GET", "/strategy/grid/preview?" + q); setPv(r.ok ? r.data : { err: GERR[(r as any).code] || r.error }); }, 400); return () => clearTimeout(t); }, [v, symbol]);
   const go = async () => { if (!authed) { close(); location.href = "/login"; return; } setBusy(true); const r = await rest<any>("POST", "/strategy/grid", { symbol, mode: "arithmetic", ...v }); setBusy(false); if (r.ok) { toast("网格策略已创建"); close(); } else toast(GERR[(r as any).code] || r.error || "创建失败", "err"); };
   return <Box title={"复制策略 · 现货网格 " + symbol.replace("USDT", "/USDT")} onClose={close} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={go}>{authed ? (busy ? "创建中…" : "创建") : "登录后创建"}</button></>}>
