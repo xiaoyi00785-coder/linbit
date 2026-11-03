@@ -62,6 +62,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	// ReverseProxy transparently tunnels WebSocket upgrades (used by /ws).
 	marketProxy := httputil.NewSingleHostReverseProxy(market)
 	kycProxy := httputil.NewSingleHostReverseProxy(kyc)
+	futures, err := url.Parse(cfg.FuturesURL)
+	if err != nil {
+		return nil, err
+	}
+	futuresProxy := httputil.NewSingleHostReverseProxy(futures)
 
 	return &Gateway{
 		cfg: cfg,
@@ -73,6 +78,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/assets", proxy: assetProxy},
 			{prefix: "/wallet", proxy: walletProxy},
 			{prefix: "/kyc", proxy: kycProxy},
+			{prefix: "/futures", proxy: futuresProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/ws", proxy: marketProxy},
@@ -89,6 +95,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/password/reset"},
 			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
 			{method: "", path: "/market/"},                      // public market data (prefix)
+			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
 			{method: "", path: "/ws"},                           // public market WebSocket
 		},
 	}, nil

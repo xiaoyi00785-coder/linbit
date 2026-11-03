@@ -53,6 +53,7 @@ var (
 	walletPort  = envOr("DEVSTACK_WALLET_PORT", "8086")
 	kycPort     = envOr("DEVSTACK_KYC_PORT", "8087")
 	adminPort   = envOr("DEVSTACK_ADMIN_PORT", "8088")
+	futuresPort = envOr("DEVSTACK_FUTURES_PORT", "8089")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -131,7 +132,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -273,6 +274,15 @@ func run(root, execCmd string) int {
 			// can exercise the 24h fee-change notice without waiting.
 			"DEV_MODE=true",
 		},
+		"futures": {
+			"PORT=" + futuresPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			// Dev mode exposes index override / forced tick / funding endpoints.
+			"DEV_MODE=true",
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
@@ -283,6 +293,7 @@ func run(root, execCmd string) int {
 			"MARKET_URL=http://localhost:" + marketPort,
 			"KYC_URL=http://localhost:" + kycPort,
 			"ADMIN_URL=http://localhost:" + adminPort,
+			"FUTURES_URL=http://localhost:" + futuresPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
@@ -304,6 +315,7 @@ func run(root, execCmd string) int {
 		{"wallet", "http://localhost:" + walletPort + "/healthz"},
 		{"kyc", "http://localhost:" + kycPort + "/healthz"},
 		{"admin", "http://localhost:" + adminPort + "/healthz"},
+		{"futures", "http://localhost:" + futuresPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 

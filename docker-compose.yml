@@ -220,6 +220,34 @@ services:
       kyc:
         condition: service_started
 
+  futures:
+    build:
+      context: .
+      dockerfile: services/go/futures/Dockerfile
+    environment:
+      PORT: "8089"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      # Index price = spot last price from market-data (no price = no mark = fail closed).
+      MARKET_URL: http://market-data:8085
+      FUTURES_DEFAULT_LEVERAGE: ${FUTURES_DEFAULT_LEVERAGE:-20}
+      FUTURES_DEFAULT_MARGIN_MODE: ${FUTURES_DEFAULT_MARGIN_MODE:-cross}
+      FUTURES_MARKET_PRICE_BAND: ${FUTURES_MARKET_PRICE_BAND:-0.05}
+      FUTURES_FUNDING_HOURS: ${FUTURES_FUNDING_HOURS:-8}
+      FUTURES_FUNDING_INTEREST: ${FUTURES_FUNDING_INTEREST:-0.0001}
+      FUTURES_FUNDING_CLAMP: ${FUTURES_FUNDING_CLAMP:-0.0005}
+      FUTURES_FUNDING_CAP: ${FUTURES_FUNDING_CAP:-0.0075}
+      # Empty = use each contract's maintenance margin rate.
+      FUTURES_LIQUIDATION_FEE_RATE: ${FUTURES_LIQUIDATION_FEE_RATE:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      market-data:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -233,6 +261,7 @@ services:
       MARKET_URL: http://market-data:8085
       WALLET_URL: http://wallet:8086
       KYC_URL: http://kyc:8087
+      FUTURES_URL: http://futures:8089
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
@@ -250,6 +279,8 @@ services:
       wallet:
         condition: service_started
       kyc:
+        condition: service_started
+      futures:
         condition: service_started
 
 volumes:

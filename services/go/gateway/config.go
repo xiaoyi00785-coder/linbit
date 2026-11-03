@@ -12,6 +12,7 @@ type Config struct {
 	OrderURL   string
 	MarketURL  string
 	KycURL     string
+	FuturesURL string
 	RedisURL   string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string
@@ -28,6 +29,7 @@ func LoadConfig() Config {
 		OrderURL:       common.Env("ORDER_URL", "http://localhost:8084"),
 		MarketURL:      common.Env("MARKET_URL", "http://localhost:8085"),
 		KycURL:         common.Env("KYC_URL", "http://localhost:8087"),
+		FuturesURL:     common.Env("FUTURES_URL", "http://localhost:8089"),
 		RedisURL:       common.Env("REDIS_URL", ""),
 		AllowedOrigins: splitOrigins(common.Env("CORS_ALLOWED_ORIGINS", "")),
 	}
