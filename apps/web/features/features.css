@@ -126,3 +126,4 @@
 .cv-empty{color:var(--lb-light-text-2);text-align:center;padding:16px}.cv-hist{max-width:1200px;margin:0 auto 60px;padding:0 24px}.cv-hist table{width:100%;border-collapse:collapse;font-size:13px}.cv-hist th,.cv-hist td{text-align:left;padding:10px 6px;border-bottom:1px solid var(--lb-light-border)}
 .cv-modal{display:flex;flex-direction:column;gap:12px;min-width:360px}
 .cv-pg{display:flex;gap:12px;align-items:center;justify-content:center;margin-top:12px}.cv-pg button{border:0;background:var(--lb-light-fill,#f3f3f3);border-radius:6px;padding:4px 12px;cursor:pointer}.cv-pg button:disabled{opacity:.4;cursor:default}
+.kit-ci{vertical-align:middle;margin-right:8px;border-radius:50%}.kit-it .kit-ci{margin-right:8px}.kit-dd .kit-ci+*{vertical-align:middle}
