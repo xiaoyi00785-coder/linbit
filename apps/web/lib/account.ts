@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import type { components } from "@linbit/api-client";
-import { api } from "./api";
+import { api, API_BASE } from "./api";
 import { useAuthStore } from "./store";
 import type { Result } from "./services";
 
@@ -13,9 +13,10 @@ type S = components["schemas"];
 export type AccountInfo = S["Account"];
 export type AuthTokens = S["AuthTokens"];
 export type LoginChallenge = S["LoginChallenge"];
-export type DeviceItem = S["Device"];
+export type DeviceItem = S["Device"] & { current?: boolean }; // current：后端已返回，schema.ts 待重新生成
 export type AddressItem = S["WithdrawAddress"];
-type SendCodeRes = { sent?: boolean; channel?: string; ttlSeconds?: number };
+/** 对应 openapi SendCodeResponse（schema.ts 待 openapi-growth 合入后重新生成） */
+type SendCodeRes = { sent: boolean; channel: "email" | "sms"; ttlSeconds?: number };
 
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 const errMsg = (e: unknown, status: number) =>
@@ -111,8 +112,12 @@ export const loginVerify = (challengeToken: string, method: string, code: string
 export const loginResend = (challengeToken: string) =>
   call(() => api.POST("/auth/login/code", { body: { challengeToken } }) as never, () => true);
 
-export const resetPassword = (b: Target & { code: string; newPassword: string }) =>
-  call(() => api.POST("/auth/password/reset", { body: b }) as never, () => true);
+/** 找回密码第一步：校验验证码，换取一次性 resetToken（默认 600 秒有效） */
+export const verifyResetCode = (b: Target & { code: string }) =>
+  call<{ resetToken: string; expiresIn: number }>(() => (api as any).POST("/auth/password/verify-code", { body: b }), () => ({ resetToken: "mock-reset-token", expiresIn: 600 }));
+/** 找回密码第二步：用 resetToken 设置新密码（令牌一次性） */
+export const resetPassword = (b: { resetToken: string; newPassword: string }) =>
+  call(() => (api as any).POST("/auth/password/reset", { body: b }) as never, () => true);
 
 /* ---------- 账户资料 ---------- */
 const isMockToken = () => (useAuthStore.getState().accessToken ?? "").startsWith("mock-");
@@ -200,3 +205,21 @@ export const setWhitelist = (b: S["SetWhitelistRequest"]) =>
     mockWl = b.enabled;
     return { enabled: mockWl };
   });
+
+/* ---------- 头像上传（multipart，字段 file；jpeg/png/webp ≤2MB） ---------- */
+export async function uploadAvatar(file: File): Promise<Result<AccountInfo>> {
+  if (isMockToken()) return { ok: true, data: { ...(meCache ?? mockAccount()), avatarUrl: URL.createObjectURL(file) }, source: "mock" };
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const r = await fetch(API_BASE + "/account/avatar", { method: "POST", body: fd, headers: { Authorization: `Bearer ${useAuthStore.getState().accessToken}` } });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return { ok: true, data: j as AccountInfo, source: "api" };
+    const msg = r.status === 413 ? "头像超过 2MB 大小限制" : r.status === 415 ? "仅支持 JPEG/PNG/WEBP 图片" : j?.message || `上传失败（HTTP ${r.status}）`;
+    return { ok: false, error: msg, source: "api" };
+  } catch {
+    return { ok: false, error: "网络错误，上传失败", source: "api" };
+  }
+}
+/** avatarUrl 可能是相对路径 /account/avatars/{file}，需拼接 API 基地址 */
+export const avatarSrc = (u?: string | null) => (!u ? null : /^(https?:|blob:|data:)/.test(u) ? u : API_BASE + u);

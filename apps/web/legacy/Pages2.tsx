@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate, useParams } from '@/lib/router'
 import { QRCodeSVG } from 'qrcode.react'
 import { Ico, Footer } from './App'
+import { LoanBody } from '@/features/Loan'
 import { coins } from './data'
 import { MOCK } from './auth'
 import { SqCard, Pager } from './Pages'
@@ -18,7 +19,7 @@ const SHARE=['保存图片','复制链接','X','Telegram','Facebook','Instagram'
 export function ShareModal({onClose,title,hl,img='/img/invite.webp',gold}){return <div className="xmask" onClick={onClose}><div className="shw" onClick={e=>e.stopPropagation()}><span className="xx d" onClick={onClose}>×</span><div className={'shc'+(gold?' gold':'')}><div className="shl">▣ LINBIT</div><div className="shm"><div><b>{title}</b><b className={gold?'goldt':'lime'}>{hl}</b></div><img src={img} alt=""/></div><div className="shq"><span className="qr"><QRCodeSVG value={'https://linbit.example.com/r/'+MOCK.invite} size={54} bgColor="transparent" fgColor="currentColor"/></span><div><small className="g">输入我的邀请码，加入 linbit</small><b>{MOCK.invite}</b></div></div></div><div className="shb">{SHARE.map((s,i)=><div key={s}><i className={i<2?'lime':''}>{['⤓','⛓','𝕏','✈','f','◎','◉','●●'][i]}</i><small>{s}</small></div>)}</div></div></div>}
 
 /* ---------- Earn hub with distinct sub-tabs ---------- */
-const TABS=[['','理财总览'],['bao','理财宝'],['simple','简单赚币'],['onchain','链上赚币'],['vip','VIP 尊享财富管理']]
+const TABS=[['','理财总览'],['bao','理财宝'],['simple','简单赚币'],['onchain','链上赚币'],['vip','VIP 尊享财富管理'],['loan','质押借币']]
 export function EarnTabs({cur}){return <div className="etabs">{TABS.map(([k,t])=><Link key={k} to={'/earn'+(k?'/'+k:'')} className={cur===k?'on':''}>{t}</Link>)}</div>}
 function Hero({cur,title,sub,img,stats,btns,extra}){return <div className="eh"><div className="ewrap"><EarnTabs cur={cur}/><div className="ehero"><div><h1>{title}{extra}</h1><p className="g">{sub}</p></div><img src={img} alt=""/></div>{stats&&<div className="ebar">{stats.map(([a,b])=><div key={a}><span className="g">{a}</span><b>{b}</b></div>)}<span className="sp"/>{btns}</div>}</div></div>}
 function Tog(){const[o,setO]=useState(false);return <span className={'sw'+(o?' on':'')} onClick={()=>setO(!o)}><i/></span>}
@@ -26,7 +27,7 @@ const BAO=[['USDT','7 天','8.8%','新人专享'],['USDT','30 天','4.6%'],['BTC
 const SIMPLE=[['USDC','1% ~ 1.1%'],['SOL','1.83% ~ 1.9%'],['USDT','1% ~ 1.2%'],['BTC','0.3% ~ 0.5%'],['ETH','0.8% ~ 1.4%'],['DOGE','0.6% ~ 1%']]
 const CHAIN=[['ETH','ETH 质押','2.9%','无锁定期'],['SOL','SOL 质押','6.4%','2 天解锁'],['TRX','TRX 质押','4.1%','14 天解锁'],['DOT','DOT 质押','11.2%','28 天解锁'],['ATOM','ATOM 质押','13.5%','21 天解锁'],['ADA','ADA 质押','2.6%','无锁定期']]
 export function EarnHub({base}){const {tab=''}=useParams();const cur=base??tab
- if(cur==='vip')return <Vip/>;
+ if(cur==='vip')return <Vip/>;if(cur==='loan')return <Loan/>
  if(cur==='bao')return <main><Hero cur="bao" title="理财宝 · 定期锁仓" sub="锁定期限，享受更高固定年化，到期本息自动返还" img="/img/bao.webp" stats={[['持仓估值(USDT) ▾ ◉','0'],['累计收益','0']]} btns={<><button className="pill white">申购记录</button><button className="pill lime">我的持仓</button></>}/><div className="light"><div className="ewrap"><h2 className="lh2">定期产品</h2><div className="g3 bao">{BAO.map(([s,d,r,t],i)=><div key={i} className="lcard bc"><div className="lrow l"><Ico c={cf(s)} s={28}/><b>{s}</b>{t&&<em className="hot">{t}</em>}</div><div className="apr">{r} <small>参考年化</small></div><div className="lrow"><span className="lg">期限 {d}</span><button className="lb dark">申购</button></div></div>)}</div><Faq items={[['理财宝和简单赚币有什么区别？','理财宝为定期产品，期间不可赎回；简单赚币可随时存取。'],['到期后资金如何返还？','本金与收益在到期后 1 小时内返还至资金账户。'],['可以提前赎回吗？']]}/></div><Footer light/></div></main>
  if(cur==='simple')return <main><Hero cur="simple" title="灵活存取，日日计息" sub="随存随取，按日发放收益，闲置资产不再沉睡" img="/img/spot.webp" stats={[['累计收益(USDT) ▾ ◉','0'],['昨日收益','0']]} btns={<><button className="pill sq">⤴</button><button className="pill white">查看我的收益</button></>}/><div className="light"><div className="ewrap"><h2 className="lh2">全部产品</h2><div className="lrow"><span className="lsearch">⌕ 搜索币种</span><span className="auto">◐ 自动赚币 <small>未开启</small></span></div><div className="lth"><span>币种</span><span>参考年化</span><span className="r">自动赚币</span></div>{SIMPLE.map(([s,r])=><div className="ltr e3" key={s}><span><Ico c={cf(s)} s={22}/> {s}</span><span>{r}</span><span className="r"><Tog/></span></div>)}<Faq items={[['什么是简单赚币？'],['自动赚币如何运作？','开启后，资金账户中的闲置资产将自动申购活期产品。'],['收益什么时候到账？']]}/></div><Footer light/></div></main>
  if(cur==='onchain')return <main><Hero cur="onchain" title="链上赚币" sub="参与公链质押，透明链上收益，平台代为节点运维" img="/img/hero.webp" stats={[['质押估值(USDT) ▾ ◉','0'],['累计收益','0']]} btns={<button className="pill lime">我的质押</button>}/><div className="light"><div className="ewrap"><h2 className="lh2">可质押资产</h2><div className="lth"><span>资产</span><span>项目</span><span>参考年化</span><span>赎回规则</span><span className="r">操作</span></div>{CHAIN.map(([s,p,r,u])=><div className="ltr e5" key={s}><span><Ico c={cf(s)} s={22}/> {s}</span><span>{p}</span><span className="up2">{r}</span><span className="lg">{u}</span><span className="r"><button className="lb dark sm">质押</button></span></div>)}<Faq items={[['链上赚币的收益来自哪里？','收益来自公链网络的质押奖励，按链上实际发放计算。'],['质押有风险吗？'],['解锁期内能交易吗？']]}/></div><Footer light/></div></main>
@@ -40,6 +41,9 @@ export function Vip(){const[sh,setSh]=useState(false);const[ok,setOk]=useState(f
 <Faq dark items={[['成为 linbit VIP 有哪些权益？','包括专属客户经理（全站统一费率：现货 0.1%、合约 0.05%，无等级折扣）、定制理财方案与私享活动。'],['如何成为 linbit VIP？','满足资产或交易量条件后，提交申请，1-3 个工作日内审核。'],['如何联系我们？']]}/><Footer/>
 {sh&&<ShareModal gold onClose={()=>setSh(false)} title="linbit VIP 私享财富" hl="尊享专属权益" img="/img/vip.webp"/>}
 {ok&&<Modal title="申请已提交" sub="客户经理将在 1-3 个工作日内与你联系。（演示数据，未真实提交）" onClose={()=>setOk(false)}><button className="lb dark wide" onClick={()=>setOk(false)}>知道了</button></Modal>}</main>}
+
+/* ---------- Loan ---------- */
+export function Loan(){return <main><Hero cur="loan" title="质押借币" extra={<small className="pi">◈ 产品介绍</small>} sub="质押加密资产，快速借出稳定币" img="/img/loan.webp"/><LoanBody faq={<><h2 className="lh2 c">放入质押，轻松获利</h2><div className="g3">{[['不卖币也能用钱','保留持仓上涨空间的同时获得流动性'],['灵活还款','支持随时部分或全部还款'],['透明风控','实时展示质押率与强平价格']].map(([a,c])=><div key={a} className="lcard sm"><b>{a}</b><span className="lg">{c}</span></div>)}</div><Faq items={[['什么是质押借币？','质押 BTC / ETH 等数字资产即可借出 USDT，无需卖出持仓。'],['质押率如何计算？','质押率 =（借款本金 + 未付利息）÷ 质押物价值。初始质押率 80%，达到预警线会通知补仓，达到强平线将触发平仓。'],['利息如何计算？','按小时计息：活期为浮动利率，7 天 / 30 天为固定利率，以借款时的利率为准。']]}/></>}/><div className="light"><Footer light/></div></main>}
 
 /* ---------- Rewards ---------- */
 function useCountdown(){const[t,setT]=useState(7*86400-1);useEffect(()=>{const i=setInterval(()=>setT(x=>x>0?x-1:0),1000);return()=>clearInterval(i)},[]);return [Math.floor(t/86400),Math.floor(t%86400/3600),Math.floor(t%3600/60),t%60].map(x=>String(x).padStart(2,'0'))}

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import {
-  COUNTRIES, displayAccount, isChallenge, login, loginResend, loginVerify, register, resetPassword,
+  COUNTRIES, displayAccount, isChallenge, login, loginResend, loginVerify, register, resetPassword, verifyResetCode,
   sendAuthCode, setMe, toE164, type AuthTokens, type LoginChallenge, type Target,
 } from "@/lib/account";
 import { useAuthStore } from "@/lib/store";
@@ -271,6 +271,7 @@ export function ForgotPassword() {
   const [pwd2, setPwd2] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [tok, setTok] = useState<{ t: string; exp: number } | null>(null);
   const nav = useNavigate();
   const send = async () => {
     const r = await sendAuthCode("reset_password", a.target());
@@ -306,8 +307,20 @@ export function ForgotPassword() {
           <p className="fx-hint">验证码已发送至 {a.shown}</p>
           <CodeInput value={code} onChange={setCode} send={send} autoSent />
           {err && <div className="fx-err">{err}</div>}
-          <button className={"abtn" + (code.length === 6 ? "" : " dis")} onClick={() => code.length === 6 && (setErr(""), setStep(2))}>
-            下一步
+          <button
+            className={"abtn" + (code.length === 6 && !busy ? "" : " dis")}
+            onClick={async () => {
+              if (code.length !== 6 || busy) return;
+              setBusy(true);
+              const r = await verifyResetCode({ ...a.target(), code });
+              setBusy(false);
+              if (!r.ok || !r.data?.resetToken) return setErr(r.error ?? "验证码错误或已过期");
+              setTok({ t: r.data.resetToken, exp: Date.now() + (r.data.expiresIn ?? 600) * 1000 });
+              setErr("");
+              setStep(2);
+            }}
+          >
+            {busy ? "校验中…" : "下一步"}
           </button>
         </>
       )}
@@ -321,12 +334,20 @@ export function ForgotPassword() {
             onClick={async () => {
               if (pwd.length < 8 || !/[A-Za-z]/.test(pwd) || !/\d/.test(pwd)) return setErr("密码需 8 位以上且包含字母和数字");
               if (pwd !== pwd2) return setErr("两次输入的密码不一致");
+              if (!tok || Date.now() > tok.exp) {
+                setTok(null);
+                setCode("");
+                setStep(1);
+                return setErr("重置令牌已过期，请重新获取验证码");
+              }
               setBusy(true);
-              const r = await resetPassword({ ...a.target(), code, newPassword: pwd });
+              const r = await resetPassword({ resetToken: tok.t, newPassword: pwd });
               setBusy(false);
+              setTok(null); // 一次性令牌，无论成败都作废
               if (r.ok) return setStep(3);
-              setErr(r.error ?? "重置失败");
-              if (/code|验证码/i.test(r.error ?? "")) setStep(1);
+              setCode("");
+              setStep(1);
+              setErr((r.error ?? "重置失败") + "，请重新获取验证码");
             }}
           >
             {busy ? "提交中…" : "确认重置"}

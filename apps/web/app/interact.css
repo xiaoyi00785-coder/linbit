@@ -114,3 +114,15 @@ input[type=range]{accent-color:#abe127;cursor:pointer}
 .lb-sl input[type=range]{position:absolute;inset:-6px 0;width:100%;opacity:0;cursor:pointer;margin:0}
 .lb-sl span{z-index:1}
 .cimg{border-radius:50%;object-fit:cover;display:inline-block;vertical-align:middle;flex:none}
+/* 质押借币 */
+.fx-loans{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.fx-loan{display:grid;grid-template-columns:1.4fr 1.4fr .8fr .8fr 1.2fr 1.6fr;gap:12px;align-items:center;padding:14px 16px;border:1px solid #232425;border-radius:12px;transition:all .3s}
+.fx-loan:hover{background:#1d1d1d;border-color:rgba(171,225,39,.4)}
+.fx-loan.warn{border-color:rgba(246,70,93,.6)}
+.fx-loan>span{display:flex;flex-direction:column;gap:4px}.fx-loan>span:first-child{flex-direction:row;align-items:center;gap:8px}
+.fx-loan .r{flex-direction:row!important;justify-content:flex-end;gap:6px}
+.fx-chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}.fx-chips b{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border:1px solid #d6d6d6;border-radius:8px;cursor:pointer;transition:all .3s}
+.fx-chips b.on{border-color:#abe127;background:rgba(171,225,39,.15)}
+.fx-tbl{margin-top:12px}.fx-tr{display:grid;grid-template-columns:1.4fr .7fr .7fr .9fr 1fr 1.2fr .9fr 1fr .7fr;gap:8px;padding:12px 4px;border-bottom:1px solid rgba(128,128,128,.15);font-size:13px;transition:background .3s}
+.fx-tr.th{color:#8a8d91;font-size:12px}.fx-tr:not(.th):hover{background:rgba(171,225,39,.06)}
+.fx-empty{padding:28px;text-align:center}

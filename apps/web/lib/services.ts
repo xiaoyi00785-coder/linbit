@@ -320,7 +320,6 @@ export interface Notice {
   time: string;
   read: boolean;
 }
-/** 缺口：GET /notifications、POST /notifications/read */
 /** 已对接：GET /notifications、POST /notifications/read、GET /notifications/unread-count、GET|PUT /notifications/settings（account 服务） */
 export async function listNotifications(kind?: string): Promise<Result<Notice[]>> {
   const r = await rest<{ items: { id: string; kind: Notice["kind"]; title: string; body: string; time: number; read: boolean }[] }>("GET", `/notifications?pageSize=50${kind ? `&kind=${kind}` : ""}`);

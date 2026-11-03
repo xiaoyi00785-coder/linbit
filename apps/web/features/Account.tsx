@@ -132,16 +132,16 @@ export function Devices() {
         <div className="fx-list">
           {list.length === 0 && <div className="lg">暂无设备</div>}
           {list.map((d) => {
-            const cur = d.deviceId === mine;
+            const cur = d.current ?? d.deviceId === mine; // 后端 current 字段优先
             return (
               <div key={d.deviceId} className="fx-item">
                 <div className="sp">
                   <b>{d.name || d.userAgent || d.deviceId}</b>
-                  {cur && <span className="fx-pin" style={{ marginLeft: 8 }}>本机</span>}
+                  {cur && <span className="fx-pin" style={{ marginLeft: 8 }}>当前设备</span>}
                   <small>{d.ip ? `IP ${d.ip} · ` : ""}首次登录 {fmtTime(d.firstSeen)}</small>
                 </div>
                 <span className="lg">最近活跃 {fmtTime(d.lastSeen)}</span>
-                {!cur && (
+                {cur ? <button className="lb sm dis" disabled title="无法移除当前正在使用的设备">当前设备</button> : (
                   <button className="lb sm" onClick={async () => {
                     const r = await removeDevice(d.deviceId);
                     if (!r.ok) return setErr(r.error ?? "移除失败");
