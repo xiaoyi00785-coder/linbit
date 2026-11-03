@@ -40,6 +40,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /market/trades", s.handleTrades)
 	mux.HandleFunc("GET /market/index", s.handleIndex)
 
+	s.homeInternalRoutes(mux)
+
 	mux.HandleFunc("GET /ws", s.hub.ServeHTTP)
 	mux.HandleFunc("POST /internal/events", s.ingest.Handler())
 	if s.cfg.DevMode {

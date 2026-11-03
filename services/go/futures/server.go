@@ -34,6 +34,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /futures/account", s.user(s.hAccount))
 	mux.HandleFunc("POST /futures/transfer", s.user(s.hTransfer))
 	mux.HandleFunc("GET /futures/transfers", s.user(s.hTransfers))
+	mux.HandleFunc("POST /assets/transfer", s.user(s.hAssetTransfer))
+	mux.HandleFunc("GET /assets/transfers", s.user(s.hAssetTransfers))
 	mux.HandleFunc("GET /futures/leverage", s.user(s.hGetLeverage))
 	mux.HandleFunc("POST /futures/leverage", s.user(s.hSetLeverage))
 	mux.HandleFunc("POST /futures/orders", s.user(s.hPlace))

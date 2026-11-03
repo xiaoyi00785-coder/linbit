@@ -146,6 +146,7 @@ func (s *Server) Routes() http.Handler {
 	a("GET /admin/v1/convert/position", permLedgerView, s.handleAssetGet("/internal/convert/position", nil))
 	a("GET /admin/v1/convert/hedges", permLedgerView, s.handleAssetGet("/internal/convert/hedges", []string{"asset", "status", "page", "pageSize"}))
 	a("GET /admin/v1/convert/events", permLedgerView, s.handleAssetGet("/internal/convert/events", []string{"kind", "page", "pageSize"}))
+	s.registerHomeRoutes(a)
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
 

@@ -22,6 +22,8 @@ type route struct {
 type publicRoute struct {
 	method string // empty = any method
 	path   string // exact path, or prefix when suffixed with "/"
+	// optionalAuth: forward X-User-Id when a valid token is sent (still public).
+	optionalAuth bool
 }
 
 // Gateway is the API gateway: it authenticates requests and reverse-proxies
@@ -123,6 +125,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/notifications", proxy: accountProxy},
 			{prefix: "/vip", proxy: accountProxy},
+			// General transfer lives in the futures service (spot<->futures saga);
+			// must precede the /assets prefix.
+			{prefix: "/assets/transfer", proxy: futuresProxy},
+			{prefix: "/assets/transfers", proxy: futuresProxy},
 			{prefix: "/assets", proxy: assetProxy},
 			{prefix: "/convert", proxy: assetProxy},
 			{prefix: "/wallet", proxy: walletProxy},
@@ -141,6 +147,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/market", proxy: marketProxy},
 			// market-data only serves GET /ws; /ws/* is not a route.
 			{prefix: "/ws", exact: true, proxy: marketProxy},
+			{prefix: "/home/newcomer", proxy: growthProxy}, // newcomer task bar (growth)
+			{prefix: "/app/features", proxy: marketProxy},  // app feature switches (market-data)
+			{prefix: "/home", proxy: marketProxy},          // home placements/banners + hot list (market-data)
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -169,7 +178,12 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/loans/quote"},
 			{method: http.MethodGet, path: "/earn/products"},
 			{method: http.MethodGet, path: "/earn/products/"}, // public product detail (prefix)
-			{method: "", path: "/ws"},                         // public market WebSocket
+			{method: http.MethodGet, path: "/home/banners"},   // home carousel alias (read-only)
+			{method: http.MethodGet, path: "/home/placements"},
+			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
+			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
+			{method: http.MethodGet, path: "/home/hot"}, // home hot list (read-only)
+			{method: "", path: "/ws"},                   // public market WebSocket
 		},
 	}, nil
 }
@@ -228,9 +242,26 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r.Header.Set("X-User-Id", claims.Subject)
+	} else if g.optionalAuth(r) {
+		// Public route that personalises when a valid token is present; a
+		// missing or invalid token just means anonymous.
+		if token := bearer(r); token != "" {
+			if claims, err := common.ParseAccessToken(g.cfg.JWTSecret, token); err == nil {
+				r.Header.Set("X-User-Id", claims.Subject)
+			}
+		}
 	}
 
 	proxy.ServeHTTP(w, r)
+}
+
+func (g *Gateway) optionalAuth(r *http.Request) bool {
+	for _, p := range g.public {
+		if p.optionalAuth && (p.method == "" || p.method == r.Method) && r.URL.Path == p.path {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *Gateway) isPublic(r *http.Request) bool {

@@ -241,6 +241,8 @@ func run(root, execCmd string) int {
 			// /internal/dev/index (smoke-mm). Override with DEVSTACK_INDEX_FEED.
 			"INDEX_FEED=" + envOr("DEVSTACK_INDEX_FEED", "off"),
 			"DEV_MODE=true",
+			// Live APR for earn-linked home placements.
+			"EARN_URL=http://localhost:" + earnPort,
 		},
 		"account": {
 			"PORT=" + accountPort,

@@ -119,6 +119,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleListAddresses)))
 	mux.Handle("POST /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleCreateAddress)))
 	mux.Handle("DELETE /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handleDeleteAddress)))
+	mux.Handle("GET /account/favorites", s.auth(http.HandlerFunc(s.handleListFavorites)))
+	mux.Handle("PUT /account/favorites", s.auth(http.HandlerFunc(s.handleReplaceFavorites)))
+	mux.Handle("PUT /account/favorites/{symbol}", s.auth(http.HandlerFunc(s.handleAddFavorite)))
+	mux.Handle("DELETE /account/favorites/{symbol}", s.auth(http.HandlerFunc(s.handleRemoveFavorite)))
 
 	// Message center (in-app notifications + email channel preferences).
 	mux.Handle("GET /notifications", s.auth(http.HandlerFunc(s.handleListNotifications)))
