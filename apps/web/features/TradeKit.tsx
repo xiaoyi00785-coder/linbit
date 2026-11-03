@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/store";
 import { rest } from "@/lib/rest";
 import { toast } from "@/lib/ui";
 import { CoinIcon } from "@/components/CoinIcon";
+import type { components } from "@linbit/api-client";
 import { fmtFixed, restBase, useOrderBook, useRecentTrades, useSymbols, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
@@ -208,7 +209,7 @@ const readLocal = (s: string): { lev: number; mode: Mode } => {
   try { const j = JSON.parse(localStorage.getItem(LS(s)) || ""); if (j?.lev) return j; } catch { /* */ }
   return { lev: 20, mode: { margin: "cross", pos: "merged" } };
 };
-function Modal({ title, onClose, children, foot }: { title: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode }) {
+export function Modal({ title, onClose, children, foot }: { title: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode }) {
   useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
   return (
     <div className="fx-modal" onClick={onClose}>
@@ -223,6 +224,13 @@ function Modal({ title, onClose, children, foot }: { title: string; onClose: () 
 function Opt({ on, t, d, onClick }: { on: boolean; t: string; d?: string; onClick: () => void }) {
   return <div className={"tk-opt2" + (on ? " on" : "")} onClick={onClick}><b>{t}</b>{d && <small>{d}</small>}{on && <i className="tk-ck">✓</i>}</div>;
 }
+
+// tp/slTriggerPriceType 依赖 feat/futures-order-amend2 的 openapi（FuturesPlaceOrderRequest 新增字段，默认 MARK）；
+// 该分支合入并重新生成 schema 后，删掉这里的补充字段，直接用生成的类型。
+type TrigType = "LAST" | "MARK";
+type PlaceReq = components["schemas"]["FuturesPlaceOrderRequest"] & { tpTriggerPriceType?: TrigType; slTriggerPriceType?: TrigType };
+type Tif = "GTC" | "IOC" | "POST_ONLY";
+const TIF: [Tif, string][] = [["GTC", "GTC"], ["IOC", "IOC"], ["POST_ONLY", "只做 Maker"]];
 
 export function FutForm({ pair }: { pair: PairMeta }) {
   const nav = useNavigate();
@@ -239,6 +247,13 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const [modal, setModal] = useState<"" | "mode" | "lev" | "calc">("");
   const [busy, setBusy] = useState(false);
   const [avail, setAvail] = useState<string | null>(null);
+  const [tif, setTif] = useState<Tif>("GTC");
+  const [trigType, setTrigType] = useState<"LAST" | "MARK">("LAST");
+  const [tpsl, setTpsl] = useState(false);
+  const [tp, setTp] = useState("");
+  const [sl, setSl] = useState("");
+  const [tpTT, setTpTT] = useState<"LAST" | "MARK">("MARK");
+  const [slTT, setSlTT] = useState<"LAST" | "MARK">("MARK");
   useFillPrice((p) => { setPrice(p); if (ty === "market") setTy("limit"); });
   useEffect(() => { setSt(readLocal(pair.symbol)); setPrice(""); }, [pair.symbol]);
   const save = (n: typeof st) => { setSt(n); localStorage.setItem(LS(pair.symbol), JSON.stringify(n)); };
@@ -248,6 +263,9 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     rest<any>("GET", `/futures/leverage?symbol=${pair.symbol}`).then((r) => {
       if (r.ok && r.data?.leverage) save({ lev: +r.data.leverage, mode: { ...readLocal(pair.symbol).mode, margin: r.data.marginMode === "isolated" ? "isolated" : "cross" } });
     });
+    rest<components["schemas"]["FuturesPositionMode"]>("GET", "/futures/position-mode").then((r) => {
+      if (r.ok && r.data?.positionMode) { const cur = readLocal(pair.symbol); save({ ...cur, mode: { ...cur.mode, pos: String(r.data.positionMode).toUpperCase() === "HEDGE" ? "split" : "merged" } }); }
+    });
     rest<any>("GET", "/futures/account").then((r) => r.ok && setAvail(String(r.data?.availableBalance ?? r.data?.available ?? r.data?.availableMargin ?? "0")));
   }, [authed, pair.symbol]); // eslint-disable-line
   const pushLev = async (lev: number, margin: Mode["margin"]) => {
@@ -255,6 +273,15 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     const r = await rest("POST", "/futures/leverage", { symbol: pair.symbol, leverage: lev, marginMode: margin });
     if (!r.ok) { toast(/HAS_POSITION|HAS_OPEN_ORDERS/.test(r.error ?? "") ? "存在持仓或挂单，无法调整" : r.error || "设置失败", "err"); return false; }
     return true;
+  };
+  /** 单向/双向持仓：POST /futures/position-mode（需无持仓、无挂单、无计划/止盈止损委托） */
+  const pushPosMode = async (pos: Mode["pos"]) => {
+    if (!authed) return true;
+    const r = await rest("POST", "/futures/position-mode", { positionMode: pos === "split" ? "HEDGE" : "ONE_WAY" });
+    if (r.ok) return true;
+    const e = r.error ?? "";
+    toast(/HAS_POSITION|HAS_OPEN_ORDERS/.test(e) ? "存在持仓、挂单或条件单，无法切换持仓模式" : /COPY_TRADER/.test(e) ? "带单交易员仅支持单向持仓" : /HEDGE_MODE_DISABLED/.test(e) ? "双向持仓暂未开放" : e || "切换失败", "err");
+    return false;
   };
   const qn = Number(qty) || 0;
   const px = ty === "market" ? Number(price) || 0 : Number(price) || 0;
@@ -265,12 +292,35 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     if (!authed) return nav("/login");
     if (!qn) return toast("请输入数量", "err");
     if (ty !== "market" && !Number(price)) return toast("请输入价格", "err");
-    if (ty === "plan") return toast("计划委托暂未开放（后端缺少接口）", "err");
+    if (ty === "plan" && !Number(trig)) return toast("请输入触发价", "err");
+    const hedge = st.mode.pos === "split";
+    // 双向持仓：开多/平多 → LONG，开空/平空 → SHORT；单向持仓用 reduceOnly 表示平仓
+    const positionSide: PlaceReq["positionSide"] = hedge ? (act === 0 ? (side === "buy" ? "LONG" : "SHORT") : (side === "buy" ? "SHORT" : "LONG")) : undefined;
+    const isLimit = ty === "limit" || (ty === "plan" && !!Number(price));
+    const body: PlaceReq = {
+      symbol: pair.symbol, side, qty,
+      type: isLimit ? "limit" : "market",
+      timeInForce: ty === "limit" ? tif : isLimit ? "GTC" : "IOC",
+      price: isLimit ? price : undefined,
+      reduceOnly: !hedge && act === 1 ? true : undefined,
+      positionSide,
+      triggerPrice: ty === "plan" ? trig : undefined,
+      triggerPriceType: ty === "plan" ? trigType : undefined,
+      tpPrice: act === 0 && tpsl && tp ? tp : undefined,
+      slPrice: act === 0 && tpsl && sl ? sl : undefined,
+      tpTriggerPriceType: act === 0 && tpsl && tp ? tpTT : undefined,
+      slTriggerPriceType: act === 0 && tpsl && sl ? slTT : undefined,
+    };
     setBusy(true);
-    const r = await rest<any>("POST", "/futures/orders", { symbol: pair.symbol, side, type: ty, timeInForce: ty === "limit" ? "GTC" : "IOC", price: ty === "limit" ? price : undefined, qty, reduceOnly: act === 1 });
+    const r = await rest<any>("POST", "/futures/orders", body);
     setBusy(false);
-    if (!r.ok) return toast(r.error || "下单失败", "err");
-    toast("下单成功"); setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
+    if (!r.ok) {
+      const e = r.error ?? "";
+      const M: Record<string, string> = { POST_ONLY_REJECTED: "只做 Maker 订单会立即成交，已被拒绝", POST_ONLY_DISABLED: "只做 Maker 暂未开放", TRIGGER_DEVIATION: "触发价偏离当前价格过大", ALGO_LIMIT: "条件单数量已达上限", INVALID_TPSL: "止盈止损价格不合理", POSITION_SIDE_REQUIRED: "双向持仓需指定仓位方向", POSITION_SIDE_MISMATCH: "仓位方向与持仓模式不一致", REDUCE_ONLY_REJECTED: "无可平仓位" };
+      const k = Object.keys(M).find((x) => e.includes(x));
+      return toast(k ? M[k] : e || "下单失败", "err");
+    }
+    toast(ty === "plan" ? "计划委托已提交" : "下单成功"); setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
   };
   const setByPct = (p: number) => {
     setPc(p);
@@ -281,7 +331,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   return (
     <div data-guide="form" className="of">
       <div className="selrow tk-sel">
-        <button className="tk-chip" onClick={() => setModal("mode")}>{L.margin === "cross" ? "全仓" : "逐仓"} {L.pos === "merged" ? "合仓" : "分仓"}</button>
+        <button className="tk-chip" onClick={() => setModal("mode")}>{L.margin === "cross" ? "全仓" : "逐仓"} {L.pos === "merged" ? "单向" : "双向"}</button>
         <button className="tk-chip long" onClick={() => setModal("lev")}>{st.lev}x</button>
         <button className="tk-chip short" onClick={() => setModal("lev")}>{st.lev}x</button>
         <button className="tk-chip ic" data-tip="计算器" aria-label="计算器" onClick={() => setModal("calc")}>
@@ -291,10 +341,13 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       <div className="seg">{["开仓", "平仓"].map((x, i) => <b key={x} className={act === i ? "on" : ""} onClick={() => setAct(i as 0 | 1)}>{x}</b>)}</div>
       <div className="pt sm">{([["limit", "限价"], ["market", "市价"], ["plan", "计划委托"]] as const).map(([k, x]) => <b key={k} className={ty === k ? "on" : ""} onClick={() => setTy(k)}>{x}</b>)}</div>
       <div className="kv2"><span>可用</span><b>{avail != null ? fmtFixed(avail, 4) : "--"} USDT</b></div>
-      {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div>}
-      {ty !== "market" ? <div className="inp"><small>价格</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
+      {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="触发价类型" value={trigType} onChange={(e) => setTrigType(e.target.value as "LAST" | "MARK")}><option value="LAST">最新价</option><option value="MARK">标记价</option></select></div>}
+      {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
       <div className="inp"><small>数量</small><input inputMode="decimal" value={qty} onChange={(e) => { setQty(e.target.value.replace(/[^\d.]/g, "")); setPc(0); }} /><em>{pair.base}</em></div>
       <div className="slider lb-sl"><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="比例" /></div>
+      {ty === "limit" && <div className="tk-tif">{TIF.map(([k, x]) => <b key={k} className={tif === k ? "on" : ""} onClick={() => setTif(k)}>{x}</b>)}</div>}
+      {act === 0 && <label className="tk-ck2"><input type="checkbox" checked={tpsl} onChange={(e) => setTpsl(e.target.checked)} />止盈/止损</label>}
+      {act === 0 && tpsl && <div className="tk-tp2"><div className="inp"><small>止盈</small><input inputMode="decimal" placeholder="触发价" value={tp} onChange={(e) => setTp(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止盈触发价类型" value={tpTT} onChange={(e) => setTpTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div><div className="inp"><small>止损</small><input inputMode="decimal" placeholder="触发价" value={sl} onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止损触发价类型" value={slTT} onChange={(e) => setSlTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div></div>}
       <div className="kv2 g"><span>保证金</span><span>{fmtFixed(margin, 4)} USDT</span></div>
       <div className="kv2 g"><span>预估手续费（{(Number(c?.takerFeeRate ?? 0.0005) * 100).toFixed(2)}%）</span><span>{fmtFixed(fee, 4)} USDT</span></div>
       {authed ? (
@@ -304,7 +357,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
         </div>
       ) : <button className="lbtn" onClick={() => nav("/login")}>登录/注册</button>}
 
-      {modal === "mode" && <ModeModal mode={L} onClose={() => setModal("")} onOk={async (m) => { if (m.margin !== L.margin && !(await pushLev(st.lev, m.margin))) return; save({ ...st, mode: m }); setModal(""); toast("交易模式已更新"); }} />}
+      {modal === "mode" && <ModeModal mode={L} onClose={() => setModal("")} onOk={async (m) => { if (m.margin !== L.margin && !(await pushLev(st.lev, m.margin))) return; if (m.pos !== L.pos && !(await pushPosMode(m.pos))) return; save({ ...st, mode: m }); setModal(""); toast("交易模式已更新"); }} />}
       {modal === "lev" && <LevModal lev={st.lev} max={maxLev} onClose={() => setModal("")} onOk={async (v) => { if (!(await pushLev(v, L.margin))) return; save({ ...st, lev: v }); setModal(""); toast(`杠杆已调整为 ${v}x`); }} />}
       {modal === "calc" && <CalcModal pair={pair} lev={st.lev} max={maxLev} onClose={() => setModal("")} />}
     </div>
@@ -319,9 +372,9 @@ function ModeModal({ mode, onClose, onOk }: { mode: Mode; onClose: () => void; o
       <div className="tk-pair"><Opt on={m.margin === "cross"} t="全仓" onClick={() => setM({ ...m, margin: "cross" })} /><Opt on={m.margin === "isolated"} t="逐仓" onClick={() => setM({ ...m, margin: "isolated" })} /></div>
       <p className="tk-txt">全仓：所有仓位共享合约账户的可用余额作为保证金，盈亏可相互抵消，强平时可能损失全部可用余额。逐仓：每个仓位单独分配保证金，最大损失限于该仓位保证金。</p>
       <p className="tk-lbl">持仓模式</p>
-      <div className="tk-pair"><Opt on={m.pos === "merged"} t="合仓" onClick={() => setM({ ...m, pos: "merged" })} /><Opt on={m.pos === "split"} t="分仓" onClick={() => setM({ ...m, pos: "split" })} /></div>
-      <p className="tk-txt">合仓：同一合约同方向的多次开仓合并为一个仓位，均价合并计算。分仓：每次开仓独立成为一个仓位，可分别设置止盈止损与平仓。</p>
-      <p className="tk-txt g">存在持仓或挂单时无法切换模式。</p>
+      <div className="tk-pair"><Opt on={m.pos === "merged"} t="单向持仓" onClick={() => setM({ ...m, pos: "merged" })} /><Opt on={m.pos === "split"} t="双向持仓" onClick={() => setM({ ...m, pos: "split" })} /></div>
+      <p className="tk-txt">单向持仓：同一合约只持有一个方向的仓位，反向下单会先减仓。双向持仓：同一合约可同时持有多仓和空仓，开多/开空、平多/平空分别对应各自仓位。</p>
+      <p className="tk-txt g">存在持仓、挂单或计划/止盈止损委托时无法切换持仓模式。</p>
     </Modal>
   );
 }

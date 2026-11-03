@@ -170,3 +170,10 @@ input[aria-invalid="true"]{border-color:var(--lb-down)!important}
 /* 骨架占位（账户信息加载中） */
 i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border-radius:4px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:lbSk 1.2s infinite linear}
 @keyframes lbSk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.tk-tif{display:flex;gap:6px;margin:6px 0}.tk-tif b{flex:1;text-align:center;font-size:12px;font-weight:400;padding:5px 0;border:1px solid var(--lb-card-2);border-radius:6px;color:var(--lb-text-2);cursor:pointer}.tk-tif b.on{border-color:#abe127;color:#abe127}
+.tk-tt{background:transparent;border:0;color:var(--lb-text-2);font-size:12px;outline:0;cursor:pointer}.tk-tt option{background:#1b1d22}
+.tk-ck2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--lb-text-2);margin:6px 0;cursor:pointer}.tk-ck2 input{accent-color:#abe127}
+.tk-tp2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.tk-ed{display:grid;gap:10px}.tk-ed .inp{margin:0}
+
+.tk-only{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--lb-text-2);cursor:pointer;margin-left:12px;white-space:nowrap}.tk-only input{accent-color:#abe127;margin:0}
