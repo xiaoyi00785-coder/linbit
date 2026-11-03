@@ -92,7 +92,7 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	s.loanRoutes(mux)
-	s.extraRoutes(mux)
+	s.savingsRoutes(mux)
 	// Dev: move the service clock forward and run one tick.
 	mux.HandleFunc("POST /internal/dev/earn/advance", s.dev(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -123,7 +123,7 @@ func (s *Server) Tick(ctx context.Context) {
 	if err := s.loanTick(ctx); err != nil {
 		log.Printf("earn loan tick: %v", err)
 	}
-	if err := s.extraTick(ctx); err != nil {
+	if err := s.savingsTick(ctx); err != nil {
 		log.Printf("earn tick: %v", err)
 	}
 }

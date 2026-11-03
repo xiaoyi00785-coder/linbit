@@ -38,6 +38,38 @@ Errors: `UNSUPPORTED_COLLATERAL`, `INVALID_TERM`, `AMOUNT_TOO_SMALL`,
 Dev only (`DEV_MODE=true`): `POST /internal/dev/earn/advance {hours}` shifts
 the service clock and runs one tick.
 
+## Savings products
+
+Public: `GET /earn/products`, `GET /earn/products/{id}`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/earn/products?kind=simple\|fixed\|onchain&asset=&hot=true` | catalogue (apr, aprMax, bonusApr/bonusQuota, termDays, unlockDays, minAmount, perUserMax, totalQuota/remaining, newcomer, redeemRule) |
+| GET | `/earn/products/{id}` | one product |
+| POST | `/earn/products/{id}/subscribe` | `{amount}` debits spot. fixed → order (`expectedInterest`, `maturityAt`); simple/onchain → holding, interest from the next UTC day (`interestStartsAt`) |
+| POST | `/earn/products/{id}/redeem` | `{amount}` or `{all:true}`; simple → immediate; onchain → immediate or `unlocking` for unlockDays (no yield); fixed → `REDEEM_NOT_ALLOWED` |
+| POST | `/earn/products/{id}/auto` | `{enabled}` simple only: idle spot balance of the asset is subscribed on every tick |
+| GET | `/earn/positions?kind=` | holdings (amount, pending, totalInterest, estDailyInterest, auto) + `unlocking` |
+| GET | `/earn/orders?status=holding\|matured` | fixed orders |
+| GET | `/earn/records?type=subscribe\|redeem\|interest\|maturity\|unlock` | history |
+| GET | `/earn/summary` | totalValueUsdt, totalInterestUsdt, recentInterestUsdt (since start of previous UTC day), per asset |
+| POST | `/internal/earn/products` | ops upsert of a product (internal token) |
+
+Rules: simple/onchain pay `floor8(yearly / 365)` per complete UTC day on the
+principal held at the start of that day, where yearly = `min(p, bonusQuota) ×
+bonusApr + rest × apr`. Fixed pays `floor8(amount × apr × termDays / 365)`
+with principal at maturity (next tick). Newcomer products: only for users
+without any non-newcomer fixed order, capped by `perUserMax`.
+
+Errors: `PRODUCT_NOT_FOUND`, `PRODUCT_OFFLINE`, `AMOUNT_TOO_SMALL`,
+`QUOTA_EXCEEDED`, `USER_LIMIT_EXCEEDED`, `NEWCOMER_ONLY`,
+`REDEEM_NOT_ALLOWED`, `INSUFFICIENT_POSITION`, `AUTO_NOT_SUPPORTED`,
+`INSUFFICIENT_BALANCE` (from asset).
+
+The seed catalogue (migration 00002) copies the products and APRs shown in
+the UI; simple products earn the upper APR on the first bonus quota (USDT/USDC
+10000, BTC 0.5, ETH 5, SOL 100, DOGE 50000) and the lower APR above it.
+
 ## Config
 
 | Env | Default |
