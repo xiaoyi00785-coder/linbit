@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 
-const View = dynamic(() => import("@/legacy/Pages").then((m) => m.Security as ComponentType<any>), { ssr: false });
+const View = dynamic(() => import("@/features/Security").then((m) => m.SecurityCenter as ComponentType<any>), { ssr: false });
 
 export default function Page() {
   return <View />;

@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import {G,SOCIAL} from "@/components/Glyph";
 import { useHome } from '@/lib/home'
 import { useFavorites } from '@/lib/favorites'
 import { soonPath } from '@/lib/features'
@@ -49,9 +50,9 @@ const promos0=[['连胜挑战赛，赢取真实奖励','首笔交易即得体验
 const promos=H.carousel.length?H.carousel.map(p=>[p.title,p.subtitle||'',p.imageUrl,p.linkUrl]):promos0
 return <main className="home">
 <section className="hero"><div className="hero-art"><img src="/img/hero.webp" alt=""/></div>
-<h1>linbit 全新上线<br/>交易即可解锁限时专属礼遇</h1><p className="gift" role={H.newcomer?'button':undefined} style={H.newcomer?{cursor:'pointer'}:undefined} onClick={H.newcomer?()=>go(H.newcomer.link):undefined}>🎁 新用户专享 <span className="lime">最高 {H.newcomer?.total?Number(H.newcomer.total).toLocaleString('en-US')+' '+(H.newcomer.asset||'USDT'):'10,000 USDT'}</span> 礼包</p>
+<h1>linbit 全新上线<br/>交易即可解锁限时专属礼遇</h1><p className="gift" role={H.newcomer?'button':undefined} style={H.newcomer?{cursor:'pointer'}:undefined} onClick={H.newcomer?()=>go(H.newcomer.link):undefined}><G n="gift" s={14}/> 新用户专享 <span className="lime">最高 {H.newcomer?.total?Number(H.newcomer.total).toLocaleString('en-US')+' '+(H.newcomer.asset||'USDT'):'10,000 USDT'}</span> 礼包</p>
 <div className="hero-row"><div className="signup"><input placeholder="邮箱/手机号"/><button onClick={()=>n('/register')}>注册</button></div><div className="stores">{SK.map(([k,t])=><span key={k} title={t} role="button" style={{cursor:'pointer'}} onClick={()=>openM('download',{kind:k})}>{SI[k]}</span>)}</div></div></section>
-<section className="wrap"><div className="notice">{H.bar?<><span>🔊 {H.bar.title}</span><a role="button" onClick={()=>go(H.bar.linkUrl)}>更多 →</a></>:<><span>🔊 linbit 推出事件合约——预测市场方向，轻松交易</span><Link to={soonPath('事件合约')||'/announcements'}>更多 →</Link></>}</div>
+<section className="wrap"><div className="notice">{H.bar?<><span><G n="speaker" s={16}/> {H.bar.title}</span><a role="button" onClick={()=>go(H.bar.linkUrl)}>更多 →</a></>:<><span><G n="speaker" s={16}/> linbit 推出事件合约——预测市场方向，轻松交易</span><Link to={soonPath('事件合约')||'/announcements'}>更多 →</Link></>}</div>
 <div className="promos"><button className="arr" onClick={()=>setSl(sl<=0?Math.max(0,promos.length-4):sl-1)}>‹</button>{promos.slice(sl,sl+4).map(([t,d,img,u])=><div className="promo" key={t} role="button" style={{cursor:'pointer'}} onClick={()=>u?go(u):n(soonPath(t)||'/rewards')}><div><b>{t}</b><p>{d}</p></div><img className="pimg" src={img||'/img/promo.webp'} alt=""/></div>)}<button className="arr" onClick={()=>setSl(sl>=promos.length-4?0:sl+1)}>›</button></div></section>
 <section className="wrap"><h2 className="st">热门交易对</h2><div className="pairs2"><div className="box"><div className="tabs2"><b className="on">热门合约</b></div><table className="t"><thead><tr><th>币种</th><th>最新价</th><th>24h 涨跌</th><th>24h 成交量</th><th style={{textAlign:'right'}}>操作</th></tr></thead><tbody>{coins.slice(0,6).map(c=><tr key={c.s}><td><Ico c={c}/> {c.s}USDT</td><td>{fp(c)}</td><td><Pct c={c.c}/></td><td>{c.v}</td><td style={{textAlign:'right'}}><button className="tbtn" onClick={()=>n('/futures')}>交易</button></td></tr>)}</tbody></table></div>
 <div className="box"><div className="tabs2">{['涨幅榜','跌幅榜'].map((x,i)=><b key={x} className={gt===i?'on':''} onClick={()=>setGt(i)}>{x}</b>)}</div><table className="t"><thead><tr><th>币种</th><th>最新价</th><th style={{textAlign:'right'}}>24h 涨跌</th></tr></thead><tbody>{[...coins].sort((a,b)=>gt?a.c-b.c:b.c-a.c).slice(0,6).map(c=><tr key={c.s}><td><Ico c={c}/> {c.s}USDT</td><td>{fp(c)}</td><td style={{textAlign:'right'}}><Pct c={c.c}/></td></tr>)}</tbody></table></div></div><Link className="more" to="/markets">更多 →</Link></section>
@@ -89,6 +90,6 @@ function Auth({reg}){const[t,setT]=useState('邮箱');return <main className="au
 <div className="pt aline">{(reg?['邮箱','手机']:['邮箱','手机','二维码']).map(x=><b key={x} className={t===x?'on':''} onClick={()=>setT(x)}>{x}</b>)}</div>
 {t==='二维码'?<div className="qr" style={{margin:'30px auto'}}><QRCodeSVG bgColor="transparent" fgColor="currentColor" value="https://linbit.example.com/" size={104} marginSize={1}/></div>:<><input className="ai" placeholder={t==='邮箱'?'邮箱地址':'手机号'}/><div className="aiw"><input className="ai" type="password" placeholder={reg?'设置密码':'请输入密码'}/><span>◡◡</span></div>
 {reg?<Reg/>:<Link to="/forgot-password" className="fg">忘记密码？</Link>}{!reg&&<button className="abtn" onClick={()=>{setAuthed(true);location.hash="#/assets"}}>登录</button>}</>}
-<div className="or"><span>或</span></div>{[['👤','通行密钥登录'],['','使用 Apple 继续'],['G','使用 Google 继续']].map(([i,x])=><button className="obtn" key={x}><span>{i}</span>{x}</button>)}</div></main>}
+<div className="or"><span>或</span></div>{[['user','通行密钥登录'],['apple','使用 Apple 继续'],['G','使用 Google 继续']].map(([i,x])=><button className="obtn" key={x}><span>{i==='G'?'G':<G n={i} s={18}/>}</span>{x}</button>)}</div></main>}
 
 export { Home, Markets, Trade, Auth }
