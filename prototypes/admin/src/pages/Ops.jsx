@@ -17,7 +17,7 @@ export function Campaigns() {
       <div className="muted" style={{ marginTop: 6 }}>合计 215 USDT（体验金 + 手续费抵扣券）· 体验金盈利可提，本金到期回收</div>
       <div className="sec">反作弊</div>{[['同设备 / 同 IP 仅一个账户可领取', true], ['持仓时间 < 60 秒的成交不计入', true], ['对敲成交不计入', true], ['奖励发放前进入风控复核', false]].map(([l, on]) => <div className="chk" key={l}>{l}<span className="s"><Sw on={on} /></span></div>)}</Drawer>}</>
 }
-export function Rewards() {
+function RewardsDemo() {
   const [m, setM] = useState(false); const { say } = useApp()
   return <><PageHead title="奖励发放" desc="活动自动发放 + 人工补发；体验金/抵扣券/现金券/积分；支持回收"><button className="btn p" onClick={() => setM(true)}>+ 人工补发</button></PageHead>
     <DataTable rows={rewards} select filters={<><input className="in" placeholder="UID" /><select className="sel"><option>全部类型</option><option>体验金</option><option>手续费抵扣券</option><option>现金券</option></select><select className="sel"><option>全部状态</option><option>风控拦截</option></select></>}
@@ -50,7 +50,7 @@ export function Copy() {
       <dl className="kv"><dt>UID</dt><dd>{cur.uid}</dd><dt>入驻条件</dt><dd>KYC L2 ✓ · 合约账户 ≥ 500 USDT ✓ · 近 30 日交易 ≥ 10 笔 ✓</dd><dt>分润比例</dt><dd><input className="in" defaultValue={cur.share} style={{ width: 80, minWidth: 0 }} /> %（0 ~ 50，每日结算，不计入返佣）</dd>
         <dt>最大跟随人数</dt><dd><input className="in" defaultValue={cur.maxF} style={{ width: 100, minWidth: 0 }} /></dd><dt>可带单合约</dt><dd>BTCUSDT, ETHUSDT, SOLUSDT …</dd><dt>风控</dt><dd>回撤 &gt; 50% 自动暂停带单</dd></dl></Drawer>}</>
 }
-export function Content() {
+function ContentDemo() {
   const [cur, setCur] = useState(null)
   return <><PageHead title="内容与公告" desc="公告、上新、活动页、帮助中心、Banner、弹窗 · 多语言 · 定时发布 · 发布需审核"><button className="btn p" onClick={() => setCur({ title: '', cat: '公告' })}>+ 新建内容</button></PageHead>
     <DataTable rows={contents} onRow={setCur} filters={<><input className="in" placeholder="标题" /><select className="sel"><option>全部分类</option><option>公告</option><option>上新</option><option>活动</option><option>帮助中心</option><option>Banner</option></select></>}
@@ -74,3 +74,6 @@ export function Rebate() {
       <div className="card"><h3>Override（上级合伙人）</h3><dl className="kv"><dt>比例</dt><dd>下级合伙人佣金的 10%（平台出资，不扣下级）</dd><dt>最多层级</dt><dd>2 级</dd><dt>结算</dt><dd>每日结算至资金账户</dd></dl></div>
       <div className="card"><h3>普通邀请返佣</h3><dl className="kv"><dt>比例</dt><dd>被邀请人手续费的 10%</dd><dt>有效期</dt><dd>注册起 1 年</dd><dt>层级</dt><dd>单级</dd><dt>叠加</dt><dd>与合伙人返佣不叠加（取合伙人）</dd><dt>排除</dt><dd>跟单分润不计入返佣基数</dd></dl></div></div></>
 }
+
+// 已接入真实接口的版本见 Live.jsx；上面的 *Demo 保留为原型参考
+export { Rewards, Content } from './Live.jsx'

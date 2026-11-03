@@ -19,7 +19,7 @@ export function Coins() {
     {add && <Change title="新增币种（上币流程）" onClose={() => setAdd(false)}><div className="steps"><div className="done">基础信息</div><div className="cur">网络与合约地址</div><div>钱包接入测试</div><div>上线审批</div></div>
       <div className="fr"><label>币种代码</label><input className="in" placeholder="如 NEWT" /></div><div className="fr"><label>合约地址</label><input className="in" placeholder="0x…" /></div><div className="fr"><label>精度</label><input className="in" defaultValue="8" /></div></Change>}</>
 }
-export function Pairs() {
+function PairsDemo() {
   const [m, setM] = useState(false)
   return <><PageHead title="现货交易对" desc="交易对上下架、价格/数量精度、最小下单额、分区；仅现货撮合，无杠杆"><button className="btn p" onClick={() => setM(true)}>+ 新增交易对</button></PageHead>
     <DataTable rows={pairs} select filters={<><input className="in" placeholder="交易对" /><select className="sel"><option>全部分区</option><option>主板</option><option>创新区</option><option>Meme</option></select><select className="sel"><option>全部状态</option><option>交易中</option><option>暂停交易</option><option>待上线</option></select></>}
@@ -41,7 +41,7 @@ export function Futures() {
       <div className="sec">阶梯保证金（风险限额）</div><table className="t"><thead><tr><th>档位</th><th className="r">仓位价值上限 (USDT)</th><th className="r">最大杠杆</th><th className="r">维持保证金率</th><th className="r">初始保证金率</th></tr></thead><tbody>
         {riskTiers.map(t => <tr key={t.id}><td>{t.tier}</td><td className="r num">{fmt(t.cap, 0)}</td><td className="r">{Math.min(t.lev, cur.maxLev)}x</td><td className="r">{t.mmr}%</td><td className="r">{t.imr}%</td></tr>)}</tbody></table></Drawer>}</>
 }
-export function Fees() {
+function FeesDemo() {
   const [m, setM] = useState(null); const [t, setT] = useState('rate'); const loading = useLoading()
   return <><PageHead title="手续费配置" desc="全站统一费率，不设 VIP 等级：现货 Maker/Taker 0.1% · 合约 Maker/Taker 0.05%（按仓位价值，开仓、平仓各收一次）· 提现平台手续费 0，仅收链上 Gas">
     <button className="btn" onClick={() => setT('log')}>变更记录</button><button className="btn p" onClick={() => setM(feeRates[0])}>发起费率变更</button></PageHead>
@@ -64,3 +64,6 @@ export function Fees() {
       <div className="fr"><label>当前费率</label><span className="num">{m.rate}</span></div><div className="fr"><label>新费率</label><input className="in" defaultValue={m.rate.replace('%', '')} style={{ width: 100, minWidth: 0 }} /> %</div>
       <div className="fr"><label>同步修改</label><select className="sel"><option>Maker 与 Taker 同时修改</option><option>仅修改 {m.side}</option></select></div></Change>}</>
 }
+
+// 已接入真实接口的版本见 Live.jsx；上面的 *Demo 保留为原型参考
+export { Pairs, Fees } from './Live.jsx'

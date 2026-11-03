@@ -8,7 +8,7 @@ const M = { '超级管理员': 'VEAX'.repeat(1), 运营: { dash: 'V', user: 'VE'
   财务初审: { dash: 'V', user: 'V', wd: 'VA', fund: 'VX' }, 财务复审: { dash: 'V', user: 'V', wd: 'VA', fund: 'VX', mkt: 'A' }, 风控专员: { dash: 'V', user: 'VE', kyc: 'V', wd: 'V', fund: 'V', trade: 'VE', fut: 'VE', copy: 'V' },
   客服: { user: 'V', kyc: 'V', fund: 'V', trade: 'V' }, 市场: { dash: 'V', mkt: 'VE', cms: 'VE', copy: 'V' }, '审计（只读）': Object.fromEntries(MODS.map(m => [m[1], 'VX'])) }
 const cell = (r, m) => r === '超级管理员' ? 'VEAX' : (M[r][m] || '')
-export function Admins() {
+function AdminsDemo() {
   const [t, setT] = useState('admin'); const [role, setRole] = useState('风控专员'); const [cur, setCur] = useState(null)
   return <><PageHead title="管理员与角色" desc="RBAC：用户 → 角色 → 权限点（菜单/按钮/数据范围）· 强制 2FA + IP 白名单 · 职责分离"><button className="btn p">{t === 'admin' ? '+ 新增管理员' : '+ 新增角色'}</button></PageHead>
     <div className="card"><Tabs value={t} onChange={setT} items={[['admin', '管理员', admins.length], ['role', '角色权限矩阵'], ['sod', '职责分离规则']]} /></div>
@@ -21,7 +21,7 @@ export function Admins() {
       <div className="fr"><label>角色</label><select className="sel" defaultValue={cur.role}>{ROLES.map(r => <option key={r}>{r}</option>)}</select></div><div className="fr"><label>数据范围</label><select className="sel"><option>全部用户</option><option>指定国家/地区</option><option>指定代理线</option></select></div>
       <div className="fr"><label>IP 白名单</label><input className="in" defaultValue={cur.ip + '/32'} /></div><div className="fr"><label>敏感字段脱敏</label><Sw on /></div><div className="fr"><label>会话超时</label><select className="sel"><option>30 分钟</option></select></div></Drawer>}</>
 }
-export function Audit() {
+function AuditDemo() {
   const [cur, setCur] = useState(null)
   return <><PageHead title="审计日志" desc="所有后台操作（含查看敏感信息、导出）不可篡改留存 ≥ 5 年 · 前后值对比"><button className="btn">导出</button></PageHead>
     <DataTable rows={audits} onRow={setCur} filters={<><input className="in" placeholder="管理员 / 对象" /><select className="sel"><option>全部模块</option></select><select className="sel"><option>全部级别</option><option>敏感</option><option>高危</option></select><input className="in" type="date" /></>}
@@ -41,3 +41,6 @@ export function Settings() {
       <div style={{ padding: 14 }}>{t === 'sys' && <div className="banner bad">紧急开关影响全站用户，需超级管理员 + 风控负责人双人确认。</div>}
         {(rows[t] || [['邮件模板：提现成功 / 冻结通知 / KYC 结果 …', true], ['短信通道：主备切换', true]]).map(([l, on]) => <div className="chk" key={l}>{l}<span className="s"><Sw on={on} /></span></div>)}</div></div></>
 }
+
+// 已接入真实接口的版本见 Live.jsx；上面的 *Demo 保留为原型参考
+export { Admins, Audit } from './Live.jsx'
