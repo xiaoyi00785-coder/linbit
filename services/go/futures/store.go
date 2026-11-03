@@ -180,41 +180,62 @@ type Position struct {
 	Realized  decimal.Decimal
 	TP, SL    decimal.NullDecimal
 	UpdatedAt time.Time
+	Side      string // position side: BOTH (one-way) | LONG | SHORT (hedge)
+	// lifecycle accumulators (position history)
+	OpenedAt              sql.NullTime
+	OpenQty, OpenQuote    decimal.Decimal
+	CloseQty, CloseQuote  decimal.Decimal
+	MaxQty, Fees, Funding decimal.Decimal
 }
 
-const posCols = `user_id, symbol, qty, entry_price, margin_mode, leverage, iso_margin, realized_pnl, tp_price, sl_price, updated_at`
+const posCols = `user_id, symbol, qty, entry_price, margin_mode, leverage, iso_margin, realized_pnl, tp_price, sl_price, updated_at, position_side, opened_at, open_qty, open_quote, close_qty, close_quote, max_qty, acc_fee, acc_funding`
 
 func scanPos(sc interface{ Scan(...any) error }) (Position, error) {
 	var p Position
-	err := sc.Scan(&p.UserID, &p.Symbol, &p.Qty, &p.Entry, &p.Mode, &p.Leverage, &p.Iso, &p.Realized, &p.TP, &p.SL, &p.UpdatedAt)
+	err := sc.Scan(&p.UserID, &p.Symbol, &p.Qty, &p.Entry, &p.Mode, &p.Leverage, &p.Iso, &p.Realized, &p.TP, &p.SL, &p.UpdatedAt,
+		&p.Side, &p.OpenedAt, &p.OpenQty, &p.OpenQuote, &p.CloseQty, &p.CloseQuote, &p.MaxQty, &p.Fees, &p.Funding)
 	return p, err
 }
 
-// loadPosition returns the (possibly empty) position; forUpdate locks the row.
-func loadPosition(ctx context.Context, q queryer, uid, sym string, forUpdate bool) (Position, bool, error) {
-	qs := `SELECT ` + posCols + ` FROM fut_positions WHERE user_id=$1 AND symbol=$2`
+// normSide maps "" to BOTH.
+func normSide(side string) string {
+	if side == "" {
+		return "BOTH"
+	}
+	return side
+}
+
+// loadPosition returns the (possibly empty) position on side (BOTH|LONG|SHORT);
+// forUpdate locks the row.
+func loadPosition(ctx context.Context, q queryer, uid, sym, side string, forUpdate bool) (Position, bool, error) {
+	side = normSide(side)
+	qs := `SELECT ` + posCols + ` FROM fut_positions WHERE user_id=$1 AND symbol=$2 AND position_side=$3`
 	if forUpdate {
 		qs += ` FOR UPDATE`
 	}
-	p, err := scanPos(q.QueryRowContext(ctx, qs, uid, sym))
+	p, err := scanPos(q.QueryRowContext(ctx, qs, uid, sym, side))
 	if errors.Is(err, sql.ErrNoRows) {
-		return Position{UserID: uid, Symbol: sym}, false, nil
+		return Position{UserID: uid, Symbol: sym, Side: side}, false, nil
 	}
 	return p, err == nil, err
 }
 
 func savePosition(ctx context.Context, tx queryer, p Position) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO fut_positions (`+posCols[:len(posCols)-len(", updated_at")]+`, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
-		ON CONFLICT (user_id, symbol) DO UPDATE SET qty=EXCLUDED.qty, entry_price=EXCLUDED.entry_price,
+	_, err := tx.ExecContext(ctx, `INSERT INTO fut_positions (user_id, symbol, qty, entry_price, margin_mode, leverage, iso_margin, realized_pnl, tp_price, sl_price, updated_at,
+		  position_side, opened_at, open_qty, open_quote, close_qty, close_quote, max_qty, acc_fee, acc_funding)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), $11,$12,$13,$14,$15,$16,$17,$18,$19)
+		ON CONFLICT (user_id, symbol, position_side) DO UPDATE SET qty=EXCLUDED.qty, entry_price=EXCLUDED.entry_price,
 		  margin_mode=EXCLUDED.margin_mode, leverage=EXCLUDED.leverage, iso_margin=EXCLUDED.iso_margin,
-		  realized_pnl=EXCLUDED.realized_pnl, tp_price=EXCLUDED.tp_price, sl_price=EXCLUDED.sl_price, updated_at=now()`,
-		p.UserID, p.Symbol, p.Qty, p.Entry, p.Mode, p.Leverage, p.Iso, p.Realized, p.TP, p.SL)
+		  realized_pnl=EXCLUDED.realized_pnl, tp_price=EXCLUDED.tp_price, sl_price=EXCLUDED.sl_price, updated_at=now(),
+		  opened_at=EXCLUDED.opened_at, open_qty=EXCLUDED.open_qty, open_quote=EXCLUDED.open_quote, close_qty=EXCLUDED.close_qty,
+		  close_quote=EXCLUDED.close_quote, max_qty=EXCLUDED.max_qty, acc_fee=EXCLUDED.acc_fee, acc_funding=EXCLUDED.acc_funding`,
+		p.UserID, p.Symbol, p.Qty, p.Entry, p.Mode, p.Leverage, p.Iso, p.Realized, p.TP, p.SL,
+		normSide(p.Side), p.OpenedAt, p.OpenQty, p.OpenQuote, p.CloseQty, p.CloseQuote, p.MaxQty, p.Fees, p.Funding)
 	return err
 }
 
 func openPositions(ctx context.Context, q queryer, uid string) ([]Position, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+posCols+` FROM fut_positions WHERE user_id=$1 AND qty <> 0 ORDER BY symbol`, uid)
+	rows, err := q.QueryContext(ctx, `SELECT `+posCols+` FROM fut_positions WHERE user_id=$1 AND qty <> 0 ORDER BY symbol, position_side`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -252,6 +273,9 @@ type Order struct {
 	Source      string              `json:"source"`
 	TP          decimal.NullDecimal `json:"tpPrice"`
 	SL          decimal.NullDecimal `json:"slPrice"`
+	PosSide     string              `json:"positionSide"`
+	AmendCount  int                 `json:"amendCount"`
+	AlgoID      sql.NullInt64       `json:"-"`
 	Reason      sql.NullString      `json:"-"`
 	CancelWhy   string              `json:"cancelReason,omitempty"`
 	AvgPrice    string              `json:"avgPrice"`
@@ -259,11 +283,11 @@ type Order struct {
 	UpdatedAt   time.Time           `json:"updatedAt"`
 }
 
-const orderCols = `id, user_id, symbol, side, type, tif, price, qty, filled, filled_quote, reserved, fee, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price, cancel_reason, created_at, updated_at`
+const orderCols = `id, user_id, symbol, side, type, tif, price, qty, filled, filled_quote, reserved, fee, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price, cancel_reason, created_at, updated_at, position_side, amend_count, algo_id`
 
 func scanOrder(sc interface{ Scan(...any) error }) (Order, error) {
 	var o Order
-	err := sc.Scan(&o.ID, &o.UserID, &o.Symbol, &o.Side, &o.Type, &o.TIF, &o.Price, &o.Qty, &o.Filled, &o.FilledQuote, &o.Reserved, &o.Fee, &o.Status, &o.ReduceOnly, &o.Leverage, &o.Mode, &o.Source, &o.TP, &o.SL, &o.Reason, &o.CreatedAt, &o.UpdatedAt)
+	err := sc.Scan(&o.ID, &o.UserID, &o.Symbol, &o.Side, &o.Type, &o.TIF, &o.Price, &o.Qty, &o.Filled, &o.FilledQuote, &o.Reserved, &o.Fee, &o.Status, &o.ReduceOnly, &o.Leverage, &o.Mode, &o.Source, &o.TP, &o.SL, &o.Reason, &o.CreatedAt, &o.UpdatedAt, &o.PosSide, &o.AmendCount, &o.AlgoID)
 	if err == nil {
 		o.CancelWhy = o.Reason.String
 		o.AvgPrice = "0"

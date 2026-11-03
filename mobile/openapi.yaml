@@ -3407,6 +3407,7 @@ paths:
                     type: string
                     enum:
                     - one_way
+                    - hedge
         '400':
           description: UNKNOWN_SYMBOL
           content:
@@ -3462,6 +3463,7 @@ paths:
                     type: string
                     enum:
                     - one_way
+                    - hedge
         '400':
           description: UNKNOWN_SYMBOL / INVALID_LEVERAGE / POSITION_LIMIT / INSUFFICIENT_MARGIN
           content:
@@ -3480,7 +3482,7 @@ paths:
     post:
       tags:
       - Futures
-      summary: 合约下单（可附带止盈止损）
+      summary: 合约下单（可附带止盈止损；带 triggerPrice 时创建计划委托，响应为 order=FuturesAlgoOrder）
       operationId: futuresPlaceOrder
       requestBody:
         required: true
@@ -3503,7 +3505,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/FuturesPublicTrade'
         '400':
-          description: VALIDATION_ERROR / UNKNOWN_SYMBOL / INVALID_PRICE / INVALID_QTY / INVALID_TPSL / INSUFFICIENT_MARGIN / POSITION_LIMIT / REDUCE_ONLY_REJECTED / CONTRACT_HALTED
+          description: VALIDATION_ERROR / UNKNOWN_SYMBOL / INVALID_PRICE / INVALID_QTY / INVALID_TPSL / INSUFFICIENT_MARGIN / POSITION_LIMIT / REDUCE_ONLY_REJECTED / CONTRACT_HALTED / POST_ONLY_REJECTED / POST_ONLY_DISABLED / POSITION_SIDE_REQUIRED / POSITION_SIDE_MISMATCH / ALGO_LIMIT / TRIGGER_DEVIATION
           content:
             application/json:
               schema:
@@ -3535,6 +3537,12 @@ paths:
           enum:
           - open
         description: open = 仅当前委托
+      - name: positionSide
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [BOTH, LONG, SHORT]
       - name: limit
         in: query
         required: false
@@ -3555,6 +3563,98 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
   /futures/orders/{id}:
+    put:
+      tags:
+      - Futures
+      summary: 改单（限价单改价/改量；改价或加量失去时间优先级，减量保留）
+      operationId: futuresAmendOrder
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesAmendOrderRequest'
+      responses:
+        '200':
+          description: OK（PATCH 同义）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesOrder'
+                  trades:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPublicTrade'
+        '400':
+          description: VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / NO_CHANGE / AMEND_LIMIT / POST_ONLY_REJECTED / INSUFFICIENT_MARGIN / POSITION_LIMIT / INVALID_TPSL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: ORDER_NOT_OPEN / NOT_AMENDABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags:
+      - Futures
+      summary: 改单（同 PUT）
+      operationId: futuresAmendOrderPatch
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesAmendOrderRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesOrder'
+                  trades:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPublicTrade'
+        '400':
+          description: 同 PUT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     delete:
       tags:
       - Futures
@@ -3611,6 +3711,344 @@ paths:
                       $ref: '#/components/schemas/FuturesPosition'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /futures/position-mode:
+    get:
+      tags:
+      - Futures
+      summary: 查询持仓模式（账户级）
+      operationId: futuresGetPositionMode
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FuturesPositionMode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+      - Futures
+      summary: 切换单向/双向持仓（需无持仓、无挂单、无计划/止盈止损委托）
+      operationId: futuresSetPositionMode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesPositionMode'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FuturesPositionMode'
+        '400':
+          description: VALIDATION_ERROR / HEDGE_MODE_DISABLED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: HAS_POSITION / HAS_OPEN_ORDERS / COPY_TRADER_ONE_WAY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/positions/history:
+    get:
+      tags:
+      - Futures
+      summary: 历史仓位（已平仓/强平/ADL）
+      operationId: futuresPositionHistory
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: startTime
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: 平仓时间下限（毫秒）
+      - name: endTime
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  positions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesPositionHistory'
+                  nextCursor:
+                    type: integer
+                    format: int64
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/tpsl-orders:
+    post:
+      tags:
+      - Futures
+      summary: 创建止盈止损委托（可部分仓位，单次可同时建 TP 与 SL）
+      operationId: futuresCreateTpslOrders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesTpslOrderRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesAlgoOrder'
+                  order:
+                    $ref: '#/components/schemas/FuturesAlgoOrder'
+        '400':
+          description: "VALIDATION_ERROR / INVALID_TPSL / INVALID_QTY / ALGO_LIMIT / POSITION_SIDE_REQUIRED / NO_POSITION"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - Futures
+      summary: 查询止盈止损委托（可部分仓位，单次可同时建 TP 与 SL）
+      operationId: futuresListTpslOrders
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [active, history]
+        description: active（默认）= 待触发；history = 已触发/已撤/失败
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesAlgoOrder'
+                  nextCursor:
+                    type: integer
+                    format: int64
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/tpsl-orders/{id}:
+    delete:
+      tags:
+      - Futures
+      summary: 撤销止盈止损委托（可部分仓位，单次可同时建 TP 与 SL）
+      operationId: futuresCancelTpslOrders
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesAlgoOrder'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: ALGO_NOT_ACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/plan-orders:
+    post:
+      tags:
+      - Futures
+      summary: 创建计划委托（条件单，触发后以限价/市价下单）
+      operationId: futuresCreatePlanOrders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuturesPlaceOrderRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesAlgoOrder'
+                  order:
+                    $ref: '#/components/schemas/FuturesAlgoOrder'
+        '400':
+          description: VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / ALGO_LIMIT / TRIGGER_DEVIATION / POST_ONLY_DISABLED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - Futures
+      summary: 查询计划委托（条件单，触发后以限价/市价下单）
+      operationId: futuresListPlanOrders
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [active, history]
+        description: active（默认）= 待触发；history = 已触发/已撤/失败
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FuturesAlgoOrder'
+                  nextCursor:
+                    type: integer
+                    format: int64
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /futures/plan-orders/{id}:
+    delete:
+      tags:
+      - Futures
+      summary: 撤销计划委托（条件单，触发后以限价/市价下单）
+      operationId: futuresCancelPlanOrders
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/FuturesAlgoOrder'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: ALGO_NOT_ACTIVE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /futures/positions/{symbol}/tpsl:
     post:
       tags:
@@ -3618,6 +4056,13 @@ paths:
       summary: 设置持仓止盈止损（传 "" 清除）
       operationId: futuresSetTpsl
       parameters:
+      - name: positionSide
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [BOTH, LONG, SHORT]
+        description: 双向持仓模式下必填（也可放在请求体）
       - name: symbol
         in: path
         required: true
@@ -3636,6 +4081,9 @@ paths:
                 slPrice:
                   type: string
                   nullable: true
+                positionSide:
+                  type: string
+                  enum: [BOTH, LONG, SHORT]
       responses:
         '200':
           description: OK
@@ -3669,6 +4117,13 @@ paths:
       summary: 逐仓调整保证金（正数追加，负数减少）
       operationId: futuresAdjustMargin
       parameters:
+      - name: positionSide
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [BOTH, LONG, SHORT]
+        description: 双向持仓模式下必填（也可放在请求体）
       - name: symbol
         in: path
         required: true
@@ -3719,6 +4174,13 @@ paths:
       summary: 市价全平
       operationId: futuresClosePosition
       parameters:
+      - name: positionSide
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [BOTH, LONG, SHORT]
+        description: 双向持仓模式下必填（也可放在请求体）
       - name: symbol
         in: path
         required: true
@@ -7688,6 +8150,9 @@ components:
           type: integer
           minimum: 0
           maximum: 5
+        positionSide:
+          type: string
+          enum: [BOTH, LONG, SHORT]
     FuturesAccount:
       type: object
       properties:
@@ -7746,6 +8211,9 @@ components:
           enum:
           - GTC
           - IOC
+          - POST_ONLY
+          - GTX
+          description: POST_ONLY（GTX 为别名）= 只做 Maker，会立即成交则整单拒绝
         price:
           type: string
           description: 限价单必填
@@ -7758,11 +8226,168 @@ components:
           type: string
         slPrice:
           type: string
+        positionSide:
+          type: string
+          enum: [BOTH, LONG, SHORT]
+          description: 双向模式必填 LONG/SHORT；单向模式可省略或 BOTH
+        triggerPrice:
+          type: string
+          description: 填写即为计划委托（POST /futures/orders 或 /futures/plan-orders）
+        triggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+          description: 默认 LAST（后台可配置）
       required:
       - symbol
       - side
       - type
       - qty
+    FuturesAmendOrderRequest:
+      type: object
+      description: 至少填一项
+      properties:
+        price:
+          type: string
+        qty:
+          type: string
+          description: 新总数量，必须大于已成交数量
+    FuturesPositionMode:
+      type: object
+      properties:
+        positionMode:
+          type: string
+          enum: [ONE_WAY, HEDGE]
+      required:
+      - positionMode
+    FuturesTpslOrderRequest:
+      type: object
+      properties:
+        symbol:
+          type: string
+        positionSide:
+          type: string
+          enum: [BOTH, LONG, SHORT]
+        qty:
+          type: string
+          description: 不填 = 整个仓位
+        tpTriggerPrice:
+          type: string
+        tpPrice:
+          type: string
+          description: 不填 = 触发后市价
+        tpTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+          description: 默认 MARK（后台可配置）
+        slTriggerPrice:
+          type: string
+        slPrice:
+          type: string
+        slTriggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+      required:
+      - symbol
+    FuturesAlgoOrder:
+      type: object
+      properties:
+        algoId:
+          type: integer
+          format: int64
+        symbol:
+          type: string
+        algoType:
+          type: string
+          enum: [tp, sl, plan]
+        side:
+          type: string
+        positionSide:
+          type: string
+        orderType:
+          type: string
+          enum: [limit, market]
+        price:
+          type: string
+          nullable: true
+        qty:
+          type: string
+          nullable: true
+          description: 空 = 整仓
+        triggerPrice:
+          type: string
+        triggerPriceType:
+          type: string
+          enum: [LAST, MARK]
+        triggerDirection:
+          type: string
+          enum: [up, down]
+        reduceOnly:
+          type: boolean
+        timeInForce:
+          type: string
+        status:
+          type: string
+          enum: [active, triggered, canceled, failed]
+        orderId:
+          type: integer
+          format: int64
+          nullable: true
+          description: 触发后生成的委托 ID
+        failReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        triggeredAt:
+          type: string
+          format: date-time
+          nullable: true
+    FuturesPositionHistory:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        symbol:
+          type: string
+        positionSide:
+          type: string
+        side:
+          type: string
+          enum: [long, short]
+        marginMode:
+          type: string
+        leverage:
+          type: integer
+        entryPrice:
+          type: string
+        closePrice:
+          type: string
+        maxQty:
+          type: string
+        closedQty:
+          type: string
+        realizedPnl:
+          type: string
+        fee:
+          type: string
+        fundingFee:
+          type: string
+        netPnl:
+          type: string
+        status:
+          type: string
+          enum: [closed, liquidated, adl]
+        openTime:
+          type: string
+          format: date-time
+        closeTime:
+          type: string
+          format: date-time
     FuturesOrder:
       type: object
       properties:
@@ -7815,6 +8440,10 @@ components:
           nullable: true
         cancelReason:
           type: string
+        positionSide:
+          type: string
+        amendCount:
+          type: integer
         avgPrice:
           type: string
           description: 十进制字符串

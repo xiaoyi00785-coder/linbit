@@ -36,6 +36,7 @@ type Server struct {
 	tpslRetry      map[string]time.Time
 	traders        map[string]bool // active copy traders (their fills emit copy events)
 	lastCopySettle string
+	histStatus     string // status for position history rows written by the current liquidation/ADL step
 }
 
 func NewServer(cfg Config, db *sql.DB) (*Server, error) {
@@ -95,6 +96,7 @@ func (s *Server) txLocked(ctx context.Context, fn func(tx *sql.Tx) error) error 
 
 type PosView struct {
 	Symbol      string  `json:"symbol"`
+	PosSide     string  `json:"positionSide"` // BOTH (one-way) | LONG | SHORT (hedge)
 	Side        string  `json:"side"`
 	Qty         string  `json:"qty"`
 	Entry       string  `json:"entryPrice"`
@@ -151,7 +153,7 @@ func (s *Server) state(ctx context.Context, q queryer, uid string) (AcctState, e
 	for _, p := range ps {
 		c := s.contracts[p.Symbol]
 		m, ok := s.mark(p.Symbol)
-		v := PosView{pos: p, markMissing: !ok}
+		v := PosView{pos: p, PosSide: p.Side, markMissing: !ok}
 		if !ok {
 			m = p.Entry
 		}
@@ -220,19 +222,22 @@ type Trade struct {
 	Time      time.Time       `json:"time"`
 }
 
-// fill applies a signed quantity d at price px to uid's position and wallet:
-// realized PnL, isolated-margin movement, and fee = |d|*px*feeRate (by position
-// value, on open and on close alike) moved to the fee account.
-func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid string, d, px, feeRate decimal.Decimal, lev int, mode string, tp, sl decimal.NullDecimal) (fee, pnl, bonus decimal.Decimal, err error) {
+// fill applies a signed quantity d at price px to uid's position on posSide
+// (BOTH in one-way mode, LONG/SHORT in hedge mode) and wallet: realized PnL,
+// isolated-margin movement, and fee = |d|*px*feeRate (by position value, on open
+// and on close alike) moved to the fee account. A position that goes flat (or
+// flips in one-way mode) is written to fut_position_history.
+func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid, posSide string, d, px, feeRate decimal.Decimal, lev int, mode string, tp, sl decimal.NullDecimal) (fee, pnl, bonus decimal.Decimal, err error) {
 	if _, _, err = lockAccount(ctx, tx, uid); err != nil {
 		return
 	}
-	p, _, err := loadPosition(ctx, tx, uid, c.Symbol, true)
+	p, _, err := loadPosition(ctx, tx, uid, c.Symbol, posSide, true)
 	if err != nil {
 		return
 	}
 	if p.Qty.IsZero() {
 		p.Mode, p.Leverage, p.Iso, p.Realized, p.TP, p.SL = mode, lev, dZero, dZero, decimal.NullDecimal{}, decimal.NullDecimal{}
+		p.resetLifecycle(s.now())
 	}
 	if p.Leverage < 1 {
 		p.Leverage = max(lev, 1)
@@ -241,23 +246,57 @@ func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid string, d
 	nq, ne, rp, closed := applyTrade(p.Qty, p.Entry, d, px)
 	rp = money(rp)
 	balDelta := rp
+	opened := d.Abs().Sub(closed)
 	if p.Mode == "isolated" {
 		if closed.Sign() > 0 && !oldQ.IsZero() {
 			rel := money(p.Iso.Mul(closed).Div(oldQ.Abs()))
 			p.Iso = p.Iso.Sub(rel)
 			balDelta = balDelta.Add(rel)
 		}
-		if opened := d.Abs().Sub(closed); opened.Sign() > 0 {
+		if opened.Sign() > 0 {
 			add := money(opened.Mul(px).Div(decimal.NewFromInt(int64(p.Leverage))))
 			p.Iso = p.Iso.Add(add)
 			balDelta = balDelta.Sub(add)
 		}
 	}
-	p.Qty, p.Entry = nq, ne
+	fee = money(d.Abs().Mul(px).Mul(feeRate))
+	// lifecycle: the closing part (and its share of the fee) belongs to the old position
+	closeFee := fee
+	if d.Abs().Sign() > 0 && opened.Sign() > 0 {
+		closeFee = money(fee.Mul(closed).Div(d.Abs()))
+	}
+	if closed.Sign() > 0 {
+		p.CloseQty = p.CloseQty.Add(closed)
+		p.CloseQuote = p.CloseQuote.Add(closed.Mul(px))
+		p.Fees = p.Fees.Add(closeFee)
+	}
 	p.Realized = p.Realized.Add(rp)
+	ended := !oldQ.IsZero() && (nq.IsZero() || oldQ.Sign() != nq.Sign())
+	if ended {
+		if err = s.recordHistory(ctx, tx, p, oldQ); err != nil {
+			return
+		}
+		p.Realized = dZero
+		p.resetLifecycle(s.now())
+	}
+	if opened.Sign() > 0 {
+		p.OpenQty = p.OpenQty.Add(opened)
+		p.OpenQuote = p.OpenQuote.Add(opened.Mul(px))
+		p.Fees = p.Fees.Add(fee.Sub(closeFee))
+		if !p.OpenedAt.Valid {
+			p.OpenedAt = sql.NullTime{Time: s.now(), Valid: true}
+		}
+	} else if closed.Sign() == 0 {
+		p.Fees = p.Fees.Add(fee)
+	}
+	if nq.Abs().GreaterThan(p.MaxQty) {
+		p.MaxQty = nq.Abs()
+	}
+	p.Qty, p.Entry = nq, ne
 	if nq.IsZero() {
 		balDelta = balDelta.Add(p.Iso)
 		p.Iso, p.Entry, p.TP, p.SL = dZero, dZero, decimal.NullDecimal{}, decimal.NullDecimal{}
+		p.OpenedAt = sql.NullTime{}
 	} else if (tp.Valid || sl.Valid) && closed.LessThan(d.Abs()) {
 		if tp.Valid {
 			p.TP = tp
@@ -285,7 +324,6 @@ func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid string, d
 	if err = addBalance(ctx, tx, uid, c.Symbol, "realized_pnl", rp, ""); err != nil {
 		return
 	}
-	fee = money(d.Abs().Mul(px).Mul(feeRate))
 	if fee.Sign() > 0 {
 		if err = addBalance(ctx, tx, uid, c.Symbol, "fee", fee.Neg(), ""); err != nil {
 			return
@@ -312,7 +350,13 @@ type PlaceReq struct {
 	ReduceOnly bool   `json:"reduceOnly"`
 	TP         string `json:"tpPrice"`
 	SL         string `json:"slPrice"`
-	source     string
+	// PositionSide: BOTH (default, one-way mode) or LONG/SHORT (hedge mode).
+	PositionSide string `json:"positionSide"`
+	// TriggerPrice turns the request into a plan (conditional) order; see algo.go.
+	TriggerPrice string `json:"triggerPrice"`
+	TriggerType  string `json:"triggerPriceType"`
+	source       string
+	algoID       int64
 }
 
 func optDec(v string) (decimal.NullDecimal, error) {
@@ -356,9 +400,27 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 	if r.TIF == "" {
 		r.TIF = "GTC"
 	}
-	if r.TIF != "GTC" && r.TIF != "IOC" {
-		return Order{}, nil, bad("VALIDATION_ERROR", "timeInForce 仅支持 GTC/IOC")
+	if r.TIF == "GTX" {
+		r.TIF = "POST_ONLY"
 	}
+	if r.TIF != "GTC" && r.TIF != "IOC" && r.TIF != "POST_ONLY" {
+		return Order{}, nil, bad("VALIDATION_ERROR", "timeInForce 仅支持 GTC/IOC/POST_ONLY")
+	}
+	if r.TIF == "POST_ONLY" {
+		if r.Type != "limit" {
+			return Order{}, nil, bad("VALIDATION_ERROR", "只做 Maker（POST_ONLY）仅支持限价单")
+		}
+		if cfg, err := loadOrderConfig(ctx, s.db); err != nil {
+			return Order{}, nil, err
+		} else if !cfg.PostOnlyEnabled {
+			return Order{}, nil, bad("POST_ONLY_DISABLED", "只做 Maker 暂未开放")
+		}
+	}
+	posSide, reduceOnly, err := s.resolvePosSide(ctx, s.db, uid, r.PositionSide, r.Side, r.ReduceOnly)
+	if err != nil {
+		return Order{}, nil, err
+	}
+	r.ReduceOnly = reduceOnly
 	if r.source == "" {
 		r.source = "user"
 	}
@@ -414,12 +476,12 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 		}
 		reserve := dZero
 		if !r.ReduceOnly {
-			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, false)
+			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, posSide, false)
 			if err != nil {
 				return err
 			}
 			var pend decimal.Decimal
-			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(qty-filled),0) FROM fut_orders WHERE user_id=$1 AND symbol=$2 AND side=$3 AND NOT reduce_only AND status IN ('new','partially_filled')`, uid, c.Symbol, r.Side).Scan(&pend); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(qty-filled),0) FROM fut_orders WHERE user_id=$1 AND symbol=$2 AND side=$3 AND position_side=$4 AND NOT reduce_only AND status IN ('new','partially_filled')`, uid, c.Symbol, r.Side, posSide).Scan(&pend); err != nil {
 				return err
 			}
 			proj := p.Qty.Add(signed(r.Side, qty.Add(pend))).Abs().Mul(ref)
@@ -428,7 +490,7 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 			}
 		}
 		if r.ReduceOnly {
-			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, false)
+			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, posSide, false)
 			if err != nil {
 				return err
 			}
@@ -452,9 +514,20 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 				return err
 			}
 		}
-		row := tx.QueryRowContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, tif, price, qty, reserved, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'new',$9,$10,$11,$12,$13,$14) RETURNING `+orderCols,
-			uid, c.Symbol, r.Side, r.Type, r.TIF, price, qty, reserve, r.ReduceOnly, lev, mode, r.source, tp, sl)
+		if r.TIF == "POST_ONLY" {
+			if cross, err := wouldTake(ctx, tx, c.Symbol, r.Side, price.Decimal); err != nil {
+				return err
+			} else if cross {
+				return bad("POST_ONLY_REJECTED", "只做 Maker 订单会立即成交，已拒绝")
+			}
+		}
+		var algo any
+		if r.algoID > 0 {
+			algo = r.algoID
+		}
+		row := tx.QueryRowContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, tif, price, qty, reserved, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price, position_side, algo_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'new',$9,$10,$11,$12,$13,$14,$15,$16) RETURNING `+orderCols,
+			uid, c.Symbol, r.Side, r.Type, r.TIF, price, qty, reserve, r.ReduceOnly, lev, mode, r.source, tp, sl, posSide, algo)
 		if o, err = scanOrder(row); err != nil {
 			return err
 		}
@@ -471,8 +544,8 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 }
 
 // closable returns how much of an order on side can reduce uid's position.
-func closable(ctx context.Context, tx *sql.Tx, uid, sym, side string) (decimal.Decimal, error) {
-	p, _, err := loadPosition(ctx, tx, uid, sym, false)
+func closable(ctx context.Context, tx *sql.Tx, uid, sym, posSide, side string) (decimal.Decimal, error) {
+	p, _, err := loadPosition(ctx, tx, uid, sym, posSide, false)
 	if err != nil || p.Qty.IsZero() {
 		return dZero, err
 	}
@@ -529,7 +602,7 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 			qs += ` AND price ` + cmp + ` $3`
 			args = append(args, taker.Price.Decimal)
 		}
-		qs += ` ORDER BY price ` + ord + `, id ASC LIMIT 1 FOR UPDATE`
+		qs += ` ORDER BY price ` + ord + `, seq ASC LIMIT 1 FOR UPDATE`
 		maker, err := scanOrder(tx.QueryRowContext(ctx, qs, args...))
 		if err == sql.ErrNoRows {
 			break
@@ -550,7 +623,7 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 		}
 		qty := dmin(taker.remaining(), maker.remaining())
 		if taker.ReduceOnly {
-			cl, err := closable(ctx, tx, taker.UserID, c.Symbol, taker.Side)
+			cl, err := closable(ctx, tx, taker.UserID, c.Symbol, taker.PosSide, taker.Side)
 			if err != nil {
 				return nil, err
 			}
@@ -560,7 +633,7 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 			}
 		}
 		if maker.ReduceOnly {
-			cl, err := closable(ctx, tx, maker.UserID, c.Symbol, maker.Side)
+			cl, err := closable(ctx, tx, maker.UserID, c.Symbol, maker.PosSide, maker.Side)
 			if err != nil {
 				return nil, err
 			}
@@ -574,11 +647,11 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 		}
 		mRate, _, _ := s.userFees(maker.UserID, c)
 		_, tRate, _ := s.userFees(taker.UserID, c)
-		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, signed(maker.Side, qty), px, mRate, maker.Leverage, maker.Mode, maker.TP, maker.SL)
+		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, maker.PosSide, signed(maker.Side, qty), px, mRate, maker.Leverage, maker.Mode, maker.TP, maker.SL)
 		if err != nil {
 			return nil, err
 		}
-		tfee, _, tbonus, err := s.fill(ctx, tx, c, taker.UserID, signed(taker.Side, qty), px, tRate, taker.Leverage, taker.Mode, taker.TP, taker.SL)
+		tfee, _, tbonus, err := s.fill(ctx, tx, c, taker.UserID, taker.PosSide, signed(taker.Side, qty), px, tRate, taker.Leverage, taker.Mode, taker.TP, taker.SL)
 		if err != nil {
 			return nil, err
 		}
@@ -586,7 +659,7 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 			return nil, err
 		}
 		if maker.ReduceOnly && maker.open() {
-			if cl, _ := closable(ctx, tx, maker.UserID, c.Symbol, maker.Side); cl.IsZero() {
+			if cl, _ := closable(ctx, tx, maker.UserID, c.Symbol, maker.PosSide, maker.Side); cl.IsZero() {
 				if err := releaseOrder(ctx, tx, &maker, "reduce_only"); err != nil {
 					return nil, err
 				}
@@ -668,26 +741,41 @@ func (s *Server) SetLeverage(ctx context.Context, uid, sym string, lev int, mode
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM fut_orders WHERE user_id=$1 AND symbol=$2 AND status IN ('new','partially_filled')`, uid, c.Symbol).Scan(&openOrders); err != nil {
 			return err
 		}
-		p, _, err := loadPosition(ctx, tx, uid, c.Symbol, true)
-		if err != nil {
-			return err
+		// leverage and margin mode are per symbol, shared by both hedge sides
+		var ps []Position
+		for _, side := range []string{"BOTH", "LONG", "SHORT"} {
+			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, side, true)
+			if err != nil {
+				return err
+			}
+			if !p.Qty.IsZero() {
+				ps = append(ps, p)
+			}
+		}
+		var totQty decimal.Decimal
+		for _, p := range ps {
+			totQty = totQty.Add(p.Qty.Abs())
 		}
 		if (lev != curLev || mode != curMode) && openOrders > 0 {
 			return bad("HAS_OPEN_ORDERS", "请先撤销该合约的挂单")
 		}
-		if !p.Qty.IsZero() && lev != curLev {
-			if m, ok := s.mark(c.Symbol); ok && p.Qty.Abs().Mul(m).GreaterThan(c.maxNotional(lev)) {
+		if len(ps) > 0 && lev != curLev {
+			if m, ok := s.mark(c.Symbol); ok && totQty.Mul(m).GreaterThan(c.maxNotional(lev)) {
 				return bad("POSITION_LIMIT", fmt.Sprintf("当前仓位价值超过 %dx 杠杆的上限 %s USDT", lev, c.maxNotional(lev)))
 			}
 		}
-		if mode != curMode && !p.Qty.IsZero() {
+		if mode != curMode && len(ps) > 0 {
 			return bad("HAS_POSITION", "持仓期间不能切换保证金模式")
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO fut_settings (user_id, symbol, leverage, margin_mode) VALUES ($1,$2,$3,$4)
 			ON CONFLICT (user_id, symbol) DO UPDATE SET leverage=EXCLUDED.leverage, margin_mode=EXCLUDED.margin_mode`, uid, c.Symbol, lev, mode); err != nil {
 			return err
 		}
-		if !p.Qty.IsZero() && lev != p.Leverage {
+		changed := false
+		for _, p := range ps {
+			if lev == p.Leverage {
+				continue
+			}
 			if p.Mode == "isolated" && lev < p.Leverage {
 				return bad("INVALID_LEVERAGE", "逐仓持仓期间只能调高杠杆，或先追加保证金")
 			}
@@ -695,6 +783,9 @@ func (s *Server) SetLeverage(ctx context.Context, uid, sym string, lev int, mode
 			if err := savePosition(ctx, tx, p); err != nil {
 				return err
 			}
+			changed = true
+		}
+		if changed {
 			st, err := s.state(ctx, tx, uid)
 			if err != nil {
 				return err
@@ -708,16 +799,19 @@ func (s *Server) SetLeverage(ctx context.Context, uid, sym string, lev int, mode
 }
 
 // AdjustMargin adds (delta>0) or removes isolated margin.
-func (s *Server) AdjustMargin(ctx context.Context, uid, sym string, delta decimal.Decimal) error {
+func (s *Server) AdjustMargin(ctx context.Context, uid, sym, posSide string, delta decimal.Decimal) error {
 	c, err := s.contract(sym)
 	if err != nil {
+		return err
+	}
+	if posSide, err = s.pickSide(ctx, uid, c.Symbol, posSide); err != nil {
 		return err
 	}
 	return s.withTx(ctx, func(tx *sql.Tx) error {
 		if _, _, err := lockAccount(ctx, tx, uid); err != nil {
 			return err
 		}
-		p, _, err := loadPosition(ctx, tx, uid, c.Symbol, true)
+		p, _, err := loadPosition(ctx, tx, uid, c.Symbol, posSide, true)
 		if err != nil {
 			return err
 		}
@@ -753,13 +847,16 @@ func (s *Server) AdjustMargin(ctx context.Context, uid, sym string, delta decima
 }
 
 // SetTPSL sets/clears the position-level take-profit / stop-loss (mark-triggered).
-func (s *Server) SetTPSL(ctx context.Context, uid, sym string, tp, sl decimal.NullDecimal, clearTP, clearSL bool) error {
+func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl decimal.NullDecimal, clearTP, clearSL bool) error {
 	c, err := s.contract(sym)
 	if err != nil {
 		return err
 	}
+	if posSide, err = s.pickSide(ctx, uid, c.Symbol, posSide); err != nil {
+		return err
+	}
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		p, _, err := loadPosition(ctx, tx, uid, c.Symbol, true)
+		p, _, err := loadPosition(ctx, tx, uid, c.Symbol, posSide, true)
 		if err != nil {
 			return err
 		}
@@ -792,20 +889,25 @@ func (s *Server) SetTPSL(ctx context.Context, uid, sym string, tp, sl decimal.Nu
 }
 
 // ClosePosition submits a reduce-only market order for the whole position.
-func (s *Server) ClosePosition(ctx context.Context, uid, sym, source string) (Order, []Trade, error) {
+func (s *Server) ClosePosition(ctx context.Context, uid, sym, posSide, source string) (Order, []Trade, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	o, t, err := s.closeLocked(ctx, uid, sym, source)
+	o, t, err := s.closeLocked(ctx, uid, sym, posSide, source)
 	s.processCopy(ctx)
 	return o, t, err
 }
 
-func (s *Server) closeLocked(ctx context.Context, uid, sym, source string) (Order, []Trade, error) {
+func (s *Server) closeLocked(ctx context.Context, uid, sym, posSide, source string) (Order, []Trade, error) {
 	c, err := s.contract(sym)
 	if err != nil {
 		return Order{}, nil, err
 	}
-	p, _, err := loadPosition(ctx, s.db, uid, c.Symbol, false)
+	if posSide == "" {
+		if posSide, err = s.defaultCloseSide(ctx, uid, c.Symbol); err != nil {
+			return Order{}, nil, err
+		}
+	}
+	p, _, err := loadPosition(ctx, s.db, uid, c.Symbol, posSide, false)
 	if err != nil {
 		return Order{}, nil, err
 	}
@@ -816,7 +918,7 @@ func (s *Server) closeLocked(ctx context.Context, uid, sym, source string) (Orde
 	if p.Qty.Sign() < 0 {
 		side = "buy"
 	}
-	return s.placeLocked(ctx, uid, PlaceReq{Symbol: c.Symbol, Side: side, Type: "market", Qty: p.Qty.Abs().String(), ReduceOnly: true, source: source})
+	return s.placeLocked(ctx, uid, PlaceReq{Symbol: c.Symbol, Side: side, Type: "market", Qty: p.Qty.Abs().String(), ReduceOnly: true, PositionSide: posSide, source: source})
 }
 
 // ---- transfers (spot <-> futures) ----

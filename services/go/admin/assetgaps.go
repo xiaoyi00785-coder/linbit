@@ -42,6 +42,9 @@ func (s *Server) assetGapRoutes(a func(pattern, perm string, h http.HandlerFunc)
 	a("GET /admin/v1/fee-overrides/futures", permFeeView, s.gapRead(futures, "/internal/admin/fee-overrides"))
 	a("PUT /admin/v1/fee-overrides/futures/{userId}", permFeeEdit, s.gapWrite(futures, http.MethodPut, "/internal/admin/fee-overrides/{userId}", "fee", "futures_user_override"))
 	a("DELETE /admin/v1/fee-overrides/futures/{userId}", permFeeEdit, s.gapWrite(futures, http.MethodDelete, "/internal/admin/fee-overrides/{userId}", "fee", "futures_user_override_delete"))
+	// futures advanced-order rules (TP/SL & plan limits, default trigger types, hedge / POST_ONLY switches)
+	a("GET /admin/v1/futures/order-config", permSymbolView, s.gapRead(futures, "/internal/admin/order-config"))
+	a("PUT /admin/v1/futures/order-config", permSymbolEdit, s.gapWrite(futures, http.MethodPut, "/internal/admin/order-config", "futures", "order_config_update"))
 }
 
 func fillPath(r *http.Request, p string) string {

@@ -95,22 +95,25 @@ func (s *Server) deleverage(ctx context.Context, tx *sql.Tx, uid string, c Contr
 			break
 		}
 		x := dmin(rem, cd.p.Qty.Abs())
-		if _, _, _, err := s.fill(ctx, tx, c, uid, decimal.NewFromInt(int64(-p.Qty.Sign())).Mul(x), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
+		s.histStatus = "liquidated"
+		if _, _, _, err := s.fill(ctx, tx, c, uid, p.Side, decimal.NewFromInt(int64(-p.Qty.Sign())).Mul(x), px, dZero, p.Leverage, p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{}); err != nil {
 			return rem, err
 		}
-		_, cpnl, _, err := s.fill(ctx, tx, c, cd.p.UserID, decimal.NewFromInt(int64(p.Qty.Sign())).Mul(x), px, dZero, cd.p.Leverage, cd.p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{})
+		s.histStatus = "adl"
+		_, cpnl, _, err := s.fill(ctx, tx, c, cd.p.UserID, cd.p.Side, decimal.NewFromInt(int64(p.Qty.Sign())).Mul(x), px, dZero, cd.p.Leverage, cd.p.Mode, decimal.NullDecimal{}, decimal.NullDecimal{})
+		s.histStatus = "liquidated"
 		if err != nil {
 			return rem, err
 		}
-		if err := cancelReduceOnly(ctx, tx, cd.p.UserID, c.Symbol); err != nil {
+		if err := cancelReduceOnly(ctx, tx, cd.p.UserID, c.Symbol, cd.p.Side); err != nil {
 			return rem, err
 		}
 		side := "buy"
 		if cd.p.Qty.Sign() > 0 {
 			side = "sell"
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, price, qty, filled, filled_quote, status, reduce_only, leverage, margin_mode, source)
-			VALUES ($1,$2,$3,'market',$4,$5,$5,$6,'filled',true,$7,$8,'adl')`, cd.p.UserID, c.Symbol, side, px, x, x.Mul(px), cd.p.Leverage, cd.p.Mode); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, price, qty, filled, filled_quote, status, reduce_only, leverage, margin_mode, source, position_side)
+			VALUES ($1,$2,$3,'market',$4,$5,$5,$6,'filled',true,$7,$8,'adl',$9)`, cd.p.UserID, c.Symbol, side, px, x, x.Mul(px), cd.p.Leverage, cd.p.Mode, cd.p.Side); err != nil {
 			return rem, err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO fut_adl (symbol, liq_user, counter_user, qty, price, counter_pnl) VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -123,16 +126,16 @@ func (s *Server) deleverage(ctx context.Context, tx *sql.Tx, uid string, c Contr
 	return rem, nil
 }
 
-func cancelReduceOnly(ctx context.Context, tx *sql.Tx, uid, sym string) error {
-	p, _, err := loadPosition(ctx, tx, uid, sym, false)
+func cancelReduceOnly(ctx context.Context, tx *sql.Tx, uid, sym, side string) error {
+	p, _, err := loadPosition(ctx, tx, uid, sym, side, false)
 	if err != nil {
 		return err
 	}
-	q := `SELECT ` + orderCols + ` FROM fut_orders WHERE user_id=$1 AND symbol=$2 AND reduce_only AND status IN ('new','partially_filled')`
+	q := `SELECT ` + orderCols + ` FROM fut_orders WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND reduce_only AND status IN ('new','partially_filled')`
 	if !p.Qty.IsZero() {
 		return nil // still has a position: remaining reduce-only orders stay valid (matching caps them)
 	}
-	rows, err := tx.QueryContext(ctx, q+` FOR UPDATE`, uid, sym)
+	rows, err := tx.QueryContext(ctx, q+` FOR UPDATE`, uid, sym, normSide(side))
 	if err != nil {
 		return err
 	}
