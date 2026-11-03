@@ -85,7 +85,7 @@ http() { curl -sS -o /dev/null -w '%{http_code}' "$@"; }
 
 # balance_of <token> <asset> — free balance as a fixed 8dp string.
 balance_of() {
-  api GET /assets/balances "$1" | jq -r --arg a "$2" '.items[] | select(.asset==$a) | .free'
+  api GET "/assets/balances?account=funding" "$1" | jq -r --arg a "$2" '.items[] | select(.asset==$a) | .free'
 }
 
 # parse_amount <string> -> normalized 8dp for exact comparison.

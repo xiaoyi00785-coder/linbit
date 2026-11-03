@@ -41,7 +41,7 @@ expect() { # expect <resp> <http> [errcode] <label>
 
 say "parent 2FA gate + create"
 read -r PT PU <<<"$(register "subparent-$TS@example.com")"
-expect "$(api "$PT" POST /sub-accounts '{"username":"desk01"}')" 403 TWO_FACTOR_REQUIRED "create without 2FA"
+expect "$(api "$PT" POST /sub-accounts '{"username":"desk01"}')" 403 TWOFA_REQUIRED "create without 2FA"
 PSEC="$(ok "$(api "$PT" POST /2fa/totp/bind '{}')" bind | jq -r .secret)"
 ok "$(api "$PT" POST /2fa/totp/verify "{\"code\":\"$(totp "$PSEC")\"}")" "totp verify" >/dev/null
 expect "$(api "$PT" POST /sub-accounts '{"username":"Bad Name"}')" 400 VALIDATION_ERROR "bad username"
@@ -113,7 +113,7 @@ SSEC="$(jq -r .loginTotp.secret <<<"$EN")"; [ -n "$SSEC" ] && [ "$SSEC" != null 
 CH="$(ok "$(LOGIN)" login)"; [ "$(jq -r '.challengeToken // empty' <<<"$CH")" != "" ] || fail "sub login must require 2FA: $CH"
 ST="$(ok "$(curl -sS -w '\n%{http_code}' -X POST "$GATEWAY_URL/auth/login/verify" -H 'Content-Type: application/json' -d "{\"challengeToken\":\"$(jq -r .challengeToken <<<"$CH")\",\"totpCode\":\"$(totp "$SSEC")\"}")" "login verify" | jq -r .accessToken)"
 [ "$(jwt_sub "$ST")" = "$SU" ] || fail "sub token subject"
-for p in "GET /sub-accounts" "POST /sub-accounts" "POST /wallet/withdraw" "GET /wallet/deposit/address?asset=USDT" "POST /account/withdraw-addresses" "POST /2fa/totp/disable"; do
+for p in "GET /sub-accounts" "POST /sub-accounts" "POST /wallet/withdraw" "GET /wallet/deposit/address?asset=USDT" "POST /account/withdraw-addresses" "POST /2fa/totp/disable" "POST /wallet/internal-transfer" "POST /account/fund-password" "PUT /account/anti-phishing" "POST /account/password/change" "POST /account/passkeys/register/begin" "POST /chat/rooms/BTCUSDT/messages"; do
   expect "$(api "$ST" ${p% *} "${p#* }" '{}')" 403 SUB_ACCOUNT_FORBIDDEN "sub session -> $p"
 done
 expect "$(api "$ST" POST /sub-accounts/transfer '{"clientId":"s1-'$TS'","subAccountId":"'$SU'","direction":"to_sub","asset":"USDT","amount":"1"}')" 403 SUB_ACCOUNT_FORBIDDEN "sub pulls from parent"

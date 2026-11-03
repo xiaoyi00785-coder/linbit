@@ -34,7 +34,7 @@ declare -A TOK UID_
 reg() { read -r t s < <(register "gift-${1,,}-$TS@example.com" "${2:-}"); TOK[$1]="$t"; UID_[$1]="$s"; }
 kyc() { internal "$ACCOUNT_URL" POST /internal/account/kyc-level "{\"uid\":\"${UID_[$1]}\",\"level\":${2:-1}}" >/dev/null; }
 deposit() {
-  [ "$(internal "$ASSET_URL" POST /internal/deposit "{\"userId\":\"$1\",\"asset\":\"USDT\",\"amount\":\"$2\",\"ref\":\"gift-dep-$TS-$3\"}" | jq -r .status)" = ok ] || fail "deposit"
+  [ "$(internal "$ASSET_URL" POST /internal/deposit "{\"userId\":\"$1\",\"asset\":\"USDT\",\"amount\":\"$2\",\"account\":\"spot\",\"ref\":\"gift-dep-$TS-$3\"}" | jq -r .status)" = ok ] || fail "deposit"
 }
 nc() { ok "$(api "${TOK[$1]}" GET /rewards/newcomer)" "newcomer $1"; }
 st() { nc "$1" | jq -r --arg k "$2" '.tasks[] | select(.key==$k) | .status'; }

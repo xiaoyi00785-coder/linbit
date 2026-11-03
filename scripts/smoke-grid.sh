@@ -186,7 +186,7 @@ say "cycle: buy@49000 fills -> sell@50000 -> fills -> buy@49000 again"
 spot "${TOK[N]}" '{"symbol":"BTCUSDT","side":"sell","type":"limit","price":"49000","quantity":"0.005065"}' >/dev/null
 # openOrders is already 4 before the fill is processed; wait for the
 # replacement sell@50000 itself rather than racing the fill handler.
-OO="$(wait_orders "${TOK[G]}" "$B1" '[.items[]|select(.side=="sell" and .price=="50000")]|length==1 and (.items|length)==4')"
+OO="$(wait_orders "${TOK[G]}" "$B1" '([.items[]|select(.side=="sell" and .price=="50000")]|length==1) and ((.items|length)==4)')"
 B="$(wait_bot "${TOK[G]}" "$B1" '.openOrders==4 and (.levels|length)==5')"
 # N lifts M's remaining 50000 ask first (time priority), then the bot's sell.
 spot "${TOK[N]}" '{"symbol":"BTCUSDT","side":"buy","type":"limit","price":"50000","quantity":"0.02"}' >/dev/null
