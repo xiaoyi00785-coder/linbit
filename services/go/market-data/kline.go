@@ -13,8 +13,8 @@ type Interval struct {
 
 const mondayAnchor = 345600 // 1970-01-05T00:00:00Z, the first Monday after the epoch
 
-// Intervals lists every interval the service aggregates and serves. It is a
-// superset of the openapi KlineInterval enum (it additionally supports 30m).
+// Intervals lists every interval the service aggregates and serves. It matches
+// the openapi KlineInterval enum and the WebSocket kline channel docs.
 var Intervals = []Interval{
 	{Name: "1m", Seconds: 60},
 	{Name: "5m", Seconds: 300},

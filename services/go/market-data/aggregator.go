@@ -35,6 +35,26 @@ type nopBroadcaster struct{}
 
 func (nopBroadcaster) Broadcast(string, any) {}
 
+// symPrec is a trading pair's decimal precision for rendering market frames. It
+// mirrors the order service's convention: prices and quote-denominated amounts
+// (e.g. ticker quoteVolume) use pricePrec; base quantities use qtyPrec. `ok` is
+// false when the symbol is absent from the shared catalogue, in which case the
+// canonical decimal string is used so no precision is invented.
+type symPrec struct {
+	pricePrec int
+	qtyPrec   int
+	ok        bool
+}
+
+// fmtPrec renders d as a fixed-precision decimal string (never a float). When
+// the symbol precision is unknown it falls back to the canonical string.
+func fmtPrec(d decimal.Decimal, places int, ok bool) string {
+	if !ok {
+		return d.String()
+	}
+	return d.StringFixed(int32(places))
+}
+
 // book is an aggregated order book: price (canonical string) -> resting qty.
 type book struct {
 	bids map[string]decimal.Decimal
@@ -57,9 +77,9 @@ func applyLevels(side map[string]decimal.Decimal, levels []Level) {
 	}
 }
 
-// sortedLevels returns up to limit [price, qty] pairs. bids descend by price,
-// asks ascend.
-func sortedLevels(side map[string]decimal.Decimal, desc bool, limit int) [][2]string {
+// sortedLevels returns up to limit [price, qty] pairs, each padded to the
+// trading pair's precision. bids descend by price, asks ascend.
+func sortedLevels(side map[string]decimal.Decimal, desc bool, limit int, p symPrec) [][2]string {
 	prices := make([]decimal.Decimal, 0, len(side))
 	for k := range side {
 		prices = append(prices, decimal.RequireFromString(k))
@@ -74,9 +94,12 @@ func sortedLevels(side map[string]decimal.Decimal, desc bool, limit int) [][2]st
 		prices = prices[:limit]
 	}
 	out := make([][2]string, 0, len(prices))
-	for _, p := range prices {
-		key := p.String()
-		out = append(out, [2]string{key, side[key].String()})
+	for _, price := range prices {
+		key := price.String()
+		out = append(out, [2]string{
+			fmtPrec(price, p.pricePrec, p.ok),
+			fmtPrec(side[key], p.qtyPrec, p.ok),
+		})
 	}
 	return out
 }
@@ -116,6 +139,10 @@ type Aggregator struct {
 	bc      Broadcaster
 	states  map[string]*symbolState
 	symbols []string
+	// prec maps a symbol to its rendering precision, loaded from the shared
+	// `symbols` catalogue (same source as the order service). Set once at
+	// startup via SetPrecisions and only read afterwards.
+	prec    map[string]symPrec
 	now     func() time.Time
 	persist chan persistJob
 }
@@ -134,6 +161,7 @@ func NewAggregator(store *Store, symbols []string) *Aggregator {
 		bc:      nopBroadcaster{},
 		states:  map[string]*symbolState{},
 		symbols: append([]string(nil), symbols...),
+		prec:    map[string]symPrec{},
 		now:     time.Now,
 		persist: make(chan persistJob, persistQueue),
 	}
@@ -153,6 +181,20 @@ func newSymbolState(symbol string) *symbolState {
 
 // SetBroadcaster attaches the live-push transport (the WS hub).
 func (a *Aggregator) SetBroadcaster(bc Broadcaster) { a.bc = bc }
+
+// SetPrecisions loads per-symbol rendering precision from the shared trading-pair
+// catalogue (the `symbols` table owned by the order service) so REST and WS
+// price/quantity strings are padded to each pair's rules, identical to the order
+// service. Call once at startup before serving.
+func (a *Aggregator) SetPrecisions(infos []SymbolInfo) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	m := make(map[string]symPrec, len(infos))
+	for _, si := range infos {
+		m[si.Symbol] = symPrec{pricePrec: si.PricePrecision, qtyPrec: si.QuantityPrecision, ok: true}
+	}
+	a.prec = m
+}
 
 // Recover reloads persisted candles for every tracked symbol/interval so the
 // in-memory history (and REST responses) survive a restart.
@@ -322,20 +364,24 @@ func (a *Aggregator) OnDepth(ev DepthEvent) {
 		ss.book.seq = ev.Sequence
 		ss.lastDepth = ev.Sequence
 	}
+	p := a.prec[ev.Symbol]
 	a.mu.Unlock()
 
 	a.bc.Broadcast("depth:"+ev.Symbol, depthDTO{
 		Symbol:       ev.Symbol,
 		LastUpdateID: ev.Sequence,
-		Bids:         levelsToPairs(ev.Bids),
-		Asks:         levelsToPairs(ev.Asks),
+		Bids:         levelsToPairs(ev.Bids, p),
+		Asks:         levelsToPairs(ev.Asks, p),
 	})
 }
 
-func levelsToPairs(levels []Level) [][2]string {
+func levelsToPairs(levels []Level, p symPrec) [][2]string {
 	out := make([][2]string, 0, len(levels))
 	for _, l := range levels {
-		out = append(out, [2]string{l.Price.String(), l.Quantity.String()})
+		out = append(out, [2]string{
+			fmtPrec(l.Price, p.pricePrec, p.ok),
+			fmtPrec(l.Quantity, p.qtyPrec, p.ok),
+		})
 	}
 	return out
 }
@@ -376,11 +422,12 @@ func (a *Aggregator) DepthFrame(symbol string, limit int) (depthDTO, bool) {
 	if ss == nil {
 		return depthDTO{}, false
 	}
+	p := a.prec[symbol]
 	return depthDTO{
 		Symbol:       symbol,
 		LastUpdateID: ss.book.seq,
-		Bids:         sortedLevels(ss.book.bids, true, limit),
-		Asks:         sortedLevels(ss.book.asks, false, limit),
+		Bids:         sortedLevels(ss.book.bids, true, limit, p),
+		Asks:         sortedLevels(ss.book.asks, false, limit, p),
 	}, true
 }
 
@@ -397,19 +444,23 @@ func (a *Aggregator) TickerFrame(symbol string) (tickerDTO, bool) {
 }
 
 // tickerDTOLocked computes the ticker from the rolling window. Caller holds mu.
+// Prices (lastPrice/high/low) render to pricePrecision, base volume to
+// quantityPrecision, and quoteVolume to pricePrecision (the quote currency's
+// precision), matching the order service's fixed-precision decimal strings.
 func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
+	p := a.prec[ss.symbol]
 	last := decimal.Zero
 	if ss.hasLast {
 		last = ss.lastPrice
 	}
 	dto := tickerDTO{
 		Symbol:             ss.symbol,
-		LastPrice:          last.String(),
+		LastPrice:          fmtPrec(last, p.pricePrec, p.ok),
 		PriceChangePercent: "0",
-		High:               last.String(),
-		Low:                last.String(),
-		Volume:             "0",
-		QuoteVolume:        "0",
+		High:               fmtPrec(last, p.pricePrec, p.ok),
+		Low:                fmtPrec(last, p.pricePrec, p.ok),
+		Volume:             fmtPrec(decimal.Zero, p.qtyPrec, p.ok),
+		QuoteVolume:        fmtPrec(decimal.Zero, p.pricePrec, p.ok),
 	}
 	if len(ss.window) == 0 {
 		return dto
@@ -429,10 +480,10 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		vol = vol.Add(it.qty)
 		quoteVol = quoteVol.Add(it.price.Mul(it.qty))
 	}
-	dto.High = high.String()
-	dto.Low = low.String()
-	dto.Volume = vol.String()
-	dto.QuoteVolume = quoteVol.String()
+	dto.High = fmtPrec(high, p.pricePrec, p.ok)
+	dto.Low = fmtPrec(low, p.pricePrec, p.ok)
+	dto.Volume = fmtPrec(vol, p.qtyPrec, p.ok)
+	dto.QuoteVolume = fmtPrec(quoteVol, p.pricePrec, p.ok)
 	if open.Sign() > 0 {
 		pct := last.Sub(open).Div(open).Mul(decimal.NewFromInt(100))
 		dto.PriceChangePercent = pct.Round(2).String()

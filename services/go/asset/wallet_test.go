@@ -33,6 +33,20 @@ func TestWithdrawNetworks(t *testing.T) {
 	}
 }
 
+// TestWithdrawNetworksUSDTMinWithdraw checks that every default USDT network
+// shares the same 12 USDT minimum withdrawal.
+func TestWithdrawNetworksUSDTMinWithdraw(t *testing.T) {
+	nets := defaultWithdrawNetworks()["USDT"]
+	if len(nets) == 0 {
+		t.Fatal("no default USDT networks")
+	}
+	for _, n := range nets {
+		if n.MinWithdraw != "12.00000000" {
+			t.Fatalf("%s minWithdraw = %q, want 12.00000000", n.Network, n.MinWithdraw)
+		}
+	}
+}
+
 func TestWithdrawNetworksRequiresAuth(t *testing.T) {
 	s := testWalletServer()
 	r := httptest.NewRequest("GET", "/wallet/withdraw/networks?asset=USDT", nil)

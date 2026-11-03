@@ -71,14 +71,16 @@ func (s *Server) handleSymbols(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 	symbol := r.URL.Query().Get("symbol")
 	if symbol != "" {
+		// With a symbol the response is a single Ticker object (openapi oneOf).
 		t, ok := s.agg.TickerFrame(symbol)
 		if !ok {
 			common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "交易对不存在")
 			return
 		}
-		common.WriteJSON(w, http.StatusOK, []tickerDTO{t})
+		common.WriteJSON(w, http.StatusOK, t)
 		return
 	}
+	// Without a symbol the response is an array of all tracked symbols' tickers.
 	// All tracked symbols.
 	out := make([]tickerDTO, 0)
 	for _, sym := range s.agg.TrackedSymbols() {

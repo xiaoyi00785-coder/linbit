@@ -192,6 +192,78 @@ func TestOnDepthSnapshotAndDelta(t *testing.T) {
 	}
 }
 
+// precAgg builds a test aggregator with BTCUSDT precision loaded
+// (pricePrecision=2, quantityPrecision=6) to exercise fixed-precision rendering.
+func precAgg() (*Aggregator, *recBroadcaster) {
+	agg, bc := newTestAgg()
+	agg.SetPrecisions([]SymbolInfo{{Symbol: "BTCUSDT", PricePrecision: 2, QuantityPrecision: 6}})
+	return agg, bc
+}
+
+// TestTickerPrecision checks the ticker pads prices/quoteVolume to price
+// precision (2) and base volume to quantity precision (6).
+func TestTickerPrecision(t *testing.T) {
+	agg, bc := precAgg()
+	base := int64(1762070400)
+	agg.OnTrade(trade("1", "70000", "0.01", "buy", base))
+
+	tk, _ := agg.TickerFrame("BTCUSDT")
+	if tk.LastPrice != "70000.00" {
+		t.Fatalf("lastPrice = %q, want 70000.00", tk.LastPrice)
+	}
+	if tk.High != "70000.00" || tk.Low != "70000.00" {
+		t.Fatalf("high/low = %q/%q, want 70000.00", tk.High, tk.Low)
+	}
+	if tk.Volume != "0.010000" {
+		t.Fatalf("volume = %q, want 0.010000", tk.Volume)
+	}
+	// quoteVolume = 70000 * 0.01 = 700, padded to quote (price) precision 2.
+	if tk.QuoteVolume != "700.00" {
+		t.Fatalf("quoteVolume = %q, want 700.00", tk.QuoteVolume)
+	}
+
+	// The WS ticker push carries the same padded frame.
+	var pushed tickerDTO
+	for _, f := range bc.frames {
+		if f.channel == "ticker:BTCUSDT" {
+			pushed = f.data.(tickerDTO)
+		}
+	}
+	if pushed.LastPrice != "70000.00" || pushed.Volume != "0.010000" || pushed.QuoteVolume != "700.00" {
+		t.Fatalf("ws ticker push = %+v, want padded", pushed)
+	}
+}
+
+// TestDepthPrecision checks REST depth and the WS depth push pad price to price
+// precision (2) and quantity to quantity precision (6).
+func TestDepthPrecision(t *testing.T) {
+	agg, bc := precAgg()
+	agg.OnDepth(DepthEvent{Symbol: "BTCUSDT", Sequence: 1,
+		Bids: []Level{{dec("70000"), dec("0.5")}}, Asks: []Level{{dec("70010"), dec("0.3")}}})
+
+	d, _ := agg.DepthFrame("BTCUSDT", 20)
+	if d.Bids[0][0] != "70000.00" || d.Bids[0][1] != "0.500000" {
+		t.Fatalf("rest bid = %v, want [70000.00 0.500000]", d.Bids[0])
+	}
+	if d.Asks[0][0] != "70010.00" || d.Asks[0][1] != "0.300000" {
+		t.Fatalf("rest ask = %v, want [70010.00 0.300000]", d.Asks[0])
+	}
+
+	// The WS depth push (the delta that was broadcast) is padded too.
+	var pushed depthDTO
+	for _, f := range bc.frames {
+		if f.channel == "depth:BTCUSDT" {
+			pushed = f.data.(depthDTO)
+		}
+	}
+	if pushed.Bids[0][0] != "70000.00" || pushed.Bids[0][1] != "0.500000" {
+		t.Fatalf("ws depth bid = %v, want [70000.00 0.500000]", pushed.Bids[0])
+	}
+	if pushed.Asks[0][0] != "70010.00" || pushed.Asks[0][1] != "0.300000" {
+		t.Fatalf("ws depth ask = %v, want [70010.00 0.300000]", pushed.Asks[0])
+	}
+}
+
 func TestDepthLimit(t *testing.T) {
 	agg, _ := newTestAgg()
 	agg.OnDepth(DepthEvent{Symbol: "BTCUSDT", Sequence: 1,

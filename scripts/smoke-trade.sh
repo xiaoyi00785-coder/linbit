@@ -205,6 +205,9 @@ echo "  ok  withdraw networks count          = $NET_COUNT"
 GAS="$(printf '%s' "$NET" | jq -r '.networks[0].gasFeeEstimate')"
 [ -n "$GAS" ] && [ "$GAS" != "null" ] || fail "withdraw network missing gasFeeEstimate"
 echo "  ok  withdraw networks[0].gasFeeEstimate = $GAS"
+# All USDT networks share a 12 USDT minimum withdrawal.
+BAD_MIN="$(printf '%s' "$NET" | jq -r '[.networks[] | select(.minWithdraw != "12.00000000")] | length')"
+expect "USDT networks all minWithdraw=12" "$BAD_MIN" "0"
 # networks require authentication through the gateway.
 NET_NOAUTH="$(curl -sS -o /dev/null -w '%{http_code}' "$GATEWAY_URL/wallet/withdraw/networks?asset=USDT")"
 expect "withdraw networks no-auth" "$NET_NOAUTH" "401"
