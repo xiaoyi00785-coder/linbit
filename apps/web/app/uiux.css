@@ -41,3 +41,21 @@ body{overflow-x:clip}
 .inp input[aria-invalid=true]{color:var(--lb-down)}
 .inp input{min-height:40px;font-size:14px}
 @media (max-width:1023px){.box.ml,.box.mc{max-width:100%;overflow-x:auto}.mlg{min-width:0}}
+/* QA r2: page details */
+/* /buy: compact top, values vs placeholders */
+.bwrap{padding-top:24px}.bwrap>.bstep:first-child{margin-top:0}
+.bfrm{padding-bottom:20px;margin-bottom:8px}.bfrm .bart{font-size:56px}
+.bfrm .lsel,.bfrm .lsel input{color:var(--lb-light-text,var(--lb-card));font-size:14px;font-weight:500}
+.lsel .lg,.lsel input::placeholder,.inp input::placeholder{color:var(--lb-text-3);font-weight:400}
+/* /convert: balanced hero + clear disabled state */
+.cvh{max-width:1120px;padding:56px 24px 40px;grid-template-columns:1fr 420px;gap:64px}
+.cvh h1{font-size:36px}.cv-hist{max-width:1120px}
+.cvbox .lb.wide{height:44px;background:var(--lb-primary);color:#070808;font-weight:600}
+.cvbox .lb.wide.dis,.cvbox .lb.wide:disabled{background:var(--lb-light-fill);color:var(--lb-text-3);cursor:not-allowed;opacity:1}
+/* /deposit + /withdraw: narrower column, compact sidebar like reference */
+.dwrap{max-width:1000px}.dgrid{grid-template-columns:minmax(0,1fr) 300px;gap:56px}
+.dtips{position:sticky;top:80px;align-self:start}.dtips .lcard.sm{padding:16px;gap:8px;font-size:13px}.dtips .lcard.sm p{line-height:1.7;margin:0}
+.dtips .lcard.sm b{font-size:14px}
+/* spot/futures: no blank band under order panel */
+main.trade{display:flex;flex-direction:column}main.trade>.tgrid{flex:1 0 auto;grid-template-rows:520px minmax(0,1fr)}main.trade .orders{min-height:224px}
+.cvh{align-content:center}.cvh h1{margin:0}
