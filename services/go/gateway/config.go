@@ -19,6 +19,11 @@ type Config struct {
 	// AdminURL is used ONLY for the public read-only GET /announcements.
 	AdminURL string
 	RedisURL string
+	// InternalToken authenticates the gateway to account's /internal/api-keys/verify.
+	InternalToken string
+	// ClientIPHeader names the trusted header carrying the real client IP (set by
+	// nginx); used for API-key IP allowlists. Empty = TCP peer address.
+	ClientIPHeader string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string
 }
@@ -40,6 +45,8 @@ func LoadConfig() Config {
 		EarnURL:        common.Env("EARN_URL", "http://localhost:8092"),
 		AdminURL:       common.Env("ADMIN_URL", "http://localhost:8088"),
 		RedisURL:       common.Env("REDIS_URL", ""),
+		InternalToken:  common.Env("INTERNAL_TOKEN", ""),
+		ClientIPHeader: common.Env("GATEWAY_CLIENT_IP_HEADER", "X-Real-IP"),
 		AllowedOrigins: splitOrigins(common.Env("CORS_ALLOWED_ORIGINS", "")),
 	}
 }

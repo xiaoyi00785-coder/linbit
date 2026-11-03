@@ -50,6 +50,11 @@ func (s *Server) handleInternalWithdrawVerify(w http.ResponseWriter, r *http.Req
 		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "account_frozen"})
 		return
 	}
+	// Sub-accounts can never withdraw (their only route out is a transfer to the parent).
+	if pid, err := s.store.ParentIDOf(r.Context(), u.ID); err != nil || pid != 0 {
+		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "sub_account_withdraw_forbidden"})
+		return
+	}
 	if u.TOTPEnabled {
 		if req.TOTPCode == "" || !validateTOTP(u.TOTPSecret, req.TOTPCode) {
 			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_invalid"})

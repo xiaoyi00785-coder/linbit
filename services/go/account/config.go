@@ -15,6 +15,8 @@ type Config struct {
 	RefreshTTL       time.Duration
 	ResetTokenTTL    time.Duration
 	AssetInternalURL string
+	// OrderInternalURL lets a parent read its sub-accounts' spot orders.
+	OrderInternalURL string
 	InternalToken    string
 	RedisURL         string
 	// DevMode exposes the internal "last verification code" endpoint and records
@@ -54,6 +56,7 @@ func LoadConfig() Config {
 		RefreshTTL:       time.Duration(common.EnvInt("REFRESH_TTL_SECONDS", 7*24*3600)) * time.Second,
 		ResetTokenTTL:    time.Duration(common.EnvInt("RESET_TOKEN_TTL_SECONDS", 600)) * time.Second,
 		AssetInternalURL: common.Env("ASSET_INTERNAL_URL", ""),
+		OrderInternalURL: common.Env("ORDER_INTERNAL_URL", ""),
 		InternalToken:    common.Env("INTERNAL_TOKEN", ""),
 		RedisURL:         common.Env("REDIS_URL", ""),
 		DevMode:          common.Env("DEV_MODE", "") == "true",

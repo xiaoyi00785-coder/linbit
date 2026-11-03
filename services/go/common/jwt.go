@@ -16,14 +16,31 @@ var ErrInvalidToken = errors.New("invalid token")
 type AccessClaims struct {
 	Email string `json:"email"`
 	Typ   string `json:"typ"`
+	// Acct is "sub" for a sub-account session (empty for a normal account);
+	// Parent is then the parent's uid. The gateway uses it to fence sub-account
+	// sessions off parent-only and withdrawal/deposit endpoints.
+	Acct   string `json:"acct,omitempty"`
+	Parent string `json:"parent,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // SignAccessToken issues an HS256 access token for the given uid/email.
 func SignAccessToken(secret, uid, email string, ttl time.Duration, now time.Time) (string, error) {
+	return SignAccessTokenFor(secret, uid, email, "", ttl, now)
+}
+
+// SignAccessTokenFor issues an access token; a non-empty parentUID marks the
+// session as a sub-account session (acct="sub").
+func SignAccessTokenFor(secret, uid, email, parentUID string, ttl time.Duration, now time.Time) (string, error) {
+	acct := ""
+	if parentUID != "" {
+		acct = "sub"
+	}
 	claims := AccessClaims{
-		Email: email,
-		Typ:   "access",
+		Email:  email,
+		Typ:    "access",
+		Acct:   acct,
+		Parent: parentUID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   uid,
 			Issuer:    "linbit",

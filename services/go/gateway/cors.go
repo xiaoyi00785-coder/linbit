@@ -17,7 +17,7 @@ import (
 // Preflight (OPTIONS) requests are answered here; the allowed request headers
 // always include Authorization and Content-Type.
 
-const corsAllowHeaders = "Authorization, Content-Type, X-Device-Id"
+const corsAllowHeaders = "Authorization, Content-Type, X-Device-Id, X-LB-APIKEY, X-LB-SECRET"
 const corsAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 
 // splitOrigins parses a comma-separated origin list, trimming blanks.

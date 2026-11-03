@@ -129,6 +129,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			// must precede the /assets prefix.
 			{prefix: "/assets/transfer", proxy: futuresProxy},
 			{prefix: "/assets/transfers", proxy: futuresProxy},
+			{prefix: "/sub-accounts", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
 			{prefix: "/convert", proxy: assetProxy},
 			{prefix: "/wallet", proxy: walletProxy},
@@ -220,6 +221,15 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 	// Never trust a client-supplied identity header; the gateway is the sole
 	// authority that sets it after validating the JWT.
 	r.Header.Del("X-User-Id")
+	r.Header.Del("X-Parent-Uid")
+	r.Header.Del("X-Auth-Kind")
+
+	// Sub-account API key (X-LB-APIKEY + X-LB-SECRET): verified by account,
+	// then fenced by permission to trading/read paths only.
+	if key := r.Header.Get(apiKeyHeader); key != "" {
+		g.serveAPIKey(w, r, key)
+		return
+	}
 
 	// Unknown routes answer 404 before auth (scanner noise such as /v1/*, /,
 	// /markets no longer looks like "login required"). Known prefixes keep
@@ -240,6 +250,14 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "令牌无效或已过期")
 			return
+		}
+		if claims.Acct == "sub" {
+			if !subSessionAllowed(r.Method, r.URL.Path) {
+				common.WriteError(w, http.StatusForbidden, "SUB_ACCOUNT_FORBIDDEN", "子账户无权访问该功能")
+				return
+			}
+			r.Header.Set("X-Parent-Uid", claims.Parent)
+			r.Header.Set("X-Auth-Kind", "sub")
 		}
 		r.Header.Set("X-User-Id", claims.Subject)
 	} else if g.optionalAuth(r) {
