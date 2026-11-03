@@ -108,7 +108,7 @@ func (s *Server) usdtValue(ctx context.Context, asset string, amount decimal.Dec
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	u := fmt.Sprintf("%s/market/ticker?symbol=%s", strings.TrimRight(s.cfg.MarketURL, "/"), url.QueryEscape(asset+"USDT"))
+	u := fmt.Sprintf("%s/market/index?symbol=%s", strings.TrimRight(s.cfg.MarketURL, "/"), url.QueryEscape(asset+"USDT"))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return decimal.Zero, false
@@ -122,12 +122,12 @@ func (s *Server) usdtValue(ctx context.Context, asset string, amount decimal.Dec
 		return decimal.Zero, false
 	}
 	var t struct {
-		LastPrice string `json:"lastPrice"`
+		IndexPrice string `json:"indexPrice"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&t) != nil {
 		return decimal.Zero, false
 	}
-	p, err := decimal.NewFromString(t.LastPrice)
+	p, err := decimal.NewFromString(t.IndexPrice)
 	if err != nil || p.Sign() <= 0 {
 		return decimal.Zero, false
 	}

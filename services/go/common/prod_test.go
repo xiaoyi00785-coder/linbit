@@ -35,3 +35,20 @@ func TestProductionProblems(t *testing.T) {
 		t.Fatal("empty password accepted")
 	}
 }
+
+func TestTestnetSeedAllowed(t *testing.T) {
+	cases := []struct {
+		env, chain string
+		want       bool
+	}{
+		{"", "", true}, {"", "mock", true}, {"development", "testnet", true},
+		{"", "mainnet", false}, {"production", "testnet", false}, {"production", "mock", false}, {"", "weird", false},
+	}
+	for _, c := range cases {
+		t.Setenv("LINBIT_ENV", c.env)
+		t.Setenv("WALLET_CHAIN", c.chain)
+		if got, _ := TestnetSeedAllowed(); got != c.want {
+			t.Errorf("env=%q chain=%q: got %v want %v", c.env, c.chain, got, c.want)
+		}
+	}
+}

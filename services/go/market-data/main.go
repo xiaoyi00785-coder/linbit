@@ -21,7 +21,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
-	common.RequireProduction("market-data", nil, "DATABASE_URL", "INTERNAL_TOKEN", "REDIS_URL")
+	common.RequireProduction("market-data", common.ProblemIf(len(cfg.IndexFeed) == 0, "INDEX_FEED=off (no external index) is not allowed"), "DATABASE_URL", "INTERNAL_TOKEN", "REDIS_URL")
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
@@ -68,7 +68,11 @@ func main() {
 	bootstrapDepth(cfg, symbols, agg)
 
 	ingest := NewHTTPEventSource(agg, cfg.InternalToken)
+	feed := NewIndexFeed(cfg, agg.LastPrice)
+	feed.Start(ctx)
+	log.Printf("index feed sources: %v (stale after %s)", cfg.IndexFeed, cfg.IndexStale)
 	srv := NewServer(cfg, store, agg, hub, ingest)
+	srv.feed = feed
 
 	addr := ":" + cfg.Port
 	log.Printf("market-data service listening on %s (engine=%s)", addr, cfg.EngineURL)

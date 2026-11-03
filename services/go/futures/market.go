@@ -23,13 +23,15 @@ func NewMarketClient(baseURL string) *MarketClient {
 	return &MarketClient{baseURL: strings.TrimRight(baseURL, "/"), http: &http.Client{Timeout: 3 * time.Second}}
 }
 
-// LastPrice returns the last trade price of {asset}USDT. ok=false means no
-// usable price (unknown pair, no trades yet, or the service is unreachable).
+// LastPrice returns the index price of {asset}USDT from market-data's
+// /market/index (external Binance/OKX feed; local last price only when
+// INDEX_FEED=off). ok=false means no usable price (unknown pair, feed stale or
+// the service unreachable) and callers fail closed.
 func (c *MarketClient) LastPrice(ctx context.Context, asset string) (decimal.Decimal, bool) {
 	if c == nil || c.baseURL == "" {
 		return decimal.Zero, false
 	}
-	u := fmt.Sprintf("%s/market/ticker?symbol=%s", c.baseURL, url.QueryEscape(strings.ToUpper(asset)+"USDT"))
+	u := fmt.Sprintf("%s/market/index?symbol=%s", c.baseURL, url.QueryEscape(strings.ToUpper(asset)+"USDT"))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return decimal.Zero, false
@@ -43,12 +45,12 @@ func (c *MarketClient) LastPrice(ctx context.Context, asset string) (decimal.Dec
 		return decimal.Zero, false
 	}
 	var t struct {
-		LastPrice string `json:"lastPrice"`
+		IndexPrice string `json:"indexPrice"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
 		return decimal.Zero, false
 	}
-	p, err := decimal.NewFromString(t.LastPrice)
+	p, err := decimal.NewFromString(t.IndexPrice)
 	if err != nil || p.Sign() <= 0 {
 		return decimal.Zero, false
 	}

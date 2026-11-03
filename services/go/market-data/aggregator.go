@@ -554,3 +554,14 @@ func (a *Aggregator) ValidInterval(name string) bool {
 	_, ok := LookupInterval(name)
 	return ok
 }
+
+// LastPrice returns the last local spot trade price for symbol.
+func (a *Aggregator) LastPrice(symbol string) (decimal.Decimal, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ss := a.states[symbol]
+	if ss == nil || !ss.hasLast {
+		return decimal.Zero, false
+	}
+	return ss.lastPrice, true
+}

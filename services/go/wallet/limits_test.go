@@ -55,7 +55,7 @@ func TestLimitUsesMarketPriceAndFailsClosed(t *testing.T) {
 	defer acct.Close()
 	mkt := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("symbol") == "BTCUSDT" {
-			_ = json.NewEncoder(w).Encode(map[string]string{"symbol": "BTCUSDT", "lastPrice": "60000"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"symbol": "BTCUSDT", "indexPrice": "60000"})
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

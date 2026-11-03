@@ -225,6 +225,10 @@ func run(root, execCmd string) int {
 			"INTERNAL_TOKEN=" + internalTok,
 			"ENGINE_URL=http://localhost:" + enginePort,
 			"REDIS_URL=" + redisURL,
+			// Deterministic smokes: index = local last price unless pinned via
+			// /internal/dev/index (smoke-mm). Override with DEVSTACK_INDEX_FEED.
+			"INDEX_FEED=" + envOr("DEVSTACK_INDEX_FEED", "off"),
+			"DEV_MODE=true",
 		},
 		"account": {
 			"PORT=" + accountPort,
