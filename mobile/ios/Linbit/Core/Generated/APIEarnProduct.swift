@@ -12,6 +12,13 @@ public struct APIEarnProduct: Codable, JSONEncodable, Hashable {
     public enum APIKind: String, Codable, CaseIterable {
         case flexible = "flexible"
         case fixed = "fixed"
+        case simple = "simple"
+        case onchain = "onchain"
+        case unknown
+        public init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = APIKind(rawValue: raw) ?? .unknown
+        }
     }
     public var id: String?
     public var kind: APIKind?

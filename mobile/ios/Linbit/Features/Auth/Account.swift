@@ -69,6 +69,10 @@ struct UserCenterView: View {
                     row("昵称", value: session.account?.nickname ?? "") {}
                     row("身份认证", value: (session.account?.kycLevel ?? 0) > 0 ? "已认证" : "去认证") {}
                     NavigationLink { SecurityView() } label: { rowLabel("账户安全", value: nil) }.buttonStyle(RowPressStyle())
+                    row("子账户", value: nil) {
+                        Router.shared.showUserCenter = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.subAccounts) }
+                    }
                     row("切换账号", value: nil) { showSwitch = true }
                     Button {
                         confirm = .init(title: "退出当前账户", message: "退出后需重新登录才能交易与查看资产", confirmTitle: "退出", destructive: true) {

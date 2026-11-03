@@ -75,9 +75,16 @@ extension MarketRow {
     /// 合约：无成交时 lastPrice 为 0，用标记价格兜底显示（priceAvailable=true）。
     init?(futures t: APIFuturesTicker) {
         guard let sym = t.symbol else { return nil }
-        var last = Dec.parse(t.lastPrice)
-        if last == 0 { last = Dec.parse(t.markPrice) }
+        let last = t.effectivePrice()
         self.init(symbol: sym, base: String(sym.dropLast(4)), quote: "USDT", last: last,
                   changePct: Dec.parse(t.priceChangePercent24h), quoteVolume: Dec.parse(t.turnover24h), precision: nil)
+    }
+}
+
+extension APIFuturesTicker {
+    /// 显示用最新价：lastPrice 为 0（无成交）时依次退回 标记价 → 指数价 → 现货价。
+    func effectivePrice(spot: Decimal = 0) -> Decimal {
+        for v in [lastPrice, markPrice, indexPrice] { let d = Dec.parse(v); if d > 0 { return d } }
+        return spot
     }
 }

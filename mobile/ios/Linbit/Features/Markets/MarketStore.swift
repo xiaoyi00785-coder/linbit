@@ -9,12 +9,15 @@ final class MarketStore: ObservableObject {
 
     @Published private(set) var spot: [MarketRow] = []
     @Published private(set) var futures: [MarketRow] = []
+    private var refPrice: [String: Decimal] = [:]
     @Published private(set) var categories: [APIMarketCategory] = []
     @Published private(set) var loading = false
     @Published var error: String?
 
     private var subs: [WSSubscription] = []
     private var symbolMeta: [String: APISymbol] = [:]
+
+    func meta(_ symbol: String) -> APISymbol? { symbolMeta[symbol] }
 
     func rows(_ kind: MarketKind) -> [MarketRow] {
         switch kind { case .spot: spot; case .futures: futures; case .tradfi: [] }
@@ -29,8 +32,17 @@ final class MarketStore: ObservableObject {
         async let catR = try? MarketAPI.categories()
         let (symbols, spotT, futT, cats) = await (symbolsR, spotR, futR, catR)
         symbolMeta = Dictionary((symbols ?? []).map { ($0.symbol, $0) }, uniquingKeysWith: { a, _ in a })
-        if let spotT { spot = spotT.map { MarketRow(spot: $0, symbol: symbolMeta[$0.symbol]) } }
-        if let futT { futures = futT.compactMap(MarketRow.init(futures:)) }
+        // 现货无成交（lastPrice=0）时用同名合约的 标记价 → 指数价 兜底；合约再兜底现货价
+        if let futT { refPrice = Dictionary(futT.compactMap { t in t.symbol.map { ($0, t.effectivePrice()) } }, uniquingKeysWith: { a, _ in a }) }
+        if let spotT { spot = spotT.map { var r = MarketRow(spot: $0, symbol: symbolMeta[$0.symbol]); if r.last == 0 { r.last = refPrice[r.symbol] ?? 0 }; return r } }
+        if let futT {
+            let spotMap = Dictionary(spot.map { ($0.symbol, $0.last) }, uniquingKeysWith: { a, _ in a })
+            futures = futT.compactMap { t in
+                guard var r = MarketRow(futures: t) else { return nil }
+                if r.last == 0 { r.last = spotMap[r.symbol] ?? 0 }
+                return r
+            }
+        }
         if let cats { categories = cats }
         if spotT == nil && futT == nil { error = "行情加载失败，请检查网络" } else { error = nil }
         subscribeTickers()
@@ -50,7 +62,8 @@ final class MarketStore: ObservableObject {
     private func apply(_ t: WSTicker) {
         guard let i = spot.firstIndex(where: { $0.symbol == t.symbol }) else { return }
         var r = spot[i]
-        r.last = Dec.parse(t.lastPrice)
+        let v = Dec.parse(t.lastPrice)
+        r.last = v > 0 ? v : (refPrice[t.symbol] ?? r.last)
         r.changePct = Dec.parse(t.priceChangePercent)
         if let q = t.quoteVolume { r.quoteVolume = Dec.parse(q) }
         spot[i] = r
@@ -64,7 +77,7 @@ final class MarketStore: ObservableObject {
     }
 }
 
-/// 自选（本地；登录后可同步到服务端，接口待定）。
+/// 自选：本地持久化；登录后与 /account/favorites 合并同步（PUT 整体替换）。
 @MainActor
 final class Watchlist: ObservableObject {
     static let shared = Watchlist()
@@ -72,7 +85,22 @@ final class Watchlist: ObservableObject {
     func contains(_ s: String) -> Bool { symbols.contains(s) }
     func toggle(_ s: String) { if contains(s) { symbols.removeAll { $0 == s } } else { symbols.append(s) }; persist() }
     func add(_ list: [String]) { for s in list where !contains(s) { symbols.append(s) }; persist() }
-    private func persist() { UserDefaults.standard.set(symbols, forKey: "lb.watchlist") }
+    private func persist() {
+        UserDefaults.standard.set(symbols, forKey: "lb.watchlist")
+        guard TokenStore.shared.isLoggedIn else { return }
+        let snapshot = symbols
+        pushTask?.cancel()
+        pushTask = Task { try? await Task.sleep(nanoseconds: 600_000_000); guard !Task.isCancelled else { return }; _ = try? await FavoritesAPI.replace(snapshot) }
+    }
+    private var pushTask: Task<Void, Never>?
+    /// 登录后调用：服务端 ∪ 本地，回写服务端
+    func sync() async {
+        guard TokenStore.shared.isLoggedIn, let remote = try? await FavoritesAPI.list() else { return }
+        let merged = remote + symbols.filter { !remote.contains($0) }
+        symbols = merged
+        UserDefaults.standard.set(symbols, forKey: "lb.watchlist")
+        if merged != remote { _ = try? await FavoritesAPI.replace(merged) }
+    }
 }
 
 enum SortField { case volume, price, change }

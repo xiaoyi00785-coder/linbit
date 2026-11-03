@@ -57,7 +57,7 @@ struct SpotTradeView: View {
     private var topBar: some View {
         HStack {
             PrimaryTabs(items: ["现货", "策略", "理财", "闪兑"], selected: Binding(get: { topTab }, set: { i in
-                if i == 0 { topTab = 0 } else { ToastCenter.shared.show(["", "策略交易", "理财", "闪兑"][i] + "即将开放") }
+                if i == 0 { topTab = 0 } else { Haptics.tap(); Router.shared.openFeature([FeaturePage.strategy, .strategy, .earn, .swap][i]) }
             }))
             Spacer()
         }.padding(.horizontal, Spacing.pageH).frame(height: 44)

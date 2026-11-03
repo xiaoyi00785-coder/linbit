@@ -138,6 +138,9 @@ extension Error {
         if let f = self as? APIFailure {
             switch f {
             case let .server(status, e):
+                if status == 401 || e?.code == "AUTH_UNAUTHORIZED" {
+                    return TokenStore.shared.sessionExpired ? "登录已过期，请重新登录" : ErrorText.loginRequired
+                }
                 if let e { return ErrorText.map[e.code] ?? e.message }
                 return status >= 500 ? "服务繁忙，请稍后再试" : "请求失败（\(status)）"
             case .transport: return "网络连接失败，请检查网络"
@@ -149,6 +152,7 @@ extension Error {
 }
 
 enum ErrorText {
+    static let loginRequired = "登录后查看"
     static let map: [String: String] = [
         "AUTH_UNAUTHORIZED": "登录已过期，请重新登录",
         "AUTH_INVALID_CREDENTIALS": "账户或密码错误",
@@ -165,6 +169,33 @@ enum ErrorText {
         "AMOUNT_TOO_SMALL": "低于最小数量",
         "EMAIL_UNAVAILABLE": "邮件服务暂不可用，请稍后再试",
         "SMS_UNAVAILABLE": "短信服务暂不可用，请稍后再试",
+        "STAKE_OUT_OF_RANGE": "投注金额超出范围",
+        "DAILY_LIMIT_EXCEEDED": "已超过今日投注上限",
+        "EXPOSURE_LIMIT": "当前方向敞口已满，请稍后再试",
+        "SYMBOL_PAUSED": "该产品暂停交易",
+        "INDEX_UNAVAILABLE": "指数价格暂不可用，请稍后再试",
+        "FEATURE_DISABLED": "该功能暂未开放",
+        "PAIR_NOT_SUPPORTED": "暂不支持该币对兑换",
+        "AMOUNT_TOO_LARGE": "超过单笔兑换上限",
+        "PRICE_UNAVAILABLE": "暂无可用报价，请稍后再试",
+        "PAIR_PAUSED_DEPEG": "USDC 价格偏离，兑换暂停",
+        "QUOTE_NOT_FOUND": "报价不存在，请重新询价",
+        "QUOTE_EXPIRED": "报价已过期，请重新询价",
+        "SAME_ACCOUNT": "转出与转入账户相同",
+        "ACCOUNT_NOT_SUPPORTED": "该账户不支持划转",
+        "SUB_ACCOUNT_FROZEN": "子账户已冻结",
+        "SUB_ACCOUNT_LIMIT": "子账户数量已达上限",
+        "USERNAME_TAKEN": "用户名已被占用",
+        "CHAT_RATE_LIMITED": "发言过于频繁，请稍后再试",
+        "CHAT_MUTED": "你已被禁言",
+        "CHAT_KYC_REQUIRED": "完成身份认证后才能发言",
+        "CHAT_BANNED": "你已被禁止发言",
+        "CHAT_TOO_LONG": "消息过长",
+        "CHAT_LINK_BLOCKED": "不允许发送链接",
+        "CHAT_CONTACT_BLOCKED": "不允许发送联系方式",
+        "CHAT_WORD_BLOCKED": "消息包含敏感词",
+        "CHAT_UNAVAILABLE": "聊天室暂不可用",
+        "KYC_REQUIRED": "请先完成身份认证",
     ]
 }
 
@@ -201,6 +232,23 @@ struct LBSheet<Content: View>: View {
 }
 
 /// 自定义底部弹窗容器：遮罩点击关闭、下滑关闭、弹簧动画（iOS16 的 .sheet 无法做出对照图的遮罩与高度）
+/// 当前已弹出的自绘弹窗数量；>0 时根视图隐藏底部 Tab 栏，避免遮挡弹窗主按钮。
+@MainActor
+final class OverlayTracker: ObservableObject {
+    static let shared = OverlayTracker()
+    @Published private(set) var count = 0
+    func push() { count += 1 }
+    func pop() { count = max(0, count - 1) }
+}
+
+private struct TrackOverlay: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .onAppear { OverlayTracker.shared.push() }
+            .onDisappear { OverlayTracker.shared.pop() }
+    }
+}
+
 struct SheetHost<Sheet: View>: ViewModifier {
     @Environment(\.palette) private var p
     @Binding var isPresented: Bool
@@ -215,6 +263,7 @@ struct SheetHost<Sheet: View>: ViewModifier {
                     .transition(.opacity)
                     .onTapGesture { isPresented = false }
                 sheet()
+                    .modifier(TrackOverlay())
                     .offset(y: max(drag, 0))
                     .gesture(DragGesture().updating($drag) { v, s, _ in s = v.translation.height }
                         .onEnded { v in if v.translation.height > 80 { isPresented = false } })
@@ -290,6 +339,7 @@ struct ConfirmHost: ViewModifier {
                 }
                 .frame(width: 300)
                 .background(RoundedRectangle(cornerRadius: Radius.xl).fill(p.bgElevated))
+                .modifier(TrackOverlay())
                 .transition(.scale(scale: 0.92).combined(with: .opacity))
             }
         }
@@ -349,7 +399,21 @@ struct ErrorStateView: View {
     @Environment(\.palette) private var p
     let message: String
     let retry: () -> Void
+    @ObservedObject private var session = Session.shared
+    private var needLogin: Bool { message == ErrorText.loginRequired || (message.hasPrefix("登录已过期") && !session.isLoggedIn) }
     var body: some View {
+        if needLogin { loginState } else { errorState }
+    }
+    private var loginState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark").font(.system(size: 34)).foregroundColor(p.textTertiary)
+            Text(message == ErrorText.loginRequired ? "登录后查看" : message).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+            LBButton(title: "登录", kind: .primary, height: 36) { session.requireLogin { retry() } }.frame(width: 140)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 48)
+        .onChange(of: session.isLoggedIn) { v in if v { retry() } }
+    }
+    private var errorState: some View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.exclamationmark").font(.system(size: 34)).foregroundColor(p.textTertiary)
             Text(message).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).multilineTextAlignment(.center)

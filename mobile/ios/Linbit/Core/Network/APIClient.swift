@@ -20,7 +20,9 @@ final class TokenStore {
     var accessToken: String? { get { Keychain.get("lb.access") } set { Keychain.set(newValue, for: "lb.access") } }
     var refreshToken: String? { get { Keychain.get("lb.refresh") } set { Keychain.set(newValue, for: "lb.refresh") } }
     var isLoggedIn: Bool { accessToken != nil }
-    func save(_ t: APIAuthTokens) { accessToken = t.accessToken; refreshToken = t.refreshToken }
+    /// 仅当 refresh token 刷新失败时置为 true（区分“未登录”与“登录过期”）
+    var sessionExpired = false
+    func save(_ t: APIAuthTokens) { accessToken = t.accessToken; refreshToken = t.refreshToken; sessionExpired = false }
     func clear() { accessToken = nil; refreshToken = nil }
 }
 
@@ -48,6 +50,18 @@ actor APIClient {
 
     func post<T: Decodable, B: Encodable>(_ path: String, body: B?, auth: Bool = true) async throws -> T {
         try await send(path, method: "POST", query: [:], body: body, auth: auth)
+    }
+
+    func put<T: Decodable, B: Encodable>(_ path: String, body: B?) async throws -> T {
+        try await send(path, method: "PUT", query: [:], body: body, auth: true)
+    }
+
+    func patch<T: Decodable, B: Encodable>(_ path: String, body: B?) async throws -> T {
+        try await send(path, method: "PATCH", query: [:], body: body, auth: true)
+    }
+
+    func deleteAuth(_ path: String) async throws {
+        let _: EmptyResponse = try await send(path, method: "DELETE", query: [:], body: Optional<Int>.none, auth: true)
     }
 
     private func makeRequest<B: Encodable>(_ path: String, _ method: String, _ query: [String: String?], _ body: B?, _ auth: Bool) throws -> URLRequest {
@@ -97,6 +111,7 @@ actor APIClient {
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let t = try? CodableHelper.jsonDecoder.decode(APIAuthTokens.self, from: data) else {
                 tokens.clear()
+                tokens.sessionExpired = true
                 NotificationCenter.default.post(name: .lbSessionExpired, object: nil)
                 return false
             }
