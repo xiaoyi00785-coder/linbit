@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -40,6 +41,9 @@ func main() {
 	asset := NewAssetClient(cfg.AssetInternalURL, cfg.InternalToken)
 	engine := NewHTTPMatching(cfg.EngineURL, cfg.InternalToken)
 	srv := NewServer(cfg, store, asset, engine)
+	if err := srv.LoadFees(context.Background()); err != nil {
+		log.Printf("load fee overrides: %v (using env defaults)", err)
+	}
 
 	addr := ":" + cfg.Port
 	log.Printf("order service listening on %s (engine=%s asset=%s)", addr, cfg.EngineURL, cfg.AssetInternalURL)

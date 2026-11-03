@@ -263,6 +263,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrAccountFrozen) {
+			writeFrozen(w)
+			return
+		}
 		log.Printf("register: issue tokens: %v", err)
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
@@ -291,6 +295,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "账号或密码错误")
 		return
 	}
+	if u.Status == userFrozen {
+		writeFrozen(w)
+		return
+	}
 
 	dev := deviceFrom(r, req.DeviceID, req.DeviceName)
 
@@ -314,6 +322,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpsertDevice(r.Context(), u.ID, dev, s.now())
 		tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 		if err != nil {
+			if errors.Is(err, ErrAccountFrozen) {
+				writeFrozen(w)
+				return
+			}
 			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 			return
 		}
@@ -394,6 +406,10 @@ func (s *Server) handleLoginVerify(w http.ResponseWriter, r *http.Request) {
 	_ = s.store.UpsertDevice(r.Context(), u.ID, dev, s.now())
 	tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrAccountFrozen) {
+			writeFrozen(w)
+			return
+		}
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
@@ -446,6 +462,10 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.issueTokens(r.Context(), rec.User, rec.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrAccountFrozen) {
+			writeFrozen(w)
+			return
+		}
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}

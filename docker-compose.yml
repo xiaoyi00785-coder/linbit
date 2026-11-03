@@ -185,6 +185,41 @@ services:
       account:
         condition: service_started
 
+  admin:
+    build:
+      context: .
+      dockerfile: services/go/admin/Dockerfile
+    environment:
+      PORT: "8088"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      ASSET_INTERNAL_URL: http://asset:8082
+      ORDER_INTERNAL_URL: http://order:8084
+      MARKET_URL: http://market-data:8085
+      WALLET_INTERNAL_URL: http://wallet:8086
+      KYC_INTERNAL_URL: http://kyc:8087
+      # First super admin, created only when the admin_users table is empty.
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      ADMIN_BOOTSTRAP_TOTP_SECRET: ${ADMIN_BOOTSTRAP_TOTP_SECRET:-}
+      # Comma-separated IPs/CIDRs allowed to reach /admin/v1 (empty = allow all).
+      ADMIN_IP_ALLOWLIST: ${ADMIN_IP_ALLOWLIST:-}
+      ADMIN_SESSION_IDLE_MINUTES: ${ADMIN_SESSION_IDLE_MINUTES:-30}
+      ADMIN_FEE_NOTICE_HOURS: ${ADMIN_FEE_NOTICE_HOURS:-24}
+      ADMIN_COUPON_FINANCE_THRESHOLD: ${ADMIN_COUPON_FINANCE_THRESHOLD:-10000}
+      ADMIN_REWARD_FINANCE_THRESHOLD: ${ADMIN_REWARD_FINANCE_THRESHOLD:-1000}
+      ADMIN_WITHDRAW_SECOND_REVIEW_USDT: ${ADMIN_WITHDRAW_SECOND_REVIEW_USDT:-5000}
+      ADMIN_WITHDRAW_SECOND_REVIEW_RISK: ${ADMIN_WITHDRAW_SECOND_REVIEW_RISK:-40}
+    ports:
+      # Back office: bound to localhost only; put it behind VPN / allow-list in prod.
+      - "127.0.0.1:${ADMIN_PORT:-8088}:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kyc:
+        condition: service_started
+
   gateway:
     build:
       context: .

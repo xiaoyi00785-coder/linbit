@@ -51,6 +51,7 @@ data/kyc-docs/
 services/go/account/account
 services/go/asset/asset
 services/go/kyc/kyc
+services/go/admin/admin
 services/go/gateway/gateway
 services/go/order/order
 services/go/wallet/wallet

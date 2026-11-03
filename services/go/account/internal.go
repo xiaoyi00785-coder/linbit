@@ -46,6 +46,10 @@ func (s *Server) handleInternalWithdrawVerify(w http.ResponseWriter, r *http.Req
 		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "user_not_found"})
 		return
 	}
+	if u.Status == userFrozen {
+		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "account_frozen"})
+		return
+	}
 	if u.TOTPEnabled {
 		if req.TOTPCode == "" || !validateTOTP(u.TOTPSecret, req.TOTPCode) {
 			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_invalid"})

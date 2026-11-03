@@ -125,6 +125,9 @@ func (s *Server) Routes() http.Handler {
 	// user's kycLevel.
 	mux.HandleFunc("GET /internal/account/kyc-level", s.handleInternalGetKYCLevel)
 	mux.HandleFunc("POST /internal/account/kyc-level", s.handleInternalSetKYCLevel)
+	mux.HandleFunc("GET /internal/admin/users", s.handleInternalAdminUsers)
+	mux.HandleFunc("GET /internal/admin/users/{uid}", s.handleInternalAdminUser)
+	mux.HandleFunc("POST /internal/admin/users/{uid}/status", s.handleInternalAdminSetStatus)
 
 	// Dev-only internal endpoint: read the most recent verification code so tests
 	// and smoke scripts can complete flows without a real email/SMS provider.
@@ -299,6 +302,9 @@ func (s *Server) handleDevLastCode(w http.ResponseWriter, r *http.Request) {
 // issueTokens signs an access token and persists a rotated refresh token bound
 // to the given device.
 func (s *Server) issueTokens(ctx context.Context, u *User, deviceKey string) (authTokens, error) {
+	if u.Status == userFrozen {
+		return authTokens{}, ErrAccountFrozen
+	}
 	now := s.now()
 	subEmail := ""
 	if u.Email.Valid {

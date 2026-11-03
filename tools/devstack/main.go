@@ -14,6 +14,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base32"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -49,6 +52,7 @@ var (
 	marketPort  = envOr("DEVSTACK_MARKET_PORT", "8085")
 	walletPort  = envOr("DEVSTACK_WALLET_PORT", "8086")
 	kycPort     = envOr("DEVSTACK_KYC_PORT", "8087")
+	adminPort   = envOr("DEVSTACK_ADMIN_PORT", "8088")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -127,7 +131,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -177,6 +181,12 @@ func run(root, execCmd string) int {
 		return 1
 	}
 	defer os.RemoveAll(kycData)
+
+	// Per-run bootstrap super admin for the admin service. Random unless set in
+	// the environment; handed to -exec commands, never printed.
+	adminUser := envOr("ADMIN_BOOTSTRAP_USERNAME", "devadmin")
+	adminPass := envOr("ADMIN_BOOTSTRAP_PASSWORD", randToken(18))
+	adminTOTP := envOr("ADMIN_BOOTSTRAP_TOTP_SECRET", randBase32(20))
 
 	// --- Run services -------------------------------------------------------
 	ctx, cancel := context.WithCancel(context.Background())
@@ -246,6 +256,23 @@ func run(root, execCmd string) int {
 			// KYC document uploads land in a per-run temp dir (local ObjectStorage).
 			"KYC_DOC_STORAGE_DIR=" + kycData,
 		},
+		"admin": {
+			"PORT=" + adminPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"WALLET_INTERNAL_URL=http://localhost:" + walletPort,
+			"KYC_INTERNAL_URL=http://localhost:" + kycPort,
+			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
+			"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
+			"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,
+			// Dev mode exposes the scheduler "run at now=X" endpoint so the smoke
+			// can exercise the 24h fee-change notice without waiting.
+			"DEV_MODE=true",
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
@@ -255,6 +282,7 @@ func run(root, execCmd string) int {
 			"ORDER_URL=http://localhost:" + orderPort,
 			"MARKET_URL=http://localhost:" + marketPort,
 			"KYC_URL=http://localhost:" + kycPort,
+			"ADMIN_URL=http://localhost:" + adminPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
@@ -275,6 +303,7 @@ func run(root, execCmd string) int {
 		{"account", "http://localhost:" + accountPort + "/healthz"},
 		{"wallet", "http://localhost:" + walletPort + "/healthz"},
 		{"kyc", "http://localhost:" + kycPort + "/healthz"},
+		{"admin", "http://localhost:" + adminPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 
@@ -324,6 +353,14 @@ func run(root, execCmd string) int {
 		// Dev-only shared secret so smoke scripts can reach asset's /internal/*
 		// (e.g. seed balances). Not a real credential; never used in production.
 		"INTERNAL_TOKEN=" + internalTok,
+		"ADMIN_URL=http://localhost:" + adminPort,
+	}
+	// Bootstrap super-admin credentials go only to exec'd commands (smokes),
+	// never to stdout.
+	adminEnv := []string{
+		"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
+		"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
+		"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,
 	}
 
 	if execCmd == "" {
@@ -334,6 +371,7 @@ func run(root, execCmd string) int {
 		for _, e := range stackEnv {
 			fmt.Println("  " + e)
 		}
+		fmt.Println("  ADMIN_BOOTSTRAP_*: random per run unless set in the environment")
 		<-sig
 		return 0
 	}
@@ -342,7 +380,7 @@ func run(root, execCmd string) int {
 	log.Printf("devstack: exec %q", execCmd)
 	c := exec.Command("sh", "-c", execCmd)
 	c.Dir = absRoot // run the command from the repository root
-	c.Env = append(os.Environ(), stackEnv...)
+	c.Env = append(append(os.Environ(), stackEnv...), adminEnv...)
 	c.Stdout, c.Stderr, c.Stdin = os.Stdout, os.Stderr, os.Stdin
 	if err := c.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -399,4 +437,22 @@ func prefixed(name string, w io.Writer) io.Writer {
 		}
 	}()
 	return pw
+}
+
+// randToken returns n random bytes, hex encoded.
+func randToken(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+// randBase32 returns n random bytes as unpadded base32 (a TOTP secret).
+func randBase32(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
 }

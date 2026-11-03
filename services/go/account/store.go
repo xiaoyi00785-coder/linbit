@@ -38,6 +38,8 @@ type User struct {
 	PhoneVerified            bool
 	WithdrawWhitelistEnabled bool
 	CreatedAt                time.Time
+	Status                   string
+	StatusReason             string
 }
 
 // Store wraps the account database.
@@ -61,7 +63,7 @@ type CreateUserParams struct {
 
 const userColumns = `id, uid, email, phone, country_code, password_hash, nickname, avatar_url,
 	kyc_level, totp_secret, totp_enabled, email_verified, phone_verified,
-	withdraw_whitelist_enabled, created_at`
+	withdraw_whitelist_enabled, created_at, status, status_reason`
 
 const userSelectByEmail = `SELECT ` + userColumns + ` FROM users WHERE email = $1`
 const userSelectByPhone = `SELECT ` + userColumns + ` FROM users WHERE phone = $1`
@@ -119,7 +121,7 @@ func (s *Store) scanUser(row *sql.Row) (*User, error) {
 	var u User
 	err := row.Scan(&u.ID, &u.UID, &u.Email, &u.Phone, &u.CountryCode, &u.PasswordHash,
 		&u.Nickname, &u.AvatarURL, &u.KYCLevel, &u.TOTPSecret, &u.TOTPEnabled,
-		&u.EmailVerified, &u.PhoneVerified, &u.WithdrawWhitelistEnabled, &u.CreatedAt)
+		&u.EmailVerified, &u.PhoneVerified, &u.WithdrawWhitelistEnabled, &u.CreatedAt, &u.Status, &u.StatusReason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
