@@ -137,10 +137,12 @@ function Funding({ sym }: { sym: string }) {
   const h = st.data?.history || [];
   return <section className="box pgc"><h3>{sym} 永续 · 资金费率历史{st.data?.fundingIntervalHours ? <small> · 每 {String(st.data.fundingIntervalHours)} 小时结算</small> : null}</h3>
     <State st={st} empty={!h.length}>
-      <table className="pgt"><thead><tr><th>结算时间</th><th>合约</th><th>资金费率</th><th>结算标记价格</th></tr></thead>
-        <tbody>{h.map((r) => <tr key={r.fundingTime}><td>{ts(r.fundingTime)}</td><td>{sym}</td><td className={Number(r.fundingRate) >= 0 ? "up" : "down"}>{pct(r.fundingRate)}</td><td>{num(r.markPrice)}</td></tr>)}</tbody></table>
+      <table className="pgt"><thead><tr><th>结算时间</th><th>合约</th><th>资金费率</th><th>结算标记价格</th><th>来源</th></tr></thead>
+        <tbody>{h.map((r) => <tr key={r.fundingTime}><td>{ts(r.fundingTime)}</td><td>{sym}</td><td className={Number(r.fundingRate) >= 0 ? "up" : "down"}>{pct(r.fundingRate)}</td><td>{Number(r.markPrice) ? num(r.markPrice) : "--"}</td><td>{SRC[r.source ?? ""] ?? "--"}</td></tr>)}</tbody></table>
       <Pager pg={pg} next={st.data?.nextEndTime} /></State></section>;
 }
+
+const SRC: Record<string, string> = { settle: "本平台结算", binance: "Binance 回填", okx: "OKX 回填" };
 
 function Insurance() {
   const cur = useGet<R<"/futures/market/insurance-fund">>(`${P}/insurance-fund`);

@@ -1,4 +1,5 @@
 import { rest, useRest, type RestResult } from "@/lib/rest";
+import { useAuthStore } from "@/lib/store";
 /** 资产/钱包新接口（feat/spot-asset-gaps @2039887，docs/api/openapi.yaml）。类型本地镜像，主干合并后可换成 api-client schema。 */
 export type AcctKey = "funding" | "spot" | "futures";
 export interface OverviewAccount { account: AcctKey; available: boolean; totalValueUsdt: string; balances: { asset: string; free: string; locked?: string; valuationUsd?: string | null }[] }
@@ -13,7 +14,8 @@ export const SOON = "该功能即将上线";
 export const isSoon = (r: RestResult<unknown>) => !r.ok && !r.code && (r.status === 404 || r.status === undefined);
 export const newClientId = () => `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-export const useOverview = () => useRest<AssetsOverview>("/assets/overview");
+// 未登录不请求（避免 /login 等页面控制台出现 401）
+export const useOverview = () => useRest<AssetsOverview>(useAuthStore((st) => st.isAuthed) ? "/assets/overview" : null);
 export const getNetworks = (asset?: string) => rest<{ asset?: string; networks: WalletNetwork[] }>("GET", `/wallet/networks${asset ? `?asset=${encodeURIComponent(asset)}` : ""}`);
 export const createInternalTransfer = (b: InternalTransferReq) => rest<InternalTransfer>("POST", "/wallet/internal-transfer", b);
 export const listInternalTransfers = (page = 1, pageSize = 20) => rest<Page<InternalTransfer>>("GET", `/wallet/internal-transfers?page=${page}&pageSize=${pageSize}`);

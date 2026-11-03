@@ -2,7 +2,11 @@
 import { G } from "@/components/Glyph";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
+import dynamic from "next/dynamic";
+import type { ComponentType } from "react";
 import { SOON, LIVE, bySlug, isOn, loadFeatures } from "@/lib/features";
+
+const Footer = dynamic(() => import("@/legacy/App").then((m) => m.Footer as ComponentType<any>), { ssr: false });
 
 export default function ComingSoon() {
   const { feature } = useParams<{ feature: string }>();
@@ -13,6 +17,7 @@ export default function ComingSoon() {
   useEffect(() => { if (k) loadFeatures().then(() => { if (isOn(k) && LIVE[k]) r.replace(LIVE[k]!); }); }, [k, r]);
   const back = () => (typeof window !== "undefined" && window.history.length > 1 && document.referrer.startsWith(location.origin) ? r.back() : r.push("/"));
   return (
+    <>
     <main className="cs-wrap">
       <div className="cs-card">
         <span className="cs-ic"><G n={it.icon} s={28} /></span>
@@ -22,5 +27,7 @@ export default function ComingSoon() {
         <div className="cs-btns"><button className="cs-b1" onClick={back}>返回</button><a className="cs-b2" href="/">回到首页</a></div>
       </div>
     </main>
+    <Footer />
+    </>
   );
 }

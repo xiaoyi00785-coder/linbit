@@ -8,6 +8,7 @@ import type { components } from "@linbit/api-client";
 import { api, API_BASE } from "./api";
 import { useAuthStore } from "./store";
 import type { Result } from "./services";
+import { MOCK_ENABLED, NET_ERR } from "./mockFlag";
 
 type S = components["schemas"];
 export type AccountInfo = S["Account"];
@@ -46,6 +47,7 @@ async function call<T>(
   } catch {
     /* 网络错误 → mock */
   }
+  if (!MOCK_ENABLED) return { ok: false, error: NET_ERR, code: "NETWORK", source: "api" };
   await delay();
   return { ok: true, data: await fallback(), source: "mock" };
 }
@@ -66,10 +68,15 @@ export function maskPhone(p?: string | null, cc?: string | null) {
   const m = n.length > 7 ? `${n.slice(0, 3)}****${n.slice(-4)}` : n.length > 4 ? `${n.slice(0, 2)}***${n.slice(-2)}` : n;
   return c ? `+${c} ${m}` : p.startsWith("+") ? `+${m}` : m;
 }
+/** 全站唯一的邮箱脱敏规则：保留前 3 位（短用户名至少隐藏 1 位）+ ***@域名。
+ *  对后端已脱敏的值（如 ab*****@x.com）幂等，统一成同一格式。 */
 export function maskEmail(e?: string | null) {
   if (!e || !e.includes("@")) return e ?? "";
-  const [u, d] = e.split("@");
-  return `${u.slice(0, Math.min(3, Math.max(1, u.length - 1)))}***@${d}`;
+  const i = e.lastIndexOf("@");
+  const u = e.slice(0, i), d = e.slice(i + 1);
+  const masked = u.includes("*");
+  const vis = masked ? u.slice(0, u.indexOf("*")) : u;
+  return `${vis.slice(0, Math.min(3, masked ? vis.length : Math.max(1, u.length - 1)))}***@${d}`;
 }
 /** 账户展示名：优先邮箱，手机号用户（token 中 email 为空）显示脱敏手机号 */
 export function displayAccount(a?: { email?: string | null; phone?: string | null; countryCode?: string | null } | null) {
@@ -143,14 +150,14 @@ export const resetPassword = (b: { resetToken: string; newPassword: string }) =>
   call(() => api.POST("/auth/password/reset", { body: b }), () => true);
 
 /* ---------- 账户资料 ---------- */
-const isMockToken = () => (useAuthStore.getState().accessToken ?? "").startsWith("mock-");
+const isMockToken = () => MOCK_ENABLED && (useAuthStore.getState().accessToken ?? "").startsWith("mock-");
 function mockAccount(): AccountInfo {
   const c = jwtClaims(useAuthStore.getState().accessToken);
   return {
-    uid: String(c.sub ?? "80000001"),
+    uid: String(c.sub ?? ""),
     email: (c.email as string) || useAuthStore.getState().email || null,
     phone: (c.phone as string) || null,
-    nickname: "lb_Demo8K2",
+    nickname: null,
     avatarUrl: null,
     kycLevel: 0,
     twoFactorEnabled: false,

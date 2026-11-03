@@ -37,4 +37,3 @@ export function useAuth(){
   return ready && authed
 }
 // 模拟用户（全部为虚构数据）
-export const MOCK={name:'lb_Demo8K2',uid:'80000001',acct:'demo***@example.com',invite:'LB8DEMO'}

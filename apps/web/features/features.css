@@ -163,3 +163,10 @@
 .ff-mact{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.ff-f{display:flex;flex-direction:column;gap:6px;margin-top:14px;font-size:12px;color:var(--lb-light-text-2)}.ff-f>input{height:40px;border:1px solid var(--lb-light-border);border-radius:8px;padding:0 12px;outline:0;font-size:14px;color:var(--lb-card)}.ff-f>input:focus{border-color:#abe127}
 .ff-ops button{border:0;background:none;color:var(--lb-card);text-decoration:underline;cursor:pointer;font-size:12px;margin-left:10px}
 .ff-krow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--lb-light-border)}
+/* QA r1：行内校验错误与禁用按钮 */
+.fx-err.fe-inline{margin:6px 0 0;padding:0;background:none;font-size:12px;line-height:1.4}
+input[aria-invalid="true"]{border-color:var(--lb-down)!important}
+.lb:disabled,.lb.dis{opacity:.55;cursor:not-allowed}
+/* 骨架占位（账户信息加载中） */
+i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border-radius:4px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:lbSk 1.2s infinite linear}
+@keyframes lbSk{0%{background-position:200% 0}100%{background-position:-200% 0}}
