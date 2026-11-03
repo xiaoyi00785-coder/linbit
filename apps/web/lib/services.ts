@@ -9,6 +9,7 @@
  */
 import type { components } from "@linbit/api-client";
 import { api } from "./api";
+import { rest } from "./rest";
 
 type S = components["schemas"];
 export type AuthTokens = S["AuthTokens"];
@@ -278,22 +279,36 @@ export interface Coupon {
   status: "unused" | "active" | "used" | "expired";
 }
 /** 缺口：GET /coupons?status= */
+/** 已对接：GET /coupons、GET /coupons/summary、POST /coupons/{id}/activate（growth 服务）。网关不可达时回退演示数据。 */
+type ApiCoupon = { id: number; kind: "trial" | "deduction"; amount: string; asset: string; title: string; status: "issued" | "active" | "expired" | "revoked"; activateBy: number; validDays: number; activatedAt?: number; bonus?: { remaining: string; status: string; expiresAt: number } };
+const ymd = (ms?: number) => (ms ? new Date(ms).toLocaleDateString("sv-SE") : "-");
 export async function listCoupons(): Promise<Result<Coupon[]>> {
+  const r = await rest<{ items: ApiCoupon[] }>("GET", "/coupons");
+  if (r.source === "api" && r.ok && r.data) {
+    return { ok: true, source: "api", data: r.data.items.map((c) => {
+      const used = c.bonus && c.bonus.status !== "active";
+      const st: Coupon["status"] = c.status === "issued" ? "unused" : c.status === "active" ? (used ? "used" : "active") : c.status === "expired" ? "expired" : "used";
+      return { id: String(c.id), type: c.kind === "trial" ? "trial" : "fee", amount: Number(c.amount), title: c.title,
+        desc: c.kind === "trial" ? `激活后 ${c.validDays} 天有效${c.bonus ? ` · 剩余 ${c.bonus.remaining} ${c.asset}` : ""}` : "可抵扣现货 / 合约交易手续费",
+        expireAt: c.status === "active" && c.bonus ? ymd(c.bonus.expiresAt) : ymd(c.activateBy), status: st };
+    }) };
+  }
+  if (r.source === "api") return { ok: false, error: r.error, source: "api", data: [] };
   await delay();
-  return {
-    ok: true,
-    source: "mock",
-    data: [
+  return { ok: true, source: "mock", data: [
       { id: "c1", type: "fee", amount: 5, title: "手续费抵扣券", desc: "可抵扣现货 / 合约交易手续费", expireAt: "2026-12-31", status: "unused" },
       { id: "c2", type: "trial", amount: 5, title: "合约体验金", desc: "激活需合约账户自有资金 ≥ 5 USDT", expireAt: "2026-12-15", status: "unused" },
       { id: "c3", type: "trial", amount: 10, title: "合约体验金", desc: "新手合约交易 Lv.2 奖励", expireAt: "2026-11-20", status: "active" },
       { id: "c4", type: "fee", amount: 5, title: "手续费抵扣券", desc: "已于 2026-10-12 使用", expireAt: "2026-10-30", status: "used" },
-    ],
-  };
+    ] };
 }
-/** 缺口：POST /coupons/{id}/activate */
-export async function activateCoupon(_id: string): Promise<Result<true>> {
-  await delay();
+export async function couponSummary() {
+  const r = await rest<{ available: number; active: number }>("GET", "/coupons/summary");
+  return r.ok ? r.data : undefined;
+}
+export async function activateCoupon(id: string): Promise<Result<true>> {
+  const r = await rest<{ id: number; status: string }>("POST", `/coupons/${id}/activate`, {});
+  if (r.source === "api") return r.ok ? { ok: true, data: true, source: "api" } : { ok: false, error: r.error, source: "api" };
   return { ok: true, data: true, source: "mock" };
 }
 
@@ -306,19 +321,28 @@ export interface Notice {
   read: boolean;
 }
 /** 缺口：GET /notifications、POST /notifications/read */
-export async function listNotifications(): Promise<Result<Notice[]>> {
+/** 已对接：GET /notifications、POST /notifications/read、GET /notifications/unread-count、GET|PUT /notifications/settings（account 服务） */
+export async function listNotifications(kind?: string): Promise<Result<Notice[]>> {
+  const r = await rest<{ items: { id: string; kind: Notice["kind"]; title: string; body: string; time: number; read: boolean }[] }>("GET", `/notifications?pageSize=50${kind ? `&kind=${kind}` : ""}`);
+  if (r.source === "api") return r.ok && r.data ? { ok: true, source: "api", data: r.data.items.map((n) => ({ ...n, time: new Date(n.time).toLocaleString("zh-CN", { hour12: false }) })) } : { ok: false, error: r.error, source: "api", data: [] };
   await delay();
-  return {
-    ok: true,
-    source: "mock",
-    data: [
+  return { ok: true, source: "mock", data: [
       { id: "n1", kind: "security", title: "新设备登录提醒", body: "你的账户于 Chrome · macOS 登录，如非本人操作请立即修改密码。", time: "2026-11-02 09:12", read: false },
       { id: "n2", kind: "activity", title: "新人奖励已到账", body: "5 USDT 手续费抵扣券已发放至卡券中心。", time: "2026-11-01 18:40", read: false },
       { id: "n3", kind: "trade", title: "提现申请已提交", body: "提现 100 USDT（TRC20）审核中。", time: "2026-10-30 14:03", read: true },
       { id: "n4", kind: "system", title: "系统维护通知", body: "11 月 5 日 02:00–03:00 (UTC+8) 进行系统升级。", time: "2026-10-29 10:00", read: true },
-    ],
-  };
+    ] };
 }
+export async function readNotifications(b: { ids?: string[]; all?: boolean }) {
+  return rest<{ updated: number }>("POST", "/notifications/read", b);
+}
+export async function unreadCount() {
+  const r = await rest<{ unread: number }>("GET", "/notifications/unread-count");
+  return r.ok ? r.data?.unread ?? 0 : 0;
+}
+export type NotifyPrefs = { emailSystem: boolean; emailTrade: boolean; emailActivity: boolean; emailSecurity: boolean };
+export const getNotifyPrefs = () => rest<NotifyPrefs>("GET", "/notifications/settings");
+export const putNotifyPrefs = (p: Partial<NotifyPrefs>) => rest<NotifyPrefs>("PUT", "/notifications/settings", p);
 
 export interface Announcement {
   id: string;

@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+import { installUiDelegates } from "@/lib/ui";
 
 const RV = "main section, .wrap > section, section.center, .trader, .pcard, .two > *, .three > *, details.faq, .dl, .promo";
 /** 滚动入场：元素进入视口时淡入上移（仅首屏外元素）。 */
@@ -33,6 +34,7 @@ const DemoToggle = nav("DemoToggle");
 export default function LegacyChrome({ children }: { children: React.ReactNode }) {
   const p = usePathname();
   useReveal(p);
+  useEffect(() => installUiDelegates(), []);
   return (
     <>
       {p !== "/api/docs" && <Header />}

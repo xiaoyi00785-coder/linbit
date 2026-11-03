@@ -1,11 +1,24 @@
-import { TEAM, fmtU } from "@/lib/rules";
-export default function Team() {
+"use client";
+import { useState } from "react";
+import { useApi, type Team } from "@/lib/api";
+import { TEAM } from "@/lib/rules";
+import { Demo, ErrBox, Skel, Tabs, day, num } from "../ui";
+
+type K = "" | "user" | "partner";
+const demo = (): Team => ({ items: TEAM.map((t) => ({ uid: t.uid, joinedAt: Date.parse(t.joined), kycLevel: 1, isPartner: t.type === "下级合伙人", tier: "", futuresVolume30d: String(t.vol30d), spotVolume30d: "0", fee30d: String(t.fee30d), commission: "0" })) });
+
+export default function TeamPage() {
+  const [k, setK] = useState<K>("");
+  const r = useApi<Team>(`/partner/team${k ? `?type=${k}` : ""}`, demo);
+  const L = r.data?.items || [];
   return (
     <>
-      <h1>我的团队</h1>
-      <p className="muted">仅展示直属用户与直属下级合伙人；二级奖励最多计算 2 级。</p>
-      <table><thead><tr><th>UID</th><th>类型</th><th>注册时间</th><th>近 30 日合约交易量</th><th>近 30 日手续费</th></tr></thead>
-        <tbody>{TEAM.map((t) => <tr key={t.uid}><td>{t.uid}</td><td>{t.type}</td><td>{t.joined}</td><td>{fmtU(t.vol30d)}</td><td>{fmtU(t.fee30d)}</td></tr>)}</tbody></table>
+      <h1>我的团队 <Demo on={r.demo} /></h1>
+      <Tabs<K> items={[["", "全部"], ["user", "直属用户"], ["partner", "下级合伙人"]]} cur={k} set={setK} />
+      {r.loading ? <Skel h={44} n={5} /> : r.err ? <ErrBox err={r.err} reload={r.reload} /> : !L.length ? <div className="card empty">暂无团队成员，去 <a className="lime" href="/links">推广链接</a> 邀请用户</div> : (
+        <table className="fade"><thead><tr><th>UID</th><th>类型</th><th>注册时间</th><th>KYC</th><th>近 30 日合约量</th><th>近 30 日现货量</th><th>近 30 日手续费</th><th>为我贡献佣金</th></tr></thead>
+          <tbody>{L.map((t) => <tr key={t.uid}><td>{t.uid}</td><td>{t.isPartner ? <span className="tag">下级合伙人{t.tier ? ` · ${t.tier}` : ""}</span> : "直属用户"}</td><td>{day(t.joinedAt)}</td><td>Lv.{t.kycLevel}</td><td>{num(t.futuresVolume30d)}</td><td>{num(t.spotVolume30d)}</td><td>{num(t.fee30d, 4)}</td><td className="lime">{num(t.commission, 4)}</td></tr>)}</tbody></table>
+      )}
     </>
   );
 }

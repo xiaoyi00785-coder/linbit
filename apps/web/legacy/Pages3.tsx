@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { CoinIcon } from '@/components/CoinIcon'
 import { NavLink, Link, useNavigate, useLocation, useParams } from '@/lib/router'
 import { useState } from 'react'
 import { Footer } from './App'
@@ -8,10 +9,10 @@ import { useProfile } from './Pages'
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div>
 const Eye=()=><span className="eye">◉</span>
-const U=()=><i className="ico" style={{background:'var(--lb-usdt)',width:22,height:22,fontSize:11}}>₮</i>
+const U=()=><CoinIcon s="USDT" size={22}/>
 const ACCTS=[['/assets/overview','▰','资产总览'],['/assets/funding-account','●','资金账户'],['/assets/trading-account','◧','合约账户'],['/assets/spot-account','◎','现货账户'],['/assets/earn-account','◒','理财账户'],['/assets/tradfi-account','⌂','传统金融账户'],['/assets/bots-account','◙','策略账户']]
 export const RECS=[['funding','资金记录'],['futures','合约记录'],['spot','现货记录'],['tradfi','传统金融记录']]
-export const ORDS=[['futures','合约订单'],['spot','现货订单'],['buy','买币订单'],['earn','理财订单'],['convert','闪兑记录'],['tradfi','传统金融订单'],['loan','借贷订单']]
+export const ORDS=[['futures','合约订单'],['spot','现货订单'],['buy','买币订单'],['earn','理财订单'],['convert','闪兑记录'],['tradfi','传统金融订单']]
 function ASide(){const p=useLocation().pathname;const[h,setH]=useState(p.startsWith('/assets/history'));const[o,setO]=useState(p.startsWith('/orders'))
 return <aside className="lside a2">{ACCTS.map(([to,i,t])=><NavLink key={to} to={to} className="lsi"><span className="lsic">{i}</span>{t}</NavLink>)}
 <div className="lsi" onClick={()=>setH(!h)}><span className="lsic">▤</span>资金流水<em>{h?'▴':'▾'}</em></div>{h&&RECS.map(([k,t])=><NavLink key={k} to={'/assets/history/'+k} className="lsi sub">{t}</NavLink>)}
@@ -32,7 +33,7 @@ export function ASpot(){return <AS><Head t="现货账户" btns={[['充值','/dep
 export function ATradfi(){return <AS><Head t="传统金融账户" btns={[['充值','/deposit'],['划转'],['传统金融订单','/orders/tradfi'],['传统金融记录','/assets/history/tradfi']]}/><Val t="总资产"><div className="lg" style={{marginTop:14}}>未实现盈亏</div><b className="lk">0 USDT</b><div className="lg">≈ $0</div></Val>
 <div className="lcard"><TH s c={['资产','可用','账户余额','仓位保证金','委托占用','未实现盈亏','操作']}/><URow v={['u','u','0','0','0',{lime:['划转']}]}/></div></AS>}
 export function ABots(){return <AS><Head t="策略账户" btns={[['创建策略','/strategy'],['划转']]}/><Val/><div className="lcard"><h3>运行中的策略</h3><TH c={['策略','交易对','投入','总收益','运行时长','操作']}/><Empty/></div></AS>}
-const EARN_T=['理财宝','简单赚币','链上赚币','VIP 私享理财','质押借币']
+const EARN_T=['理财宝','简单赚币','链上赚币','VIP 私享理财']
 export function AEarn(){const[t,setT]=useState(0);const[s,setS]=useState(0);return <AS><Head t="理财账户" btns={[['理财总览','/earn'],['理财订单','/orders/earn'],['现货记录','/assets/history/spot']]}/><Val/>
 <div className="lcard"><div className="ltabs">{EARN_T.map((x,i)=><b key={x} className={t===i?'on':''} onClick={()=>setT(i)}>{x}</b>)}</div><div className="estat">{['资产估值','24h 收益','累计收益'].map(x=><div key={x}><span className="lg">{x}</span><b>0</b><small className="lg">≈ $0</small></div>)}</div>
 {t===0&&<div className="seg">{['活期','定期','限时抢购'].map((x,i)=><b key={x} className={s===i?'on':''} onClick={()=>setS(i)}>{x}</b>)}</div>}<TH c={t===4?['借款币种','质押币种','借款金额','LTV','小时利率','操作']:['币种','参考年化','持有数量','24h 收益','累计收益','自动申购','操作']}/><Empty/></div></AS>}
@@ -52,7 +53,7 @@ buy:{t:'买币订单',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="
 earn:{t:'理财订单',tabs:['申购','赎回','收益'],fil:[<Sel key={1} k="产品" v="全部"/>,<Sel key={2} k="币种" v="全部"/>,<Dt key={3} v/>],cols:['时间','产品','币种','数量','参考年化','状态']},
 convert:{t:'闪兑记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Dt key={2} v/>],cols:['时间','支付','获得','价格','状态']},
 tradfi:{t:'传统金融订单',tabs:['当前委托','历史委托','历史仓位','成交明细'],fil:[<Sel key={1} k="品种" v="全部"/>,<Sel key={2} k="类型" v="限价 | 市价"/>,<Dt key={3} v/>],cols:['品种','方向','委托价','数量','已成交','状态','时间']},
-loan:{t:'借贷订单',tabs:['借款记录','还款记录','质押率调整记录','强平记录'],fil:[<Sel key={1} k="订单类型" v="活期"/>,<Sel key={2} k="借款币种" v="全部"/>,<Sel key={3} k="质押币种" v="全部"/>,<Sel key={4} k="状态" v="全部"/>,<Sel key={5} k="借款时间" v="最近 7 天"/>,<Dt key={6} v/>],cols:['借款时间','订单类型','借款币种','初始借款','质押币种','初始质押','小时 / 年化利率','状态']}}
+}
 export function OrdersX(){const{k}=useParams();const r=O[k]||O.futures;return <Rec key={k} {...r}/>}
 // —— 积分商城（深色，参数取自业务规则） ——
 const PTASK=[['+168','合约累计交易任务','当日合约交易量达到不同档位可获得对应积分，每日最多 168 分。',1],['+10','充值任务','每入金 100 USDT 得 1 分，每日最多 10 分。','去充值'],['+80','邀请任务','每邀请 1 位有效用户（累计手续费 ≥100 USDT）得 8 分，每日最多 80 分。','去邀请']]

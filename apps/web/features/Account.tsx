@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { Shell, Side, ACC } from "./layout";
 import { Footer } from "./layout";
+import { toast } from "@/lib/ui";
 import {
-  activateCoupon, listAnnouncements, listCoupons, listNotifications,
+  activateCoupon, couponSummary, listAnnouncements, listCoupons, listNotifications, readNotifications,
   type Announcement, type Coupon, type Notice,
 } from "@/lib/services";
 import {
@@ -13,11 +14,15 @@ import {
 } from "@/lib/account";
 import { CodeInput, Src } from "./common";
 
-function useLoad<T>(fn: () => Promise<{ data?: T; source: "api" | "mock" }>, init: T) {
+function useLoad<T>(fn: () => Promise<{ data?: T; source: "api" | "mock"; ok?: boolean; error?: string }>, init: T) {
   const [d, setD] = useState<T>(init);
   const [src, setSrc] = useState<"api" | "mock">();
-  useEffect(() => { fn().then((r) => { setD(r.data ?? init); setSrc(r.source); }); }, []); // eslint-disable-line
+  useEffect(() => { fn().then((r) => { setD(r.data ?? init); setSrc(r.source); if (r.ok === false && r.error) toast(r.error, "err"); }); }, []); // eslint-disable-line
   return [d, setD, src] as const;
+}
+/** 骨架屏：数据加载中占位 */
+export function Skel({ n = 3, h = 64 }: { n?: number; h?: number }) {
+  return <div className="lb-skel-list">{Array.from({ length: n }, (_, i) => <div key={i} className="lb-skel" style={{ height: h }} />)}</div>;
 }
 
 function Tabs<T extends string>({ items, cur, set }: { items: T[]; cur: T; set: (v: T) => void }) {
@@ -30,20 +35,34 @@ type CpTab = keyof typeof CP_TAB;
 export function Coupons() {
   const [list, setList, src] = useLoad<Coupon[]>(listCoupons, []);
   const [tab, setTab] = useState<CpTab>("未使用");
+  const [sum, setSum] = useState<{ available: number; active: number }>();
+  const [busy, setBusy] = useState("");
+  useEffect(() => { couponSummary().then(setSum); }, []);
+  const activate = async (id: string) => {
+    setBusy(id);
+    const r = await activateCoupon(id);
+    setBusy("");
+    if (!r.ok) return toast(r.error || "激活失败", "err");
+    toast("体验金已激活，可前往合约交易使用");
+    setList(list.map((x) => (x.id === id ? { ...x, status: "active" } : x)));
+    couponSummary().then(setSum);
+  };
   const shown = list.filter((c) => (tab === "已使用/过期" ? c.status === "used" || c.status === "expired" : c.status === CP_TAB[tab]));
   return (
     <main className="light"><div className="lwrap"><section className="lmain" style={{ width: "100%" }}>
       <div className="crumb lg"><Link to="/rewards">福利中心</Link> / 卡券中心</div>
       <h2 className="lh2">卡券中心 <Src s={src} /></h2>
+      {sum && <div className="fx-cpsum"><span>可用 <b>{sum.available}</b></span><span>使用中 <b>{sum.active}</b></span></div>}
       <Tabs items={Object.keys(CP_TAB) as CpTab[]} cur={tab} set={setTab} />
       <p className="lg">体验金激活时，合约账户自有资金不得少于体验金金额；体验金仅限合约交易，可抵扣手续费与资金费，本金不可提现，盈利可提现。</p>
       <div className="fx-coupons">
-        {shown.length === 0 && <div className="lg">暂无卡券</div>}
+        {!src && <Skel n={2} h={110} />}
+        {src && shown.length === 0 && <div className="lg fx-empty">暂无卡券</div>}
         {shown.map((c) => (
           <div key={c.id} className={"fx-cp" + (c.status === "used" || c.status === "expired" ? " dim" : "")}>
             <div className="v"><b>{c.amount}</b><small>USDT</small></div>
             <div className="b"><b>{c.title}</b><span className="lg">{c.desc}</span><span className="lg">有效期至 {c.expireAt}</span>
-              {c.status === "unused" && c.type === "trial" && <button className="lb lime sm" onClick={async () => { await activateCoupon(c.id); setList(list.map((x) => (x.id === c.id ? { ...x, status: "active" } : x))); }}>激活</button>}
+              {c.status === "unused" && c.type === "trial" && <button className="lb lime sm" disabled={busy === c.id} onClick={() => activate(c.id)}>{busy === c.id ? "激活中…" : "激活"}</button>}
               {c.status === "unused" && c.type === "fee" && <span className="lime2">交易时自动抵扣</span>}
               {c.status === "active" && <Link to="/futures" className="lime2">去合约交易 ›</Link>}
             </div>
@@ -62,11 +81,13 @@ export function Notifications() {
   return (
     <Shell side={<Side items={ACC} />}>
       <div className="lcard">
-        <div className="lrow"><h3>消息通知 <Src s={src} /></h3><a className="lime2" onClick={() => setList(list.map((n) => ({ ...n, read: true })))}>全部已读</a></div>
+        <div className="lrow"><h3>消息通知 <Src s={src} /></h3><a className="lime2" onClick={async () => { const r = await readNotifications({ all: true }); if (r.source === "api" && !r.ok) return toast(r.error || "操作失败", "err"); setList(list.map((n) => ({ ...n, read: true }))); toast("已全部标记为已读"); window.dispatchEvent(new Event("lb_unread")); }}>全部已读</a></div>
         <Tabs items={["全部", ...Object.values(KIND)]} cur={tab} set={setTab} />
         <div className="fx-list">
+          {!src && <Skel n={4} h={52} />}
+          {src && shown.length === 0 && <div className="lg fx-empty">暂无消息</div>}
           {shown.map((n) => (
-            <div key={n.id} className="fx-item" onClick={() => setList(list.map((x) => (x.id === n.id ? { ...x, read: true } : x)))}>
+            <div key={n.id} className={"fx-item" + (n.read ? "" : " unread")} onClick={() => { if (!n.read) { readNotifications({ ids: [n.id] }); window.dispatchEvent(new Event("lb_unread")); } setList(list.map((x) => (x.id === n.id ? { ...x, read: true } : x))); }}>
               <span className={"fx-dot" + (n.read ? " off" : "")} />
               <div className="sp"><b>[{KIND[n.kind]}] {n.title}</b><small>{n.body}</small></div>
               <span className="lg">{n.time}</span>

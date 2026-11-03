@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { CoinIcon } from '@/components/CoinIcon'
 import { Link, NavLink } from '@/lib/router'
 import { useState, useEffect } from 'react'
 import { useParams, useLocation } from '@/lib/router'
@@ -12,14 +13,14 @@ const M={
 '买币':{w:256,items:[['💳','法币购买','多种支付方式，快速入金',1],['⬇','充值','链上充值，到账迅速'],['▣','linbit 卡','用数字资产全球消费']]},
 '交易':{w:256,items:[['⇄','现货交易','轻松买卖主流数字资产'],['▦','现货网格','自动低买高卖的交易机器人'],['⇆','闪兑','一键兑换，零手续费']]},
 '合约':{w:536,groups:[['交易',[['U','U本位永续','USDT 结算的永续合约',1],['▤','股票合约','覆盖美股与黄金等真实资产合约'],['◫','模拟交易','用模拟资金零风险体验合约'],['◉','传统金融','用 USDT 连接全球资产']]],['探索',[['◎','传统金融概览','三分钟了解传统资产交易']]]],coins:1},
-'理财':{w:256,items:[['◔','理财总览','多样产品助力资产增长'],['◑','活期理财','随存随取，零风险灵活收益'],['🔒','定期理财','锁定收益，稳步增长','APR'],['◕','简单赚币','随存随取，灵活赚取收益'],['⛓','链上理财','牛熊市都有保障的收益'],['◈','VIP 私享理财','为高净值用户提供专属服务'],['⛁','质押借币','以数字资产质押，即时借款','NEW']]},
+'理财':{w:256,items:[['◔','理财总览','多样产品助力资产增长'],['◑','活期理财','随存随取，零风险灵活收益'],['🔒','定期理财','锁定收益，稳步增长','APR'],['◕','简单赚币','随存随取，灵活赚取收益'],['⛓','链上理财','牛熊市都有保障的收益'],['◈','VIP 私享理财','为高净值用户提供专属服务']]},
 '活动中心':{w:520,cols:[['专属活动',[['🎁','福利中心','完成任务领取奖励'],['＄','充值奖励','按充值金额领取奖励','HOT'],['▦','交易抽奖','幸运转盘，好运不断'],['👥','邀请好友','分享全新交易体验','NEW'],['⚑','推荐活动','邀请好友赢好礼']]],['热门活动',[['⌂','传统金融等级挑战','赢取 2,000 USDT 奖励',1],['◎','事件合约挑战','赢取 1,002 USDT 奖励',1],['✦','积分嘉年华','本期已结束 · 积分兑换体验金 / 抵扣金'],['✉','红包雨','即时开奖',1],['🏆','交易打卡挑战','最高领取 500 USDT 奖励']]]]},
 '更多':{w:770,cols:[['合约数据',[['⚖','仓位档位','快速了解仓位档位规则'],['⌂','逐仓参数','查看逐仓交易对参数'],['∿','标记价格历史','查看标记价格历史走势'],['▥','指数价格','合约价格指数历史'],['％','资金费率历史','获取历史资金费率数据'],['⛨','保险基金','查看风险保障基金余额']]],['学院',[['📖','linbit 学院','学习区块链与数字资产知识','NEW']],'机构',[['⌘','API','开发者文档与接口支持']]],['帮助',[['?','帮助中心','查看帮助文档'],['📣','公告中心','查看平台重要公告']]]]}}
-const R={'福利中心':'/rewards','公告中心':'/announcements','公告':'/announcements','卡券中心':'/coupons','邀请好友':'/invite','推荐活动':'/invite','积分嘉年华':'/points','充值奖励':'/rewards','交易打卡挑战':'/rewards','简单赚币':'/earn/simple','VIP 私享理财':'/earn/vip','质押借币':'/earn/loan','新人福利':'/rewards','交易大赛':'/rewards','邀请返佣':'/invite','API':'/api','跟单交易':'/copy','合约跟单':'/copy','法币购买':'/buy','充值':'/deposit','闪兑':'/convert','理财总览':'/earn','活期理财':'/earn','定期理财':'/earn/bao','链上理财':'/earn/onchain','现货网格':'/strategy','现货交易':'/spot','U本位永续':'/futures','股票合约':'/futures','模拟交易':'/sim','传统金融':'/futures','指数价格':'/futures','资金费率历史':'/futures'}
+const R={'福利中心':'/rewards','公告中心':'/announcements','公告':'/announcements','卡券中心':'/coupons','邀请好友':'/invite','推荐活动':'/invite','积分嘉年华':'/points','充值奖励':'/rewards','交易打卡挑战':'/rewards','简单赚币':'/earn/simple','VIP 私享理财':'/earn/vip','新人福利':'/rewards','交易大赛':'/rewards','邀请返佣':'/invite','API':'/api','跟单交易':'/copy','合约跟单':'/copy','法币购买':'/buy','充值':'/deposit','闪兑':'/convert','理财总览':'/earn','活期理财':'/earn','定期理财':'/earn/bao','链上理财':'/earn/onchain','现货网格':'/strategy','现货交易':'/spot','U本位永续':'/futures','股票合约':'/futures','模拟交易':'/sim','传统金融':'/futures','指数价格':'/futures','资金费率历史':'/futures'}
 const path=t=>R[t]||'/p/'+encodeURIComponent(t)
 const Item=([k,t,d,hot])=><Link className="dit" key={t} to={path(t)}><I k={k}/><div><b>{t}{hot===1&&' 🔥'}{hot==='NEW'&&<em className="new">NEW</em>}{hot==='APR'&&<em className="new">100%APR</em>}{hot==='HOT'&&' ◆'}</b><small>{d}</small></div></Link>
 function Panel({m}){if(m.cols)return <div className="dd" style={{width:m.w}}><div className="ddcols">{m.cols.map((c,i)=><div key={i}>{c.map((x,j)=>typeof x==='string'?<h5 key={j}>{x}</h5>:x.map(Item))}</div>)}</div></div>
-if(m.groups)return <div className="dd nop" style={{width:m.w}}><div className="ddsplit"><div>{m.groups.map(([g,l])=><div key={g}><h6>{g}</h6>{l.map(Item)}</div>)}</div><div className="ddcoins"><div className="dds">⌕ 搜索币种</div>{coins.slice(0,9).map(c=><Link to="/futures" key={c.s}><i className="ico" style={{background:c.col,width:20,height:20,fontSize:10}}>{c.s[0]}</i>{c.s}USDT</Link>)}</div></div></div>
+if(m.groups)return <div className="dd nop" style={{width:m.w}}><div className="ddsplit"><div>{m.groups.map(([g,l])=><div key={g}><h6>{g}</h6>{l.map(Item)}</div>)}</div><div className="ddcoins"><div className="dds">⌕ 搜索币种</div>{coins.slice(0,9).map(c=><Link to="/futures" key={c.s}><CoinIcon s={c.s} col={c.col} size={20}/>{c.s}USDT</Link>)}</div></div></div>
 return <div className="dd" style={{width:m.w}}>{m.items.map(Item)}</div>}
 const LANGS=['简体中文','English','繁體中文','Tiếng Việt','Bahasa Indonesia','Español','Русский','Português','Français','Українська',"O'zbekcha",'Polski','Türkçe','Italiano','日本語','한국어','Deutsch','ไทย','العربية','Ελληνικά','Español (Latinoamérica)','Português (Brasil)','Azərbaycan','Қазақша','Slovenčina','Slovenščina','Čeština','Română','Magyar','Svenska','Dansk','Nederlands','Bahasa Melayu','Filipino','हिन्दी','עברית']
 const CUR=['USD','CNY','EUR','JPY','KRW','GBP','HKD','VND','RUB','TRY','INR','BRL']
