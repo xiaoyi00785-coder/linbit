@@ -3,15 +3,28 @@ import SwiftUI
 @main
 struct LinbitApp: App {
     @StateObject private var theme = ThemeStore()
+    @StateObject private var splash = SplashState()
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
         WindowGroup {
-            ThemedRoot { RootTabView() }
-                .environmentObject(theme)
-                .environmentObject(Session.shared)
-                .environmentObject(AccountsStore.shared)
-                .preferredColorScheme(theme.mode.colorScheme)
+            ZStack {
+                // 首页在动画下层同时挂载：首页数据与行情在动画期间并行加载
+                ThemedRoot { RootTabView() }
+                    .environmentObject(theme)
+                    .environmentObject(Session.shared)
+                    .environmentObject(AccountsStore.shared)
+                    .opacity(splash.done ? 1 : 0)
+                if !splash.done {
+                    SplashView(frozen: splash.frozen) {
+                        withAnimation(.easeInOut(duration: 0.3)) { splash.done = true }
+                    }
+                    .transition(.opacity)
+                    .zIndex(1)
+                }
+            }
+            .preferredColorScheme(theme.mode.colorScheme)
+            .task { if !splash.done { await MarketStore.shared.load() } }
         }
         .onChange(of: phase) { p in
             switch p {

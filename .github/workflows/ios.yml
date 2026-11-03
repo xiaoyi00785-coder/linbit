@@ -114,6 +114,24 @@ jobs:
                         futures-orders-tpsl futures-orders-plan futures-amend futures-mode-hedge futures-tpsl-partial earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
             shoot "$screen" light
           done
+          # 启动动画：开始 / 中间 / 结束 三个时刻（冻结进度），日间 + 夜间
+          for screen in splash-start splash-mid splash-end; do
+            for mode in light dark; do shoot "$screen" "$mode"; done
+          done
+          # 启动动画录屏（真实播放，日间 + 夜间）
+          for mode in light dark; do
+            xcrun simctl ui "$UDID" appearance "$mode"
+            xcrun simctl terminate "$UDID" click.cowa.linbit || true
+            xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
+            xcrun simctl spawn "$UDID" defaults delete click.cowa.linbit lb.shot || true
+            xcrun simctl io "$UDID" recordVideo --codec=h264 --force "shots/splash-${mode}.mp4" &
+            REC=$!
+            sleep 2
+            xcrun simctl launch "$UDID" click.cowa.linbit
+            sleep 4
+            kill -INT "$REC" || true
+            wait "$REC" || true
+          done
           # 合约弹窗夜间版
           for screen in futures-orders-tpsl futures-orders-plan futures-amend futures-mode-hedge futures-tpsl-partial futures-tpsl futures-mode futures-leverage futures-kind futures-tools; do
             shoot "$screen" dark
