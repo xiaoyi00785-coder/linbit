@@ -72,7 +72,7 @@ export function withdraw(body: WithdrawRequest) {
       network: body.network,
       address: body.address,
       amount: body.amount,
-      fee: "1",
+      fee: estimateGas(body.asset, body.network),
       status: "pending",
       createdAt: new Date().toISOString(),
     }),
@@ -116,27 +116,43 @@ export async function resetPassword(_b: {
   return { ok: true, data: true, source: "mock" };
 }
 
-/** 缺口：GET /wallet/withdraw/config?asset=&network=（最小提现额、手续费、单笔上限、是否需要 memo） */
+/** 缺口：GET /wallet/withdraw/config?asset=&network=（最小提现额、链上网络费 networkFee、单笔上限、是否需要 memo）。平台不收提现手续费，仅收链上 Gas，随网络实时变化 */
 export interface WithdrawConfig {
   asset: string;
   network: string;
   minAmount: string;
   maxAmount: string;
-  fee: string;
+  /** 链上网络费（Gas）预估，平台不另收手续费 */
+  networkFee: string;
   memoRequired: boolean;
 }
-const WD_CONFIG: Record<string, { min: string; max: string; fee: string }> = {
-  USDT: { min: "12", max: "20000", fee: "1" },
-  BTC: { min: "0.001", max: "2", fee: "0.0002" },
-  ETH: { min: "0.01", max: "50", fee: "0.002" },
+const WD_CONFIG: Record<string, { min: string; max: string }> = {
+  USDT: { min: "12", max: "20000" },
+  BTC: { min: "0.001", max: "2" },
+  ETH: { min: "0.01", max: "50" },
 };
+/** mock：各网络链上 Gas 预估（USDT 计），实际以接口实时返回为准 */
+const GAS_USDT: Record<string, number> = {
+  "Arbitrum One": 1,
+  "BEP20(BSC)": 1,
+  TRC20: 2,
+  ERC20: 10,
+  Solana: 1,
+  Bitcoin: 5,
+};
+const PRICE: Record<string, number> = { USDT: 1, BTC: 76768, ETH: 2600 };
+export function estimateGas(asset: string, network: string): string {
+  const usdt = GAS_USDT[network] ?? 1;
+  const p = PRICE[asset] ?? 1;
+  return asset === "USDT" ? String(usdt) : (usdt / p).toFixed(6);
+}
 export async function getWithdrawConfig(asset: string, network: string): Promise<Result<WithdrawConfig>> {
   await delay(150);
   const c = WD_CONFIG[asset] ?? WD_CONFIG.USDT;
   return {
     ok: true,
     source: "mock",
-    data: { asset, network, minAmount: c.min, maxAmount: c.max, fee: c.fee, memoRequired: false },
+    data: { asset, network, minAmount: c.min, maxAmount: c.max, networkFee: estimateGas(asset, network), memoRequired: false },
   };
 }
 
@@ -212,7 +228,7 @@ export async function listAnnouncements(): Promise<Result<Announcement[]>> {
     ok: true,
     source: "mock",
     data: [
-      { id: "a1", category: "最新公告", title: "linbit 现货、合约统一 0.1% 交易手续费说明", date: "2026-11-01", pinned: true },
+      { id: "a1", category: "最新公告", title: "linbit 现货、合约交易手续费说明：现货 0.1%、合约 0.05%，提现仅收链上 Gas", date: "2026-11-01", pinned: true },
       { id: "a2", category: "新币上线", title: "示例代币 DEMO/USDT 现货交易即将上线", date: "2026-10-30" },
       { id: "a3", category: "活动", title: "新人任务上线：最高领取 215 USDT 奖励", date: "2026-10-28" },
       { id: "a4", category: "系统维护", title: "11 月 5 日系统升级维护公告", date: "2026-10-27" },

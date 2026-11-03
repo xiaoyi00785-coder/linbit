@@ -12,7 +12,7 @@ const NETS: Record<string, string[]> = {
   ETH: ["ERC20", "Arbitrum One"],
 };
 
-/** 提现：币种 → 网络 → 地址/memo/数量（最小额、手续费来自配置接口）→ 2FA 确认 */
+/** 提现：币种 → 网络 → 地址/memo/数量（最小额、链上网络费来自配置接口，平台不收提现手续费）→ 2FA 确认 */
 export function Withdraw() {
   const [asset, setAsset] = useState("USDT");
   const [net, setNet] = useState("TRC20");
@@ -47,8 +47,8 @@ export function Withdraw() {
   const n = Number(amt);
   const min = Number(cfg?.minAmount ?? 0);
   const max = Number(cfg?.maxAmount ?? Infinity);
-  const fee = Number(cfg?.fee ?? 0);
-  const receive = n > fee ? (n - fee).toString() : "0";
+  const fee = Number(cfg?.networkFee ?? 0);
+  const receive = n > fee ? String(+(n - fee).toFixed(8)) : "0";
 
   const check = () => {
     if (addr.length < 20) return "请输入正确的提现地址";
@@ -92,7 +92,7 @@ export function Withdraw() {
             </div>
             <div className="fx-row">
               <span>可用 {free} {asset} <a className="lime2" onClick={() => setAmt(free)}>全部</a></span>
-              <span>手续费 {cfg?.fee ?? "-"} {asset}</span>
+              <span>网络费（链上 Gas）≈ {cfg?.networkFee ?? "-"} {asset} · 平台手续费 0</span>
             </div>
             <div className="fx-row">
               <span>单笔限额 {cfg?.minAmount ?? "-"} ~ {cfg?.maxAmount ?? "-"} {asset}</span>
@@ -107,7 +107,7 @@ export function Withdraw() {
           <div className="dtips">
             <div className="lcard sm">
               <b>温馨提示</b>
-              <p className="lg">提现需完成谷歌验证器（2FA）验证。修改密码或安全设置后 24 小时内禁止提现。请仔细核对地址与网络，错误地址将导致资产无法找回。</p>
+              <p className="lg">提现需完成谷歌验证器（2FA）验证。修改密码或安全设置后 24 小时内禁止提现。linbit 不收取提现手续费，仅扣除链上网络费（Gas），金额随网络拥堵实时变化：Arbitrum 约 1 USDT、BNB Chain 约 1 USDT、TRON 约 2 USDT、Ethereum 约 10 USDT。请仔细核对地址与网络，错误地址将导致资产无法找回。</p>
             </div>
           </div>
         </div>
