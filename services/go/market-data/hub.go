@@ -33,6 +33,9 @@ type Hub struct {
 	idleTimeout  time.Duration
 	now          func() time.Time
 
+	// chatValidate validates a "chat:{room}" channel (set by chatRoutes).
+	chatValidate func(room string) (code, msg string)
+
 	mu       sync.RWMutex
 	channels map[string]map[*wsClient]struct{}
 }
@@ -287,6 +290,11 @@ func (c *wsClient) validateChannel(channel string) (code, msg string) {
 		if len(parts) != 3 || !c.hub.snap.HasSymbol(parts[1]) || !c.hub.snap.ValidInterval(parts[2]) {
 			return "SUB_INVALID", "无效的 K 线频道: " + channel
 		}
+	case "chat":
+		if len(parts) != 2 || c.hub.chatValidate == nil {
+			return "SUB_INVALID", "无效的聊天室频道: " + channel
+		}
+		return c.hub.chatValidate(parts[1])
 	case "orders", "balances":
 		return "SUB_INVALID", "用户频道由账户/订单服务提供"
 	default:

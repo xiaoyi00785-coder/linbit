@@ -30,6 +30,9 @@ type Config struct {
 	EarnURL string
 	// FiatRatesURLs are tried in order for GET /market/fiat-rates (USD base).
 	FiatRatesURLs []string
+	// Chat: KYC level lookup (account) and futures rooms (futures contracts).
+	AccountURL string
+	FuturesURL string
 }
 
 // LoadConfig reads configuration from the environment.
@@ -48,6 +51,8 @@ func LoadConfig() Config {
 		OKXURL:        common.Env("OKX_API_URL", "https://www.okx.com"),
 		DevMode:       common.Env("DEV_MODE", "") == "true",
 		EarnURL:       common.Env("EARN_URL", "http://localhost:8092"),
+		AccountURL:    common.Env("ACCOUNT_URL", "http://localhost:8081"),
+		FuturesURL:    common.Env("FUTURES_URL", "http://localhost:8089"),
 		FiatRatesURLs: splitCSV(common.Env("FIAT_RATES_URLS", "https://open.er-api.com/v6/latest/USD,https://api.frankfurter.app/latest?from=USD")),
 	}
 }

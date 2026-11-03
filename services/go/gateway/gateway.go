@@ -118,6 +118,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/home/newcomer", proxy: growthProxy}, // newcomer task bar (growth)
 			{prefix: "/app/features", proxy: marketProxy},  // app feature switches (market-data)
 			{prefix: "/home", proxy: marketProxy},          // home placements/banners + hot list (market-data)
+			{prefix: "/chat", proxy: marketProxy},          // trading chat rooms (market-data)
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -149,8 +150,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
 			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
-			{method: http.MethodGet, path: "/home/hot"}, // home hot list (read-only)
-			{method: "", path: "/ws"},                   // public market WebSocket
+			{method: http.MethodGet, path: "/home/hot"},    // home hot list (read-only)
+			{method: "", path: "/ws"},                      // public market WebSocket
+			{method: http.MethodGet, path: "/chat/rooms"},  // chat: anyone can read
+			{method: http.MethodGet, path: "/chat/rooms/"}, // chat history (prefix); posting needs auth
 		},
 	}, nil
 }

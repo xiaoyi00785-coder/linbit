@@ -140,6 +140,7 @@ func (s *Server) Routes() http.Handler {
 
 	s.registerEarnRoutes(a)
 	s.registerHomeRoutes(a)
+	s.registerChatRoutes(a)
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
 

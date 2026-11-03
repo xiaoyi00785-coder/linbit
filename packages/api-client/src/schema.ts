@@ -101,7 +101,6 @@ export interface paths {
         /**
          * 找回密码-校验验证码并换取重置令牌
          * @description 找回密码第一步：校验邮箱/短信验证码，成功后返回短期有效（默认 10 分钟）、 一次性的 resetToken，随后用它调用 /auth/password/reset 设置新密码。
-         *
          */
         post: operations["verifyPasswordResetCode"];
         delete?: never;
@@ -261,7 +260,6 @@ export interface paths {
         /**
          * 上传头像（multipart）
          * @description 以 multipart/form-data 上传头像图片（字段名 file）。服务端按内容嗅探类型 （仅支持 jpeg/png/webp），并限制大小（默认 2MB，可配置）。存储后返回更新后的 账户信息，其中 avatarUrl 指向受控访问路由 /account/avatars/{file}。
-         *
          */
         post: operations["uploadAvatar"];
         delete?: never;
@@ -441,7 +439,6 @@ export interface paths {
          * 上传 KYC 证件图片
          * @description multipart/form-data。按文件内容识别类型，仅支持 JPEG/PNG；默认上限 10MB
          *     （KYC_DOC_MAX_BYTES 可配）。文件只属于上传者，提交 /kyc 时校验归属与 side。
-         *
          */
         post: operations["uploadKycDocument"];
         delete?: never;
@@ -546,7 +543,6 @@ export interface paths {
          * 待同步到账户服务的认证等级（失败自动重试队列）
          * @description 审核通过后先持久化同步任务再立即尝试；失败按指数退避（默认 5s 起翻倍，
          *     上限 1h，KYC_SYNC_BASE_SECONDS / KYC_SYNC_MAX_SECONDS）自动重试直至成功。
-         *
          */
         get: operations["adminListKycLevelSync"];
         put?: never;
@@ -622,7 +618,6 @@ export interface paths {
          * @description Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
          *     amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
          *     未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
-         *
          */
         post: operations["createWithdrawal"];
         delete?: never;
@@ -641,7 +636,6 @@ export interface paths {
         /**
          * 可提现网络与 Gas 估算
          * @description 返回某资产可用的提现网络列表及每个网络的链上 Gas 估算。提现不收取平台 手续费，仅收取链上 Gas，因此前端据此向用户展示预计到账金额。
-         *
          */
         get: operations["listWithdrawNetworks"];
         put?: never;
@@ -681,7 +675,6 @@ export interface paths {
         /**
          * 撤销提现申请
          * @description 仅可撤销处于待人工审核（pending）状态的提现；撤销后冻结金额解冻退回可用余额。
-         *
          */
         post: operations["cancelWithdrawal"];
         delete?: never;
@@ -805,7 +798,6 @@ export interface paths {
          *     （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
          *     commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
          *     layer2 Layer 2, ecosystem 生态。「全部」由前端自行处理。
-         *
          */
         get: operations["listMarketCategories"];
         put?: never;
@@ -826,7 +818,6 @@ export interface paths {
         /**
          * 24 小时行情 ticker（单个或全部）
          * @description 传入 `symbol` 时返回该交易对的单个 Ticker 对象；不传 `symbol` 时返回全部 交易对的 Ticker 数组。响应为二者之一（见 oneOf）。价格、quoteVolume 按交易对 计价币精度，base 成交量按数量精度，均为十进制字符串。
-         *
          */
         get: operations["getTicker"];
         put?: never;
@@ -2268,7 +2259,6 @@ export interface paths {
          * 账户间划转（spot ⇄ futures），按 clientId 幂等，记入账本
          * @description 复用 /futures/transfer 内部实现（旧接口保持可用）。earn 不是划转账户：理财为按产品的持仓并计息，请使用申购/赎回接口。
          *     错误码：INSUFFICIENT_BALANCE、ACCOUNT_NOT_SUPPORTED（如 earn）、SAME_ACCOUNT、VALIDATION_ERROR、IDEMPOTENCY_CONFLICT（同 clientId 不同参数）。
-         *
          */
         post: operations["createAssetTransfer"];
         delete?: never;
@@ -2350,10 +2340,345 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 聊天室列表（公开；general + spot.{SYM} + futures.{SYM}，含在线人数与发言规则；功能开关 chat 关闭时 403 FEATURE_DISABLED）
+         * @description 实时推送：在现有 /ws 上订阅频道 `chat:{room}`（如 `chat:spot.BTCUSDT`）。
+         *     帧 data 为 `{type:"message", message: ChatMessage}` 或 `{type:"delete", id}`。
+         */
+        get: operations["listChatRooms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/rooms/{room}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room: string;
+            };
+            cookie?: never;
+        };
+        /** 历史消息（公开，新→旧；before=消息 id 游标，limit 默认 50，上限 historyLimitMax） */
+        get: operations["listChatMessages"];
+        put?: never;
+        /**
+         * 发言（需登录 + KYC ≥ minKycLevel；服务端拦截链接/联系方式/屏蔽词；频率与长度限制；clientId 幂等）
+         * @description 错误码：CHAT_KYC_REQUIRED/CHAT_MUTED(含 mutedUntil)/CHAT_BANNED/FEATURE_DISABLED (403)，
+         *     CHAT_RATE_LIMITED (429，含 retryAfterMs 与 Retry-After)，CHAT_TOO_LONG/CHAT_LINK_BLOCKED/CHAT_CONTACT_BLOCKED/CHAT_WORD_BLOCKED/VALIDATION_ERROR (400)，
+         *     CHAT_UNAVAILABLE (503)。相同 clientId 重放返回 200 与原消息。
+         */
+        post: operations["postChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/messages/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 举报消息（需登录；不可举报自己；同一人重复举报幂等） */
+        post: operations["reportChatMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 聊天配置（content 权限） */
+        get: operations["adminGetChatConfig"];
+        /** 部分更新聊天配置（未知 key 400；totpCode + reason，审计 chat_config_update） */
+        put: operations["adminUpdateChatConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 消息检索（room/uid/status/q/before/limit；含完整 uid 与举报数） */
+        get: operations["adminListChatMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除消息（WS 推送 delete；关联未处理举报置为 resolved；totpCode + reason） */
+        delete: operations["adminDeleteChatMessage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/sanctions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 禁言/封禁名单 */
+        get: operations["adminListChatSanctions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/mutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 禁言（durationMinutes 1-525600；totpCode + reason） */
+        post: operations["adminMuteChatUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/mutes/{uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 解除禁言（totpCode + reason） */
+        delete: operations["adminUnmuteChatUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/bans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 封禁发言（永久，直至解除；totpCode + reason） */
+        post: operations["adminBanChatUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/bans/{uid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 解除封禁（totpCode + reason） */
+        delete: operations["adminUnbanChatUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 举报列表（status=open|resolved|dismissed|all，默认 open） */
+        get: operations["adminListChatReports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/chat/reports/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 处理举报（action=resolve|dismiss；totpCode + reason） */
+        post: operations["adminResolveChatReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ChatRoom: {
+            /** @example spot.BTCUSDT */
+            id?: string;
+            /** @enum {string} */
+            kind?: "general" | "spot" | "futures";
+            symbol?: string;
+            online?: number;
+        };
+        ChatRules: {
+            maxLength?: number;
+            minIntervalMs?: number;
+            minKycLevel?: number;
+            blockLinks?: boolean;
+            blockContacts?: boolean;
+        };
+        ChatMessage: {
+            /** Format: int64 */
+            id?: number;
+            room?: string;
+            /** @description 脱敏昵称，如 用户***1234 */
+            sender?: string;
+            text?: string;
+            mine?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        ChatAdminMessage: components["schemas"]["ChatMessage"] & {
+            uid?: string;
+            clientId?: string;
+            /** @enum {string} */
+            status?: "visible" | "deleted";
+            deletedBy?: string | null;
+            deletedReason?: string | null;
+            reports?: number;
+        };
+        ChatConfig: {
+            /** @default 3000 */
+            minIntervalMs: number;
+            /** @default 200 */
+            maxLength: number;
+            /** @default 1 */
+            minKycLevel: number;
+            /** @default true */
+            blockLinks: boolean;
+            /** @default true */
+            blockContacts: boolean;
+            bannedWords?: string[];
+            /** @default 100 */
+            historyLimitMax: number;
+            /** @default true */
+            generalRoom: boolean;
+            /** @default true */
+            futuresRooms: boolean;
+            /**
+             * @description 达到该举报数自动隐藏（0=关闭）
+             * @default 0
+             */
+            reportsToHide: number;
+        };
+        ChatSanction: {
+            uid?: string;
+            /** Format: date-time */
+            mutedUntil?: string | null;
+            banned?: boolean;
+            reason?: string;
+            updatedBy?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        ChatReport: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            messageId?: number;
+            reporter?: string;
+            reason?: string;
+            /** @enum {string} */
+            status?: "open" | "resolved" | "dismissed";
+            handledBy?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            message?: components["schemas"]["ChatAdminMessage"];
+        };
+        ChatChange: {
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            after?: {
+                [key: string]: unknown;
+            } | null;
+        };
         LoanMarket: {
             /** @example USDT */
             asset?: string;
@@ -2540,8 +2865,7 @@ export interface components {
             /** @example 42 */
             total: number;
         };
-        /** @description 请求邮箱/短信验证码。register / reset_password 为公开接口；二选一提供 email 或 phone（手机号可用 E.164 的 "+8613800138000"，或 phone + countryCode 拨号区号组合）。为避免账号枚举，reset_password 对不存在的账号也返回 200。
-         *      */
+        /** @description 请求邮箱/短信验证码。register / reset_password 为公开接口；二选一提供 email 或 phone（手机号可用 E.164 的 "+8613800138000"，或 phone + countryCode 拨号区号组合）。为避免账号枚举，reset_password 对不存在的账号也返回 200。 */
         SendCodeRequest: {
             /**
              * @example register
@@ -2603,8 +2927,7 @@ export interface components {
             /** @example LB8DEMO */
             inviteCode?: string | null;
         };
-        /** @description 邮箱或手机号二选一 + 密码。密码正确后若需二次验证（已开启 TOTP、或新设备 登录触发邮箱/短信验证），返回 LoginChallenge 而非 AuthTokens。
-         *      */
+        /** @description 邮箱或手机号二选一 + 密码。密码正确后若需二次验证（已开启 TOTP、或新设备 登录触发邮箱/短信验证），返回 LoginChallenge 而非 AuthTokens。 */
         LoginRequest: {
             /**
              * Format: email
@@ -2907,10 +3230,11 @@ export interface components {
              * @enum {integer}
              */
             level?: 1 | 2;
-            /** @description 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
+            /**
+             * @description 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
              *     高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
              *     缺失时返回 400 DOCUMENT_REQUIRED。
-             *      */
+             */
             documents?: {
                 /** @example doc_1 */
                 front?: string;
@@ -3052,7 +3376,6 @@ export interface components {
             totpCode?: string | null;
             /**
              * @description 未开启 2FA 时必填：发到用户邮箱/手机的验证码（purpose=withdraw）。 与 totpCode 二选一，由服务端按账户状态校验。
-             *
              * @example 123456
              */
             code?: string | null;
@@ -3070,7 +3393,6 @@ export interface components {
             amount: string;
             /**
              * @description 链上 Gas 费（不含平台手续费——提现不收平台手续费）。等同于 gasFee，保留 以兼容既有字段。
-             *
              * @example 1.00000000
              */
             fee: string;
@@ -3158,8 +3480,7 @@ export interface components {
             /** @example cli-20261102-001 */
             clientOrderId?: string | null;
         };
-        /** @description 现货订单。所有价格/数量字段均为十进制字符串（非浮点），并按交易对精度格式化输出： price 按 pricePrecision、quantity/filledQuantity 按 quantityPrecision 补齐定长小数位。 示例按 BTCUSDT（pricePrecision=2, quantityPrecision=6）。
-         *      */
+        /** @description 现货订单。所有价格/数量字段均为十进制字符串（非浮点），并按交易对精度格式化输出： price 按 pricePrecision、quantity/filledQuantity 按 quantityPrecision 补齐定长小数位。 示例按 BTCUSDT（pricePrecision=2, quantityPrecision=6）。 */
         Order: {
             /** @example 1000000001 */
             orderId: string;
@@ -3195,8 +3516,7 @@ export interface components {
         PaginatedOrders: components["schemas"]["Pagination"] & {
             items: components["schemas"]["Order"][];
         };
-        /** @description 成交记录。price/quantity/fee 均为十进制字符串（非浮点）并按交易对精度格式化： price 按 pricePrecision、quantity 按 quantityPrecision；fee 按其计价资产精度 （base 计价按 quantityPrecision、quote 计价按 pricePrecision）。示例按 BTCUSDT。
-         *      */
+        /** @description 成交记录。price/quantity/fee 均为十进制字符串（非浮点）并按交易对精度格式化： price 按 pricePrecision、quantity 按 quantityPrecision；fee 按其计价资产精度 （base 计价按 quantityPrecision、quote 计价按 pricePrecision）。示例按 BTCUSDT。 */
         Trade: {
             /** @example 5000000001 */
             tradeId: string;
@@ -3267,10 +3587,12 @@ export interface components {
             id: string;
             /** @example 公链 */
             name: string;
-            /** @example [
+            /**
+             * @example [
              *       "BTCUSDT",
              *       "ETHUSDT"
-             *     ] */
+             *     ]
+             */
             symbols: string[];
         };
         Ticker: {
@@ -3692,10 +4014,12 @@ export interface components {
              * @enum {string}
              */
             audience: "all" | "new" | "existing";
-            /** @example [
+            /**
+             * @example [
              *       "HK",
              *       "SG"
-             *     ] */
+             *     ]
+             */
             regions?: string[];
             appMinVersion?: string;
             appMaxVersion?: string;
@@ -3807,14 +4131,16 @@ export interface components {
         FiatRates: {
             /** @example USDT */
             base?: string;
-            /** @example {
+            /**
+             * @example {
              *       "CNY": 7.12,
              *       "USD": 1,
              *       "EUR": 0.92,
              *       "HKD": 7.8,
              *       "JPY": 150.1,
              *       "KRW": 1380
-             *     } */
+             *     }
+             */
             rates?: {
                 [key: string]: number;
             };
@@ -3828,7 +4154,8 @@ export interface components {
             stale?: boolean;
         };
         AppFeatures: {
-            /** @example {
+            /**
+             * @example {
              *       "tokenizedStocks": false,
              *       "metals": false,
              *       "eventContracts": false,
@@ -3839,7 +4166,8 @@ export interface components {
              *       "p2p": false,
              *       "fiatOnRamp": false,
              *       "options": false
-             *     } */
+             *     }
+             */
             features?: {
                 [key: string]: boolean;
             };
@@ -3895,6 +4223,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "VALIDATION_ERROR",
+                 *       "message": "请求参数不合法",
+                 *       "requestId": "req_400demo"
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3904,6 +4239,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "AUTH_UNAUTHORIZED",
+                 *       "message": "请先登录",
+                 *       "requestId": "req_401demo"
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3913,6 +4255,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "NOT_FOUND",
+                 *       "message": "资源不存在",
+                 *       "requestId": "req_404demo"
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3938,11 +4287,13 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "purpose": "register",
                  *       "phone": "13800138000",
                  *       "countryCode": "86"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["SendCodeRequest"];
             };
         };
@@ -3953,6 +4304,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "sent": true,
+                     *       "channel": "sms",
+                     *       "ttlSeconds": 600
+                     *     }
+                     */
                     "application/json": components["schemas"]["SendCodeResponse"];
                 };
             };
@@ -3962,6 +4320,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_EMAIL",
+                     *       "message": "邮箱地址无效或无法接收邮件，请检查后重试"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -3971,6 +4335,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "RATE_LIMITED",
+                     *       "message": "验证码发送过于频繁，请稍后再试"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -3980,6 +4350,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "EMAIL_UNAVAILABLE",
+                     *       "message": "email delivery unavailable"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -3994,12 +4370,14 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "email": "trader@example.com",
                  *       "password": "Str0ng-Passw0rd!",
                  *       "code": "123456",
                  *       "inviteCode": "LB8DEMO"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["RegisterRequest"];
             };
         };
@@ -4010,6 +4388,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access",
+                     *       "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh",
+                     *       "tokenType": "Bearer",
+                     *       "expiresIn": 3600
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthTokens"];
                 };
             };
@@ -4020,6 +4406,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "AUTH_EMAIL_EXISTS",
+                     *       "message": "该邮箱已被注册",
+                     *       "requestId": "req_8c1f2a"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4034,17 +4427,18 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "email": "trader@example.com",
                  *       "password": "Str0ng-Passw0rd!",
                  *       "deviceId": "web-7f3a"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["LoginRequest"];
             };
         };
         responses: {
-            /** @description 密码正确。若无需二次验证返回 AuthTokens；若需要（已开启 TOTP 或新设备 触发邮箱/短信验证）返回 LoginChallenge。
-             *      */
+            /** @description 密码正确。若无需二次验证返回 AuthTokens；若需要（已开启 TOTP 或新设备 触发邮箱/短信验证）返回 LoginChallenge。 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4066,10 +4460,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "challengeToken": "3kZ9...challenge",
                  *       "code": "123456"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["LoginVerifyRequest"];
             };
         };
@@ -4096,9 +4492,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "challengeToken": "3kZ9...challenge"
-                 *     } */
+                 *     }
+                 */
                 "application/json": {
                     challengeToken: string;
                 };
@@ -4118,6 +4516,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_EMAIL",
+                     *       "message": "邮箱地址无效或无法接收邮件，请检查后重试"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4135,6 +4539,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "EMAIL_UNAVAILABLE",
+                     *       "message": "email delivery unavailable"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4149,11 +4559,13 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "phone": "13800138000",
                  *       "countryCode": "86",
                  *       "code": "123456"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["VerifyResetCodeRequest"];
             };
         };
@@ -4164,6 +4576,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "resetToken": "3kZ9...resetTok",
+                     *       "expiresIn": 600
+                     *     }
+                     */
                     "application/json": components["schemas"]["VerifyResetCodeResponse"];
                 };
             };
@@ -4179,10 +4597,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "resetToken": "3kZ9...resetTok",
                  *       "newPassword": "N3w-Passw0rd!"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["PasswordResetRequest"];
             };
         };
@@ -4206,9 +4626,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh"
-                 *     } */
+                 *     }
+                 */
                 "application/json": {
                     refreshToken: string;
                 };
@@ -4221,6 +4643,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newaccess",
+                     *       "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newrefresh",
+                     *       "tokenType": "Bearer",
+                     *       "expiresIn": 3600
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthTokens"];
                 };
             };
@@ -4261,6 +4691,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "secret": "JBSWY3DPEHPK3PXP",
+                     *       "otpauthUri": "otpauth://totp/Linbit:trader@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Linbit"
+                     *     }
+                     */
                     "application/json": components["schemas"]["TotpBinding"];
                 };
             };
@@ -4276,9 +4712,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "code": "123456"
-                 *     } */
+                 *     }
+                 */
                 "application/json": {
                     /** @description 6 位 TOTP 验证码 */
                     code: string;
@@ -4292,6 +4730,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "enabled": true,
+                     *       "method": "totp"
+                     *     }
+                     */
                     "application/json": components["schemas"]["TwoFactorStatus"];
                 };
             };
@@ -4308,9 +4752,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "code": "123456"
-                 *     } */
+                 *     }
+                 */
                 "application/json": {
                     code: string;
                 };
@@ -4323,6 +4769,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "enabled": false,
+                     *       "method": null
+                     *     }
+                     */
                     "application/json": components["schemas"]["TwoFactorStatus"];
                 };
             };
@@ -4345,6 +4797,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "uid": "80000001",
+                     *       "email": "trader@example.com",
+                     *       "nickname": "lb_Trader",
+                     *       "kycLevel": 1,
+                     *       "twoFactorEnabled": true,
+                     *       "createdAt": "2026-01-05T08:30:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Account"];
                 };
             };
@@ -4360,10 +4822,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "nickname": "lb_Trader",
                  *       "avatarUrl": "https://cdn.example.com/avatar/lb.png"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["UpdateProfileRequest"];
             };
         };
@@ -4417,6 +4881,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "FILE_TOO_LARGE",
+                     *       "message": "头像超过大小限制"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4426,6 +4896,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "UNSUPPORTED_MEDIA_TYPE",
+                     *       "message": "仅支持 JPEG/PNG/WEBP 图片"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4466,10 +4942,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "purpose": "address",
                  *       "channel": "sms"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["SendCodeAuthedRequest"];
             };
         };
@@ -4480,6 +4958,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "sent": true,
+                     *       "channel": "sms",
+                     *       "ttlSeconds": 600
+                     *     }
+                     */
                     "application/json": components["schemas"]["SendCodeResponse"];
                 };
             };
@@ -4489,6 +4974,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "INVALID_EMAIL",
+                     *       "message": "邮箱地址无效或无法接收邮件，请检查后重试"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4506,6 +4997,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "EMAIL_UNAVAILABLE",
+                     *       "message": "email delivery unavailable"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4584,10 +5081,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "enabled": true,
                  *       "code": "123456"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["SetWhitelistRequest"];
             };
         };
@@ -4635,13 +5134,15 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "asset": "USDT",
                  *       "network": "TRC20",
                  *       "address": "TXy1Z9DemoAddr000000000000000000000",
                  *       "label": "cold-wallet",
                  *       "code": "123456"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["CreateWithdrawAddressRequest"];
             };
         };
@@ -4663,6 +5164,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "ADDRESS_EXISTS",
+                     *       "message": "该地址已在地址簿中"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4704,14 +5211,16 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "firstName": "San",
                  *       "lastName": "Zhang",
                  *       "country": "SG",
                  *       "idType": "passport",
                  *       "idNumber": "E12345678",
                  *       "dateOfBirth": "1992-04-18"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["KycSubmission"];
             };
         };
@@ -4722,12 +5231,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "level": 1,
+                     *       "status": "pending",
+                     *       "submittedAt": "2026-11-02T10:00:00Z",
+                     *       "reason": null
+                     *     }
+                     */
                     "application/json": components["schemas"]["KycStatus"];
                 };
             };
-            /** @description 参数错误：VALIDATION_ERROR、UNDERAGE（默认未满 18 岁，KYC_MIN_AGE 可配）、
+            /**
+             * @description 参数错误：VALIDATION_ERROR、UNDERAGE（默认未满 18 岁，KYC_MIN_AGE 可配）、
              *     KYC_LEVEL_REQUIRED（高级认证需先通过基础认证）、DOCUMENT_NOT_FOUND、DOCUMENT_SIDE_MISMATCH
-             *      */
+             */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4759,6 +5277,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "level": 1,
+                     *       "status": "approved",
+                     *       "submittedAt": "2026-11-01T10:00:00Z",
+                     *       "reason": null
+                     *     }
+                     */
                     "application/json": components["schemas"]["KycStatus"];
                 };
             };
@@ -5002,6 +5528,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "asset": "USDT",
+                     *           "free": "10520.33000000",
+                     *           "locked": "250.00000000",
+                     *           "total": "10770.33000000",
+                     *           "valuationUsd": "10770.33"
+                     *         },
+                     *         {
+                     *           "asset": "BTC",
+                     *           "free": "0.52100000",
+                     *           "locked": "0.00000000",
+                     *           "total": "0.52100000",
+                     *           "valuationUsd": "39994.40"
+                     *         }
+                     *       ],
+                     *       "page": 1,
+                     *       "pageSize": 20,
+                     *       "total": 2
+                     *     }
+                     */
                     "application/json": components["schemas"]["PaginatedBalances"];
                 };
             };
@@ -5028,6 +5577,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "asset": "USDT",
+                     *       "network": "TRC20",
+                     *       "address": "TXy1Z9DemoAddr000000000000000000000",
+                     *       "memo": null,
+                     *       "minDeposit": "1.00000000"
+                     *     }
+                     */
                     "application/json": components["schemas"]["DepositAddress"];
                 };
             };
@@ -5056,6 +5614,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "dep_0001",
+                     *           "asset": "USDT",
+                     *           "network": "TRC20",
+                     *           "amount": "500.00000000",
+                     *           "txId": "9a7b...demo",
+                     *           "status": "completed",
+                     *           "confirmations": 20,
+                     *           "createdAt": "2026-10-30T12:00:00Z"
+                     *         }
+                     *       ],
+                     *       "page": 1,
+                     *       "pageSize": 20,
+                     *       "total": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["PaginatedDeposits"];
                 };
             };
@@ -5071,14 +5648,16 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "asset": "USDT",
                  *       "network": "TRC20",
                  *       "address": "TXy1Z9DemoAddr000000000000000000000",
                  *       "amount": "100.00000000",
                  *       "memo": null,
                  *       "totpCode": "123456"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["WithdrawRequest"];
             };
         };
@@ -5089,15 +5668,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "wd_0001",
+                     *       "asset": "USDT",
+                     *       "network": "TRC20",
+                     *       "address": "TXy1Z9DemoAddr000000000000000000000",
+                     *       "amount": "100.00000000",
+                     *       "fee": "1.00000000",
+                     *       "status": "pending",
+                     *       "createdAt": "2026-11-02T10:05:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Withdrawal"];
                 };
             };
-            /** @description 参数错误；MIN_WITHDRAW 表示低于最小提现数量或 amount 不大于 Gas；
+            /**
+             * @description 参数错误；MIN_WITHDRAW 表示低于最小提现数量或 amount 不大于 Gas；
              *     WITHDRAW_LIMIT_EXCEEDED 表示超过当前 KYC 等级的 24 小时提现额度
              *     （USDT 等值，默认 level1=50000、level2=200000，可配置）；非 USDT 资产按
              *     market-data 实时价格（{ASSET}USDT 最新成交价）折算，无可用价格时拒绝提现并返回
              *     PRICE_UNAVAILABLE。
-             *      */
+             */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5105,9 +5697,10 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
-            /** @description KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
+            /**
+             * @description KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
              *     但目标地址不在白名单内
-             *      */
+             */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5136,6 +5729,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "asset": "USDT",
+                     *       "networks": [
+                     *         {
+                     *           "network": "TRC20",
+                     *           "minWithdraw": "12.00000000",
+                     *           "gasFeeEstimate": "1.00000000",
+                     *           "gasFeeAsset": "USDT",
+                     *           "estimatedArrivalMinutes": 5
+                     *         },
+                     *         {
+                     *           "network": "ERC20",
+                     *           "minWithdraw": "12.00000000",
+                     *           "gasFeeEstimate": "6.50000000",
+                     *           "gasFeeAsset": "USDT",
+                     *           "estimatedArrivalMinutes": 10
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["WithdrawNetworkOptions"];
                 };
             };
@@ -5163,6 +5777,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "wd_0001",
+                     *           "asset": "USDT",
+                     *           "network": "TRC20",
+                     *           "address": "TXy1Z9DemoAddr000000000000000000000",
+                     *           "amount": "100.00000000",
+                     *           "fee": "1.00000000",
+                     *           "status": "completed",
+                     *           "createdAt": "2026-10-28T09:00:00Z"
+                     *         }
+                     *       ],
+                     *       "page": 1,
+                     *       "pageSize": 20,
+                     *       "total": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["PaginatedWithdrawals"];
                 };
             };
@@ -5211,7 +5844,8 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /** @example {
+                /**
+                 * @example {
                  *       "symbol": "BTCUSDT",
                  *       "side": "buy",
                  *       "type": "limit",
@@ -5219,7 +5853,8 @@ export interface operations {
                  *       "quantity": "0.010000",
                  *       "timeInForce": "GTC",
                  *       "clientOrderId": "cli-20261102-001"
-                 *     } */
+                 *     }
+                 */
                 "application/json": components["schemas"]["PlaceOrderRequest"];
             };
         };
@@ -5230,6 +5865,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "orderId": "1000000001",
+                     *       "clientOrderId": "cli-20261102-001",
+                     *       "symbol": "BTCUSDT",
+                     *       "side": "buy",
+                     *       "type": "limit",
+                     *       "price": "76768.40",
+                     *       "quantity": "0.010000",
+                     *       "filledQuantity": "0.000000",
+                     *       "status": "new",
+                     *       "timeInForce": "GTC",
+                     *       "createdAt": "2026-11-02T10:10:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Order"];
                 };
             };
@@ -5258,6 +5908,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "orderId": "1000000001",
+                     *       "clientOrderId": "cli-20261102-001",
+                     *       "symbol": "BTCUSDT",
+                     *       "side": "buy",
+                     *       "type": "limit",
+                     *       "price": "76768.40",
+                     *       "quantity": "0.010000",
+                     *       "filledQuantity": "0.000000",
+                     *       "status": "canceled",
+                     *       "timeInForce": "GTC",
+                     *       "createdAt": "2026-11-02T10:10:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Order"];
                 };
             };
@@ -5286,6 +5951,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "orderId": "1000000001",
+                     *           "clientOrderId": "cli-20261102-001",
+                     *           "symbol": "BTCUSDT",
+                     *           "side": "buy",
+                     *           "type": "limit",
+                     *           "price": "76768.40",
+                     *           "quantity": "0.010000",
+                     *           "filledQuantity": "0.000000",
+                     *           "status": "new",
+                     *           "timeInForce": "GTC",
+                     *           "createdAt": "2026-11-02T10:10:00Z"
+                     *         }
+                     *       ],
+                     *       "page": 1,
+                     *       "pageSize": 20,
+                     *       "total": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["PaginatedOrders"];
                 };
             };
@@ -5314,6 +6001,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "orderId": "0999999900",
+                     *           "clientOrderId": "cli-20261030-009",
+                     *           "symbol": "BTCUSDT",
+                     *           "side": "sell",
+                     *           "type": "limit",
+                     *           "price": "78000.00",
+                     *           "quantity": "0.020000",
+                     *           "filledQuantity": "0.020000",
+                     *           "status": "filled",
+                     *           "timeInForce": "GTC",
+                     *           "createdAt": "2026-10-30T11:00:00Z"
+                     *         }
+                     *       ],
+                     *       "page": 1,
+                     *       "pageSize": 20,
+                     *       "total": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["PaginatedOrders"];
                 };
             };
@@ -5341,6 +6050,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "tradeId": "5000000001",
+                     *           "orderId": "0999999900",
+                     *           "symbol": "BTCUSDT",
+                     *           "side": "sell",
+                     *           "price": "78000.00",
+                     *           "quantity": "0.020000",
+                     *           "fee": "1.56",
+                     *           "feeAsset": "USDT",
+                     *           "role": "maker",
+                     *           "createdAt": "2026-10-30T11:05:00Z"
+                     *         }
+                     *       ],
+                     *       "page": 1,
+                     *       "pageSize": 20,
+                     *       "total": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["PaginatedTrades"];
                 };
             };
@@ -5362,6 +6092,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example [
+                     *       {
+                     *         "symbol": "BTCUSDT",
+                     *         "base": "BTC",
+                     *         "quote": "USDT",
+                     *         "pricePrecision": 1,
+                     *         "quantityPrecision": 6,
+                     *         "minQuantity": "0.000010",
+                     *         "status": "trading"
+                     *       },
+                     *       {
+                     *         "symbol": "ETHUSDT",
+                     *         "base": "ETH",
+                     *         "quote": "USDT",
+                     *         "pricePrecision": 2,
+                     *         "quantityPrecision": 5,
+                     *         "minQuantity": "0.00100",
+                     *         "status": "trading",
+                     *         "tags": [
+                     *           "layer1"
+                     *         ]
+                     *       }
+                     *     ]
+                     */
                     "application/json": components["schemas"]["Symbol"][];
                 };
             };
@@ -5382,6 +6137,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example [
+                     *       {
+                     *         "id": "layer1",
+                     *         "name": "公链",
+                     *         "symbols": [
+                     *           "BNBUSDT",
+                     *           "BTCUSDT",
+                     *           "ETHUSDT",
+                     *           "SOLUSDT",
+                     *           "TRXUSDT"
+                     *         ]
+                     *       },
+                     *       {
+                     *         "id": "metals",
+                     *         "name": "贵金属",
+                     *         "symbols": []
+                     *       }
+                     *     ]
+                     */
                     "application/json": components["schemas"]["MarketCategory"][];
                 };
             };
@@ -5402,8 +6177,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 行情数据。带 `symbol` 为单个 Ticker 对象；不带为 Ticker 数组。
-             *      */
+            /** @description 行情数据。带 `symbol` 为单个 Ticker 对象；不带为 Ticker 数组。 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5433,6 +6207,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "symbol": "BTCUSDT",
+                     *       "lastUpdateId": 123456789,
+                     *       "bids": [
+                     *         [
+                     *           "76768.40",
+                     *           "0.51230"
+                     *         ],
+                     *         [
+                     *           "76768.30",
+                     *           "1.20100"
+                     *         ]
+                     *       ],
+                     *       "asks": [
+                     *         [
+                     *           "76768.50",
+                     *           "0.33200"
+                     *         ],
+                     *         [
+                     *           "76768.60",
+                     *           "0.89500"
+                     *         ]
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["Depth"];
                 };
             };
@@ -5459,6 +6259,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example [
+                     *       {
+                     *         "time": 1762070400,
+                     *         "open": "76500.00",
+                     *         "high": "76820.00",
+                     *         "low": "76410.00",
+                     *         "close": "76768.40",
+                     *         "volume": "123.45"
+                     *       },
+                     *       {
+                     *         "time": 1762071300,
+                     *         "open": "76768.40",
+                     *         "high": "76900.00",
+                     *         "low": "76700.00",
+                     *         "close": "76771.90",
+                     *         "volume": "98.76"
+                     *       }
+                     *     ]
+                     */
                     "application/json": components["schemas"]["Kline"][];
                 };
             };
@@ -5935,10 +6755,12 @@ export interface operations {
                      * @enum {string}
                      */
                     market?: "spot" | "futures";
-                    /** @example [
+                    /**
+                     * @example [
                      *       "BTCUSDT",
                      *       "ETHUSDT"
-                     *     ] */
+                     *     ]
+                     */
                     symbols: string[];
                 };
             };
@@ -6203,9 +7025,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminWriteMeta"] & {
-                    /** @example {
+                    /**
+                     * @example {
                      *       "chat": true
-                     *     } */
+                     *     }
+                     */
                     features: {
                         [key: string]: boolean;
                     };
@@ -6235,6 +7059,452 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+        };
+    };
+    listChatRooms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        rooms?: components["schemas"]["ChatRoom"][];
+                        rules?: components["schemas"]["ChatRules"];
+                    };
+                };
+            };
+            /** @description FEATURE_DISABLED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listChatMessages: {
+        parameters: {
+            query?: {
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                room: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatMessage"][];
+                        hasMore?: boolean;
+                    };
+                };
+            };
+            /** @description FEATURE_DISABLED */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    postChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    clientId: string;
+                    text: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 幂等重放 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessage"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description CHAT_RATE_LIMITED */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reportChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminGetChatConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConfig"];
+                };
+            };
+        };
+    };
+    adminUpdateChatConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & components["schemas"]["ChatConfig"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminListChatMessages: {
+        parameters: {
+            query?: {
+                room?: string;
+                uid?: string;
+                status?: "visible" | "deleted";
+                q?: string;
+                before?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatAdminMessage"][];
+                        hasMore?: boolean;
+                    };
+                };
+            };
+        };
+    };
+    adminDeleteChatMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminListChatSanctions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatSanction"][];
+                    };
+                };
+            };
+        };
+    };
+    adminMuteChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    uid: string;
+                    durationMinutes: number;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUnmuteChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+        };
+    };
+    adminBanChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    uid: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUnbanChatUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+        };
+    };
+    adminListChatReports: {
+        parameters: {
+            query?: {
+                status?: "open" | "resolved" | "dismissed" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ChatReport"][];
+                    };
+                };
+            };
+        };
+    };
+    adminResolveChatReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @enum {string} */
+                    action: "resolve" | "dismiss";
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatChange"];
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
 }
