@@ -293,3 +293,5 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 .stores{height:56px;box-sizing:border-box;padding:0 10px}
 .stores span svg{display:block}
 .hotf{color:#ff7a1a;vertical-align:-1px}
+
+.rh h1{font-size:48px;line-height:1.25;margin:12px 0 18px}.rcp{display:inline-flex;gap:8px;align-items:center;color:#cfd2d2;font-size:14px}.rcp b{font-size:20px}.rh .pill{margin-top:28px;display:flex}.rlogin{min-width:180px;height:56px;justify-content:center;align-items:center;font-weight:600;color:#fff;background:linear-gradient(180deg,#2a2b2b,#141515);border:1px solid rgba(255,255,255,.18);border-radius:999px}.rlogin:hover{border-color:rgba(255,255,255,.35)}
