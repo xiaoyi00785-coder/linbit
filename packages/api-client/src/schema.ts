@@ -2822,7 +2822,7 @@ export interface paths {
         /** 我的合约委托 */
         get: operations["futuresOrders"];
         put?: never;
-        /** 合约下单（可附带止盈止损） */
+        /** 合约下单（可附带止盈止损；带 triggerPrice 时创建计划委托，响应为 order=FuturesAlgoOrder） */
         post: operations["futuresPlaceOrder"];
         delete?: never;
         options?: never;
@@ -2838,13 +2838,15 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /** 改单（限价单改价/改量；改价或加量失去时间优先级，减量保留） */
+        put: operations["futuresAmendOrder"];
         post?: never;
         /** 撤单 */
         delete: operations["futuresCancelOrder"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** 改单（同 PUT） */
+        patch: operations["futuresAmendOrderPatch"];
         trace?: never;
     };
     "/futures/positions": {
@@ -2859,6 +2861,111 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/position-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询持仓模式（账户级） */
+        get: operations["futuresGetPositionMode"];
+        put?: never;
+        /** 切换单向/双向持仓（需无持仓、无挂单、无计划/止盈止损委托） */
+        post: operations["futuresSetPositionMode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/positions/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 历史仓位（已平仓/强平/ADL） */
+        get: operations["futuresPositionHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/tpsl-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询止盈止损委托（可部分仓位，单次可同时建 TP 与 SL） */
+        get: operations["futuresListTpslOrders"];
+        put?: never;
+        /** 创建止盈止损委托（可部分仓位，单次可同时建 TP 与 SL） */
+        post: operations["futuresCreateTpslOrders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/tpsl-orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销止盈止损委托（可部分仓位，单次可同时建 TP 与 SL） */
+        delete: operations["futuresCancelTpslOrders"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/plan-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询计划委托（条件单，触发后以限价/市价下单） */
+        get: operations["futuresListPlanOrders"];
+        put?: never;
+        /** 创建计划委托（条件单，触发后以限价/市价下单） */
+        post: operations["futuresCreatePlanOrders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/plan-orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销计划委托（条件单，触发后以限价/市价下单） */
+        delete: operations["futuresCancelPlanOrders"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6147,6 +6254,8 @@ export interface components {
             tpPrice?: string | null;
             slPrice?: string | null;
             adlRank?: number;
+            /** @enum {string} */
+            positionSide?: "BOTH" | "LONG" | "SHORT";
         };
         FuturesAccount: {
             /** @example USDT */
@@ -6178,8 +6287,11 @@ export interface components {
             side: "buy" | "sell";
             /** @enum {string} */
             type: "limit" | "market";
-            /** @enum {string} */
-            timeInForce?: "GTC" | "IOC";
+            /**
+             * @description POST_ONLY（GTX 为别名）= 只做 Maker，会立即成交则整单拒绝
+             * @enum {string}
+             */
+            timeInForce?: "GTC" | "IOC" | "POST_ONLY" | "GTX";
             /** @description 限价单必填 */
             price?: string;
             /** @description 十进制字符串 */
@@ -6187,6 +6299,106 @@ export interface components {
             reduceOnly?: boolean;
             tpPrice?: string;
             slPrice?: string;
+            /**
+             * @description 双向模式必填 LONG/SHORT；单向模式可省略或 BOTH
+             * @enum {string}
+             */
+            positionSide?: "BOTH" | "LONG" | "SHORT";
+            /** @description 填写即为计划委托（POST /futures/orders 或 /futures/plan-orders） */
+            triggerPrice?: string;
+            /**
+             * @description 默认 LAST（后台可配置）
+             * @enum {string}
+             */
+            triggerPriceType?: "LAST" | "MARK";
+        };
+        /** @description 至少填一项 */
+        FuturesAmendOrderRequest: {
+            price?: string;
+            /** @description 新总数量，必须大于已成交数量 */
+            qty?: string;
+        };
+        FuturesPositionMode: {
+            /** @enum {string} */
+            positionMode: "ONE_WAY" | "HEDGE";
+        };
+        FuturesTpslOrderRequest: {
+            symbol: string;
+            /** @enum {string} */
+            positionSide?: "BOTH" | "LONG" | "SHORT";
+            /** @description 不填 = 整个仓位 */
+            qty?: string;
+            tpTriggerPrice?: string;
+            /** @description 不填 = 触发后市价 */
+            tpPrice?: string;
+            /**
+             * @description 默认 MARK（后台可配置）
+             * @enum {string}
+             */
+            tpTriggerPriceType?: "LAST" | "MARK";
+            slTriggerPrice?: string;
+            slPrice?: string;
+            /** @enum {string} */
+            slTriggerPriceType?: "LAST" | "MARK";
+        };
+        FuturesAlgoOrder: {
+            /** Format: int64 */
+            algoId?: number;
+            symbol?: string;
+            /** @enum {string} */
+            algoType?: "tp" | "sl" | "plan";
+            side?: string;
+            positionSide?: string;
+            /** @enum {string} */
+            orderType?: "limit" | "market";
+            price?: string | null;
+            /** @description 空 = 整仓 */
+            qty?: string | null;
+            triggerPrice?: string;
+            /** @enum {string} */
+            triggerPriceType?: "LAST" | "MARK";
+            /** @enum {string} */
+            triggerDirection?: "up" | "down";
+            reduceOnly?: boolean;
+            timeInForce?: string;
+            /** @enum {string} */
+            status?: "active" | "triggered" | "canceled" | "failed";
+            /**
+             * Format: int64
+             * @description 触发后生成的委托 ID
+             */
+            orderId?: number | null;
+            failReason?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            /** Format: date-time */
+            triggeredAt?: string | null;
+        };
+        FuturesPositionHistory: {
+            /** Format: int64 */
+            id?: number;
+            symbol?: string;
+            positionSide?: string;
+            /** @enum {string} */
+            side?: "long" | "short";
+            marginMode?: string;
+            leverage?: number;
+            entryPrice?: string;
+            closePrice?: string;
+            maxQty?: string;
+            closedQty?: string;
+            realizedPnl?: string;
+            fee?: string;
+            fundingFee?: string;
+            netPnl?: string;
+            /** @enum {string} */
+            status?: "closed" | "liquidated" | "adl";
+            /** Format: date-time */
+            openTime?: string;
+            /** Format: date-time */
+            closeTime?: string;
         };
         FuturesOrder: {
             /** Format: int64 */
@@ -6216,6 +6428,8 @@ export interface components {
             tpPrice?: string | null;
             slPrice?: string | null;
             cancelReason?: string;
+            positionSide?: string;
+            amendCount?: number;
             /** @description 十进制字符串 */
             avgPrice?: string;
             /** Format: date-time */
@@ -10895,7 +11109,7 @@ export interface operations {
                         marginMode?: "cross" | "isolated";
                         maxLeverage?: number;
                         /** @enum {string} */
-                        positionMode?: "one_way";
+                        positionMode?: "one_way" | "hedge";
                     };
                 };
             };
@@ -10942,7 +11156,7 @@ export interface operations {
                         marginMode?: "cross" | "isolated";
                         maxLeverage?: number;
                         /** @enum {string} */
-                        positionMode?: "one_way";
+                        positionMode?: "one_way" | "hedge";
                     };
                 };
             };
@@ -10974,6 +11188,7 @@ export interface operations {
                 symbol?: string;
                 /** @description open = 仅当前委托 */
                 status?: "open";
+                positionSide?: "BOTH" | "LONG" | "SHORT";
                 limit?: number;
             };
             header?: never;
@@ -11021,7 +11236,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description VALIDATION_ERROR / UNKNOWN_SYMBOL / INVALID_PRICE / INVALID_QTY / INVALID_TPSL / INSUFFICIENT_MARGIN / POSITION_LIMIT / REDUCE_ONLY_REJECTED / CONTRACT_HALTED */
+            /** @description VALIDATION_ERROR / UNKNOWN_SYMBOL / INVALID_PRICE / INVALID_QTY / INVALID_TPSL / INSUFFICIENT_MARGIN / POSITION_LIMIT / REDUCE_ONLY_REJECTED / CONTRACT_HALTED / POST_ONLY_REJECTED / POST_ONLY_DISABLED / POSITION_SIDE_REQUIRED / POSITION_SIDE_MISMATCH / ALGO_LIMIT / TRIGGER_DEVIATION */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -11033,6 +11248,63 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description MARK_PRICE_UNAVAILABLE（指数价不可用，拒绝开仓） */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresAmendOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesAmendOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK（PATCH 同义） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesOrder"];
+                        trades?: components["schemas"]["FuturesPublicTrade"][];
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / NO_CHANGE / AMEND_LIMIT / POST_ONLY_REJECTED / INSUFFICIENT_MARGIN / POSITION_LIMIT / INVALID_TPSL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description ORDER_NOT_OPEN / NOT_AMENDABLE */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11085,6 +11357,45 @@ export interface operations {
             };
         };
     };
+    futuresAmendOrderPatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesAmendOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesOrder"];
+                        trades?: components["schemas"]["FuturesPublicTrade"][];
+                    };
+                };
+            };
+            /** @description 同 PUT */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     futuresPositions: {
         parameters: {
             query?: never;
@@ -11108,9 +11419,330 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    futuresSetTpsl: {
+    futuresGetPositionMode: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FuturesPositionMode"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresSetPositionMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesPositionMode"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FuturesPositionMode"];
+                };
+            };
+            /** @description VALIDATION_ERROR / HEDGE_MODE_DISABLED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description HAS_POSITION / HAS_OPEN_ORDERS / COPY_TRADER_ONE_WAY */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresPositionHistory: {
+        parameters: {
+            query?: {
+                symbol?: string;
+                /** @description 平仓时间下限（毫秒） */
+                startTime?: number;
+                endTime?: number;
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        positions?: components["schemas"]["FuturesPositionHistory"][];
+                        /** Format: int64 */
+                        nextCursor?: number | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresListTpslOrders: {
+        parameters: {
+            query?: {
+                symbol?: string;
+                /** @description active（默认）= 待触发；history = 已触发/已撤/失败 */
+                status?: "active" | "history";
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["FuturesAlgoOrder"][];
+                        /** Format: int64 */
+                        nextCursor?: number | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresCreateTpslOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesTpslOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["FuturesAlgoOrder"][];
+                        order?: components["schemas"]["FuturesAlgoOrder"];
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_TPSL / INVALID_QTY / ALGO_LIMIT / POSITION_SIDE_REQUIRED / NO_POSITION */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresCancelTpslOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesAlgoOrder"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description ALGO_NOT_ACTIVE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresListPlanOrders: {
+        parameters: {
+            query?: {
+                symbol?: string;
+                /** @description active（默认）= 待触发；history = 已触发/已撤/失败 */
+                status?: "active" | "history";
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["FuturesAlgoOrder"][];
+                        /** Format: int64 */
+                        nextCursor?: number | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresCreatePlanOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FuturesPlaceOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        orders?: components["schemas"]["FuturesAlgoOrder"][];
+                        order?: components["schemas"]["FuturesAlgoOrder"];
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_PRICE / INVALID_QTY / ALGO_LIMIT / TRIGGER_DEVIATION / POST_ONLY_DISABLED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    futuresCancelPlanOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        order?: components["schemas"]["FuturesAlgoOrder"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description ALGO_NOT_ACTIVE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresSetTpsl: {
+        parameters: {
+            query?: {
+                /** @description 双向持仓模式下必填（也可放在请求体） */
+                positionSide?: "BOTH" | "LONG" | "SHORT";
+            };
             header?: never;
             path: {
                 symbol: unknown;
@@ -11122,6 +11754,8 @@ export interface operations {
                 "application/json": {
                     tpPrice?: string | null;
                     slPrice?: string | null;
+                    /** @enum {string} */
+                    positionSide?: "BOTH" | "LONG" | "SHORT";
                 };
             };
         };
@@ -11160,7 +11794,10 @@ export interface operations {
     };
     futuresAdjustMargin: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 双向持仓模式下必填（也可放在请求体） */
+                positionSide?: "BOTH" | "LONG" | "SHORT";
+            };
             header?: never;
             path: {
                 symbol: unknown;
@@ -11210,7 +11847,10 @@ export interface operations {
     };
     futuresClosePosition: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 双向持仓模式下必填（也可放在请求体） */
+                positionSide?: "BOTH" | "LONG" | "SHORT";
+            };
             header?: never;
             path: {
                 symbol: unknown;

@@ -182,11 +182,14 @@ func (s *Server) settleFunding(ctx context.Context, sym string, rate, mark decim
 			if pay.IsZero() {
 				continue
 			}
+			p.Funding = p.Funding.Sub(pay) // lifecycle total for position history (>0 received)
 			if p.Mode == "isolated" {
 				p.Iso = p.Iso.Sub(pay)
-				if err := savePosition(ctx, tx, p); err != nil {
-					return err
-				}
+			}
+			if err := savePosition(ctx, tx, p); err != nil {
+				return err
+			}
+			if p.Mode == "isolated" {
 				if err := addBill(ctx, tx, p.UserID, sym, "funding", pay.Neg(), ref); err != nil {
 					return err
 				}

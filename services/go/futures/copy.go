@@ -468,7 +468,7 @@ func (s *Server) finishStop(ctx context.Context, f Follow) error {
 		return err
 	}
 	for _, p := range ps {
-		o, _, err := s.closeLocked(ctx, acct, p.Symbol, "copy_stop")
+		o, _, err := s.closeLocked(ctx, acct, p.Symbol, p.Side, "copy_stop")
 		s.logCopy(ctx, f.ID, 0, p.Symbol, "stop", o, p.Qty.Abs(), err)
 	}
 	if ps, err = openPositions(ctx, s.db, acct); err != nil || len(ps) > 0 {
@@ -643,7 +643,7 @@ func (s *Server) mirror(ctx context.Context, f Follow, e copyEvent) {
 		return
 	}
 	acct := copyAcct(f.ID)
-	p, _, err := loadPosition(ctx, s.db, acct, c.Symbol, false)
+	p, _, err := loadPosition(ctx, s.db, acct, c.Symbol, "BOTH", false)
 	if err != nil {
 		return
 	}
@@ -688,7 +688,7 @@ func (s *Server) mirror(ctx context.Context, f Follow, e copyEvent) {
 	if err != nil {
 		return
 	}
-	if p2, _, _ := loadPosition(ctx, s.db, acct, c.Symbol, false); p2.Qty.Sign() != 0 && p2.Qty.Sign() != e.New.Sign() {
+	if p2, _, _ := loadPosition(ctx, s.db, acct, c.Symbol, "BOTH", false); p2.Qty.Sign() != 0 && p2.Qty.Sign() != e.New.Sign() {
 		s.skipCopy(ctx, f.ID, e.ID, c.Symbol, "open", side, "OPPOSITE_POSITION")
 		return
 	}

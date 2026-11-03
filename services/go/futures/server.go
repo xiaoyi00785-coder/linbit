@@ -46,6 +46,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /futures/orders", s.user(s.hPlace))
 	mux.HandleFunc("GET /futures/orders", s.user(s.hOrders))
 	mux.HandleFunc("DELETE /futures/orders/{id}", s.user(s.hCancel))
+	mux.HandleFunc("PUT /futures/orders/{id}", s.user(s.hAmend))
+	mux.HandleFunc("PATCH /futures/orders/{id}", s.user(s.hAmend))
+	mux.HandleFunc("GET /futures/position-mode", s.user(s.hGetPositionMode))
+	mux.HandleFunc("POST /futures/position-mode", s.user(s.hSetPositionMode))
+	mux.HandleFunc("GET /futures/positions/history", s.user(s.hPositionHistory))
+	mux.HandleFunc("POST /futures/tpsl-orders", s.user(s.hCreateTPSL))
+	mux.HandleFunc("GET /futures/tpsl-orders", s.user(s.listAlgo("tp", "sl")))
+	mux.HandleFunc("DELETE /futures/tpsl-orders/{id}", s.user(s.cancelAlgo("tp", "sl")))
+	mux.HandleFunc("POST /futures/plan-orders", s.user(s.hCreatePlan))
+	mux.HandleFunc("GET /futures/plan-orders", s.user(s.listAlgo("plan")))
+	mux.HandleFunc("DELETE /futures/plan-orders/{id}", s.user(s.cancelAlgo("plan")))
+	s.orderConfigRoutes(mux)
 	mux.HandleFunc("GET /futures/positions", s.user(s.hPositions))
 	mux.HandleFunc("POST /futures/positions/{symbol}/tpsl", s.user(s.hTPSL))
 	mux.HandleFunc("POST /futures/positions/{symbol}/margin", s.user(s.hMargin))
@@ -204,7 +216,12 @@ func (s *Server) hGetLeverage(w http.ResponseWriter, r *http.Request, uid string
 		writeErr(w, err)
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "leverage": lev, "marginMode": mode, "maxLeverage": c.MaxLeverage, "positionMode": "one_way"})
+	pm, err := positionMode(r.Context(), s.db, uid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "leverage": lev, "marginMode": mode, "maxLeverage": c.MaxLeverage, "positionMode": strings.ToLower(pm)})
 }
 
 func (s *Server) hSetLeverage(w http.ResponseWriter, r *http.Request, uid string) {
@@ -227,6 +244,10 @@ func (s *Server) hSetLeverage(w http.ResponseWriter, r *http.Request, uid string
 func (s *Server) hPlace(w http.ResponseWriter, r *http.Request, uid string) {
 	var req PlaceReq
 	if !decode(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.TriggerPrice) != "" { // conditional (plan) order
+		s.hPlanResult(w, r, uid, req)
 		return
 	}
 	o, trades, err := s.PlaceOrder(r.Context(), uid, req)
@@ -261,6 +282,10 @@ func (s *Server) hOrders(w http.ResponseWriter, r *http.Request, uid string) {
 		args = append(args, strings.ToUpper(sym))
 		q += ` AND symbol=$` + strconv.Itoa(len(args))
 	}
+	if ps := strings.ToUpper(r.URL.Query().Get("positionSide")); ps != "" {
+		args = append(args, ps)
+		q += ` AND position_side=$` + strconv.Itoa(len(args))
+	}
 	if r.URL.Query().Get("status") == "open" {
 		q += ` AND status IN ('new','partially_filled')`
 	}
@@ -286,8 +311,9 @@ func (s *Server) hOrders(w http.ResponseWriter, r *http.Request, uid string) {
 
 func (s *Server) hTPSL(w http.ResponseWriter, r *http.Request, uid string) {
 	var req struct {
-		TP *string `json:"tpPrice"`
-		SL *string `json:"slPrice"`
+		TP      *string `json:"tpPrice"`
+		SL      *string `json:"slPrice"`
+		PosSide string  `json:"positionSide"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -309,7 +335,7 @@ func (s *Server) hTPSL(w http.ResponseWriter, r *http.Request, uid string) {
 		}
 		clearSL = !sl.Valid
 	}
-	if err := s.SetTPSL(r.Context(), uid, r.PathValue("symbol"), tp, sl, clearTP, clearSL); err != nil {
+	if err := s.SetTPSL(r.Context(), uid, r.PathValue("symbol"), sideParam(r, req.PosSide), tp, sl, clearTP, clearSL); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -318,7 +344,8 @@ func (s *Server) hTPSL(w http.ResponseWriter, r *http.Request, uid string) {
 
 func (s *Server) hMargin(w http.ResponseWriter, r *http.Request, uid string) {
 	var req struct {
-		Amount string `json:"amount"` // >0 add, <0 remove
+		Amount  string `json:"amount"` // >0 add, <0 remove
+		PosSide string `json:"positionSide"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -328,7 +355,7 @@ func (s *Server) hMargin(w http.ResponseWriter, r *http.Request, uid string) {
 		writeErr(w, bad("INVALID_AMOUNT", "金额不合法"))
 		return
 	}
-	if err := s.AdjustMargin(r.Context(), uid, r.PathValue("symbol"), d); err != nil {
+	if err := s.AdjustMargin(r.Context(), uid, r.PathValue("symbol"), sideParam(r, req.PosSide), d); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -336,7 +363,7 @@ func (s *Server) hMargin(w http.ResponseWriter, r *http.Request, uid string) {
 }
 
 func (s *Server) hClose(w http.ResponseWriter, r *http.Request, uid string) {
-	o, trades, err := s.ClosePosition(r.Context(), uid, r.PathValue("symbol"), "user")
+	o, trades, err := s.ClosePosition(r.Context(), uid, r.PathValue("symbol"), sideParam(r, ""), "user")
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -510,4 +537,12 @@ func (s *Server) hDevAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	fee, _, _ := readAccount(r.Context(), s.db, feeUser)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"totalEquity": money(total), "netTransfers": money(net), "diff": total.Sub(net).Round(8), "feeBalance": money(fee), "accounts": len(users)})
+}
+
+// sideParam returns positionSide from the body value or the ?positionSide= query.
+func sideParam(r *http.Request, body string) string {
+	if body != "" {
+		return body
+	}
+	return r.URL.Query().Get("positionSide")
 }
