@@ -135,6 +135,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/wallet", proxy: walletProxy},
 			{prefix: "/kyc", proxy: kycProxy},
 			{prefix: "/futures", proxy: futuresProxy},
+			{prefix: "/event", proxy: futuresProxy}, // event contracts (futures service)
 			{prefix: "/strategy", proxy: strategyProxy},
 			{prefix: "/partner", proxy: growthProxy},
 			{prefix: "/referral", proxy: growthProxy},
@@ -184,10 +185,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
 			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
-			{method: http.MethodGet, path: "/home/hot"},    // home hot list (read-only)
-			{method: "", path: "/ws"},                      // public market WebSocket
-			{method: http.MethodGet, path: "/chat/rooms"},  // chat: anyone can read
-			{method: http.MethodGet, path: "/chat/rooms/"}, // chat history (prefix); posting needs auth
+			{method: http.MethodGet, path: "/home/hot"},       // home hot list (read-only)
+			{method: "", path: "/ws", optionalAuth: true},     // market WebSocket; a token unlocks private channels (event:orders)
+			{method: http.MethodGet, path: "/event/products"}, // event contract products (public)
+			{method: http.MethodGet, path: "/chat/rooms"},     // chat: anyone can read
+			{method: http.MethodGet, path: "/chat/rooms/"},    // chat history (prefix); posting needs auth
 		},
 	}, nil
 }
@@ -266,7 +268,20 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 	} else if g.optionalAuth(r) {
 		// Public route that personalises when a valid token is present; a
 		// missing or invalid token just means anonymous.
-		if token := bearer(r); token != "" {
+		token := bearer(r)
+		if r.URL.Path == "/ws" {
+			// Browsers cannot set headers on a WebSocket handshake: accept
+			// ?token= and strip it before proxying.
+			q := r.URL.Query()
+			if token == "" {
+				token = q.Get("token")
+			}
+			if q.Has("token") {
+				q.Del("token")
+				r.URL.RawQuery = q.Encode()
+			}
+		}
+		if token != "" {
 			if claims, err := common.ParseAccessToken(g.cfg.JWTSecret, token); err == nil {
 				r.Header.Set("X-User-Id", claims.Subject)
 			}

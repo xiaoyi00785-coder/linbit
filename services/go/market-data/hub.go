@@ -63,6 +63,7 @@ type wsClient struct {
 	conn *wsConn
 	send chan outFrame
 	subs map[string]struct{}
+	uid  string // set by the gateway (X-User-Id) when the handshake carried a valid token
 
 	closeOnce sync.Once
 	closed    chan struct{}
@@ -107,10 +108,44 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		conn:   conn,
 		send:   make(chan outFrame, clientSendBuffer),
 		subs:   map[string]struct{}{},
+		uid:    r.Header.Get("X-User-Id"),
 		closed: make(chan struct{}),
 	}
 	go c.writePump()
 	c.readPump()
+}
+
+// userChannels are private channels: the subscription is keyed by the
+// connection's user so a frame reaches only that user's sockets.
+var userChannels = map[string]bool{"event:orders": true}
+
+func userKey(channel, uid string) string { return channel + "#" + uid }
+
+// subKey maps a client-visible channel to the hub key.
+func (c *wsClient) subKey(channel string) string {
+	if userChannels[channel] {
+		return userKey(channel, c.uid)
+	}
+	return channel
+}
+
+// PushUser delivers one frame on a private channel to every socket of uid.
+func (h *Hub) PushUser(uid, channel string, data any) int {
+	b, err := json.Marshal(wsData{Channel: channel, TS: h.now().UnixMilli(), Data: data})
+	if err != nil {
+		return 0
+	}
+	h.mu.RLock()
+	subs := h.channels[userKey(channel, uid)]
+	clients := make([]*wsClient, 0, len(subs))
+	for c := range subs {
+		clients = append(clients, c)
+	}
+	h.mu.RUnlock()
+	for _, c := range clients {
+		c.enqueue(outFrame{opcode: opText, data: b})
+	}
+	return len(clients)
 }
 
 // Broadcast implements Broadcaster: it serializes one data frame and delivers it
@@ -253,8 +288,8 @@ func (c *wsClient) handle(payload []byte) {
 		}
 	case "unsubscribe":
 		for _, ch := range req.Args {
-			c.hub.unsubscribe(c, ch)
-			delete(c.subs, ch)
+			c.hub.unsubscribe(c, c.subKey(ch))
+			delete(c.subs, c.subKey(ch))
 			c.sendJSON(wsReceipt{ID: req.ID, Event: "unsubscribed", Channel: ch})
 		}
 	case "auth":
@@ -271,8 +306,8 @@ func (c *wsClient) doSubscribe(id, channel string) {
 		c.sendJSON(wsError{ID: id, Event: "error", Code: code, Message: msg})
 		return
 	}
-	c.hub.subscribe(c, channel)
-	c.subs[channel] = struct{}{}
+	c.hub.subscribe(c, c.subKey(channel))
+	c.subs[c.subKey(channel)] = struct{}{}
 	c.sendJSON(wsReceipt{ID: id, Event: "subscribed", Channel: channel})
 	c.sendInitial(channel)
 }
@@ -295,6 +330,13 @@ func (c *wsClient) validateChannel(channel string) (code, msg string) {
 			return "SUB_INVALID", "无效的聊天室频道: " + channel
 		}
 		return c.hub.chatValidate(parts[1])
+	case "event":
+		if channel != "event:orders" {
+			return "SUB_INVALID", "未知频道: " + channel
+		}
+		if c.uid == "" {
+			return "AUTH_REQUIRED", "私有频道需登录：连接 /ws 时携带 Authorization: Bearer 或 ?token="
+		}
 	case "orders", "balances":
 		return "SUB_INVALID", "用户频道由账户/订单服务提供"
 	default:

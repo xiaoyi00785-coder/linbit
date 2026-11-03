@@ -51,6 +51,7 @@ func (s *Server) Routes() http.Handler {
 	s.copyRoutes(mux)
 	s.tradeFeedRoutes(mux)
 	s.bonusRoutes(mux)
+	s.eventRoutes(mux)
 	mux.HandleFunc("GET /internal/solvency/liabilities", s.hSolvency)
 	mux.HandleFunc("POST /internal/dev/index", s.dev(s.hDevIndex))
 	mux.HandleFunc("POST /internal/dev/tick", s.dev(s.hDevTick))
