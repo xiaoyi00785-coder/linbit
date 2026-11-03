@@ -14,8 +14,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-linbit}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-linbit}
       POSTGRES_DB: ${POSTGRES_DB:-linbit}
-    ports:
-      - "5432:5432"
+    # Not published: reachable only on the internal compose network.
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -26,8 +25,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Not published; password-protected. Keep REDIS_URL in sync with REDIS_PASSWORD.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-change-me-redis-password}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-change-me-redis-password}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -39,10 +40,11 @@ services:
       context: .
       dockerfile: services/go/asset/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8082"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Optional JSON override for GET /wallet/withdraw/networks (empty = defaults).
       WITHDRAW_NETWORKS_JSON: ${WITHDRAW_NETWORKS_JSON:-}
     depends_on:
@@ -56,6 +58,7 @@ services:
       context: .
       dockerfile: services/go/wallet/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8086"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -63,7 +66,7 @@ services:
       ASSET_INTERNAL_URL: http://asset:8082
       # Real-time prices for the KYC limit (non-stablecoins; no price = rejected).
       MARKET_URL: http://market-data:8085
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Chains are simulated by default (no real node/keys). Set DEV_MODE=true only
       # in local/CI environments to enable the mock-chain injection endpoints.
       DEV_MODE: ${WALLET_DEV_MODE:-false}
@@ -102,6 +105,9 @@ services:
       WALLET_RPC_BTC: ${WALLET_RPC_BTC:-}
       WALLET_RPC_SOL: ${WALLET_RPC_SOL:-}
       WALLET_TOKEN_USDT_ERC20: ${WALLET_TOKEN_USDT_ERC20:-}
+      # No multisig yet: empty cold address = reserve address from the same HD
+      # seed (branch 2). WALLET_COLD_FROM_HD=false keeps everything hot.
+      WALLET_COLD_FROM_HD: ${WALLET_COLD_FROM_HD:-true}
       WALLET_COLD_ADDRESS_TRC20: ${WALLET_COLD_ADDRESS_TRC20:-}
       WALLET_COLD_ADDRESS_ERC20: ${WALLET_COLD_ADDRESS_ERC20:-}
       WALLET_COLD_ADDRESS_BEP20: ${WALLET_COLD_ADDRESS_BEP20:-}
@@ -143,16 +149,21 @@ services:
       context: .
       dockerfile: services/go/account/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8081"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ASSET_INTERNAL_URL: http://asset:8082
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Email via Resend (https://resend.com). Both unset -> dev mock sender.
       # RESEND_FROM must use a domain verified in Resend, e.g. "Linbit <no-reply@your-domain>".
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
+      # Avatars persist on a named volume (survive container rebuilds).
+      AVATAR_STORAGE_DIR: /data/avatars
+    volumes:
+      - avatars:/data/avatars
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,6 +174,7 @@ services:
     build:
       context: services/rust/matching-engine
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       BIND: "0.0.0.0:8083"
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       DATA_DIR: /data
@@ -178,6 +190,7 @@ services:
       context: .
       dockerfile: services/go/order/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8084"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -185,7 +198,7 @@ services:
       ENGINE_URL: http://matching-engine:8083
       SPOT_MAKER_FEE_RATE: ${SPOT_MAKER_FEE_RATE:-0.001}
       SPOT_TAKER_FEE_RATE: ${SPOT_TAKER_FEE_RATE:-0.001}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
     depends_on:
       postgres:
         condition: service_healthy
@@ -199,11 +212,12 @@ services:
       context: .
       dockerfile: services/go/market-data/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8085"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ENGINE_URL: http://matching-engine:8083
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
     depends_on:
       postgres:
         condition: service_healthy
@@ -217,11 +231,12 @@ services:
       context: .
       dockerfile: services/go/kyc/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8087"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ACCOUNT_INTERNAL_URL: http://account:8081
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Minimum applicant age.
       KYC_MIN_AGE: ${KYC_MIN_AGE:-18}
       # Document storage: local disk (default) or s3 (skeleton, not implemented yet).
@@ -241,6 +256,7 @@ services:
       context: .
       dockerfile: services/go/admin/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8088"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -279,6 +295,7 @@ services:
       context: .
       dockerfile: services/go/futures/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8089"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -312,6 +329,7 @@ services:
       context: .
       dockerfile: services/go/strategy/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8090"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -333,6 +351,7 @@ services:
       context: .
       dockerfile: services/go/growth/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8091"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -360,6 +379,7 @@ services:
       context: .
       dockerfile: services/go/earn/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8092"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -379,6 +399,7 @@ services:
       context: .
       dockerfile: services/go/gateway/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8080"
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
       ACCOUNT_URL: http://account:8081
@@ -391,11 +412,12 @@ services:
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+      # Loopback only: put nginx/Caddy (TLS) in front.
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
     depends_on:
       account:
         condition: service_started
@@ -423,6 +445,7 @@ secrets:
     file: ${WALLET_SIGNER_PASSPHRASE_FILE:-./secrets/signer_passphrase}
 
 volumes:
+  avatars:
   signerdata:
   pgdata:
   enginedata:

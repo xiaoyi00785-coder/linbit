@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"github.com/linbit/platform/services/go/common"
 	"log"
 	"net/http"
 	"time"
@@ -20,6 +21,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
+	common.RequireProduction("futures", nil, "DATABASE_URL", "INTERNAL_TOKEN")
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("open db: %v", err)

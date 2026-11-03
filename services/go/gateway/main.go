@@ -11,6 +11,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
+	common.RequireProduction("gateway", nil, "JWT_SECRET", "REDIS_URL", "CORS_ALLOWED_ORIGINS")
 
 	if client := common.MaybeRedis(cfg.RedisURL); client != nil {
 		defer client.Close()

@@ -33,6 +33,12 @@ fn main() {
     let data_dir = PathBuf::from(env("DATA_DIR", "./data"));
     let snapshot_every: u64 = env("SNAPSHOT_EVERY", "1000").parse().unwrap_or(1000);
     let token = env("INTERNAL_TOKEN", "");
+    if env("LINBIT_ENV", "").eq_ignore_ascii_case("production")
+        && (token.trim().is_empty() || token.to_ascii_lowercase().contains("change-me"))
+    {
+        eprintln!("matching-engine: refusing to start in production: INTERNAL_TOKEN is empty or a change-me default");
+        std::process::exit(1);
+    }
     let symbols = parse_symbols(&env("SYMBOLS", "BTCUSDT:6,ETHUSDT:5"));
     let commit_mode = parse_commit_mode();
 

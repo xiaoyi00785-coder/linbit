@@ -18,6 +18,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
+	common.RequireProduction("order", nil, "DATABASE_URL", "INTERNAL_TOKEN", "REDIS_URL")
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {

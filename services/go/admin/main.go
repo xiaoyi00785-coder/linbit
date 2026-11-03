@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"github.com/linbit/platform/services/go/common"
 	"log"
 	"net/http"
 	"time"
@@ -17,6 +18,10 @@ import (
 
 func main() {
 	cfg := LoadConfig()
+	common.RequireProduction("admin", nil, "DATABASE_URL", "INTERNAL_TOKEN")
+	if common.IsProduction() && len(cfg.IPAllowlist) == 0 {
+		log.Printf("WARN admin: ADMIN_IP_ALLOWLIST is empty in production; every source IP can reach the back office (rely on nginx/firewall)")
+	}
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
