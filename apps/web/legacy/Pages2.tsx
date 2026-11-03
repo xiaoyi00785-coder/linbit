@@ -9,7 +9,7 @@ import { useState, useEffect, Fragment } from 'react'
 import { Link, useNavigate, useParams } from '@/lib/router'
 import { QRCodeSVG } from 'qrcode.react'
 import { useGrowthConfig, pct } from '@/lib/growth'
-import { DOWNLOAD_URL } from '@/lib/siteUrls'
+import { downloadUrl } from '@/lib/siteUrls'
 import { Ico, Footer } from './App'
 import { LoanBody } from '@/features/Loan'
 import { coins } from './data'
@@ -78,7 +78,7 @@ const DOC={'简介':[['API 简介','欢迎使用 linbit 开发者文档。','本
 export function ApiDocs(){const ks=Object.keys(DOC);const[k,setK]=useState(ks[0]);const[top,setTop]=useState('公共');const i=ks.indexOf(k);return <div className="docs"><header className="dhd"><Link to="/" className="dlogo"><G n="logo" s={16}/> LINBIT</Link>{['公共','合约','现货','资金'].map(x=><b key={x} className={top===x?'on':''} onClick={()=>setTop(x)}>{x}</b>)}<span className="sp"/><span>文A 简体中文 ▾</span><span><G n="theme" s={16}/></span></header><div className="dbody"><aside>{ks.map(x=><div key={x} className={k===x?'on':''} onClick={()=>setK(x)}>{x}{x.startsWith('Web')&&<span>›</span>}</div>)}</aside><article><small className="dtag">{top} · {k}</small><h1>{k}</h1>{DOC[k].map(([h,...ps])=><section key={h}><h2>{h}</h2>{ps.map(p=><p key={p} className={p.startsWith('{')?'code':''}>{p}</p>)}</section>)}{i<ks.length-1&&<div className="dnext" onClick={()=>setK(ks[i+1])}><small>下一页</small><b>{ks[i+1]} »</b></div>}</article></div><footer className="dft">© 2026 linbit. All rights reserved.</footer></div>}
 
 /* ---------- Sim trading download ---------- */
-export function SimTrade(){return <main className="sim"><div className="wrap simw"><div><h1>下载 <span className="lime">linbit</span> App<br/>零风险体验合约交易</h1><p className="g">赠送 50,000 USDT 模拟资金，真实行情，随时重置</p><div className="dlb">{['apple','download','play','download'].map((x,i)=><span key={i} role="button" style={{cursor:'pointer'}} title={['iOS','APK','Google Play','Android'][i]} onClick={()=>openM('download',{kind:['apple','apk','gplay','apk'][i]})}><G n={x} s={20}/></span>)}</div><div className="lrow l mt"><span className="qr"><QRCodeSVG value={DOWNLOAD_URL} size={92} bgColor="transparent" fgColor="currentColor"/></span><small className="g">扫码下载 App</small></div></div><img src="/img/simtrade.webp" alt=""/></div><Footer/></main>}
+export function SimTrade(){return <main className="sim"><div className="wrap simw"><div><h1>下载 <span className="lime">linbit</span> App<br/>零风险体验合约交易</h1><p className="g">赠送 50,000 USDT 模拟资金，真实行情，随时重置</p><div className="dlb">{['apple','download','play','download'].map((x,i)=><span key={i} role="button" style={{cursor:'pointer'}} title={['iOS','APK','Google Play','Android'][i]} onClick={()=>openM('download',{kind:['apple','apk','gplay','apk'][i]})}><G n={x} s={20}/></span>)}</div><div className="lrow l mt"><span className="qr"><QRCodeSVG value={downloadUrl()} size={92} bgColor="transparent" fgColor="currentColor"/></span><small className="g">扫码下载 App</small></div></div><img src="/img/simtrade.webp" alt=""/></div><Footer/></main>}
 
 /* ---------- Copy trading ---------- */
 const TR=[['GridMaster','186.4%','+12,840.22','92.1%',1248],['Atlas_Q','143.9%','+9,315.07','88.6%',986],['LunaWave','121.2%','+7,201.55','85.3%',742],['SteadyFox','98.7%','+5,980.10','91.0%',655],['NovaTrend','87.5%','+4,412.36','79.4%',503],['BlueOrca','76.0%','+3,950.48','83.7%',421],['Kite88','64.3%','+2,804.91','80.2%',388],['ZenBot','58.9%','+2,333.70','86.5%',301]]

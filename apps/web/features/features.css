@@ -164,3 +164,6 @@
 .ff-ops button{border:0;background:none;color:var(--lb-card);text-decoration:underline;cursor:pointer;font-size:12px;margin-left:10px}
 .ff-krow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--lb-light-border)}
 .por-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}.por-t th,.por-t td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--lb-card-2)}.por-t th:first-child,.por-t td:first-child{text-align:left}.por-t th{color:var(--lb-text-3);font-weight:400}
+/* 骨架占位（账户信息加载中） */
+i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border-radius:4px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:lbSk 1.2s infinite linear}
+@keyframes lbSk{0%{background-position:200% 0}100%{background-position:-200% 0}}
