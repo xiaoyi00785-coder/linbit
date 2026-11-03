@@ -46,3 +46,44 @@
 .fx-inline{height:32px;border:1px solid var(--lb-border);border-radius:8px;background:none;color:inherit;padding:0 10px;margin-right:8px;min-width:240px}
 .ah .sw{width:auto;height:auto;white-space:nowrap;padding:4px 12px;border-radius:8px;background:var(--lb-border);color:var(--lb-white)}
 .ah .sw::before,.ah .sw::after{display:none}
+/* ---- TradeKit ---- */
+.tk-pp{position:relative;cursor:pointer}
+.tk-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:60;background:#1b1d22;border:1px solid #2a2d34;border-radius:10px;padding:6px;min-width:200px;max-height:320px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.tk-pop.sm{min-width:90px;left:auto;right:0}
+.tk-pop input{width:100%;background:#0f1013;border:1px solid #2a2d34;border-radius:6px;color:#fff;padding:6px 8px;margin-bottom:4px}
+.tk-opt{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:#ddd}
+.tk-opt:hover{background:#262930}.tk-opt.on{color:#abe127}
+.tk-views{display:flex;gap:4px}
+.tk-vb{position:relative;background:none;border:1px solid transparent;border-radius:4px;padding:2px;cursor:pointer;opacity:.45;line-height:0}
+.tk-vb.on{opacity:1;border-color:#3a3d44;background:#22252b}.tk-vb:hover{opacity:1}
+[data-tip]{position:relative}
+[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#0b0c0e;color:#fff;font-size:12px;line-height:1;padding:6px 8px;border-radius:6px;white-space:nowrap;z-index:70;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.tk-prec{position:relative;cursor:pointer}
+.tk-r{cursor:pointer}.tk-r:hover{background:rgba(255,255,255,.04)}
+.tk-side.full{min-height:calc(18 * 22px)}
+.tk-mid{cursor:pointer}
+.tk-empty{padding:16px 0;text-align:center;color:#777;font-size:12px}
+.tk-sel{display:flex;gap:6px}
+.tk-chip{flex:1;background:#22252b;border:1px solid #2f323a;color:#ddd;border-radius:6px;padding:6px 4px;font-size:12px;cursor:pointer}
+.tk-chip:hover{border-color:#555}.tk-chip.long{color:#abe127}.tk-chip.short{color:#f43f5e}.tk-chip.ic{flex:0 0 32px;display:flex;align-items:center;justify-content:center}
+.tk-btns{display:flex;gap:8px}.tk-btns .lbtn{flex:1}
+.tk-long{background:#abe127!important;color:#111!important}.tk-short{background:#f43f5e!important;color:#fff!important}
+.tk-modal{background:#1b1d22;color:#eee;border-radius:14px;padding:20px;width:440px;max-width:92vw}
+.tk-mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:16px}.tk-x{cursor:pointer;color:#888}
+.tk-mf{display:flex;gap:10px;margin-top:16px}.tk-mf button{flex:1;padding:10px;border-radius:8px;border:0;cursor:pointer;font-weight:600}
+.tk-b1{background:#abe127;color:#111}.tk-b2{background:#2a2d34;color:#ddd}
+.tk-lbl{font-size:13px;color:#aaa;margin:10px 0 6px}
+.tk-pair{display:flex;gap:10px}
+.tk-opt2{position:relative;flex:1;border:1px solid #2f323a;border-radius:8px;padding:12px;cursor:pointer;text-align:center;overflow:hidden}
+.tk-opt2.on{border-color:#abe127}
+.tk-ck{position:absolute;right:0;bottom:0;width:18px;height:18px;background:#abe127;color:#111;font-size:11px;font-style:normal;display:flex;align-items:center;justify-content:center;border-top-left-radius:8px}
+.tk-txt{font-size:12px;color:#999;line-height:1.6;margin:8px 0 0}
+.tk-levin{display:flex;align-items:center;gap:8px;background:#0f1013;border:1px solid #2f323a;border-radius:8px;padding:6px}
+.tk-levin input{flex:1;background:none;border:0;color:#fff;text-align:center;font-size:18px}
+.tk-levin button{width:32px;height:32px;border-radius:6px;border:0;background:#2a2d34;color:#fff;cursor:pointer;font-size:18px}
+.tk-range{width:100%;margin:14px 0 8px;accent-color:#abe127}
+.tk-presets{display:flex;flex-wrap:wrap;gap:6px}
+.tk-presets span{padding:4px 10px;border:1px solid #2f323a;border-radius:6px;font-size:12px;cursor:pointer}
+.tk-presets span.on{border-color:#abe127;color:#abe127}
+.tk-levsm{width:48px;background:#0f1013;border:1px solid #2f323a;color:#fff;border-radius:4px;text-align:center}
+.tk-res{background:#0f1013;border-radius:8px;padding:10px;margin-top:10px}

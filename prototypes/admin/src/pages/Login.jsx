@@ -7,7 +7,7 @@ export default function Login({ onDone }) {
   const submit = async e => {
     e.preventDefault(); setErr(''); setBusy(true)
     try { const r = await api('auth/login', { method: 'POST', body: f }); setToken(r.token); onDone() }
-    catch (x) { setErr(errText(x)) } finally { setBusy(false) }
+    catch (x) { setErr(x && (x.code === 'ADMIN_LOCKED' || x.status === 423) ? '连续失败5次，账号已锁定15分钟' : x && x.code === 'TOTP_INVALID' ? '验证码错误' : errText(x)) } finally { setBusy(false) }
   }
   return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
     <form className="card pad" style={{ width: 360 }} onSubmit={submit}>

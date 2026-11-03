@@ -13,8 +13,40 @@ const CAT_MAP: Record<string, string[]> = {
   UNI: ["DeFi"], AAVE: ["DeFi"], LINK: ["DeFi"], MKR: ["DeFi"], CRV: ["DeFi"],
   ARB: ["Layer 2"], OP: ["Layer 2"], POL: ["Layer 2"], MATIC: ["Layer 2"], STRK: ["Layer 2"],
 };
-export function catsOf(base: string, tags?: string[]): string[] {
-  return tags?.length ? tags : CAT_MAP[base.toUpperCase()] ?? [];
+/** chip 名称 ↔ 后端分类 id（GET /market/categories、symbols[].tags 使用 id） */
+export const CAT_ID: Record<string, string> = { 公链: "layer1", 贵金属: "metals", 大宗商品: "commodities", 股票: "stocks", Meme: "meme", AI: "ai", DeFi: "defi", "Layer 2": "layer2", 生态: "ecosystem" };
+let catNames: string[] | null = null;
+let catP: Promise<Record<string, string[]> | null> | null = null;
+/** GET /market/categories → { id: symbols[] }；失败时返回 null（退回 tags，再退回本地映射）。 */
+export function loadCategories() {
+  catP ??= fetch(restBase() + "/market/categories")
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((l: { id: string; name?: string; symbols: string[] }[]) => {
+      if (!Array.isArray(l)) return null;
+      catNames = l.map((c) => { const nm = c.name || c.id; CAT_ID[nm] = c.id; return nm; });
+      return Object.fromEntries(l.map((c) => [c.id, c.symbols ?? []]));
+    })
+    .catch(() => ((catP = null), null));
+  return catP;
+}
+/** chip 列表：后端 /market/categories 返回什么就渲染什么（前置“全部”）；接口不可用时用本地 CATS。 */
+export function useCatChips(): string[] {
+  const [n, setN] = useState<string[] | null>(catNames);
+  useEffect(() => void loadCategories().then(() => setN(catNames)), []);
+  return n ? ["全部", ...n] : [...CATS];
+}
+export function useCategories() {
+  const [c, setC] = useState<Record<string, string[]> | null>(null);
+  useEffect(() => void loadCategories().then(setC), []);
+  return c;
+}
+/** 判断交易对是否属于某 chip：categories 接口 → symbols[].tags → 本地映射 */
+export function inCat(chip: string, symbol: string, base: string, tags: string[] | undefined, cats: Record<string, string[]> | null): boolean {
+  if (chip === "全部") return true;
+  const id = CAT_ID[chip];
+  if (cats && id in cats) return cats[id].includes(symbol);
+  if (tags?.length) return tags.includes(id) || tags.includes(chip);
+  return (CAT_MAP[base.toUpperCase()] ?? []).includes(chip);
 }
 
 export type FutRow = { symbol: string; base: string; tags?: string[]; last?: string; chg?: string; hi?: string; lo?: string; vol?: string; pp?: number };
