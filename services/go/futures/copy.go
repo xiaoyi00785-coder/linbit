@@ -561,7 +561,7 @@ func (s *Server) settleFollow(ctx context.Context, f Follow, period string) erro
 		return err
 	})
 	if err == nil && ref != "" {
-		s.completeOut(ctx, ref, f.Trader, share)
+		s.completeOut(ctx, ref, f.Trader, "spot", share)
 	}
 	return err
 }
@@ -718,7 +718,7 @@ func (s *Server) mirror(ctx context.Context, f Follow, e copyEvent) {
 		mark = e.Px
 	}
 	unit := mark.Mul(dOne.Add(s.cfg.MarketBand))
-	perQty := unit.Div(decimal.NewFromInt(int64(lev))).Add(unit.Mul(c.TakerFee))
+	perQty := unit.Div(decimal.NewFromInt(int64(lev))).Add(unit.Mul(s.reserveTaker(f.Follower, c)))
 	q := floorStep(margin.Mul(decimal.NewFromInt(int64(lev))).Div(e.Px), c.MinQty)
 	if afford := floorStep(st.Available.Div(perQty), c.MinQty); afford.LessThan(q) {
 		q = afford

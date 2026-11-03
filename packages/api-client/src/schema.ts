@@ -389,7 +389,8 @@ export interface paths {
         delete: operations["deleteWithdrawAddress"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** 修改提现地址（label / memo / 白名单标记；需验证码或 2FA） */
+        patch: operations["updateWithdrawAddress"];
         trace?: never;
     };
     "/kyc": {
@@ -2284,6 +2285,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assets/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 资产总览（资金账户 funding / 现货 spot / 合约 futures 分账户余额与 USDT 估值）
+         * @description 充值默认入 funding、提现默认从 funding 扣（后台可配置为 spot，见 depositAccount/withdrawAccount）。
+         *     合约账户只接受 USDT 划转。价格缺失时该币 valuationUsd 为 null 且不计入合计；合约服务不可用时 futures.available=false。
+         */
+        get: operations["getAssetsOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/wallet/networks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 币种网络参数（充提开关、最小充值、确认数、Memo、提现手续费/最小提现） */
+        get: operations["listWalletNetworks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/wallet/internal-transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 站内转账（免手续费、实时到账，需 2FA，按 clientId 幂等）
+         * @description 从资金账户（funding）转给另一位平台用户（toUid 或 toEmail 二选一）。收款方须存在、状态正常且不是子账户。
+         *     24 小时滚动额度按 USDT 估值计（后台可配，默认 50000；0=不限）；功能可被后台关闭。
+         *     错误码：VALIDATION_ERROR、TWOFA_REQUIRED、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
+         *     RECIPIENT_SUB_ACCOUNT、RECIPIENT_UNAVAILABLE、PRICE_UNAVAILABLE、INTERNAL_TRANSFER_LIMIT_EXCEEDED、INSUFFICIENT_BALANCE、
+         *     IDEMPOTENCY_CONFLICT(409，同 clientId 不同参数)。
+         */
+        post: operations["createInternalTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/wallet/internal-transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 站内转账记录（转出 + 已到账的转入） */
+        get: operations["listInternalTransfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/spot/orders/conditional": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 条件单列表（默认 status=open 即 pending/triggering；all 或具体状态） */
+        get: operations["listConditionalOrders"];
+        put?: never;
+        /**
+         * 条件单（止损 stop / 止盈 take_profit / 计划委托 trigger），最新成交价穿越触发价后下限价或市价单
+         * @description 创建时即冻结所需资金；触发后释放并按普通下单流程提交子订单（orderId 回填）。
+         *     方向：stop 买=up 卖=down；take_profit 买=down 卖=up；trigger 按当前价自动判断或传 triggerDirection。
+         *     错误码：VALIDATION_ERROR、TRIGGER_WOULD_IMMEDIATELY_FIRE、CONDITIONAL_LIMIT_EXCEEDED（每人最多 50 个未触发）、INSUFFICIENT_BALANCE、IDEMPOTENCY_CONFLICT。
+         */
+        post: operations["createConditionalOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/spot/orders/conditional/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销未触发的条件单（释放冻结；已撤销重复调用返回 200） */
+        delete: operations["cancelConditionalOrder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/fee-rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的手续费率（现货 + 合约 maker/taker，含后台个人费率覆盖）
+         * @description VIP 仅提供服务权益，费率统一（vipLevel 恒为 0）；合约服务不可用时 futures 为 null。
+         */
+        get: operations["getFeeRates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/home/placements": {
         parameters: {
             query?: never;
@@ -3326,10 +3466,15 @@ export interface components {
             network: string;
             /** @example TXy1Z9DemoAddr000000000000000000000 */
             address: string;
-            /** @example null */
+            /**
+             * @description memoRequired=true 时为必填的充值 Memo/Tag
+             * @example null
+             */
             memo?: string | null;
             /** @example 1.00000000 */
             minDeposit?: string | null;
+            memoRequired?: boolean;
+            confirmations?: number;
         };
         Deposit: {
             /** @example dep_0001 */
@@ -3462,8 +3607,11 @@ export interface components {
         OrderType: "limit" | "market";
         /** @enum {string} */
         OrderStatus: "new" | "partially_filled" | "filled" | "canceled" | "rejected";
-        /** @enum {string} */
-        TimeInForce: "GTC" | "IOC" | "FOK";
+        /**
+         * @description PostOnly（别名 GTX）= 只做 Maker，会立即成交则拒绝（POST_ONLY_REJECTED）
+         * @enum {string}
+         */
+        TimeInForce: "GTC" | "IOC" | "FOK" | "PostOnly" | "GTX";
         PlaceOrderRequest: {
             /** @example BTCUSDT */
             symbol: string;
@@ -3477,6 +3625,8 @@ export interface components {
             /** @example 0.01000000 */
             quantity: string;
             timeInForce?: components["schemas"]["TimeInForce"];
+            /** @description 等价于 timeInForce=PostOnly；会立即成交时返回 POST_ONLY_REJECTED */
+            postOnly?: boolean;
             /** @example cli-20261102-001 */
             clientOrderId?: string | null;
         };
@@ -4186,6 +4336,165 @@ export interface components {
                 createdAt?: string;
             }[];
         };
+        AssetsOverviewAccount: {
+            /** @enum {string} */
+            account?: "funding" | "spot" | "futures";
+            available?: boolean;
+            /** @example 1234.56 */
+            totalValueUsdt?: string;
+            balances?: {
+                asset?: string;
+                free?: string;
+                locked?: string;
+                total?: string;
+                valuationUsd?: string | null;
+            }[];
+        };
+        AssetsOverview: {
+            totalValueUsdt?: string;
+            accounts?: components["schemas"]["AssetsOverviewAccount"][];
+            /** @enum {string} */
+            depositAccount?: "funding" | "spot";
+            /** @enum {string} */
+            withdrawAccount?: "funding" | "spot";
+            /**
+             * @example {
+             *       "funding": [
+             *         "spot",
+             *         "futures"
+             *       ],
+             *       "spot": [
+             *         "funding",
+             *         "futures"
+             *       ],
+             *       "futures": [
+             *         "funding",
+             *         "spot"
+             *       ],
+             *       "futuresAssets": [
+             *         "USDT"
+             *       ]
+             *     }
+             */
+            transferable?: {
+                [key: string]: unknown;
+            };
+        };
+        WalletNetwork: {
+            /** @example USDT */
+            asset?: string;
+            /** @example TRC20 */
+            network?: string;
+            minDeposit?: string;
+            confirmations?: number;
+            memoRequired?: boolean;
+            withdrawFee?: string;
+            withdrawFeeAsset?: string;
+            minWithdraw?: string;
+            maxWithdraw?: string | null;
+            depositEnabled?: boolean;
+            withdrawEnabled?: boolean;
+            estimatedArrivalMinutes?: number;
+        };
+        InternalTransferRequest: {
+            clientId: string;
+            /** @example USDT */
+            asset: string;
+            /** @example 10 */
+            amount: string;
+            toUid?: string;
+            toEmail?: string;
+            totpCode: string;
+        };
+        InternalTransfer: {
+            id?: string;
+            clientId?: string;
+            /** @enum {string} */
+            direction?: "out" | "in";
+            fromUid?: string;
+            toUid?: string;
+            toMaskedEmail?: string;
+            asset?: string;
+            amount?: string;
+            /** @example 0 */
+            fee?: string;
+            /** @enum {string} */
+            status?: "pending" | "completed" | "failed";
+            failReason?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            completedAt?: string | null;
+        };
+        ConditionalOrderRequest: {
+            /** @example BTCUSDT */
+            symbol: string;
+            side: components["schemas"]["OrderSide"];
+            type: components["schemas"]["OrderType"];
+            /**
+             * @default trigger
+             * @enum {string}
+             */
+            kind: "stop" | "take_profit" | "trigger";
+            triggerPrice: string;
+            /**
+             * @description 仅 kind=trigger 且无最新价时需要
+             * @enum {string}
+             */
+            triggerDirection?: "up" | "down";
+            /** @description limit 子单必填 */
+            price?: string | null;
+            quantity?: string | null;
+            /** @description 市价买按金额 */
+            quoteOrderQty?: string | null;
+            timeInForce?: components["schemas"]["TimeInForce"];
+            clientOrderId?: string | null;
+        };
+        ConditionalOrder: {
+            id?: string;
+            clientOrderId?: string | null;
+            symbol?: string;
+            side?: string;
+            /** @enum {string} */
+            kind?: "stop" | "take_profit" | "trigger";
+            /** @enum {string} */
+            type?: "limit" | "market";
+            triggerPrice?: string;
+            /** @enum {string} */
+            triggerDirection?: "up" | "down";
+            price?: string | null;
+            quantity?: string | null;
+            quoteOrderQty?: string | null;
+            timeInForce?: string;
+            /** @enum {string} */
+            status?: "pending" | "triggering" | "triggered" | "canceled" | "failed";
+            /** @description 触发后生成的现货订单 */
+            orderId?: string | null;
+            frozenAsset?: string;
+            frozenAmount?: string;
+            failReason?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            triggeredAt?: string | null;
+        };
+        FeePair: {
+            /** @example 0.001 */
+            maker?: string;
+            /** @example 0.001 */
+            taker?: string;
+        };
+        FeeRates: {
+            symbol?: string;
+            /** @example 0 */
+            vipLevel?: number;
+            spot?: components["schemas"]["FeePair"];
+            futures?: components["schemas"]["FeePair"] | null;
+            overridden?: boolean;
+            /** @enum {string} */
+            source?: "default" | "override";
+            note?: string;
+        };
         TransferRequest: {
             /** @example c-20261103-0001 */
             clientId: string;
@@ -4193,10 +4502,13 @@ export interface components {
             asset: string;
             /** @example 100 */
             amount: string;
+            /**
+             * @description 涉及 futures 时仅支持 USDT
+             * @enum {string}
+             */
+            from: "funding" | "spot" | "futures";
             /** @enum {string} */
-            from: "spot" | "futures";
-            /** @enum {string} */
-            to: "spot" | "futures";
+            to: "funding" | "spot" | "futures";
         };
         Transfer: {
             /** @example fut-4e77c5c8769ee51d */
@@ -5198,6 +5510,42 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateWithdrawAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label?: string;
+                    memo?: string;
+                    whitelisted?: boolean;
+                    totpCode?: string;
+                    /** @description 未开启 2FA 时提供（purpose=address） */
+                    code?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 更新后的地址 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawAddress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -6884,6 +7232,231 @@ export interface operations {
                         pageSize?: number;
                         total?: number;
                     };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getAssetsOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetsOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listWalletNetworks: {
+        parameters: {
+            query?: {
+                /** @description 不传返回全部网络 */
+                asset?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example USDT */
+                        asset?: string;
+                        networks: components["schemas"]["WalletNetwork"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createInternalTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description 完成（或同 clientId 重放返回原结果） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalTransfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    listInternalTransfers: {
+        parameters: {
+            query?: {
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["InternalTransfer"][];
+                        page?: number;
+                        pageSize?: number;
+                        total?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listConditionalOrders: {
+        parameters: {
+            query?: {
+                symbol?: string;
+                status?: "open" | "all" | "pending" | "triggering" | "triggered" | "canceled" | "failed";
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["ConditionalOrder"][];
+                        page?: number;
+                        pageSize?: number;
+                        total?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createConditionalOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConditionalOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description 同 clientOrderId 重放 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionalOrder"];
+                };
+            };
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionalOrder"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    cancelConditionalOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已撤销 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionalOrder"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    getFeeRates: {
+        parameters: {
+            query?: {
+                symbol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeRates"];
                 };
             };
             401: components["responses"]["Unauthorized"];

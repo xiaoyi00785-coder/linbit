@@ -59,6 +59,12 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 	if !ok {
 		return nil, errf(http.StatusBadRequest, "UNSUPPORTED_NETWORK", "不支持的提现网络")
 	}
+	if net.WithdrawDisabled {
+		return nil, errf(http.StatusBadRequest, "WITHDRAW_DISABLED", "该网络暂停提现")
+	}
+	if net.MemoRequired && strings.TrimSpace(in.Memo) == "" {
+		return nil, errf(http.StatusBadRequest, "MEMO_REQUIRED", "该网络提现需要填写 Memo/Tag")
+	}
 	if in.Amount.Sign() <= 0 {
 		return nil, errf(http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
 	}
@@ -140,7 +146,7 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
 
-	if err := s.asset.Freeze(ctx, userID, in.Asset, frozen, withdrawRef(id)); err != nil {
+	if err := s.asset.FreezeWithdraw(ctx, userID, in.Asset, frozen, withdrawRef(id)); err != nil {
 		_, _ = s.store.FailSubmit(ctx, id, "freeze_failed")
 		if strings.Contains(err.Error(), "INSUFFICIENT_BALANCE") {
 			return nil, errf(http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")

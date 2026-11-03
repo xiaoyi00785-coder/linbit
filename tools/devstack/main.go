@@ -223,6 +223,7 @@ func run(root, execCmd string) int {
 			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
 			"ENGINE_URL=http://localhost:" + enginePort,
 			"REDIS_URL=" + redisURL,
+			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
 		},
 		"market-data": {
 			"PORT=" + marketPort,

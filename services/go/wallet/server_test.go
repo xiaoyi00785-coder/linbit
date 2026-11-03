@@ -53,11 +53,11 @@ func newFakeAccount(t *testing.T, ok2fa bool, wlEnabled, wlAllowed bool) *httpte
 
 func testServerConfig(t *testing.T, assetURL, accountURL string) Config {
 	cfg := Config{
-		InternalToken:      "tok",
-		AssetInternalURL:   assetURL,
-		AccountInternalURL: accountURL,
-		FeeAccount:         "platform:gas",
-		GasDeductMode:      "extra",
+		InternalToken:         "tok",
+		AssetInternalURL:      assetURL,
+		AccountInternalURL:    accountURL,
+		FeeAccount:            "platform:gas",
+		GasDeductMode:         "extra",
 		CreditBelowMinDeposit: true,
 		Risk: RiskThresholds{
 			AutoMaxAmount: d("1000"), AutoMaxScore: 20,

@@ -229,6 +229,7 @@ services:
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ASSET_INTERNAL_URL: http://asset:8082
       ENGINE_URL: http://matching-engine:8083
+      FUTURES_INTERNAL_URL: http://futures:8089
       SPOT_MAKER_FEE_RATE: ${SPOT_MAKER_FEE_RATE:-0.001}
       SPOT_TAKER_FEE_RATE: ${SPOT_TAKER_FEE_RATE:-0.001}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}

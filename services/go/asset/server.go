@@ -32,14 +32,19 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 
 	mux.HandleFunc("GET /assets/balances", s.handleBalances)
+	mux.HandleFunc("GET /assets/overview", s.handleOverview)
 
 	// Wallet user-facing endpoints (/wallet/*) live in the wallet service; this
 	// service exposes only the internal double-entry operations it drives.
 
 	mux.HandleFunc("POST /internal/accounts", s.internal(s.handleInitAccount))
 	mux.HandleFunc("POST /internal/credit", s.internal(s.handleCredit))
-	mux.HandleFunc("POST /internal/freeze", s.internal(s.handleFreeze))
-	mux.HandleFunc("POST /internal/unfreeze", s.internal(s.handleUnfreeze))
+	mux.HandleFunc("POST /internal/freeze", s.internal(s.handleFreezeAcct))
+	mux.HandleFunc("POST /internal/unfreeze", s.internal(s.handleUnfreezeAcct))
+	mux.HandleFunc("POST /internal/account-transfer", s.internal(s.handleAccountTransfer))
+	mux.HandleFunc("POST /internal/user-transfer", s.internal(s.handleUserTransfer))
+	mux.HandleFunc("GET /internal/admin/asset-settings", s.internal(s.handleGetSettings))
+	mux.HandleFunc("PUT /internal/admin/asset-settings", s.internal(s.handlePutSettings))
 	mux.HandleFunc("POST /internal/deposit", s.internal(s.handleDeposit))
 	mux.HandleFunc("POST /internal/withdraw-complete", s.internal(s.handleWithdrawComplete))
 	mux.HandleFunc("POST /internal/settle", s.internal(s.handleSettle))
@@ -113,6 +118,25 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	page := atoiDefault(r.URL.Query().Get("page"), 1, 1, 1<<30)
 	pageSize := atoiDefault(r.URL.Query().Get("pageSize"), 20, 1, 100)
 
+	if acct := r.URL.Query().Get("account"); acct != "" && acct != AcctSpot {
+		if acct != AcctFunding {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 必须为 spot 或 funding")
+			return
+		}
+		all, err := s.store.WalletBalances(r.Context(), AcctFunding, userID)
+		if err != nil {
+			log.Printf("balances: funding: %v", err)
+			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+			return
+		}
+		items := []balanceDTO{}
+		for i := (page - 1) * pageSize; i < len(all) && i < page*pageSize; i++ {
+			items = append(items, toBalanceDTO(all[i]))
+		}
+		common.WriteJSON(w, http.StatusOK, paginatedBalances{Items: items, Page: page, PageSize: pageSize, Total: len(all)})
+		return
+	}
+
 	balances, total, err := s.store.Balances(r.Context(), userID, page, pageSize)
 	if err != nil {
 		log.Printf("balances: query: %v", err)
@@ -169,6 +193,7 @@ type walletMovementRequest struct {
 	Gas        string `json:"gas"`
 	FeeAccount string `json:"feeAccount"`
 	Ref        string `json:"ref"`
+	Account    string `json:"account"` // deposit only: spot|funding (default: deposit_account setting)
 }
 
 // handleDeposit credits a confirmed on-chain deposit (idempotent on ref).
@@ -183,7 +208,15 @@ func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
 		return
 	}
-	err = s.store.Deposit(r.Context(), req.UserID, req.Asset, amount, req.Ref)
+	acct := req.Account
+	if acct == "" {
+		acct = s.store.depositAccount(r.Context())
+	}
+	if !validAcct(acct) {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 不合法")
+		return
+	}
+	err = s.store.DepositTo(r.Context(), acct, req.UserID, req.Asset, amount, req.Ref)
 	switch {
 	case errors.Is(err, ErrAlreadyApplied):
 		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "already_applied"})
@@ -330,7 +363,15 @@ func (s *Server) handleInternalBalances(w http.ResponseWriter, r *http.Request) 
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	balances, total, err := s.store.Balances(r.Context(), userID, 1, 1000)
+	var balances []Balance
+	var total int
+	var err error
+	if r.URL.Query().Get("account") == AcctFunding {
+		balances, err = s.store.WalletBalances(r.Context(), AcctFunding, userID)
+		total = len(balances)
+	} else {
+		balances, total, err = s.store.Balances(r.Context(), userID, 1, 1000)
+	}
 	if err != nil {
 		log.Printf("internal balances: %v", err)
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")

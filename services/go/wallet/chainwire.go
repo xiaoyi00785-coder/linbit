@@ -120,11 +120,15 @@ func (s *Server) RunWorker(ctx context.Context, every time.Duration) {
 func (s *Server) workerPass(ctx context.Context) {
 	pass, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+	if err := s.store.LoadNetworkOverrides(pass); err != nil {
+		log.Printf("worker: network overrides: %v", err)
+	}
 	if s.real != nil {
 		if n, _ := s.real.Sync(pass); n > 0 {
 			log.Printf("worker: %d new on-chain deposits", n)
 		}
 	}
+	s.retryPendingITX(pass)
 	if _, err := s.scanner.ScanAll(pass); err != nil {
 		log.Printf("worker: scan: %v", err)
 	}

@@ -61,6 +61,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /wallet/deposit/address", s.handleDepositAddress)
 	mux.HandleFunc("GET /wallet/deposit/records", s.handleDepositRecords)
 	mux.HandleFunc("GET /wallet/withdraw/networks", s.handleWithdrawNetworks)
+	mux.HandleFunc("GET /wallet/networks", s.handleNetworks)
+	mux.HandleFunc("POST /wallet/internal-transfer", s.handleInternalTransfer)
+	mux.HandleFunc("GET /wallet/internal-transfers", s.handleInternalTransferList)
 	mux.HandleFunc("GET /wallet/withdraw/records", s.handleWithdrawRecords)
 	mux.HandleFunc("POST /wallet/withdraw", s.handleCreateWithdrawal)
 	mux.HandleFunc("POST /wallet/withdraw/{id}/cancel", s.handleCancelWithdrawal)
@@ -72,6 +75,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /internal/admin/withdrawals", s.internal(s.handleAdminList))
 	mux.HandleFunc("POST /internal/admin/withdrawals/{id}/approve", s.internal(s.handleAdminApprove))
 	mux.HandleFunc("POST /internal/admin/withdrawals/{id}/reject", s.internal(s.handleAdminReject))
+	mux.HandleFunc("GET /internal/admin/wallet/networks", s.internal(s.handleAdminNetworks))
+	mux.HandleFunc("PUT /internal/admin/wallet/networks/{asset}/{network}", s.internal(s.handleAdminPutNetwork))
+	mux.HandleFunc("GET /internal/admin/internal-transfer/config", s.internal(s.handleAdminITConfig))
+	mux.HandleFunc("PUT /internal/admin/internal-transfer/config", s.internal(s.handleAdminPutITConfig))
+	mux.HandleFunc("GET /internal/admin/internal-transfers", s.internal(s.handleAdminITList))
 
 	// Dev-only simulated-chain control.
 	if s.real != nil {
@@ -126,6 +134,9 @@ type depositAddressDTO struct {
 	Address    string  `json:"address"`
 	Memo       *string `json:"memo"`
 	MinDeposit *string `json:"minDeposit"`
+	// Additive fields (backward compatible).
+	MemoRequired  bool `json:"memoRequired"`
+	Confirmations *int `json:"confirmations,omitempty"`
 }
 
 type depositDTO struct {
@@ -154,6 +165,9 @@ type withdrawNetworkDTO struct {
 	GasFeeAsset             string `json:"gasFeeAsset,omitempty"`
 	Confirmations           *int   `json:"confirmations,omitempty"`
 	EstimatedArrivalMinutes *int   `json:"estimatedArrivalMinutes,omitempty"`
+	WithdrawFee             string `json:"withdrawFee,omitempty"`
+	MemoRequired            bool   `json:"memoRequired"`
+	WithdrawEnabled         bool   `json:"withdrawEnabled"`
 }
 
 type withdrawNetworkOptionsDTO struct {
@@ -228,6 +242,10 @@ func (s *Server) handleDepositAddress(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "UNSUPPORTED_NETWORK", "不支持的充值网络")
 		return
 	}
+	if net.DepositDisabled {
+		common.WriteError(w, http.StatusBadRequest, "DEPOSIT_DISABLED", "该网络暂停充值")
+		return
+	}
 	da, err := s.store.UpsertDepositAddress(r.Context(), uid, asset, network, func() (string, string, *int64, error) {
 		if a, ok := s.chain.(AddressAllocator); ok {
 			return a.AllocateAddress(r.Context(), net)
@@ -240,12 +258,22 @@ func (s *Server) handleDepositAddress(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
+	if net.MemoRequired && da.Memo == "" {
+		da.Memo = userMemo(uid)
+		if err := s.store.ensureMemo(r.Context(), uid, asset, network, da.Memo); err != nil {
+			log.Printf("deposit memo: %v", err)
+			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+			return
+		}
+	}
 	common.WriteJSON(w, http.StatusOK, depositAddressDTO{
-		Asset:      da.Asset,
-		Network:    da.Network,
-		Address:    da.Address,
-		Memo:       strptr(da.Memo),
-		MinDeposit: strptr(fmt8(net.MinDeposit)),
+		Asset:         da.Asset,
+		Network:       da.Network,
+		Address:       da.Address,
+		Memo:          strptr(da.Memo),
+		MinDeposit:    strptr(fmt8(net.MinDeposit)),
+		MemoRequired:  net.MemoRequired,
+		Confirmations: intptr(net.Confirmations),
 	})
 }
 
@@ -288,6 +316,9 @@ func (s *Server) handleWithdrawNetworks(w http.ResponseWriter, r *http.Request) 
 			GasFeeAsset:             n.GasFeeAsset,
 			Confirmations:           intptr(n.Confirmations),
 			EstimatedArrivalMinutes: intptr(n.EstimatedArrivalMinutes),
+			WithdrawFee:             fmt8(n.GasFeeEstimate),
+			MemoRequired:            n.MemoRequired,
+			WithdrawEnabled:         !n.WithdrawDisabled,
 		}
 		if n.MaxWithdraw.Sign() > 0 {
 			dto.MaxWithdraw = fmt8(n.MaxWithdraw)

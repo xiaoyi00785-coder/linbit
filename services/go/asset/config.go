@@ -10,6 +10,8 @@ type Config struct {
 	DatabaseURL   string
 	InternalToken string
 	RedisURL      string
+	FuturesURL    string // FUTURES_INTERNAL_URL: futures wallet for /assets/overview
+	MarketURL     string // MARKET_URL: index prices for USDT valuation
 }
 
 // LoadConfig reads configuration from the environment.
@@ -19,6 +21,8 @@ func LoadConfig() Config {
 		DatabaseURL:   common.MustEnv("DATABASE_URL"),
 		InternalToken: common.Env("INTERNAL_TOKEN", ""),
 		RedisURL:      common.Env("REDIS_URL", ""),
+		FuturesURL:    common.Env("FUTURES_INTERNAL_URL", "http://localhost:8089"),
+		MarketURL:     common.Env("MARKET_URL", "http://localhost:8085"),
 	}
 }
 

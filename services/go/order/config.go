@@ -14,12 +14,13 @@ import (
 // there are no VIP tiers to special-case. Withdrawals charge no platform fee
 // (only on-chain gas, handled by the wallet service), so no fee lives here.
 type Config struct {
-	Port             string
-	DatabaseURL      string
-	InternalToken    string
-	AssetInternalURL string
-	EngineURL        string
-	RedisURL         string
+	Port               string
+	DatabaseURL        string
+	InternalToken      string
+	AssetInternalURL   string
+	EngineURL          string
+	FuturesInternalURL string
+	RedisURL           string
 
 	// Spot fees (applied by this service).
 	SpotMakerFeeRate decimal.Decimal
@@ -39,6 +40,7 @@ func LoadConfig() Config {
 		InternalToken:        common.Env("INTERNAL_TOKEN", ""),
 		AssetInternalURL:     common.Env("ASSET_INTERNAL_URL", "http://localhost:8082"),
 		EngineURL:            common.Env("ENGINE_URL", "http://localhost:8083"),
+		FuturesInternalURL:   common.Env("FUTURES_INTERNAL_URL", ""),
 		RedisURL:             common.Env("REDIS_URL", ""),
 		SpotMakerFeeRate:     feeRate("SPOT_MAKER_FEE_RATE", "MAKER_FEE_RATE", "0.001"),
 		SpotTakerFeeRate:     feeRate("SPOT_TAKER_FEE_RATE", "TAKER_FEE_RATE", "0.001"),

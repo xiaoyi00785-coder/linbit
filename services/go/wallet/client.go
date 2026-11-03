@@ -81,10 +81,27 @@ func (c *AssetClient) WithdrawComplete(ctx context.Context, userID, asset string
 }
 
 type movement struct {
-	UserID string `json:"userId"`
-	Asset  string `json:"asset"`
-	Amount string `json:"amount"`
-	Ref    string `json:"ref"`
+	UserID  string `json:"userId"`
+	Asset   string `json:"asset"`
+	Amount  string `json:"amount"`
+	Ref     string `json:"ref"`
+	Purpose string `json:"purpose,omitempty"`
+	Account string `json:"account,omitempty"`
+	ToUser  string `json:"toUserId,omitempty"`
+}
+
+// FreezeWithdraw freezes withdrawal funds in the admin-configured withdraw
+// account (funding by default). The asset service remembers the account per
+// ref so Unfreeze / WithdrawComplete hit the same bucket.
+func (c *AssetClient) FreezeWithdraw(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
+	return c.post(ctx, "/internal/freeze", movement{UserID: userID, Asset: asset, Amount: amount.String(), Ref: ref, Purpose: "withdraw"})
+}
+
+// UserTransfer moves funds between two users' accounts (funding by default),
+// idempotent on ref.
+func (c *AssetClient) UserTransfer(ctx context.Context, fromUser, toUser, asset string, amount decimal.Decimal, ref string) error {
+	return c.post(ctx, "/internal/user-transfer", movement{UserID: fromUser, ToUser: toUser, Asset: asset,
+		Amount: amount.String(), Ref: ref, Account: "funding"})
 }
 
 type withdrawComplete struct {
@@ -210,4 +227,49 @@ func (c *AccountClient) KYCLevel(ctx context.Context, uid string) (int, error) {
 		return 0, err
 	}
 	return out.Level, nil
+}
+
+// UserLookup is the account service's recipient lookup result.
+type UserLookup struct {
+	UID          string `json:"uid"`
+	Status       string `json:"status"`
+	IsSubAccount bool   `json:"isSubAccount"`
+	MaskedEmail  string `json:"maskedEmail"`
+}
+
+// ErrUserNotFound is returned by LookupUser for an unknown uid/email.
+var ErrUserNotFound = fmt.Errorf("user not found")
+
+// LookupUser resolves a user by uid or email via the account service.
+func (c *AccountClient) LookupUser(ctx context.Context, uid, email string) (UserLookup, error) {
+	if c.baseURL == "" {
+		return UserLookup{}, fmt.Errorf("account internal url not configured")
+	}
+	q := url.Values{}
+	if uid != "" {
+		q.Set("uid", uid)
+	} else {
+		q.Set("email", email)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/users/lookup?"+q.Encode(), nil)
+	if err != nil {
+		return UserLookup{}, err
+	}
+	req.Header.Set("X-Internal-Token", c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return UserLookup{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return UserLookup{}, ErrUserNotFound
+	}
+	if resp.StatusCode >= 300 {
+		return UserLookup{}, fmt.Errorf("account lookup status %d", resp.StatusCode)
+	}
+	var out UserLookup
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return UserLookup{}, err
+	}
+	return out, nil
 }

@@ -8,12 +8,12 @@ import "github.com/shopspring/decimal"
 
 // RiskInput carries the signals the scorer looks at.
 type RiskInput struct {
-	Amount          decimal.Decimal
-	NewAddress      bool // destination never used by this user before
-	NewDevice       bool // request came from an unrecognised device
-	WhitelistOn     bool // the user has the withdrawal whitelist enabled
-	Count24h        int  // withdrawals submitted by this user in the last 24h
-	AmountUSD24h    decimal.Decimal
+	Amount       decimal.Decimal
+	NewAddress   bool // destination never used by this user before
+	NewDevice    bool // request came from an unrecognised device
+	WhitelistOn  bool // the user has the withdrawal whitelist enabled
+	Count24h     int  // withdrawals submitted by this user in the last 24h
+	AmountUSD24h decimal.Decimal
 }
 
 // RiskScorer scores a withdrawal. Implementations must be side-effect free.

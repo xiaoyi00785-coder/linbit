@@ -76,7 +76,7 @@ func (s *Store) Liabilities(ctx context.Context, mmUser string) ([]Liability, er
 		       COALESCE(SUM(b.free + b.locked), 0)::text,
 		       COALESCE(SUM(CASE WHEN b.user_id = $1 THEN b.free + b.locked ELSE 0 END), 0)::text,
 		       COALESCE((SELECT SUM(o.amount) FROM wallet_ops o WHERE o.op = 'mm_testnet_seed' AND o.asset = b.asset), 0)::text
-		FROM balances b WHERE b.user_id NOT LIKE 'system:%' GROUP BY b.asset ORDER BY b.asset`, mmUser)
+		FROM (SELECT user_id, asset, free, locked FROM balances UNION ALL SELECT user_id, asset, free, locked FROM funding_balances) b WHERE b.user_id NOT LIKE 'system:%' GROUP BY b.asset ORDER BY b.asset`, mmUser)
 	if err != nil {
 		return nil, err
 	}

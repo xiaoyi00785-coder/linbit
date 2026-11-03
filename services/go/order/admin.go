@@ -78,6 +78,9 @@ func (s *Server) internal(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/admin/fees", s.internal(s.handleGetFees))
 	mux.HandleFunc("PUT /internal/admin/fees", s.internal(s.handlePutFees))
+	mux.HandleFunc("GET /internal/admin/fee-overrides", s.internal(s.handleListUserFees))
+	mux.HandleFunc("PUT /internal/admin/fee-overrides/{userId}", s.internal(s.handlePutUserFee))
+	mux.HandleFunc("DELETE /internal/admin/fee-overrides/{userId}", s.internal(s.handleDeleteUserFee))
 	mux.HandleFunc("GET /internal/admin/symbols", s.internal(s.handleListSymbols))
 	mux.HandleFunc("POST /internal/admin/symbols", s.internal(s.handleCreateSymbol))
 	mux.HandleFunc("PATCH /internal/admin/symbols/{symbol}", s.internal(s.handlePatchSymbol))
