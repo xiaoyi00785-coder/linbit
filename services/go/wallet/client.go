@@ -128,17 +128,29 @@ func NewAccountClient(baseURL, token string) *AccountClient {
 
 // VerifyResult is the outcome of a withdrawal 2FA check.
 type VerifyResult struct {
-	OK     bool   `json:"ok"`
-	Reason string `json:"reason"`
+	OK          bool    `json:"ok"`
+	Reason      string  `json:"reason"`
+	LockedUntil *string `json:"lockedUntil"`
+}
+
+// OutflowOpts adds the security-settings checks (withdrawal lock + fund
+// password) to Verify2FA. Action: "withdraw" | "internal_transfer".
+type OutflowOpts struct {
+	Action       string
+	FundPassword string
 }
 
 // Verify2FA validates the withdrawal's second factor (TOTP when enabled, else an
 // email/SMS code with purpose=withdraw) for the user.
-func (c *AccountClient) Verify2FA(ctx context.Context, uid, totpCode, code string) (VerifyResult, error) {
+func (c *AccountClient) Verify2FA(ctx context.Context, uid, totpCode, code string, opts ...OutflowOpts) (VerifyResult, error) {
 	if c.baseURL == "" {
 		return VerifyResult{}, fmt.Errorf("account internal url not configured")
 	}
-	buf, _ := json.Marshal(map[string]string{"uid": uid, "totpCode": totpCode, "code": code})
+	body := map[string]string{"uid": uid, "totpCode": totpCode, "code": code}
+	if len(opts) > 0 {
+		body["action"], body["fundPassword"] = opts[0].Action, opts[0].FundPassword
+	}
+	buf, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/withdraw/verify", bytes.NewReader(buf))
 	if err != nil {
 		return VerifyResult{}, err
@@ -272,4 +284,38 @@ func (c *AccountClient) LookupUser(ctx context.Context, uid, email string) (User
 		return UserLookup{}, err
 	}
 	return out, nil
+}
+
+// verifyError maps an account verify reason to the public API error.
+// TWOFA_REQUIRED (403): no second factor supplied or none bound.
+// INVALID_TOTP (401): a TOTP / verification code was supplied but is wrong.
+func verifyError(vr VerifyResult) *apiError {
+	switch vr.Reason {
+	case "totp_invalid", "code_invalid":
+		return errf(http.StatusUnauthorized, "INVALID_TOTP", "二次验证码错误")
+	case "account_frozen":
+		return errf(http.StatusForbidden, "ACCOUNT_FROZEN", "账户已冻结")
+	case "withdraw_locked":
+		msg := "账户安全设置近期变更，提现/转账暂时锁定"
+		if vr.LockedUntil != nil {
+			msg += "，解锁时间 " + *vr.LockedUntil
+		}
+		return errf(http.StatusForbidden, "WITHDRAW_LOCKED", msg)
+	case "fund_password_required":
+		return errf(http.StatusBadRequest, "FUND_PASSWORD_REQUIRED", "请输入资金密码")
+	case "fund_password_invalid":
+		return errf(http.StatusBadRequest, "FUND_PASSWORD_INVALID", "资金密码错误")
+	case "fund_password_locked":
+		msg := "资金密码错误次数过多，已暂时锁定"
+		if vr.LockedUntil != nil {
+			msg += "，解锁时间 " + *vr.LockedUntil
+		}
+		return errf(http.StatusLocked, "FUND_PASSWORD_LOCKED", msg)
+	case "fund_password_not_set":
+		return errf(http.StatusForbidden, "FUND_PASSWORD_NOT_SET", "请先设置资金密码")
+	case "internal_error":
+		return errf(http.StatusInternalServerError, "INTERNAL", "二次验证服务不可用")
+	default: // totp_required, code_required, no_contact, legacy/unknown
+		return errf(http.StatusForbidden, "TWOFA_REQUIRED", "需要二次验证（请绑定并提供 TOTP 或验证码）")
+	}
 }

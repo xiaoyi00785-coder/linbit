@@ -85,7 +85,7 @@ func (s *Server) handleSendCodeAuthed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Purpose {
-	case purposeAddress, purposeBind, purposeReset, purposeWithdraw:
+	case purposeAddress, purposeBind, purposeReset, purposeWithdraw, purposeSecurity:
 	default:
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "不支持的 purpose")
 		return
@@ -99,6 +99,10 @@ func (s *Server) handleSendCodeAuthed(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "账户未绑定对应的邮箱/手机")
 		return
 	}
+	if channel == channelSMS && !s.smsAvailable() {
+		common.WriteError(w, http.StatusServiceUnavailable, "SMS_UNAVAILABLE", "短信服务暂不可用，请稍后再试")
+		return
+	}
 	if err := s.codes.Send(r.Context(), channel, target, req.Purpose); err != nil {
 		writeSendCodeError(w, "account code", err)
 		return
@@ -110,12 +114,14 @@ func (s *Server) handleSendCodeAuthed(w http.ResponseWriter, r *http.Request) {
 // emailed/texted code with the given purpose. It writes an API error and returns
 // false when the check fails.
 func (s *Server) requireSensitiveAuth(w http.ResponseWriter, r *http.Request, u *User, totpCode, code, purpose string) bool {
+	// Error split: TWOFA_REQUIRED (403) = no second factor supplied / bound;
+	// INVALID_TOTP (401) = a TOTP was supplied but is wrong.
 	if u.TOTPEnabled {
-		if totpCode == "" || !validateTOTP(u.TOTPSecret, totpCode) {
-			common.WriteError(w, http.StatusUnauthorized, "TOTP_INVALID", "需要有效的两步验证码")
-			return false
-		}
-		return true
+		return requireTOTPIfEnabled(w, u, totpCode)
+	}
+	if s.contactTarget(u, s.contactChannel(u)) == "" {
+		common.WriteError(w, http.StatusForbidden, "TWOFA_REQUIRED", "请先绑定两步验证或邮箱/手机")
+		return false
 	}
 	if code == "" {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请先获取并提交验证码")

@@ -208,6 +208,8 @@ type internalTransferReq struct {
 	ToEmail  string `json:"toEmail"`
 	TOTPCode string `json:"totpCode"`
 	Code     string `json:"code"`
+	// FundPassword: required when set and the admin policy applies.
+	FundPassword string `json:"fundPassword"`
 }
 
 func (s *Server) itxPrice(ctx context.Context, asset string) (decimal.Decimal, bool) {
@@ -278,12 +280,12 @@ func (s *Server) internalTransfer(ctx context.Context, uid string, req internalT
 		return nil, errf(http.StatusForbidden, "INTERNAL_TRANSFER_DISABLED", "内部转账暂未开放")
 	}
 
-	vr, err := s.account.Verify2FA(ctx, uid, req.TOTPCode, req.Code)
+	vr, err := s.account.Verify2FA(ctx, uid, req.TOTPCode, req.Code, OutflowOpts{Action: "internal_transfer", FundPassword: req.FundPassword})
 	if err != nil {
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "二次验证服务不可用")
 	}
 	if !vr.OK {
-		return nil, errf(http.StatusUnauthorized, "TWOFA_REQUIRED", "需要有效的二次验证（TOTP 或验证码）")
+		return nil, verifyError(vr)
 	}
 
 	to, err := s.account.LookupUser(ctx, req.ToUID, req.ToEmail)

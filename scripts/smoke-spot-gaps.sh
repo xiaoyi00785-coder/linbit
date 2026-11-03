@@ -111,7 +111,7 @@ SECRET="$(ok "$(api "$TA" POST /2fa/totp/bind '{}')" bind | jq -r .secret)"
 ok "$(api "$TA" POST /2fa/totp/verify "{\"code\":\"$(totp "$SECRET")\"}")" "totp verify" >/dev/null
 IT() { api "$TA" POST /wallet/internal-transfer "{\"clientId\":\"$1\",\"asset\":\"USDT\",\"amount\":\"$2\",$3,\"totpCode\":\"$(totp "$SECRET")\"}"; }
 B0="$(acct_free "$TB" funding USDT)"
-expect_err "$(api "$TA" POST /wallet/internal-transfer "{\"clientId\":\"it-$TS-0\",\"asset\":\"USDT\",\"amount\":\"5\",\"toUid\":\"$UB\",\"totpCode\":\"000000\"}")" 401 TWOFA_REQUIRED "bad totp"
+expect_err "$(api "$TA" POST /wallet/internal-transfer "{\"clientId\":\"it-$TS-0\",\"asset\":\"USDT\",\"amount\":\"5\",\"toUid\":\"$UB\",\"totpCode\":\"000000\"}")" 401 INVALID_TOTP "bad totp"
 expect_err "$(IT "it-$TS-x" 5 "\"toUid\":\"$UA\"")" 400 SELF_TRANSFER "self"
 expect_err "$(IT "it-$TS-y" 5 "\"toEmail\":\"nobody+$TS@example.com\"")" 404 RECIPIENT_NOT_FOUND "unknown recipient"
 R="$(ok "$(IT "it-$TS-1" 5 "\"toUid\":\"$UB\"")" "internal transfer")"

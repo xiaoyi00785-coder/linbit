@@ -89,5 +89,6 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
+	s.securityChanged(r.Context(), u, "关闭了两步验证", true)
 	common.WriteJSON(w, http.StatusOK, twoFactorStatus{Enabled: false, Method: nil})
 }

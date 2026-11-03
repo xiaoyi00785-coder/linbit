@@ -357,6 +357,8 @@ type createWithdrawalRequest struct {
 	Memo     string `json:"memo"`
 	TOTPCode string `json:"totpCode"`
 	Code     string `json:"code"`
+	// FundPassword: required when set and the admin policy applies.
+	FundPassword string `json:"fundPassword"`
 }
 
 func (s *Server) handleCreateWithdrawal(w http.ResponseWriter, r *http.Request) {
@@ -384,6 +386,7 @@ func (s *Server) handleCreateWithdrawal(w http.ResponseWriter, r *http.Request) 
 	wd, apiErr := s.submitWithdrawal(r.Context(), uid, withdrawInput{
 		Asset: req.Asset, Network: req.Network, Address: req.Address, Memo: strings.TrimSpace(req.Memo),
 		Amount: amount, TOTPCode: strings.TrimSpace(req.TOTPCode), Code: strings.TrimSpace(req.Code),
+		FundPassword: req.FundPassword,
 	})
 	if apiErr != nil {
 		common.WriteError(w, apiErr.status, apiErr.code, apiErr.msg)

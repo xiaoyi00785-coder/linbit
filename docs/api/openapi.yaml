@@ -539,6 +539,337 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: EMAIL_UNAVAILABLE, message: email delivery unavailable }
 
+  /account/security:
+    get:
+      tags: [Account]
+      summary: 账户安全概览
+      operationId: getSecurityOverview
+      description: 2FA、邮箱/手机（脱敏）、资金密码、防钓鱼码、通行密钥数量、提现锁定状态、最近登录设备及当前安全策略。
+      responses:
+        "200":
+          description: 安全概览
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecurityOverview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/password/change:
+    post:
+      tags: [Account]
+      summary: 修改登录密码（原密码 + 2FA/验证码，默认注销其他会话）
+      operationId: changePassword
+      description: |
+        已开启 2FA 时需 totpCode；否则需 code（POST /account/code/send purpose=security）。
+        成功后撤销除当前设备外的全部会话，并触发提现锁定（默认 24 小时）与安全通知邮件。
+        错误码：OLD_PASSWORD_INVALID、PASSWORD_UNCHANGED、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、AUTH_CODE_INVALID。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "200":
+          description: 已修改
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  revokedSessions: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+
+  /account/contact/code:
+    post:
+      tags: [Account]
+      summary: 向新邮箱/手机发送绑定验证码（purpose=bind_new）
+      operationId: sendContactCode
+      description: 传 email 或 phone(+countryCode)。短信不可用时返回 503 SMS_UNAVAILABLE；已被他人使用返回 409 EMAIL_EXISTS/PHONE_EXISTS。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                phone: { type: string }
+                countryCode: { type: string, example: "+86" }
+      responses:
+        "200":
+          description: 已发送
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: boolean }
+                  channel: { type: string, enum: [email, sms] }
+                  ttlSeconds: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /account/email:
+    put:
+      tags: [Account]
+      summary: 修改/绑定邮箱（新旧双重验证）
+      operationId: changeEmail
+      description: |
+        newCode：发到新邮箱的验证码（/account/contact/code）；oldCode：发到原邮箱（未绑邮箱时为现有联系方式）的验证码
+        （/account/code/send purpose=security）；已开启 2FA 时另需 totpCode。成功后触发提现锁定与安全通知。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeContactRequest" }
+      responses:
+        "200": { description: 已更新, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+
+  /account/phone:
+    put:
+      tags: [Account]
+      summary: 修改/绑定手机（新旧双重验证）
+      operationId: changePhone
+      description: 同 /account/email，传 phone + countryCode。短信不可用时 503 SMS_UNAVAILABLE。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangeContactRequest" }
+      responses:
+        "200": { description: 已更新, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /account/fund-password:
+    post:
+      tags: [Account]
+      summary: 设置资金密码（6 位数字，首次）
+      operationId: setFundPassword
+      description: 需 2FA 或 code(purpose=security)。已设置返回 409 FUND_PASSWORD_EXISTS。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundPasswordRequest" }
+      responses:
+        "200": { description: 已设置, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+    put:
+      tags: [Account]
+      summary: 修改资金密码（需原资金密码 + 2FA/验证码）
+      operationId: changeFundPassword
+      description: 原资金密码连续错误达上限（默认 5 次）锁定（423 FUND_PASSWORD_LOCKED，含 lockedUntil）。成功后触发提现锁定。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundPasswordRequest" }
+      responses:
+        "200": { description: 已修改, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "423": { $ref: "#/components/responses/BadRequest" }
+
+  /account/fund-password/reset:
+    post:
+      tags: [Account]
+      summary: 重置资金密码（忘记时，2FA/验证码，清除锁定）
+      operationId: resetFundPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FundPasswordRequest" }
+      responses:
+        "200": { description: 已重置, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+
+  /account/anti-phishing:
+    put:
+      tags: [Account]
+      summary: 设置/修改防钓鱼码（4-20 位字母数字，显示在平台所有外发邮件开头）
+      operationId: setAntiPhishing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [antiPhishingCode]
+              properties:
+                antiPhishingCode: { type: string, example: "Lb2026" }
+                totpCode: { type: string }
+                code: { type: string, description: 未开 2FA 时 purpose=security 验证码 }
+      responses:
+        "200": { description: 已设置, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+
+  /account/sessions:
+    get:
+      tags: [Account]
+      summary: 列出有效登录会话（refresh token）
+      operationId: listSessions
+      responses:
+        "200":
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/sessions/{id}:
+    delete:
+      tags: [Account]
+      summary: 注销指定会话
+      operationId: revokeSession
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: 已注销 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /account/sessions/revoke-others:
+    post:
+      tags: [Account]
+      summary: 注销除当前设备外的全部会话
+      operationId: revokeOtherSessions
+      responses:
+        "200":
+          description: 已注销
+          content:
+            application/json:
+              schema: { type: object, properties: { revoked: { type: integer } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/passkeys:
+    get:
+      tags: [Account]
+      summary: 列出通行密钥（Passkey / WebAuthn）
+      operationId: listPasskeys
+      responses:
+        "200":
+          description: 列表；enabled=false 表示服务端未配置 WEBAUTHN_RP_ID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  items: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /account/passkeys/register/begin:
+    post:
+      tags: [Account]
+      summary: 开始注册通行密钥（需 2FA/验证码）
+      operationId: beginPasskeyRegistration
+      description: 返回 publicKey（PublicKeyCredentialCreationOptions，二进制字段为 base64url）与 sessionId（5 分钟有效、一次性）。未启用时 503 PASSKEY_UNAVAILABLE。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                totpCode: { type: string }
+                code: { type: string }
+      responses:
+        "200": { description: 注册选项, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /account/passkeys/register/finish:
+    post:
+      tags: [Account]
+      summary: 完成注册通行密钥
+      operationId: finishPasskeyRegistration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, credential]
+              properties:
+                sessionId: { type: string }
+                name: { type: string, maxLength: 64 }
+                credential: { type: object, description: navigator.credentials.create() 结果的 JSON（PublicKeyCredential.toJSON()） }
+      responses:
+        "201": { description: 已绑定, content: { application/json: { schema: { $ref: "#/components/schemas/Passkey" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+
+  /account/passkeys/{id}:
+    delete:
+      tags: [Account]
+      summary: 删除通行密钥
+      operationId: deletePasskey
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: 已删除 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /auth/passkey/login/begin:
+    post:
+      tags: [Auth]
+      summary: 通行密钥登录：获取挑战（可发现凭据，无需用户名）
+      operationId: beginPasskeyLogin
+      security: []
+      responses:
+        "200": { description: 登录选项, content: { application/json: { schema: { $ref: "#/components/schemas/PasskeyCeremony" } } } }
+        "503": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/passkey/login/finish:
+    post:
+      tags: [Auth]
+      summary: 通行密钥登录：校验断言并签发令牌
+      operationId: finishPasskeyLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, credential]
+              properties:
+                sessionId: { type: string }
+                credential: { type: object, description: navigator.credentials.get() 结果的 JSON }
+                deviceId: { type: string }
+                deviceName: { type: string }
+      responses:
+        "200": { description: 登录成功, content: { application/json: { schema: { $ref: "#/components/schemas/AuthTokens" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/BadRequest" }
+
   /account/devices:
     get:
       tags: [Account]
@@ -1009,7 +1340,10 @@ paths:
         Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
         amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
         未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
-      x-error-codes: [MIN_WITHDRAW, WITHDRAW_LIMIT_EXCEEDED, PRICE_UNAVAILABLE, KYC_REQUIRED]
+        二次验证错误码拆分：TWOFA_REQUIRED(403，未提供/未绑定二次验证)、INVALID_TOTP(401，TOTP 或验证码错误)。
+        安全设置：WITHDRAW_LOCKED(403，近期修改密码/邮箱/手机/资金密码/关闭 2FA 后锁定，默认 24h)、
+        FUND_PASSWORD_REQUIRED/FUND_PASSWORD_INVALID(400)、FUND_PASSWORD_LOCKED(423)、FUND_PASSWORD_NOT_SET(403)。
+      x-error-codes: [MIN_WITHDRAW, WITHDRAW_LIMIT_EXCEEDED, PRICE_UNAVAILABLE, KYC_REQUIRED, TWOFA_REQUIRED, INVALID_TOTP, WITHDRAW_LOCKED, FUND_PASSWORD_REQUIRED, FUND_PASSWORD_INVALID, FUND_PASSWORD_LOCKED, FUND_PASSWORD_NOT_SET]
       requestBody:
         required: true
         content:
@@ -1048,7 +1382,8 @@ paths:
         "403":
           description: |
             KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
-            但目标地址不在白名单内
+            但目标地址不在白名单内；TWOFA_REQUIRED：未提供/未绑定二次验证；WITHDRAW_LOCKED：安全设置变更后的锁定期；
+            FUND_PASSWORD_NOT_SET：后台要求资金密码但尚未设置
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -4296,7 +4631,7 @@ paths:
       description: |
         从资金账户（funding）转给另一位平台用户（toUid 或 toEmail 二选一）。收款方须存在、状态正常且不是子账户。
         24 小时滚动额度按 USDT 估值计（后台可配，默认 50000；0=不限）；功能可被后台关闭。
-        错误码：VALIDATION_ERROR、TWOFA_REQUIRED、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
+        错误码：VALIDATION_ERROR、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、WITHDRAW_LOCKED(403)、FUND_PASSWORD_*、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
         RECIPIENT_SUB_ACCOUNT、RECIPIENT_UNAVAILABLE、PRICE_UNAVAILABLE、INTERNAL_TRANSFER_LIMIT_EXCEEDED、INSUFFICIENT_BALANCE、
         IDEMPOTENCY_CONFLICT(409，同 clientId 不同参数)。
       operationId: createInternalTransfer
@@ -5164,6 +5499,17 @@ components:
             code: AUTH_UNAUTHORIZED
             message: 请先登录
             requestId: req_401demo
+    Forbidden2FA:
+      description: |
+        TWOFA_REQUIRED：未提供二次验证或账户未绑定任何二次验证方式（403）。
+        注意：提供了但错误的 TOTP/验证码返回 401 INVALID_TOTP（见各接口）。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: TWOFA_REQUIRED
+            message: 请提供两步验证码
+            requestId: req_403demo
     NotFound:
       description: 资源不存在
       content:
@@ -5779,6 +6125,92 @@ components:
             未开启 2FA 时必填：发到用户邮箱/手机的验证码（purpose=withdraw）。
             与 totpCode 二选一，由服务端按账户状态校验。
           example: "123456"
+        fundPassword:
+          type: string
+          nullable: true
+          description: 资金密码（已设置且后台策略要求时必填；fundPasswordMandatory=true 时未设置将被拒绝 FUND_PASSWORD_NOT_SET）
+
+    OkResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+    ChangePasswordRequest:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword: { type: string }
+        newPassword: { type: string, minLength: 8, maxLength: 128 }
+        totpCode: { type: string, description: 已开启 2FA 时必填 }
+        code: { type: string, description: 未开 2FA 时必填（purpose=security） }
+        revokeOtherSessions: { type: boolean, default: true }
+    ChangeContactRequest:
+      type: object
+      required: [newCode, oldCode]
+      properties:
+        email: { type: string }
+        phone: { type: string }
+        countryCode: { type: string }
+        newCode: { type: string, description: 新联系方式收到的验证码（purpose=bind_new） }
+        oldCode: { type: string, description: 原联系方式收到的验证码（purpose=security） }
+        totpCode: { type: string, description: 已开启 2FA 时必填 }
+    FundPasswordRequest:
+      type: object
+      required: [fundPassword]
+      properties:
+        fundPassword: { type: string, pattern: "^[0-9]{6}$" }
+        oldFundPassword: { type: string, description: PUT（修改）时必填 }
+        totpCode: { type: string }
+        code: { type: string, description: 未开 2FA 时 purpose=security 验证码 }
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        deviceId: { type: string }
+        name: { type: string }
+        ip: { type: string }
+        userAgent: { type: string }
+        current: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    Passkey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+    PasskeyCeremony:
+      type: object
+      properties:
+        sessionId: { type: string }
+        publicKey: { type: object, additionalProperties: true }
+    SecurityOverview:
+      type: object
+      properties:
+        twoFactor:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            method: { type: string, nullable: true, enum: [totp, null] }
+        email: { type: string, nullable: true, description: 脱敏 }
+        emailVerified: { type: boolean }
+        phone: { type: string, nullable: true, description: 脱敏，如 138****5678 }
+        phoneVerified: { type: boolean }
+        fundPasswordSet: { type: boolean }
+        fundPasswordLockedUntil: { type: string, format: date-time, nullable: true }
+        antiPhishingSet: { type: boolean }
+        antiPhishingHint: { type: string, nullable: true, description: 首字符 + 星号 }
+        passkeysCount: { type: integer }
+        withdrawLockedUntil: { type: string, format: date-time, nullable: true }
+        withdrawLockReason: { type: string, nullable: true }
+        recentDevices: { type: array, items: { $ref: "#/components/schemas/Device" } }
+        policy:
+          type: object
+          properties:
+            fundPasswordForWithdraw: { type: boolean }
+            fundPasswordForInternalTransfer: { type: boolean }
+            fundPasswordMandatory: { type: boolean }
+            withdrawLockHours: { type: integer }
 
     Withdrawal:
       type: object
@@ -7204,6 +7636,8 @@ components:
         toUid: { type: string }
         toEmail: { type: string }
         totpCode: { type: string }
+        code: { type: string, description: 未开 2FA 时 purpose=withdraw 验证码 }
+        fundPassword: { type: string, description: 资金密码（已设置且后台策略要求时必填） }
     InternalTransfer:
       type: object
       properties:

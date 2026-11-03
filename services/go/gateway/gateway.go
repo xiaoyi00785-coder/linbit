@@ -167,6 +167,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/refresh"},
 			{method: http.MethodPost, path: "/auth/password/verify-code"},
 			{method: http.MethodPost, path: "/auth/password/reset"},
+			{method: http.MethodPost, path: "/auth/passkey/login/begin"},
+			{method: http.MethodPost, path: "/auth/passkey/login/finish"},
 			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
 			{method: "", path: "/market/"},                      // public market data (prefix)
 			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
