@@ -346,13 +346,15 @@ enum SubAPI {
 
 // MARK: - 聊天室（feat/chat）
 
-struct ChatRoom: Decodable, Hashable, Identifiable { let id: String; let kind: String?; let symbol: String?; let online: Int? }
+/// type: general / spot / futures；name 为服务端给出的展示名
+struct ChatRoom: Decodable, Hashable, Identifiable { let id: String; let type: String?; let symbol: String?; let name: String?; let online: Int? }
 struct ChatRules: Decodable, Hashable { let maxLength: Int?; let minIntervalMs: Int?; let minKycLevel: Int?; let blockLinks: Bool?; let blockContacts: Bool? }
 struct ChatMessage: Decodable, Hashable, Identifiable {
     let id: Int64
     let room: String?
     let sender: String?
     let text: String
+    /// 仅历史与发言接口返回；WS 推送不带（自己的消息靠发言接口返回的 id 识别）
     let mine: Bool?
     let createdAt: Date?
 }

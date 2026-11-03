@@ -10,15 +10,22 @@ import Foundation
 public struct APIFuturesFundingHistory200Response: Codable, JSONEncodable, Hashable {
 
     public var symbol: String?
+    public var fundingIntervalHours: Int?
+    /** 本页满额时返回，作为下一页的 endTime */
+    public var nextEndTime: Int64?
     public var history: [APIFuturesFundingHistory200ResponseHistoryInner]?
 
-    public init(symbol: String? = nil, history: [APIFuturesFundingHistory200ResponseHistoryInner]? = nil) {
+    public init(symbol: String? = nil, fundingIntervalHours: Int? = nil, nextEndTime: Int64? = nil, history: [APIFuturesFundingHistory200ResponseHistoryInner]? = nil) {
         self.symbol = symbol
+        self.fundingIntervalHours = fundingIntervalHours
+        self.nextEndTime = nextEndTime
         self.history = history
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case symbol
+        case fundingIntervalHours
+        case nextEndTime
         case history
     }
 
@@ -27,6 +34,8 @@ public struct APIFuturesFundingHistory200Response: Codable, JSONEncodable, Hasha
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(symbol, forKey: .symbol)
+        try container.encodeIfPresent(fundingIntervalHours, forKey: .fundingIntervalHours)
+        try container.encodeIfPresent(nextEndTime, forKey: .nextEndTime)
         try container.encodeIfPresent(history, forKey: .history)
     }
 }

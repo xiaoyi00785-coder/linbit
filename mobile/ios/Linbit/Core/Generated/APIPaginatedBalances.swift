@@ -9,16 +9,23 @@ import Foundation
 
 public struct APIPaginatedBalances: Codable, JSONEncodable, Hashable {
 
+    public enum APIAccount: String, Codable, CaseIterable {
+        case spot = "spot"
+        case funding = "funding"
+    }
     public var page: Int
     public var pageSize: Int
     public var total: Int
     public var items: [APIBalance]
+    /** 本次列出的钱包 */
+    public var account: APIAccount?
 
-    public init(page: Int, pageSize: Int, total: Int, items: [APIBalance]) {
+    public init(page: Int, pageSize: Int, total: Int, items: [APIBalance], account: APIAccount? = nil) {
         self.page = page
         self.pageSize = pageSize
         self.total = total
         self.items = items
+        self.account = account
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -26,6 +33,7 @@ public struct APIPaginatedBalances: Codable, JSONEncodable, Hashable {
         case pageSize
         case total
         case items
+        case account
     }
 
     // Encodable protocol methods
@@ -36,6 +44,7 @@ public struct APIPaginatedBalances: Codable, JSONEncodable, Hashable {
         try container.encode(pageSize, forKey: .pageSize)
         try container.encode(total, forKey: .total)
         try container.encode(items, forKey: .items)
+        try container.encodeIfPresent(account, forKey: .account)
     }
 }
 

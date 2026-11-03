@@ -9,27 +9,31 @@ import Foundation
 
 public struct APIChatRoom: Codable, JSONEncodable, Hashable {
 
-    public enum APIKind: String, Codable, CaseIterable {
+    public enum APIType: String, Codable, CaseIterable {
         case general = "general"
         case spot = "spot"
         case futures = "futures"
     }
-    public var id: String?
-    public var kind: APIKind?
+    public var id: String
+    public var type: APIType
+    /** general 房间不返回 */
     public var symbol: String?
-    public var online: Int?
+    public var name: String
+    public var online: Int
 
-    public init(id: String? = nil, kind: APIKind? = nil, symbol: String? = nil, online: Int? = nil) {
+    public init(id: String, type: APIType, symbol: String? = nil, name: String, online: Int) {
         self.id = id
-        self.kind = kind
+        self.type = type
         self.symbol = symbol
+        self.name = name
         self.online = online
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case id
-        case kind
+        case type
         case symbol
+        case name
         case online
     }
 
@@ -37,10 +41,11 @@ public struct APIChatRoom: Codable, JSONEncodable, Hashable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(id, forKey: .id)
-        try container.encodeIfPresent(kind, forKey: .kind)
+        try container.encode(id, forKey: .id)
+        try container.encode(type, forKey: .type)
         try container.encodeIfPresent(symbol, forKey: .symbol)
-        try container.encodeIfPresent(online, forKey: .online)
+        try container.encode(name, forKey: .name)
+        try container.encode(online, forKey: .online)
     }
 }
 

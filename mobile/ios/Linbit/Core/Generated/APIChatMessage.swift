@@ -9,19 +9,23 @@ import Foundation
 
 public struct APIChatMessage: Codable, JSONEncodable, Hashable {
 
-    public var id: Int64?
-    public var room: String?
+    public var id: Int64
+    public var room: String
     /** 脱敏昵称，如 用户***1234 */
-    public var sender: String?
-    public var text: String?
+    public var sender: String
+    public var text: String
+    /** 仅发言接口的响应返回（发送者自己的 clientId）；历史与推送不返回 */
+    public var clientId: String?
+    /** 发送者是否为当前登录用户；仅历史与发言接口返回，匿名请求与 WS 推送不返回 */
     public var mine: Bool?
-    public var createdAt: Date?
+    public var createdAt: Date
 
-    public init(id: Int64? = nil, room: String? = nil, sender: String? = nil, text: String? = nil, mine: Bool? = nil, createdAt: Date? = nil) {
+    public init(id: Int64, room: String, sender: String, text: String, clientId: String? = nil, mine: Bool? = nil, createdAt: Date) {
         self.id = id
         self.room = room
         self.sender = sender
         self.text = text
+        self.clientId = clientId
         self.mine = mine
         self.createdAt = createdAt
     }
@@ -31,6 +35,7 @@ public struct APIChatMessage: Codable, JSONEncodable, Hashable {
         case room
         case sender
         case text
+        case clientId
         case mine
         case createdAt
     }
@@ -39,12 +44,13 @@ public struct APIChatMessage: Codable, JSONEncodable, Hashable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(id, forKey: .id)
-        try container.encodeIfPresent(room, forKey: .room)
-        try container.encodeIfPresent(sender, forKey: .sender)
-        try container.encodeIfPresent(text, forKey: .text)
+        try container.encode(id, forKey: .id)
+        try container.encode(room, forKey: .room)
+        try container.encode(sender, forKey: .sender)
+        try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(clientId, forKey: .clientId)
         try container.encodeIfPresent(mine, forKey: .mine)
-        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encode(createdAt, forKey: .createdAt)
     }
 }
 
