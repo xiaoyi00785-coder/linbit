@@ -30,6 +30,7 @@ func (s *Server) Tick(ctx context.Context, forceSample bool) {
 	defer s.tickMu.Unlock()
 	s.refreshPrices(ctx)
 	s.sampleMarks(ctx, forceSample)
+	s.snapshotInsurance(ctx, forceSample)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.fundingDue(ctx)

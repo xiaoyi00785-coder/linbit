@@ -32,6 +32,7 @@ type Server struct {
 	prices         map[string]*priceState
 	devIndex       map[string]decimal.Decimal
 	lastMarkSample time.Time
+	lastInsSnap    time.Time
 	tpslRetry      map[string]time.Time
 	traders        map[string]bool // active copy traders (their fills emit copy events)
 	lastCopySettle string

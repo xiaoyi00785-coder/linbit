@@ -146,10 +146,57 @@ func (f *IndexFeed) run(ctx context.Context, src *indexSource) {
 
 // IndexResult is one index lookup.
 type IndexResult struct {
-	Symbol    string    `json:"symbol"`
-	Price     string    `json:"indexPrice"`
-	Source    string    `json:"source"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Symbol     string           `json:"symbol"`
+	Price      string           `json:"indexPrice"`
+	Source     string           `json:"source"`
+	UpdatedAt  time.Time        `json:"updatedAt"`
+	Components []IndexComponent `json:"components,omitempty"`
+}
+
+// IndexComponent describes one constituent exchange of an index. The index
+// uses primary/backup failover, so the active source has weight 1 and the
+// others 0.
+type IndexComponent struct {
+	Exchange  string `json:"exchange"`
+	Price     string `json:"price,omitempty"`
+	Weight    string `json:"weight"`
+	Fresh     bool   `json:"fresh"`
+	UpdatedAt int64  `json:"updatedAt,omitempty"`
+}
+
+// Components lists every source quoting symbol, marking active as weight 1.
+func (f *IndexFeed) Components(symbol, active string) []IndexComponent {
+	symbol = strings.ToUpper(symbol)
+	f.mu.Lock()
+	ref, isTradFi := f.tradfi[symbol]
+	f.mu.Unlock()
+	srcs := f.sources
+	if isTradFi {
+		srcs = f.tradfiSources
+	}
+	now := time.Now()
+	out := []IndexComponent{}
+	for _, src := range srcs {
+		id := symbol
+		if isTradFi {
+			id = ref.Binance
+			if src.name == "okx-swap" {
+				id = ref.OKX
+			}
+		}
+		c := IndexComponent{Exchange: src.name, Weight: "0"}
+		if src.name == active {
+			c.Weight = "1"
+		}
+		src.mu.Lock()
+		q, ok := src.quotes[id]
+		src.mu.Unlock()
+		if ok && id != "" {
+			c.Price, c.Fresh, c.UpdatedAt = q.price.String(), now.Sub(q.at) <= f.stale, q.at.UnixMilli()
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // Index returns the freshest usable index for symbol, honouring source order.
@@ -398,10 +445,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusServiceUnavailable, "INDEX_UNAVAILABLE", "外部指数价格不可用")
 		return
 	}
+	res.Components = s.feed.Components(sym, res.Source)
 	if s.tradfi != nil {
 		if d, ok := s.tradfi.deviation(sym); ok {
 			common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": res.Symbol, "indexPrice": res.Price, "source": res.Source,
-				"updatedAt": res.UpdatedAt, "reference": "tradfi", "deviationBps": d.DeviationBps, "widened": d.Widened, "widenFactor": d.WidenFactor})
+				"updatedAt": res.UpdatedAt, "components": res.Components, "reference": "tradfi", "deviationBps": d.DeviationBps, "widened": d.Widened, "widenFactor": d.WidenFactor})
 			return
 		}
 	}

@@ -2587,7 +2587,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 资金费率历史 */
+        /** 资金费率历史（按交易对分页，新到旧） */
         get: operations["futuresFundingHistory"];
         put?: never;
         post?: never;
@@ -2604,7 +2604,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 标记价 / 指数价历史 */
+        /** 标记价 / 指数价历史（原始采样或按周期聚合的 K 线） */
         get: operations["futuresMarkHistory"];
         put?: never;
         post?: never;
@@ -2623,6 +2623,74 @@ export interface paths {
         };
         /** 保险基金（余额、最近强平与 ADL） */
         get: operations["futuresInsuranceFund"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/insurance-fund/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 保险基金历史余额（定时快照，新到旧） */
+        get: operations["futuresInsuranceFundHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/risk-tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 仓位档位（每档名义价值区间、最大杠杆、维持保证金率） */
+        get: operations["futuresRiskTiers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/isolated-params": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 逐仓参数（每个合约的杠杆、保证金率、强平费率、数量限制等） */
+        get: operations["futuresIsolatedParams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/futures/market/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前指数价格与成分交易所（Binance 主、OKX 备，当前生效来源权重为 1） */
+        get: operations["futuresIndex"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10126,6 +10194,10 @@ export interface operations {
             query: {
                 symbol: unknown;
                 limit?: number;
+                /** @description 起始时间（毫秒，含） */
+                startTime?: number;
+                /** @description 结束时间（毫秒，含）；翻页时传上一页的 nextEndTime */
+                endTime?: number;
             };
             header?: never;
             path?: never;
@@ -10141,6 +10213,12 @@ export interface operations {
                 content: {
                     "application/json": {
                         symbol?: string;
+                        fundingIntervalHours?: number;
+                        /**
+                         * Format: int64
+                         * @description 本页满额时返回，作为下一页的 endTime
+                         */
+                        nextEndTime?: number;
                         history?: {
                             /** Format: int64 */
                             fundingTime?: number;
@@ -10159,6 +10237,12 @@ export interface operations {
             query: {
                 symbol: unknown;
                 limit?: number;
+                /** @description 不传返回原始采样；传入则返回标记价 K 线 */
+                interval?: "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+                /** @description 起始时间（毫秒，含） */
+                startTime?: number;
+                /** @description 结束时间（毫秒，含）；翻页时传上一页的 nextEndTime */
+                endTime?: number;
             };
             header?: never;
             path?: never;
@@ -10174,7 +10258,25 @@ export interface operations {
                 content: {
                     "application/json": {
                         symbol?: string;
+                        interval?: string;
+                        /** @description 原始采样间隔（秒） */
+                        sampleSeconds?: number;
+                        /** Format: int64 */
+                        nextEndTime?: number;
+                        /** @description 不传 interval 时为 time/indexPrice/markPrice；传 interval 时为 openTime/open/high/low/close/indexClose */
                         history?: {
+                            /** Format: int64 */
+                            openTime?: number;
+                            /** @description 十进制字符串 */
+                            open?: string;
+                            /** @description 十进制字符串 */
+                            high?: string;
+                            /** @description 十进制字符串 */
+                            low?: string;
+                            /** @description 十进制字符串 */
+                            close?: string;
+                            /** @description 十进制字符串 */
+                            indexClose?: string;
                             /** Format: int64 */
                             time?: number;
                             /** @description 十进制字符串 */
@@ -10233,6 +10335,209 @@ export interface operations {
                             time?: number;
                         }[];
                     };
+                };
+            };
+        };
+    };
+    futuresInsuranceFundHistory: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description 起始时间（毫秒，含） */
+                startTime?: number;
+                /** @description 结束时间（毫秒，含）；翻页时传上一页的 nextEndTime */
+                endTime?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        asset?: string;
+                        snapshotMinutes?: number;
+                        /** Format: int64 */
+                        nextEndTime?: number;
+                        history?: {
+                            /** Format: int64 */
+                            time?: number;
+                            asset?: string;
+                            /** @description 十进制字符串 */
+                            balance?: string;
+                            /** @description 十进制字符串 */
+                            equity?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    futuresRiskTiers: {
+        parameters: {
+            query?: {
+                /** @description 不传返回全部合约 */
+                symbol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        contracts?: {
+                            symbol?: string;
+                            marginAsset?: string;
+                            tiers?: {
+                                tier?: number;
+                                /** @description 名义价值下限（USDT，不含） */
+                                minNotional?: string;
+                                /** @description 名义价值上限（USDT，含） */
+                                maxNotional?: string;
+                                maxLeverage?: number;
+                                maintenanceMarginRate?: string;
+                                /** @description 维持保证金速算额 */
+                                maintenanceAmount?: string;
+                            }[];
+                        }[];
+                    };
+                };
+            };
+            /** @description UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresIsolatedParams: {
+        parameters: {
+            query?: {
+                /** @description 不传返回全部合约 */
+                symbol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        defaultMarginMode?: string;
+                        contracts?: {
+                            symbol?: string;
+                            marginAsset?: string;
+                            marginModes?: string[];
+                            maxLeverage?: number;
+                            defaultLeverage?: number;
+                            /** @description 第一档维持保证金率 */
+                            maintenanceMarginRate?: string;
+                            /** @description 强平手续费率（进入保险基金） */
+                            liquidationFeeRate?: string;
+                            minQty?: string;
+                            maxQty?: string;
+                            tickSize?: string;
+                            makerFeeRate?: string;
+                            takerFeeRate?: string;
+                            fundingIntervalHours?: number;
+                            /** @description 逐仓可追加/减少保证金 */
+                            marginAdjustable?: boolean;
+                            tiers?: {
+                                tier?: number;
+                                /** @description 名义价值下限（USDT，不含） */
+                                minNotional?: string;
+                                /** @description 名义价值上限（USDT，含） */
+                                maxNotional?: string;
+                                maxLeverage?: number;
+                                maintenanceMarginRate?: string;
+                                /** @description 维持保证金速算额 */
+                                maintenanceAmount?: string;
+                            }[];
+                        }[];
+                    };
+                };
+            };
+            /** @description UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    futuresIndex: {
+        parameters: {
+            query: {
+                symbol: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        symbol?: string;
+                        /** @description 十进制字符串；为 0 表示指数暂不可用 */
+                        indexPrice?: string;
+                        markPrice?: string;
+                        /** Format: int64 */
+                        indexUpdatedAt?: number;
+                        /** @description 当前生效来源（binance / okx / binance-tradfi / okx-swap / local） */
+                        source?: string;
+                        /** @description primary_failover：按顺序取第一个新鲜来源，不做加权平均 */
+                        method?: string;
+                        components?: {
+                            exchange?: string;
+                            price?: string;
+                            /** @description "1" 为当前生效来源，其余 "0" */
+                            weight?: string;
+                            fresh?: boolean;
+                            /** Format: int64 */
+                            updatedAt?: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description UNKNOWN_SYMBOL */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

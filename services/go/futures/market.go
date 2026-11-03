@@ -56,3 +56,42 @@ func (c *MarketClient) LastPrice(ctx context.Context, asset string) (decimal.Dec
 	}
 	return p, true
 }
+
+// IndexComponent is one index source as reported by market-data /market/index.
+type IndexComponent struct {
+	Exchange  string `json:"exchange"`
+	Price     string `json:"price,omitempty"`
+	Weight    string `json:"weight"`
+	Fresh     bool   `json:"fresh"`
+	UpdatedAt int64  `json:"updatedAt,omitempty"`
+}
+
+type IndexInfo struct {
+	Source     string           `json:"source"`
+	Components []IndexComponent `json:"components"`
+}
+
+// IndexInfo returns the active source and constituent exchanges for asset/USDT.
+func (c *MarketClient) IndexInfo(ctx context.Context, asset string) (IndexInfo, bool) {
+	var out IndexInfo
+	if c == nil || c.baseURL == "" {
+		return out, false
+	}
+	u := fmt.Sprintf("%s/market/index?symbol=%s", c.baseURL, url.QueryEscape(strings.ToUpper(asset)+"USDT"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return out, false
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return out, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out, false
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, false
+	}
+	return out, true
+}

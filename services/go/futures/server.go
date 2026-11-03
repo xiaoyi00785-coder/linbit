@@ -31,6 +31,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /futures/market/funding-history", s.hFundingHistory)
 	mux.HandleFunc("GET /futures/market/mark-history", s.hMarkHistory)
 	mux.HandleFunc("GET /futures/market/insurance-fund", s.hInsurance)
+	mux.HandleFunc("GET /futures/market/insurance-fund/history", s.hInsuranceHistory)
+	mux.HandleFunc("GET /futures/market/risk-tiers", s.hRiskTiers)
+	mux.HandleFunc("GET /futures/market/isolated-params", s.hIsolatedParams)
+	mux.HandleFunc("GET /futures/market/index", s.hIndex)
 	// account
 	mux.HandleFunc("GET /futures/account", s.user(s.hAccount))
 	mux.HandleFunc("POST /futures/transfer", s.user(s.hTransfer))
