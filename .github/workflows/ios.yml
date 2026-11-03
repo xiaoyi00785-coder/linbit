@@ -33,6 +33,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check mobile/openapi.yaml matches docs/api/openapi.yaml (current branch)
+        env:
+          # pull_request 事件默认检出与最新 main 的合并提交；这里以 PR 分支自身（head）为准
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          if ! git cat-file -e "$HEAD_SHA:docs/api/openapi.yaml" 2>/dev/null; then
+            echo "当前分支没有 docs/api/openapi.yaml，跳过一致性检查"
+            exit 0
+          fi
+          git show "$HEAD_SHA:docs/api/openapi.yaml" > /tmp/docs-openapi.yaml
+          git show "$HEAD_SHA:mobile/openapi.yaml" > /tmp/mobile-openapi.yaml
+          if ! diff -u /tmp/docs-openapi.yaml /tmp/mobile-openapi.yaml > /tmp/openapi.diff; then
+            echo "::error file=mobile/openapi.yaml::mobile/openapi.yaml 与当前分支的 docs/api/openapi.yaml 不一致；请执行 cp docs/api/openapi.yaml mobile/openapi.yaml 并用 mobile/tools/gen_models.sh 重新生成模型"
+            head -80 /tmp/openapi.diff
+            exit 1
+          fi
+          echo "openapi.yaml 一致（${HEAD_SHA}）"
+
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
@@ -75,17 +95,23 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
-          # 首页 / 行情 / 现货 / 资产 / 登录，日间与夜间各一张。lb.shot 只在 CI 写入。
-          for screen in home markets spot assets login; do
-            for mode in light dark; do
-              xcrun simctl ui "$UDID" appearance "$mode"
-              xcrun simctl terminate "$UDID" click.cowa.linbit || true
-              xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
-              xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.shot "$screen"
-              xcrun simctl launch "$UDID" click.cowa.linbit
-              sleep 6
-              xcrun simctl io "$UDID" screenshot "shots/${screen}-${mode}.png"
-            done
+          # 主页面日间/夜间各一张；主要弹窗仅日间。lb.shot 只在 CI 写入。
+          shoot() {
+            local screen="$1" mode="$2"
+            xcrun simctl ui "$UDID" appearance "$mode"
+            xcrun simctl terminate "$UDID" click.cowa.linbit || true
+            xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
+            xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.shot "$screen"
+            xcrun simctl launch "$UDID" click.cowa.linbit
+            sleep 7
+            xcrun simctl io "$UDID" screenshot "shots/${screen}-${mode}.png" || true
+          }
+          for screen in home markets spot assets login futures event earn strategy swap chat subaccounts welfare; do
+            for mode in light dark; do shoot "$screen" "$mode"; done
+          done
+          for screen in futures-leverage futures-mode futures-tpsl futures-kind futures-tools event-confirm \
+                        earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
+            shoot "$screen" light
           done
 
       - uses: actions/upload-artifact@v4

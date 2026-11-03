@@ -30,6 +30,7 @@ final class Session: ObservableObject {
         isLoggedIn = true
         showAuth = false
         await reloadAccount()
+        Task { await Watchlist.shared.sync() }
         ToastCenter.shared.show("登录成功", .success)
         let p = pending; pending = nil
         p?()
@@ -53,8 +54,17 @@ final class Router: ObservableObject {
     @Published var assetsPath = NavigationPath()
     @Published var spotPath = NavigationPath()
     @Published var showUserCenter = false
+    /// 二级全屏功能页（理财 / 策略 / 闪兑 / 聊天室 / 子账户 …）
+    @Published var feature: FeaturePage?
+    /// 合约 Tab 顶部：0 合约 1 事件合约 2 TradFi 3 模拟交易
+    @Published var futuresTop = 0
+    @Published var futuresSymbol = "BTCUSDT"
+    /// CI 截图：自动弹出的弹窗名（leverage / mode / tpsl / kind / tools / subscribe / gridSheet …）
+    @Published var shotSheet: String?
 
     func trade(_ symbol: String) { spotSymbol = symbol; tab = .spot }
+    func tradeFutures(_ symbol: String) { futuresSymbol = symbol; futuresTop = 0; tab = .futures }
+    func openFeature(_ f: FeaturePage) { feature = f }
     func open(_ r: AssetsRoute) {
         Session.shared.requireLogin { [self] in tab = .assets; assetsPath.append(r) }
     }

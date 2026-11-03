@@ -19,23 +19,30 @@ final class HomeViewModel: ObservableObject {
     /// 运营位：弹窗 / 搜索占位词（/home/placements 上线后生效）
     @Published var popup: Placement?
     @Published var searchHint: String?
+    @Published var promo: Placement?
+    @Published var newcomer: Newcomer?
 
     func load() async {
         async let p = try? PlacementAPI.fetch()
         async let e: APIEarnProducts200Response? = try? APIClient.shared.get("/earn/products")
         async let a = loadAnnouncements()
         async let r: Void = FiatRates.refresh()
+        async let n = try? HomeAPI.newcomer()
+        async let f: Void = AppFeatures.shared.refresh()
         // 优先 /home/placements → 回退 /home/banners → 本地
         if let items = await p, !items.isEmpty {
-            let b = items.filter { $0.slot == "home_banner" }
-                .map { HomeBanner(id: $0.id, title: $0.title, subtitle: $0.subtitle, image: $0.imageUrl, link: $0.action?.target) }
+            let b = items.filter { $0.slot == "carousel" }
+                .map { HomeBanner(id: $0.id, title: $0.title ?? "", subtitle: $0.subtitle, image: $0.imageUrl, link: $0.linkUrl) }
             if !b.isEmpty { banners = b }
             searchHint = items.first { $0.slot == "search_hint" }?.title
             popup = items.first { $0.slot == "popup" && PopupFrequency.shouldShow($0) }
+            promo = items.first { $0.slot == "promo_bar" }
         } else if let list = try? await MarketAPI.banners(), !list.isEmpty {
             banners = list
         }
         _ = await r
+        _ = await f
+        newcomer = await n
         earn = (await e)?.items?.filter { ($0.apr.map(Dec.parse) ?? 0) > 0 } ?? []
         await a
     }

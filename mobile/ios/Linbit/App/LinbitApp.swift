@@ -27,6 +27,7 @@ struct RootTabView: View {
     @Environment(\.palette) private var p
     @ObservedObject private var router = Router.shared
     @ObservedObject private var session = Session.shared
+    @ObservedObject private var overlays = OverlayTracker.shared
     @EnvironmentObject private var theme: ThemeStore
 
     var body: some View {
@@ -35,7 +36,7 @@ struct RootTabView: View {
                 switch router.tab {
                 case .home: HomeView(onOpenMarkets: { router.tab = .markets })
                 case .markets: MarketsView()
-                case .futures: PlaceholderView(title: "合约", note: "合约交易页（下一阶段）")
+                case .futures: FuturesRootView()
                 case .spot: NavigationStack(path: $router.spotPath) {
                     SpotTradeView().navigationBarHidden(true)
                         .navigationDestination(for: SpotRoute.self) { _ in SpotHistoryView() }
@@ -44,13 +45,18 @@ struct RootTabView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if router.spotPath.isEmpty && router.assetsPath.isEmpty || ![.spot, .assets].contains(router.tab) {
+            if overlays.count == 0, router.spotPath.isEmpty && router.assetsPath.isEmpty || ![.spot, .assets].contains(router.tab) {
                 FloatingTabBar(selected: $router.tab)
             }
         }
         .background(p.bg.ignoresSafeArea())
         .overlay(alignment: .top) { ToastOverlay() }
         .onAppear { applyScreenshotRoute() }
+        .task { await AppFeatures.shared.refresh(); await Watchlist.shared.sync() }
+        .fullScreenCover(item: $router.feature) { page in
+            ThemedRoot { FeatureHost(page: page) }
+                .environmentObject(session).environmentObject(AccountsStore.shared).environmentObject(theme).overlay(alignment: .top) { ToastOverlay() }
+        }
         .fullScreenCover(isPresented: $session.showAuth) {
             ThemedRoot { AuthFlow(start: session.authStart) }.environmentObject(session).environmentObject(theme).overlay(alignment: .top) { ToastOverlay() }
         }
@@ -67,6 +73,26 @@ struct RootTabView: View {
         case "markets": router.tab = .markets
         case "spot": router.tab = .spot
         case "assets": router.tab = .assets
+        case "futures": router.tab = .futures; router.futuresTop = 0
+        case "futures-leverage": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "leverage"
+        case "futures-mode": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "mode"
+        case "futures-tpsl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "tpsl"
+        case "futures-kind": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "kind"
+        case "futures-tools": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "tools"
+        case "event": router.tab = .futures; router.futuresTop = 1
+        case "event-confirm": router.tab = .futures; router.futuresTop = 1; router.shotSheet = "eventConfirm"
+        case "earn": router.feature = .earn
+        case "earn-subscribe": router.shotSheet = "earnSubscribe"; router.feature = .earn
+        case "strategy": router.feature = .strategy
+        case "grid-create": router.feature = .gridCreate
+        case "grid-confirm": router.shotSheet = "gridConfirm"; router.feature = .gridCreate
+        case "swap": router.feature = .swap
+        case "swap-picker": router.shotSheet = "swapPicker"; router.feature = .swap
+        case "chat": router.feature = .chat
+        case "subaccounts": router.feature = .subAccounts
+        case "sub-create": router.shotSheet = "subCreate"; router.feature = .subAccounts
+        case "account-switch": router.shotSheet = "accountSwitch"; router.feature = .subAccounts
+        case "welfare": router.feature = .welfare
         case "login":
             router.tab = .home
             session.present(.login)

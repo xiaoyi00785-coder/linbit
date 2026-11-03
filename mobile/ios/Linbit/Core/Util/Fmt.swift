@@ -61,7 +61,7 @@ enum Fmt {
 
     /// 法币折合：¥ 541,066.4
     static func fiat(_ usdt: Decimal, rate: Decimal) -> String {
-        "¥" + priceAuto(usdt * rate)
+        "¥" + price(usdt * rate, precision: 2)
     }
 }
 
