@@ -227,3 +227,22 @@ input[type=range]{accent-color:#abe127;cursor:pointer}
 .ft .soc a:hover{background:#3a3a3a;color:var(--lb-primary,#abe127)}
 .ft .soc a .gly{width:16px;height:16px;vertical-align:0}
 .ft .soc{width:auto;grid-auto-rows:32px;align-content:start}.ft .soc a{margin:0;padding:0;line-height:1}.ft h2+.soc{margin-top:16px}
+.fx-field .chips,.cchips{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.fx-field .chips span,.cchips span{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px 0 6px;border:1px solid #e6e6e6;border-radius:6px;font-size:12px;font-weight:500;color:#121212;cursor:pointer;background:#fff}
+.fx-field .chips span:hover,.cchips span:hover,.fx-field .chips span.on,.cchips span.on{border-color:#121212}
+select.fsel{appearance:none;-webkit-appearance:none;width:100%;height:44px;border:1px solid #e6e6e6;border-radius:8px;background:#f5f5f5 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6' stroke='%23121212' stroke-width='2.5' fill='none'/%3E%3C/svg%3E") no-repeat right 14px center;padding:0 36px 0 14px;font-size:14px;color:#121212;font-family:inherit;outline:none}
+select.fsel:focus{border-color:#121212}
+.cvh{grid-template-rows:auto auto;row-gap:12px}
+.cvh h1{font-size:40px;font-weight:700;align-self:end;grid-column:1;grid-row:1}
+.cvh>p{grid-column:1;grid-row:2;align-self:start;font-size:15px;max-width:440px}
+.cvh .cvbox{grid-column:2;grid-row:1/3}
+.light .chips.cchips span,.chips.cchips span{border:1px solid #e6e6e6;background:#fff;color:#121212}.light .chips.cchips span.on,.chips.cchips span.on,.chips.cchips span:hover{border-color:#121212;background:#fff;color:#121212}
+.lh2.kyh{text-align:left;font-size:20px;margin:8px 0 20px}
+.kyc{max-width:none;margin:0;gap:24px}
+.kc{min-height:150px;padding:28px;gap:12px}
+.kc:not(.on){border:1px solid #ececec}
+.kc .kv{background:var(--lb-primary);width:48px;height:48px}
+.kc b{font-size:15px}
+.kc .lb.lime{min-width:180px}
+.kc .lb.kgr{background:#f5f5f5;color:#121212;display:inline-flex;gap:6px;align-items:center}
+.lcard .lsel.w{color:#121212;background:#fff;border:1px solid #e6e6e6;height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:8px;width:240px;margin-top:8px;font-size:14px}
