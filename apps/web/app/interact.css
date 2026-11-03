@@ -1,0 +1,59 @@
+/* ===== 全站交互层：hover / active / 过渡 / 动画 / 滚动入场 ===== */
+:root{--lb-ease:cubic-bezier(.2,.7,.2,1)}
+button,a,[role=button],summary,.tbtn,.cbtn,.abtn,.lb,.pill,.arr,.dli,.stores span,.tab,.tabs>*,select,label[for]{cursor:pointer}
+button,a,.lb,.pill,.tbtn,.cbtn,.abtn,.arr,input,select,textarea,.tab,.tabs>*{transition:color .2s var(--lb-ease),background-color .2s var(--lb-ease),border-color .2s var(--lb-ease),box-shadow .25s var(--lb-ease),transform .15s var(--lb-ease),opacity .2s,filter .2s}
+button:not(:disabled):hover,.lb:hover,.pill:hover,.tbtn:hover,.cbtn:hover,.abtn:hover{filter:brightness(1.12)}
+button:not(:disabled):active,.lb:active,.pill:active,.tbtn:active,.cbtn:active,.abtn:active,.arr:active{transform:scale(.96)}
+button:disabled{cursor:not-allowed;opacity:.55}
+.lime:not(:disabled):hover,.lb.lime:hover,.pill.white:hover{box-shadow:0 6px 20px rgba(171,225,39,.28)}
+.cbtn:hover,.tbtn:hover{background:var(--lb-primary)!important;color:#070808!important}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--lb-primary)!important;box-shadow:0 0 0 3px rgba(171,225,39,.15)}
+/* 导航下划线 + 下拉淡入 */
+.hdr nav a{position:relative}
+.hdr nav a::after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:2px;background:var(--lb-primary);transform:scaleX(0);transition:transform .25s var(--lb-ease)}
+.hdr nav a:hover::after,.hdr nav a.active::after{transform:scaleX(1)}
+.dd{animation:lbDd .22s var(--lb-ease)}
+.dd a,.dd li,.dd>div>*{transition:background .18s,color .18s;border-radius:10px}
+.dd a:hover{background:rgba(255,255,255,.06);color:var(--lb-primary)}
+@keyframes lbDd{from{opacity:0;margin-top:-8px}to{opacity:1;margin-top:0}}
+/* 卡片悬浮上浮 */
+.trader,.pcard,.promo,.fcard,.card,.dli,.kc,.ecard,.tcard{transition:transform .3s var(--lb-ease),border-color .3s,box-shadow .3s}
+.trader:hover,.pcard:hover,.promo:hover,.fcard:hover,.ecard:hover,.tcard:hover{transform:translateY(-4px);border-color:rgba(171,225,39,.45)!important;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.dli:hover,.stores span:hover{color:var(--lb-primary);transform:translateY(-3px)}
+.stores span{border-radius:50%;transition:background .2s,color .2s,transform .2s}
+.stores span:hover{background:rgba(255,255,255,.08)}
+.dli span{display:grid;place-items:center;height:28px}
+/* 表格行 / 标签 */
+table tbody tr{transition:background .15s}
+table tbody tr:hover{background:rgba(255,255,255,.04)}
+.tabs>*:hover,.tab:hover{color:var(--lb-white)}
+details.faq summary{transition:color .2s}
+details.faq summary:hover{color:var(--lb-primary)}
+details.faq[open]>*:not(summary){animation:lbFade .3s var(--lb-ease)}
+a:not(.lb):not(.pill):hover{opacity:.9}
+@keyframes lbFade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+/* 跟单头像 */
+.av2{position:relative;width:40px;height:40px;flex:none;display:inline-block}
+/* 跟单曲线动画 */
+.tline{stroke-dasharray:1;stroke-dashoffset:1;animation:lbDraw 1.6s var(--lb-ease) .2s forwards}
+.tfill{opacity:0;animation:lbFill 1s ease 1.2s forwards}
+.tdot{animation:lbPulse 1.6s ease-in-out infinite}
+.trader:hover .tline{animation:lbDraw 1.2s var(--lb-ease) forwards}
+@keyframes lbDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes lbFill{to{opacity:1}}
+@keyframes lbPulse{0%,100%{opacity:1;r:2.5}50%{opacity:.4;r:4}}
+/* 主视觉/插图浮动 */
+.hero img,.three img,.vis img,.pcard img{animation:lbFloat 6s ease-in-out infinite}
+@keyframes lbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+/* 合作伙伴跑马灯 */
+.partners.mq{display:block;overflow:hidden;width:100%;max-width:100%;min-width:0;contain:inline-size;-webkit-mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
+.mq-track{display:flex;gap:80px;width:max-content;animation:lbMq 28s linear infinite}
+.partners.mq:hover .mq-track{animation-play-state:paused}
+.plogo{display:inline-flex;align-items:center;gap:12px;font-size:26px;font-weight:700;color:var(--lb-text-2);transition:color .2s}
+.plogo:hover{color:var(--lb-white)}
+.plogo:hover svg{color:var(--lb-primary)}
+@keyframes lbMq{to{transform:translateX(calc(-50% - 40px))}}
+/* 滚动入场 */
+.lb-rv{opacity:0;transform:translateY(28px);transition:opacity .7s var(--lb-ease),transform .7s var(--lb-ease)}
+.lb-rv.lb-rv-in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.lb-rv{opacity:1;transform:none}}
