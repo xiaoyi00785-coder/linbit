@@ -48,31 +48,42 @@ func TestRateLimitedHasRetryAfter(t *testing.T) {
 	}
 }
 
-// DB-backed: login step 1 surfaces send failures and rate limits.
+// DB-backed: login step 1 surfaces send failures and rate limits; a failed
+// send does not consume the rate-limit slot (DB fallback and Redis limiter).
 func TestLoginSendErrorsSurface(t *testing.T) {
-	srv := newTestServer(t)
-	h := srv.Routes()
-	email := uniqueEmail()
-	registerWithCode(t, srv, email, "", "")
-	login := map[string]string{"email": email, "password": "Str0ng-Passw0rd!", "deviceId": "dev-new", "deviceName": "x"}
+	for _, useRedis := range []bool{false, true} {
+		srv := newTestServer(t)
+		if useRedis {
+			srv.codes.redis = redis.NewClient(&redis.Options{Addr: miniredis.RunT(t).Addr()})
+		}
+		srv.codes.minInterval = 0
+		srv.codes.hourlyMax = 1 << 30
+		h := srv.Routes()
+		email := uniqueEmail()
+		registerWithCode(t, srv, email, "", "")
+		login := map[string]string{"email": email, "password": "Str0ng-Passw0rd!", "deviceId": "dev-new", "deviceName": "x"}
 
-	srv.codes.email = &captureMail{fail: &DeliveryError{Channel: channelEmail, Reason: "network"}}
-	if w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login); w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("send failure: %d %s", w.Code, w.Body.String())
-	}
-	srv.codes.email = &captureMail{}
-	srv.codes.minInterval = time.Hour
-	if w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login); w.Code != http.StatusOK {
-		t.Fatalf("first: %d", w.Code)
-	}
-	w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login)
-	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
-		t.Fatalf("rate limited: %d %s", w.Code, w.Body.String())
-	}
-	// Wrong password stays 401 (no extra account signal).
-	login["password"] = "wrong"
-	if w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login); w.Code != http.StatusUnauthorized {
-		t.Fatalf("bad pw: %d", w.Code)
+		srv.codes.minInterval = time.Hour
+		srv.codes.hourlyMax = 5
+		srv.codes.email = &captureMail{fail: &DeliveryError{Channel: channelEmail, Reason: "network"}}
+		for i := 0; i < 7; i++ { // more failures than hourlyMax: none count
+			if w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login); w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("redis=%v send failure %d: %d %s", useRedis, i, w.Code, w.Body.String())
+			}
+		}
+		srv.codes.email = &captureMail{}
+		if w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login); w.Code != http.StatusOK {
+			t.Fatalf("redis=%v first after failures: %d %s", useRedis, w.Code, w.Body.String())
+		}
+		w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login)
+		if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+			t.Fatalf("redis=%v rate limited: %d %s", useRedis, w.Code, w.Body.String())
+		}
+		// Wrong password stays 401 (no extra account signal).
+		login["password"] = "wrong"
+		if w := doJSONDevice(t, h, "POST", "/auth/login", "", "dev-new", login); w.Code != http.StatusUnauthorized {
+			t.Fatalf("bad pw: %d", w.Code)
+		}
 	}
 }
 

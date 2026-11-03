@@ -305,6 +305,14 @@ func (s *Store) InsertCode(ctx context.Context, target, channel, purpose, codeHa
 	return err
 }
 
+// DeleteCode removes an issued code (used when its delivery failed).
+func (s *Store) DeleteCode(ctx context.Context, target, purpose, codeHash string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM verification_codes WHERE target = $1 AND purpose = $2 AND code_hash = $3`,
+		target, purpose, codeHash)
+	return err
+}
+
 // CountCodesSince returns how many codes were issued for target+purpose since t.
 func (s *Store) CountCodesSince(ctx context.Context, target, purpose string, since time.Time) (int, error) {
 	var n int

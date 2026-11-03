@@ -152,13 +152,34 @@ func (c *CodeService) Send(ctx context.Context, channel, target, purpose string)
 	if err := c.store.InsertCode(ctx, target, channel, purpose, hashToken(code), c.maxAttempts, expires); err != nil {
 		return fmt.Errorf("insert code (db): %w", err)
 	}
+	var sendErr error
 	switch channel {
 	case channelEmail:
-		return c.email.SendEmailCode(ctx, target, code, purpose)
+		sendErr = c.email.SendEmailCode(ctx, target, code, purpose)
 	case channelSMS:
-		return c.sms.SendSMSCode(ctx, target, code, purpose)
+		sendErr = c.sms.SendSMSCode(ctx, target, code, purpose)
 	default:
-		return fmt.Errorf("unknown channel %q", channel)
+		sendErr = fmt.Errorf("unknown channel %q", channel)
+	}
+	if sendErr != nil {
+		// A failed delivery must not consume the rate-limit slot: drop the
+		// undelivered code and give the quota back so the user can retry now.
+		c.releaseSend(ctx, target, purpose, hashToken(code))
+	}
+	return sendErr
+}
+
+// releaseSend undoes the quota taken by a send whose delivery failed.
+func (c *CodeService) releaseSend(ctx context.Context, target, purpose, codeHash string) {
+	if err := c.store.DeleteCode(ctx, target, purpose, codeHash); err != nil {
+		log.Printf("code send: release db row: %v", err)
+	}
+	if c.redis == nil {
+		return
+	}
+	_ = c.redis.Del(ctx, "vc:int:"+purpose+":"+target).Err()
+	if n, err := c.redis.Decr(ctx, "vc:hr:"+purpose+":"+target).Result(); err == nil && n <= 0 {
+		_ = c.redis.Del(ctx, "vc:hr:"+purpose+":"+target).Err()
 	}
 }
 
