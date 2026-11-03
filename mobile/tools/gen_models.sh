@@ -19,5 +19,18 @@ for f in JSONDataEncoding Configuration Extensions Models CodableHelper OpenISO8
 sed -i '/^import AnyCodable/d;/^#if canImport(AnyCodable)/,/^#endif/d' "$G"/*.swift
 sed -i 's/\[Dictionary\]/[[String: AnyCodable]]/g' "$G"/*.swift
 sed -i -E 's/\.?type\[(API[A-Za-z0-9]+)\]/\0/; s/case type\[(API[A-Za-z0-9]+)\]/case typeArrayOf\1/; s/\.type\[(API[A-Za-z0-9]+)\]/.typeArrayOf\1/g' "$G"/*.swift
+# 修正：APIEarnProduct.kind 容忍服务端新增的 kind（simple/onchain/未知值），避免整页解码失败
+python3 - "$G/APIEarnProduct.swift" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+old = '        case fixed = "fixed"\n    }'
+new = ('        case fixed = "fixed"\n        case simple = "simple"\n        case onchain = "onchain"\n        case unknown\n'
+       '        public init(from decoder: Decoder) throws {\n'
+       '            let raw = try decoder.singleValueContainer().decode(String.self)\n'
+       '            self = APIKind(rawValue: raw) ?? .unknown\n        }\n    }')
+if 'case unknown' not in s:
+    assert old in s, "APIEarnProduct.APIKind 结构变化，请更新补丁"
+    open(p, 'w').write(s.replace(old, new, 1))
+PY
 rm -rf "$TMP"
 echo "生成完成：$(ls "$G" | wc -l) 个文件"
