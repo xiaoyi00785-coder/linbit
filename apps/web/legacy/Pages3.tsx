@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { openM, Dropdown, DateRange, Refresh } from '@/features/Kit'
 import { CoinIcon } from '@/components/CoinIcon'
 import { LoanRecords } from '@/features/Loan'
 import { NavLink, Link, useNavigate, useLocation, useParams } from '@/lib/router'
@@ -39,9 +40,9 @@ export function AEarn(){const[t,setT]=useState(0);const[s,setS]=useState(0);retu
 <div className="lcard"><div className="ltabs">{EARN_T.map((x,i)=><b key={x} className={t===i?'on':''} onClick={()=>setT(i)}>{x}</b>)}</div><div className="estat">{['资产估值','24h 收益','累计收益'].map(x=><div key={x}><span className="lg">{x}</span><b>0</b><small className="lg">≈ $0</small></div>)}</div>
 {t===0&&<div className="seg">{['活期','定期','限时抢购'].map((x,i)=><b key={x} className={s===i?'on':''} onClick={()=>setS(i)}>{x}</b>)}</div>}<TH c={t===4?['借款币种','质押币种','借款金额','LTV','小时利率','操作']:['币种','参考年化','持有数量','24h 收益','累计收益','自动申购','操作']}/><Empty/></div></AS>}
 // —— 记录 / 订单（通用） ——
-const Sel=({k,v,w})=><div><span className="flab">{k}</span><div className="lsel" style={w?{minWidth:w}:null}>{v}<em>▾</em></div></div>
-const Dt=({v})=><div><span className="flab">&nbsp;</span><div className="lsel date">{v?<><span>2026-10-27</span><span className="lg">→</span><span>2026-11-02</span></>:<><span className="lg">开始日期</span><span className="lg">→</span><span className="lg">结束日期</span></>}<em>▦</em></div></div>
-function Rec({t,tabs,fil,cols,extra,live}){const[i,setI]=useState(0);if(live)return <AS><h2 className="lh2">{t}</h2>{live}</AS>;const f=typeof fil==='function'?fil(i):fil;const c=typeof cols==='function'?cols(i):cols;return <AS><h2 className="lh2">{t}</h2><div className="lcard rec">{tabs&&<div className="ltabs">{tabs.map((x,j)=><b key={x} className={i===j?'on':''} onClick={()=>setI(j)}>{x}</b>)}</div>}<div className="lfil">{f}<span className="sp"/>{extra}<button className="lb sm g">↻ 刷新</button></div><div className="lth t2 sm">{c.map(x=><span key={x}>{x}</span>)}</div><Empty/></div></AS>}
+const Sel=({k,v,w})=><div><span className="flab">{k}</span><Dropdown k={k} v={v}/></div>
+const Dt=({v})=><div><span className="flab">&nbsp;</span><DateRange preset={v}/></div>
+function Rec({t,tabs,fil,cols,extra,live}){const[i,setI]=useState(0);if(live)return <AS><h2 className="lh2">{t}</h2>{live}</AS>;const f=typeof fil==='function'?fil(i):fil;const c=typeof cols==='function'?cols(i):cols;return <AS><h2 className="lh2">{t}</h2><div className="lcard rec">{tabs&&<div className="ltabs">{tabs.map((x,j)=><b key={x} className={i===j?'on':''} onClick={()=>setI(j)}>{x}</b>)}</div>}<div className="lfil">{f}<span className="sp"/>{extra}<Refresh cls="lb sm g"/></div><div className="lth t2 sm">{c.map(x=><span key={x}>{x}</span>)}</div><Empty/></div></AS>}
 const R={funding:{t:'资金记录',tabs:['充值','提现','划转','分发'],fil:i=>[<Sel key={1} k="币种" v="全部"/>,i<2&&<Sel key={2} k="类型" v={i?'链上提现':'链上充值'}/>,i===2&&<Sel key={4} k="账户" v="全部"/>,<Sel key={3} k="状态" v="全部"/>,<Dt key={5}/>],cols:i=>i===2?['时间','币种','数量','从','到','状态']:i===3?['时间','币种','数量','类型','备注']:['时间','类型','币种','网络','数量','状态','链上交易']},
 futures:{t:'合约记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','合约']},
 spot:{t:'现货记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','余额']},
