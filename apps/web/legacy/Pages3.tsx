@@ -16,7 +16,7 @@ import { Footer } from './App'
 import { MOCK } from './auth'
 import { useProfile } from './Pages'
 // —— 资产中心（浅色），路径与线上一致 ——
-const Empty=()=><div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div>
+const Empty=()=><div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div>
 const Eye=()=><span className="eye"><G n="eye" s={14}/></span>
 const U=()=><CoinIcon s="USDT" size={22}/>
 const ACCTS=[['/assets/overview','overview','资产总览'],['/assets/funding-account','funding','资金账户'],['/assets/trading-account','futures','合约账户'],['/assets/spot-account','spot','现货账户'],['/assets/earn-account','earn','理财账户'],['/assets/tradfi-account','tradfi','传统金融账户'],['/assets/bots-account','bots','策略账户']]
@@ -32,7 +32,7 @@ const fmtV=v=>{const n=Number(v||0);return n.toLocaleString('en-US',{maximumFrac
 // 估值来自 GET /assets/overview；all=全部账户，acct=单账户；接口未上线时显示 0
 const Val=({t='资产估值',children,set,acct,all})=>{const ov=useOverview();const d=ov.data;const v=all?d?.totalValueUsdt:acct?d?.accounts?.find(a=>a.account===acct)?.totalValueUsdt:0;return <div className="lcard v"><div className="lg">{t}(USDT) <Eye/>{set&&<span className="vset"><G n="gear" s={14}/></span>}</div><div className="big">{fmtV(v)} <small>USDT ▾</small></div><div className="lg">≈ ${fmtV(v)}</div>{children}</div>}
 const TH=({c,s})=><div className="lth t2">{c.map((x,i)=><span key={x}>{x}{s&&i>0&&i<c.length-1&&<em className="srt">⇅</em>}</span>)}</div>
-const Srch=()=><><span className="sp"/><span className="lsearch">⌕ 搜索币种</span><label className="lchk"><i/>隐藏小于 1 USD 的资产</label></>
+const Srch=()=><><span className="sp"/><span className="lsearch"><G n="search" s={14}/> 搜索币种</span><label className="lchk"><i/>隐藏小于 1 USD 的资产</label></>
 const URow=({v})=>{const n=useNavigate();return <div className="ltr"><span><U/> USDT</span>{v.map((x,i)=><span key={i} className={x.lime?'lime2 act':''}>{x.lime?x.lime.map(l=><a key={l} onClick={()=>l==='划转'?openTransfer():n(l==='交易'?'/futures':'/assets/history/funding')}>{l}</a>):x==='u'?<>0<small className="lg d">≈ $0</small></>:x}</span>)}</div>}
 export function AOverview(){const n=useNavigate();const[t,setT]=useState(0);return <AS><Val all><div className="lg">今日盈亏 <b className="lk">0 USDT</b></div><div className="lbtns l"><button className="lb dark" onClick={()=>n('/deposit')}>充值</button><button className="lb" onClick={()=>n('/withdraw')}>提现</button><button className="lb" onClick={()=>openTransfer()}>划转</button></div><span className="vchev">⌄</span></Val>
 <div className="lcard"><h3>我的资产</h3><div className="ltabs">{['币种','账户'].map((x,i)=><b key={x} className={t===i?'on':''} onClick={()=>setT(i)}>{x}</b>)}<Srch/></div>{t?<><TH c={['账户','资产估值','占比']}/>{ACCTS.slice(1).map(([to,,a])=><div className="ltr" key={a}><span>{a}</span><span>0 USDT</span><span>0%</span></div>)}</>:<><TH c={['币种','数量','价格','占比']}/><Empty/></>}</div>
