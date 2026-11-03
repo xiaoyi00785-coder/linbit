@@ -20,6 +20,7 @@ func (s *Server) Routes() http.Handler {
 	// Public.
 	mux.HandleFunc("GET /strategy/config", s.hConfig)
 	mux.HandleFunc("GET /strategy/grid/square", s.hSquare)
+	mux.HandleFunc("POST /strategy/grid/square/{id}/copy", s.user(s.hCopy))
 	// User (X-User-Id injected by the gateway).
 	mux.HandleFunc("GET /strategy/grid/preview", s.user(s.hPreview))
 	mux.HandleFunc("POST /strategy/grid", s.user(s.hCreate))
@@ -339,6 +340,7 @@ func (s *Server) hSquare(w http.ResponseWriter, r *http.Request) {
 		m       map[string]any
 		rate    decimal.Decimal
 		runtime time.Duration
+		copies  int
 	}
 	rows := []row{}
 	for _, b := range bs {
@@ -359,7 +361,18 @@ func (s *Server) hSquare(w http.ResponseWriter, r *http.Request) {
 			"cycles": b.Cycles,
 		}, rate: rate, runtime: rt})
 	}
+	ids := make([]int64, 0, len(bs))
+	for _, b := range bs {
+		ids = append(ids, b.ID)
+	}
+	counts := s.copyCounts(r.Context(), ids)
+	for i, b := range bs {
+		rows[i].m["copyCount"] = counts[b.ID]
+		rows[i].copies = counts[b.ID]
+	}
 	switch q.Get("sort") {
+	case "copies":
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].copies > rows[j].copies })
 	case "runtime":
 		sort.SliceStable(rows, func(i, j int) bool { return rows[i].runtime > rows[j].runtime })
 	default: // "default" and "roi"

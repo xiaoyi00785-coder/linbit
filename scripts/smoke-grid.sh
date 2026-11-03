@@ -197,6 +197,16 @@ jq -e '.items[0]|has("profitRate") and has("runtimeSeconds") and has("maxDrawdow
 [ "$(code "$(api "${TOK[H]}" GET "/strategy/grid/$B1")")" = "404" ] || fail "other user sees bot"
 [ "$(code "$(api "${TOK[H]}" POST "/strategy/grid/$B1/stop" '{}')")" = "404" ] || fail "other user stops bot"
 
+say "one-click copy from the square"
+[ "$(errcode "$(api "${TOK[G]}" POST "/strategy/grid/square/$B1/copy" '{"investment":"300"}')")" = "SELF_COPY" ] || fail "self copy allowed"
+[ "$(code "$(api "${TOK[H]}" POST "/strategy/grid/square/999999999/copy" '{"investment":"300"}')")" = "404" ] || fail "copy unknown bot"
+C="$(ok "$(api "${TOK[H]}" POST "/strategy/grid/square/$B1/copy" '{"investment":"300","sellBaseOnStop":true}')" "copy bot1")"
+CID="$(jq -r .id <<<"$C")"
+[ "$(jq -r '"\(.copiedFrom) \(.symbol) \(.gridCount) \(.investment)"' <<<"$C")" = "$B1 BTCUSDT $(jq -r .gridCount <<<"$(ok "$(api "${TOK[G]}" GET "/strategy/grid/$B1")" b1)") 300" ] || fail "copy params: $C"
+[ "$(curl -sS "$GATEWAY_URL/strategy/grid/square?sort=copies" | jq -r --arg id "$B1" '.items[]|select(.id==$id)|.copyCount')" = "1" ] || fail "copyCount not 1"
+ok "$(api "${TOK[H]}" POST "/strategy/grid/$CID/stop" '{"sellBase":true}')" "stop copy" >/dev/null
+echo "  ok  copy: self-copy blocked, params cloned, copyCount=1, copy bot stopped"
+
 say "bot 2: geometric, take-profit 50600 -> stop + sell base"
 spot "${TOK[M]}" '{"symbol":"BTCUSDT","side":"sell","type":"limit","price":"50000","quantity":"0.02"}' >/dev/null
 B="$(ok "$(grid '{"symbol":"BTCUSDT","mode":"geometric","lowerPrice":"45000","upperPrice":"55000","gridCount":5,"investment":"500","takeProfitPrice":"50600"}')" "create bot2")"

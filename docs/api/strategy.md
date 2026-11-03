@@ -46,3 +46,11 @@ Errors: INVALID_MODE, SYMBOL_NOT_FOUND, SYMBOL_NOT_TRADING, INVALID_RANGE, INVAL
 | GRID_SELL_ON_STOP | true | Default for sellBaseOnStop |
 
 Not implemented: copying a grid from the square, and per-bot copier counts.
+
+## 策略广场一键复制
+
+- `GET /strategy/grid/square` 每项新增 `copyCount`（被复制次数）；`sort` 新增 `copies`（按复制数降序）。
+- `POST /strategy/grid/square/{id}/copy`（需登录）`{"investment":"300","stopLossPrice"?,"takeProfitPrice"?,"sellBaseOnStop"?}`
+  - 复制源策略的交易对、模式、价格区间与网格数，投入金额与止盈止损由复制者设置；返回新策略详情及 `copiedFrom`。
+  - 只能复制广场上展示的策略（运行中且运行时长 ≥ 广场门槛），否则 404；复制自己的策略返回 `SELF_COPY`。
+  - 其它校验（余额、最多运行数、价格区间）与创建网格一致。成功后源策略 `copyCount` +1。
