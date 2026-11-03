@@ -18,7 +18,7 @@ export const NETNAME = { TRC20: 'TRON', ERC20: 'Ethereum', BEP20: 'BNB Chain', A
 export const users = Array.from({ length: 86 }, (_, i) => ({
   id: uid(i), uid: uid(i), nick: nick(i), email: mail(i), phone: i % 3 ? `+65 ****${pad(ri(10, 99))}${pad(ri(10, 99))}` : '-',
   country: pick(COUNTRIES), kyc: i === 0 ? 'L2 高级' : pick(['未认证', 'L1 基础', 'L1 基础', 'L2 高级', '审核中']),
-  vip: i === 0 ? '合伙人·银牌' : pick(['普通用户', '普通用户', '普通用户', '普通用户', '合伙人·普通', '带单员']),
+  identity: i === 0 ? '合伙人·银牌' : pick(['普通用户', '普通用户', '普通用户', '普通用户', '合伙人·普通', '带单员']),
   status: i === 0 ? '正常' : pick(['正常', '正常', '正常', '正常', '冻结', '限制提现']),
   risk: pick(['低', '低', '低', '中', '高']), asset: +(rnd() * 120000).toFixed(2), reg: ts(ri(600, 200000)),
   last: ts(ri(1, 3000)), inviter: i % 4 === 0 ? '80000001' : '-', tfa: rnd() > .3, agent: i % 9 === 0,
@@ -81,8 +81,8 @@ export const campaigns = [
   .map(([n, t, s, b, p, u], i) => ({ id: 'CP' + (100 + i), name: n, type: t, status: s, budget: b, part: p, used: u, start: ts(ri(4000, 40000)), end: ts(-ri(1000, 40000)) }))
 export const rewards = Array.from({ length: 50 }, (_, i) => ({ id: 'RW' + (300000 + i), uid: uid(ri(0, 85)), kind: pick(['体验金', '手续费抵扣券', '现金券', 'USDT 空投', '积分']),
   amt: pick([5, 10, 20, 50, 100]), src: pick(['新人任务', '合约交易赛 S3', '签到积分 · 11 月', '人工补发']), status: pick(['已发放', '已发放', '已使用', '已过期', '已回收', '风控拦截']), time: ts(ri(1, 9000)) }))
-export const pointsItems = [['10 USDT 手续费抵扣券', 1000, 500, 213], ['5 USDT 体验金', 600, 1000, 820], ['50 USDT 合约体验金', 4500, 100, 31], ['linbit 周边卫衣', 12000, 20, 4], ['20 USDT 现金券', 3000, 200, 58]]
-  .map(([n, p, st, sold], i) => ({ id: 'PI' + i, name: n, cost: p, stock: st, sold, on: i !== 3 }))
+export const pointsItems = [[10, '3 USDT 手续费抵扣金'], [20, '6 USDT 手续费抵扣金'], [35, '10 USDT 合约体验金'], [50, '10 USDT 手续费抵扣金'], [75, '20 USDT 合约体验金'], [100, '30 USDT 合约体验金'], [200, '75 USDT 手续费抵扣金'], [300, '100 USDT 合约体验金']]
+  .map(([p, n], i) => ({ id: 'PI' + i, name: n, cost: p, sold: [412, 268, 190, 151, 96, 74, 21, 9][i], on: true }))
 export const traders = Array.from({ length: 28 }, (_, i) => ({ id: 'TR' + (2000 + i), uid: uid(i * 3), nick: nick(i * 3), roi: +((rnd() - .2) * 260).toFixed(2), pnl: +((rnd() - .2) * 90000).toFixed(2),
   aum: ri(1, 900) * 1000, followers: ri(0, 1500), maxF: 1500, share: pick([0, 5, 10, 10, 15, 20, 30]), mdd: +(rnd() * 45).toFixed(1), days: ri(7, 600),
   status: i < 4 ? '申请中' : pick(['带单中', '带单中', '带单中', '暂停带单', '已下架']) }))

@@ -22,7 +22,7 @@ export function FreezeModal({ user, onClose }) {
 export function UserDrawer({ u, onClose }) {
   const [adj, setAdj] = useState(false)
   const [tab, setTab] = useState('base'); const [fz, setFz] = useState(false)
-  return <Drawer width={760} title={<>{u.nick} <span className="muted" style={{ fontWeight: 400 }}>UID {u.uid}</span></>} extra={<>{stTag(u.status)}<Tag k="gd">{u.vip}</Tag></>} onClose={onClose}
+  return <Drawer width={760} title={<>{u.nick} <span className="muted" style={{ fontWeight: 400 }}>UID {u.uid}</span></>} extra={<>{stTag(u.status)}<Tag k="gd">{u.identity}</Tag></>} onClose={onClose}
     footer={<><button className="btn">重置 2FA</button><button className="btn">设为合伙人</button><button className="btn" onClick={() => setAdj(true)}>人工调账</button><button className="btn d" onClick={() => setFz(true)}>冻结 / 限制</button></>}>
     <div className="grid g4" style={{ marginBottom: 12 }}>{[['总资产估值', '$' + fmt(u.asset)], ['30 日交易量', '$1,284,320'], ['累计手续费', '$642.16'], ['邀请人数', '12']].map(([l, v]) => <div key={l} className="card kpi"><div className="l">{l}</div><div className="v num" style={{ fontSize: 16 }}>{v}</div></div>)}</div>
     <div className="card"><Tabs value={tab} onChange={setTab} items={[['base', '基本信息'], ['asset', '资产'], ['pos', '持仓'], ['log', '登录/设备'], ['note', '备注与工单']]} />
@@ -46,18 +46,18 @@ export function UserDrawer({ u, onClose }) {
 
 export function Users() {
   const { q } = useApp()
-  const [rows, set, f] = useFilter(users, (r, f) => (has(r.uid, f.k) || has(r.nick, f.k) || has(r.email, f.k)) && eq(r.status, f.s) && eq(r.kyc, f.kyc) && eq(r.vip, f.vip))
+  const [rows, set, f] = useFilter(users, (r, f) => (has(r.uid, f.k) || has(r.nick, f.k) || has(r.email, f.k)) && eq(r.status, f.s) && eq(r.kyc, f.kyc) && eq(r.identity, f.idt))
   const [cur, setCur] = useState(q.open ? users[0] : null)
   return <><PageHead title="用户列表" desc="共 86 名演示用户 · 支持 UID / 昵称 / 邮箱检索"><button className="btn">导出 CSV</button></PageHead>
     <DataTable rows={rows} select onRow={setCur} cols={[
       { t: 'UID', k: 'uid', render: r => <span className="pri">{r.uid}</span> }, { t: '昵称', k: 'nick' }, { t: '邮箱', k: 'email' }, { t: '国家', k: 'country' },
-      { t: 'KYC', k: 'kyc', render: r => <Tag k={r.kyc.startsWith('L2') ? 'ok' : r.kyc === '审核中' ? 'in' : ''}>{r.kyc}</Tag> }, { t: '身份', k: 'vip' },
+      { t: 'KYC', k: 'kyc', render: r => <Tag k={r.kyc.startsWith('L2') ? 'ok' : r.kyc === '审核中' ? 'in' : ''}>{r.kyc}</Tag> }, { t: '身份', k: 'identity' },
       { t: '总资产(USD)', k: 'asset', r: 1, num: 1, render: r => fmt(r.asset) }, { t: '风险', k: 'risk', render: r => riskTag(r.risk) }, { t: '状态', k: 'status', render: r => stTag(r.status) },
       { t: '注册时间', k: 'reg' }, { t: '操作', render: r => <a className="btn g">详情</a> }]}
       filters={<><input className="in" style={{ width: 220 }} placeholder="UID / 昵称 / 邮箱" value={f.k || ''} onChange={set('k')} />
         <select className="sel" onChange={set('s')}><option>全部</option><option>正常</option><option>冻结</option><option>限制提现</option></select>
         <select className="sel" onChange={set('kyc')}><option>全部</option><option>未认证</option><option>L1 基础</option><option>L2 高级</option><option>审核中</option></select>
-        <select className="sel" onChange={set('vip')}><option>全部</option>{['普通用户', '合伙人·普通', '合伙人·银牌', '带单员'].map(v => <option key={v}>{v}</option>)}</select><input className="in" type="date" /></>}
+        <select className="sel" onChange={set('idt')}><option>全部</option>{['普通用户', '合伙人·普通', '合伙人·银牌', '带单员'].map(v => <option key={v}>{v}</option>)}</select><input className="in" type="date" /></>}
       toolbar={(sel) => <><button className="btn" disabled={!sel.length}>批量打标签</button><button className="btn d" disabled={!sel.length}>批量冻结</button></>} />
     {cur && <UserDrawer u={cur} onClose={() => setCur(null)} />}</>
 }

@@ -30,12 +30,12 @@ export function Rewards() {
 }
 export function Points() {
   const [t, setT] = useState('goods')
-  return <><PageHead title="积分商城" desc="积分获取规则 + 兑换商品与库存"><button className="btn p">+ 新增商品</button></PageHead>
-    <div className="card"><Tabs value={t} onChange={setT} items={[['goods', '兑换商品'], ['rule', '获取规则'], ['log', '兑换记录']]} />
-      {t === 'goods' && <table className="t"><thead><tr><th>商品</th><th className="r">所需积分</th><th className="r">库存</th><th className="r">已兑换</th><th>上架</th><th>操作</th></tr></thead><tbody>
-        {pointsItems.map(p => <tr key={p.id}><td>{p.name}</td><td className="r num">{fmt(p.cost, 0)}</td><td className={'r num ' + (p.stock - p.sold < 20 ? 'down' : '')}>{p.stock - p.sold} / {p.stock}</td><td className="r num">{p.sold}</td><td><Sw on={p.on} /></td><td><a className="btn g">编辑</a><a className="btn g">补库存</a></td></tr>)}</tbody></table>}
-      {t === 'rule' && <table className="t"><thead><tr><th>行为</th><th>积分</th><th>上限</th><th>启用</th></tr></thead><tbody>
-        {[['每日签到', '+10（连签 7 天 +50）', '每日 1 次'], ['合约交易每 1,000 USDT', '+1', '每日 500'], ['邀请好友完成 KYC', '+100', '每月 20 人'], ['完成新人任务', '+200', '一次性']].map(r => <tr key={r[0]}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td><Sw on /></td></tr>)}</tbody></table>}
+  return <><PageHead title="积分商城" desc="仅虚拟奖励（抵扣金 / 体验金），不设实物奖品 · 每档每人限兑 1 次 · 积分仅在积分活动期间有效，活动结束清零 · 任务每日 UTC 0 点重置"><button className="btn p">+ 新增兑换档位</button></PageHead>
+    <div className="card"><Tabs value={t} onChange={setT} items={[['goods', '兑换档位', pointsItems.length], ['rule', '获取规则'], ['log', '兑换记录']]} />
+      {t === 'goods' && <table className="t"><thead><tr><th className="r">所需积分</th><th>兑换奖励</th><th>类型</th><th className="r">已兑换</th><th>每人限兑</th><th>上架</th><th>操作</th></tr></thead><tbody>
+        {pointsItems.map(p => <tr key={p.id}><td className="r num pri">{p.cost}</td><td>{p.name}</td><td><Tag k={p.name.includes('体验金') ? 'gd' : 'in'}>{p.name.includes('体验金') ? '体验金' : '抵扣金'}</Tag></td><td className="r num">{p.sold}</td><td>1 次</td><td><Sw on={p.on} /></td><td><a className="btn g">编辑</a></td></tr>)}</tbody></table>}
+      {t === 'rule' && <table className="t"><thead><tr><th>任务</th><th>积分</th><th>每日上限</th><th>启用</th></tr></thead><tbody>
+        {[['当日合约交易量 2千 / 1万 / 10万 / 20万 / 30万 / 50万 / 100万 / 300万 / 1000万 USDT（9 档）', '+1 / 1 / 3 / 3 / 5 / 8 / 12 / 35 / 100', '168 分'], ['入金：每 100 USDT', '+1', '10 分'], ['邀请有效用户（累计手续费 ≥ 100 USDT）', '+8 / 人', '80 分']].map(r => <tr key={r[0]}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td><Sw on /></td></tr>)}</tbody></table>}
       {t === 'log' && <div className="empty">兑换记录（同奖励发放列表结构）</div>}</div></>
 }
 export function Copy() {
