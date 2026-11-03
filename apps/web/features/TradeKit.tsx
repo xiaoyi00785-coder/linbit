@@ -225,10 +225,8 @@ function Opt({ on, t, d, onClick }: { on: boolean; t: string; d?: string; onClic
   return <div className={"tk-opt2" + (on ? " on" : "")} onClick={onClick}><b>{t}</b>{d && <small>{d}</small>}{on && <i className="tk-ck">✓</i>}</div>;
 }
 
-// tp/slTriggerPriceType 依赖 feat/futures-order-amend2 的 openapi（FuturesPlaceOrderRequest 新增字段，默认 MARK）；
-// 该分支合入并重新生成 schema 后，删掉这里的补充字段，直接用生成的类型。
-type TrigType = "LAST" | "MARK";
-type PlaceReq = components["schemas"]["FuturesPlaceOrderRequest"] & { tpTriggerPriceType?: TrigType; slTriggerPriceType?: TrigType };
+type PlaceReq = components["schemas"]["FuturesPlaceOrderRequest"];
+type TrigType = NonNullable<PlaceReq["tpTriggerPriceType"]>;
 type Tif = "GTC" | "IOC" | "POST_ONLY";
 const TIF: [Tif, string][] = [["GTC", "GTC"], ["IOC", "IOC"], ["POST_ONLY", "只做 Maker"]];
 
