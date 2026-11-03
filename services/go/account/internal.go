@@ -111,3 +111,66 @@ func (s *Server) handleInternalWithdrawWhitelist(w http.ResponseWriter, r *http.
 	}
 	common.WriteJSON(w, http.StatusOK, internalWhitelistResponse{Enabled: true, Allowed: allowed})
 }
+
+type internalKYCLevelResponse struct {
+	UID   string `json:"uid"`
+	Level int    `json:"level"`
+}
+
+// handleInternalGetKYCLevel reports a user's current kycLevel. Used by the wallet
+// service to apply KYC-tiered withdrawal limits.
+//
+//	GET /internal/account/kyc-level?uid=
+func (s *Server) handleInternalGetKYCLevel(w http.ResponseWriter, r *http.Request) {
+	if !s.authedInternal(r) {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "内部令牌无效")
+		return
+	}
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	if uid == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "缺少 uid")
+		return
+	}
+	u, err := s.store.UserByUID(r.Context(), uid)
+	if err != nil {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "用户不存在")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, internalKYCLevelResponse{UID: u.UID, Level: u.KYCLevel})
+}
+
+type internalSetKYCLevelRequest struct {
+	UID   string `json:"uid"`
+	Level int    `json:"level"`
+}
+
+// handleInternalSetKYCLevel raises a user's kycLevel (never downgrades). Called by
+// the KYC service when an application is approved.
+//
+//	POST /internal/account/kyc-level   {uid, level}
+func (s *Server) handleInternalSetKYCLevel(w http.ResponseWriter, r *http.Request) {
+	if !s.authedInternal(r) {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "内部令牌无效")
+		return
+	}
+	var req internalSetKYCLevelRequest
+	if err := common.DecodeJSON(r, &req); err != nil || strings.TrimSpace(req.UID) == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	if req.Level < 0 || req.Level > 9 {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "认证等级不合法")
+		return
+	}
+	u, err := s.store.UserByUID(r.Context(), req.UID)
+	if err != nil {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "用户不存在")
+		return
+	}
+	if err := s.store.SetKYCLevelAtLeast(r.Context(), u.UID, req.Level); err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	u, _ = s.store.UserByUID(r.Context(), u.UID)
+	common.WriteJSON(w, http.StatusOK, internalKYCLevelResponse{UID: u.UID, Level: u.KYCLevel})
+}

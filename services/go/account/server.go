@@ -121,6 +121,10 @@ func (s *Server) Routes() http.Handler {
 	// check the destination against the user's withdrawal whitelist.
 	mux.HandleFunc("POST /internal/withdraw/verify", s.handleInternalWithdrawVerify)
 	mux.HandleFunc("GET /internal/withdraw/whitelist", s.handleInternalWithdrawWhitelist)
+	// Used by the KYC service to read (wallet limits) and raise (on approval) a
+	// user's kycLevel.
+	mux.HandleFunc("GET /internal/account/kyc-level", s.handleInternalGetKYCLevel)
+	mux.HandleFunc("POST /internal/account/kyc-level", s.handleInternalSetKYCLevel)
 
 	// Dev-only internal endpoint: read the most recent verification code so tests
 	// and smoke scripts can complete flows without a real email/SMS provider.

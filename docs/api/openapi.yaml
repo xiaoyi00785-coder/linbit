@@ -29,7 +29,9 @@ tags:
   - name: Account
     description: 账户信息
   - name: KYC
-    description: 身份认证
+    description: 身份认证（基础认证 level 1、高级认证 level 2）
+  - name: KYC Admin
+    description: KYC 审核（仅内部，需 X-Internal-Token；网关不转发 /admin/*）
   - name: Assets
     description: 资产余额
   - name: Wallet
@@ -639,8 +641,12 @@ paths:
                 status: pending
                 submittedAt: "2026-11-02T10:00:00Z"
                 reason: null
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: |
+            参数错误：VALIDATION_ERROR、UNDERAGE（默认未满 18 岁，KYC_MIN_AGE 可配）、
+            KYC_LEVEL_REQUIRED（高级认证需先通过基础认证）、DOCUMENT_NOT_FOUND、DOCUMENT_SIDE_MISMATCH
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: KYC_PENDING（已有审核中的申请）或 ID_NUMBER_TAKEN（证件已被其他账户认证） }
 
   /kyc/status:
     get:
@@ -660,6 +666,137 @@ paths:
                 reason: null
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+
+  /kyc/documents:
+    post:
+      tags: [KYC]
+      summary: 上传 KYC 证件图片
+      description: |
+        multipart/form-data。按文件内容识别类型，仅支持 JPEG/PNG；默认上限 10MB
+        （KYC_DOC_MAX_BYTES 可配）。文件只属于上传者，提交 /kyc 时校验归属与 side。
+      operationId: uploadKycDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, side]
+              properties:
+                file: { type: string, format: binary }
+                side: { type: string, enum: [front, selfie, back] }
+      responses:
+        "201":
+          description: 已上传
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycDocument" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { description: 文件过大（FILE_TOO_LARGE） }
+        "415": { description: 不支持的文件类型（UNSUPPORTED_MEDIA_TYPE） }
+
+  /admin/kyc/applications:
+    get:
+      tags: [KYC Admin]
+      summary: 审核列表
+      operationId: adminListKycApplications
+      security: [{ internalToken: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [pending, approved, rejected] }
+      responses:
+        "200":
+          description: 申请列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/KycApplication" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/kyc/applications/{id}:
+    get:
+      tags: [KYC Admin]
+      summary: 申请详情（含证件受控读取地址）
+      operationId: adminGetKycApplication
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, example: app_1 } }
+      responses:
+        "200":
+          description: 申请详情
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycApplication" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/kyc/applications/{id}/approve:
+    post:
+      tags: [KYC Admin]
+      summary: 审核通过（同步账户 kycLevel，只升不降）
+      operationId: adminApproveKyc
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 已通过
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycApplication" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: 不在待审核状态（NOT_PENDING）或证件已被他人认证（ID_NUMBER_TAKEN） }
+
+  /admin/kyc/applications/{id}/reject:
+    post:
+      tags: [KYC Admin]
+      summary: 驳回（reason 必填，用户可重新提交）
+      operationId: adminRejectKyc
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, example: 证件照片模糊 }
+      responses:
+        "200":
+          description: 已驳回
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycApplication" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: 不在待审核状态（NOT_PENDING） }
+
+  /admin/kyc/documents/{id}:
+    get:
+      tags: [KYC Admin]
+      summary: 受控读取证件图片
+      operationId: adminGetKycDocument
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, example: doc_1 } }
+      responses:
+        "200":
+          description: 图片内容
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /assets/balances:
     get:
       tags: [Assets]
@@ -787,7 +924,10 @@ paths:
                 fee: "1.00000000"
                 status: pending
                 createdAt: "2026-11-02T10:05:00Z"
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: |
+            参数错误；WITHDRAW_LIMIT_EXCEEDED 表示超过当前 KYC 等级的 24 小时提现额度
+            （USDT 等值，默认 level0=1000、level1=50000、level2=200000，可配置）
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: 已开启提现白名单，但目标地址不在白名单内
@@ -1250,6 +1390,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
 
   parameters:
     Page:
@@ -1579,6 +1723,52 @@ components:
           example: passport
         idNumber: { type: string, example: E12345678 }
         dateOfBirth: { type: string, format: date, example: "1992-04-18" }
+        level:
+          type: integer
+          enum: [1, 2]
+          default: 1
+          description: 1 = 基础认证；2 = 高级认证（需基础认证已通过）
+        documents:
+          type: object
+          description: 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选
+          properties:
+            front: { type: string, example: doc_1 }
+            selfie: { type: string, example: doc_2 }
+            back: { type: string, example: doc_3 }
+
+    KycDocument:
+      type: object
+      required: [fileId, side]
+      properties:
+        fileId: { type: string, example: doc_1 }
+        side: { type: string, enum: [front, selfie, back] }
+
+    KycApplication:
+      type: object
+      required: [id, userId, level, status, submittedAt]
+      properties:
+        id: { type: string, example: app_1 }
+        userId: { type: string }
+        level: { type: integer, enum: [1, 2] }
+        status: { type: string, enum: [pending, approved, rejected] }
+        firstName: { type: string }
+        lastName: { type: string }
+        country: { type: string }
+        idType: { type: string, enum: [passport, id_card, driver_license] }
+        idNumber: { type: string }
+        dateOfBirth: { type: string, format: date }
+        reason: { type: string, nullable: true }
+        submittedAt: { type: string, format: date-time }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        documents:
+          type: array
+          description: 仅详情接口返回；url 为受控读取地址（同样需要内部令牌）
+          items:
+            type: object
+            properties:
+              side: { type: string, enum: [front, selfie, back] }
+              fileId: { type: string }
+              url: { type: string, example: /admin/kyc/documents/doc_1 }
 
     KycStatus:
       type: object

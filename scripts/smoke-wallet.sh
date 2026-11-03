@@ -105,6 +105,16 @@ TOKEN="$(printf '%s' "$REG" | jq -r '.accessToken // empty')"
 [ -n "$TOKEN" ] || fail "register did not return accessToken: $REG"
 ok "registered ($EMAIL)"
 
+# Withdrawals are capped per KYC level (level 0 = 1000 USDT/24h by default); this
+# smoke exercises >5000 USDT review, so lift the user to level 2 via the account
+# internal endpoint (the KYC flow itself is covered by smoke-kyc.sh).
+UID_="$(api GET /account "$TOKEN" | jq -r '.uid // empty')"
+[ -n "$UID_" ] || fail "no uid from /account"
+curl -sS -X POST "$ACCOUNT_URL/internal/account/kyc-level" -H 'Content-Type: application/json' \
+  -H "X-Internal-Token: $INTERNAL_TOKEN" -d "{\"uid\":\"$UID_\",\"level\":2}" >/dev/null \
+  || fail "set kyc level failed"
+ok "kyc level raised to 2 for limit-free review tests"
+
 DEP="$(api GET "/wallet/deposit/address?asset=$ASSET&network=$NETWORK" "$TOKEN")"
 ADDR="$(printf '%s' "$DEP" | jq -r '.address // empty')"
 [ -n "$ADDR" ] || fail "no deposit address: $DEP"

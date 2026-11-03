@@ -167,6 +167,14 @@ func (s *Store) UpdateProfile(ctx context.Context, userID int64, nickname, avata
 	return nil
 }
 
+// SetKYCLevelAtLeast raises the user's kyc_level to level, never lowering it
+// (an approval for a lower tier must not downgrade an already-higher entitlement).
+func (s *Store) SetKYCLevelAtLeast(ctx context.Context, uid string, level int) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE users SET kyc_level = GREATEST(kyc_level, $2) WHERE uid = $1`, uid, level)
+	return err
+}
+
 // SetWithdrawWhitelistEnabled toggles the per-user withdrawal whitelist switch.
 func (s *Store) SetWithdrawWhitelistEnabled(ctx context.Context, userID int64, enabled bool) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE users SET withdraw_whitelist_enabled = $2 WHERE id = $1`, userID, enabled)

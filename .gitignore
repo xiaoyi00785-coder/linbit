@@ -44,9 +44,13 @@ snapshot.json.tmp
 # backend default dir; never commit user uploads.
 services/go/account/data/
 data/avatars/
+services/go/kyc/data/
+data/kyc-docs/
 
 # Compiled Go service binaries (produced by `go build` inside a service dir)
 services/go/account/account
 services/go/asset/asset
+services/go/kyc/kyc
 services/go/gateway/gateway
 services/go/order/order
+services/go/wallet/wallet

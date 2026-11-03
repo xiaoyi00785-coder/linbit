@@ -71,6 +71,12 @@ services:
       WALLET_FEE_ACCOUNT: ${WALLET_FEE_ACCOUNT:-platform:gas}
       # Optional JSON array override for the network registry (empty = built-in).
       WALLET_NETWORKS_JSON: ${WALLET_NETWORKS_JSON:-}
+      # KYC-tiered rolling-24h withdrawal caps (USDT-equivalent; <=0 = unlimited).
+      WALLET_KYC_LEVEL0_DAILY_USDT: ${WALLET_KYC_LEVEL0_DAILY_USDT:-1000}
+      WALLET_KYC_LEVEL1_DAILY_USDT: ${WALLET_KYC_LEVEL1_DAILY_USDT:-50000}
+      WALLET_KYC_LEVEL2_DAILY_USDT: ${WALLET_KYC_LEVEL2_DAILY_USDT:-200000}
+      # USDT price table for non-USDT assets (unpriced assets are not counted).
+      WALLET_KYC_PRICES_JSON: ${WALLET_KYC_PRICES_JSON:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,6 +155,30 @@ services:
       matching-engine:
         condition: service_started
 
+  kyc:
+    build:
+      context: .
+      dockerfile: services/go/kyc/Dockerfile
+    environment:
+      PORT: "8087"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Minimum applicant age.
+      KYC_MIN_AGE: ${KYC_MIN_AGE:-18}
+      # Document storage: local disk (default) or s3 (skeleton, not implemented yet).
+      STORAGE_BACKEND: ${KYC_STORAGE_BACKEND:-local}
+      KYC_DOC_STORAGE_DIR: /data/kyc-docs
+      KYC_DOC_MAX_BYTES: ${KYC_DOC_MAX_BYTES:-10485760}
+    volumes:
+      - kycdocs:/data/kyc-docs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      account:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -160,6 +190,8 @@ services:
       ASSET_URL: http://asset:8082
       ORDER_URL: http://order:8084
       MARKET_URL: http://market-data:8085
+      WALLET_URL: http://wallet:8086
+      KYC_URL: http://kyc:8087
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
@@ -174,7 +206,12 @@ services:
         condition: service_started
       market-data:
         condition: service_started
+      wallet:
+        condition: service_started
+      kyc:
+        condition: service_started
 
 volumes:
   pgdata:
   enginedata:
+  kycdocs:

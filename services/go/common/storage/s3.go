@@ -8,9 +8,9 @@ import (
 // S3Config holds the settings a real S3 (or S3-compatible, e.g. MinIO) backend
 // needs. Kept here so wiring/config can be added without reshaping callers.
 type S3Config struct {
-	Bucket    string // target bucket
-	Region    string // AWS region (or endpoint region for compatibles)
-	Endpoint  string // custom endpoint for S3-compatible stores; empty = AWS
+	Bucket     string // target bucket
+	Region     string // AWS region (or endpoint region for compatibles)
+	Endpoint   string // custom endpoint for S3-compatible stores; empty = AWS
 	PublicBase string // public URL prefix for retrieval (CDN or bucket URL)
 	// Credentials are intentionally omitted here; a real implementation should
 	// source them from the environment / instance role / a secrets manager.

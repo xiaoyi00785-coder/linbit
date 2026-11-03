@@ -67,6 +67,11 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		return nil, errf(http.StatusBadRequest, "MAX_WITHDRAW", "超过最大提现数量 "+net.MaxWithdraw.String())
 	}
 
+	// KYC-tiered rolling-24h withdrawal limit (checked before any funds are frozen).
+	if apiErr := s.checkDailyLimit(ctx, userID, in.Asset, in.Amount); apiErr != nil {
+		return nil, apiErr
+	}
+
 	// Gas estimate and how much to freeze.
 	gas, err := s.chain.EstimateGas(ctx, net)
 	if err != nil {

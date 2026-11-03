@@ -48,6 +48,7 @@ var (
 	orderPort   = envOr("DEVSTACK_ORDER_PORT", "8084")
 	marketPort  = envOr("DEVSTACK_MARKET_PORT", "8085")
 	walletPort  = envOr("DEVSTACK_WALLET_PORT", "8086")
+	kycPort     = envOr("DEVSTACK_KYC_PORT", "8087")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -126,7 +127,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -168,6 +169,14 @@ func run(root, execCmd string) int {
 		return 1
 	}
 	defer os.RemoveAll(avatarData)
+
+	// Per-run data dir for KYC document uploads (thrown away on exit).
+	kycData, err := os.MkdirTemp("", "linbit-kyc-*")
+	if err != nil {
+		log.Printf("kyc data dir: %v", err)
+		return 1
+	}
+	defer os.RemoveAll(kycData)
 
 	// --- Run services -------------------------------------------------------
 	ctx, cancel := context.WithCancel(context.Background())
@@ -227,6 +236,15 @@ func run(root, execCmd string) int {
 			// scripts can simulate deposits and block confirmations.
 			"DEV_MODE=true",
 		},
+		"kyc": {
+			"PORT=" + kycPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"REDIS_URL=" + redisURL,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			// KYC document uploads land in a per-run temp dir (local ObjectStorage).
+			"KYC_DOC_STORAGE_DIR=" + kycData,
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
@@ -235,6 +253,7 @@ func run(root, execCmd string) int {
 			"WALLET_URL=http://localhost:" + walletPort,
 			"ORDER_URL=http://localhost:" + orderPort,
 			"MARKET_URL=http://localhost:" + marketPort,
+			"KYC_URL=http://localhost:" + kycPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
@@ -254,6 +273,7 @@ func run(root, execCmd string) int {
 		{"market-data", "http://localhost:" + marketPort + "/healthz"},
 		{"account", "http://localhost:" + accountPort + "/healthz"},
 		{"wallet", "http://localhost:" + walletPort + "/healthz"},
+		{"kyc", "http://localhost:" + kycPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 

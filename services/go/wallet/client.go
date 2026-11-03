@@ -179,3 +179,35 @@ func (c *AccountClient) WhitelistCheck(ctx context.Context, uid, asset, network,
 	}
 	return out, nil
 }
+
+// KYCLevel returns the user's current KYC level from the account service (the
+// source of truth, raised by the KYC service on approval). Used to apply the
+// KYC-tiered daily withdrawal limit.
+func (c *AccountClient) KYCLevel(ctx context.Context, uid string) (int, error) {
+	if c.baseURL == "" {
+		return 0, fmt.Errorf("account internal url not configured")
+	}
+	q := url.Values{}
+	q.Set("uid", uid)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+"/internal/account/kyc-level?"+q.Encode(), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("X-Internal-Token", c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("account kyc-level status %d", resp.StatusCode)
+	}
+	var out struct {
+		Level int `json:"level"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return 0, err
+	}
+	return out.Level, nil
+}

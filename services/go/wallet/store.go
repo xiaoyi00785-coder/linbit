@@ -513,6 +513,38 @@ func (s *Store) CountWithdrawals24h(ctx context.Context, userID string, since ti
 	return n, err
 }
 
+// AssetAmount is a (asset, amount) pair used to sum rolling-24h withdrawal usage.
+type AssetAmount struct {
+	Asset  string
+	Amount decimal.Decimal
+}
+
+// WithdrawnSince returns the (asset, amount) of the user's withdrawals created at
+// or after `since` that count toward the KYC daily limit — i.e. everything except
+// those that released their funds (rejected / canceled / failed).
+func (s *Store) WithdrawnSince(ctx context.Context, userID string, since time.Time) ([]AssetAmount, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT asset, amount::text FROM withdrawals
+		 WHERE user_id = $1 AND created_at >= $2
+		   AND status NOT IN ('rejected','canceled','failed')`,
+		userID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AssetAmount
+	for rows.Next() {
+		var a AssetAmount
+		var amt string
+		if err := rows.Scan(&a.Asset, &amt); err != nil {
+			return nil, err
+		}
+		a.Amount = decimal.RequireFromString(amt)
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // HasPriorWithdrawalTo reports whether the user has a prior non-rejected
 // withdrawal to the same (asset, network, address) — used as a "new address"
 // risk signal.

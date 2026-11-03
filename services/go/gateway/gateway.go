@@ -51,12 +51,17 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	kyc, err := url.Parse(cfg.KycURL)
+	if err != nil {
+		return nil, err
+	}
 	accountProxy := httputil.NewSingleHostReverseProxy(account)
 	assetProxy := httputil.NewSingleHostReverseProxy(asset)
 	walletProxy := httputil.NewSingleHostReverseProxy(wallet)
 	orderProxy := httputil.NewSingleHostReverseProxy(order)
 	// ReverseProxy transparently tunnels WebSocket upgrades (used by /ws).
 	marketProxy := httputil.NewSingleHostReverseProxy(market)
+	kycProxy := httputil.NewSingleHostReverseProxy(kyc)
 
 	return &Gateway{
 		cfg: cfg,
@@ -67,6 +72,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
 			{prefix: "/wallet", proxy: walletProxy},
+			{prefix: "/kyc", proxy: kycProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/ws", proxy: marketProxy},
