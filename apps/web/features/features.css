@@ -87,3 +87,4 @@
 .tk-presets span.on{border-color:#abe127;color:#abe127}
 .tk-levsm{width:48px;background:#0f1013;border:1px solid #2f323a;color:#fff;border-radius:4px;text-align:center}
 .tk-res{background:#0f1013;border-radius:8px;padding:10px;margin-top:10px}
+.tk-ref{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:11px;line-height:16px;color:#8c8c8c;background:#1c1c1c;cursor:help;vertical-align:middle}

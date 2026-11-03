@@ -19,8 +19,17 @@ export type AddressItem = S["WithdrawAddress"];
 type SendCodeRes = { sent: boolean; channel: "email" | "sms"; ttlSeconds?: number };
 
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
-const errMsg = (e: unknown, status: number) =>
-  (e as { message?: string } | undefined)?.message ?? `HTTP ${status}`;
+const CODE_MSG: Record<string, string> = {
+  RATE_LIMITED: "发送太频繁，请稍后再试",
+  EMAIL_UNAVAILABLE: "邮件暂时无法发送",
+  SMS_UNAVAILABLE: "短信暂时无法发送",
+};
+const errMsg = (e: unknown, status: number) => {
+  const x = e as { code?: string; message?: string } | undefined;
+  if (x?.code && CODE_MSG[x.code]) return CODE_MSG[x.code];
+  if (status === 429) return CODE_MSG.RATE_LIMITED;
+  return x?.message ?? `HTTP ${status}`;
+};
 
 async function call<T>(
   fn: () => Promise<{ data?: T; error?: unknown; response: Response }>,

@@ -41,6 +41,14 @@ export function useTradePair(fut: boolean): [PairMeta, PairMeta[], (s: string) =
 export function PairPicker({ cur, list, pick, fut }: { cur: PairMeta; list: PairMeta[]; pick: (s: string) => void; fut: boolean }) {
   const [o, setO] = useState(false);
   const [q, setQ] = useState("");
+  useEffect(() => {
+    if (!o) return;
+    const c = () => setO(false);
+    const k = (e: KeyboardEvent) => e.key === "Escape" && setO(false);
+    const t = setTimeout(() => window.addEventListener("click", c));
+    window.addEventListener("keydown", k);
+    return () => { clearTimeout(t); window.removeEventListener("click", c); window.removeEventListener("keydown", k); };
+  }, [o]);
   return (
     <span className="pair tk-pp" data-guide="pair" onClick={() => setO(!o)}>
       <CoinIcon s={cur.base} size={22} /> {fut ? cur.symbol : `${cur.base}/${cur.quote}`} ▾
@@ -187,6 +195,7 @@ const readLocal = (s: string): { lev: number; mode: Mode } => {
   return { lev: 20, mode: { margin: "cross", pos: "merged" } };
 };
 function Modal({ title, onClose, children, foot }: { title: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode }) {
+  useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
   return (
     <div className="fx-modal" onClick={onClose}>
       <div className="tk-modal" onClick={(e) => e.stopPropagation()}>
@@ -350,4 +359,42 @@ function CalcModal({ pair, lev: l0, max, onClose }: { pair: PairMeta; lev: numbe
       <p className="tk-txt g">计算结果仅供参考，未计入手续费与资金费用。维持保证金率 {(mmr * 100).toFixed(2)}%。</p>
     </Modal>
   );
+}
+
+/** 合约 K 线：GET /futures/market/klines（无 WS，订阅时 5s 轮询，页面隐藏暂停）。
+ *  兼容数组或 { source, items|klines }；顶层 source==='index' 时整段按“无成交”样式绘制。 */
+type FutK = { time?: number; openTime?: number; open: string; high: string; low: string; close: string; volume: string; source?: string };
+const futFeeds: Record<string, ReturnType<typeof mkFutFeed>> = {};
+function mkFutFeed(symbol: string) {
+  const load = async (interval: string) => {
+    try {
+      const r = await fetch(`${restBase()}/futures/market/klines?symbol=${symbol}&interval=${interval}&limit=300`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const raw = j?.data ?? j;
+      const top: string | undefined = Array.isArray(raw) ? undefined : raw?.source;
+      const l: FutK[] = Array.isArray(raw) ? raw : raw?.items ?? raw?.klines ?? [];
+      return l
+        .map((k) => {
+          const t = Number(k.time ?? k.openTime);
+          return { time: t > 1e12 ? Math.floor(t / 1000) : t, open: +k.open, high: +k.high, low: +k.low, close: +k.close, v: +k.volume, src: k.source ?? (top && top !== "trade" ? "index" : undefined) };
+        })
+        .sort((a, b) => a.time - b.time);
+    } catch { return null; }
+  };
+  return {
+    load,
+    subscribe(interval: string, cb: (b: { time: number; open: number; high: number; low: number; close: number; v: number; src?: string }) => void) {
+      const id = setInterval(async () => { if (document.hidden) return; const l = await load(interval); if (l?.length) cb(l[l.length - 1]); }, 5000);
+      return () => clearInterval(id);
+    },
+  };
+}
+export const futFeedOf = (s: string) => (futFeeds[s] ??= mkFutFeed(s));
+
+/** 非成交价提示：priceSource 不是 trade 时显示“参考价” */
+export function RefHint({ src }: { src?: string }) {
+  if (!src || src === "trade") return null;
+  const why: Record<string, string> = { mid: "盘口中间价", index: "指数价格", mark: "标记价格", none: "暂无价格" };
+  return <span className="tk-ref" data-tip={`暂无成交，展示${why[src] ?? "参考价"}；24h 数据为 0`}>参考价</span>;
 }

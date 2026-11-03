@@ -10,11 +10,11 @@ import { API_BASE } from "./api";
 
 export type Source = "api" | "mock" | "loading";
 export type SymbolMeta = { symbol: string; base: string; quote: string; pricePrecision: number; quantityPrecision: number; minQuantity?: string; status?: string; tags?: string[] };
-export type Ticker = { symbol: string; lastPrice: string; priceChangePercent: string; high: string; low: string; volume: string; quoteVolume: string };
+export type Ticker = { symbol: string; lastPrice: string; priceChangePercent: string; high: string; low: string; volume: string; quoteVolume: string; priceSource?: "trade" | "mid" | "index" | "mark" | "none" };
 export type Level = [string, string];
 export type Book = { lastUpdateId: number; bids: Level[]; asks: Level[] };
 export type Trade = { tradeId: string; price: string; quantity: string; side: "buy" | "sell"; time: number };
-export type Bar = { time: number; open: number; high: number; low: number; close: number; v: number };
+export type Bar = { time: number; open: number; high: number; low: number; close: number; v: number; src?: string };
 
 export function restBase(): string {
   return API_BASE.replace(/\/$/, "");
@@ -306,8 +306,8 @@ export function useRecentTrades(symbol: string, limit = 30) {
 }
 
 /** K 线 feed（供 @linbit/chart KLinePro）：load 返回 null 表示不可用→图表回退演示数据。 */
-type RawK = { time?: number; openTime?: number; open: string; high: string; low: string; close: string; volume: string };
-const toBar = (k: RawK): Bar => ({ time: Number(k.time ?? k.openTime), open: +k.open, high: +k.high, low: +k.low, close: +k.close, v: +k.volume });
+type RawK = { time?: number; openTime?: number; open: string; high: string; low: string; close: string; volume: string; source?: string };
+const toBar = (k: RawK): Bar => ({ time: Number(k.time ?? k.openTime), open: +k.open, high: +k.high, low: +k.low, close: +k.close, v: +k.volume, src: k.source });
 export function klineFeed(symbol: string) {
   return {
     async load(interval: string): Promise<Bar[] | null> {
