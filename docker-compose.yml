@@ -52,6 +52,16 @@ services:
       WALLET_CHAIN: ${WALLET_CHAIN:-mock}
       MM_USER_ID: ${MM_USER_ID:-mm:main}
       MM_SEED_MAX: ${MM_SEED_MAX:-10000000}
+      ORDER_URL: ${ORDER_URL:-http://order:8084}
+      # Convert hedging (empty = code defaults; hedge account must be system:*).
+      CONVERT_HEDGE_ENABLED: ${CONVERT_HEDGE_ENABLED:-}
+      CONVERT_HEDGE_USER_ID: ${CONVERT_HEDGE_USER_ID:-}
+      CONVERT_HEDGE_INTERVAL_SECONDS: ${CONVERT_HEDGE_INTERVAL_SECONDS:-}
+      CONVERT_HEDGE_BACKOFF_SECONDS: ${CONVERT_HEDGE_BACKOFF_SECONDS:-}
+      CONVERT_HEDGE_BACKOFF_MAX_SECONDS: ${CONVERT_HEDGE_BACKOFF_MAX_SECONDS:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_API_URL: ${TELEGRAM_API_URL:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -464,6 +474,9 @@ services:
       WALLET_CHAIN: ${WALLET_CHAIN:-mock}
       MM_USER_ID: ${MM_USER_ID:-mm:main}
       MM_SEED_AMOUNT: ${MM_SEED_AMOUNT:-10000000}
+      # Base-asset seed for the MM inventory (empty = code defaults).
+      MM_SEED_BASE_USDT: ${MM_SEED_BASE_USDT:-}
+      MM_SEED_BASE_ASSETS: ${MM_SEED_BASE_ASSETS:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:
