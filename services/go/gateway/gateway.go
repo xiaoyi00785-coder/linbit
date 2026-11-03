@@ -90,6 +90,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/auth", proxy: accountProxy},
 			{prefix: "/2fa", proxy: accountProxy},
 			{prefix: "/account", proxy: accountProxy},
+			{prefix: "/notifications", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
 			{prefix: "/wallet", proxy: walletProxy},
 			{prefix: "/kyc", proxy: kycProxy},

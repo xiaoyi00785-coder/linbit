@@ -25,6 +25,7 @@ type Server struct {
 	cfg      Config
 	store    *Store
 	codes    *CodeService
+	mail     EmailSender   // notification email channel
 	recorder *CodeRecorder // non-nil only in dev mode (backs the dev last-code endpoint)
 	http     *http.Client
 	avatars  storage.ObjectStorage // pluggable blob store for avatar uploads
@@ -39,7 +40,8 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 	if cfg.DevMode {
 		rec = NewCodeRecorder()
 	}
-	codes := NewCodeService(store, logEmailSender{rec: rec}, logSmsSender{rec: rec}, rec, rdb, now)
+	mail := EmailSender(logEmailSender{rec: rec})
+	codes := NewCodeService(store, mail, logSmsSender{rec: rec}, rec, rdb, now)
 	if cfg.DevMode {
 		// Dev/test: relax send throttling so smoke scripts can drive several
 		// code-gated operations back-to-back. Production keeps the real limits.
@@ -50,6 +52,7 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		cfg:      cfg,
 		store:    store,
 		codes:    codes,
+		mail:     mail,
 		recorder: rec,
 		http:     &http.Client{Timeout: 5 * time.Second},
 		avatars:  newAvatarStorage(cfg),
@@ -110,6 +113,15 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleListAddresses)))
 	mux.Handle("POST /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleCreateAddress)))
 	mux.Handle("DELETE /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handleDeleteAddress)))
+
+	// Message center (in-app notifications + email channel preferences).
+	mux.Handle("GET /notifications", s.auth(http.HandlerFunc(s.handleListNotifications)))
+	mux.Handle("GET /notifications/unread-count", s.auth(http.HandlerFunc(s.handleUnreadCount)))
+	mux.Handle("POST /notifications/read", s.auth(http.HandlerFunc(s.handleReadNotifications)))
+	mux.Handle("GET /notifications/settings", s.auth(http.HandlerFunc(s.handleGetNotifyPrefs)))
+	mux.Handle("PUT /notifications/settings", s.auth(http.HandlerFunc(s.handleSetNotifyPrefs)))
+	mux.HandleFunc("POST /internal/notifications", s.handleInternalNotify)
+	mux.HandleFunc("POST /internal/notifications/broadcast", s.handleInternalBroadcast)
 
 	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))

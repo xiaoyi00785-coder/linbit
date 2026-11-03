@@ -148,6 +148,8 @@ func (s *Server) handleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	} else {
 		s.trySync(r.Context(), app.UserID, app.Level, 0)
 	}
+	common.Notify(common.Notice{UID: app.UserID, Kind: common.NoticeSecurity, Title: "身份认证已通过",
+		Body: "您的身份认证（Lv" + strconv.Itoa(app.Level) + "）已通过人工审核。"})
 	common.WriteJSON(w, http.StatusOK, toAdminDTO(app, false))
 }
 
@@ -181,6 +183,10 @@ func (s *Server) handleAdminReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	app, _ := s.store.GetApplication(r.Context(), id)
+	if app != nil {
+		common.Notify(common.Notice{UID: app.UserID, Kind: common.NoticeSecurity, Title: "身份认证未通过",
+			Body: "您的身份认证申请未通过人工审核，原因：" + reason + "。请修改后重新提交。"})
+	}
 	common.WriteJSON(w, http.StatusOK, toAdminDTO(app, false))
 }
 

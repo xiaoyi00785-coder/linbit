@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/linbit/platform/services/go/common"
+
 	"context"
 	"fmt"
 	"log"
@@ -172,6 +174,8 @@ func (s *Server) adminReject(ctx context.Context, id int64, reason string) (bool
 	if err != nil || !applied {
 		return false, err
 	}
+	common.Notify(common.Notice{UID: w.UserID, Kind: common.NoticeTrade, Title: "提现申请被驳回",
+		Body: "您的 " + w.Amount.String() + " " + w.Asset + " 提现申请未通过审核，冻结资金已退回。原因：" + reason})
 	if err := s.asset.Unfreeze(ctx, w.UserID, w.Asset, w.FrozenAmount, withdrawRef(id)); err != nil {
 		log.Printf("reject %d: unfreeze: %v", id, err)
 		return true, err
@@ -292,6 +296,10 @@ func (s *Server) completeWithdrawal(ctx context.Context, w *Withdrawal) bool {
 	if err != nil {
 		log.Printf("mark completed %d: %v", w.ID, err)
 		return false
+	}
+	if applied {
+		common.Notify(common.Notice{UID: w.UserID, Kind: common.NoticeTrade, Title: "提现成功",
+			Body: "您的 " + sendAmount(w).String() + " " + w.Asset + "（" + w.Network + "）提现已完成，到账地址 " + w.Address + "。"})
 	}
 	return applied
 }

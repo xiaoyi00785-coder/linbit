@@ -403,7 +403,12 @@ func (s *Server) handleLoginVerify(w http.ResponseWriter, r *http.Request) {
 
 	_ = s.store.ConsumeLoginChallenge(r.Context(), c.ID)
 	dev := Device{DeviceKey: c.DeviceKey, Name: c.DeviceName, UserAgent: c.UserAgent, IP: c.IP}
+	known, _ := s.store.DeviceExists(r.Context(), u.ID, dev.DeviceKey)
 	_ = s.store.UpsertDevice(r.Context(), u.ID, dev, s.now())
+	if !known {
+		s.notifyAsync(u, common.NoticeSecurity, "新设备登录提醒",
+			"您的账户于 "+s.now().UTC().Format("2006-01-02 15:04:05")+" (UTC) 在新设备「"+dev.Name+"」登录，IP "+dev.IP+"。如非本人操作，请立即修改密码并联系客服。")
+	}
 	tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 	if err != nil {
 		if errors.Is(err, ErrAccountFrozen) {
@@ -567,6 +572,9 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.RevokeAllRefreshTokens(r.Context(), userID); err != nil {
 		log.Printf("password reset: revoke tokens: %v", err)
+	}
+	if u, err := s.store.UserByID(r.Context(), userID); err == nil {
+		s.notifyAsync(u, common.NoticeSecurity, "登录密码已重置", "您的登录密码已重置，所有设备已退出登录。如非本人操作，请立即联系客服。")
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

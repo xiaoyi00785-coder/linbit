@@ -120,6 +120,9 @@ func (s *Server) Routes() http.Handler {
 	a("POST /admin/v1/points/campaigns", permRewardEdit, s.handlePointsCampaignCreate)
 	a("GET /admin/v1/users/{uid}/coupons", permUserView, s.handleUserCoupons)
 
+	a("POST /admin/v1/notifications/broadcast", permContentEdit, s.handleNotifyBroadcast)
+	a("POST /admin/v1/users/{uid}/notifications", permContentEdit, s.handleNotifyUser)
+
 	s.registerEarnRoutes(a)
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)

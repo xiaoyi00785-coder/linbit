@@ -31,6 +31,8 @@ const (
 // implementation only logs; a real provider is wired in later.
 type EmailSender interface {
 	SendEmailCode(ctx context.Context, email, code, purpose string) error
+	// SendEmail delivers a plain-text notification email.
+	SendEmail(ctx context.Context, to, subject, text string) error
 }
 
 // SmsSender delivers a verification code to a phone number (E.164). The local
@@ -78,6 +80,11 @@ type logEmailSender struct{ rec *CodeRecorder }
 func (s logEmailSender) SendEmailCode(_ context.Context, email, code, purpose string) error {
 	log.Printf("[mock-email] to=%s purpose=%s code=%s", email, purpose, code)
 	s.rec.record(email, purpose, code)
+	return nil
+}
+
+func (s logEmailSender) SendEmail(_ context.Context, to, subject, _ string) error {
+	log.Printf("[mock-email] to=%s subject=%q", to, subject)
 	return nil
 }
 

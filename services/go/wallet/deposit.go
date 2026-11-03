@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/linbit/platform/services/go/common"
+
 	"context"
 	"fmt"
 	"log"
@@ -103,6 +105,8 @@ func (sc *Scanner) ScanNetwork(ctx context.Context, network string) (int, error)
 		}
 		if applied {
 			credited++
+			common.Notify(common.Notice{UID: t.UserID, Kind: common.NoticeTrade, Title: "充值到账",
+				Body: "您的 " + t.Amount.String() + " " + t.Asset + "（" + network + "）充值已到账。交易哈希：" + t.TxHash})
 		}
 	}
 	return credited, nil
