@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { KlineInterval } from "@linbit/api-client";
+import type { KlineInterval, Ticker } from "@linbit/api-client";
 import { api } from "./api";
 import { useAuthStore } from "./store";
 
@@ -25,7 +25,8 @@ export function useTickers() {
         params: { query: {} },
       });
       if (error) throw error;
-      return data ?? [];
+      // 不带 symbol 返回数组；带 symbol 返回单对象（c5143eb）
+      return (Array.isArray(data) ? data : data ? [data] : []) as Ticker[];
     },
     refetchInterval: 5_000,
   });

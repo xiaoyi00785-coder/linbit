@@ -1,0 +1,129 @@
+/* ===== 全站交互层：hover / active / 过渡 / 动画 / 滚动入场 ===== */
+:root{--lb-ease:cubic-bezier(.2,.7,.2,1)}
+button,a,[role=button],summary,.tbtn,.cbtn,.abtn,.lb,.pill,.arr,.dli,.stores span,.tab,.tabs>*,select,label[for]{cursor:pointer}
+button,a,.lb,.pill,.tbtn,.cbtn,.abtn,.arr,input,select,textarea,.tab,.tabs>*{transition:color .2s var(--lb-ease),background-color .2s var(--lb-ease),border-color .2s var(--lb-ease),box-shadow .25s var(--lb-ease),transform .15s var(--lb-ease),opacity .2s,filter .2s}
+button:not(:disabled):hover,.lb:hover,.pill:hover,.tbtn:hover,.cbtn:hover,.abtn:hover{filter:brightness(1.12)}
+button:not(:disabled):active,.lb:active,.pill:active,.tbtn:active,.cbtn:active,.abtn:active,.arr:active{transform:scale(.96)}
+button:disabled{cursor:not-allowed;opacity:.55}
+.lime:not(:disabled):hover,.lb.lime:hover,.pill.white:hover{box-shadow:0 6px 20px rgba(171,225,39,.28)}
+.cbtn:hover,.tbtn:hover{background:var(--lb-primary)!important;color:#070808!important}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--lb-primary)!important;box-shadow:0 0 0 3px rgba(171,225,39,.15)}
+/* 导航下划线 + 下拉淡入 */
+.hdr nav a{position:relative}
+.hdr nav a::after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:2px;background:var(--lb-primary);transform:scaleX(0);transition:transform .25s var(--lb-ease)}
+.hdr nav a:hover::after,.hdr nav a.active::after{transform:scaleX(1)}
+.dd{animation:lbDd .22s var(--lb-ease)}
+.dd a,.dd li,.dd>div>*{transition:background .18s,color .18s;border-radius:10px}
+.dd a:hover{background:rgba(255,255,255,.06);color:var(--lb-primary)}
+@keyframes lbDd{from{opacity:0;margin-top:-8px}to{opacity:1;margin-top:0}}
+/* 卡片悬浮上浮 */
+.trader,.pcard,.promo,.fcard,.card,.dli,.kc,.ecard,.tcard{transition:transform .3s var(--lb-ease),border-color .3s,box-shadow .3s}
+.trader:hover,.pcard:hover,.promo:hover,.fcard:hover,.ecard:hover,.tcard:hover{transform:translateY(-4px);border-color:rgba(171,225,39,.45)!important;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.dli:hover,.stores span:hover{color:var(--lb-primary);transform:translateY(-3px)}
+.stores span{border-radius:50%;transition:background .2s,color .2s,transform .2s}
+.stores span:hover{background:rgba(255,255,255,.08)}
+.dli span{display:grid;place-items:center;height:28px}
+/* 表格行 / 标签 */
+table tbody tr{transition:background .15s}
+table tbody tr:hover{background:rgba(255,255,255,.04)}
+.tabs>*:hover,.tab:hover{color:var(--lb-white)}
+details.faq summary{transition:color .2s}
+details.faq summary:hover{color:var(--lb-primary)}
+details.faq[open]>*:not(summary){animation:lbFade .3s var(--lb-ease)}
+a:not(.lb):not(.pill):hover{opacity:.9}
+@keyframes lbFade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+/* 跟单头像 */
+.av2{position:relative;width:40px;height:40px;flex:none;display:inline-block}
+/* 跟单曲线动画 */
+.tline{stroke-dasharray:1;stroke-dashoffset:1;animation:lbDraw 1.6s var(--lb-ease) .2s forwards}
+.tfill{opacity:0;animation:lbFill 1s ease 1.2s forwards}
+.tdot{animation:lbPulse 1.6s ease-in-out infinite}
+.trader:hover .tline{animation:lbDraw 1.2s var(--lb-ease) forwards}
+@keyframes lbDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes lbFill{to{opacity:1}}
+@keyframes lbPulse{0%,100%{opacity:1;r:2.5}50%{opacity:.4;r:4}}
+/* 主视觉/插图浮动 */
+.hero img,.three img,.vis img,.pcard img{animation:lbFloat 6s ease-in-out infinite}
+@keyframes lbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+/* 合作伙伴跑马灯 */
+.partners.mq{display:block;overflow:hidden;width:100%;max-width:100%;min-width:0;contain:inline-size;-webkit-mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
+.mq-track{display:flex;gap:80px;width:max-content;animation:lbMq 28s linear infinite}
+.partners.mq:hover .mq-track{animation-play-state:paused}
+.plogo{display:inline-flex;align-items:center;gap:12px;font-size:26px;font-weight:700;color:var(--lb-text-2);transition:color .2s}
+.plogo:hover{color:var(--lb-white)}
+.plogo:hover svg{color:var(--lb-primary)}
+@keyframes lbMq{to{transform:translateX(calc(-50% - 40px))}}
+/* 滚动入场 */
+.lb-rv{opacity:0;transform:translateY(28px);transition:opacity .7s var(--lb-ease),transform .7s var(--lb-ease)}
+.lb-rv.lb-rv-in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.lb-rv{opacity:1;transform:none}}
+
+/* ===== toast（.3s 过渡，深色卡片 + 品牌色描边） ===== */
+#lb-toasts{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.lb-toast{min-width:220px;max-width:420px;padding:11px 18px;border-radius:10px;background:#1d1d1d;border:1px solid #2a2c2d;color:#fff;font-size:14px;box-shadow:0 8px 28px rgba(0,0,0,.45);display:flex;gap:8px;align-items:center;animation:lbToastIn .3s cubic-bezier(.16,1,.3,1)}
+.lb-toast::before{content:"";width:8px;height:8px;border-radius:50%;background:#abe127;flex:none}
+.lb-toast.err::before{background:#f6465d}.lb-toast.info::before{background:#8a8f94}
+.lb-toast.out{animation:lbToastOut .3s forwards}
+@keyframes lbToastIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+@keyframes lbToastOut{to{opacity:0;transform:translateY(-12px)}}
+/* ===== 骨架屏 ===== */
+.lb-skel-list{display:flex;flex-direction:column;gap:10px}
+.lb-skel{border-radius:10px;background:linear-gradient(90deg,#151616 25%,#1f2122 50%,#151616 75%);background-size:200% 100%;animation:lbSk 1.2s infinite linear}
+@keyframes lbSk{from{background-position:200% 0}to{background-position:-200% 0}}
+.fx-empty{text-align:center;padding:40px 0}
+.fx-src{font-size:12px;color:#f0b90b;border:1px solid rgba(240,185,11,.4);border-radius:4px;padding:1px 6px;margin-left:8px}
+.fx-cpsum{display:flex;gap:24px;margin:-4px 0 16px;color:#8a8f94}.fx-cpsum b{color:#abe127;font-size:18px;margin-left:6px}
+.fx-item.unread b,.fx-item.unread .t{color:#fff}
+.sw.dis{opacity:.5;cursor:not-allowed}
+/* ===== 弹窗开合动画（所有遮罩/对话框） ===== */
+.lmask,.lmodal-mask,.fx-mask,[class*="mask"]{animation:lbFade .3s}
+.lmodal,.lpop,.fx-modal,.ldlg{animation:lbPop .3s cubic-bezier(.16,1,.3,1)}
+@keyframes lbFade{from{opacity:0}}
+@keyframes lbPop{from{opacity:0;transform:translateY(16px) scale(.97)}}
+/* ===== 复制反馈 ===== */
+[data-copy]{cursor:pointer;transition:color .3s}
+[data-copy]:hover{color:#abe127}
+[data-copy].copied{color:#abe127}
+[data-copy].copied::after{content:" ✓";font-size:12px}
+/* ===== 交易页：下单类型 tab、滑杆、盘口行 hover、K线工具条 ===== */
+.otabs span,.ot span,.tp-tabs span{position:relative;transition:color .3s;cursor:pointer}
+.otabs span:hover,.ot span:hover,.tp-tabs span:hover{color:#fff}
+.otabs span.on::after,.ot span.on::after,.tp-tabs span.on::after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:2px;background:#abe127;border-radius:2px;animation:lbUl .3s}
+@keyframes lbUl{from{transform:scaleX(0)}}
+input[type=range]{accent-color:#abe127;cursor:pointer}
+.ob .r,.obk .r,.depth .r,.ob-row{transition:background .15s;cursor:pointer}
+.ob .r:hover,.obk .r:hover,.depth .r:hover,.ob-row:hover{background:#1d1d1d}
+.ktool span,.ktb span,.chart-tool span{transition:all .3s;border-radius:4px;padding:2px 6px;cursor:pointer}
+.ktool span:hover,.ktb span:hover,.chart-tool span:hover{background:#1d1d1d;color:#fff}
+.ktool span.on,.ktb span.on,.chart-tool span.on{color:#abe127;background:rgba(171,225,39,.15)}
+/* ===== 资产：行展开 ===== */
+.atbl tr,.ltbl tbody tr{transition:background .3s}
+.ltbl tbody tr:hover,.atbl tr:hover{background:#1d1d1d}
+.lb-exp{animation:lbExp .3s ease}
+@keyframes lbExp{from{opacity:0;transform:translateY(-6px)}}
+/* ===== 理财卡片 hover/展开 ===== */
+.ecard,.earn-card,.fx-card{transition:all .3s}
+.ecard:hover,.earn-card:hover,.fx-card:hover{transform:translateY(-4px);border-color:rgba(171,225,39,.5);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+/* 实际类名：.pt b 为 tab，.obr 为盘口行，.obt 为深度工具条 */
+.pt b{position:relative;transition:color .3s;cursor:pointer}.pt b:hover{color:#fff}
+.pt b.on::after{animation:lbUl .3s}
+.obr{transition:background .15s;cursor:pointer}.obr:hover{background:#1d1d1d}
+.obt span{transition:all .3s;border-radius:4px;padding:2px 6px;cursor:pointer}.obt span:hover{background:#1d1d1d;color:#fff}
+.lb-sl{position:relative}.lb-sl .fill{position:absolute;left:0;top:50%;height:2px;background:#abe127;transform:translateY(-50%);transition:width .2s;pointer-events:none}
+.lb-sl span{cursor:pointer}.lb-sl span.on i{background:#abe127;border-color:#abe127}.lb-sl span:hover i{transform:scale(1.25)}.lb-sl span i{transition:all .2s}
+.lb-sl input[type=range]{position:absolute;inset:-6px 0;width:100%;opacity:0;cursor:pointer;margin:0}
+.lb-sl span{z-index:1}
+.cimg{border-radius:50%;object-fit:cover;display:inline-block;vertical-align:middle;flex:none}
+/* 质押借币 */
+.fx-loans{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.fx-loan{display:grid;grid-template-columns:1.4fr 1.4fr .8fr .8fr 1.2fr 1.6fr;gap:12px;align-items:center;padding:14px 16px;border:1px solid #232425;border-radius:12px;transition:all .3s}
+.fx-loan:hover{background:#1d1d1d;border-color:rgba(171,225,39,.4)}
+.fx-loan.warn{border-color:rgba(246,70,93,.6)}
+.fx-loan>span{display:flex;flex-direction:column;gap:4px}.fx-loan>span:first-child{flex-direction:row;align-items:center;gap:8px}
+.fx-loan .r{flex-direction:row!important;justify-content:flex-end;gap:6px}
+.fx-chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}.fx-chips b{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border:1px solid #d6d6d6;border-radius:8px;cursor:pointer;transition:all .3s}
+.fx-chips b.on{border-color:#abe127;background:rgba(171,225,39,.15)}
+.fx-tbl{margin-top:12px}.fx-tr{display:grid;grid-template-columns:1.4fr .7fr .7fr .9fr 1fr 1.2fr .9fr 1fr .7fr;gap:8px;padding:12px 4px;border-bottom:1px solid rgba(128,128,128,.15);font-size:13px;transition:background .3s}
+.fx-tr.th{color:#8a8d91;font-size:12px}.fx-tr:not(.th):hover{background:rgba(171,225,39,.06)}
+.fx-empty{padding:28px;text-align:center}
+.fx-loanm{display:flex;flex-direction:column;gap:8px}.fx-loanm .lrow{display:flex;align-items:center}.fx-loanm .lbtns{display:flex;gap:8px;justify-content:flex-end}

@@ -1,10 +1,9 @@
 "use client";
-// 原型页面读取 localStorage（演示登录态），在客户端渲染
+// 新版页面（features/），依赖 localStorage / 浏览器 API，在客户端渲染
 import dynamic from "next/dynamic";
-import type { ComponentType } from "react";
 
-const View = dynamic(() => import("@/legacy/Pages").then((m) => m.Deposit as ComponentType<any>), { ssr: false });
+const View = dynamic(() => import("@/features/Withdraw").then((m) => m.Withdraw), { ssr: false });
 
 export default function Page() {
-  return <View out />;
+  return <View />;
 }
