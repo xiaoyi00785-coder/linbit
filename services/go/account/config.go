@@ -16,6 +16,9 @@ type Config struct {
 	AssetInternalURL string
 	InternalToken    string
 	RedisURL         string
+	// DevMode exposes the internal "last verification code" endpoint and records
+	// plaintext codes in memory. Never enable in production.
+	DevMode bool
 }
 
 // LoadConfig reads configuration from the environment.
@@ -29,5 +32,6 @@ func LoadConfig() Config {
 		AssetInternalURL: common.Env("ASSET_INTERNAL_URL", ""),
 		InternalToken:    common.Env("INTERNAL_TOKEN", ""),
 		RedisURL:         common.Env("REDIS_URL", ""),
+		DevMode:          common.Env("DEV_MODE", "") == "true",
 	}
 }

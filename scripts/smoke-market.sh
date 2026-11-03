@@ -32,6 +32,7 @@ fi
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 ASSET_URL="${ASSET_URL:-http://localhost:8082}"
+ACCOUNT_URL="${ACCOUNT_URL:-http://localhost:8081}"
 INTERNAL_TOKEN="${INTERNAL_TOKEN:-}"
 PASSWORD="Str0ng-Passw0rd!"
 SYMBOL="BTCUSDT"
@@ -57,10 +58,19 @@ PY
 }
 
 register() {
-  local email="$1" resp token sub
+  local email="$1" resp token sub code
+  # Registration requires a verification code; read it back via the account
+  # service's dev-only internal endpoint (DEV_MODE=true).
+  curl -sS -o /dev/null -X POST "$GATEWAY_URL/auth/code/send" \
+    -H 'Content-Type: application/json' \
+    -d "{\"purpose\":\"register\",\"email\":\"$email\"}"
+  code="$(curl -sS -G "$ACCOUNT_URL/internal/dev/last-code" \
+    --data-urlencode "target=$email" --data-urlencode "purpose=register" \
+    -H "X-Internal-Token: $INTERNAL_TOKEN" | jq -r '.code // empty')"
+  [ -n "$code" ] || fail "could not read register code for $email"
   resp="$(curl -sS -X POST "$GATEWAY_URL/auth/register" \
     -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$email\",\"password\":\"$PASSWORD\"}")"
+    -d "{\"email\":\"$email\",\"password\":\"$PASSWORD\",\"code\":\"$code\"}")"
   token="$(printf '%s' "$resp" | jq -r '.accessToken // empty')"
   [ -n "$token" ] || fail "register $email did not return accessToken ($resp)"
   sub="$(jwt_sub "$token")"

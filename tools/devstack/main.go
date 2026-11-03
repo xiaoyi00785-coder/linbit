@@ -201,6 +201,9 @@ func run(root, execCmd string) int {
 			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
 			"INTERNAL_TOKEN=" + internalTok,
 			"REDIS_URL=" + redisURL,
+			// Dev mode exposes the internal "last verification code" endpoint so
+			// smoke scripts can complete code-gated flows without a real provider.
+			"DEV_MODE=true",
 		},
 		"gateway": {
 			"PORT=" + gatewayPort,

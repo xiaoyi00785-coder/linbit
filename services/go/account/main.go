@@ -29,12 +29,13 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	// Redis is an optional dependency.
-	if client := common.MaybeRedis(cfg.RedisURL); client != nil {
-		defer client.Close()
+	// Redis is an optional dependency (used for verification-code rate limiting).
+	rdb := common.MaybeRedis(cfg.RedisURL)
+	if rdb != nil {
+		defer rdb.Close()
 	}
 
-	srv := NewServer(cfg, NewStore(db))
+	srv := NewServer(cfg, NewStore(db), rdb)
 	addr := ":" + cfg.Port
 	log.Printf("account service listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {
