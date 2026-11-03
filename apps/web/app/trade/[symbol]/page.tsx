@@ -1,10 +1,10 @@
-"use client";
-// 行情/交易页依赖 window、localStorage 与图表，仅在客户端渲染
-import dynamic from "next/dynamic";
-import type { ComponentType } from "react";
+import { notFound } from "next/navigation";
+import { TradeView } from "@/legacy/TradeView";
+import { normSymbol, SYMBOL_RE } from "@/features/symbol";
 
-const View = dynamic(() => import("@/legacy/App").then((m) => m.Trade as ComponentType<any>), { ssr: false });
-
-export default function Page() {
-  return <View />;
+// /trade/BTCUSDT（也接受 btc_usdt、BTC-USDT）。格式非法返回 404；格式合法但不存在的交易对由页面回退到默认交易对。
+export default function Page({ params }: { params: { symbol: string } }) {
+  const s = normSymbol(decodeURIComponent(params.symbol));
+  if (!SYMBOL_RE.test(s)) notFound();
+  return <TradeView symbol={s} />;
 }

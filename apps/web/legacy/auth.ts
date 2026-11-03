@@ -7,16 +7,24 @@ import { API_BASE } from '@/lib/api'
 const tokenOk = s => !!(s && s.isAuthed && s.accessToken)
 export const isAuthed = () => tokenOk(useAuthStore.getState())
 export const setAuthed = v => { if (!v) useAuthStore.getState().logout(); try { localStorage.setItem('lb_auth', v && isAuthed() ? '1' : '0') } catch {} ; window.dispatchEvent(new Event('lb_auth')) }
-/** 退出：先调 POST /auth/logout 吊销刷新令牌，无论成功失败都执行本地 logout() */
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+/** 退出：先调 POST /auth/logout 吊销刷新令牌；503 LOGOUT_INCOMPLETE（吊销未完成）时退避重试最多 2 次
+ *  （400ms、1200ms），无论最终成功失败都执行本地 logout() */
 export async function signOut(){
   const { accessToken, refreshToken } = useAuthStore.getState()
   try {
-    if (accessToken || refreshToken) await fetch(API_BASE + '/auth/logout', {
-      method: 'POST', keepalive: true,
-      headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
-      body: JSON.stringify({ refreshToken }),
-      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined,
-    })
+    if (accessToken || refreshToken) for (let i = 0; ; i++) {
+      const res = await fetch(API_BASE + '/auth/logout', {
+        method: 'POST', keepalive: true,
+        headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+        body: JSON.stringify({ refreshToken }),
+        signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined,
+      })
+      if (res.status !== 503 || i >= 2) break
+      const code = await res.json().then(j => j && j.code, () => null)
+      if (code !== 'LOGOUT_INCOMPLETE') break
+      await sleep(i === 0 ? 400 : 1200)
+    }
   } catch {} finally { setAuthed(false) }
 }
 // 跨标签页同步：其它标签页登录/退出时重新水合
