@@ -1,12 +1,12 @@
 "use client";
 import { useRef, useState } from "react";
 import { Shell, Side, ACC } from "./layout";
-import { submitKyc, uploadKycDocument, type KycSubmission } from "@/lib/services";
+import { getKycStatus, submitKyc, uploadKycDocument, type KycSubmission } from "@/lib/services";
 import { Src } from "./common";
 
 type UpState = { file?: File; preview?: string; status: "idle" | "uploading" | "done" | "error"; fileId?: string; msg?: string };
 
-/** KYC 证件上传组件：本地校验（JPG/PNG、≤10MB）+ 预览 + 上传状态。上传接口待定，当前走 mock。 */
+/** KYC 证件上传组件：本地校验（JPG/PNG、≤10MB）+ 预览 + 上传状态。上传走 POST /kyc/documents（multipart：file + side）。 */
 export function KycUpload({ label, side, onDone }: { label: string; side: "front" | "selfie"; onDone: (id: string) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   const [s, setS] = useState<UpState>({ status: "idle" });
@@ -58,9 +58,12 @@ export function KycBasic() {
         </div>
         {msg && <div className="fx-ok">{msg}</div>}
         <button className="lb lime wide" disabled={!ready} style={{ opacity: ready ? 1 : 0.5 }} onClick={async () => {
-          const r = await submitKyc(f);
+          const r = await submitKyc({ ...f, documents: { front: docs.front!, selfie: docs.selfie! } });
           setSrc(r.source);
-          setMsg(r.ok ? "✓ 已提交，审核结果将通过消息通知告知" : r.error ?? "提交失败");
+          if (!r.ok) return setMsg(r.error ?? "提交失败");
+          const st = await getKycStatus();
+          const ST: Record<string, string> = { pending: "审核中", approved: "已通过", rejected: "已驳回", none: "未提交" };
+          setMsg(st.ok && st.data?.status ? `✓ 已提交，当前状态：${ST[st.data.status] ?? st.data.status}${st.data.reason ? `（${st.data.reason}）` : ""}` : "✓ 已提交，审核结果将通过消息通知告知");
         }}>提交</button>
       </div>
     </Shell>

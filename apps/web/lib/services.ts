@@ -11,6 +11,8 @@ import type { components } from "@linbit/api-client";
 import { api } from "./api";
 import { rest } from "./rest";
 import { MOCK_ENABLED, NET_ERR } from "./mockFlag";
+import { API_BASE } from "./api";
+import { useAuthStore } from "./store";
 
 type S = components["schemas"];
 export type AuthTokens = S["AuthTokens"];
@@ -94,10 +96,10 @@ export function withdrawRecords(asset?: string) {
   );
 }
 
-/** 已对接：POST /kyc（基础信息）；证件文件上传接口待定 */
-export function submitKyc(body: KycSubmission) {
+/** 已对接：POST /kyc（基础信息 + documents{front,selfie,back?}，fileId 来自 POST /kyc/documents） */
+export function submitKyc(body: KycSubmission & { documents?: { front: string; selfie: string; back?: string } }) {
   return tryApi(
-    () => api.POST("/kyc", { body }),
+    () => api.POST("/kyc", { body: body as KycSubmission }),
     () => ({ level: 0, status: "pending" as const, submittedAt: new Date().toISOString(), reason: null }),
   );
 }
@@ -270,10 +272,32 @@ export function listMyTrades(symbol?: string) {
   );
 }
 
-/** 缺口：POST /kyc/documents（multipart，返回 fileId，提交 /kyc 时引用） */
-export async function uploadKycDocument(file: File, _side: "front" | "selfie"): Promise<Result<{ fileId: string }>> {
+/** 已对接：POST /kyc/documents（multipart：file + side，201 返回 { fileId, side }）。
+ *  仅 NEXT_PUBLIC_ENABLE_MOCK=1 且网关不可达时才回退演示 fileId。 */
+export async function uploadKycDocument(file: File, side: "front" | "selfie" | "back" | "proof_of_address"): Promise<Result<{ fileId: string }>> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("side", side);
+  const tok = useAuthStore.getState().accessToken;
+  try {
+    const res = await fetch(API_BASE + "/kyc/documents", { method: "POST", body: fd, headers: tok ? { Authorization: `Bearer ${tok}` } : {} });
+    const txt = await res.text();
+    const j = txt ? JSON.parse(txt) : {};
+    if (res.ok && j?.fileId) return { ok: true, data: { fileId: String(j.fileId) }, source: "api" };
+    const msg = res.status === 413 || j?.code === "FILE_TOO_LARGE" ? "文件过大" : res.status === 415 || j?.code === "UNSUPPORTED_MEDIA_TYPE" ? "仅支持 JPG / PNG" : j?.message || `HTTP ${res.status}`;
+    if (res.status < 500 || j?.code) return { ok: false, error: msg, code: j?.code, source: "api" };
+  } catch { /* 网络错误 */ }
+  if (!MOCK_ENABLED) return { ok: false, error: NET_ERR, code: "NETWORK", source: "api" };
   await delay(600);
   return { ok: true, data: { fileId: `mock_${file.name}` }, source: "mock" };
+}
+
+/** GET /kyc/status：提交后刷新审核状态 */
+export function getKycStatus() {
+  return tryApi(
+    () => api.GET("/kyc/status" as any, {} as any) as any,
+    () => ({ level: 0, status: "pending" as const, submittedAt: new Date().toISOString(), reason: null }),
+  ) as Promise<Result<{ level?: number; status?: string; submittedAt?: string | null; reason?: string | null }>>;
 }
 
 export interface Coupon {
@@ -300,7 +324,7 @@ export async function listCoupons(): Promise<Result<Coupon[]>> {
         expireAt: c.status === "active" && c.bonus ? ymd(c.bonus.expiresAt) : ymd(c.activateBy), status: st };
     }) };
   }
-  if (r.source === "api") return { ok: false, error: r.error, source: "api", data: [] };
+  if (r.source === "api" || !MOCK_ENABLED) return { ok: false, error: r.error, source: "api", data: [] };
   await delay();
   return { ok: true, source: "mock", data: [
       { id: "c1", type: "fee", amount: 5, title: "手续费抵扣券", desc: "可抵扣现货 / 合约交易手续费", expireAt: "2026-12-31", status: "unused" },
@@ -316,6 +340,7 @@ export async function couponSummary() {
 export async function activateCoupon(id: string): Promise<Result<true>> {
   const r = await rest<{ id: number; status: string }>("POST", `/coupons/${id}/activate`, {});
   if (r.source === "api") return r.ok ? { ok: true, data: true, source: "api" } : { ok: false, error: r.error, source: "api" };
+  if (!MOCK_ENABLED) return { ok: false, error: r.error ?? NET_ERR, code: "NETWORK", source: "api" };
   return { ok: true, data: true, source: "mock" };
 }
 
@@ -331,6 +356,7 @@ export interface Notice {
 export async function listNotifications(kind?: string): Promise<Result<Notice[]>> {
   const r = await rest<{ items: { id: string; kind: Notice["kind"]; title: string; body: string; time: number; read: boolean }[] }>("GET", `/notifications?pageSize=50${kind ? `&kind=${kind}` : ""}`);
   if (r.source === "api") return r.ok && r.data ? { ok: true, source: "api", data: r.data.items.map((n) => ({ ...n, time: new Date(n.time).toLocaleString("zh-CN", { hour12: false }) })) } : { ok: false, error: r.error, source: "api", data: [] };
+  if (!MOCK_ENABLED) return { ok: false, error: r.error ?? NET_ERR, code: "NETWORK", source: "api", data: [] };
   await delay();
   return { ok: true, source: "mock", data: [
       { id: "n1", kind: "security", title: "新设备登录提醒", body: "你的账户于 Chrome · macOS 登录，如非本人操作请立即修改密码。", time: "2026-11-02 09:12", read: false },
@@ -357,8 +383,15 @@ export interface Announcement {
   date: string;
   pinned?: boolean;
 }
-/** 缺口：GET /announcements?category=&page= */
+/** 已对接：GET /announcements（公开，已发布，最多 100 条）。网关不可达且未开启 mock 时返回错误。 */
+type ApiAnnouncement = { id: number | string; category?: string; title: string; body?: string; publishAt?: string; pinned?: boolean };
+const ANN_CAT: Record<string, string> = { general: "最新公告", listing: "新币上线", activity: "活动", maintenance: "系统维护", product: "产品更新" };
 export async function listAnnouncements(): Promise<Result<Announcement[]>> {
+  const r = await rest<{ items: ApiAnnouncement[] }>("GET", "/announcements");
+  if (r.source === "api") return r.ok && r.data ? { ok: true, source: "api", data: (r.data.items ?? []).map((a) => ({
+    id: String(a.id), category: ANN_CAT[a.category ?? ""] ?? a.category ?? "最新公告", title: a.title,
+    date: a.publishAt ? new Date(a.publishAt).toLocaleDateString("sv-SE") : "-", pinned: !!a.pinned })) } : { ok: false, error: r.error, source: "api", data: [] };
+  if (!MOCK_ENABLED) return { ok: false, error: r.error ?? NET_ERR, code: "NETWORK", source: "api", data: [] };
   await delay();
   return {
     ok: true,
