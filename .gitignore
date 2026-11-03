@@ -40,8 +40,27 @@ wal.log
 snapshot.json
 snapshot.json.tmp
 
+# Uploaded object storage (avatars now, KYC docs later) — local ObjectStorage
+# backend default dir; never commit user uploads.
+services/go/account/data/
+data/avatars/
+services/go/kyc/data/
+data/kyc-docs/
+
 # Compiled Go service binaries (produced by `go build` inside a service dir)
 services/go/account/account
 services/go/asset/asset
+services/go/kyc/kyc
+services/go/futures/futures
+services/go/strategy/strategy
+services/go/growth/growth
+services/go/earn/earn
+services/go/admin/admin
 services/go/gateway/gateway
 services/go/order/order
+services/go/wallet/wallet
+
+# wallet secrets (never commit)
+secrets/
+*keystore*.json
+sol-deposit-addresses.txt

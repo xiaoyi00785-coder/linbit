@@ -18,17 +18,17 @@ func MaybeRedis(url string) *redis.Client {
 	}
 	opt, err := redis.ParseURL(url)
 	if err != nil {
-		log.Printf("redis: invalid REDIS_URL (%v), continuing without redis", err)
+		log.Printf("redis: invalid REDIS_URL (%s), continuing without redis", RedactSecrets(err.Error()))
 		return nil
 	}
 	client := redis.NewClient(opt)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Printf("redis: ping failed (%v), continuing without redis", err)
+		log.Printf("redis: ping failed (%s), continuing without redis", RedactSecrets(err.Error()))
 		_ = client.Close()
 		return nil
 	}
-	log.Printf("redis: connected to %s", url)
+	log.Printf("redis: connected to %s", RedactSecrets(url))
 	return client
 }

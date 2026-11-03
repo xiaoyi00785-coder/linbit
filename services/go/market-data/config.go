@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/linbit/platform/services/go/common"
 )
@@ -18,6 +19,13 @@ type Config struct {
 	// Symbols optionally overrides the tracked trading pairs; when empty the
 	// list is read from the shared `symbols` table.
 	Symbols []string
+	// External index feed (feed.go).
+	IndexFeed  []string // ordered sources: binance, okx; empty = off (local last price)
+	IndexPoll  time.Duration
+	IndexStale time.Duration
+	BinanceURL string
+	OKXURL     string
+	DevMode    bool
 }
 
 // LoadConfig reads configuration from the environment.
@@ -29,6 +37,12 @@ func LoadConfig() Config {
 		EngineURL:     common.Env("ENGINE_URL", "http://localhost:8083"),
 		RedisURL:      common.Env("REDIS_URL", ""),
 		Symbols:       splitCSV(common.Env("SYMBOLS", "")),
+		IndexFeed:     parseFeed(common.Env("INDEX_FEED", "binance,okx")),
+		IndexPoll:     time.Duration(common.EnvInt("INDEX_POLL_MS", 2000)) * time.Millisecond,
+		IndexStale:    time.Duration(common.EnvInt("INDEX_STALE_SECONDS", 10)) * time.Second,
+		BinanceURL:    common.Env("BINANCE_API_URL", "https://data-api.binance.vision"),
+		OKXURL:        common.Env("OKX_API_URL", "https://www.okx.com"),
+		DevMode:       common.Env("DEV_MODE", "") == "true",
 	}
 }
 
@@ -38,6 +52,20 @@ func splitCSV(s string) []string {
 	for _, p := range strings.Split(s, ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// parseFeed parses INDEX_FEED ("binance,okx" | "off").
+func parseFeed(v string) []string {
+	var out []string
+	for _, n := range splitCSV(strings.ToLower(v)) {
+		if n == "off" || n == "none" {
+			return nil
+		}
+		if n == "binance" || n == "okx" {
+			out = append(out, n)
 		}
 	}
 	return out

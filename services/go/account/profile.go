@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -9,15 +8,6 @@ import (
 
 	"github.com/linbit/platform/services/go/common"
 )
-
-// AvatarUploader is the pluggable channel for binary avatar uploads. Phase 1
-// only stores an avatar URL (validated below); a real uploader (object storage,
-// signed URLs, etc.) implements this interface later and the profile handler
-// will accept a multipart upload that resolves to a URL.
-type AvatarUploader interface {
-	// Upload stores the image bytes and returns a public URL.
-	Upload(ctx context.Context, userID, contentType string, data []byte) (string, error)
-}
 
 type updateProfileRequest struct {
 	Nickname  *string `json:"nickname"`
@@ -95,7 +85,7 @@ func (s *Server) handleSendCodeAuthed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Purpose {
-	case purposeAddress, purposeBind, purposeReset:
+	case purposeAddress, purposeBind, purposeReset, purposeWithdraw:
 	default:
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "不支持的 purpose")
 		return

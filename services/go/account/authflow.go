@@ -22,26 +22,54 @@ type identity struct {
 	countryCode string
 }
 
+// Identity-resolution errors (in addition to the phone errors in phone.go).
+var (
+	// errNoIdentity means neither email nor phone was supplied.
+	errNoIdentity = errors.New("请提供邮箱或手机号")
+	// errBadEmail means the email failed the sanity check.
+	errBadEmail = errors.New("邮箱格式不正确")
+)
+
 // resolveIdentity turns an email or phone (+ dial country code) into an identity.
-// Email takes precedence when both are supplied.
-func resolveIdentity(email, phone, countryCode string) (identity, bool) {
+// Email takes precedence when both are supplied. On failure it returns a
+// specific error so callers can return 400 with a clear, consistent message.
+func resolveIdentity(email, phone, countryCode string) (identity, error) {
 	email = strings.TrimSpace(email)
 	phone = strings.TrimSpace(phone)
 	switch {
 	case email != "":
 		if !validEmail(email) {
-			return identity{}, false
+			return identity{}, errBadEmail
 		}
-		return identity{channel: channelEmail, target: strings.ToLower(email)}, true
+		return identity{channel: channelEmail, target: strings.ToLower(email)}, nil
 	case phone != "":
-		norm, dial, ok := normalizePhone(phone, countryCode)
-		if !ok {
-			return identity{}, false
+		norm, dial, err := normalizePhone(phone, countryCode)
+		if err != nil {
+			return identity{}, err
 		}
-		return identity{channel: channelSMS, target: norm, countryCode: dial}, true
+		return identity{channel: channelSMS, target: norm, countryCode: dial}, nil
 	default:
-		return identity{}, false
+		return identity{}, errNoIdentity
 	}
+}
+
+// writeIdentityError maps a resolveIdentity error to a 400 with a precise,
+// user-facing message. It is used by every entry point (register / send-code /
+// login / verify-code) so a malformed phone or missing country code is always a
+// clear 400 — never a misleading 401.
+func writeIdentityError(w http.ResponseWriter, err error) {
+	msg := "邮箱或手机号不合法"
+	switch {
+	case errors.Is(err, errNoIdentity):
+		msg = "请提供邮箱或手机号"
+	case errors.Is(err, errBadEmail):
+		msg = "邮箱格式不正确"
+	case errors.Is(err, ErrPhoneCountryCode):
+		msg = "请提供手机号国家码（如 86）"
+	case errors.Is(err, ErrPhoneFormat):
+		msg = "手机号格式不正确"
+	}
+	common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", msg)
 }
 
 // writeCodeVerdict maps a non-OK code verdict to an API error. It returns true
@@ -77,11 +105,12 @@ type registerRequest struct {
 }
 
 type loginRequest struct {
-	Email      string `json:"email"`
-	Phone      string `json:"phone"`
-	Password   string `json:"password"`
-	DeviceID   string `json:"deviceId"`
-	DeviceName string `json:"deviceName"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	CountryCode string `json:"countryCode"`
+	Password    string `json:"password"`
+	DeviceID    string `json:"deviceId"`
+	DeviceName  string `json:"deviceName"`
 }
 
 type loginVerifyRequest struct {
@@ -94,11 +123,24 @@ type refreshRequest struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
-type passwordResetRequest struct {
+// verifyResetCodeRequest is step 1 of the forgot-password flow: validate the
+// emailed/texted code and mint a short-lived reset token.
+type verifyResetCodeRequest struct {
 	Email       string `json:"email"`
 	Phone       string `json:"phone"`
 	CountryCode string `json:"countryCode"`
 	Code        string `json:"code"`
+}
+
+// verifyResetCodeResponse carries the single-use reset token and its lifetime.
+type verifyResetCodeResponse struct {
+	ResetToken string `json:"resetToken"`
+	ExpiresIn  int    `json:"expiresIn"`
+}
+
+// passwordResetRequest is step 2: exchange the reset token for a new password.
+type passwordResetRequest struct {
+	ResetToken  string `json:"resetToken"`
 	NewPassword string `json:"newPassword"`
 }
 
@@ -123,9 +165,9 @@ func (s *Server) handleSendCode(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "purpose 仅支持 register / reset_password")
 		return
 	}
-	id, ok := resolveIdentity(req.Email, req.Phone, req.CountryCode)
-	if !ok {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "邮箱或手机号不合法")
+	id, err := resolveIdentity(req.Email, req.Phone, req.CountryCode)
+	if err != nil {
+		writeIdentityError(w, err)
 		return
 	}
 
@@ -163,9 +205,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
 		return
 	}
-	id, ok := resolveIdentity(req.Email, req.Phone, req.CountryCode)
-	if !ok {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "邮箱或手机号不合法")
+	id, err := resolveIdentity(req.Email, req.Phone, req.CountryCode)
+	if err != nil {
+		writeIdentityError(w, err)
 		return
 	}
 	if len(req.Password) < 8 {
@@ -189,7 +231,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	params := CreateUserParams{PasswordHash: hash, CountryCode: id.countryCode}
+	params := CreateUserParams{PasswordHash: hash, CountryCode: id.countryCode, InviteCode: req.InviteCode}
 	if id.channel == channelEmail {
 		params.Email = &id.target
 		params.EmailVerified = true
@@ -221,6 +263,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrAccountFrozen) {
+			writeFrozen(w)
+			return
+		}
 		log.Printf("register: issue tokens: %v", err)
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
@@ -236,16 +282,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
 		return
 	}
-	id, ok := resolveIdentity(req.Email, req.Phone, "")
-	if !ok {
-		// Phone login may arrive without a '+' prefix; the stored value is E.164,
-		// so a bare number can't be matched. Require email or E.164 phone.
-		common.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "账号或密码错误")
+	id, err := resolveIdentity(req.Email, req.Phone, req.CountryCode)
+	if err != nil {
+		// A malformed handle (bad email, bad phone format, or a bare number with
+		// no country code) is a client input error: return 400 with a clear
+		// message, consistent with register/send-code — not a misleading 401.
+		writeIdentityError(w, err)
 		return
 	}
 	u, err := s.lookupByIdentity(r.Context(), id)
 	if err != nil || !checkPassword(u.PasswordHash, req.Password) {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "账号或密码错误")
+		return
+	}
+	if u.Status == userFrozen {
+		writeFrozen(w)
 		return
 	}
 
@@ -271,6 +322,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpsertDevice(r.Context(), u.ID, dev, s.now())
 		tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 		if err != nil {
+			if errors.Is(err, ErrAccountFrozen) {
+				writeFrozen(w)
+				return
+			}
 			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 			return
 		}
@@ -348,9 +403,18 @@ func (s *Server) handleLoginVerify(w http.ResponseWriter, r *http.Request) {
 
 	_ = s.store.ConsumeLoginChallenge(r.Context(), c.ID)
 	dev := Device{DeviceKey: c.DeviceKey, Name: c.DeviceName, UserAgent: c.UserAgent, IP: c.IP}
+	known, _ := s.store.DeviceExists(r.Context(), u.ID, dev.DeviceKey)
 	_ = s.store.UpsertDevice(r.Context(), u.ID, dev, s.now())
+	if !known {
+		s.notifyAsync(u, common.NoticeSecurity, "新设备登录提醒",
+			"您的账户于 "+s.now().UTC().Format("2006-01-02 15:04:05")+" (UTC) 在新设备「"+dev.Name+"」登录，IP "+dev.IP+"。如非本人操作，请立即修改密码并联系客服。")
+	}
 	tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrAccountFrozen) {
+			writeFrozen(w)
+			return
+		}
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
@@ -403,6 +467,10 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.issueTokens(r.Context(), rec.User, rec.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrAccountFrozen) {
+			writeFrozen(w)
+			return
+		}
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
@@ -423,21 +491,23 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handlePasswordReset verifies a reset code, sets the new password, and revokes
-// all existing sessions.
-func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
-	var req passwordResetRequest
+// handlePasswordVerifyCode is step 1 of the forgot-password flow: it validates
+// the reset code and, on success, issues a short-lived single-use reset token.
+// The subsequent /auth/password/reset call exchanges that token for a new
+// password, so the raw code never travels with the password change.
+func (s *Server) handlePasswordVerifyCode(w http.ResponseWriter, r *http.Request) {
+	var req verifyResetCodeRequest
 	if err := common.DecodeJSON(r, &req); err != nil {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
 		return
 	}
-	id, ok := resolveIdentity(req.Email, req.Phone, req.CountryCode)
-	if !ok {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "邮箱或手机号不合法")
+	id, err := resolveIdentity(req.Email, req.Phone, req.CountryCode)
+	if err != nil {
+		writeIdentityError(w, err)
 		return
 	}
-	if len(req.NewPassword) < 8 {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "密码至少 8 位")
+	if req.Code == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请提供验证码")
 		return
 	}
 	verdict, err := s.codes.Verify(r.Context(), id.target, purposeReset, req.Code)
@@ -448,9 +518,47 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 	if writeCodeVerdict(w, verdict) {
 		return
 	}
+	// A valid reset code is only ever issued to an existing account, so a miss
+	// here is treated as an invalid code (and avoids account enumeration).
 	u, err := s.lookupByIdentity(r.Context(), id)
 	if err != nil {
 		common.WriteError(w, http.StatusBadRequest, "CODE_INVALID", "验证码无效或已过期")
+		return
+	}
+	token, err := newRefreshToken()
+	if err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	if err := s.store.StorePasswordResetToken(r.Context(), u.ID, token, s.now().Add(s.cfg.ResetTokenTTL)); err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, verifyResetCodeResponse{
+		ResetToken: token,
+		ExpiresIn:  int(s.cfg.ResetTokenTTL.Seconds()),
+	})
+}
+
+// handlePasswordReset is step 2 of the forgot-password flow: it consumes the
+// single-use reset token, sets the new password, and revokes all sessions.
+func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
+	var req passwordResetRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	if req.ResetToken == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "缺少 resetToken")
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "密码至少 8 位")
+		return
+	}
+	userID, err := s.store.ConsumePasswordResetToken(r.Context(), req.ResetToken)
+	if err != nil {
+		common.WriteError(w, http.StatusBadRequest, "RESET_TOKEN_INVALID", "重置令牌无效或已过期")
 		return
 	}
 	hash, err := hashPassword(req.NewPassword)
@@ -458,12 +566,15 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	if err := s.store.UpdatePassword(r.Context(), u.ID, hash); err != nil {
+	if err := s.store.UpdatePassword(r.Context(), userID, hash); err != nil {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	if err := s.store.RevokeAllRefreshTokens(r.Context(), u.ID); err != nil {
+	if err := s.store.RevokeAllRefreshTokens(r.Context(), userID); err != nil {
 		log.Printf("password reset: revoke tokens: %v", err)
+	}
+	if u, err := s.store.UserByID(r.Context(), userID); err == nil {
+		s.notifyAsync(u, common.NoticeSecurity, "登录密码已重置", "您的登录密码已重置，所有设备已退出登录。如非本人操作，请立即联系客服。")
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -19,11 +19,12 @@ type Server struct {
 	store  *Store
 	asset  *AssetClient
 	engine Matching
+	fees   *feeOverrides
 }
 
 // NewServer constructs a Server.
 func NewServer(cfg Config, store *Store, asset *AssetClient, engine Matching) *Server {
-	return &Server{cfg: cfg, store: store, asset: asset, engine: engine}
+	return &Server{cfg: cfg, store: store, asset: asset, engine: engine, fees: &feeOverrides{}}
 }
 
 // Routes returns the order service HTTP handler. The /spot/* paths mirror
@@ -37,6 +38,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /spot/orders/open", s.withUser(s.handleOpenOrders))
 	mux.HandleFunc("GET /spot/orders/history", s.withUser(s.handleHistory))
 	mux.HandleFunc("GET /spot/trades", s.withUser(s.handleTrades))
+	s.adminRoutes(mux)
+	s.internalRoutes(mux)
 	return mux
 }
 
@@ -553,10 +556,11 @@ func (s *Server) releaseLeftover(ctx context.Context, o *Order) {
 
 // feeRate returns the configured spot fee rate for a maker/taker role.
 func (s *Server) feeRate(role string) decimal.Decimal {
+	maker, taker := s.currentFees()
 	if role == "taker" {
-		return s.cfg.SpotTakerFeeRate
+		return taker
 	}
-	return s.cfg.SpotMakerFeeRate
+	return maker
 }
 
 // ---- helpers ----

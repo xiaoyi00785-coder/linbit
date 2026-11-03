@@ -69,7 +69,7 @@ impl EventSink for HttpSink {
             }
         };
         if let Err(e) = crate::httpc::post(&self.url, &self.token, &body) {
-            eprintln!("[event] post to {} failed: {e}", self.url);
+            eprintln!("[event] post to {} failed: {e}", redact_url(&self.url));
         }
     }
 }
@@ -112,5 +112,28 @@ impl EventSink for KafkaSink {
         // builds without a broker.
         let _ = (event, &self.brokers, &self.topic);
         unimplemented!("wire an rdkafka producer here for the Kafka deployment");
+    }
+}
+
+/// Masks the password of a `scheme://user:pass@host` URL before it is logged.
+pub fn redact_url(u: &str) -> String {
+    let Some(i) = u.find("://") else { return u.to_string() };
+    let rest = &u[i + 3..];
+    let end = rest.find('/').unwrap_or(rest.len());
+    let Some(at) = rest[..end].rfind('@') else { return u.to_string() };
+    let cred = &rest[..at];
+    match cred.find(':') {
+        Some(c) => format!("{}{}:***{}", &u[..i + 3], &cred[..c], &rest[at..]),
+        None => u.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod redact_tests {
+    use super::redact_url;
+    #[test]
+    fn masks_password() {
+        assert_eq!(redact_url("http://u:p@ss@h:1/x"), "http://u:***@h:1/x");
+        assert_eq!(redact_url("http://h:8080/events"), "http://h:8080/events");
     }
 }

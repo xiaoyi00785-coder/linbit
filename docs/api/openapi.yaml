@@ -29,7 +29,9 @@ tags:
   - name: Account
     description: 账户信息
   - name: KYC
-    description: 身份认证
+    description: 身份认证（基础认证 level 1、高级认证 level 2）
+  - name: KYC Admin
+    description: KYC 审核（仅内部，需 X-Internal-Token；网关不转发 /admin/*）
   - name: Assets
     description: 资产余额
   - name: Wallet
@@ -60,12 +62,7 @@ paths:
           description: 已发送（reset_password 对不存在账号也返回 200）
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  sent: { type: boolean }
-                  channel: { type: string, enum: [email, sms] }
-                  ttlSeconds: { type: integer }
+              schema: { $ref: "#/components/schemas/SendCodeResponse" }
               example: { sent: true, channel: sms, ttlSeconds: 600 }
         "400": { $ref: "#/components/responses/BadRequest" }
         "429":
@@ -202,10 +199,38 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
 
+  /auth/password/verify-code:
+    post:
+      tags: [Auth]
+      summary: 找回密码-校验验证码并换取重置令牌
+      description: >
+        找回密码第一步：校验邮箱/短信验证码，成功后返回短期有效（默认 10 分钟）、
+        一次性的 resetToken，随后用它调用 /auth/password/reset 设置新密码。
+      operationId: verifyPasswordResetCode
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyResetCodeRequest" }
+            example:
+              phone: "13800138000"
+              countryCode: "86"
+              code: "123456"
+      responses:
+        "200":
+          description: 验证码正确，返回重置令牌
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VerifyResetCodeResponse" }
+              example: { resetToken: "3kZ9...resetTok", expiresIn: 600 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /auth/password/reset:
     post:
       tags: [Auth]
-      summary: 校验验证码并重置密码（撤销全部会话）
+      summary: 使用重置令牌设置新密码（撤销全部会话）
+      description: 找回密码第二步：用 /auth/password/verify-code 返回的 resetToken 设置新密码。
       operationId: resetPassword
       security: []
       requestBody:
@@ -214,9 +239,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/PasswordResetRequest" }
             example:
-              phone: "13800138000"
-              countryCode: "86"
-              code: "123456"
+              resetToken: "3kZ9...resetTok"
               newPassword: "N3w-Passw0rd!"
       responses:
         "204": { description: 重置成功 }
@@ -378,6 +401,70 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /account/avatar:
+    post:
+      tags: [Account]
+      summary: 上传头像（multipart）
+      description: >
+        以 multipart/form-data 上传头像图片（字段名 file）。服务端按内容嗅探类型
+        （仅支持 jpeg/png/webp），并限制大小（默认 2MB，可配置）。存储后返回更新后的
+        账户信息，其中 avatarUrl 指向受控访问路由 /account/avatars/{file}。
+      operationId: uploadAvatar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 头像图片（jpeg/png/webp，≤2MB）
+      responses:
+        "200":
+          description: 上传成功，返回更新后的账户信息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: 文件过大
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: FILE_TOO_LARGE, message: 头像超过大小限制 }
+        "415":
+          description: 不支持的图片类型
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { code: UNSUPPORTED_MEDIA_TYPE, message: 仅支持 JPEG/PNG/WEBP 图片 }
+
+  /account/avatars/{file}:
+    get:
+      tags: [Account]
+      summary: 读取已上传头像（受控访问路由，公开）
+      description: 由本地存储后端通过受控路由提供头像访问；仅服务存储目录内文件，阻止路径穿越。
+      operationId: getAvatar
+      security: []
+      parameters:
+        - name: file
+          in: path
+          required: true
+          description: 相对存储键（如 80000001/ab12cd.png）
+          schema: { type: string }
+      responses:
+        "200":
+          description: 头像图片
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /account/code/send:
     post:
       tags: [Account]
@@ -390,7 +477,12 @@ paths:
             schema: { $ref: "#/components/schemas/SendCodeAuthedRequest" }
             example: { purpose: address, channel: sms }
       responses:
-        "200": { description: 已发送 }
+        "200":
+          description: 已发送
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SendCodeResponse" }
+              example: { sent: true, channel: sms, ttlSeconds: 600 }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { description: 发送过于频繁 }
@@ -549,8 +641,12 @@ paths:
                 status: pending
                 submittedAt: "2026-11-02T10:00:00Z"
                 reason: null
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: |
+            参数错误：VALIDATION_ERROR、UNDERAGE（默认未满 18 岁，KYC_MIN_AGE 可配）、
+            KYC_LEVEL_REQUIRED（高级认证需先通过基础认证）、DOCUMENT_NOT_FOUND、DOCUMENT_SIDE_MISMATCH
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: KYC_PENDING（已有审核中的申请）或 ID_NUMBER_TAKEN（证件已被其他账户认证） }
 
   /kyc/status:
     get:
@@ -570,6 +666,166 @@ paths:
                 reason: null
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+
+  /kyc/documents:
+    post:
+      tags: [KYC]
+      summary: 上传 KYC 证件图片
+      description: |
+        multipart/form-data。按文件内容识别类型，仅支持 JPEG/PNG；默认上限 10MB
+        （KYC_DOC_MAX_BYTES 可配）。文件只属于上传者，提交 /kyc 时校验归属与 side。
+      operationId: uploadKycDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, side]
+              properties:
+                file: { type: string, format: binary }
+                side: { type: string, enum: [front, selfie, back, proof_of_address] }
+      responses:
+        "201":
+          description: 已上传
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycDocument" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { description: 文件过大（FILE_TOO_LARGE） }
+        "415": { description: 不支持的文件类型（UNSUPPORTED_MEDIA_TYPE） }
+
+  /admin/kyc/applications:
+    get:
+      tags: [KYC Admin]
+      summary: 审核列表
+      operationId: adminListKycApplications
+      security: [{ internalToken: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [pending, approved, rejected] }
+      responses:
+        "200":
+          description: 申请列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/KycApplication" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /admin/kyc/applications/{id}:
+    get:
+      tags: [KYC Admin]
+      summary: 申请详情（含证件受控读取地址）
+      operationId: adminGetKycApplication
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, example: app_1 } }
+      responses:
+        "200":
+          description: 申请详情
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycApplication" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/kyc/applications/{id}/approve:
+    post:
+      tags: [KYC Admin]
+      summary: 审核通过（同步账户 kycLevel，只升不降）
+      operationId: adminApproveKyc
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 已通过
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycApplication" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: 不在待审核状态（NOT_PENDING）或证件已被他人认证（ID_NUMBER_TAKEN） }
+
+  /admin/kyc/applications/{id}/reject:
+    post:
+      tags: [KYC Admin]
+      summary: 驳回（reason 必填，用户可重新提交）
+      operationId: adminRejectKyc
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, example: 证件照片模糊 }
+      responses:
+        "200":
+          description: 已驳回
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycApplication" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: 不在待审核状态（NOT_PENDING） }
+
+  /admin/kyc/documents/{id}:
+    get:
+      tags: [KYC Admin]
+      summary: 受控读取证件图片
+      operationId: adminGetKycDocument
+      security: [{ internalToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, example: doc_1 } }
+      responses:
+        "200":
+          description: 图片内容
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/kyc/level-sync:
+    get:
+      tags: [KYC Admin]
+      summary: 待同步到账户服务的认证等级（失败自动重试队列）
+      description: |
+        审核通过后先持久化同步任务再立即尝试；失败按指数退避（默认 5s 起翻倍，
+        上限 1h，KYC_SYNC_BASE_SECONDS / KYC_SYNC_MAX_SECONDS）自动重试直至成功。
+      operationId: adminListKycLevelSync
+      security: [{ internalToken: [] }]
+      responses:
+        "200":
+          description: 未完成的同步任务
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId: { type: string }
+                        level: { type: integer }
+                        attempts: { type: integer }
+                        nextAttemptAt: { type: string, format: date-time }
+                        lastError: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /assets/balances:
     get:
       tags: [Assets]
@@ -670,6 +926,11 @@ paths:
       tags: [Wallet]
       summary: 发起提现申请
       operationId: createWithdrawal
+      description: |
+        Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
+        amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
+        未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
+      x-error-codes: [MIN_WITHDRAW, WITHDRAW_LIMIT_EXCEEDED, PRICE_UNAVAILABLE, KYC_REQUIRED]
       requestBody:
         required: true
         content:
@@ -697,8 +958,21 @@ paths:
                 fee: "1.00000000"
                 status: pending
                 createdAt: "2026-11-02T10:05:00Z"
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: |
+            参数错误；MIN_WITHDRAW 表示低于最小提现数量或 amount 不大于 Gas；
+            WITHDRAW_LIMIT_EXCEEDED 表示超过当前 KYC 等级的 24 小时提现额度
+            （USDT 等值，默认 level1=50000、level2=200000，可配置）；非 USDT 资产按
+            market-data 实时价格（{ASSET}USDT 最新成交价）折算，无可用价格时拒绝提现并返回
+            PRICE_UNAVAILABLE。
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
+            但目标地址不在白名单内
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /wallet/withdraw/networks:
     get:
@@ -766,6 +1040,32 @@ paths:
                 page: 1
                 pageSize: 20
                 total: 1
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /wallet/withdraw/{id}/cancel:
+    post:
+      tags: [Wallet]
+      summary: 撤销提现申请
+      description: >
+        仅可撤销处于待人工审核（pending）状态的提现；撤销后冻结金额解冻退回可用余额。
+      operationId: cancelWithdrawal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          example: wd_0001
+      responses:
+        "200":
+          description: 已撤销
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Withdrawal" }
+        "409":
+          description: 该提现无法撤销（不存在或已进入处理）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /spot/orders:
@@ -1129,6 +1429,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
 
   parameters:
     Page:
@@ -1232,6 +1536,15 @@ components:
         phone: { type: string, nullable: true, description: E.164 或本地号, example: "13800138000" }
         countryCode: { type: string, nullable: true, description: 国家拨号码（如 86）, example: "86" }
 
+    SendCodeResponse:
+      type: object
+      required: [sent, channel]
+      description: 发送验证码的统一响应（/auth/code/send 与 /account/code/send 共用）。
+      properties:
+        sent: { type: boolean, example: true }
+        channel: { type: string, enum: [email, sms], example: sms }
+        ttlSeconds: { type: integer, description: 验证码有效期（秒）, example: 600 }
+
     RegisterRequest:
       type: object
       required: [password, code]
@@ -1252,7 +1565,8 @@ components:
         登录触发邮箱/短信验证），返回 LoginChallenge 而非 AuthTokens。
       properties:
         email: { type: string, format: email, nullable: true, example: trader@example.com }
-        phone: { type: string, nullable: true, description: E.164, example: "+8613800138000" }
+        phone: { type: string, nullable: true, description: E.164 或本地号, example: "+8613800138000" }
+        countryCode: { type: string, nullable: true, description: 手机号为本地号时提供国家拨号码（如 86）, example: "86" }
         password: { type: string, format: password, example: "Str0ng-Passw0rd!" }
         deviceId: { type: string, nullable: true, description: 客户端稳定设备标识；缺省时按 User-Agent 推断, example: web-7f3a }
         deviceName: { type: string, nullable: true, example: Chrome on macOS }
@@ -1278,15 +1592,30 @@ components:
         totpCode: { type: string, nullable: true, description: method=totp 时必填, example: "123456" }
         code: { type: string, nullable: true, description: method=email/sms 时必填, example: "123456" }
 
-    PasswordResetRequest:
+    VerifyResetCodeRequest:
       type: object
-      required: [code, newPassword]
-      description: 校验验证码后重置密码，并撤销该用户全部会话（refresh token）。
+      required: [code]
+      description: 找回密码第一步请求：邮箱或手机号二选一 + 验证码。
       properties:
         email: { type: string, format: email, nullable: true, example: trader@example.com }
         phone: { type: string, nullable: true, example: "13800138000" }
         countryCode: { type: string, nullable: true, example: "86" }
         code: { type: string, example: "123456" }
+
+    VerifyResetCodeResponse:
+      type: object
+      required: [resetToken, expiresIn]
+      description: 一次性重置令牌（默认 10 分钟有效），用于 /auth/password/reset。
+      properties:
+        resetToken: { type: string, example: "3kZ9...resetTok" }
+        expiresIn: { type: integer, description: resetToken 有效期（秒）, example: 600 }
+
+    PasswordResetRequest:
+      type: object
+      required: [resetToken, newPassword]
+      description: 校验验证码后重置密码，并撤销该用户全部会话（refresh token）。
+      properties:
+        resetToken: { type: string, description: 由 /auth/password/verify-code 返回, example: "3kZ9...resetTok" }
         newPassword: { type: string, format: password, minLength: 8, example: "N3w-Passw0rd!" }
 
     AuthTokens:
@@ -1358,6 +1687,7 @@ components:
         name: { type: string, example: Chrome on macOS }
         userAgent: { type: string, example: "Mozilla/5.0 ..." }
         ip: { type: string, example: "203.0.113.7" }
+        current: { type: boolean, description: 是否为当前请求所在设备, example: true }
         firstSeen: { type: string, format: date-time, example: "2026-11-01T10:00:00Z" }
         lastSeen: { type: string, format: date-time, example: "2026-11-03T08:30:00Z" }
 
@@ -1432,6 +1762,56 @@ components:
           example: passport
         idNumber: { type: string, example: E12345678 }
         dateOfBirth: { type: string, format: date, example: "1992-04-18" }
+        level:
+          type: integer
+          enum: [1, 2]
+          default: 1
+          description: 1 = 基础认证；2 = 高级认证（需基础认证已通过）
+        documents:
+          type: object
+          description: |
+            由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
+            高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
+            缺失时返回 400 DOCUMENT_REQUIRED。
+          properties:
+            front: { type: string, example: doc_1 }
+            selfie: { type: string, example: doc_2 }
+            back: { type: string, example: doc_3 }
+            proofOfAddress: { type: string, example: doc_4, description: 地址证明（level 2 必填） }
+
+    KycDocument:
+      type: object
+      required: [fileId, side]
+      properties:
+        fileId: { type: string, example: doc_1 }
+        side: { type: string, enum: [front, selfie, back, proof_of_address] }
+
+    KycApplication:
+      type: object
+      required: [id, userId, level, status, submittedAt]
+      properties:
+        id: { type: string, example: app_1 }
+        userId: { type: string }
+        level: { type: integer, enum: [1, 2] }
+        status: { type: string, enum: [pending, approved, rejected] }
+        firstName: { type: string }
+        lastName: { type: string }
+        country: { type: string }
+        idType: { type: string, enum: [passport, id_card, driver_license] }
+        idNumber: { type: string }
+        dateOfBirth: { type: string, format: date }
+        reason: { type: string, nullable: true }
+        submittedAt: { type: string, format: date-time }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        documents:
+          type: array
+          description: 仅详情接口返回；url 为受控读取地址（同样需要内部令牌）
+          items:
+            type: object
+            properties:
+              side: { type: string, enum: [front, selfie, back, proof_of_address] }
+              fileId: { type: string }
+              url: { type: string, example: /admin/kyc/documents/doc_1 }
 
     KycStatus:
       type: object
@@ -1515,6 +1895,13 @@ components:
           nullable: true
           description: 已开启 2FA 时必填
           example: "123456"
+        code:
+          type: string
+          nullable: true
+          description: >
+            未开启 2FA 时必填：发到用户邮箱/手机的验证码（purpose=withdraw）。
+            与 totpCode 二选一，由服务端按账户状态校验。
+          example: "123456"
 
     Withdrawal:
       type: object
@@ -1553,6 +1940,11 @@ components:
       properties:
         network: { type: string, example: TRC20 }
         minWithdraw: { type: string, nullable: true, example: "12.00000000" }
+        maxWithdraw:
+          type: string
+          nullable: true
+          description: 单笔最大提现数量；USDT 各网络为 20000。为空表示无上限。
+          example: "20000.00000000"
         gasFeeEstimate:
           type: string
           nullable: true
@@ -1563,6 +1955,11 @@ components:
           nullable: true
           description: Gas 费计价资产。
           example: USDT
+        confirmations:
+          type: integer
+          nullable: true
+          description: 该网络的到账确认数（充值需达到该确认数才入账；提现完成后等待该确认数结算）。
+          example: 19
         estimatedArrivalMinutes:
           type: integer
           nullable: true

@@ -32,7 +32,12 @@ func newUpstream() *upstream {
 
 func newTestGateway(t *testing.T, accountURL, assetURL string) http.Handler {
 	t.Helper()
-	gw, err := NewGateway(Config{JWTSecret: "test-secret", AccountURL: accountURL, AssetURL: assetURL})
+	gw, err := NewGateway(Config{
+		JWTSecret:  "test-secret",
+		AccountURL: accountURL,
+		AssetURL:   assetURL,
+		WalletURL:  assetURL, // reuse the echo upstream for /wallet route tests
+	})
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
@@ -118,6 +123,22 @@ func TestInternalBlocked(t *testing.T) {
 	}
 	if asset.hits != 0 {
 		t.Fatal("internal path reached upstream")
+	}
+}
+
+func TestAdminHidden(t *testing.T) {
+	asset := newUpstream()
+	defer asset.server.Close()
+	h := newTestGateway(t, asset.server.URL, asset.server.URL)
+	for _, p := range []string{"/admin", "/admin/", "/admin/v1/login", "//admin/v1/users", "/ADMIN/v1/x", "/internal"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", p, nil)) // no token: must be 404, not 401
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want 404", p, w.Code)
+		}
+	}
+	if asset.hits != 0 {
+		t.Fatal("hidden path reached upstream")
 	}
 }
 

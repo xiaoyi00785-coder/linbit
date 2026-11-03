@@ -24,12 +24,15 @@ const (
 	purposeReset    = "reset_password"
 	purposeAddress  = "address"
 	purposeBind     = "bind"
+	purposeWithdraw = "withdraw"
 )
 
 // EmailSender delivers a verification code to an email address. The local
 // implementation only logs; a real provider is wired in later.
 type EmailSender interface {
 	SendEmailCode(ctx context.Context, email, code, purpose string) error
+	// SendEmail delivers a plain-text notification email.
+	SendEmail(ctx context.Context, to, subject, text string) error
 }
 
 // SmsSender delivers a verification code to a phone number (E.164). The local
@@ -71,20 +74,27 @@ func (r *CodeRecorder) Last(target, purpose string) string {
 	return r.last[recorderKey(target, purpose)]
 }
 
-// logEmailSender is the local EmailSender: it logs the code and records it.
+// logEmailSender is the local EmailSender: it records the code (for the dev
+// CodeRecorder) and logs the delivery without the code itself.
 type logEmailSender struct{ rec *CodeRecorder }
 
 func (s logEmailSender) SendEmailCode(_ context.Context, email, code, purpose string) error {
-	log.Printf("[mock-email] to=%s purpose=%s code=%s", email, purpose, code)
+	log.Printf("[mock-email] to=%s purpose=%s (code not logged)", email, purpose)
 	s.rec.record(email, purpose, code)
 	return nil
 }
 
-// logSmsSender is the local SmsSender: it logs the code and records it.
+func (s logEmailSender) SendEmail(_ context.Context, to, subject, _ string) error {
+	log.Printf("[mock-email] to=%s subject=%q", to, subject)
+	return nil
+}
+
+// logSmsSender is the local SmsSender: it records the code and logs the
+// delivery without the code itself.
 type logSmsSender struct{ rec *CodeRecorder }
 
 func (s logSmsSender) SendSMSCode(_ context.Context, phone, code, purpose string) error {
-	log.Printf("[mock-sms] to=%s purpose=%s code=%s", phone, purpose, code)
+	log.Printf("[mock-sms] to=%s purpose=%s (code not logged)", phone, purpose)
 	s.rec.record(phone, purpose, code)
 	return nil
 }

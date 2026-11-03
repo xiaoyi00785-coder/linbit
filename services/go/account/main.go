@@ -14,6 +14,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
+	common.RequireProduction("account", common.ProblemIf(cfg.ResendAPIKey == "" || cfg.ResendFrom == "", "RESEND_API_KEY and RESEND_FROM must be set (the log email sender is not allowed)"), "DATABASE_URL", "INTERNAL_TOKEN", "JWT_SECRET", "REDIS_URL")
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {

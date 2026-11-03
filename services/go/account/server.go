@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/linbit/platform/services/go/common"
+	"github.com/linbit/platform/services/go/common/storage"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -24,8 +25,10 @@ type Server struct {
 	cfg      Config
 	store    *Store
 	codes    *CodeService
+	mail     EmailSender   // notification email channel
 	recorder *CodeRecorder // non-nil only in dev mode (backs the dev last-code endpoint)
 	http     *http.Client
+	avatars  storage.ObjectStorage // pluggable blob store for avatar uploads
 	now      func() time.Time
 }
 
@@ -37,7 +40,14 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 	if cfg.DevMode {
 		rec = NewCodeRecorder()
 	}
-	codes := NewCodeService(store, logEmailSender{rec: rec}, logSmsSender{rec: rec}, rec, rdb, now)
+	mail := EmailSender(logEmailSender{rec: rec})
+	if cfg.ResendAPIKey != "" && cfg.ResendFrom != "" {
+		mail = newResendSender(cfg.ResendURL, cfg.ResendAPIKey, cfg.ResendFrom, rec)
+		log.Printf("email provider: resend (from=%s)", cfg.ResendFrom)
+	} else {
+		log.Printf("email provider: dev mock (RESEND_API_KEY/RESEND_FROM unset)")
+	}
+	codes := NewCodeService(store, mail, logSmsSender{rec: rec}, rec, rdb, now)
 	if cfg.DevMode {
 		// Dev/test: relax send throttling so smoke scripts can drive several
 		// code-gated operations back-to-back. Production keeps the real limits.
@@ -48,10 +58,33 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		cfg:      cfg,
 		store:    store,
 		codes:    codes,
+		mail:     mail,
 		recorder: rec,
 		http:     &http.Client{Timeout: 5 * time.Second},
+		avatars:  newAvatarStorage(cfg),
 		now:      now,
 	}
+}
+
+// newAvatarStorage builds the configured ObjectStorage backend for avatars. The
+// local backend stores on disk; "s3" selects the (skeleton) S3 backend. A local
+// backend that fails to initialise (e.g. undeletable dir) leaves avatars nil,
+// and the upload handler reports the feature as unavailable.
+func newAvatarStorage(cfg Config) storage.ObjectStorage {
+	if strings.EqualFold(cfg.StorageBackend, "s3") {
+		return storage.NewS3Storage(storage.S3Config{
+			Bucket:     cfg.S3Bucket,
+			Region:     cfg.S3Region,
+			Endpoint:   cfg.S3Endpoint,
+			PublicBase: cfg.S3PublicBase,
+		})
+	}
+	ls, err := storage.NewLocalStorage(cfg.AvatarDir, cfg.AvatarPublicBase)
+	if err != nil {
+		log.Printf("avatar storage: init local backend: %v (avatar upload disabled)", err)
+		return nil
+	}
+	return ls
 }
 
 // Routes returns the account service HTTP handler.
@@ -66,12 +99,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/login/verify", s.handleLoginVerify)
 	mux.HandleFunc("POST /auth/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
+	mux.HandleFunc("POST /auth/password/verify-code", s.handlePasswordVerifyCode)
 	mux.HandleFunc("POST /auth/password/reset", s.handlePasswordReset)
+
+	// Public avatar retrieval: a controlled route that streams stored avatars
+	// (local backend only) from the configured directory, blocking traversal.
+	mux.HandleFunc("GET /account/avatars/{rest...}", s.handleServeAvatar)
 
 	// Authenticated endpoints.
 	mux.Handle("POST /auth/logout", s.auth(http.HandlerFunc(s.handleLogout)))
 	mux.Handle("GET /account", s.auth(http.HandlerFunc(s.handleAccount)))
 	mux.Handle("PATCH /account/profile", s.auth(http.HandlerFunc(s.handleUpdateProfile)))
+	mux.Handle("POST /account/avatar", s.auth(http.HandlerFunc(s.handleUploadAvatar)))
 	mux.Handle("POST /account/code/send", s.auth(http.HandlerFunc(s.handleSendCodeAuthed)))
 	mux.Handle("GET /account/devices", s.auth(http.HandlerFunc(s.handleListDevices)))
 	mux.Handle("DELETE /account/devices/{deviceId}", s.auth(http.HandlerFunc(s.handleRemoveDevice)))
@@ -81,16 +120,47 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleCreateAddress)))
 	mux.Handle("DELETE /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handleDeleteAddress)))
 
+	// Message center (in-app notifications + email channel preferences).
+	mux.Handle("GET /notifications", s.auth(http.HandlerFunc(s.handleListNotifications)))
+	mux.Handle("GET /notifications/unread-count", s.auth(http.HandlerFunc(s.handleUnreadCount)))
+	mux.Handle("POST /notifications/read", s.auth(http.HandlerFunc(s.handleReadNotifications)))
+	mux.Handle("GET /notifications/settings", s.auth(http.HandlerFunc(s.handleGetNotifyPrefs)))
+	mux.Handle("PUT /notifications/settings", s.auth(http.HandlerFunc(s.handleSetNotifyPrefs)))
+	mux.HandleFunc("POST /internal/notifications", s.handleInternalNotify)
+	mux.HandleFunc("POST /internal/notifications/broadcast", s.handleInternalBroadcast)
+
+	// VIP application (manual review; no fee tiers).
+	mux.Handle("GET /vip/application", s.auth(http.HandlerFunc(s.handleGetVIP)))
+	mux.Handle("POST /vip/applications", s.auth(http.HandlerFunc(s.handleApplyVIP)))
+	mux.HandleFunc("GET /internal/vip/applications", s.handleInternalListVIP)
+	mux.HandleFunc("POST /internal/vip/applications/{id}/review", s.handleInternalReviewVIP)
+
 	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))
 	mux.Handle("POST /2fa/totp/verify", s.auth(http.HandlerFunc(s.handleTOTPVerify)))
 	mux.Handle("POST /2fa/totp/disable", s.auth(http.HandlerFunc(s.handleTOTPDisable)))
+
+	// Service-to-service endpoints (internal token; never proxied by the gateway).
+	// Used by the wallet service to gate withdrawals: verify the second factor and
+	// check the destination against the user's withdrawal whitelist.
+	mux.HandleFunc("POST /internal/withdraw/verify", s.handleInternalWithdrawVerify)
+	mux.HandleFunc("GET /internal/withdraw/whitelist", s.handleInternalWithdrawWhitelist)
+	// Used by the KYC service to read (wallet limits) and raise (on approval) a
+	// user's kycLevel.
+	mux.HandleFunc("GET /internal/account/kyc-level", s.handleInternalGetKYCLevel)
+	mux.HandleFunc("POST /internal/account/kyc-level", s.handleInternalSetKYCLevel)
+	mux.HandleFunc("GET /internal/admin/users", s.handleInternalAdminUsers)
+	mux.HandleFunc("GET /internal/users/feed", s.handleInternalUsersFeed)
+	mux.HandleFunc("GET /internal/users/profile", s.handleInternalUserProfile)
+	mux.HandleFunc("GET /internal/admin/users/{uid}", s.handleInternalAdminUser)
+	mux.HandleFunc("POST /internal/admin/users/{uid}/status", s.handleInternalAdminSetStatus)
 
 	// Dev-only internal endpoint: read the most recent verification code so tests
 	// and smoke scripts can complete flows without a real email/SMS provider.
 	// Guarded by DEV_MODE + the shared internal token; never proxied by the gateway.
 	if s.cfg.DevMode {
 		mux.HandleFunc("GET /internal/dev/last-code", s.handleDevLastCode)
+		mux.HandleFunc("POST /internal/dev/account/bind-phone", s.handleDevBindPhone)
 	}
 	return mux
 }
@@ -149,16 +219,33 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-// deviceFrom builds a Device fingerprint from the request. A client-supplied
-// deviceId is preferred; otherwise the User-Agent is hashed. The key is stable
-// so the same browser/device is recognised across logins.
-func deviceFrom(r *http.Request, deviceID, deviceName string) Device {
-	ua := r.Header.Get("User-Agent")
-	key := "ua:" + hashToken(ua)
+// deviceKeyFor computes the stable device fingerprint key for a request. An
+// explicit client-supplied deviceId wins; otherwise it falls back to the
+// X-Device-Id header or a deviceId query param (so non-login requests such as
+// the device list can identify "this" device), and finally to a User-Agent hash.
+// The key is stable so the same browser/device is recognised across requests.
+func deviceKeyFor(r *http.Request, deviceID string) string {
 	if deviceID = strings.TrimSpace(deviceID); deviceID != "" {
-		key = "cid:" + deviceID
+		return "cid:" + deviceID
 	}
-	return Device{DeviceKey: key, Name: strings.TrimSpace(deviceName), UserAgent: ua, IP: clientIP(r)}
+	if h := strings.TrimSpace(r.Header.Get("X-Device-Id")); h != "" {
+		return "cid:" + h
+	}
+	if q := strings.TrimSpace(r.URL.Query().Get("deviceId")); q != "" {
+		return "cid:" + q
+	}
+	return "ua:" + hashToken(r.Header.Get("User-Agent"))
+}
+
+// deviceFrom builds a Device fingerprint from the request (see deviceKeyFor for
+// the key derivation).
+func deviceFrom(r *http.Request, deviceID, deviceName string) Device {
+	return Device{
+		DeviceKey: deviceKeyFor(r, deviceID),
+		Name:      strings.TrimSpace(deviceName),
+		UserAgent: r.Header.Get("User-Agent"),
+		IP:        clientIP(r),
+	}
 }
 
 // ---- shared DTOs ----
@@ -242,6 +329,9 @@ func (s *Server) handleDevLastCode(w http.ResponseWriter, r *http.Request) {
 // issueTokens signs an access token and persists a rotated refresh token bound
 // to the given device.
 func (s *Server) issueTokens(ctx context.Context, u *User, deviceKey string) (authTokens, error) {
+	if u.Status == userFrozen {
+		return authTokens{}, ErrAccountFrozen
+	}
 	now := s.now()
 	subEmail := ""
 	if u.Email.Valid {
@@ -289,4 +379,26 @@ func (s *Server) initAssetAccount(ctx context.Context, uid string) {
 	if resp.StatusCode >= 300 {
 		log.Printf("initAssetAccount: asset returned %d", resp.StatusCode)
 	}
+}
+
+// handleDevBindPhone (dev only) attaches a verified phone to a user so smoke
+// scripts can exercise the "bind email + phone" newcomer task.
+func (s *Server) handleDevBindPhone(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.InternalToken == "" || r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "internal token required")
+		return
+	}
+	var req struct {
+		UID   string `json:"uid"`
+		Phone string `json:"phone"`
+	}
+	if err := common.DecodeJSON(r, &req); err != nil || req.UID == "" || req.Phone == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	if _, err := s.store.db.ExecContext(r.Context(), `UPDATE users SET phone=$2, phone_verified=TRUE, email_verified=(email IS NOT NULL) WHERE uid=$1`, req.UID, req.Phone); err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

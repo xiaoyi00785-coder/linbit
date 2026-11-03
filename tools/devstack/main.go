@@ -14,6 +14,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base32"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -40,13 +43,23 @@ const (
 // Ports are overridable via environment so two devstacks (e.g. two parallel
 // smoke runs) can coexist without colliding. Set DEVSTACK_*_PORT to change them.
 var (
-	pgPort      = envInt("DEVSTACK_PG_PORT", 5433)
-	gatewayPort = envOr("DEVSTACK_GATEWAY_PORT", "8080")
-	accountPort = envOr("DEVSTACK_ACCOUNT_PORT", "8081")
-	assetPort   = envOr("DEVSTACK_ASSET_PORT", "8082")
-	enginePort  = envOr("DEVSTACK_ENGINE_PORT", "8083")
-	orderPort   = envOr("DEVSTACK_ORDER_PORT", "8084")
-	marketPort  = envOr("DEVSTACK_MARKET_PORT", "8085")
+	pgPort       = envInt("DEVSTACK_PG_PORT", 5433)
+	gatewayPort  = envOr("DEVSTACK_GATEWAY_PORT", "8080")
+	accountPort  = envOr("DEVSTACK_ACCOUNT_PORT", "8081")
+	assetPort    = envOr("DEVSTACK_ASSET_PORT", "8082")
+	enginePort   = envOr("DEVSTACK_ENGINE_PORT", "8083")
+	orderPort    = envOr("DEVSTACK_ORDER_PORT", "8084")
+	marketPort   = envOr("DEVSTACK_MARKET_PORT", "8085")
+	walletPort   = envOr("DEVSTACK_WALLET_PORT", "8086")
+	kycPort      = envOr("DEVSTACK_KYC_PORT", "8087")
+	strategyPort = envOr("DEVSTACK_STRATEGY_PORT", "8090")
+	growthPort   = envOr("DEVSTACK_GROWTH_PORT", "8091")
+	earnPort     = envOr("DEVSTACK_EARN_PORT", "8092")
+	adminPort    = envOr("DEVSTACK_ADMIN_PORT", "8088")
+	futuresPort  = envOr("DEVSTACK_FUTURES_PORT", "8089")
+	mmPort       = envOr("DEVSTACK_MM_PORT", "8093")
+	// Fake Telegram API for alert smokes (smoke-mm listens here); real tokens are never used.
+	tgAPI = envOr("DEVSTACK_TELEGRAM_API_URL", "http://127.0.0.1:18099")
 )
 
 // envOr returns the env var value or def when unset/empty.
@@ -125,7 +138,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth", "earn", "marketmaker"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -160,6 +173,28 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(engineData)
 
+	// Per-run data dir for account avatar uploads (thrown away on exit).
+	avatarData, err := os.MkdirTemp("", "linbit-avatars-*")
+	if err != nil {
+		log.Printf("avatar data dir: %v", err)
+		return 1
+	}
+	defer os.RemoveAll(avatarData)
+
+	// Per-run data dir for KYC document uploads (thrown away on exit).
+	kycData, err := os.MkdirTemp("", "linbit-kyc-*")
+	if err != nil {
+		log.Printf("kyc data dir: %v", err)
+		return 1
+	}
+	defer os.RemoveAll(kycData)
+
+	// Per-run bootstrap super admin for the admin service. Random unless set in
+	// the environment; handed to -exec commands, never printed.
+	adminUser := envOr("ADMIN_BOOTSTRAP_USERNAME", "devadmin")
+	adminPass := envOr("ADMIN_BOOTSTRAP_PASSWORD", randToken(18))
+	adminTOTP := envOr("ADMIN_BOOTSTRAP_TOTP_SECRET", randBase32(20))
+
 	// --- Run services -------------------------------------------------------
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -193,6 +228,10 @@ func run(root, execCmd string) int {
 			"INTERNAL_TOKEN=" + internalTok,
 			"ENGINE_URL=http://localhost:" + enginePort,
 			"REDIS_URL=" + redisURL,
+			// Deterministic smokes: index = local last price unless pinned via
+			// /internal/dev/index (smoke-mm). Override with DEVSTACK_INDEX_FEED.
+			"INDEX_FEED=" + envOr("DEVSTACK_INDEX_FEED", "off"),
+			"DEV_MODE=true",
 		},
 		"account": {
 			"PORT=" + accountPort,
@@ -204,23 +243,134 @@ func run(root, execCmd string) int {
 			// Dev mode exposes the internal "last verification code" endpoint so
 			// smoke scripts can complete code-gated flows without a real provider.
 			"DEV_MODE=true",
+			// Avatar uploads land in a per-run temp dir (local ObjectStorage).
+			"AVATAR_STORAGE_DIR=" + avatarData,
+		},
+		"wallet": {
+			"PORT=" + walletPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"REDIS_URL=" + redisURL,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			// Dev mode exposes the mock-chain injection/advance endpoints so smoke
+			// scripts can simulate deposits and block confirmations.
+			"DEV_MODE=true",
+		},
+		"kyc": {
+			"PORT=" + kycPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"REDIS_URL=" + redisURL,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			// KYC document uploads land in a per-run temp dir (local ObjectStorage).
+			"KYC_DOC_STORAGE_DIR=" + kycData,
+		},
+		"admin": {
+			"PORT=" + adminPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"WALLET_INTERNAL_URL=http://localhost:" + walletPort,
+			"KYC_INTERNAL_URL=http://localhost:" + kycPort,
+			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+			"GROWTH_INTERNAL_URL=http://localhost:" + growthPort,
+			"EARN_INTERNAL_URL=http://localhost:" + earnPort,
+			"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
+			"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
+			"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,
+			"MM_INTERNAL_URL=http://localhost:" + mmPort,
+			"SOLVENCY_HOUR_UTC=-1",
+			"TELEGRAM_API_URL=" + tgAPI,
+			"TELEGRAM_BOT_TOKEN=devstack-telegram-token",
+			"TELEGRAM_CHAT_ID=devstack-chat",
+			// Dev mode exposes the scheduler "run at now=X" endpoint so the smoke
+			// can exercise the 24h fee-change notice without waiting.
+			"DEV_MODE=true",
+		},
+		"marketmaker": {
+			"PORT=" + mmPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ORDER_URL=http://localhost:" + orderPort,
+			"FUTURES_URL=http://localhost:" + futuresPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			"ASSET_URL=http://localhost:" + assetPort,
+			"WALLET_CHAIN=mock",
+			"TELEGRAM_API_URL=" + tgAPI,
+			"TELEGRAM_BOT_TOKEN=devstack-telegram-token",
+			"TELEGRAM_CHAT_ID=devstack-chat",
+		},
+		"futures": {
+			"PORT=" + futuresPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			// Dev mode exposes index override / forced tick / funding endpoints.
+			"DEV_MODE=true",
+		},
+		"strategy": {
+			"PORT=" + strategyPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ORDER_URL=http://localhost:" + orderPort,
+			"MARKET_URL=http://localhost:" + marketPort,
+			// Fast polling / sampling and an open strategy square for the smoke.
+			"GRID_POLL_MS=300",
+			"GRID_SNAPSHOT_SECONDS=1",
+			"GRID_SQUARE_MIN_RUN_SECONDS=0",
+			"DEV_MODE=true",
+		},
+		"growth": {
+			"PORT=" + growthPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
+			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+			"GROWTH_SYNC_MS=500",
+			// Dev mode exposes the manual sync / settle endpoints.
+			"DEV_MODE=true",
+		},
+		"earn": {
+			"PORT=" + earnPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+			"EARN_TICK_MS=1000",
+			// Dev mode exposes the clock-advance endpoint.
+			"DEV_MODE=true",
 		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
 			"ACCOUNT_URL=http://localhost:" + accountPort,
 			"ASSET_URL=http://localhost:" + assetPort,
+			"WALLET_URL=http://localhost:" + walletPort,
 			"ORDER_URL=http://localhost:" + orderPort,
 			"MARKET_URL=http://localhost:" + marketPort,
+			"KYC_URL=http://localhost:" + kycPort,
+			"ADMIN_URL=http://localhost:" + adminPort,
+			"FUTURES_URL=http://localhost:" + futuresPort,
+			"STRATEGY_URL=http://localhost:" + strategyPort,
+			"GROWTH_URL=http://localhost:" + growthPort,
+			"EARN_URL=http://localhost:" + earnPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
 
 	// Start order matters: asset first (account/order call it), then the engine,
 	// then the order service (migrates the spot schema, needs asset+engine), then
-	// market-data (reads the symbols table order seeded), then account, then
-	// gateway. Each is started and awaited healthy before the next so their
-	// startup migrations run sequentially, not concurrently.
+	// market-data (reads the symbols table order seeded), then account, wallet
+	// (calls account+asset), then gateway. Each is started and awaited healthy
+	// before the next so their startup migrations run sequentially.
 	startOrder := []struct {
 		name   string
 		health string
@@ -230,6 +380,14 @@ func run(root, execCmd string) int {
 		{"order", "http://localhost:" + orderPort + "/healthz"},
 		{"market-data", "http://localhost:" + marketPort + "/healthz"},
 		{"account", "http://localhost:" + accountPort + "/healthz"},
+		{"wallet", "http://localhost:" + walletPort + "/healthz"},
+		{"kyc", "http://localhost:" + kycPort + "/healthz"},
+		{"admin", "http://localhost:" + adminPort + "/healthz"},
+		{"futures", "http://localhost:" + futuresPort + "/healthz"},
+		{"strategy", "http://localhost:" + strategyPort + "/healthz"},
+		{"growth", "http://localhost:" + growthPort + "/healthz"},
+		{"earn", "http://localhost:" + earnPort + "/healthz"},
+		{"marketmaker", "http://localhost:" + mmPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 
@@ -270,6 +428,7 @@ func run(root, execCmd string) int {
 		"GATEWAY_URL=" + gatewayURL,
 		"ACCOUNT_URL=http://localhost:" + accountPort,
 		"ASSET_URL=http://localhost:" + assetPort,
+		"WALLET_URL=http://localhost:" + walletPort,
 		"ORDER_URL=http://localhost:" + orderPort,
 		"ENGINE_URL=http://localhost:" + enginePort,
 		"MARKET_URL=http://localhost:" + marketPort,
@@ -278,6 +437,17 @@ func run(root, execCmd string) int {
 		// Dev-only shared secret so smoke scripts can reach asset's /internal/*
 		// (e.g. seed balances). Not a real credential; never used in production.
 		"INTERNAL_TOKEN=" + internalTok,
+		"ADMIN_URL=http://localhost:" + adminPort,
+		"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+		"MM_URL=http://localhost:" + mmPort,
+		"DEVSTACK_TELEGRAM_API_URL=" + tgAPI,
+	}
+	// Bootstrap super-admin credentials go only to exec'd commands (smokes),
+	// never to stdout.
+	adminEnv := []string{
+		"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
+		"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
+		"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,
 	}
 
 	if execCmd == "" {
@@ -288,6 +458,7 @@ func run(root, execCmd string) int {
 		for _, e := range stackEnv {
 			fmt.Println("  " + e)
 		}
+		fmt.Println("  ADMIN_BOOTSTRAP_*: random per run unless set in the environment")
 		<-sig
 		return 0
 	}
@@ -296,7 +467,7 @@ func run(root, execCmd string) int {
 	log.Printf("devstack: exec %q", execCmd)
 	c := exec.Command("sh", "-c", execCmd)
 	c.Dir = absRoot // run the command from the repository root
-	c.Env = append(os.Environ(), stackEnv...)
+	c.Env = append(append(os.Environ(), stackEnv...), adminEnv...)
 	c.Stdout, c.Stderr, c.Stdin = os.Stdout, os.Stderr, os.Stdin
 	if err := c.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -353,4 +524,22 @@ func prefixed(name string, w io.Writer) io.Writer {
 		}
 	}()
 	return pw
+}
+
+// randToken returns n random bytes, hex encoded.
+func randToken(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+// randBase32 returns n random bytes as unpadded base32 (a TOTP secret).
+func randBase32(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
 }

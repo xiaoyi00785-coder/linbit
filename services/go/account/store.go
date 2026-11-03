@@ -38,6 +38,8 @@ type User struct {
 	PhoneVerified            bool
 	WithdrawWhitelistEnabled bool
 	CreatedAt                time.Time
+	Status                   string
+	StatusReason             string
 }
 
 // Store wraps the account database.
@@ -57,11 +59,12 @@ type CreateUserParams struct {
 	PasswordHash  string
 	EmailVerified bool
 	PhoneVerified bool
+	InviteCode    string
 }
 
 const userColumns = `id, uid, email, phone, country_code, password_hash, nickname, avatar_url,
 	kyc_level, totp_secret, totp_enabled, email_verified, phone_verified,
-	withdraw_whitelist_enabled, created_at`
+	withdraw_whitelist_enabled, created_at, status, status_reason`
 
 const userSelectByEmail = `SELECT ` + userColumns + ` FROM users WHERE email = $1`
 const userSelectByPhone = `SELECT ` + userColumns + ` FROM users WHERE phone = $1`
@@ -78,10 +81,10 @@ func (s *Store) CreateUser(ctx context.Context, p CreateUserParams) (*User, erro
 		phone = *p.Phone
 	}
 	row := s.db.QueryRowContext(ctx,
-		`INSERT INTO users (email, phone, country_code, password_hash, email_verified, phone_verified)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO users (email, phone, country_code, password_hash, email_verified, phone_verified, invite_code)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+userColumns,
-		email, phone, p.CountryCode, p.PasswordHash, p.EmailVerified, p.PhoneVerified)
+		email, phone, p.CountryCode, p.PasswordHash, p.EmailVerified, p.PhoneVerified, normalizeInviteCode(p.InviteCode))
 	u, err := s.scanUser(row)
 	if err != nil {
 		if constraint := uniqueConstraint(err); constraint != "" {
@@ -119,7 +122,7 @@ func (s *Store) scanUser(row *sql.Row) (*User, error) {
 	var u User
 	err := row.Scan(&u.ID, &u.UID, &u.Email, &u.Phone, &u.CountryCode, &u.PasswordHash,
 		&u.Nickname, &u.AvatarURL, &u.KYCLevel, &u.TOTPSecret, &u.TOTPEnabled,
-		&u.EmailVerified, &u.PhoneVerified, &u.WithdrawWhitelistEnabled, &u.CreatedAt)
+		&u.EmailVerified, &u.PhoneVerified, &u.WithdrawWhitelistEnabled, &u.CreatedAt, &u.Status, &u.StatusReason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -165,6 +168,14 @@ func (s *Store) UpdateProfile(ctx context.Context, userID int64, nickname, avata
 		}
 	}
 	return nil
+}
+
+// SetKYCLevelAtLeast raises the user's kyc_level to level, never lowering it
+// (an approval for a lower tier must not downgrade an already-higher entitlement).
+func (s *Store) SetKYCLevelAtLeast(ctx context.Context, uid string, level int) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE users SET kyc_level = GREATEST(kyc_level, $2) WHERE uid = $1`, uid, level)
+	return err
 }
 
 // SetWithdrawWhitelistEnabled toggles the per-user withdrawal whitelist switch.
@@ -240,6 +251,47 @@ func (s *Store) RevokeDeviceRefreshTokens(ctx context.Context, userID int64, dev
 		`UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1 AND device_key = $2 AND revoked = FALSE`,
 		userID, deviceKey)
 	return err
+}
+
+// ---- password reset tokens ----
+
+// StorePasswordResetToken persists the hash of a short-lived, single-use reset
+// token bound to a user.
+func (s *Store) StorePasswordResetToken(ctx context.Context, userID int64, token string, expiresAt time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES ($1, $2, $3)`,
+		hashToken(token), userID, expiresAt)
+	return err
+}
+
+// ConsumePasswordResetToken validates a reset token and marks it consumed,
+// returning the owning user id. A used or expired token yields ErrNotFound.
+func (s *Store) ConsumePasswordResetToken(ctx context.Context, token string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var id, userID int64
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, user_id FROM password_reset_tokens
+		 WHERE token_hash = $1 AND consumed = FALSE AND expires_at > now()
+		 FOR UPDATE`,
+		hashToken(token)).Scan(&id, &userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE password_reset_tokens SET consumed = TRUE WHERE id = $1`, id); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return userID, nil
 }
 
 // ---- verification codes ----
@@ -331,12 +383,14 @@ func (s *Store) VerifyAndConsumeCode(ctx context.Context, target, purpose, codeH
 
 // ---- devices ----
 
-// Device is a recognised login device.
+// Device is a recognised login device. Current flags the device making the
+// request (set by the list handler, not persisted).
 type Device struct {
 	DeviceKey string    `json:"deviceId"`
 	Name      string    `json:"name"`
 	UserAgent string    `json:"userAgent"`
 	IP        string    `json:"ip"`
+	Current   bool      `json:"current"`
 	FirstSeen time.Time `json:"firstSeen"`
 	LastSeen  time.Time `json:"lastSeen"`
 }
@@ -492,6 +546,22 @@ func (s *Store) ListWithdrawAddresses(ctx context.Context, userID int64) ([]With
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// IsWhitelistedAddress reports whether (asset, network, address) is an entry in
+// the user's address book flagged as whitelisted. Used by the wallet service to
+// enforce the withdrawal whitelist when it is enabled.
+func (s *Store) IsWhitelistedAddress(ctx context.Context, userID int64, asset, network, address string) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM withdraw_addresses
+		 WHERE user_id = $1 AND asset = $2 AND network = $3 AND address = $4 AND whitelisted = TRUE
+		 LIMIT 1`,
+		userID, strings.ToUpper(asset), strings.ToUpper(network), address).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // DeleteWithdrawAddress removes an address-book entry and reports success.

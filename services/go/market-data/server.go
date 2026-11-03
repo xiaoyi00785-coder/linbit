@@ -16,6 +16,7 @@ type Server struct {
 	agg    *Aggregator
 	hub    *Hub
 	ingest *HTTPEventSource
+	feed   *IndexFeed
 }
 
 // NewServer constructs a Server.
@@ -36,9 +37,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /market/depth", s.handleDepth)
 	mux.HandleFunc("GET /market/klines", s.handleKlines)
 	mux.HandleFunc("GET /market/trades", s.handleTrades)
+	mux.HandleFunc("GET /market/index", s.handleIndex)
 
 	mux.HandleFunc("GET /ws", s.hub.ServeHTTP)
 	mux.HandleFunc("POST /internal/events", s.ingest.Handler())
+	if s.cfg.DevMode {
+		mux.HandleFunc("POST /internal/dev/index", s.handleDevIndex)
+	}
 	return mux
 }
 

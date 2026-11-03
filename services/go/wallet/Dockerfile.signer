@@ -1,0 +1,16 @@
+# Hot-wallet signer. Build from the repository root:
+#   docker build -f services/go/wallet/Dockerfile.signer .
+FROM golang:1.27 AS build
+WORKDIR /src
+COPY services/go/common ./common
+COPY services/go/wallet ./wallet
+WORKDIR /src/wallet
+RUN go mod download
+RUN CGO_ENABLED=0 go build -o /out/signer ./cmd/signer && mkdir -p /out/data
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/signer /signer
+# Named volume inherits this ownership, so the nonroot user can write the keystore.
+COPY --from=build --chown=65532:65532 /out/data /data
+EXPOSE 8095
+ENTRYPOINT ["/signer"]

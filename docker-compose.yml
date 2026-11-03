@@ -14,8 +14,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-linbit}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-linbit}
       POSTGRES_DB: ${POSTGRES_DB:-linbit}
-    ports:
-      - "5432:5432"
+    # Not published: reachable only on the internal compose network.
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -26,8 +25,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Not published; password-protected. Keep REDIS_URL in sync with REDIS_PASSWORD.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-change-me-redis-password}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-change-me-redis-password}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -39,29 +40,140 @@ services:
       context: .
       dockerfile: services/go/asset/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8082"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Optional JSON override for GET /wallet/withdraw/networks (empty = defaults).
       WITHDRAW_NETWORKS_JSON: ${WITHDRAW_NETWORKS_JSON:-}
+      # mm_testnet_seed is only accepted when WALLET_CHAIN is mock/testnet and
+      # LINBIT_ENV != production.
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      MM_USER_ID: ${MM_USER_ID:-mm:main}
+      MM_SEED_MAX: ${MM_SEED_MAX:-10000000}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
+  wallet:
+    build:
+      context: .
+      dockerfile: services/go/wallet/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8086"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      ASSET_INTERNAL_URL: http://asset:8082
+      # Real-time prices for the KYC limit (non-stablecoins; no price = rejected).
+      MARKET_URL: http://market-data:8085
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
+      # Chains are simulated by default (no real node/keys). Set DEV_MODE=true only
+      # in local/CI environments to enable the mock-chain injection endpoints.
+      DEV_MODE: ${WALLET_DEV_MODE:-false}
+      # Where the on-chain gas is charged: "amount" (default) deducts it from the
+      # withdrawal amount (user receives amount-gas; only amount is frozen);
+      # "extra" adds it on top.
+      WALLET_GAS_DEDUCT_MODE: ${WALLET_GAS_DEDUCT_MODE:-amount}
+      WALLET_FEE_ACCOUNT: ${WALLET_FEE_ACCOUNT:-platform:gas}
+      # Optional JSON array override for the network registry (empty = built-in).
+      WALLET_NETWORKS_JSON: ${WALLET_NETWORKS_JSON:-}
+      # Lowest KYC level allowed to withdraw (below it: KYC_REQUIRED).
+      WALLET_KYC_MIN_LEVEL: ${WALLET_KYC_MIN_LEVEL:-1}
+      # KYC-tiered rolling-24h withdrawal caps (USDT-equivalent; <=0 = unlimited).
+      # Level 0 only applies if WALLET_KYC_MIN_LEVEL=0.
+      WALLET_KYC_LEVEL0_DAILY_USDT: ${WALLET_KYC_LEVEL0_DAILY_USDT:-1000}
+      WALLET_KYC_LEVEL1_DAILY_USDT: ${WALLET_KYC_LEVEL1_DAILY_USDT:-50000}
+      WALLET_KYC_LEVEL2_DAILY_USDT: ${WALLET_KYC_LEVEL2_DAILY_USDT:-200000}
+      # Pinned USDT prices (default USDT=1, USDC=1); others use market-data.
+      WALLET_KYC_PRICES_JSON: ${WALLET_KYC_PRICES_JSON:-}
+      # Chain backend: mock (default) | testnet | mainnet. Real chains need the
+      # wallet-signer container (docker compose --profile chain up) and the
+      # public deposit-key sources below. See docs/wallet-chains.md.
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      WALLET_SIGNER_URL: ${WALLET_SIGNER_URL:-http://wallet-signer:8095}
+      WALLET_SIGNER_TOKEN: ${WALLET_SIGNER_TOKEN:-}
+      WALLET_XPUB_EVM: ${WALLET_XPUB_EVM:-}
+      WALLET_XPUB_TRON: ${WALLET_XPUB_TRON:-}
+      WALLET_XPUB_BTC: ${WALLET_XPUB_BTC:-}
+      # SOL deposit address list exported by `wallet-signer sol-addresses -o /export/sol.txt`
+      # into the shared solexport volume (public addresses only, no keys).
+      WALLET_SOL_ADDRESSES_FILE: ${WALLET_SOL_ADDRESSES_FILE:-}
+      WALLET_TRON_API_KEY: ${WALLET_TRON_API_KEY:-}
+      # Empty = public testnet RPC defaults (required for mainnet).
+      WALLET_RPC_TRC20: ${WALLET_RPC_TRC20:-}
+      WALLET_RPC_ERC20: ${WALLET_RPC_ERC20:-}
+      WALLET_RPC_BEP20: ${WALLET_RPC_BEP20:-}
+      WALLET_RPC_ARBITRUM: ${WALLET_RPC_ARBITRUM:-}
+      WALLET_RPC_BTC: ${WALLET_RPC_BTC:-}
+      WALLET_RPC_SOL: ${WALLET_RPC_SOL:-}
+      WALLET_TOKEN_USDT_ERC20: ${WALLET_TOKEN_USDT_ERC20:-}
+      # No multisig yet: empty cold address = reserve address from the same HD
+      # seed (branch 2). WALLET_COLD_FROM_HD=false keeps everything hot.
+      WALLET_COLD_FROM_HD: ${WALLET_COLD_FROM_HD:-true}
+      WALLET_COLD_ADDRESS_TRC20: ${WALLET_COLD_ADDRESS_TRC20:-}
+      WALLET_COLD_ADDRESS_ERC20: ${WALLET_COLD_ADDRESS_ERC20:-}
+      WALLET_COLD_ADDRESS_BEP20: ${WALLET_COLD_ADDRESS_BEP20:-}
+      WALLET_COLD_ADDRESS_ARBITRUM: ${WALLET_COLD_ADDRESS_ARBITRUM:-}
+      WALLET_COLD_ADDRESS_BTC: ${WALLET_COLD_ADDRESS_BTC:-}
+      WALLET_COLD_ADDRESS_SOL: ${WALLET_COLD_ADDRESS_SOL:-}
+      WALLET_WORKER_INTERVAL: ${WALLET_WORKER_INTERVAL:-}
+    volumes:
+      - solexport:/data/sol:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      account:
+        condition: service_started
+
+  # Hot-wallet signer: holds the encrypted keystore and signs over HTTP for the
+  # wallet service only (no published port). Same host today; can move to its
+  # own server by changing WALLET_SIGNER_URL. One-time setup:
+  #   docker compose --profile chain run --rm wallet-signer init
+  #   docker compose --profile chain run --rm wallet-signer xpub
+  wallet-signer:
+    profiles: ["chain"]
+    build:
+      context: .
+      dockerfile: services/go/wallet/Dockerfile.signer
+    command: ["serve"]
+    environment:
+      WALLET_KEYSTORE: /data/hot-keystore.json
+      WALLET_KEYSTORE_PASSPHRASE_FILE: /run/secrets/signer_passphrase
+      WALLET_SIGNER_TOKEN: ${WALLET_SIGNER_TOKEN:-}
+    secrets:
+      - signer_passphrase
+    volumes:
+      - signerdata:/data
+      - solexport:/export
+    restart: unless-stopped
+
   account:
     build:
       context: .
       dockerfile: services/go/account/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8081"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ASSET_INTERNAL_URL: http://asset:8082
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
+      # Email via Resend (https://resend.com). Both unset -> dev mock sender.
+      # RESEND_FROM must use a domain verified in Resend, e.g. "Linbit <no-reply@your-domain>".
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      # Avatars persist on a named volume (survive container rebuilds).
+      AVATAR_STORAGE_DIR: /data/avatars
+    volumes:
+      - avatars:/data/avatars
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,6 +184,7 @@ services:
     build:
       context: services/rust/matching-engine
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       BIND: "0.0.0.0:8083"
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       DATA_DIR: /data
@@ -87,6 +200,7 @@ services:
       context: .
       dockerfile: services/go/order/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8084"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
@@ -94,7 +208,7 @@ services:
       ENGINE_URL: http://matching-engine:8083
       SPOT_MAKER_FEE_RATE: ${SPOT_MAKER_FEE_RATE:-0.001}
       SPOT_TAKER_FEE_RATE: ${SPOT_TAKER_FEE_RATE:-0.001}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,11 +222,19 @@ services:
       context: .
       dockerfile: services/go/market-data/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8085"
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ENGINE_URL: http://matching-engine:8083
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
+      # External index price (futures mark/index, KYC/admin USD conversion,
+      # market maker): Binance public REST first, OKX backup; stale => 503.
+      INDEX_FEED: ${INDEX_FEED:-binance,okx}
+      INDEX_POLL_MS: ${INDEX_POLL_MS:-2000}
+      INDEX_STALE_SECONDS: ${INDEX_STALE_SECONDS:-10}
+      BINANCE_API_URL: ${BINANCE_API_URL:-https://data-api.binance.vision}
+      OKX_API_URL: ${OKX_API_URL:-https://www.okx.com}
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,22 +243,233 @@ services:
       matching-engine:
         condition: service_started
 
+  kyc:
+    build:
+      context: .
+      dockerfile: services/go/kyc/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8087"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
+      # Minimum applicant age.
+      KYC_MIN_AGE: ${KYC_MIN_AGE:-18}
+      # Document storage: local disk (default) or s3 (skeleton, not implemented yet).
+      STORAGE_BACKEND: ${KYC_STORAGE_BACKEND:-local}
+      KYC_DOC_STORAGE_DIR: /data/kyc-docs
+      KYC_DOC_MAX_BYTES: ${KYC_DOC_MAX_BYTES:-10485760}
+    volumes:
+      - kycdocs:/data/kyc-docs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      account:
+        condition: service_started
+
+  admin:
+    build:
+      context: .
+      dockerfile: services/go/admin/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8088"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      ASSET_INTERNAL_URL: http://asset:8082
+      ORDER_INTERNAL_URL: http://order:8084
+      MARKET_URL: http://market-data:8085
+      WALLET_INTERNAL_URL: http://wallet:8086
+      KYC_INTERNAL_URL: http://kyc:8087
+      FUTURES_INTERNAL_URL: http://futures:8089
+      GROWTH_INTERNAL_URL: http://growth:8091
+      EARN_INTERNAL_URL: http://earn:8092
+      MM_INTERNAL_URL: http://marketmaker:8093
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      MM_USER_ID: ${MM_USER_ID:-mm:main}
+      # Daily solvency reconciliation hour (UTC, -1 = off); alerts go to Telegram.
+      SOLVENCY_HOUR_UTC: ${SOLVENCY_HOUR_UTC:-1}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # First super admin, created only when the admin_users table is empty.
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      ADMIN_BOOTSTRAP_TOTP_SECRET: ${ADMIN_BOOTSTRAP_TOTP_SECRET:-}
+      # Comma-separated IPs/CIDRs allowed to reach /admin/v1 (empty = allow all).
+      ADMIN_IP_ALLOWLIST: ${ADMIN_IP_ALLOWLIST:-}
+      ADMIN_SESSION_IDLE_MINUTES: ${ADMIN_SESSION_IDLE_MINUTES:-30}
+      ADMIN_FEE_NOTICE_HOURS: ${ADMIN_FEE_NOTICE_HOURS:-24}
+      ADMIN_COUPON_FINANCE_THRESHOLD: ${ADMIN_COUPON_FINANCE_THRESHOLD:-10000}
+      ADMIN_REWARD_FINANCE_THRESHOLD: ${ADMIN_REWARD_FINANCE_THRESHOLD:-1000}
+      ADMIN_WITHDRAW_SECOND_REVIEW_USDT: ${ADMIN_WITHDRAW_SECOND_REVIEW_USDT:-5000}
+      ADMIN_WITHDRAW_SECOND_REVIEW_RISK: ${ADMIN_WITHDRAW_SECOND_REVIEW_RISK:-40}
+    ports:
+      # Back office: bound to localhost only; put it behind VPN / allow-list in prod.
+      - "127.0.0.1:${ADMIN_PORT:-8088}:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kyc:
+        condition: service_started
+
+  futures:
+    build:
+      context: .
+      dockerfile: services/go/futures/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8089"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      # Index price = spot last price from market-data (no price = no mark = fail closed).
+      MARKET_URL: http://market-data:8085
+      FUTURES_DEFAULT_LEVERAGE: ${FUTURES_DEFAULT_LEVERAGE:-20}
+      FUTURES_DEFAULT_MARGIN_MODE: ${FUTURES_DEFAULT_MARGIN_MODE:-cross}
+      FUTURES_MARKET_PRICE_BAND: ${FUTURES_MARKET_PRICE_BAND:-0.05}
+      FUTURES_FUNDING_HOURS: ${FUTURES_FUNDING_HOURS:-8}
+      FUTURES_FUNDING_INTEREST: ${FUTURES_FUNDING_INTEREST:-0.0001}
+      FUTURES_FUNDING_CLAMP: ${FUTURES_FUNDING_CLAMP:-0.0005}
+      FUTURES_FUNDING_CAP: ${FUTURES_FUNDING_CAP:-0.0075}
+      # Empty = use each contract's maintenance margin rate.
+      FUTURES_LIQUIDATION_FEE_RATE: ${FUTURES_LIQUIDATION_FEE_RATE:-}
+      # Copy trading (profit share 0–50% fixed by product rules; settled daily).
+      FUTURES_COPY_AUTO_APPROVE: ${FUTURES_COPY_AUTO_APPROVE:-false}
+      FUTURES_COPY_MIN_AMOUNT: ${FUTURES_COPY_MIN_AMOUNT:-50}
+      FUTURES_COPY_DEFAULT_SHARE: ${FUTURES_COPY_DEFAULT_SHARE:-0.10}
+      FUTURES_COPY_SETTLE_HOUR_UTC: ${FUTURES_COPY_SETTLE_HOUR_UTC:-16}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      market-data:
+        condition: service_started
+
+  strategy:
+    build:
+      context: .
+      dockerfile: services/go/strategy/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8090"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ORDER_URL: http://order:8084
+      MARKET_URL: http://market-data:8085
+      GRID_POLL_MS: ${GRID_POLL_MS:-1000}
+      GRID_MAX_BOTS_PER_USER: ${GRID_MAX_BOTS_PER_USER:-10}
+      GRID_MIN_INVESTMENT: ${GRID_MIN_INVESTMENT:-10}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      order:
+        condition: service_started
+      market-data:
+        condition: service_started
+
+  growth:
+    build:
+      context: .
+      dockerfile: services/go/growth/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8091"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      ASSET_INTERNAL_URL: http://asset:8082
+      ORDER_INTERNAL_URL: http://order:8084
+      FUTURES_INTERNAL_URL: http://futures:8089
+      GROWTH_SETTLE_HOUR_UTC: ${GROWTH_SETTLE_HOUR_UTC:-16}
+      GROWTH_PARTNER_AUTO_APPROVE: ${GROWTH_PARTNER_AUTO_APPROVE:-false}
+      GROWTH_INVITE_BASE_URL: ${GROWTH_INVITE_BASE_URL:-https://linbit.example.com/r/}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      account:
+        condition: service_started
+      asset:
+        condition: service_started
+      order:
+        condition: service_started
+      futures:
+        condition: service_started
+
+  earn:
+    build:
+      context: .
+      dockerfile: services/go/earn/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8092"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      FUTURES_INTERNAL_URL: http://futures:8089
+      LOAN_EARLY_REPAY_PENALTY_RATE: ${LOAN_EARLY_REPAY_PENALTY_RATE:-0.0005}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      futures:
+        condition: service_started
+
+  marketmaker:
+    build:
+      context: .
+      dockerfile: services/go/marketmaker/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8093"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ORDER_URL: http://order:8084
+      FUTURES_URL: http://futures:8089
+      MARKET_URL: http://market-data:8085
+      ASSET_URL: http://asset:8082
+      WALLET_CHAIN: ${WALLET_CHAIN:-mock}
+      MM_USER_ID: ${MM_USER_ID:-mm:main}
+      MM_SEED_AMOUNT: ${MM_SEED_AMOUNT:-10000000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      order:
+        condition: service_started
+      futures:
+        condition: service_started
+      market-data:
+        condition: service_started
+
   gateway:
     build:
       context: .
       dockerfile: services/go/gateway/Dockerfile
     environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8080"
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
       ACCOUNT_URL: http://account:8081
       ASSET_URL: http://asset:8082
       ORDER_URL: http://order:8084
       MARKET_URL: http://market-data:8085
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      WALLET_URL: http://wallet:8086
+      KYC_URL: http://kyc:8087
+      FUTURES_URL: http://futures:8089
+      STRATEGY_URL: http://strategy:8090
+      GROWTH_URL: http://growth:8091
+      EARN_URL: http://earn:8092
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+      # Loopback only: put nginx/Caddy (TLS) in front.
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
     depends_on:
       account:
         condition: service_started
@@ -146,7 +479,27 @@ services:
         condition: service_started
       market-data:
         condition: service_started
+      wallet:
+        condition: service_started
+      kyc:
+        condition: service_started
+      futures:
+        condition: service_started
+      strategy:
+        condition: service_started
+      growth:
+        condition: service_started
+      earn:
+        condition: service_started
+
+secrets:
+  signer_passphrase:
+    file: ${WALLET_SIGNER_PASSPHRASE_FILE:-./secrets/signer_passphrase}
 
 volumes:
+  avatars:
+  solexport:
+  signerdata:
   pgdata:
   enginedata:
+  kycdocs:

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/linbit/platform/services/go/common"
@@ -39,6 +40,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	wallet, err := url.Parse(cfg.WalletURL)
+	if err != nil {
+		return nil, err
+	}
 	order, err := url.Parse(cfg.OrderURL)
 	if err != nil {
 		return nil, err
@@ -47,11 +52,37 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	kyc, err := url.Parse(cfg.KycURL)
+	if err != nil {
+		return nil, err
+	}
 	accountProxy := httputil.NewSingleHostReverseProxy(account)
 	assetProxy := httputil.NewSingleHostReverseProxy(asset)
+	walletProxy := httputil.NewSingleHostReverseProxy(wallet)
 	orderProxy := httputil.NewSingleHostReverseProxy(order)
 	// ReverseProxy transparently tunnels WebSocket upgrades (used by /ws).
 	marketProxy := httputil.NewSingleHostReverseProxy(market)
+	kycProxy := httputil.NewSingleHostReverseProxy(kyc)
+	futures, err := url.Parse(cfg.FuturesURL)
+	if err != nil {
+		return nil, err
+	}
+	futuresProxy := httputil.NewSingleHostReverseProxy(futures)
+	strategy, err := url.Parse(cfg.StrategyURL)
+	if err != nil {
+		return nil, err
+	}
+	strategyProxy := httputil.NewSingleHostReverseProxy(strategy)
+	growth, err := url.Parse(cfg.GrowthURL)
+	if err != nil {
+		return nil, err
+	}
+	growthProxy := httputil.NewSingleHostReverseProxy(growth)
+	earn, err := url.Parse(cfg.EarnURL)
+	if err != nil {
+		return nil, err
+	}
+	earnProxy := httputil.NewSingleHostReverseProxy(earn)
 
 	return &Gateway{
 		cfg: cfg,
@@ -60,8 +91,21 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/auth", proxy: accountProxy},
 			{prefix: "/2fa", proxy: accountProxy},
 			{prefix: "/account", proxy: accountProxy},
+			{prefix: "/notifications", proxy: accountProxy},
+			{prefix: "/vip", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
-			{prefix: "/wallet", proxy: assetProxy},
+			{prefix: "/wallet", proxy: walletProxy},
+			{prefix: "/kyc", proxy: kycProxy},
+			{prefix: "/futures", proxy: futuresProxy},
+			{prefix: "/strategy", proxy: strategyProxy},
+			{prefix: "/partner", proxy: growthProxy},
+			{prefix: "/referral", proxy: growthProxy},
+			{prefix: "/points", proxy: growthProxy},
+			{prefix: "/rewards", proxy: growthProxy},
+			{prefix: "/activities", proxy: growthProxy},
+			{prefix: "/coupons", proxy: growthProxy},
+			{prefix: "/loans", proxy: earnProxy},
+			{prefix: "/earn", proxy: earnProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/ws", proxy: marketProxy},
@@ -74,9 +118,25 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/login/verify"},
 			{method: http.MethodPost, path: "/auth/login/code"},
 			{method: http.MethodPost, path: "/auth/refresh"},
+			{method: http.MethodPost, path: "/auth/password/verify-code"},
 			{method: http.MethodPost, path: "/auth/password/reset"},
-			{method: "", path: "/market/"}, // public market data (prefix)
-			{method: "", path: "/ws"},      // public market WebSocket
+			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
+			{method: "", path: "/market/"},                      // public market data (prefix)
+			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
+			{method: http.MethodGet, path: "/futures/copy/summary"},
+			{method: http.MethodGet, path: "/futures/copy/traders"},
+			{method: http.MethodGet, path: "/futures/copy/traders/"}, // public trader profiles (prefix)
+			{method: http.MethodGet, path: "/strategy/config"},
+			{method: http.MethodGet, path: "/strategy/grid/square"}, // public strategy square
+			{method: http.MethodGet, path: "/partner/rules"},
+			{method: http.MethodGet, path: "/points/campaigns"},
+			{method: http.MethodGet, path: "/points/campaign"},
+			{method: http.MethodGet, path: "/activities"},
+			{method: http.MethodGet, path: "/loans/market"},
+			{method: http.MethodGet, path: "/loans/quote"},
+			{method: http.MethodGet, path: "/earn/products"},
+			{method: http.MethodGet, path: "/earn/products/"}, // public product detail (prefix)
+			{method: "", path: "/ws"},                         // public market WebSocket
 		},
 	}, nil
 }
@@ -91,8 +151,9 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 		return
 	}
-	// Internal service-to-service endpoints are never exposed through the gateway.
-	if strings.HasPrefix(r.URL.Path, "/internal") {
+	// Internal service-to-service endpoints and the admin back office are never
+	// exposed through the public gateway: answer 404 so they are not discoverable.
+	if hiddenPath(r.URL.Path) {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在")
 		return
 	}
@@ -154,4 +215,10 @@ func bearer(r *http.Request) string {
 		return strings.TrimSpace(h[len("Bearer "):])
 	}
 	return ""
+}
+
+// hiddenPath: /internal* and /admin* are not routed by the public gateway.
+func hiddenPath(raw string) bool {
+	p := strings.ToLower(path.Clean("/" + raw))
+	return strings.HasPrefix(p, "/internal") || p == "/admin" || strings.HasPrefix(p, "/admin/")
 }
