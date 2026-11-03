@@ -115,7 +115,7 @@ jobs:
             shoot "$screen" light
           done
           # 合约弹窗夜间版
-          for screen in futures-tpsl futures-mode futures-leverage futures-kind futures-tools; do
+          for screen in futures-orders-tpsl futures-tpsl futures-mode futures-leverage futures-kind futures-tools; do
             shoot "$screen" dark
           done
 

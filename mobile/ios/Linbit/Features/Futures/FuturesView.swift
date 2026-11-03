@@ -44,6 +44,7 @@ struct FuturesTradeView: View {
     @State private var orderFilter = 0     // 委托：0 普通委托 1 止盈止损 2 计划委托
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(spacing: 0) {
                 pairHeader
@@ -56,10 +57,18 @@ struct FuturesTradeView: View {
                     FuturesBookView(m: m).frame(width: 138)
                 }
                 .padding(.horizontal, Spacing.pageH).padding(.top, 10)
-                chartToggle.padding(.top, 14)
-                bottomSection.padding(.top, 8)
+                chartToggle.padding(.top, 14).id("lb.chart")
+                bottomSection.padding(.top, 8).id("lb.bottom")
             }
             .padding(.bottom, Metrics.tabBarH + 60)
+        }
+        .task {
+            // 截图：把 K 线 / 委托区滚动到画面内
+            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (router.shotSheet == "ordersTpsl" ? "lb.bottom" : nil)
+            guard let target else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            proxy.scrollTo(target, anchor: .top)
+        }
         }
         .refreshable { await m.refreshMarket(); await m.refreshAccount() }
         .background(p.bg)
