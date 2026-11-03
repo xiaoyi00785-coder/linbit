@@ -186,6 +186,46 @@ wait_for "quotes back" 15 spot_ok
 wait_for "telegram recovery alert" 10 tg_has "做市恢复"
 pass "outage: all quotes cancelled, pairs paused, Telegram alert; recovery requotes + alert"
 
+say "net position cap: seeded base excluded from max_position (spot SOLUSDT)"
+sol_open() { curl -sS "$ORDER_URL/spot/orders/open?symbol=SOLUSDT&pageSize=100" -H "X-User-Id: $MM"; }
+sol_n() { sol_open | jq --arg s "$1" '[.items[] | select(.side==$s)] | length'; }
+sol_inv() { internal "$MM_URL" GET /internal/mm/status | jq -c '.pairs[] | select(.market=="spot" and .symbol=="SOLUSDT") | .inventory'; }
+idx '{"symbol":"SOLUSDT","price":"150"}'
+internal "$MM_URL" PUT /internal/mm/pairs/spot/SOLUSDT '{"enabled":true,"levels":2,"maxSkewBps":0,"refreshMs":1000,"updatedBy":"smoke"}' >/dev/null
+P="$(internal "$MM_URL" GET /internal/mm/pairs)"
+MAXP="$(jq -r '.items[] | select(.market=="spot" and .symbol=="SOLUSDT") | .maxPosition' <<<"$P")"   # configured cap, not changed here
+DQ="$(python3 -c "print(int($MAXP*1.2/150))")"; DV="$(python3 -c "print($DQ*150)")"   # net move = 1.2x cap
+both() { [ "$(sol_n buy)" -ge 1 ] && [ "$(sol_n sell)" -ge 1 ]; }
+wait_for "SOL quotes both sides with ~1M seeded base, 0 net" 20 both
+I="$(sol_inv)"
+[ "$(jq -r .baselineSource <<<"$I")" = seed ] && [ "$(jq -r .allowBuy <<<"$I")" = true ] && [ "$(jq -r .allowSell <<<"$I")" = true ] || fail "net 0 inventory: $I"
+eq "$(jq -r .netQty <<<"$I")" 0 "SOL net qty"
+eq "$(jq -r .baseline <<<"$I")" "$SOLQ" "SOL baseline = seeded qty"
+S="$(A "$SA" GET /admin/v1/mm/status)"
+eq "$(jq -r '.baselines[] | select(.asset=="SOL") | .baseline' <<<"$S")" "$SOLQ" "admin status SOL baseline"
+[ "$(jq -r '.pairs[] | select(.symbol=="SOLUSDT" and .market=="spot") | .inventory.netValue' <<<"$S")" != null ] || fail "admin status netValue: $S"
+credit "$MM" SOL "$DQ"   # net long DQ*150 > max_position
+nobids() { [ "$(sol_n buy)" = 0 ] && [ "$(sol_n sell)" -ge 1 ]; }
+wait_for "net long > max_position -> bids stop" 20 nobids
+I="$(sol_inv)"; [ "$(jq -r .allowBuy <<<"$I")" = false ] || fail "net long: $I"
+eq "$(jq -r .netValue <<<"$I")" "$DV" "SOL net long value"
+TB="$(python3 -c "from decimal import Decimal as D; print(D('$SOLQ')+2*$DQ)")"   # baseline above balance -> net short DQ SOL
+[ "$(cj "$(A "$SA" PUT /admin/v1/mm/baselines/SOL "{\"targetBase\":\"$TB\",\"reason\":\"smoke\",\"totpCode\":\"000000\"}")")" = TOTP_INVALID ] || fail "baseline without 2FA"
+fresh; R="$(A "$SA" PUT /admin/v1/mm/baselines/SOL "{\"targetBase\":\"$TB\",\"reason\":\"smoke short\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .source <<<"$R")" = admin ] || fail "set baseline: $R"
+noasks() { [ "$(sol_n sell)" = 0 ] && [ "$(sol_n buy)" -ge 1 ]; }
+wait_for "net short > max_position -> asks stop" 20 noasks
+I="$(sol_inv)"; [ "$(jq -r .allowSell <<<"$I")" = false ] && [ "$(jq -r .baselineSource <<<"$I")" = admin ] || fail "net short: $I"
+eq "$(jq -r .netValue <<<"$I")" "-$DV" "SOL net short value"
+fresh; R="$(A "$SA" PUT /admin/v1/mm/baselines/SOL "{\"clearTarget\":true,\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .source <<<"$R")" = seed ] || fail "clear baseline: $R"
+L="$(A "$SA" GET "/admin/v1/audit-logs?module=mm&action=update_baseline")"
+[ "$(jq '[.items[] | select(.result=="ok")] | length' <<<"$L")" -ge 2 ] || fail "baseline audit: $L"
+internal "$MM_URL" PUT /internal/mm/pairs/spot/SOLUSDT '{"enabled":false,"updatedBy":"smoke"}' >/dev/null
+solgone() { [ "$(sol_open | jq '.items | length')" = 0 ]; }
+wait_for "SOL quotes cancelled" 15 solgone
+pass "seeded ~1M SOL, net 0 -> both sides; net long 1.2x cap ($DV) -> bids stop; net short -> asks stop; baseline admin-visible/settable (2FA, audited)"
+
 say "stop"
 fresh; R="$(A "$SA" POST /admin/v1/mm/stop "{\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
 [ "$(jq -r .running <<<"$R")" = false ] || fail "stop: $R"
@@ -209,5 +249,22 @@ wait_for "telegram solvency alert" 10 tg_has "偿付对账失败"
 G="$(A "$SA" GET /admin/v1/solvency/latest)"
 [ "$(jq -r .report.ok <<<"$G")" = false ] && [[ "$(jq -r .trigger <<<"$G")" == manual:* ]] || fail "latest: $G"
 pass "holdings vs user+MM liabilities per asset; virtual seed excluded; shortfall -> Telegram; report stored"
+
+say "single-asset testnet top-up {asset:USDT, amount:5000000} into MM spot"
+seedreq() { fresh; A "$SA" POST /admin/v1/mm/testnet-seed "$1"; }
+USDT0="$(internal "$ASSET_URL" GET "/internal/balances?userId=$MM" | jq -r '.items[] | select(.asset=="USDT") | .free')"
+[ "$(cj "$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")")" = VALIDATION_ERROR ] || fail "single seed without reason accepted"
+[ "$(cj "$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"10000001\",\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")")" = VALIDATION_ERROR ] || fail "single seed over max accepted"
+[ "$(cj "$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"DOGE\",\"amount\":\"1\",\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")")" = ASSET_NOT_ALLOWED ] || fail "single seed DOGE accepted"
+[ "$(cj "$(A "$SA" POST /admin/v1/mm/testnet-seed "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"reason\":\"smoke\",\"totpCode\":\"000000\"}")")" = TOTP_INVALID ] || fail "single seed without 2FA"
+R="$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"reason\":\"smoke top-up\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .status <<<"$R")" = ok ] && [ "$(jq -r .asset <<<"$R")" = USDT ] || fail "single seed: $R"
+R="$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"reason\":\"smoke top-up\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .status <<<"$R")" = already_applied ] || fail "single seed replay: $R"
+USDT1="$(internal "$ASSET_URL" GET "/internal/balances?userId=$MM" | jq -r '.items[] | select(.asset=="USDT") | .free')"
+python3 -c "from decimal import Decimal as D; import sys; sys.exit(0 if D('$USDT1')-D('$USDT0')==D(5000000) else 1)" || fail "MM spot USDT delta $USDT0 -> $USDT1, want +5000000"
+L="$(A "$SA" GET "/admin/v1/audit-logs?module=mm&action=testnet_seed")"
+[ "$(jq --arg r "u1-$TS" '[.items[] | select(.result=="ok") | (.after // .afterJson // {}) | (if type=="string" then fromjson else . end) | select(.ref==$r and .asset=="USDT" and .amount=="5000000")] | length' <<<"$L")" -ge 1 ] || fail "single seed audit: $(jq -c '.items[0]' <<<"$L")"
+pass "reason/max/asset/2FA enforced; +5,000,000 USDT spot once (idempotent); audit has asset+amount"
 
 printf '\n\033[1;32mSMOKE-MM PASSED\033[0m\n'

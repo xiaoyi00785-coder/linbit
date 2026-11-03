@@ -3829,6 +3829,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/mm/testnet-seed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 做市账户虚拟注资（仅测试网/mock 链；主网或禁用虚拟额度时 403 SEED_DISABLED；totpCode 必填，审计）
+         * @description 三种模式（ref 为幂等键）：
+         *     - 仅 {ref}：注入 MM_SEED_AMOUNT USDT（原行为不变）。
+         *     - {ref, assets[, usdtValue, amounts]}：按指数价为每个基础资产注入约 usdtValue。
+         *     - {ref, asset, amount, reason}：单资产精确注资到做市现货账户，例如 {asset:"USDT", amount:"5000000"}；
+         *       reason 必填，amount ≤ MM_SEED_MAX（默认 10,000,000，可配置），不可与 assets 混用；
+         *       资产须为 USDT 或 MM_SEED_BASE_ASSETS 之一。审计日志记录 asset/amount。
+         */
+        post: operations["adminMMTestnetSeed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/mm/baselines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 做市现货库存基线（max_position 只限制净头寸 = 当前 base − baseline）
+         * @description 基线优先级：admin targetBase > 测试网 mm_testnet_seed 注资量（seed）> 首次启动时余额（start）> 0（none）。
+         *     GET /admin/v1/mm/status 中每个现货对的 inventory 同时给出 baseQty/baseline/baselineSource/netQty/netValue。
+         */
+        get: operations["adminMMBaselines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/mm/baselines/{asset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 设置/清除库存基线（主网库存目标）；totpCode + reason 必填，审计 update_baseline */
+        put: operations["adminMMSetBaseline"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/chat/config": {
         parameters: {
             query?: never;
@@ -4253,6 +4316,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MMBaseline: {
+            asset?: string;
+            /** @description 生效基线数量 */
+            baseline?: string;
+            /** @enum {string} */
+            source?: "admin" | "seed" | "start" | "none";
+            targetBase?: string | null;
+            startBase?: string | null;
+            seedQty?: string;
+            updatedBy?: string;
+        };
         ConvertPairs: {
             assets?: {
                 asset?: string;
@@ -12977,6 +13051,157 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    adminMMTestnetSeed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description 幂等键 */
+                    ref: string;
+                    assets?: string[];
+                    usdtValue?: string;
+                    amounts?: {
+                        [key: string]: string;
+                    };
+                    /**
+                     * @description 单资产模式
+                     * @example USDT
+                     */
+                    asset?: string;
+                    /**
+                     * @description 单资产模式数量（≤ MM_SEED_MAX）
+                     * @example 5000000
+                     */
+                    amount?: string;
+                    /** @description 单资产模式必填 */
+                    reason?: string;
+                    totpCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status?: "ok" | "already_applied";
+                        /** @example mm_testnet_seed */
+                        txType?: string;
+                        asset?: string;
+                        amount?: string;
+                        usdtValue?: string;
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / ASSET_NOT_ALLOWED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TOTP_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SEED_DISABLED（主网/生产）或无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminMMBaselines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["MMBaseline"][];
+                    };
+                };
+            };
+        };
+    };
+    adminMMSetBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description 管理员设定的库存目标（基础资产数量）
+                     * @example 6666.66666666
+                     */
+                    targetBase?: string;
+                    /** @description 清除 targetBase */
+                    clearTarget?: boolean;
+                    /** @description 清除启动基线，下次启动重新采集 */
+                    resetStart?: boolean;
+                    reason: string;
+                    totpCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MMBaseline"];
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_PARAM */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TOTP_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     adminGetChatConfig: {

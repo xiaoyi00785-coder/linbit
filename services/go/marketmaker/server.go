@@ -26,6 +26,8 @@ func (m *Maker) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/mm/start", m.guard(m.handleRun(true)))
 	mux.HandleFunc("POST /internal/mm/stop", m.guard(m.handleRun(false)))
 	mux.HandleFunc("POST /internal/mm/seed", m.guard(m.handleSeed))
+	mux.HandleFunc("GET /internal/mm/baselines", m.guard(m.handleBaselines))
+	mux.HandleFunc("PUT /internal/mm/baselines/{asset}", m.guard(m.handleUpdateBaseline))
 	mux.HandleFunc("POST /internal/mm/futures-transfer", m.guard(m.handleTransfer))
 	return mux
 }
@@ -58,7 +60,15 @@ func (m *Maker) handleStatus(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(pairs, func(i, j int) bool {
 		return key(pairs[i].Market, pairs[i].Symbol) < key(pairs[j].Market, pairs[j].Symbol)
 	})
+	bl := []Baseline{}
+	if bs, err := m.Baselines(r.Context()); err == nil {
+		for _, b := range bs {
+			bl = append(bl, b)
+		}
+		sort.Slice(bl, func(i, j int) bool { return bl[i].Asset < bl[j].Asset })
+	}
 	common.WriteJSON(w, 200, map[string]any{
+		"baselines": bl, "positionMode": "net (max_position applies to base - baseline)",
 		"running": running, "account": m.cfg.UserID, "pairs": pairs, "feedDownPairs": down,
 		"lastCycle": last, "testnetSeedAllowed": seed, "testnetSeedReason": why, "seedAmount": m.cfg.SeedAmount,
 		"stopLoss": false, "priceFeed": "market-data /market/index (REST polling: Binance primary, OKX backup)",
@@ -206,14 +216,38 @@ func (m *Maker) handleSeed(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusForbidden, "SEED_DISABLED", "虚拟注资已禁用："+why)
 		return
 	}
+	defer m.invalidateSeeds() // seeded inventory moves the testnet baseline
 	var body struct {
 		Ref       string            `json:"ref"`
 		Assets    []string          `json:"assets"`
 		USDTValue string            `json:"usdtValue"`
 		Amounts   map[string]string `json:"amounts"`
+		Asset     string            `json:"asset"`
+		Amount    string            `json:"amount"`
 	}
 	if err := common.DecodeJSON(r, &body); err != nil || strings.TrimSpace(body.Ref) == "" {
 		common.WriteError(w, 400, "INVALID_REQUEST", "ref 必填")
+		return
+	}
+	if a := strings.ToUpper(strings.TrimSpace(body.Asset)); a != "" || body.Amount != "" {
+		// single-asset top-up: exactly {amount} of {asset} into the MM spot
+		// account; asset caps it at MM_SEED_MAX and enforces testnet-only.
+		amt, err := decimal.NewFromString(strings.TrimSpace(body.Amount))
+		if a == "" || err != nil || !amt.IsPositive() {
+			common.WriteError(w, 400, "INVALID_REQUEST", "asset/amount 不合法")
+			return
+		}
+		if !SeedAssetAllowed(a, m.cfg.SeedBaseAssets) {
+			common.WriteError(w, 400, "ASSET_NOT_ALLOWED", "该资产不可注资")
+			return
+		}
+		var out map[string]any
+		err = call(r.Context(), "POST", m.cfg.AssetURL+"/internal/mm/testnet-seed", m.internalHdr(), map[string]any{
+			"userId": m.cfg.UserID, "asset": a, "amount": amt.String(), "ref": "mm_testnet_seed:" + body.Ref + ":single:" + a}, &out)
+		if err == nil && out != nil {
+			out["asset"], out["amount"] = a, amt.String()
+		}
+		relayErr(w, err, out)
 		return
 	}
 	if len(body.Assets) == 0 {
@@ -327,4 +361,17 @@ func relayErr(w http.ResponseWriter, err error, out any) {
 		return
 	}
 	common.WriteJSON(w, 200, out)
+}
+
+// SeedAssetAllowed: USDT or one of MM_SEED_BASE_ASSETS (pure; unit tested).
+func SeedAssetAllowed(asset, base string) bool {
+	if asset == "USDT" {
+		return true
+	}
+	for _, b := range strings.Split(base, ",") {
+		if strings.EqualFold(strings.TrimSpace(b), asset) {
+			return true
+		}
+	}
+	return false
 }

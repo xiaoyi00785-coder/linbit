@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/linbit/platform/services/go/common"
+	"github.com/shopspring/decimal"
 )
 
 // mm.go: market-maker controls. Reads need mm:view; every write needs mm:edit,
@@ -84,7 +85,10 @@ func (s *Server) handleMMRun(action string) http.HandlerFunc {
 	}
 }
 
-// POST /admin/v1/mm/testnet-seed {ref, assets?, usdtValue?, amounts?, reason, totpCode}
+// POST /admin/v1/mm/testnet-seed {ref, assets?, usdtValue?, amounts?, asset?, amount?, reason, totpCode}
+// — single-asset mode {asset:"USDT", amount:"5000000"} credits exactly that
+// amount of one asset to the MM spot account (reason required, amount <=
+// MM_SEED_MAX, default 10,000,000).
 // — testnet/mock only. Without assets: MM_SEED_AMOUNT USDT. With assets
 // (e.g. ["BTC","ETH","SOL"]): each credited ~usdtValue (default 1,000,000) of
 // the base asset at the current index, idempotent per ref+asset.
@@ -95,6 +99,8 @@ func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
 		Assets    []string          `json:"assets"`
 		USDTValue string            `json:"usdtValue"`
 		Amounts   map[string]string `json:"amounts"`
+		Asset     string            `json:"asset"`
+		Amount    string            `json:"amount"`
 		Reason    string            `json:"reason"`
 		TOTPCode  string            `json:"totpCode"`
 	}
@@ -109,11 +115,21 @@ func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "ref 必填（幂等键）")
 		return
 	}
+	req.Asset = strings.ToUpper(strings.TrimSpace(req.Asset))
+	single := req.Asset != "" || strings.TrimSpace(req.Amount) != ""
+	if single {
+		if msg := validateSingleSeed(req.Asset, req.Amount, req.Assets, req.Reason, s.cfg.MMSeedMax); msg != "" {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", msg)
+			return
+		}
+	}
 	if !s.verify2FA(w, a, req.TOTPCode) {
 		return
 	}
 	payload := map[string]any{"ref": req.Ref}
-	if len(req.Assets) > 0 {
+	if single {
+		payload["asset"], payload["amount"] = req.Asset, strings.TrimSpace(req.Amount)
+	} else if len(req.Assets) > 0 {
 		payload["assets"] = req.Assets
 		if req.USDTValue != "" {
 			payload["usdtValue"] = req.USDTValue
@@ -128,6 +144,9 @@ func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	after := map[string]any{"ref": req.Ref, "txType": "mm_testnet_seed", "assets": req.Assets, "usdtValue": req.USDTValue, "amounts": req.Amounts}
+	if single {
+		after = map[string]any{"ref": req.Ref, "txType": "mm_testnet_seed", "mode": "single", "asset": req.Asset, "amount": strings.TrimSpace(req.Amount), "account": "spot"}
+	}
 	if u.ok() && len(req.Assets) > 0 {
 		var res struct {
 			Items json.RawMessage `json:"items"`
@@ -161,5 +180,63 @@ func (s *Server) handleMMTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, a, "mm", "futures_transfer", "mm:"+s.cfg.MMUserID, levelHigh, resultOf(u), nil,
 		map[string]string{"direction": req.Direction, "amount": req.Amount}, req.Reason)
+	relay(w, u)
+}
+
+// validateSingleSeed checks a single-asset testnet seed request; "" = ok.
+func validateSingleSeed(asset, amount string, assets []string, reason, max string) string {
+	if len(assets) > 0 {
+		return "asset/amount 不能与 assets 同时使用"
+	}
+	if asset == "" || len(asset) > 16 || strings.Trim(asset, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != "" {
+		return "asset 不合法"
+	}
+	if strings.TrimSpace(reason) == "" {
+		return "reason 必填"
+	}
+	amt, err := decimal.NewFromString(strings.TrimSpace(amount))
+	if err != nil || !amt.IsPositive() || amt.Exponent() < -8 {
+		return "amount 不合法"
+	}
+	if m, err := decimal.NewFromString(max); err == nil && amt.GreaterThan(m) {
+		return "amount 超过单次上限 " + m.String()
+	}
+	return ""
+}
+
+// PUT /admin/v1/mm/baselines/{asset} {targetBase?|clearTarget?|resetStart?, reason, totpCode}
+// Sets the spot inventory baseline excluded from max_position (net position cap).
+func (s *Server) handleMMUpdateBaseline(w http.ResponseWriter, r *http.Request) {
+	a := actorOf(r)
+	asset := strings.ToUpper(r.PathValue("asset"))
+	var body map[string]json.RawMessage
+	if err := common.DecodeJSON(r, &body); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求格式错误")
+		return
+	}
+	var code, reason string
+	_ = json.Unmarshal(body["totpCode"], &code)
+	_ = json.Unmarshal(body["reason"], &reason)
+	if strings.TrimSpace(reason) == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "reason 必填")
+		return
+	}
+	out := map[string]json.RawMessage{}
+	for _, k := range []string{"targetBase", "clearTarget", "resetStart"} {
+		if v, ok := body[k]; ok {
+			out[k] = v
+		}
+	}
+	if !s.verify2FA(w, a, code) {
+		return
+	}
+	out["updatedBy"], _ = json.Marshal(a.Username)
+	u, err := s.call(r.Context(), http.MethodPut, s.cfg.MMURL, "/internal/mm/baselines/"+url.PathEscape(asset), out)
+	if err != nil {
+		upstreamErr(w, "mm baseline", err)
+		return
+	}
+	delete(out, "updatedBy")
+	s.audit(r, a, "mm", "update_baseline", "mm:baseline/"+asset, levelHigh, resultOf(u), nil, out, reason)
 	relay(w, u)
 }

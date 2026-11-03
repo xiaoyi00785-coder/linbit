@@ -5182,6 +5182,92 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /admin/v1/mm/testnet-seed:
+    post:
+      tags: [Admin]
+      summary: 做市账户虚拟注资（仅测试网/mock 链；主网或禁用虚拟额度时 403 SEED_DISABLED；totpCode 必填，审计）
+      description: |
+        三种模式（ref 为幂等键）：
+        - 仅 {ref}：注入 MM_SEED_AMOUNT USDT（原行为不变）。
+        - {ref, assets[, usdtValue, amounts]}：按指数价为每个基础资产注入约 usdtValue。
+        - {ref, asset, amount, reason}：单资产精确注资到做市现货账户，例如 {asset:"USDT", amount:"5000000"}；
+          reason 必填，amount ≤ MM_SEED_MAX（默认 10,000,000，可配置），不可与 assets 混用；
+          资产须为 USDT 或 MM_SEED_BASE_ASSETS 之一。审计日志记录 asset/amount。
+      operationId: adminMMTestnetSeed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ref, totpCode]
+              properties:
+                ref: { type: string, description: 幂等键 }
+                assets: { type: array, items: { type: string } }
+                usdtValue: { type: string }
+                amounts: { type: object, additionalProperties: { type: string } }
+                asset: { type: string, example: USDT, description: 单资产模式 }
+                amount: { type: string, example: "5000000", description: 单资产模式数量（≤ MM_SEED_MAX） }
+                reason: { type: string, description: 单资产模式必填 }
+                totpCode: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, already_applied] }
+                  txType: { type: string, example: mm_testnet_seed }
+                  asset: { type: string }
+                  amount: { type: string }
+                  usdtValue: { type: string }
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+        "400": { description: "VALIDATION_ERROR / ASSET_NOT_ALLOWED" }
+        "401": { description: "TOTP_INVALID" }
+        "403": { description: "SEED_DISABLED（主网/生产）或无权限" }
+  /admin/v1/mm/baselines:
+    get:
+      tags: [Admin]
+      summary: 做市现货库存基线（max_position 只限制净头寸 = 当前 base − baseline）
+      description: |
+        基线优先级：admin targetBase > 测试网 mm_testnet_seed 注资量（seed）> 首次启动时余额（start）> 0（none）。
+        GET /admin/v1/mm/status 中每个现货对的 inventory 同时给出 baseQty/baseline/baselineSource/netQty/netValue。
+      operationId: adminMMBaselines
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/MMBaseline" } }
+  /admin/v1/mm/baselines/{asset}:
+    put:
+      tags: [Admin]
+      summary: 设置/清除库存基线（主网库存目标）；totpCode + reason 必填，审计 update_baseline
+      operationId: adminMMSetBaseline
+      parameters:
+        - { name: asset, in: path, required: true, schema: { type: string, example: SOL } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, totpCode]
+              properties:
+                targetBase: { type: string, example: "6666.66666666", description: 管理员设定的库存目标（基础资产数量） }
+                clearTarget: { type: boolean, description: 清除 targetBase }
+                resetStart: { type: boolean, description: 清除启动基线，下次启动重新采集 }
+                reason: { type: string }
+                totpCode: { type: string }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/MMBaseline" } } } }
+        "400": { description: VALIDATION_ERROR / INVALID_PARAM }
+        "401": { description: TOTP_INVALID }
   /admin/v1/chat/config:
     get:
       tags: [Admin]
@@ -5661,6 +5747,16 @@ components:
             requestId: req_404demo
 
   schemas:
+    MMBaseline:
+      type: object
+      properties:
+        asset: { type: string }
+        baseline: { type: string, description: 生效基线数量 }
+        source: { type: string, enum: [admin, seed, start, none] }
+        targetBase: { type: string, nullable: true }
+        startBase: { type: string, nullable: true }
+        seedQty: { type: string }
+        updatedBy: { type: string }
     ConvertPairs:
       type: object
       properties:

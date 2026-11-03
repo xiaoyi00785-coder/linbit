@@ -71,12 +71,24 @@ type Inventory struct {
 	AllowBuy  bool            `json:"allowBuy"`
 	AllowSell bool            `json:"allowSell"`
 	BaseValue decimal.Decimal `json:"baseValue"` // spot: base value in quote; futures: signed position notional
+	// spot only: max_position applies to the NET position (base - baseline),
+	// so seeded / treasury inventory does not block bids.
+	BaseQty        decimal.Decimal `json:"baseQty"`
+	Baseline       decimal.Decimal `json:"baseline"`
+	BaselineSource string          `json:"baselineSource,omitempty"`
+	NetQty         decimal.Decimal `json:"netQty"`
+	NetValue       decimal.Decimal `json:"netValue"`
 }
 
 // spotInventory: base value vs. quote held, against the target base ratio.
-func spotInventory(p Pair, index, base, quote decimal.Decimal) Inventory {
+// The max_position cap applies to the net position base - baseline (the part
+// built by MM trading): net long >= cap stops bids, net short <= -cap stops asks.
+func spotInventory(p Pair, index, base, quote decimal.Decimal, bl Baseline) Inventory {
 	bv := base.Mul(index)
-	inv := Inventory{AllowBuy: true, AllowSell: base.IsPositive(), BaseValue: bv}
+	net := base.Sub(bl.Qty)
+	nv := net.Mul(index)
+	inv := Inventory{AllowBuy: true, AllowSell: base.IsPositive(), BaseValue: bv,
+		BaseQty: base, Baseline: bl.Qty, BaselineSource: bl.Source, NetQty: net, NetValue: nv}
 	total := bv.Add(quote)
 	if total.IsPositive() {
 		ratio := bv.Div(total)
@@ -86,8 +98,11 @@ func spotInventory(p Pair, index, base, quote decimal.Decimal) Inventory {
 			inv.Imbalance = clamp1(ratio.Sub(t).Div(den))
 		}
 	}
-	if p.MaxPosition.IsPositive() && bv.GreaterThanOrEqual(p.MaxPosition) {
+	if p.MaxPosition.IsPositive() && nv.GreaterThanOrEqual(p.MaxPosition) {
 		inv.AllowBuy = false
+	}
+	if p.MaxPosition.IsPositive() && nv.LessThanOrEqual(p.MaxPosition.Neg()) {
+		inv.AllowSell = false
 	}
 	if !quote.IsPositive() {
 		inv.AllowBuy = false
