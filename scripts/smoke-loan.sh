@@ -20,7 +20,7 @@ fi
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 ASSET_URL="${ASSET_URL:-http://localhost:8082}"
 ACCOUNT_URL="${ACCOUNT_URL:-http://localhost:8081}"
-FUTURES_URL="${FUTURES_URL:-http://localhost:8089}"
+FUTURES_URL="${FUTURES_URL:-${FUTURES_INTERNAL_URL:-http://localhost:8089}}"
 GROWTH_URL="${GROWTH_URL:-http://localhost:8091}"
 EARN_URL="${EARN_URL:-http://localhost:8092}"
 ADMIN_URL="${ADMIN_URL:-http://localhost:8088}"

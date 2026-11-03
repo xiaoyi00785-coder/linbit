@@ -24,7 +24,7 @@ fi
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 ASSET_URL="${ASSET_URL:-http://localhost:8082}"
 ACCOUNT_URL="${ACCOUNT_URL:-http://localhost:8081}"
-FUTURES_URL="${FUTURES_URL:-http://localhost:8089}"
+FUTURES_URL="${FUTURES_URL:-${FUTURES_INTERNAL_URL:-http://localhost:8089}}"
 INTERNAL_TOKEN="${INTERNAL_TOKEN:-}"
 PASSWORD="Str0ng-Passw0rd!"
 TS="$(date +%s%N)"
