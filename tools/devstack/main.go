@@ -468,7 +468,6 @@ func run(root, execCmd string) int {
 		"MM_URL=http://localhost:" + mmPort,
 		// Remaining service URLs so smokes follow shifted DEVSTACK_*_PORTs
 		// instead of falling back to the default ports.
-		"FUTURES_URL=http://localhost:" + futuresPort,
 		"KYC_URL=http://localhost:" + kycPort,
 		"STRATEGY_URL=http://localhost:" + strategyPort,
 		"GROWTH_URL=http://localhost:" + growthPort,
