@@ -234,6 +234,8 @@ func run(root, execCmd string) int {
 			// /internal/dev/index (smoke-mm). Override with DEVSTACK_INDEX_FEED.
 			"INDEX_FEED=" + envOr("DEVSTACK_INDEX_FEED", "off"),
 			"DEV_MODE=true",
+			// Live APR for earn-linked home placements.
+			"EARN_URL=http://localhost:" + earnPort,
 		},
 		"account": {
 			"PORT=" + accountPort,
@@ -442,6 +444,8 @@ func run(root, execCmd string) int {
 		"ADMIN_URL=http://localhost:" + adminPort,
 		"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
 		"MM_URL=http://localhost:" + mmPort,
+		"GROWTH_URL=http://localhost:" + growthPort,
+		"EARN_URL=http://localhost:" + earnPort,
 		"DEVSTACK_TELEGRAM_API_URL=" + tgAPI,
 	}
 	// Bootstrap super-admin credentials go only to exec'd commands (smokes),

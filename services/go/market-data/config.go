@@ -26,6 +26,10 @@ type Config struct {
 	BinanceURL string
 	OKXURL     string
 	DevMode    bool
+	// EarnURL serves the live APR for home placements tied to an earn product.
+	EarnURL string
+	// FiatRatesURLs are tried in order for GET /market/fiat-rates (USD base).
+	FiatRatesURLs []string
 }
 
 // LoadConfig reads configuration from the environment.
@@ -43,6 +47,8 @@ func LoadConfig() Config {
 		BinanceURL:    common.Env("BINANCE_API_URL", "https://data-api.binance.vision"),
 		OKXURL:        common.Env("OKX_API_URL", "https://www.okx.com"),
 		DevMode:       common.Env("DEV_MODE", "") == "true",
+		EarnURL:       common.Env("EARN_URL", "http://localhost:8092"),
+		FiatRatesURLs: splitCSV(common.Env("FIAT_RATES_URLS", "https://open.er-api.com/v6/latest/USD,https://api.frankfurter.app/latest?from=USD")),
 	}
 }
 

@@ -101,6 +101,7 @@ export interface paths {
         /**
          * 找回密码-校验验证码并换取重置令牌
          * @description 找回密码第一步：校验邮箱/短信验证码，成功后返回短期有效（默认 10 分钟）、 一次性的 resetToken，随后用它调用 /auth/password/reset 设置新密码。
+         *
          */
         post: operations["verifyPasswordResetCode"];
         delete?: never;
@@ -260,6 +261,7 @@ export interface paths {
         /**
          * 上传头像（multipart）
          * @description 以 multipart/form-data 上传头像图片（字段名 file）。服务端按内容嗅探类型 （仅支持 jpeg/png/webp），并限制大小（默认 2MB，可配置）。存储后返回更新后的 账户信息，其中 avatarUrl 指向受控访问路由 /account/avatars/{file}。
+         *
          */
         post: operations["uploadAvatar"];
         delete?: never;
@@ -439,6 +441,7 @@ export interface paths {
          * 上传 KYC 证件图片
          * @description multipart/form-data。按文件内容识别类型，仅支持 JPEG/PNG；默认上限 10MB
          *     （KYC_DOC_MAX_BYTES 可配）。文件只属于上传者，提交 /kyc 时校验归属与 side。
+         *
          */
         post: operations["uploadKycDocument"];
         delete?: never;
@@ -543,6 +546,7 @@ export interface paths {
          * 待同步到账户服务的认证等级（失败自动重试队列）
          * @description 审核通过后先持久化同步任务再立即尝试；失败按指数退避（默认 5s 起翻倍，
          *     上限 1h，KYC_SYNC_BASE_SECONDS / KYC_SYNC_MAX_SECONDS）自动重试直至成功。
+         *
          */
         get: operations["adminListKycLevelSync"];
         put?: never;
@@ -618,6 +622,7 @@ export interface paths {
          * @description Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
          *     amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
          *     未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
+         *
          */
         post: operations["createWithdrawal"];
         delete?: never;
@@ -636,6 +641,7 @@ export interface paths {
         /**
          * 可提现网络与 Gas 估算
          * @description 返回某资产可用的提现网络列表及每个网络的链上 Gas 估算。提现不收取平台 手续费，仅收取链上 Gas，因此前端据此向用户展示预计到账金额。
+         *
          */
         get: operations["listWithdrawNetworks"];
         put?: never;
@@ -675,6 +681,7 @@ export interface paths {
         /**
          * 撤销提现申请
          * @description 仅可撤销处于待人工审核（pending）状态的提现；撤销后冻结金额解冻退回可用余额。
+         *
          */
         post: operations["cancelWithdrawal"];
         delete?: never;
@@ -798,6 +805,7 @@ export interface paths {
          *     （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
          *     commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
          *     layer2 Layer 2, ecosystem 生态。「全部」由前端自行处理。
+         *
          */
         get: operations["listMarketCategories"];
         put?: never;
@@ -818,6 +826,7 @@ export interface paths {
         /**
          * 24 小时行情 ticker（单个或全部）
          * @description 传入 `symbol` 时返回该交易对的单个 Ticker 对象；不传 `symbol` 时返回全部 交易对的 Ticker 数组。响应为二者之一（见 oneOf）。价格、quoteVolume 按交易对 计价币精度，base 成交量按数量精度，均为十进制字符串。
+         *
          */
         get: operations["getTicker"];
         put?: never;
@@ -2101,6 +2110,246 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/home/placements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 首页运营位（popup/splash/grid/carousel/promo_bar/search_hint），公开 */
+        get: operations["getHomePlacements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home/banners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 轮播图（= placements 的 carousel 槽位别名），公开 */
+        get: operations["getHomeBanners"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home/hot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 热门币种（置顶 + 成交额排序），公开 */
+        get: operations["getHomeHot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/home/newcomer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 新人任务卡片；可匿名（带合法 Bearer 时返回个人进度） */
+        get: operations["getHomeNewcomer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/fiat-rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 法币汇率（USDT=1 USD），公开
+         * @description 免费 FX 源（FIAT_RATES_URLS 可配置，多源回退），缓存 10 分钟；失败时返回上次成功值（stale=true），从未成功则返回静态表（source=static, updatedAt=null）。
+         */
+        get: operations["getFiatRates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/app/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 功能开关，公开（缓存 30s） */
+        get: operations["getAppFeatures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 自选列表 */
+        get: operations["listFavorites"];
+        /** 整体替换自选（顺序即 sort，上限 200） */
+        put: operations["replaceFavorites"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/favorites/{symbol}": {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 添加自选（幂等；超过 200 返回 FAVORITES_LIMIT） */
+        put: operations["addFavorite"];
+        post?: never;
+        /** 删除自选（幂等） */
+        delete: operations["removeFavorite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 账户间划转（spot ⇄ futures），按 clientId 幂等，记入账本
+         * @description 复用 /futures/transfer 内部实现（旧接口保持可用）。earn 不是划转账户：理财为按产品的持仓并计息，请使用申购/赎回接口。
+         *     错误码：INSUFFICIENT_BALANCE、ACCOUNT_NOT_SUPPORTED（如 earn）、SAME_ACCOUNT、VALIDATION_ERROR、IDEMPOTENCY_CONFLICT（同 clientId 不同参数）。
+         *
+         */
+        post: operations["createAssetTransfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 划转历史（含旧 /futures/transfer 记录，clientId 为 null） */
+        get: operations["listAssetTransfers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/home/placements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 运营位列表（?slot= 过滤） */
+        get: operations["adminListPlacements"];
+        put?: never;
+        /** 创建运营位（需 content 权限 + totpCode + reason，审计 levelHigh） */
+        post: operations["adminCreatePlacement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/home/placements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新运营位（totpCode + reason） */
+        put: operations["adminUpdatePlacement"];
+        post?: never;
+        /** 删除运营位（body 含 totpCode + reason） */
+        delete: operations["adminDeletePlacement"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/app/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 功能开关（含默认值与可用 key） */
+        get: operations["adminGetAppFeatures"];
+        /** 部分更新功能开关（未知 key 400；totpCode + reason，审计） */
+        put: operations["adminSetAppFeatures"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2291,7 +2540,8 @@ export interface components {
             /** @example 42 */
             total: number;
         };
-        /** @description 请求邮箱/短信验证码。register / reset_password 为公开接口；二选一提供 email 或 phone（手机号可用 E.164 的 "+8613800138000"，或 phone + countryCode 拨号区号组合）。为避免账号枚举，reset_password 对不存在的账号也返回 200。 */
+        /** @description 请求邮箱/短信验证码。register / reset_password 为公开接口；二选一提供 email 或 phone（手机号可用 E.164 的 "+8613800138000"，或 phone + countryCode 拨号区号组合）。为避免账号枚举，reset_password 对不存在的账号也返回 200。
+         *      */
         SendCodeRequest: {
             /**
              * @example register
@@ -2353,7 +2603,8 @@ export interface components {
             /** @example LB8DEMO */
             inviteCode?: string | null;
         };
-        /** @description 邮箱或手机号二选一 + 密码。密码正确后若需二次验证（已开启 TOTP、或新设备 登录触发邮箱/短信验证），返回 LoginChallenge 而非 AuthTokens。 */
+        /** @description 邮箱或手机号二选一 + 密码。密码正确后若需二次验证（已开启 TOTP、或新设备 登录触发邮箱/短信验证），返回 LoginChallenge 而非 AuthTokens。
+         *      */
         LoginRequest: {
             /**
              * Format: email
@@ -2656,11 +2907,10 @@ export interface components {
              * @enum {integer}
              */
             level?: 1 | 2;
-            /**
-             * @description 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
+            /** @description 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选；
              *     高级认证（level 2）还必须提供 proofOfAddress（side=proof_of_address 的地址证明），
              *     缺失时返回 400 DOCUMENT_REQUIRED。
-             */
+             *      */
             documents?: {
                 /** @example doc_1 */
                 front?: string;
@@ -2802,6 +3052,7 @@ export interface components {
             totpCode?: string | null;
             /**
              * @description 未开启 2FA 时必填：发到用户邮箱/手机的验证码（purpose=withdraw）。 与 totpCode 二选一，由服务端按账户状态校验。
+             *
              * @example 123456
              */
             code?: string | null;
@@ -2819,6 +3070,7 @@ export interface components {
             amount: string;
             /**
              * @description 链上 Gas 费（不含平台手续费——提现不收平台手续费）。等同于 gasFee，保留 以兼容既有字段。
+             *
              * @example 1.00000000
              */
             fee: string;
@@ -2906,7 +3158,8 @@ export interface components {
             /** @example cli-20261102-001 */
             clientOrderId?: string | null;
         };
-        /** @description 现货订单。所有价格/数量字段均为十进制字符串（非浮点），并按交易对精度格式化输出： price 按 pricePrecision、quantity/filledQuantity 按 quantityPrecision 补齐定长小数位。 示例按 BTCUSDT（pricePrecision=2, quantityPrecision=6）。 */
+        /** @description 现货订单。所有价格/数量字段均为十进制字符串（非浮点），并按交易对精度格式化输出： price 按 pricePrecision、quantity/filledQuantity 按 quantityPrecision 补齐定长小数位。 示例按 BTCUSDT（pricePrecision=2, quantityPrecision=6）。
+         *      */
         Order: {
             /** @example 1000000001 */
             orderId: string;
@@ -2942,7 +3195,8 @@ export interface components {
         PaginatedOrders: components["schemas"]["Pagination"] & {
             items: components["schemas"]["Order"][];
         };
-        /** @description 成交记录。price/quantity/fee 均为十进制字符串（非浮点）并按交易对精度格式化： price 按 pricePrecision、quantity 按 quantityPrecision；fee 按其计价资产精度 （base 计价按 quantityPrecision、quote 计价按 pricePrecision）。示例按 BTCUSDT。 */
+        /** @description 成交记录。price/quantity/fee 均为十进制字符串（非浮点）并按交易对精度格式化： price 按 pricePrecision、quantity 按 quantityPrecision；fee 按其计价资产精度 （base 计价按 quantityPrecision、quote 计价按 pricePrecision）。示例按 BTCUSDT。
+         *      */
         Trade: {
             /** @example 5000000001 */
             tradeId: string;
@@ -3013,12 +3267,10 @@ export interface components {
             id: string;
             /** @example 公链 */
             name: string;
-            /**
-             * @example [
+            /** @example [
              *       "BTCUSDT",
              *       "ETHUSDT"
-             *     ]
-             */
+             *     ] */
             symbols: string[];
         };
         Ticker: {
@@ -3036,6 +3288,11 @@ export interface components {
             volume: string;
             /** @example 28915681.30 */
             quoteVolume: string;
+            /**
+             * @description lastPrice 来源：最近成交 > 盘口中间价 > 指数价；无成交时 24h 涨跌为 0、high/low=lastPrice、volume=0（不伪造成交）。合约行情另有 mark。
+             * @enum {string}
+             */
+            priceSource?: "trade" | "mid" | "index" | "none";
         };
         Depth: {
             /** @example BTCUSDT */
@@ -3409,6 +3666,227 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        AdminWriteMeta: {
+            /** @example 123456 */
+            totpCode: string;
+            /** @example 双十一活动 */
+            reason: string;
+        };
+        PlacementInput: {
+            /** @enum {string} */
+            slot: "popup" | "splash" | "grid" | "carousel" | "promo_bar" | "search_hint";
+            title?: string;
+            /** @description carousel/splash/popup 必填 */
+            imageUrl?: string;
+            imageDarkUrl?: string;
+            /** @description https/http、站内 / 路径或 linbit:/cowa: deep link */
+            linkUrl?: string;
+            /**
+             * @default all
+             * @enum {string}
+             */
+            platform: "web" | "app" | "all";
+            locale?: string;
+            /**
+             * @default all
+             * @enum {string}
+             */
+            audience: "all" | "new" | "existing";
+            /** @example [
+             *       "HK",
+             *       "SG"
+             *     ] */
+            regions?: string[];
+            appMinVersion?: string;
+            appMaxVersion?: string;
+            /**
+             * @default always
+             * @enum {string}
+             */
+            frequency: "always" | "once" | "daily" | "session";
+            /** Format: date-time */
+            countdownEndAt?: string | null;
+            trackingId?: string;
+            /** @description 填写后公开接口返回 earnApr（来自 earn 服务） */
+            earnProductId?: string;
+            content?: {
+                [key: string]: unknown;
+            };
+            sort?: number;
+            /** Format: date-time */
+            startAt?: string | null;
+            /** Format: date-time */
+            endAt?: string | null;
+            /** @default true */
+            enabled: boolean;
+            totpCode?: string;
+            reason?: string;
+        };
+        Placement: {
+            id?: number;
+            slot?: string;
+            title?: string;
+            imageUrl?: string;
+            imageDarkUrl?: string;
+            linkUrl?: string;
+            platform?: string;
+            locale?: string;
+            audience?: string;
+            regions?: string[];
+            appMinVersion?: string;
+            appMaxVersion?: string;
+            frequency?: string;
+            /** Format: date-time */
+            countdownEndAt?: string | null;
+            trackingId?: string;
+            earnProductId?: string;
+            /**
+             * @description 仅公开接口
+             * @example 0.123
+             */
+            earnApr?: string | null;
+            content?: {
+                [key: string]: unknown;
+            };
+            sort?: number;
+            /** Format: date-time */
+            startAt?: string | null;
+            /** Format: date-time */
+            endAt?: string | null;
+            enabled?: boolean;
+            updatedBy?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        PlacementChange: {
+            placement?: components["schemas"]["Placement"];
+            before?: {
+                [key: string]: unknown;
+            } | null;
+            after?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        HomePlacements: {
+            slots?: {
+                [key: string]: components["schemas"]["Placement"][];
+            };
+            /** Format: date-time */
+            serverTime?: string;
+        };
+        HomeNewcomer: {
+            available?: boolean;
+            loggedIn?: boolean;
+            enrolled?: boolean;
+            total?: string;
+            /** @example USDT */
+            asset?: string;
+            days?: number;
+            completed?: number;
+            claimable?: string;
+            /** Format: date-time */
+            deadline?: string | null;
+            /** @example /rewards/newcomer */
+            link?: string;
+            /** @enum {string} */
+            cta?: "login" | "kyc" | "enroll" | "claim" | "continue" | "done" | "none" | "open";
+            degraded?: boolean;
+            tasks?: {
+                key?: string;
+                title?: string;
+                type?: string;
+                kind?: string;
+                amount?: string;
+                target?: string;
+                progress?: string;
+                status?: string;
+            }[];
+        };
+        FiatRates: {
+            /** @example USDT */
+            base?: string;
+            /** @example {
+             *       "CNY": 7.12,
+             *       "USD": 1,
+             *       "EUR": 0.92,
+             *       "HKD": 7.8,
+             *       "JPY": 150.1,
+             *       "KRW": 1380
+             *     } */
+            rates?: {
+                [key: string]: number;
+            };
+            /**
+             * @description 主机名或 static
+             * @example open.er-api.com
+             */
+            source?: string;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            stale?: boolean;
+        };
+        AppFeatures: {
+            /** @example {
+             *       "tokenizedStocks": false,
+             *       "metals": false,
+             *       "eventContracts": false,
+             *       "chat": false,
+             *       "subAccounts": false,
+             *       "convert": true,
+             *       "copyTrading": false,
+             *       "p2p": false,
+             *       "fiatOnRamp": false,
+             *       "options": false
+             *     } */
+            features?: {
+                [key: string]: boolean;
+            };
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        Favorites: {
+            /** @enum {string} */
+            market?: "spot" | "futures";
+            symbols?: string[];
+            items?: {
+                symbol?: string;
+                market?: string;
+                sort?: number;
+                /** Format: date-time */
+                createdAt?: string;
+            }[];
+        };
+        TransferRequest: {
+            /** @example c-20261103-0001 */
+            clientId: string;
+            /** @example USDT */
+            asset: string;
+            /** @example 100 */
+            amount: string;
+            /** @enum {string} */
+            from: "spot" | "futures";
+            /** @enum {string} */
+            to: "spot" | "futures";
+        };
+        Transfer: {
+            /** @example fut-4e77c5c8769ee51d */
+            id?: string;
+            clientId?: string | null;
+            asset?: string;
+            amount?: string;
+            from?: string;
+            to?: string;
+            /** @enum {string} */
+            status?: "pending" | "done" | "failed";
+            /** @example transfer */
+            kind?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
     };
     responses: {
         /** @description 请求参数错误 */
@@ -3417,13 +3895,6 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                /**
-                 * @example {
-                 *       "code": "VALIDATION_ERROR",
-                 *       "message": "请求参数不合法",
-                 *       "requestId": "req_400demo"
-                 *     }
-                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3433,13 +3904,6 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                /**
-                 * @example {
-                 *       "code": "AUTH_UNAUTHORIZED",
-                 *       "message": "请先登录",
-                 *       "requestId": "req_401demo"
-                 *     }
-                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3449,13 +3913,6 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
-                /**
-                 * @example {
-                 *       "code": "NOT_FOUND",
-                 *       "message": "资源不存在",
-                 *       "requestId": "req_404demo"
-                 *     }
-                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3481,13 +3938,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "purpose": "register",
                  *       "phone": "13800138000",
                  *       "countryCode": "86"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["SendCodeRequest"];
             };
         };
@@ -3498,29 +3953,33 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "sent": true,
-                     *       "channel": "sms",
-                     *       "ttlSeconds": 600
-                     *     }
-                     */
                     "application/json": components["schemas"]["SendCodeResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description 发送过于频繁 */
             429: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "RATE_LIMITED",
-                     *       "message": "验证码发送过于频繁，请稍后再试"
-                     *     }
-                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -3535,14 +3994,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "email": "trader@example.com",
                  *       "password": "Str0ng-Passw0rd!",
                  *       "code": "123456",
                  *       "inviteCode": "LB8DEMO"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["RegisterRequest"];
             };
         };
@@ -3553,14 +4010,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access",
-                     *       "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh",
-                     *       "tokenType": "Bearer",
-                     *       "expiresIn": 3600
-                     *     }
-                     */
                     "application/json": components["schemas"]["AuthTokens"];
                 };
             };
@@ -3571,13 +4020,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "AUTH_EMAIL_EXISTS",
-                     *       "message": "该邮箱已被注册",
-                     *       "requestId": "req_8c1f2a"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -3592,18 +4034,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "email": "trader@example.com",
                  *       "password": "Str0ng-Passw0rd!",
                  *       "deviceId": "web-7f3a"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["LoginRequest"];
             };
         };
         responses: {
-            /** @description 密码正确。若无需二次验证返回 AuthTokens；若需要（已开启 TOTP 或新设备 触发邮箱/短信验证）返回 LoginChallenge。 */
+            /** @description 密码正确。若无需二次验证返回 AuthTokens；若需要（已开启 TOTP 或新设备 触发邮箱/短信验证）返回 LoginChallenge。
+             *      */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3625,12 +4066,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "challengeToken": "3kZ9...challenge",
                  *       "code": "123456"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["LoginVerifyRequest"];
             };
         };
@@ -3657,11 +4096,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "challengeToken": "3kZ9...challenge"
-                 *     }
-                 */
+                 *     } */
                 "application/json": {
                     challengeToken: string;
                 };
@@ -3675,7 +4112,15 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["BadRequest"];
+            /** @description 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             /** @description 发送过于频繁 */
             429: {
@@ -3683,6 +4128,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -3695,13 +4149,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "phone": "13800138000",
                  *       "countryCode": "86",
                  *       "code": "123456"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["VerifyResetCodeRequest"];
             };
         };
@@ -3712,12 +4164,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "resetToken": "3kZ9...resetTok",
-                     *       "expiresIn": 600
-                     *     }
-                     */
                     "application/json": components["schemas"]["VerifyResetCodeResponse"];
                 };
             };
@@ -3733,12 +4179,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "resetToken": "3kZ9...resetTok",
                  *       "newPassword": "N3w-Passw0rd!"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["PasswordResetRequest"];
             };
         };
@@ -3762,11 +4206,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh"
-                 *     }
-                 */
+                 *     } */
                 "application/json": {
                     refreshToken: string;
                 };
@@ -3779,14 +4221,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newaccess",
-                     *       "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.newrefresh",
-                     *       "tokenType": "Bearer",
-                     *       "expiresIn": 3600
-                     *     }
-                     */
                     "application/json": components["schemas"]["AuthTokens"];
                 };
             };
@@ -3827,12 +4261,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "secret": "JBSWY3DPEHPK3PXP",
-                     *       "otpauthUri": "otpauth://totp/Linbit:trader@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Linbit"
-                     *     }
-                     */
                     "application/json": components["schemas"]["TotpBinding"];
                 };
             };
@@ -3848,11 +4276,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "code": "123456"
-                 *     }
-                 */
+                 *     } */
                 "application/json": {
                     /** @description 6 位 TOTP 验证码 */
                     code: string;
@@ -3866,12 +4292,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "enabled": true,
-                     *       "method": "totp"
-                     *     }
-                     */
                     "application/json": components["schemas"]["TwoFactorStatus"];
                 };
             };
@@ -3888,11 +4308,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "code": "123456"
-                 *     }
-                 */
+                 *     } */
                 "application/json": {
                     code: string;
                 };
@@ -3905,12 +4323,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "enabled": false,
-                     *       "method": null
-                     *     }
-                     */
                     "application/json": components["schemas"]["TwoFactorStatus"];
                 };
             };
@@ -3933,16 +4345,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "uid": "80000001",
-                     *       "email": "trader@example.com",
-                     *       "nickname": "lb_Trader",
-                     *       "kycLevel": 1,
-                     *       "twoFactorEnabled": true,
-                     *       "createdAt": "2026-01-05T08:30:00Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Account"];
                 };
             };
@@ -3958,12 +4360,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "nickname": "lb_Trader",
                  *       "avatarUrl": "https://cdn.example.com/avatar/lb.png"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["UpdateProfileRequest"];
             };
         };
@@ -4017,12 +4417,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "FILE_TOO_LARGE",
-                     *       "message": "头像超过大小限制"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4032,12 +4426,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "UNSUPPORTED_MEDIA_TYPE",
-                     *       "message": "仅支持 JPEG/PNG/WEBP 图片"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4078,12 +4466,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "purpose": "address",
                  *       "channel": "sms"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["SendCodeAuthedRequest"];
             };
         };
@@ -4094,17 +4480,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "sent": true,
-                     *       "channel": "sms",
-                     *       "ttlSeconds": 600
-                     *     }
-                     */
                     "application/json": components["schemas"]["SendCodeResponse"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /** @description 参数错误（VALIDATION_ERROR），或收件邮箱无效/无法投递（INVALID_EMAIL） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             /** @description 发送过于频繁 */
             429: {
@@ -4112,6 +4499,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description 邮件/短信通道不可用（EMAIL_UNAVAILABLE / SMS_UNAVAILABLE），原因见服务端日志 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -4188,12 +4584,10 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "enabled": true,
                  *       "code": "123456"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["SetWhitelistRequest"];
             };
         };
@@ -4241,15 +4635,13 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "asset": "USDT",
                  *       "network": "TRC20",
                  *       "address": "TXy1Z9DemoAddr000000000000000000000",
                  *       "label": "cold-wallet",
                  *       "code": "123456"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["CreateWithdrawAddressRequest"];
             };
         };
@@ -4271,12 +4663,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "ADDRESS_EXISTS",
-                     *       "message": "该地址已在地址簿中"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4318,16 +4704,14 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "firstName": "San",
                  *       "lastName": "Zhang",
                  *       "country": "SG",
                  *       "idType": "passport",
                  *       "idNumber": "E12345678",
                  *       "dateOfBirth": "1992-04-18"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["KycSubmission"];
             };
         };
@@ -4338,21 +4722,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "level": 1,
-                     *       "status": "pending",
-                     *       "submittedAt": "2026-11-02T10:00:00Z",
-                     *       "reason": null
-                     *     }
-                     */
                     "application/json": components["schemas"]["KycStatus"];
                 };
             };
-            /**
-             * @description 参数错误：VALIDATION_ERROR、UNDERAGE（默认未满 18 岁，KYC_MIN_AGE 可配）、
+            /** @description 参数错误：VALIDATION_ERROR、UNDERAGE（默认未满 18 岁，KYC_MIN_AGE 可配）、
              *     KYC_LEVEL_REQUIRED（高级认证需先通过基础认证）、DOCUMENT_NOT_FOUND、DOCUMENT_SIDE_MISMATCH
-             */
+             *      */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4384,14 +4759,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "level": 1,
-                     *       "status": "approved",
-                     *       "submittedAt": "2026-11-01T10:00:00Z",
-                     *       "reason": null
-                     *     }
-                     */
                     "application/json": components["schemas"]["KycStatus"];
                 };
             };
@@ -4635,29 +5002,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [
-                     *         {
-                     *           "asset": "USDT",
-                     *           "free": "10520.33000000",
-                     *           "locked": "250.00000000",
-                     *           "total": "10770.33000000",
-                     *           "valuationUsd": "10770.33"
-                     *         },
-                     *         {
-                     *           "asset": "BTC",
-                     *           "free": "0.52100000",
-                     *           "locked": "0.00000000",
-                     *           "total": "0.52100000",
-                     *           "valuationUsd": "39994.40"
-                     *         }
-                     *       ],
-                     *       "page": 1,
-                     *       "pageSize": 20,
-                     *       "total": 2
-                     *     }
-                     */
                     "application/json": components["schemas"]["PaginatedBalances"];
                 };
             };
@@ -4684,15 +5028,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "asset": "USDT",
-                     *       "network": "TRC20",
-                     *       "address": "TXy1Z9DemoAddr000000000000000000000",
-                     *       "memo": null,
-                     *       "minDeposit": "1.00000000"
-                     *     }
-                     */
                     "application/json": components["schemas"]["DepositAddress"];
                 };
             };
@@ -4721,25 +5056,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [
-                     *         {
-                     *           "id": "dep_0001",
-                     *           "asset": "USDT",
-                     *           "network": "TRC20",
-                     *           "amount": "500.00000000",
-                     *           "txId": "9a7b...demo",
-                     *           "status": "completed",
-                     *           "confirmations": 20,
-                     *           "createdAt": "2026-10-30T12:00:00Z"
-                     *         }
-                     *       ],
-                     *       "page": 1,
-                     *       "pageSize": 20,
-                     *       "total": 1
-                     *     }
-                     */
                     "application/json": components["schemas"]["PaginatedDeposits"];
                 };
             };
@@ -4755,16 +5071,14 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "asset": "USDT",
                  *       "network": "TRC20",
                  *       "address": "TXy1Z9DemoAddr000000000000000000000",
                  *       "amount": "100.00000000",
                  *       "memo": null,
                  *       "totpCode": "123456"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["WithdrawRequest"];
             };
         };
@@ -4775,28 +5089,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "id": "wd_0001",
-                     *       "asset": "USDT",
-                     *       "network": "TRC20",
-                     *       "address": "TXy1Z9DemoAddr000000000000000000000",
-                     *       "amount": "100.00000000",
-                     *       "fee": "1.00000000",
-                     *       "status": "pending",
-                     *       "createdAt": "2026-11-02T10:05:00Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Withdrawal"];
                 };
             };
-            /**
-             * @description 参数错误；MIN_WITHDRAW 表示低于最小提现数量或 amount 不大于 Gas；
+            /** @description 参数错误；MIN_WITHDRAW 表示低于最小提现数量或 amount 不大于 Gas；
              *     WITHDRAW_LIMIT_EXCEEDED 表示超过当前 KYC 等级的 24 小时提现额度
              *     （USDT 等值，默认 level1=50000、level2=200000，可配置）；非 USDT 资产按
              *     market-data 实时价格（{ASSET}USDT 最新成交价）折算，无可用价格时拒绝提现并返回
              *     PRICE_UNAVAILABLE。
-             */
+             *      */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4804,10 +5105,9 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
-            /**
-             * @description KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
+            /** @description KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
              *     但目标地址不在白名单内
-             */
+             *      */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4836,27 +5136,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "asset": "USDT",
-                     *       "networks": [
-                     *         {
-                     *           "network": "TRC20",
-                     *           "minWithdraw": "12.00000000",
-                     *           "gasFeeEstimate": "1.00000000",
-                     *           "gasFeeAsset": "USDT",
-                     *           "estimatedArrivalMinutes": 5
-                     *         },
-                     *         {
-                     *           "network": "ERC20",
-                     *           "minWithdraw": "12.00000000",
-                     *           "gasFeeEstimate": "6.50000000",
-                     *           "gasFeeAsset": "USDT",
-                     *           "estimatedArrivalMinutes": 10
-                     *         }
-                     *       ]
-                     *     }
-                     */
                     "application/json": components["schemas"]["WithdrawNetworkOptions"];
                 };
             };
@@ -4884,25 +5163,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [
-                     *         {
-                     *           "id": "wd_0001",
-                     *           "asset": "USDT",
-                     *           "network": "TRC20",
-                     *           "address": "TXy1Z9DemoAddr000000000000000000000",
-                     *           "amount": "100.00000000",
-                     *           "fee": "1.00000000",
-                     *           "status": "completed",
-                     *           "createdAt": "2026-10-28T09:00:00Z"
-                     *         }
-                     *       ],
-                     *       "page": 1,
-                     *       "pageSize": 20,
-                     *       "total": 1
-                     *     }
-                     */
                     "application/json": components["schemas"]["PaginatedWithdrawals"];
                 };
             };
@@ -4951,8 +5211,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
+                /** @example {
                  *       "symbol": "BTCUSDT",
                  *       "side": "buy",
                  *       "type": "limit",
@@ -4960,8 +5219,7 @@ export interface operations {
                  *       "quantity": "0.010000",
                  *       "timeInForce": "GTC",
                  *       "clientOrderId": "cli-20261102-001"
-                 *     }
-                 */
+                 *     } */
                 "application/json": components["schemas"]["PlaceOrderRequest"];
             };
         };
@@ -4972,21 +5230,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "orderId": "1000000001",
-                     *       "clientOrderId": "cli-20261102-001",
-                     *       "symbol": "BTCUSDT",
-                     *       "side": "buy",
-                     *       "type": "limit",
-                     *       "price": "76768.40",
-                     *       "quantity": "0.010000",
-                     *       "filledQuantity": "0.000000",
-                     *       "status": "new",
-                     *       "timeInForce": "GTC",
-                     *       "createdAt": "2026-11-02T10:10:00Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Order"];
                 };
             };
@@ -5015,21 +5258,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "orderId": "1000000001",
-                     *       "clientOrderId": "cli-20261102-001",
-                     *       "symbol": "BTCUSDT",
-                     *       "side": "buy",
-                     *       "type": "limit",
-                     *       "price": "76768.40",
-                     *       "quantity": "0.010000",
-                     *       "filledQuantity": "0.000000",
-                     *       "status": "canceled",
-                     *       "timeInForce": "GTC",
-                     *       "createdAt": "2026-11-02T10:10:00Z"
-                     *     }
-                     */
                     "application/json": components["schemas"]["Order"];
                 };
             };
@@ -5058,28 +5286,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [
-                     *         {
-                     *           "orderId": "1000000001",
-                     *           "clientOrderId": "cli-20261102-001",
-                     *           "symbol": "BTCUSDT",
-                     *           "side": "buy",
-                     *           "type": "limit",
-                     *           "price": "76768.40",
-                     *           "quantity": "0.010000",
-                     *           "filledQuantity": "0.000000",
-                     *           "status": "new",
-                     *           "timeInForce": "GTC",
-                     *           "createdAt": "2026-11-02T10:10:00Z"
-                     *         }
-                     *       ],
-                     *       "page": 1,
-                     *       "pageSize": 20,
-                     *       "total": 1
-                     *     }
-                     */
                     "application/json": components["schemas"]["PaginatedOrders"];
                 };
             };
@@ -5108,28 +5314,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [
-                     *         {
-                     *           "orderId": "0999999900",
-                     *           "clientOrderId": "cli-20261030-009",
-                     *           "symbol": "BTCUSDT",
-                     *           "side": "sell",
-                     *           "type": "limit",
-                     *           "price": "78000.00",
-                     *           "quantity": "0.020000",
-                     *           "filledQuantity": "0.020000",
-                     *           "status": "filled",
-                     *           "timeInForce": "GTC",
-                     *           "createdAt": "2026-10-30T11:00:00Z"
-                     *         }
-                     *       ],
-                     *       "page": 1,
-                     *       "pageSize": 20,
-                     *       "total": 1
-                     *     }
-                     */
                     "application/json": components["schemas"]["PaginatedOrders"];
                 };
             };
@@ -5157,27 +5341,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "items": [
-                     *         {
-                     *           "tradeId": "5000000001",
-                     *           "orderId": "0999999900",
-                     *           "symbol": "BTCUSDT",
-                     *           "side": "sell",
-                     *           "price": "78000.00",
-                     *           "quantity": "0.020000",
-                     *           "fee": "1.56",
-                     *           "feeAsset": "USDT",
-                     *           "role": "maker",
-                     *           "createdAt": "2026-10-30T11:05:00Z"
-                     *         }
-                     *       ],
-                     *       "page": 1,
-                     *       "pageSize": 20,
-                     *       "total": 1
-                     *     }
-                     */
                     "application/json": components["schemas"]["PaginatedTrades"];
                 };
             };
@@ -5199,31 +5362,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example [
-                     *       {
-                     *         "symbol": "BTCUSDT",
-                     *         "base": "BTC",
-                     *         "quote": "USDT",
-                     *         "pricePrecision": 1,
-                     *         "quantityPrecision": 6,
-                     *         "minQuantity": "0.000010",
-                     *         "status": "trading"
-                     *       },
-                     *       {
-                     *         "symbol": "ETHUSDT",
-                     *         "base": "ETH",
-                     *         "quote": "USDT",
-                     *         "pricePrecision": 2,
-                     *         "quantityPrecision": 5,
-                     *         "minQuantity": "0.00100",
-                     *         "status": "trading",
-                     *         "tags": [
-                     *           "layer1"
-                     *         ]
-                     *       }
-                     *     ]
-                     */
                     "application/json": components["schemas"]["Symbol"][];
                 };
             };
@@ -5244,26 +5382,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example [
-                     *       {
-                     *         "id": "layer1",
-                     *         "name": "公链",
-                     *         "symbols": [
-                     *           "BNBUSDT",
-                     *           "BTCUSDT",
-                     *           "ETHUSDT",
-                     *           "SOLUSDT",
-                     *           "TRXUSDT"
-                     *         ]
-                     *       },
-                     *       {
-                     *         "id": "metals",
-                     *         "name": "贵金属",
-                     *         "symbols": []
-                     *       }
-                     *     ]
-                     */
                     "application/json": components["schemas"]["MarketCategory"][];
                 };
             };
@@ -5284,7 +5402,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 行情数据。带 `symbol` 为单个 Ticker 对象；不带为 Ticker 数组。 */
+            /** @description 行情数据。带 `symbol` 为单个 Ticker 对象；不带为 Ticker 数组。
+             *      */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5314,32 +5433,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "symbol": "BTCUSDT",
-                     *       "lastUpdateId": 123456789,
-                     *       "bids": [
-                     *         [
-                     *           "76768.40",
-                     *           "0.51230"
-                     *         ],
-                     *         [
-                     *           "76768.30",
-                     *           "1.20100"
-                     *         ]
-                     *       ],
-                     *       "asks": [
-                     *         [
-                     *           "76768.50",
-                     *           "0.33200"
-                     *         ],
-                     *         [
-                     *           "76768.60",
-                     *           "0.89500"
-                     *         ]
-                     *       ]
-                     *     }
-                     */
                     "application/json": components["schemas"]["Depth"];
                 };
             };
@@ -5366,26 +5459,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example [
-                     *       {
-                     *         "time": 1762070400,
-                     *         "open": "76500.00",
-                     *         "high": "76820.00",
-                     *         "low": "76410.00",
-                     *         "close": "76768.40",
-                     *         "volume": "123.45"
-                     *       },
-                     *       {
-                     *         "time": 1762071300,
-                     *         "open": "76768.40",
-                     *         "high": "76900.00",
-                     *         "low": "76700.00",
-                     *         "close": "76771.90",
-                     *         "volume": "98.76"
-                     *       }
-                     *     ]
-                     */
                     "application/json": components["schemas"]["Kline"][];
                 };
             };
@@ -5679,6 +5752,489 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getHomePlacements: {
+        parameters: {
+            query?: {
+                /** @description 逗号分隔；为空返回全部槽位。未知槽位 400 VALIDATION_ERROR */
+                slots?: string;
+                platform?: "web" | "app";
+                locale?: string;
+                /** @description 仅 platform=app 时参与版本区间过滤；缺失时带版本区间的投放不返回 */
+                appVersion?: string;
+                /** @description 缺省回退 CF-IPCountry 请求头 */
+                region?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK（缓存 15s） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomePlacements"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getHomeBanners: {
+        parameters: {
+            query?: {
+                platform?: "web" | "app";
+                locale?: string;
+                appVersion?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Placement"][];
+                    };
+                };
+            };
+        };
+    };
+    getHomeHot: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    getHomeNewcomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK（无活动时 available=false、tasks=[]；状态读取失败时 degraded=true 返回模板） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeNewcomer"];
+                };
+            };
+        };
+    };
+    getFiatRates: {
+        parameters: {
+            query?: {
+                base?: "USDT" | "USDC" | "USD";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiatRates"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getAppFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppFeatures"];
+                };
+            };
+        };
+    };
+    listFavorites: {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    replaceFavorites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default spot
+                     * @enum {string}
+                     */
+                    market?: "spot" | "futures";
+                    /** @example [
+                     *       "BTCUSDT",
+                     *       "ETHUSDT"
+                     *     ] */
+                    symbols: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    addFavorite: {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    removeFavorite: {
+        parameters: {
+            query?: {
+                market?: "spot" | "futures";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Favorites"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createAssetTransfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferRequest"];
+            };
+        };
+        responses: {
+            /** @description 完成（或同 clientId 重放返回原结果） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Transfer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    listAssetTransfers: {
+        parameters: {
+            query?: {
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+                asset?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Transfer"][];
+                        page?: number;
+                        pageSize?: number;
+                        total?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    adminListPlacements: {
+        parameters: {
+            query?: {
+                slot?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Placement"][];
+                    };
+                };
+            };
+        };
+    };
+    adminCreatePlacement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacementInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    adminUpdatePlacement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacementInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminDeletePlacement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementChange"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminGetAppFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminSetAppFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @example {
+                     *       "chat": true
+                     *     } */
+                    features: {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        features?: {
+                            [key: string]: boolean;
+                        };
+                        /** Format: date-time */
+                        updatedAt?: string | null;
+                        before?: {
+                            [key: string]: boolean;
+                        };
+                        after?: {
+                            [key: string]: boolean;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
         };
     };
 }

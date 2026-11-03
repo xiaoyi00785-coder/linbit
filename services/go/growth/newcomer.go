@@ -92,6 +92,7 @@ func (s *Server) newcomerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /rewards/newcomer/enroll", s.user(s.handleNewcomerEnroll))
 	mux.HandleFunc("POST /rewards/newcomer/tasks/{key}/claim", s.user(s.handleNewcomerClaim))
 	mux.HandleFunc("GET /activities", s.handleActivities)
+	mux.HandleFunc("GET /home/newcomer", s.handleHomeNewcomer)
 }
 
 type taskView struct {

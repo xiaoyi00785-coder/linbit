@@ -139,6 +139,7 @@ func (s *Server) Routes() http.Handler {
 	a("POST /admin/v1/solvency/run", permMMEdit, s.handleSolvencyRun)
 
 	s.registerEarnRoutes(a)
+	s.registerHomeRoutes(a)
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
 

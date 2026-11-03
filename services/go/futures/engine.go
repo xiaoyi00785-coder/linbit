@@ -819,17 +819,41 @@ func (s *Server) closeLocked(ctx context.Context, uid, sym, source string) (Orde
 // futures wallet first (under the lock) then credits spot. A pending row is
 // retried by RunTransferRetry until the (idempotent) asset call succeeds.
 func (s *Server) Transfer(ctx context.Context, uid, dir string, amount decimal.Decimal) (string, string, error) {
+	return s.TransferIdem(ctx, uid, dir, amount, "")
+}
+
+// TransferIdem is Transfer with an optional client idempotency key: a repeat
+// with the same clientId returns the original ref/status (no second move);
+// the same clientId with a different direction/amount is IDEMPOTENCY_CONFLICT.
+func (s *Server) TransferIdem(ctx context.Context, uid, dir string, amount decimal.Decimal, clientID string) (string, string, error) {
 	if amount.LessThan(s.cfg.MinTransfer) || amount.Exponent() < -8 {
 		return "", "", bad("INVALID_AMOUNT", "划转金额不合法")
+	}
+	if dir != "in" && dir != "out" {
+		return "", "", bad("VALIDATION_ERROR", "direction 必须为 in 或 out")
+	}
+	var cid any
+	if clientID != "" {
+		cid = clientID
+		if ref, st, found, err := s.transferByClientID(ctx, s.db, uid, clientID, dir, amount); err != nil || found {
+			return ref, st, err
+		}
 	}
 	ref := newRef("fut")
 	switch dir {
 	case "in":
-		if _, err := s.db.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status) VALUES ($1,$2,'in',$3,'pending')`, ref, uid, amount); err != nil {
+		res, err := s.db.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status, client_id) VALUES ($1,$2,'in',$3,'pending',$4)
+			ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING`, ref, uid, amount, cid)
+		if err != nil {
 			return "", "", err
+		}
+		if n, _ := res.RowsAffected(); n == 0 { // lost a race with the same clientId
+			r, st, _, err := s.transferByClientID(ctx, s.db, uid, clientID, dir, amount)
+			return r, st, err
 		}
 		return ref, s.completeIn(ctx, ref, uid, amount), nil
 	case "out":
+		replay := ""
 		err := s.withTx(ctx, func(tx *sql.Tx) error {
 			if _, _, err := lockAccount(ctx, tx, uid); err != nil {
 				return err
@@ -838,16 +862,29 @@ func (s *Server) Transfer(ctx context.Context, uid, dir string, amount decimal.D
 			if err != nil {
 				return err
 			}
+			if clientID != "" { // re-check under the account lock (serialises per user)
+				r, rs, found, err := s.transferByClientID(ctx, tx, uid, clientID, dir, amount)
+				if err != nil {
+					return err
+				}
+				if found {
+					ref, replay = r, rs
+					return nil
+				}
+			}
 			if st.Available.LessThan(amount) {
 				return bad("INSUFFICIENT_BALANCE", "可划转余额不足")
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status) VALUES ($1,$2,'out',$3,'pending')`, ref, uid, amount); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status, client_id) VALUES ($1,$2,'out',$3,'pending',$4)`, ref, uid, amount, cid); err != nil {
 				return err
 			}
 			return addBalance(ctx, tx, uid, "", "transfer_out", amount.Neg(), ref)
 		})
 		if err != nil {
 			return "", "", err
+		}
+		if replay != "" {
+			return ref, replay, nil
 		}
 		return ref, s.completeOut(ctx, ref, uid, amount), nil
 	}
