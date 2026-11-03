@@ -37,6 +37,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/credit", s.internal(s.handleCredit))
 	mux.HandleFunc("POST /internal/freeze", s.internal(s.handleFreeze))
 	mux.HandleFunc("POST /internal/unfreeze", s.internal(s.handleUnfreeze))
+	mux.HandleFunc("POST /internal/settle", s.internal(s.handleSettle))
+	mux.HandleFunc("GET /internal/balances", s.internal(s.handleInternalBalances))
 	return mux
 }
 
@@ -171,6 +173,101 @@ func (s *Server) handleMovement(w http.ResponseWriter, r *http.Request, fn movem
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// settleRequest is the internal settlement payload sent by the order service.
+type settleRequest struct {
+	TradeID        string `json:"tradeId"`
+	Base           string `json:"base"`
+	Quote          string `json:"quote"`
+	BuyerUserID    string `json:"buyerUserId"`
+	SellerUserID   string `json:"sellerUserId"`
+	FeeAccount     string `json:"feeAccount"`
+	QuoteAmount    string `json:"quoteAmount"`
+	BaseQty        string `json:"baseQty"`
+	BuyerFeeBase   string `json:"buyerFeeBase"`
+	SellerFeeQuote string `json:"sellerFeeQuote"`
+}
+
+func (s *Server) handleSettle(w http.ResponseWriter, r *http.Request) {
+	var req settleRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	if req.TradeID == "" || req.Base == "" || req.Quote == "" ||
+		req.BuyerUserID == "" || req.SellerUserID == "" || req.FeeAccount == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	dec := func(s string) decimal.Decimal {
+		if s == "" {
+			return decimal.Zero
+		}
+		return decimal.RequireFromString(s)
+	}
+	quoteAmount, err1 := decimal.NewFromString(req.QuoteAmount)
+	baseQty, err2 := decimal.NewFromString(req.BaseQty)
+	if err1 != nil || err2 != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
+		return
+	}
+	sr := SettleRequest{
+		TradeID:        req.TradeID,
+		Base:           req.Base,
+		Quote:          req.Quote,
+		BuyerUserID:    req.BuyerUserID,
+		SellerUserID:   req.SellerUserID,
+		FeeAccount:     req.FeeAccount,
+		QuoteAmount:    quoteAmount,
+		BaseQty:        baseQty,
+		BuyerFeeBase:   dec(req.BuyerFeeBase),
+		SellerFeeQuote: dec(req.SellerFeeQuote),
+	}
+	err := s.store.Settle(r.Context(), sr)
+	switch {
+	case errors.Is(err, ErrAlreadySettled):
+		// Idempotent: already applied, report success without re-applying.
+		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "already_settled"})
+	case errors.Is(err, ErrInsufficient):
+		common.WriteError(w, http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")
+	case errors.Is(err, ErrInvalidAmount):
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
+	case err != nil:
+		log.Printf("settle: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+	default:
+		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "settled"})
+	}
+}
+
+func (s *Server) handleInternalBalances(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("userId")
+	if userID == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "缺少 userId")
+		return
+	}
+	if err := s.store.EnsureAccount(r.Context(), userID); err != nil {
+		log.Printf("internal balances: ensure: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	balances, total, err := s.store.Balances(r.Context(), userID, 1, 1000)
+	if err != nil {
+		log.Printf("internal balances: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	items := make([]balanceDTO, 0, len(balances))
+	for _, b := range balances {
+		items = append(items, balanceDTO{
+			Asset:  b.Asset,
+			Free:   b.Free.StringFixed(8),
+			Locked: b.Locked.StringFixed(8),
+			Total:  b.Total().StringFixed(8),
+		})
+	}
+	common.WriteJSON(w, http.StatusOK, paginatedBalances{Items: items, Page: 1, PageSize: 1000, Total: total})
 }
 
 func atoiDefault(s string, def, min, max int) int {

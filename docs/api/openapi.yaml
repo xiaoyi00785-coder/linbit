@@ -424,6 +424,41 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /wallet/withdraw/networks:
+    get:
+      tags: [Wallet]
+      summary: 可提现网络与 Gas 估算
+      description: >
+        返回某资产可用的提现网络列表及每个网络的链上 Gas 估算。提现不收取平台
+        手续费，仅收取链上 Gas，因此前端据此向用户展示预计到账金额。
+      operationId: listWithdrawNetworks
+      parameters:
+        - name: asset
+          in: query
+          required: true
+          schema: { type: string }
+          example: USDT
+      responses:
+        "200":
+          description: 网络与 Gas 估算
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WithdrawNetworkOptions" }
+              example:
+                asset: USDT
+                networks:
+                  - network: TRC20
+                    minWithdraw: "10.00000000"
+                    gasFeeEstimate: "1.00000000"
+                    gasFeeAsset: USDT
+                    estimatedArrivalMinutes: 5
+                  - network: ERC20
+                    minWithdraw: "20.00000000"
+                    gasFeeEstimate: "6.50000000"
+                    gasFeeAsset: USDT
+                    estimatedArrivalMinutes: 10
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /wallet/withdraw/records:
     get:
       tags: [Wallet]
@@ -1051,12 +1086,58 @@ components:
         network: { type: string, example: TRC20 }
         address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
         amount: { type: string, example: "100.00000000" }
-        fee: { type: string, example: "1.00000000" }
+        fee:
+          type: string
+          description: >
+            链上 Gas 费（不含平台手续费——提现不收平台手续费）。等同于 gasFee，保留
+            以兼容既有字段。
+          example: "1.00000000"
+        gasFee:
+          type: string
+          nullable: true
+          description: 实际结算的链上 Gas 费；下单时按 gasFeeEstimate 估算。
+          example: "1.00000000"
+        gasFeeAsset:
+          type: string
+          nullable: true
+          description: Gas 费计价资产（通常为该网络的原生币或被提资产）。
+          example: USDT
         status:
           type: string
           enum: [pending, processing, completed, failed, canceled]
           example: pending
         createdAt: { type: string, format: date-time, example: "2026-11-02T10:05:00Z" }
+
+    WithdrawNetwork:
+      type: object
+      required: [network]
+      properties:
+        network: { type: string, example: TRC20 }
+        minWithdraw: { type: string, nullable: true, example: "10.00000000" }
+        gasFeeEstimate:
+          type: string
+          nullable: true
+          description: 预估链上 Gas 费（提现唯一费用，无平台手续费）。实现前可为 null。
+          example: "1.00000000"
+        gasFeeAsset:
+          type: string
+          nullable: true
+          description: Gas 费计价资产。
+          example: USDT
+        estimatedArrivalMinutes:
+          type: integer
+          nullable: true
+          description: 预计到账时间（分钟）。
+          example: 5
+
+    WithdrawNetworkOptions:
+      type: object
+      required: [asset, networks]
+      properties:
+        asset: { type: string, example: USDT }
+        networks:
+          type: array
+          items: { $ref: "#/components/schemas/WithdrawNetwork" }
 
     PaginatedWithdrawals:
       allOf:

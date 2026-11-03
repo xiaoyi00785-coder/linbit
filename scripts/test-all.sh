@@ -13,6 +13,7 @@ MODULES=(
   services/go/common
   services/go/account
   services/go/asset
+  services/go/order
   services/go/gateway
   tools/devstack
 )
