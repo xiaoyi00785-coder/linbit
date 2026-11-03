@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { SpotForm, SpotOrders } from '@/features/Spot'
 import { setAuthed, useAuth } from './auth'
 import { Assets, FuturesAcct, EarnAcct, Orders, Deposit, Account, Security, Kyc, KycBasic, Settings, ApiKeys, Buy, Convert, Earn, Strategy } from './Pages'
 import { KLinePro as KPro } from '@linbit/chart'
@@ -57,7 +58,7 @@ function FutDetails(){const[o,setO]=useState(true);const rows=[['指数来源','
 function Trade({fut}){return <main className="trade"><Guide k={fut?"fut":"spot"}/><div className="tbar"><span className="pair" data-guide="pair"><Ico c={coins[0]} s={22}/> {fut?'BTCUSDT':'BTC/USDT'} ▾</span><b className="lp up">76,768.4</b>
 {(fut?[['24h 涨跌','-1.71%','down'],['标记价格','76,764.0'],['指数价格','76,788.0'],['24h 最高','78,851.0'],['24h 最低','76,669.8'],['24h 成交额(USDT)','976,320,258.18'],['资金费率(8h)/倒计时','0.0145% / 00:45:16','up']]:[['24h 涨跌','-1.71%','down'],['24h 最高','78,878.00'],['24h 最低','76,705.00'],['24h 成交量(BTC)','371.65'],['24h 成交额(USDT)','28,915,681.30']]).map(([k,v,c])=><div className="tk" key={k}><small>{k}</small><span className={c}>{v}</span></div>)}<span className="sp"/><span className="hi">⚙</span></div>
 <div className="tgrid"><div className="cpanel"><div className="pt2"><b>K线图</b><span><b className="w">专业版</b> 深度图</span></div><KPro/></div>
-<Book fut={fut}/><Form fut={fut}/><div className="orders" data-guide="orders"><div className="pt sm">{(fut?['仓位(0)','当前委托(0)','仓位历史','历史委托','委托明细','已平仓盈亏','跟单(0)','卡券(0)']:['当前委托','历史委托','委托明细']).map((x,i)=><b key={x}>{x}</b>)}<span className="sp"/><label className="ck"><input type="checkbox"/> 只看当前</label></div><p className="empty">暂无数据</p></div></div>{fut&&<FutDetails/>}</main>}
+<Book fut={fut}/>{fut?<Form fut={fut}/>:<SpotForm/>}{fut?<div className="orders" data-guide="orders"><div className="pt sm">{(fut?['仓位(0)','当前委托(0)','仓位历史','历史委托','委托明细','已平仓盈亏','跟单(0)','卡券(0)']:['当前委托','历史委托','委托明细']).map((x,i)=><b key={x}>{x}</b>)}<span className="sp"/><label className="ck"><input type="checkbox"/> 只看当前</label></div><p className="empty">暂无数据</p></div>:<SpotOrders/>}</div>{fut&&<FutDetails/>}</main>}
 function Reg(){const[r,setR]=useState(false);const[ok,setOk]=useState(false);return <><div className="ref" onClick={()=>setR(!r)}>邀请码（选填） <span>{r?'▴':'▾'}</span></div>{r&&<input className="ai" placeholder="请输入邀请码"/>}<label className="agree" onClick={()=>setOk(!ok)}><i className={ok?'on':''}>{ok&&'✓'}</i><span>点击「创建账户」即表示你同意 linbit 的 <a className="lime">服务条款</a> 和 <a className="lime">隐私政策</a>。</span></label><button className={'abtn'+(ok?'':' dis')}>创建账户</button><div className="om">其他方式</div></>}
 function Auth({reg}){const[t,setT]=useState('邮箱');return <main className="auth"><div className="aleft"><h1>在奖励中心最高可赚<br/><span className="lime">10,000 USDT</span> 奖励</h1><div className="chest"><img src="/img/auth.webp" alt=""/></div></div>
 <div className="aright"><div className="ah"><h2>{reg?'创建账户':'欢迎来到 linbit'}</h2><Link to={reg?'/login':'/register'} className="sw">⇄ {reg?'立即登录':'立即注册'}</Link></div>

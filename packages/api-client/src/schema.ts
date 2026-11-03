@@ -242,6 +242,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/wallet/withdraw/networks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 可提现网络与 Gas 估算
+         * @description 返回某资产可用的提现网络列表及每个网络的链上 Gas 估算。提现不收取平台 手续费，仅收取链上 Gas，因此前端据此向用户展示预计到账金额。
+         */
+        get: operations["listWithdrawNetworks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/wallet/withdraw/records": {
         parameters: {
             query?: never;
@@ -650,8 +670,21 @@ export interface components {
             address: string;
             /** @example 100.00000000 */
             amount: string;
-            /** @example 1.00000000 */
+            /**
+             * @description 链上 Gas 费（不含平台手续费——提现不收平台手续费）。等同于 gasFee，保留 以兼容既有字段。
+             * @example 1.00000000
+             */
             fee: string;
+            /**
+             * @description 实际结算的链上 Gas 费；下单时按 gasFeeEstimate 估算。
+             * @example 1.00000000
+             */
+            gasFee?: string | null;
+            /**
+             * @description Gas 费计价资产（通常为该网络的原生币或被提资产）。
+             * @example USDT
+             */
+            gasFeeAsset?: string | null;
             /**
              * @example pending
              * @enum {string}
@@ -662,6 +695,32 @@ export interface components {
              * @example 2026-11-02T10:05:00Z
              */
             createdAt: string;
+        };
+        WithdrawNetwork: {
+            /** @example TRC20 */
+            network: string;
+            /** @example 10.00000000 */
+            minWithdraw?: string | null;
+            /**
+             * @description 预估链上 Gas 费（提现唯一费用，无平台手续费）。实现前可为 null。
+             * @example 1.00000000
+             */
+            gasFeeEstimate?: string | null;
+            /**
+             * @description Gas 费计价资产。
+             * @example USDT
+             */
+            gasFeeAsset?: string | null;
+            /**
+             * @description 预计到账时间（分钟）。
+             * @example 5
+             */
+            estimatedArrivalMinutes?: number | null;
+        };
+        WithdrawNetworkOptions: {
+            /** @example USDT */
+            asset: string;
+            networks: components["schemas"]["WithdrawNetwork"][];
         };
         PaginatedWithdrawals: components["schemas"]["Pagination"] & {
             items: components["schemas"]["Withdrawal"][];
@@ -1415,6 +1474,51 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listWithdrawNetworks: {
+        parameters: {
+            query: {
+                /** @example USDT */
+                asset: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 网络与 Gas 估算 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "asset": "USDT",
+                     *       "networks": [
+                     *         {
+                     *           "network": "TRC20",
+                     *           "minWithdraw": "10.00000000",
+                     *           "gasFeeEstimate": "1.00000000",
+                     *           "gasFeeAsset": "USDT",
+                     *           "estimatedArrivalMinutes": 5
+                     *         },
+                     *         {
+                     *           "network": "ERC20",
+                     *           "minWithdraw": "20.00000000",
+                     *           "gasFeeEstimate": "6.50000000",
+                     *           "gasFeeAsset": "USDT",
+                     *           "estimatedArrivalMinutes": 10
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["WithdrawNetworkOptions"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
         };
     };

@@ -55,7 +55,7 @@ export function Withdraw() {
   const n = Number(amt);
   const min = Number(cfg?.minAmount ?? 0);
   const max = Number(cfg?.maxAmount ?? Infinity);
-  const fee = Number(cfg?.networkFee ?? 0);
+  const fee = Number(cfg?.gasFeeEstimate ?? 0);
   const receive = n > fee ? String(+(n - fee).toFixed(8)) : "0";
 
   const check = () => {
@@ -112,7 +112,7 @@ export function Withdraw() {
             </div>
             <div className="fx-row">
               <span>可用 {free} {asset} <a className="lime2" onClick={() => setAmt(free)}>全部</a></span>
-              <span>网络费（链上 Gas）≈ {cfg?.networkFee ?? "-"} {asset} · 平台手续费 0</span>
+              <span>网络费（链上 Gas）≈ {cfg?.gasFeeEstimate ?? "-"} {asset} · 平台手续费 0</span>
             </div>
             <div className="fx-row">
               <span>单笔限额 {cfg?.minAmount ?? "-"} ~ {cfg?.maxAmount ?? "-"} {asset}</span>

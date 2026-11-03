@@ -116,21 +116,27 @@ export async function resetPassword(_b: {
   return { ok: true, data: true, source: "mock" };
 }
 
-/** 缺口：GET /wallet/withdraw/config?asset=&network=（最小提现额、链上网络费 networkFee、单笔上限、是否需要 memo）。平台不收提现手续费，仅收链上 Gas，随网络实时变化 */
+/** 已对接：GET /wallet/withdraw/networks?asset=（网络列表 + gasFeeEstimate）。
+ *  平台不收提现手续费，仅收链上 Gas。接口未实现（404/5xx/网络错误）时回退 mock。 */
 export interface WithdrawConfig {
   asset: string;
   network: string;
   minAmount: string;
   maxAmount: string;
   /** 链上网络费（Gas）预估，平台不另收手续费 */
-  networkFee: string;
+  gasFeeEstimate: string;
+  gasFeeAsset: string;
+  estimatedArrivalMinutes?: number | null;
   memoRequired: boolean;
 }
+export type WithdrawNetwork = S["WithdrawNetwork"];
 const WD_CONFIG: Record<string, { min: string; max: string }> = {
   USDT: { min: "12", max: "20000" },
   BTC: { min: "0.001", max: "2" },
   ETH: { min: "0.01", max: "50" },
 };
+/** linbit 规则：USDT 最小提现 12 */
+const MIN_FLOOR: Record<string, number> = { USDT: 12 };
 /** mock：各网络链上 Gas 预估（USDT 计），实际以接口实时返回为准 */
 const GAS_USDT: Record<string, number> = {
   "Arbitrum One": 1,
@@ -146,14 +152,133 @@ export function estimateGas(asset: string, network: string): string {
   const p = PRICE[asset] ?? 1;
   return asset === "USDT" ? String(usdt) : (usdt / p).toFixed(6);
 }
-export async function getWithdrawConfig(asset: string, network: string): Promise<Result<WithdrawConfig>> {
+const MOCK_NETS: Record<string, string[]> = {
+  USDT: ["TRC20", "ERC20", "BEP20(BSC)", "Solana", "Arbitrum One"],
+  BTC: ["Bitcoin"],
+  ETH: ["ERC20", "Arbitrum One"],
+};
+function mockNetworks(asset: string): S["WithdrawNetworkOptions"] {
+  return {
+    asset,
+    networks: (MOCK_NETS[asset] ?? MOCK_NETS.USDT).map((network) => ({
+      network,
+      minWithdraw: (WD_CONFIG[asset] ?? WD_CONFIG.USDT).min,
+      gasFeeEstimate: estimateGas(asset, network),
+      gasFeeAsset: asset,
+      estimatedArrivalMinutes: null,
+    })),
+  };
+}
+export async function listWithdrawNetworks(asset: string): Promise<Result<S["WithdrawNetworkOptions"]>> {
+  try {
+    const { data, response } = await api.GET("/wallet/withdraw/networks", { params: { query: { asset } } });
+    if (response.ok && data && data.networks?.length) return { ok: true, data, source: "api" };
+  } catch {
+    /* 网络错误 → mock */
+  }
   await delay(150);
+  return { ok: true, data: mockNetworks(asset), source: "mock" };
+}
+export async function getWithdrawConfig(asset: string, network: string): Promise<Result<WithdrawConfig>> {
+  const r = await listWithdrawNetworks(asset);
+  const nets = r.data?.networks ?? [];
+  const n = nets.find((x) => x.network === network) ?? nets[0];
   const c = WD_CONFIG[asset] ?? WD_CONFIG.USDT;
+  const apiMin = Number(n?.minWithdraw ?? c.min);
+  const min = String(Math.max(apiMin, MIN_FLOOR[asset] ?? 0));
+  const gas = n?.gasFeeEstimate ?? estimateGas(asset, network);
   return {
     ok: true,
-    source: "mock",
-    data: { asset, network, minAmount: c.min, maxAmount: c.max, networkFee: estimateGas(asset, network), memoRequired: false },
+    source: r.source,
+    data: {
+      asset,
+      network: n?.network ?? network,
+      minAmount: min,
+      maxAmount: c.max,
+      gasFeeEstimate: gas,
+      gasFeeAsset: n?.gasFeeAsset ?? asset,
+      estimatedArrivalMinutes: n?.estimatedArrivalMinutes ?? null,
+      memoRequired: false,
+    },
   };
+}
+
+/* ---------------- 现货交易（已对接 /spot/*，API 不可达时回退本地 mock） ---------------- */
+export type Order = S["Order"];
+export type SpotTrade = S["Trade"];
+export type PlaceOrderRequest = S["PlaceOrderRequest"];
+type Page<T> = { items: T[]; page: number; pageSize: number; total: number };
+
+const mockOrders: Order[] = [];
+const page = <T,>(items: T[]): Page<T> => ({ items, page: 1, pageSize: 20, total: items.length });
+let mockSeq = 9000000001;
+
+export function placeSpotOrder(body: PlaceOrderRequest) {
+  return tryApi(
+    () => api.POST("/spot/orders", { body }),
+    (): Order => {
+      const o: Order = {
+        orderId: String(mockSeq++),
+        clientOrderId: body.clientOrderId ?? null,
+        symbol: body.symbol,
+        side: body.side,
+        type: body.type,
+        price: body.price ?? null,
+        quantity: body.quantity,
+        filledQuantity: body.type === "market" ? body.quantity : "0",
+        status: body.type === "market" ? "filled" : "new",
+        timeInForce: body.timeInForce ?? "GTC",
+        createdAt: new Date().toISOString(),
+      } as Order;
+      mockOrders.unshift(o);
+      return o;
+    },
+  );
+}
+export function cancelSpotOrder(orderId: string, symbol: string) {
+  return tryApi(
+    () => api.DELETE("/spot/orders/{orderId}", { params: { path: { orderId }, query: { symbol } } }),
+    (): Order => {
+      const o = mockOrders.find((x) => x.orderId === orderId);
+      if (o) o.status = "canceled";
+      return o as Order;
+    },
+  );
+}
+const OPEN = ["new", "partially_filled"];
+export function listOpenOrders(symbol?: string) {
+  return tryApi(
+    () => api.GET("/spot/orders/open", { params: { query: { symbol } } }),
+    () => page(mockOrders.filter((o) => OPEN.includes(o.status))),
+  );
+}
+export function listOrderHistory(symbol?: string) {
+  return tryApi(
+    () => api.GET("/spot/orders/history", { params: { query: { symbol } } }),
+    () => page(mockOrders.filter((o) => !OPEN.includes(o.status))),
+  );
+}
+export function listMyTrades(symbol?: string) {
+  return tryApi(
+    () => api.GET("/spot/trades", { params: { query: { symbol } } }),
+    () =>
+      page<SpotTrade>(
+        mockOrders
+          .filter((o) => o.status === "filled")
+          .map((o) => ({
+            tradeId: "t" + o.orderId,
+            orderId: o.orderId,
+            symbol: o.symbol,
+            side: o.side,
+            price: o.price ?? "76768.4",
+            quantity: o.quantity,
+            fee: (Number(o.quantity) * 0.001).toFixed(8), // 现货 0.1%，从所得币种扣
+            feeAsset: o.side === "buy" ? "BTC" : "USDT",
+            role: "taker",
+            createdAt: o.createdAt,
+          }) as SpotTrade),
+      ),
+  );
 }
 
 /** 缺口：POST /kyc/documents（multipart，返回 fileId，提交 /kyc 时引用） */

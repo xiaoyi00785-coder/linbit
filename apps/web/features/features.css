@@ -40,3 +40,5 @@
 .vfee b{font-size:28px}
 .rrules{margin:24px 0;border:1px solid var(--lb-border);border-radius:16px;padding:20px 24px}
 .rrules ol{padding-left:18px;line-height:2;color:var(--lb-text-2);font-size:13px}
+.sotbl{width:100%;border-collapse:collapse;font-size:12px}.sotbl th{color:var(--lb-text-3);font-weight:400;text-align:left;padding:8px 12px}.sotbl td{padding:8px 12px;border-top:1px solid rgba(255,255,255,.05)}.lbtn:disabled{opacity:.6}
+.tgrid>.ob{overflow:hidden;min-height:0}
