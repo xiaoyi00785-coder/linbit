@@ -7,5 +7,5 @@ const View = dynamic(() => import("@/features/Flagged").then((m) => m.TradFi), {
 
 /** 受功能开关控制：关闭（或开关接口失败）⇒ /coming-soon/tradfi */
 export default function Page() {
-  return <Gate any={["tokenizedStocks","metals","tradfi"]} slug="tradfi"><Suspense><View /></Suspense></Gate>;
+  return <Gate any={["tokenizedStocks"]} slug="tradfi"><Suspense><View /></Suspense></Gate>;
 }

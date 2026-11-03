@@ -28,6 +28,9 @@ const ERR: Record<string, string> = {
   SYMBOL_NOT_SUPPORTED: "暂不支持该标的", SYMBOL_PAUSED: "该标的已暂停交易", PERIOD_NOT_SUPPORTED: "暂不支持该周期", STAKE_OUT_OF_RANGE: "下单金额超出范围",
   DAILY_LIMIT_EXCEEDED: "已超出今日下单限额", EXPOSURE_LIMIT: "平台风险敞口已满，请稍后再试", INSUFFICIENT_BALANCE: "可用余额不足", INDEX_UNAVAILABLE: "指数价格暂不可用",
   KYC_REQUIRED: "请先完成身份认证", RATE_LIMITED: "发言过于频繁", TOTP_REQUIRED: "请先开启谷歌验证",
+  TWOFA_REQUIRED: "请先开启谷歌验证（2FA）", INVALID_TOTP: "谷歌验证码错误或已过期", SUB_ACCOUNT_LIMIT: "子账户数量已达上限",
+  CHAT_KYC_REQUIRED: "完成身份认证后才能发言", CHAT_RATE_LIMITED: "发言过于频繁，请稍后再试", CHAT_LINK_BLOCKED: "消息中不能包含链接",
+  CHAT_CONTACT_BLOCKED: "消息中不能包含联系方式", CHAT_MUTED: "你已被禁言，暂时无法发言", CHAT_BANNED: "你已被禁止使用聊天室",
 };
 const errMsg = (r: RestResult<unknown>) => (r.code && ERR[r.code]) || r.error || "操作失败";
 const cid = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -40,11 +43,12 @@ function Empty({ t, children }: { t: string; children?: ReactNode }) { return <d
 function NeedLogin() { return <Empty t="登录后查看"><Link className="ff-btn pri" href="/login">登录</Link></Empty>; }
 
 /* ---------- TradFi ---------- */
-interface TFAsset { asset: string; kind: "stock" | "metal" | "commodity"; name: string; underlying?: string; market: "spot" | "futures"; symbol: string; status: string; referencePrice?: string; lastPrice?: string; deviationBps?: string | number | null; widened?: boolean }
-const KINDS = [["stock", "股票", "tokenizedStocks"], ["metal", "贵金属", "metals"], ["commodity", "大宗商品", "metals"]] as const;
+interface TFAsset { asset: string; kind: "stock" | "metal" | "commodity"; name: string; underlying?: string; market: "spot" | "futures"; symbol: string; status: string; referencePrice?: string; lastPrice?: string; currentDeviationBps?: string | null; widened?: boolean }
+// TradFi 整体由 tokenizedStocks 开关控制
+const KINDS = [["stock", "股票"], ["metal", "贵金属"], ["commodity", "大宗商品"]] as const;
 export function TradFi() {
   const sp = useSearchParams(); const r = useRouter();
-  const kinds = KINDS.filter(([, , f]) => isOn(f) || isOn("tradfi"));
+  const kinds = isOn("tokenizedStocks") ? KINDS : [];
   const kind = (kinds.find(([k]) => k === sp.get("kind"))?.[0] || kinds[0]?.[0] || "stock") as string;
   const [res, setRes] = useState<RestResult<{ items: TFAsset[] }> | null>(null);
   const [q, setQ] = useState("");
@@ -66,7 +70,7 @@ export function TradFi() {
             <td><div className="ff-as"><CoinIcon s={a.asset} size={28} /><div><b>{a.asset}</b><span>{a.underlying || a.name}</span></div></div></td>
             <td><span className="ff-tag">{a.market === "futures" ? "永续" : "现货"}</span>{a.status !== "active" && <span className="ff-tag warn">暂停</span>}</td>
             <td className="r">{num(a.lastPrice, 4)}</td><td className="r">{num(a.referencePrice, 4)}</td>
-            <td className={"r" + (a.widened ? " ff-dn" : "")}>{a.deviationBps == null ? "--" : `${(+a.deviationBps / 100).toFixed(2)}%`}{a.widened ? " · 价差放宽" : ""}</td>
+            <td className={"r" + (a.widened ? " ff-dn" : "")}>{a.currentDeviationBps == null || a.currentDeviationBps === "" || isNaN(+a.currentDeviationBps) ? "--" : `${(+a.currentDeviationBps / 100).toFixed(2)}%`}{a.widened ? " · 价差放宽" : ""}</td>
             <td className="r"><button className="ff-btn sm pri" disabled={a.status !== "active"} onClick={(e) => { e.stopPropagation(); go(a); }}>交易</button></td>
           </tr>)}</tbody></table>
       )}
@@ -123,8 +127,8 @@ export function Events() {
           {!authed ? <NeedLogin /> : !orders ? <div className="ff-skel sm" /> : !orders.length ? <Empty t="暂无订单" /> : (
             <table className="ff-t"><thead><tr><th>标的 / 周期</th><th>方向</th><th className="r">金额</th><th className="r">开仓价</th><th className="r">{tab === "open" ? "剩余" : "结算价"}</th><th className="r">状态 / 盈亏</th></tr></thead>
               <tbody>{orders.map((o) => <tr key={o.id}><td><b>{o.symbol}</b> <span className="ff-mut">{o.period}</span></td><td className={o.direction === "up" ? "ff-up" : "ff-dn"}>{o.direction === "up" ? "看涨" : "看跌"}</td><td className="r">{num(o.stake)}</td><td className="r">{num(o.openPrice, 4)}</td>
-                <td className="r">{o.status === "open" ? left(o.expiryTime - now) : num(o.settlePrice, 4)}</td>
-                <td className={"r " + (o.pnl && +o.pnl > 0 ? "ff-up" : o.pnl && +o.pnl < 0 ? "ff-dn" : "")}>{o.result ? `${RES[o.result] || o.result} ${o.pnl ? (+o.pnl > 0 ? "+" : "") + num(o.pnl) : ""}` : ST[o.status] || o.status}</td></tr>)}</tbody></table>
+                <td className="r">{o.status === "open" ? left(o.expiryTime - now) : o.status === "pending" || o.status === "settling" ? <span className="ff-tag">{ST[o.status]}</span> : num(o.settlePrice, 4)}</td>
+                <td className={"r " + (o.pnl && +o.pnl > 0 ? "ff-up" : o.pnl && +o.pnl < 0 ? "ff-dn" : "")}>{o.status === "pending" || o.status === "settling" ? <span className="ff-mut">{o.status === "pending" ? "订单确认中…" : "等待结算…"}</span> : o.result ? `${RES[o.result] || o.result} ${o.pnl ? (+o.pnl > 0 ? "+" : "") + num(o.pnl) : ""}` : ST[o.status] || o.status}</td></tr>)}</tbody></table>
           )}
         </div>
       </div>}
@@ -133,15 +137,15 @@ export function Events() {
 }
 
 /* ---------- 聊天室 ---------- */
-interface Room { id: string; kind: string; symbol?: string; online: number }
-interface Msg { id: number; room: string; sender: string; text: string; mine: boolean; createdAt: string }
+interface Room { id: string; name?: string; type: string; symbol?: string; online: number }
+interface Msg { id: number; room: string; sender: string; text: string; mine?: boolean; createdAt: string }
 interface Rules { maxLength: number; minIntervalMs: number; minKycLevel: number; blockLinks: boolean; blockContacts: boolean }
 export function Chat() {
   const authed = useAuthStore((s) => s.isAuthed);
   const [rooms, setRooms] = useState<Room[] | null>(null); const [rules, setRules] = useState<Rules | null>(null); const [err, setErr] = useState("");
   const [room, setRoom] = useState("general"); const [msgs, setMsgs] = useState<Msg[]>([]); const [more, setMore] = useState(false);
   const [text, setText] = useState(""); const [last, setLast] = useState(0); const [rep, setRep] = useState<Msg | null>(null); const [why, setWhy] = useState("");
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null); const mineIds = useRef<Set<number>>(new Set());
   useEffect(() => { rget<{ rooms: Room[]; rules: Rules }>("/chat/rooms").then((r) => { if (r.ok) { setRooms(r.data?.rooms || []); setRules(r.data?.rules || null); } else setErr(errMsg(r)); }); }, []);
   const load = useCallback((before?: number) => rget<{ items: Msg[]; hasMore: boolean }>(`/chat/rooms/${encodeURIComponent(room)}/messages?limit=50${before ? "&before=" + before : ""}`).then((r) => {
     if (!r.ok) return; const it = [...(r.data?.items || [])].reverse(); setMore(!!r.data?.hasMore);
@@ -154,11 +158,14 @@ export function Chat() {
     const t = text.trim(); if (!t) return;
     if (rules && t.length > rules.maxLength) return toast(`消息不能超过 ${rules.maxLength} 字`, "err");
     if (rules && Date.now() - last < rules.minIntervalMs) return toast(ERR.RATE_LIMITED, "err");
-    const r = await rest<Msg>("POST", `/chat/rooms/${encodeURIComponent(room)}/messages`, { clientId: cid("chat"), text: t });
-    if (r.ok && r.data) { setText(""); setLast(Date.now()); setMsgs((m) => (m.some((x) => x.id === r.data!.id) ? m : [...m, r.data!])); } else toast(errMsg(r), "err");
+    const clientId = cid("chat");
+    const r = await rest<Msg>("POST", `/chat/rooms/${encodeURIComponent(room)}/messages`, { clientId, text: t });
+    if (r.ok && r.data) { setText(""); setLast(Date.now()); mineIds.current.add(r.data.id); setMsgs((m) => (m.some((x) => x.id === r.data!.id) ? m : [...m, { ...r.data!, mine: true }])); } else toast(errMsg(r), "err");
   };
   const report = async () => { if (!rep) return; const r = await rest("POST", `/chat/messages/${rep.id}/report`, { reason: why || "其他" }); setRep(null); setWhy(""); toast(r.ok ? "已举报，感谢反馈" : errMsg(r), r.ok ? "ok" : "err"); };
-  const name = (x: Room) => (x.kind === "general" ? "综合讨论" : `${x.symbol || x.id} ${x.kind === "futures" ? "合约" : "现货"}`);
+  const name = (x: Room) => x.name || (x.type === "general" ? "综合讨论" : `${x.symbol || x.id} ${x.type === "futures" ? "合约" : "现货"}`);
+  // 自己的消息：历史/发送响应带 mine；WS 推送 chat:{room} 既无 mine 也无 clientId ⇒ 用本端发送响应的 id 集合比对
+  const isMine = (m: Msg) => m.mine === true || mineIds.current.has(m.id);
   if (err) return <Page title="聊天室"><Empty t={err} /></Page>;
   return (
     <Page title="聊天室" sub="与全球交易者实时交流行情观点。请勿发布链接、联系方式或投资建议。">
@@ -167,8 +174,8 @@ export function Chat() {
         <div className="ff-cmain">
           <div className="ff-msgs" ref={box}>
             {more && <button className="ff-more" onClick={() => load(msgs[0]?.id)}>加载更早消息</button>}
-            {!msgs.length ? <Empty t="还没有消息，来说第一句吧" /> : msgs.map((m) => <div key={m.id} className={"ff-msg" + (m.mine ? " me" : "")}>
-              <div className="ff-mh"><b>{m.mine ? "我" : m.sender}</b><span>{new Date(m.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>{!m.mine && authed && <button onClick={() => setRep(m)}>举报</button>}</div>
+            {!msgs.length ? <Empty t="还没有消息，来说第一句吧" /> : msgs.map((m) => <div key={m.id} className={"ff-msg" + (isMine(m) ? " me" : "")}>
+              <div className="ff-mh"><b>{isMine(m) ? "我" : m.sender}</b><span>{new Date(m.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>{!isMine(m) && authed && <button onClick={() => setRep(m)}>举报</button>}</div>
               <div className="ff-mb">{m.text}</div></div>)}
           </div>
           <div className="ff-send">
@@ -188,14 +195,14 @@ export function Chat() {
 
 /* ---------- 子账户 ---------- */
 interface Sub { uid: string; username: string; loginEmail: string; nickname?: string; note?: string; status: "active" | "frozen"; loginEnabled: boolean; totpBound: boolean; createdAt: string }
-interface SubBal { uid: string; username: string; nickname?: string; balances?: { asset: string; available: string; frozen?: string }[] }
+interface SubBal { uid: string; username: string; nickname?: string; balances?: { asset: string; free: string; locked?: string; total?: string }[] }
 export function SubAccounts() {
   const authed = useAuthStore((s) => s.isAuthed);
-  const [list, setList] = useState<Sub[] | null>(null); const [err, setErr] = useState(""); const [assets, setAssets] = useState<Record<string, SubBal>>({});
+  const [list, setList] = useState<Sub[] | null>(null); const [limit, setLimit] = useState<number | null>(null); const [err, setErr] = useState(""); const [assets, setAssets] = useState<Record<string, SubBal>>({});
   const [mode, setMode] = useState<null | "new" | { tr: Sub } | { key: Sub }>(null);
   const load = useCallback(() => {
     if (!authed) return;
-    rget<{ items: Sub[] }>("/sub-accounts?page=1&size=50").then((r) => { if (r.ok) setList(r.data?.items || []); else setErr(errMsg(r)); });
+    rget<{ items: Sub[]; limit?: number }>("/sub-accounts?page=1&size=50").then((r) => { if (r.ok) { setList(r.data?.items || []); if (typeof r.data?.limit === "number") setLimit(r.data.limit); } else setErr(errMsg(r)); });
     rget<{ items: SubBal[] }>("/sub-accounts/assets").then((r) => r.ok && setAssets(Object.fromEntries((r.data?.items || []).map((x) => [x.uid, x]))));
   }, [authed]);
   useEffect(() => { load(); }, [load]);
@@ -203,13 +210,13 @@ export function SubAccounts() {
   return (
     <Page title="子账户" sub="为不同策略或团队成员创建独立子账户，资产隔离、统一管理。子账户 API Key 无提现权限。">
       {!authed ? <NeedLogin /> : err ? <Empty t={err} /> : !list ? <div className="ff-skel" /> : <>
-        <div className="ff-bar"><span className="ff-mut">共 {list.length} 个子账户</span><button className="ff-btn pri" onClick={() => setMode("new")}>创建子账户</button></div>
+        <div className="ff-bar"><span className="ff-mut">共 {list.length}{limit != null ? ` / ${limit}` : ""} 个子账户</span><button className="ff-btn pri" disabled={limit != null && list.length >= limit} title={limit != null && list.length >= limit ? ERR.SUB_ACCOUNT_LIMIT : undefined} onClick={() => setMode("new")}>{limit != null && list.length >= limit ? "已达上限" : "创建子账户"}</button></div>
         {!list.length ? <Empty t="暂无子账户" /> : <table className="ff-t"><thead><tr><th>子账户</th><th>登录邮箱</th><th className="r">资产</th><th>状态</th><th className="r">操作</th></tr></thead>
           <tbody>{list.map((s) => <tr key={s.uid}><td><b>{s.nickname || s.username}</b><div className="ff-mut">{s.username}{s.note ? " · " + s.note : ""}</div></td><td className="ff-mut">{s.loginEmail}</td>
-            <td className="r">{(() => { const b = (assets[s.uid]?.balances || []).filter((x) => +x.available + +(x.frozen || 0) > 0); return b.length ? b.slice(0, 3).map((x) => `${num(String(+x.available + +(x.frozen || 0)), 4)} ${x.asset}`).join(" · ") + (b.length > 3 ? ` 等 ${b.length} 种` : "") : "--"; })()}</td><td><span className={"ff-tag" + (s.status === "frozen" ? " warn" : "")}>{s.status === "frozen" ? "已冻结" : "正常"}</span>{!s.loginEnabled && <span className="ff-tag">禁止登录</span>}</td>
+            <td className="r">{(() => { const tot = (x: { free: string; locked?: string; total?: string }) => (x.total != null && x.total !== "" ? +x.total : +x.free + +(x.locked || 0)); const b = (assets[s.uid]?.balances || []).filter((x) => tot(x) > 0); return b.length ? b.slice(0, 3).map((x) => `${num(String(tot(x)), 4)} ${x.asset}`).join(" · ") + (b.length > 3 ? ` 等 ${b.length} 种` : "") : "--"; })()}</td><td><span className={"ff-tag" + (s.status === "frozen" ? " warn" : "")}>{s.status === "frozen" ? "已冻结" : "正常"}</span>{!s.loginEnabled && <span className="ff-tag">禁止登录</span>}</td>
             <td className="r ff-ops"><button onClick={() => setMode({ tr: s })}>划转</button><button onClick={() => setMode({ key: s })}>API Key</button><button onClick={() => freeze(s)}>{s.status === "frozen" ? "解冻" : "冻结"}</button></td></tr>)}</tbody></table>}
       </>}
-      {mode === "new" && <NewSub onClose={() => setMode(null)} onDone={() => { setMode(null); load(); }} />}
+      {mode === "new" && <NewSub limit={limit} onClose={() => setMode(null)} onDone={() => { setMode(null); load(); }} />}
       {mode && typeof mode === "object" && "tr" in mode && <SubTransfer s={mode.tr} onClose={() => setMode(null)} onDone={() => { setMode(null); load(); }} />}
       {mode && typeof mode === "object" && "key" in mode && <SubKey s={mode.key} onClose={() => setMode(null)} />}
     </Page>
@@ -218,7 +225,7 @@ export function SubAccounts() {
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return <div className="ff-mask" onClick={onClose}><div className="ff-modal" onClick={(e) => e.stopPropagation()}><h3>{title}<button className="ff-x" onClick={onClose}>×</button></h3>{children}</div></div>;
 }
-function NewSub({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function NewSub({ onClose, onDone, limit }: { onClose: () => void; onDone: () => void; limit?: number | null }) {
   const [u, setU] = useState(""); const [n, setN] = useState(""); const [note, setNote] = useState(""); const ok = /^[a-z0-9][a-z0-9_]{2,19}$/.test(u);
   const go = async () => { const r = await rest("POST", "/sub-accounts", { username: u, nickname: n || undefined, note: note || undefined }); if (r.ok) { toast("子账户已创建"); onDone(); } else toast(errMsg(r), "err"); };
   return <Modal title="创建子账户" onClose={onClose}>
@@ -226,7 +233,7 @@ function NewSub({ onClose, onDone }: { onClose: () => void; onDone: () => void }
     {u && !ok && <div className="ff-note">格式不正确</div>}
     <label className="ff-f"><span>昵称（选填）</span><input value={n} maxLength={32} onChange={(e) => setN(e.target.value)} /></label>
     <label className="ff-f"><span>备注（选填）</span><input value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} /></label>
-    <p className="ff-mut">母账户需已开启谷歌验证；最多 20 个子账户。</p>
+    <p className="ff-mut">母账户需已开启谷歌验证{limit != null ? `；最多 ${limit} 个子账户` : ""}。</p>
     <div className="ff-mact"><button className="ff-btn" onClick={onClose}>取消</button><button className="ff-btn pri" disabled={!ok} onClick={go}>创建</button></div>
   </Modal>;
 }
