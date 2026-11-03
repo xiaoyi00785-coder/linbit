@@ -1,9 +1,12 @@
 package main
 
 import (
+	"github.com/shopspring/decimal"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/linbit/platform/services/go/common"
 )
@@ -97,8 +100,11 @@ func (s *Server) handleSymbols(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, out)
 }
 
-// handleCategories: GET /market/categories -> [{id,name,symbols}], symbols
-// limited to currently listed spot pairs; empty categories keep [].
+// handleCategories: GET /market/categories -> [{id,name,symbols}].
+// ?market=spot (default) limits symbols to listed spot pairs; ?market=futures
+// limits them to trading perpetual contracts (fut_contracts), so the futures
+// page's tabs show exactly what can be traded there. ?nonEmpty=true drops
+// categories with no symbols for that market; otherwise empty ones keep [].
 func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
 	cats, err := s.store.Categories(r.Context())
 	if err != nil {
@@ -107,12 +113,40 @@ func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	listed := map[string]bool{}
-	if infos, err := s.store.Symbols(r.Context()); err == nil {
-		for _, si := range infos {
-			listed[si.Symbol] = true
+	switch m := strings.ToLower(r.URL.Query().Get("market")); m {
+	case "", "spot":
+		if infos, err := s.store.Symbols(r.Context()); err == nil {
+			for _, si := range infos {
+				listed[si.Symbol] = true
+			}
+		}
+	case "futures":
+		fs, err := s.store.FuturesSymbols(r.Context())
+		if err != nil {
+			log.Printf("categories: futures symbols: %v", err)
+		}
+		for _, sym := range fs {
+			listed[sym] = true
+		}
+	default:
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "market 仅支持 spot/futures")
+		return
+	}
+	out := filterCategories(cats, listed)
+	if r.URL.Query().Get("nonEmpty") == "true" {
+		out = dropEmptyCategories(out)
+	}
+	common.WriteJSON(w, http.StatusOK, out)
+}
+
+func dropEmptyCategories(cats []Category) []Category {
+	out := make([]Category, 0, len(cats))
+	for _, c := range cats {
+		if len(c.Symbols) > 0 {
+			out = append(out, c)
 		}
 	}
-	common.WriteJSON(w, http.StatusOK, filterCategories(cats, listed))
+	return out
 }
 
 // filterCategories drops symbols that are not listed (pure; unit tested).
@@ -142,15 +176,89 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, http.StatusOK, t)
 		return
 	}
-	// Without a symbol the response is an array of all tracked symbols' tickers.
-	// All tracked symbols.
-	out := make([]tickerDTO, 0)
-	for _, sym := range s.agg.TrackedSymbols() {
+	// Without a symbol the response is an array of all tracked symbols' tickers,
+	// optionally filtered by ?category=<market_categories id> (or a comma list
+	// via ?symbols=), sorted server-side by ?sort=gainers|losers|volume and
+	// truncated by ?limit= (rankings).
+	q := r.URL.Query()
+	syms := s.agg.TrackedSymbols()
+	if v := strings.TrimSpace(q.Get("symbols")); v != "" {
+		syms = splitUpper(v)
+	} else if cat := strings.TrimSpace(q.Get("category")); cat != "" {
+		cats, err := s.store.Categories(r.Context())
+		if err != nil {
+			log.Printf("ticker: categories: %v", err)
+			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+			return
+		}
+		syms = nil
+		for _, c := range cats {
+			if c.ID == cat {
+				syms = c.Symbols
+			}
+		}
+	}
+	out := make([]tickerDTO, 0, len(syms))
+	for _, sym := range syms {
 		if t, ok := s.agg.TickerFrame(sym); ok {
 			out = append(out, t)
 		}
 	}
+	sortBy := strings.ToLower(strings.TrimSpace(q.Get("sort")))
+	switch sortBy {
+	case "", "symbol", "gainers", "losers", "volume":
+	default:
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "sort 仅支持 gainers/losers/volume/symbol")
+		return
+	}
+	sortTickers(out, sortBy)
+	if lim := atoiDefault(q.Get("limit"), 0, 1, 1000); lim > 0 && len(out) > lim {
+		out = out[:lim]
+	}
 	common.WriteJSON(w, http.StatusOK, out)
+}
+
+// sortTickers orders tickers for rankings (pure; unit tested). gainers: change
+// desc; losers: change asc; volume: quoteVolume desc. Ties (and "symbol" / "")
+// fall back to symbol asc so the order is deterministic. Symbols without a
+// price (priceSource none) always sink to the end.
+func sortTickers(ts []tickerDTO, by string) {
+	num := func(v string) decimal.Decimal {
+		d, err := decimal.NewFromString(v)
+		if err != nil {
+			return decimal.Zero
+		}
+		return d
+	}
+	sort.SliceStable(ts, func(i, j int) bool {
+		a, b := ts[i], ts[j]
+		if (a.PriceSource == "none") != (b.PriceSource == "none") {
+			return b.PriceSource == "none"
+		}
+		var c int
+		switch by {
+		case "gainers":
+			c = num(b.PriceChangePercent).Cmp(num(a.PriceChangePercent))
+		case "losers":
+			c = num(a.PriceChangePercent).Cmp(num(b.PriceChangePercent))
+		case "volume":
+			c = num(b.QuoteVolume).Cmp(num(a.QuoteVolume))
+		}
+		if c != 0 {
+			return c < 0
+		}
+		return a.Symbol < b.Symbol
+	})
+}
+
+func splitUpper(v string) []string {
+	var out []string
+	for _, x := range strings.Split(v, ",") {
+		if x = strings.ToUpper(strings.TrimSpace(x)); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 func (s *Server) handleDepth(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +284,7 @@ func (s *Server) handleKlines(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "symbol 与 interval 为必填")
 		return
 	}
+	interval = normInterval(interval)
 	if !s.agg.ValidInterval(interval) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "不支持的 interval")
 		return

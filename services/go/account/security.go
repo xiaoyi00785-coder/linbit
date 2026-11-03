@@ -295,8 +295,42 @@ func timePtr(t sql.NullTime, now time.Time) *string {
 
 // ---- GET /account/security ----
 
+// securityLevel scores the account's protection: one point each for a verified
+// email, verified phone, 2FA (TOTP or passkey), fund password, anti-phishing code.
+type securityLevel struct {
+	Score int    `json:"score"`
+	Max   int    `json:"max"`
+	Level string `json:"level"` // low | medium | high
+	// Missing lists the unset items (emailVerified, phoneVerified, twoFactor, fundPassword, antiPhishing).
+	Missing []string `json:"missing"`
+}
+
+func computeSecurityLevel(emailV, phoneV, twoFA, fund, anti bool) securityLevel {
+	l := securityLevel{Max: 5, Missing: []string{}}
+	for _, it := range []struct {
+		ok   bool
+		name string
+	}{{emailV, "emailVerified"}, {phoneV, "phoneVerified"}, {twoFA, "twoFactor"}, {fund, "fundPassword"}, {anti, "antiPhishing"}} {
+		if it.ok {
+			l.Score++
+		} else {
+			l.Missing = append(l.Missing, it.name)
+		}
+	}
+	switch {
+	case l.Score >= 4:
+		l.Level = "high"
+	case l.Score >= 2:
+		l.Level = "medium"
+	default:
+		l.Level = "low"
+	}
+	return l
+}
+
 type securityOverview struct {
-	TwoFactor struct {
+	SecurityLevel securityLevel `json:"securityLevel"`
+	TwoFactor     struct {
 		Enabled bool    `json:"enabled"`
 		Method  *string `json:"method"`
 	} `json:"twoFactor"`
@@ -322,16 +356,7 @@ type securityOverview struct {
 
 func maskEmailStr(e string) string { return maskEmail(e) }
 
-func maskPhoneStr(p string) string {
-	if len(p) <= 4 {
-		return "****"
-	}
-	keep := 3
-	if len(p) < 8 {
-		keep = 1
-	}
-	return p[:keep] + "****" + p[len(p)-4:]
-}
+func maskPhoneStr(p string) string { return common.MaskPhone(p) }
 
 func (s *Server) handleSecurityOverview(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.mustUser(w, r)
@@ -370,6 +395,7 @@ func (s *Server) handleSecurityOverview(w http.ResponseWriter, r *http.Request) 
 	}
 	o.PasskeysCount, _ = s.store.countPasskeys(ctx, u.ID)
 	o.WithdrawLockedUntil = timePtr(si.WithdrawLock, now)
+	o.SecurityLevel = computeSecurityLevel(u.EmailVerified, u.PhoneVerified, u.TOTPEnabled || o.PasskeysCount > 0, o.FundPasswordSet, o.AntiPhishingSet)
 	if o.WithdrawLockedUntil != nil && si.LockReason != "" {
 		o.WithdrawLockReason = &si.LockReason
 	}

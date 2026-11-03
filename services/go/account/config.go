@@ -22,7 +22,7 @@ type Config struct {
 	// GrowthInternalURL: growth service base URL; GET /account reads the
 	// user's own invite code from it (empty -> inviteCode null).
 	GrowthInternalURL string
-	RedisURL         string
+	RedisURL          string
 	// DevMode exposes the internal "last verification code" endpoint and records
 	// plaintext codes in memory. Never enable in production.
 	DevMode bool
@@ -57,30 +57,36 @@ type Config struct {
 	S3Region     string
 	S3Endpoint   string
 	S3PublicBase string
+
+	// Quote (display fiat) currency preference.
+	DefaultQuoteCurrency string
+	QuoteCurrencies      []string
 }
 
 // LoadConfig reads configuration from the environment.
 func LoadConfig() Config {
 	return Config{
-		Port:              common.Env("PORT", "8081"),
-		DatabaseURL:       common.MustEnv("DATABASE_URL"),
-		JWTSecret:         common.MustEnv("JWT_SECRET"),
-		AccessTTL:         time.Duration(common.EnvInt("ACCESS_TTL_SECONDS", 3600)) * time.Second,
-		RefreshTTL:        time.Duration(common.EnvInt("REFRESH_TTL_SECONDS", 7*24*3600)) * time.Second,
-		ResetTokenTTL:     time.Duration(common.EnvInt("RESET_TOKEN_TTL_SECONDS", 600)) * time.Second,
-		AssetInternalURL:  common.Env("ASSET_INTERNAL_URL", ""),
-		OrderInternalURL:  common.Env("ORDER_INTERNAL_URL", ""),
-		InternalToken:     common.Env("INTERNAL_TOKEN", ""),
-		GrowthInternalURL: common.Env("GROWTH_INTERNAL_URL", ""),
-		RedisURL:          common.Env("REDIS_URL", ""),
-		DevMode:           common.Env("DEV_MODE", "") == "true",
-		SMSEnabled:        common.Env("SMS_ENABLED", "") == "true",
-		WebAuthnRPID:      common.Env("WEBAUTHN_RP_ID", ""),
-		WebAuthnRPName:    common.Env("WEBAUTHN_RP_NAME", "Linbit"),
-		WebAuthnRPOrigins: splitCSV(common.Env("WEBAUTHN_RP_ORIGINS", common.Env("WEBAUTHN_ORIGINS", ""))), // WEBAUTHN_ORIGINS: legacy alias,
-		ResendAPIKey:      common.Env("RESEND_API_KEY", ""),
-		ResendFrom:        common.Env("RESEND_FROM", ""),
-		ResendURL:         common.Env("RESEND_API_URL", "https://api.resend.com/emails"),
+		Port:                 common.Env("PORT", "8081"),
+		DatabaseURL:          common.MustEnv("DATABASE_URL"),
+		JWTSecret:            common.MustEnv("JWT_SECRET"),
+		AccessTTL:            time.Duration(common.EnvInt("ACCESS_TTL_SECONDS", 3600)) * time.Second,
+		RefreshTTL:           time.Duration(common.EnvInt("REFRESH_TTL_SECONDS", 7*24*3600)) * time.Second,
+		ResetTokenTTL:        time.Duration(common.EnvInt("RESET_TOKEN_TTL_SECONDS", 600)) * time.Second,
+		AssetInternalURL:     common.Env("ASSET_INTERNAL_URL", ""),
+		OrderInternalURL:     common.Env("ORDER_INTERNAL_URL", ""),
+		InternalToken:        common.Env("INTERNAL_TOKEN", ""),
+		GrowthInternalURL:    common.Env("GROWTH_INTERNAL_URL", ""),
+		RedisURL:             common.Env("REDIS_URL", ""),
+		DevMode:              common.Env("DEV_MODE", "") == "true",
+		DefaultQuoteCurrency: common.Env("ACCOUNT_DEFAULT_QUOTE_CURRENCY", "CNY"),
+		QuoteCurrencies:      upperCSV(common.Env("ACCOUNT_QUOTE_CURRENCIES", "CNY,USD,EUR,HKD,JPY,KRW,GBP")),
+		SMSEnabled:           common.Env("SMS_ENABLED", "") == "true",
+		WebAuthnRPID:         common.Env("WEBAUTHN_RP_ID", ""),
+		WebAuthnRPName:       common.Env("WEBAUTHN_RP_NAME", "Linbit"),
+		WebAuthnRPOrigins:    splitCSV(common.Env("WEBAUTHN_RP_ORIGINS", common.Env("WEBAUTHN_ORIGINS", ""))), // WEBAUTHN_ORIGINS: legacy alias,
+		ResendAPIKey:         common.Env("RESEND_API_KEY", ""),
+		ResendFrom:           common.Env("RESEND_FROM", ""),
+		ResendURL:            common.Env("RESEND_API_URL", "https://api.resend.com/emails"),
 
 		StorageBackend:   common.Env("STORAGE_BACKEND", "local"),
 		AvatarDir:        common.Env("AVATAR_STORAGE_DIR", "data/avatars"),
@@ -98,6 +104,16 @@ func splitCSV(v string) []string {
 	for _, p := range strings.Split(v, ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func upperCSV(v string) []string {
+	var out []string
+	for _, x := range splitCSV(v) {
+		if x = strings.ToUpper(strings.TrimSpace(x)); x != "" {
+			out = append(out, x)
 		}
 	}
 	return out

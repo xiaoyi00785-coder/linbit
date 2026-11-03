@@ -95,3 +95,51 @@ func (c *MarketClient) IndexInfo(ctx context.Context, asset string) (IndexInfo, 
 	}
 	return out, true
 }
+
+// Klines returns market-data's candles for symbol/interval (index-backed for a
+// thin spot market, Binance-backfilled history). Used only as the futures
+// chart's index fallback; nil on any error (unknown symbol, unreachable).
+func (c *MarketClient) Klines(ctx context.Context, symbol, interval string, limit int) ([]klineBar, error) {
+	if c == nil || c.baseURL == "" {
+		return nil, nil
+	}
+	u := fmt.Sprintf("%s/market/klines?symbol=%s&interval=%s&limit=%d", c.baseURL, url.QueryEscape(symbol), url.QueryEscape(interval), limit)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("market klines: HTTP %d", resp.StatusCode)
+	}
+	var rows []struct {
+		Time int64  `json:"time"`
+		O    string `json:"open"`
+		H    string `json:"high"`
+		L    string `json:"low"`
+		C    string `json:"close"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return nil, err
+	}
+	out := make([]klineBar, 0, len(rows))
+	for _, k := range rows {
+		o, e1 := decimal.NewFromString(k.O)
+		h, e2 := decimal.NewFromString(k.H)
+		l, e3 := decimal.NewFromString(k.L)
+		cl, e4 := decimal.NewFromString(k.C)
+		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || cl.Sign() <= 0 {
+			continue
+		}
+		t := k.Time
+		if t > 1e12 {
+			t /= 1000
+		}
+		out = append(out, klineBar{Open: t, O: o, H: h, L: l, C: cl})
+	}
+	return out, nil
+}

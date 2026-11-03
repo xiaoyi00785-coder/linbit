@@ -60,6 +60,15 @@ func main() {
 	if err := agg.Recover(ctx); err != nil {
 		log.Printf("recover klines: %v", err) // non-fatal; start empty
 	}
+	// Rebuild recent trades + the 24h ticker window from persisted fills.
+	if common.Env("RECOVER_TRADES", "true") == "true" {
+		if trades, err := store.RecentTakerTrades(ctx, time.Now().Add(-ticker24h), common.EnvInt("RECOVER_TRADES_MAX", 200000)); err != nil {
+			log.Printf("recover trades: %v", err) // non-fatal
+		} else {
+			agg.RecoverTrades(trades)
+			log.Printf("recover trades: %d fills", len(trades))
+		}
+	}
 	hub := NewHub(agg)
 	agg.SetBroadcaster(hub)
 	agg.StartPersister(ctx)

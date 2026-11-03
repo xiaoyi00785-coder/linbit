@@ -114,6 +114,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.Handle("GET /account", s.auth(http.HandlerFunc(s.handleAccount)))
 	mux.Handle("PATCH /account/profile", s.auth(http.HandlerFunc(s.handleUpdateProfile)))
+	mux.Handle("GET /account/preferences", s.auth(http.HandlerFunc(s.handleGetPreferences)))
+	mux.Handle("PUT /account/preferences", s.auth(http.HandlerFunc(s.handlePutPreferences)))
 	mux.Handle("POST /account/avatar", s.auth(http.HandlerFunc(s.handleUploadAvatar)))
 	mux.Handle("POST /account/code/send", s.auth(http.HandlerFunc(s.handleSendCodeAuthed)))
 	mux.Handle("GET /account/devices", s.auth(http.HandlerFunc(s.handleListDevices)))
@@ -339,6 +341,8 @@ type accountResponse struct {
 	CreatedAt                time.Time `json:"createdAt"`
 	// InviteCode is the user's own referral code (from growth); null when unavailable.
 	InviteCode *string `json:"inviteCode"`
+	// QuoteCurrency is the user's display fiat currency (see /account/preferences).
+	QuoteCurrency string `json:"quoteCurrency,omitempty"`
 }
 
 func toAccountResponse(u *User) accountResponse {
@@ -377,6 +381,7 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := toAccountResponse(u)
 	resp.InviteCode = s.ownInviteCode(r.Context(), u.UID)
+	resp.QuoteCurrency = s.effectiveQuoteCurrency(r.Context(), u.ID)
 	common.WriteJSON(w, http.StatusOK, resp)
 }
 

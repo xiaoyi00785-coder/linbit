@@ -473,40 +473,20 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		QuoteVolume:        fmtPrec(decimal.Zero, p.pricePrec, p.ok),
 	}
 	if len(ss.window) == 0 {
-		// No local trades in 24h: derive change/high/low from the external
-		// index candles (volume stays 0 — no fabricated volume).
-		if src == "index" || src == "mid" {
-			if is := ss.idxSeries["1m"]; is != nil {
-				from := a.now().Add(-ticker24h).Unix()
-				var open, hi, lo decimal.Decimal
-				found := false
-				for _, c := range is.candles {
-					if c.OpenTime < from {
-						continue
-					}
-					if !found {
-						open, hi, lo, found = c.Open, c.High, c.Low, true
-					}
-					if c.High.GreaterThan(hi) {
-						hi = c.High
-					}
-					if c.Low.LessThan(lo) {
-						lo = c.Low
-					}
-				}
-				if found {
-					if last.GreaterThan(hi) {
-						hi = last
-					}
-					if last.LessThan(lo) {
-						lo = last
-					}
-					dto.High = fmtPrec(hi, p.pricePrec, p.ok)
-					dto.Low = fmtPrec(lo, p.pricePrec, p.ok)
-					if open.Sign() > 0 {
-						dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
-					}
-				}
+		// No local trades in 24h: derive change/high/low from the index
+		// candles (5m preferred: its backfill spans >24h; 1m otherwise).
+		// Volume stays 0 — no fabricated volume.
+		if open, hi, lo, ok := a.indexStats24hLocked(ss); ok {
+			if last.GreaterThan(hi) {
+				hi = last
+			}
+			if last.LessThan(lo) {
+				lo = last
+			}
+			dto.High = fmtPrec(hi, p.pricePrec, p.ok)
+			dto.Low = fmtPrec(lo, p.pricePrec, p.ok)
+			if open.Sign() > 0 && last.Sign() > 0 {
+				dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
 			}
 		}
 		return dto
@@ -535,6 +515,69 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		dto.PriceChangePercent = pct.Round(2).String()
 	}
 	return dto
+}
+
+// indexStats24hLocked returns open/high/low over the last 24h of index
+// candles. The open is the candle containing now-24h (or the first after it).
+func (a *Aggregator) indexStats24hLocked(ss *symbolState) (open, hi, lo decimal.Decimal, ok bool) {
+	from := a.now().Add(-ticker24h).Unix()
+	for _, name := range []string{"5m", "1m"} {
+		is := ss.idxSeries[name]
+		if is == nil || len(is.candles) == 0 {
+			continue
+		}
+		step := is.iv.Seconds
+		for _, c := range is.candles {
+			if c.OpenTime+step <= from {
+				continue
+			}
+			if !ok {
+				open, hi, lo, ok = c.Open, c.High, c.Low, true
+			}
+			if c.High.GreaterThan(hi) {
+				hi = c.High
+			}
+			if c.Low.LessThan(lo) {
+				lo = c.Low
+			}
+		}
+		if ok {
+			return
+		}
+	}
+	return
+}
+
+// RecoverTrades rebuilds the recent-trades ring and the 24h ticker window from
+// persisted taker fills (so a restart doesn't zero 24h change/volume or empty
+// the trades panel). Trades must be ascending by time.
+func (a *Aggregator) RecoverTrades(trades []TradeEvent) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cutoff := a.now().Add(-ticker24h)
+	for _, ev := range trades {
+		ss := a.states[ev.Symbol]
+		if ss == nil {
+			continue
+		}
+		if id, err := strconv.ParseInt(ev.TradeID, 10, 64); err == nil && id > ss.lastTradeID {
+			ss.lastTradeID = id
+		}
+		if ev.Time.Unix() >= ss.lastTs {
+			ss.lastPrice, ss.hasLast, ss.lastTs = ev.Price, true, ev.Time.Unix()
+		}
+		side := ev.TakerSide
+		if side != "buy" && side != "sell" {
+			side = "buy"
+		}
+		ss.recent = append(ss.recent, tradeDTO{TradeID: ev.TradeID, Price: ev.Price.String(), Quantity: ev.Quantity.String(), Side: side, Time: ev.Time.UnixMilli()})
+		if len(ss.recent) > recentTradesInMemory {
+			ss.recent = ss.recent[len(ss.recent)-recentTradesInMemory:]
+		}
+		if !ev.Time.Before(cutoff) {
+			ss.window = append(ss.window, tickItem{ts: ev.Time, price: ev.Price, qty: ev.Quantity})
+		}
+	}
 }
 
 // Klines returns up to limit candles (ascending) for a symbol/interval.

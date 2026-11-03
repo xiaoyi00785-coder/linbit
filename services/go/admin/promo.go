@@ -379,17 +379,24 @@ type announcementDTO struct {
 	Title     string `json:"title"`
 	Body      string `json:"body"`
 	PublishAt string `json:"publishAt"`
+	// Date is publishAt's calendar date (UTC, YYYY-MM-DD) for list views.
+	Date      string `json:"date"`
+	Pinned    bool   `json:"pinned"`
 	CreatedBy string `json:"createdBy,omitempty"`
 }
 
-func (s *Server) queryAnnouncements(ctx context.Context, publishedOnly bool) ([]announcementDTO, error) {
-	q := `SELECT id, category, title, body, publish_at, COALESCE(created_by,'') FROM announcements`
+func (s *Server) queryAnnouncements(ctx context.Context, publishedOnly bool, category string) ([]announcementDTO, error) {
+	q := `SELECT id, category, title, body, publish_at, COALESCE(created_by,''), pinned FROM announcements WHERE true`
 	var args []interface{}
 	if publishedOnly {
-		q += ` WHERE publish_at <= $1`
 		args = append(args, s.now())
+		q += ` AND publish_at <= $` + strconv.Itoa(len(args))
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY publish_at DESC, id DESC LIMIT 100`, args...)
+	if category != "" {
+		args = append(args, category)
+		q += ` AND category = $` + strconv.Itoa(len(args))
+	}
+	rows, err := s.db.QueryContext(ctx, q+` ORDER BY pinned DESC, publish_at DESC, id DESC LIMIT 100`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -398,10 +405,11 @@ func (s *Server) queryAnnouncements(ctx context.Context, publishedOnly bool) ([]
 	for rows.Next() {
 		var d announcementDTO
 		var at time.Time
-		if err := rows.Scan(&d.ID, &d.Category, &d.Title, &d.Body, &at, &d.CreatedBy); err != nil {
+		if err := rows.Scan(&d.ID, &d.Category, &d.Title, &d.Body, &at, &d.CreatedBy, &d.Pinned); err != nil {
 			return nil, err
 		}
 		d.PublishAt = fmtTime(at)
+		d.Date = at.UTC().Format("2006-01-02")
 		if publishedOnly {
 			d.CreatedBy = ""
 		}
@@ -411,7 +419,7 @@ func (s *Server) queryAnnouncements(ctx context.Context, publishedOnly bool) ([]
 }
 
 func (s *Server) handlePublicAnnouncements(w http.ResponseWriter, r *http.Request) {
-	items, err := s.queryAnnouncements(r.Context(), true)
+	items, err := s.queryAnnouncements(r.Context(), true, r.URL.Query().Get("category"))
 	if err != nil {
 		internalErr(w, "announcements", err)
 		return
@@ -420,7 +428,7 @@ func (s *Server) handlePublicAnnouncements(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleListAnnouncements(w http.ResponseWriter, r *http.Request) {
-	items, err := s.queryAnnouncements(r.Context(), false)
+	items, err := s.queryAnnouncements(r.Context(), false, r.URL.Query().Get("category"))
 	if err != nil {
 		internalErr(w, "announcements", err)
 		return
@@ -435,6 +443,7 @@ func (s *Server) handleCreateAnnouncement(w http.ResponseWriter, r *http.Request
 		Title     string `json:"title"`
 		Body      string `json:"body"`
 		PublishAt string `json:"publishAt"`
+		Pinned    bool   `json:"pinned"`
 	}
 	if err := common.DecodeJSON(r, &req); err != nil || strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Body) == "" {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "标题和内容必填")
@@ -453,14 +462,105 @@ func (s *Server) handleCreateAnnouncement(w http.ResponseWriter, r *http.Request
 		at = t
 	}
 	var id int64
-	if err := s.db.QueryRowContext(r.Context(), `INSERT INTO announcements (category, title, body, publish_at, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		req.Category, req.Title, req.Body, at, a.Username).Scan(&id); err != nil {
+	if err := s.db.QueryRowContext(r.Context(), `INSERT INTO announcements (category, title, body, publish_at, created_by, pinned) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+		req.Category, req.Title, req.Body, at, a.Username, req.Pinned).Scan(&id); err != nil {
 		internalErr(w, "create announcement", err)
 		return
 	}
-	d := announcementDTO{ID: id, Category: req.Category, Title: req.Title, Body: req.Body, PublishAt: fmtTime(at), CreatedBy: a.Username}
+	d := announcementDTO{ID: id, Category: req.Category, Title: req.Title, Body: req.Body, PublishAt: fmtTime(at), Date: at.UTC().Format("2006-01-02"), Pinned: req.Pinned, CreatedBy: a.Username}
 	s.audit(r, a, "content", "create_announcement", "announcement:"+strconv.FormatInt(id, 10), levelNormal, "ok", nil, d, "")
 	common.WriteJSON(w, http.StatusCreated, d)
+}
+
+// handleUpdateAnnouncement: PUT /admin/v1/announcements/{id} — partial update
+// (any of category, title, body, publishAt, pinned).
+func (s *Server) handleUpdateAnnouncement(w http.ResponseWriter, r *http.Request) {
+	a := actorOf(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "id 不合法")
+		return
+	}
+	var req struct {
+		Category  *string `json:"category"`
+		Title     *string `json:"title"`
+		Body      *string `json:"body"`
+		PublishAt *string `json:"publishAt"`
+		Pinned    *bool   `json:"pinned"`
+	}
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	var before announcementDTO
+	var at time.Time
+	err = s.db.QueryRowContext(r.Context(), `SELECT id, category, title, body, publish_at, COALESCE(created_by,''), pinned FROM announcements WHERE id=$1`, id).
+		Scan(&before.ID, &before.Category, &before.Title, &before.Body, &at, &before.CreatedBy, &before.Pinned)
+	if err == sql.ErrNoRows {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "公告不存在")
+		return
+	} else if err != nil {
+		internalErr(w, "get announcement", err)
+		return
+	}
+	before.PublishAt, before.Date = fmtTime(at), at.UTC().Format("2006-01-02")
+	after := before
+	if req.Category != nil && strings.TrimSpace(*req.Category) != "" {
+		after.Category = strings.TrimSpace(*req.Category)
+	}
+	if req.Title != nil {
+		if strings.TrimSpace(*req.Title) == "" {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "标题不能为空")
+			return
+		}
+		after.Title = *req.Title
+	}
+	if req.Body != nil {
+		if strings.TrimSpace(*req.Body) == "" {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "内容不能为空")
+			return
+		}
+		after.Body = *req.Body
+	}
+	if req.PublishAt != nil {
+		t, err := time.Parse(time.RFC3339, *req.PublishAt)
+		if err != nil {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "publishAt 需为 RFC3339")
+			return
+		}
+		at = t
+		after.PublishAt, after.Date = fmtTime(t), t.UTC().Format("2006-01-02")
+	}
+	if req.Pinned != nil {
+		after.Pinned = *req.Pinned
+	}
+	if _, err := s.db.ExecContext(r.Context(), `UPDATE announcements SET category=$2, title=$3, body=$4, publish_at=$5, pinned=$6, updated_at=now() WHERE id=$1`,
+		id, after.Category, after.Title, after.Body, at, after.Pinned); err != nil {
+		internalErr(w, "update announcement", err)
+		return
+	}
+	s.audit(r, a, "content", "update_announcement", "announcement:"+strconv.FormatInt(id, 10), levelNormal, "ok", before, after, "")
+	common.WriteJSON(w, http.StatusOK, after)
+}
+
+// handleDeleteAnnouncement: DELETE /admin/v1/announcements/{id}.
+func (s *Server) handleDeleteAnnouncement(w http.ResponseWriter, r *http.Request) {
+	a := actorOf(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "id 不合法")
+		return
+	}
+	var title string
+	if err := s.db.QueryRowContext(r.Context(), `DELETE FROM announcements WHERE id=$1 RETURNING title`, id).Scan(&title); err == sql.ErrNoRows {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "公告不存在")
+		return
+	} else if err != nil {
+		internalErr(w, "delete announcement", err)
+		return
+	}
+	s.audit(r, a, "content", "delete_announcement", "announcement:"+strconv.FormatInt(id, 10), levelNormal, "ok", map[string]string{"title": title}, nil, "")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---- audit log query ----

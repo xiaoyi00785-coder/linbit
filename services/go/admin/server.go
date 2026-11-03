@@ -113,6 +113,8 @@ func (s *Server) Routes() http.Handler {
 
 	a("GET /admin/v1/announcements", permContentEdit, s.handleListAnnouncements)
 	a("POST /admin/v1/announcements", permContentEdit, s.handleCreateAnnouncement)
+	a("PUT /admin/v1/announcements/{id}", permContentEdit, s.handleUpdateAnnouncement)
+	a("DELETE /admin/v1/announcements/{id}", permContentEdit, s.handleDeleteAnnouncement)
 
 	a("GET /admin/v1/copy/applications", permCopyView, s.handleCopyApplications)
 	a("POST /admin/v1/copy/applications/{uid}/approve", permCopyReview, s.handleCopyReview("approve"))
