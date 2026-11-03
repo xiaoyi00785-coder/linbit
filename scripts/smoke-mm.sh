@@ -210,4 +210,21 @@ G="$(A "$SA" GET /admin/v1/solvency/latest)"
 [ "$(jq -r .report.ok <<<"$G")" = false ] && [[ "$(jq -r .trigger <<<"$G")" == manual:* ]] || fail "latest: $G"
 pass "holdings vs user+MM liabilities per asset; virtual seed excluded; shortfall -> Telegram; report stored"
 
+say "single-asset testnet top-up {asset:USDT, amount:5000000} into MM spot"
+seedreq() { fresh; A "$SA" POST /admin/v1/mm/testnet-seed "$1"; }
+USDT0="$(internal "$ASSET_URL" GET "/internal/balances?userId=$MM" | jq -r '.items[] | select(.asset=="USDT") | .free')"
+[ "$(cj "$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")")" = VALIDATION_ERROR ] || fail "single seed without reason accepted"
+[ "$(cj "$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"10000001\",\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")")" = VALIDATION_ERROR ] || fail "single seed over max accepted"
+[ "$(cj "$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"DOGE\",\"amount\":\"1\",\"reason\":\"smoke\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")")" = ASSET_NOT_ALLOWED ] || fail "single seed DOGE accepted"
+[ "$(cj "$(A "$SA" POST /admin/v1/mm/testnet-seed "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"reason\":\"smoke\",\"totpCode\":\"000000\"}")")" = TOTP_INVALID ] || fail "single seed without 2FA"
+R="$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"reason\":\"smoke top-up\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .status <<<"$R")" = ok ] && [ "$(jq -r .asset <<<"$R")" = USDT ] || fail "single seed: $R"
+R="$(seedreq "{\"ref\":\"u1-$TS\",\"asset\":\"USDT\",\"amount\":\"5000000\",\"reason\":\"smoke top-up\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .status <<<"$R")" = already_applied ] || fail "single seed replay: $R"
+USDT1="$(internal "$ASSET_URL" GET "/internal/balances?userId=$MM" | jq -r '.items[] | select(.asset=="USDT") | .free')"
+python3 -c "from decimal import Decimal as D; import sys; sys.exit(0 if D('$USDT1')-D('$USDT0')==D(5000000) else 1)" || fail "MM spot USDT delta $USDT0 -> $USDT1, want +5000000"
+L="$(A "$SA" GET "/admin/v1/audit-logs?module=mm&action=testnet_seed")"
+[ "$(jq --arg r "u1-$TS" '[.items[] | select(.result=="ok") | (.after // .afterJson // {}) | (if type=="string" then fromjson else . end) | select(.ref==$r and .asset=="USDT" and .amount=="5000000")] | length' <<<"$L")" -ge 1 ] || fail "single seed audit: $(jq -c '.items[0]' <<<"$L")"
+pass "reason/max/asset/2FA enforced; +5,000,000 USDT spot once (idempotent); audit has asset+amount"
+
 printf '\n\033[1;32mSMOKE-MM PASSED\033[0m\n'
