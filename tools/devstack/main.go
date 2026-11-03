@@ -240,6 +240,7 @@ func run(root, execCmd string) int {
 			"DATABASE_URL=" + databaseURL,
 			"JWT_SECRET=" + jwtSecret,
 			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
 			"INTERNAL_TOKEN=" + internalTok,
 			"REDIS_URL=" + redisURL,
 			// Dev mode exposes the internal "last verification code" endpoint so
@@ -353,6 +354,7 @@ func run(root, execCmd string) int {
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
+			"INTERNAL_TOKEN=" + internalTok,
 			"ACCOUNT_URL=http://localhost:" + accountPort,
 			"ASSET_URL=http://localhost:" + assetPort,
 			"WALLET_URL=http://localhost:" + walletPort,

@@ -3938,6 +3938,273 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /sub-accounts:
+    get:
+      tags: [SubAccount]
+      summary: 子账户列表（母账户）
+      operationId: subAccountList
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SubAccount' } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  size: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: SUB_ACCOUNT_FORBIDDEN（子账户调用）, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    post:
+      tags: [SubAccount]
+      summary: 创建子账户（母账户需已开启谷歌验证；上限默认 20，不可嵌套）
+      operationId: subAccountCreate
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string, pattern: '^[a-z0-9][a-z0-9_]{2,19}$', description: 子账户名，生成虚拟登录邮箱 }
+                nickname: { type: string, maxLength: 32 }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: TWO_FACTOR_REQUIRED / SUB_ACCOUNT_DISABLED / SUB_ACCOUNT_FORBIDDEN / ACCOUNT_FROZEN, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: SUB_ACCOUNT_LIMIT / SUB_ACCOUNT_EXISTS, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/assets:
+    get:
+      tags: [SubAccount]
+      summary: 全部子账户资产汇总
+      operationId: subAccountAssetsAll
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uid: { type: string }
+                        username: { type: string }
+                        nickname: { type: string }
+                        status: { type: string }
+                        balances: { type: array, items: { $ref: '#/components/schemas/SubBalance' } }
+                  totals: { type: array, items: { $ref: '#/components/schemas/SubBalance' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /sub-accounts/transfer:
+    post:
+      tags: [SubAccount]
+      summary: 母子账户现货划转（clientId 幂等）
+      description: |
+        母账户：direction=to_sub 或 to_parent，需 subAccountId。
+        子账户（登录或会话）：仅允许 to_parent，subAccountId 可省略。
+        同一 clientId 重放返回同一笔记录；参数不同返回 409 CLIENT_ID_REUSED。
+      operationId: subAccountTransfer
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, direction, asset, amount]
+              properties:
+                clientId: { type: string, maxLength: 64 }
+                subAccountId: { type: string, description: 子账户 UID }
+                direction: { type: string, enum: [to_sub, to_parent] }
+                asset: { type: string, example: USDT }
+                amount: { type: string, example: '100' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubTransfer' } } } }
+        '400': { description: VALIDATION_ERROR / INSUFFICIENT_BALANCE, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: SUB_ACCOUNT_FORBIDDEN / SUB_ACCOUNT_FROZEN, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: SUB_ACCOUNT_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: CLIENT_ID_REUSED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: TRANSFER_PENDING（可用同一 clientId 重试）, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/transfers:
+    get:
+      tags: [SubAccount]
+      summary: 母子划转记录
+      operationId: subAccountTransfers
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { name: subAccountId, in: query, required: false, schema: { type: string } }
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SubTransfer' } }
+                  total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /sub-accounts/{id}:
+    parameters:
+    - { name: id, in: path, required: true, description: 子账户 UID, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户详情
+      operationId: subAccountGet
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+        '404': { description: SUB_ACCOUNT_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    patch:
+      tags: [SubAccount]
+      summary: 修改子账户（昵称/备注/登录开关/密码）
+      description: 开启登录需 password(≥8) 与母账户 totpCode，返回子账户自己的谷歌验证密钥 loginTotp（仅此一次）。关闭登录会注销子账户全部会话。
+      operationId: subAccountPatch
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname: { type: string }
+                note: { type: string }
+                loginEnabled: { type: boolean }
+                password: { type: string, minLength: 8 }
+                totpCode: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subAccount: { $ref: '#/components/schemas/SubAccount' }
+                  loginTotp:
+                    type: object
+                    properties:
+                      secret: { type: string }
+                      otpauthUri: { type: string }
+        '403': { description: TOTP_INVALID / SUB_LOGIN_NOT_ALLOWED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/{id}/freeze:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [SubAccount]
+      summary: 冻结子账户（禁止登录、API Key、划入）
+      operationId: subAccountFreeze
+      security: [{ bearerAuth: [] }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reason: { type: string } } } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+  /sub-accounts/{id}/unfreeze:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [SubAccount]
+      summary: 解冻子账户
+      operationId: subAccountUnfreeze
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubAccount' } } } }
+  /sub-accounts/{id}/assets:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户现货资产
+      operationId: subAccountAssets
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uid: { type: string }
+                  username: { type: string }
+                  nickname: { type: string }
+                  status: { type: string }
+                  balances: { type: array, items: { $ref: '#/components/schemas/SubBalance' } }
+  /sub-accounts/{id}/orders:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户现货委托/历史/成交（透传订单服务的分页与筛选参数）
+      operationId: subAccountOrders
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { name: type, in: query, schema: { type: string, enum: [open, history, trades], default: history } }
+      - { name: symbol, in: query, schema: { type: string } }
+      - $ref: '#/components/parameters/Page'
+      responses:
+        '200': { description: 与 /spot/orders/open、/spot/orders/history、/spot/trades 相同 }
+  /sub-accounts/{id}/api-keys:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [SubAccount]
+      summary: 子账户 API Key 列表（不含 secret）
+      operationId: subAccountApiKeys
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/SubApiKey' } } } } } } }
+    post:
+      tags: [SubAccount]
+      summary: 为子账户创建 API Key（需母账户 totpCode；无提现权限）
+      description: |
+        调用方式：请求头 X-LB-APIKEY + X-LB-SECRET（secret 仅在创建时返回一次）。
+        read：GET /assets、/spot、/futures；spot_trade：/spot 全部；futures_trade：/futures 全部。
+        /wallet、/account、/auth、/2fa、/sub-accounts 等一律 403 API_KEY_FORBIDDEN。
+      operationId: subAccountApiKeyCreate
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permissions, totpCode]
+              properties:
+                label: { type: string, maxLength: 40 }
+                permissions: { type: array, items: { type: string, enum: [read, spot_trade, futures_trade] } }
+                ipAllowlist: { type: array, maxItems: 20, items: { type: string, description: IP 或 CIDR } }
+                totpCode: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SubApiKey' } } } }
+        '400': { description: PERMISSION_NOT_ALLOWED / VALIDATION_ERROR, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: API_KEY_LIMIT, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sub-accounts/{id}/api-keys/{apiKey}:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    - { name: apiKey, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [SubAccount]
+      summary: 删除（吊销）子账户 API Key
+      operationId: subAccountApiKeyDelete
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
 components:
   securitySchemes:
     bearerAuth:
@@ -4000,6 +4267,49 @@ components:
             requestId: req_404demo
 
   schemas:
+    SubAccount:
+      type: object
+      properties:
+        uid: { type: string }
+        parentUid: { type: string }
+        username: { type: string }
+        loginEmail: { type: string, example: 80000001_desk01@sub.linbit.invalid }
+        nickname: { type: string }
+        note: { type: string }
+        status: { type: string, enum: [active, frozen] }
+        loginEnabled: { type: boolean }
+        totpBound: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    SubBalance:
+      type: object
+      properties:
+        asset: { type: string }
+        free: { type: string }
+        locked: { type: string }
+        total: { type: string }
+    SubTransfer:
+      type: object
+      properties:
+        transferId: { type: string }
+        clientId: { type: string }
+        subAccountId: { type: string }
+        direction: { type: string, enum: [to_sub, to_parent] }
+        asset: { type: string }
+        amount: { type: string }
+        status: { type: string, enum: [pending, success, failed] }
+        errorCode: { type: string }
+        initiator: { type: string, enum: [parent, sub] }
+        createdAt: { type: string, format: date-time }
+    SubApiKey:
+      type: object
+      properties:
+        apiKey: { type: string, example: lbk_3f2a... }
+        secret: { type: string, description: 仅创建时返回 }
+        label: { type: string }
+        permissions: { type: array, items: { type: string } }
+        ipAllowlist: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
     LoanMarket:
       type: object
       properties:

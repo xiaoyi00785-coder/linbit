@@ -266,6 +266,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrSubLoginDisabled) {
+			writeSubLoginDisabled(w)
+			return
+		}
 		if errors.Is(err, ErrAccountFrozen) {
 			writeFrozen(w)
 			return
@@ -302,13 +306,26 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeFrozen(w)
 		return
 	}
+	// Sub-accounts: login only when the parent enabled it, always with TOTP.
+	isSub := false
+	if pid, err := s.store.ParentIDOf(r.Context(), u.ID); err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	} else if pid != 0 {
+		sub, err := s.store.SubByUserID(r.Context(), u.ID)
+		if err != nil || !sub.LoginEnabled || !u.TOTPEnabled {
+			writeSubLoginDisabled(w)
+			return
+		}
+		isSub = true
+	}
 
 	dev := deviceFrom(r, req.DeviceID, req.DeviceName)
 
 	// Decide the second factor: TOTP wins; otherwise a new device triggers an
 	// email/SMS code. A known device with no TOTP logs in directly.
 	method := ""
-	if u.TOTPEnabled {
+	if u.TOTPEnabled || isSub {
 		method = "totp"
 	} else {
 		known, err := s.store.DeviceExists(r.Context(), u.ID, dev.DeviceKey)
@@ -325,6 +342,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpsertDevice(r.Context(), u.ID, dev, s.now())
 		tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 		if err != nil {
+			if errors.Is(err, ErrSubLoginDisabled) {
+				writeSubLoginDisabled(w)
+				return
+			}
 			if errors.Is(err, ErrAccountFrozen) {
 				writeFrozen(w)
 				return
@@ -414,6 +435,10 @@ func (s *Server) handleLoginVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.issueTokens(r.Context(), u, dev.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrSubLoginDisabled) {
+			writeSubLoginDisabled(w)
+			return
+		}
 		if errors.Is(err, ErrAccountFrozen) {
 			writeFrozen(w)
 			return
@@ -466,6 +491,10 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	tokens, err := s.issueTokens(r.Context(), rec.User, rec.DeviceKey)
 	if err != nil {
+		if errors.Is(err, ErrSubLoginDisabled) {
+			writeSubLoginDisabled(w)
+			return
+		}
 		if errors.Is(err, ErrAccountFrozen) {
 			writeFrozen(w)
 			return

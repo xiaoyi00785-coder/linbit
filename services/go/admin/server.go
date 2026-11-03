@@ -70,6 +70,11 @@ func (s *Server) Routes() http.Handler {
 	a("GET /admin/v1/users/{uid}", permUserView, s.handleGetUser)
 	a("POST /admin/v1/users/{uid}/freeze", permUserEdit, s.handleFreeze(true))
 	a("POST /admin/v1/users/{uid}/unfreeze", permUserEdit, s.handleFreeze(false))
+	a("GET /admin/v1/sub-accounts", permUserView, s.handleListSubAccounts)
+	a("GET /admin/v1/sub-accounts/settings", permUserView, s.handleGetSubSettings)
+	a("PUT /admin/v1/sub-accounts/settings", permUserEdit, s.handlePutSubSettings)
+	a("POST /admin/v1/sub-accounts/{uid}/freeze", permUserEdit, s.handleFreeze(true))
+	a("POST /admin/v1/sub-accounts/{uid}/unfreeze", permUserEdit, s.handleFreeze(false))
 	a("GET /admin/v1/users/{uid}/balances", permLedgerView, s.handleUserBalances)
 
 	a("GET /admin/v1/kyc/applications", permKYCView, s.handleKYCList)

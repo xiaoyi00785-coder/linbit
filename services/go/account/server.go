@@ -130,6 +130,27 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/notifications/broadcast", s.handleInternalBroadcast)
 
 	// VIP application (manual review; no fee tiers).
+	// Sub-accounts (parent-managed; see subaccounts.go).
+	sa := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.auth(h)) }
+	sa("GET /sub-accounts", s.handleListSubs)
+	sa("POST /sub-accounts", s.handleCreateSub)
+	sa("GET /sub-accounts/assets", s.handleAllSubAssets)
+	sa("POST /sub-accounts/transfer", s.handleSubTransfer)
+	sa("GET /sub-accounts/transfers", s.handleListSubTransfers)
+	sa("GET /sub-accounts/{id}", s.handleGetSub)
+	sa("PATCH /sub-accounts/{id}", s.handlePatchSub)
+	sa("POST /sub-accounts/{id}/freeze", s.handleFreezeSub(true))
+	sa("POST /sub-accounts/{id}/unfreeze", s.handleFreezeSub(false))
+	sa("GET /sub-accounts/{id}/assets", s.handleSubAssets)
+	sa("GET /sub-accounts/{id}/orders", s.handleSubOrders)
+	sa("GET /sub-accounts/{id}/api-keys", s.handleListSubKeys)
+	sa("POST /sub-accounts/{id}/api-keys", s.handleCreateSubKey)
+	sa("DELETE /sub-accounts/{id}/api-keys/{apiKey}", s.handleDeleteSubKey)
+	mux.HandleFunc("POST /internal/api-keys/verify", s.handleInternalVerifyKey)
+	mux.HandleFunc("GET /internal/admin/sub-accounts", s.handleInternalAdminSubs)
+	mux.HandleFunc("GET /internal/admin/sub-accounts/settings", s.handleInternalSubSettings)
+	mux.HandleFunc("PUT /internal/admin/sub-accounts/settings", s.handleInternalSubSettings)
+
 	mux.Handle("GET /vip/application", s.auth(http.HandlerFunc(s.handleGetVIP)))
 	mux.Handle("POST /vip/applications", s.auth(http.HandlerFunc(s.handleApplyVIP)))
 	mux.HandleFunc("GET /internal/vip/applications", s.handleInternalListVIP)
@@ -337,7 +358,20 @@ func (s *Server) issueTokens(ctx context.Context, u *User, deviceKey string) (au
 	if u.Email.Valid {
 		subEmail = u.Email.String
 	}
-	access, err := common.SignAccessToken(s.cfg.JWTSecret, u.UID, subEmail, s.cfg.AccessTTL, now)
+	parentUID := ""
+	if pid, err := s.store.ParentIDOf(ctx, u.ID); err != nil {
+		return authTokens{}, err
+	} else if pid != 0 {
+		sub, err := s.store.SubByUserID(ctx, u.ID)
+		if err != nil {
+			return authTokens{}, err
+		}
+		if !sub.LoginEnabled {
+			return authTokens{}, ErrSubLoginDisabled
+		}
+		parentUID = sub.ParentUID
+	}
+	access, err := common.SignAccessTokenFor(s.cfg.JWTSecret, u.UID, subEmail, parentUID, s.cfg.AccessTTL, now)
 	if err != nil {
 		return authTokens{}, err
 	}
