@@ -29,7 +29,9 @@ struct FuturesTradeView: View {
     @EnvironmentObject private var session: Session
     @ObservedObject private var router = Router.shared
     @StateObject private var m = FuturesModel(symbol: Router.shared.futuresSymbol)
-    @State private var bottomTab = 0
+    // 截图路由在视图创建时就决定初始子 Tab：避免 m.start() 期间视图重建导致 @State 被重置、而 shotSheet 已被消费
+    @State private var bottomTab = Router.shared.shotSheet == "ordersTpsl" || Router.shared.shotSheet == "ordersPlan" ? 1 : 0
+    @State private var amendTarget: APIFuturesOrder?
     @State private var showMode = false
     @State private var showLev = false
     @State private var showKind = false
@@ -41,7 +43,7 @@ struct FuturesTradeView: View {
     @State private var marginTarget: APIFuturesPosition?
     @State private var confirm: ConfirmRequest?
     @State private var couponTab = 0
-    @State private var orderFilter = 0     // 委托：0 普通委托 1 止盈止损 2 计划委托
+    @State private var orderFilter = Router.shared.shotSheet == "ordersTpsl" ? 1 : (Router.shared.shotSheet == "ordersPlan" ? 2 : 0)     // 委托：0 普通委托 1 止盈止损 2 计划委托
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -64,7 +66,7 @@ struct FuturesTradeView: View {
         }
         .task {
             // 截图：把 K 线 / 委托区滚动到画面内
-            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (router.shotSheet == "ordersTpsl" ? "lb.bottom" : nil)
+            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (router.shotSheet == "ordersTpsl" || router.shotSheet == "ordersPlan" ? "lb.bottom" : nil)
             guard let target else { return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             proxy.scrollTo(target, anchor: .top)
@@ -72,6 +74,7 @@ struct FuturesTradeView: View {
         }
         .refreshable { await m.refreshMarket(); await m.refreshAccount() }
         .background(p.bg)
+        .onAppear { applyEarlyShot() }
         .task { await m.start(); applyShot() }
         .onDisappear { m.stop() }
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshAccount() } }
@@ -88,7 +91,20 @@ struct FuturesTradeView: View {
         .lbSheet(Binding(get: { marginTarget != nil }, set: { if !$0 { marginTarget = nil } })) {
             if let pos = marginTarget { AdjustMarginSheet(m: m, position: pos) { marginTarget = nil } }
         }
+        .lbSheet(Binding(get: { amendTarget != nil }, set: { if !$0 { amendTarget = nil } })) {
+            if let o = amendTarget { AmendOrderSheet(m: m, order: o) { amendTarget = nil } }
+        }
         .lbConfirm($confirm)
+    }
+
+    /// 只改本视图状态的截图路由在 onAppear 立即生效（不等网络），且不清空 shotSheet，保证重建后仍可恢复
+    private func applyEarlyShot() {
+        switch router.shotSheet {
+        case "ordersTpsl": bottomTab = 1; orderFilter = 1
+        case "ordersPlan": bottomTab = 1; orderFilter = 2
+        case "plan": m.kind = .plan
+        default: break
+        }
     }
 
     private func applyShot() {
@@ -100,7 +116,13 @@ struct FuturesTradeView: View {
         case "tools": showTools = true
         case "chart": showChart = true
         case "plan": m.kind = .plan
-        case "ordersTpsl": bottomTab = 1; orderFilter = 1
+        case "ordersTpsl": bottomTab = 1; orderFilter = 1; return
+        case "ordersPlan": bottomTab = 1; orderFilter = 2; return
+        case "modeHedge": m.positionMode = .hedge; showMode = true
+        case "tpslPartial": showTpslForm = true
+        case "amend":
+            amendTarget = m.openOrders.first ?? APIFuturesOrder(orderId: 0, symbol: m.symbol, side: "buy", type: "limit", timeInForce: "GTC",
+                                                                 price: Dec.plain(m.last > 0 ? m.last * Decimal(string: "0.98")! : 0, m.pricePrec), qty: "0.010", filledQty: "0", status: "new", amendCount: 1)
         default: break
         }
         if router.shotSheet != nil { router.shotSheet = nil }
@@ -131,6 +153,7 @@ struct FuturesTradeView: View {
     private var chipsRow: some View {
         HStack(spacing: 8) {
             ChipButton(title: m.marginMode == .isolated ? "逐仓" : "全仓") { showMode = true }
+            ChipButton(title: m.hedge ? "分仓" : "合仓") { showMode = true }
             ChipButton(title: "\(m.leverage)x") { showLev = true }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -153,8 +176,18 @@ struct FuturesTradeView: View {
             }.buttonStyle(PressableStyle(scale: 1))
             if m.kind == .plan {
                 NumberBox(label: "触发价", unit: m.quote, text: $m.triggerText, onEdit: {})
+                HStack(spacing: 6) {
+                    Button { m.planTriggerType = m.planTriggerType == .last ? .mark : .last } label: {
+                        HStack(spacing: 3) {
+                            Text(m.planTriggerType == .mark ? "标记价格触发" : "最新价格触发")
+                            Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6))
+                        }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    }
+                    Spacer()
+                    Checkbox(on: $m.planMarket, label: "市价")
+                }
             }
-            if m.kind == .market {
+            if m.kind == .market || (m.kind == .plan && m.planMarket) {
                 Text("市价").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
                     .frame(maxWidth: .infinity).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
             } else {
@@ -188,10 +221,10 @@ struct FuturesTradeView: View {
                     Text("\(Fmt.amount(m.available, 2)) \(m.quote)").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
                     Button { Router.shared.open(.transfer) } label: { Image(systemName: "arrow.left.arrow.right.square.fill").font(.system(size: 12)).foregroundColor(p.textPrimary) }
                 }
-                KVRow(k: m.isOpen ? "可开" : "可平", v: "\(Fmt.amount(m.isOpen ? m.maxOpenQty : abs(Dec.parse(m.current?.qty)), m.qtyPrec)) \(m.base)")
+                KVRow(k: m.isOpen ? "可开" : "可平", v: "\(Fmt.amount(m.isOpen ? m.maxOpenQty : abs(Dec.parse(m.closeTarget?.qty)), m.qtyPrec)) \(m.base)")
             }
-            if m.kind.backendMissing {
-                InlineBanner(text: "\(m.kind.title)需后端提供下单接口，暂不可提交")
+            if m.kind == .postOnly {
+                Text("只做 Maker：若委托会立即成交则整单撤销").font(.lb(10)).foregroundColor(p.textTertiary)
             }
             sideButton(long: true)
             sideButton(long: false)
@@ -210,7 +243,7 @@ struct FuturesTradeView: View {
                     if let e = m.validation { ToastCenter.shared.show(e, .error); return }
                     let dir = m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")
                     confirm = .init(title: "\(dir) \(m.symbol)",
-                                    message: "\(m.kind.title) · \(m.marginMode == .isolated ? "逐仓" : "全仓") \(m.leverage)x\n价格 \(m.kind == .market ? "市价" : m.priceText)  数量 \(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)\n预估手续费 \(Fmt.amount(m.qty * m.orderPrice * m.takerFee, 4)) USDT",
+                                    message: "\(m.kind.title) · \(m.marginMode == .isolated ? "逐仓" : "全仓") \(m.leverage)x · \(m.hedge ? "分仓" : "合仓")\(m.kind == .plan ? "\n触发价 \(m.triggerText)（\(m.planTriggerType == .mark ? "标记价格" : "最新价格")）" : "")\n价格 \(m.kind == .market || (m.kind == .plan && m.planMarket) ? "市价" : m.priceText)  数量 \(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)\n预估手续费 \(Fmt.amount(m.qty * m.orderPrice * m.takerFee, 4)) USDT",
                                     confirmTitle: "确认\(dir)") { Task { _ = await m.place(long: long) } }
                 }
             }
@@ -334,11 +367,7 @@ struct FuturesTradeView: View {
                 switch orderFilter {
                 case 0: normalOrders
                 case 1: tpslOrders
-                default:
-                    VStack(spacing: 0) {
-                        InlineBanner(text: "计划委托需后端提供创建 / 查询 / 撤销接口，暂无数据").padding(.horizontal, Spacing.pageH).padding(.top, 10)
-                        EmptyBlock(text: "暂无计划委托", actions: [])
-                    }
+                default: algoList(m.shownPlanAlgos, empty: "暂无计划委托")
                 }
             }
         }
@@ -353,7 +382,7 @@ struct FuturesTradeView: View {
         } else {
             LazyVStack(spacing: 0) {
                 ForEach(list, id: \.self) { o in
-                    FuturesOrderRow(o: o) {
+                    FuturesOrderRow(o: o, onAmend: o.type == "market" ? nil : { amendTarget = o }) {
                         confirm = .init(title: "撤销委托", message: "确定撤销该笔委托吗？", confirmTitle: "撤销", destructive: true) { Task { await m.cancel(o) } }
                     }
                     Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
@@ -362,12 +391,39 @@ struct FuturesTradeView: View {
         }
     }
 
-    /// 持仓止盈止损：查看 / 修改 / 撤销（整仓）
+    /// 条件委托列表（止盈止损 / 计划委托，status=active）：加载 / 错误 / 空 / 列表 + 逐单撤销
+    @ViewBuilder private func algoList(_ list: [APIFuturesAlgoOrder], empty: String) -> some View {
+        if !m.algosLoaded {
+            SkeletonList(rows: 2)
+        } else if let e = m.algosError, list.isEmpty {
+            EmptyBlock(text: "加载失败：\(e)", actions: [("重试", { Task { await m.refreshAccount() } })])
+        } else if list.isEmpty {
+            EmptyBlock(text: empty, actions: [])
+        } else {
+            LazyVStack(spacing: 0) {
+                ForEach(list, id: \.self) { a in
+                    AlgoOrderRow(a: a) {
+                        confirm = .init(title: a.algoType == .plan ? "撤销计划委托" : "撤销止盈止损", message: "确定撤销该笔条件委托吗？",
+                                        confirmTitle: "撤销", destructive: true) { Task { await m.cancelAlgo(a) } }
+                    }
+                    Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
+                }
+            }
+        }
+    }
+
+    /// 止盈止损：tpsl-orders 委托（可部分数量）+ 仓位上整仓止盈止损
     @ViewBuilder private var tpslOrders: some View {
         let list = m.shownPositions.filter { !($0.tpPrice ?? "").isEmpty || !($0.slPrice ?? "").isEmpty }
-        if !m.accountLoaded {
+        if !m.accountLoaded || !m.algosLoaded {
             SkeletonList(rows: 2)
-        } else if list.isEmpty {
+        } else if !m.shownTpslAlgos.isEmpty || list.isEmpty {
+            algoList(m.shownTpslAlgos, empty: "暂无止盈止损")
+            if !list.isEmpty { legacyTpsl(list) }
+        } else { legacyTpsl(list) }
+    }
+    @ViewBuilder private func legacyTpsl(_ list: [APIFuturesPosition]) -> some View {
+        if list.isEmpty {
             EmptyBlock(text: "暂无止盈止损", actions: [])
         } else {
             LazyVStack(spacing: 0) {
@@ -456,6 +512,10 @@ struct PositionCard: View {
                 Text(long ? "多" : "空").font(.lb(FontSize.small, .semibold)).foregroundColor(.white)
                     .frame(width: 20, height: 18).background(RoundedRectangle(cornerRadius: 3).fill(long ? p.up : p.down))
                 Text(pos.symbol ?? "").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
+                if let ps = pos.positionSide, ps != .both {
+                    Text("分仓").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                        .padding(.horizontal, 4).frame(height: 18).background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
+                }
                 Text("\(pos.marginMode == .isolated ? "逐仓" : "全仓") \(pos.leverage ?? 0)x").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                     .padding(.horizontal, 4).frame(height: 18).background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
                 Spacer()
@@ -493,17 +553,32 @@ struct PositionCard: View {
 struct FuturesOrderRow: View {
     @Environment(\.palette) private var p
     let o: APIFuturesOrder
+    var onAmend: (() -> Void)? = nil
     let onCancel: () -> Void
     var body: some View {
         let buy = o.side == "buy"
-        let open = o.reduceOnly != true
+        // 分仓：LONG+买 / SHORT+卖 为开仓；合仓看 reduceOnly
+        let ps = o.positionSide ?? "BOTH"
+        let open = ps == "BOTH" ? o.reduceOnly != true : (ps == "LONG") == buy
         let dir = open ? (buy ? "开多" : "开空") : (buy ? "平空" : "平多")
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(dir).font(.lb(FontSize.small, .semibold)).foregroundColor(buy ? p.up : p.down)
                 Text(o.symbol ?? "").font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
                 Text(o.type == "market" ? "市价" : "限价").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                if o.timeInForce == "POST_ONLY" || o.timeInForce == "GTX" {
+                    Text("只做Maker").font(.lb(10)).foregroundColor(p.textSecondary)
+                }
+                if let n = o.amendCount, n > 0 {
+                    Text("已改\(n)次").font(.lb(10)).foregroundColor(p.brand)
+                }
                 Spacer()
+                if let onAmend {
+                    Button(action: onAmend) {
+                        Text("改单").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                            .padding(.horizontal, 12).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+                    }
+                }
                 Button(action: onCancel) {
                     Text("撤单").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
                         .padding(.horizontal, 12).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
@@ -590,6 +665,59 @@ struct TpslOrderRow: View {
         Button(action: a) {
             Text(t).font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
                 .padding(.horizontal, 12).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+        }
+    }
+}
+
+/// 条件委托行（计划委托 / 止盈止损委托）：方向、触发价（最新 / 标记）、委托价、数量、状态，撤销
+struct AlgoOrderRow: View {
+    @Environment(\.palette) private var p
+    let a: APIFuturesAlgoOrder
+    var onCancel: (() -> Void)? = nil
+    var body: some View {
+        let buy = a.side == "buy"
+        let ps = a.positionSide ?? "BOTH"
+        let open = a.algoType == .plan && (ps == "BOTH" ? a.reduceOnly != true : (ps == "LONG") == buy)
+        let dir = open ? (buy ? "开多" : "开空") : (buy ? "平空" : "平多")
+        let typeText = a.algoType == .plan ? "计划委托" : (a.algoType == .tp ? "止盈" : "止损")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(dir).font(.lb(FontSize.small, .semibold)).foregroundColor(buy ? p.up : p.down)
+                Text(a.symbol ?? "").font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                Text(typeText).font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                if ps != "BOTH" {
+                    Text("分仓").font(.lb(10)).foregroundColor(p.textSecondary)
+                        .padding(.horizontal, 4).frame(height: 16).background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
+                }
+                Spacer()
+                if let onCancel, a.status == .active {
+                    Button(action: onCancel) {
+                        Text("撤销").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                            .padding(.horizontal, 12).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+                    }
+                } else {
+                    Text(Self.statusText(a.status)).font(.lb(FontSize.small)).foregroundColor(a.status == .failed ? p.down : p.textSecondary)
+                }
+            }
+            HStack {
+                KVCell(k: "触发价(\(a.triggerPriceType == .mark ? "标记" : "最新"))",
+                       v: "\(a.triggerDirection == .down ? "≤" : "≥") \(Fmt.priceAuto(Dec.parse(a.triggerPrice)))")
+                KVCell(k: "委托价格", v: a.orderType == .market || (a.price ?? "").isEmpty ? "市价" : Fmt.priceAuto(Dec.parse(a.price)), align: .center)
+                KVCell(k: "数量", v: (a.qty ?? "").isEmpty ? "全部仓位" : (a.qty ?? ""), align: .trailing)
+            }
+            if let r = a.failReason, !r.isEmpty {
+                Text("失败原因：\(ErrorText.map[r] ?? r)").font(.lb(FontSize.small)).foregroundColor(p.down)
+            }
+            if let d = a.createdAt { Text(Fmt.dateTime(d)).font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary) }
+        }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
+    }
+    static func statusText(_ s: APIFuturesAlgoOrder.APIStatus?) -> String {
+        switch s {
+        case .active: return "等待触发"
+        case .triggered: return "已触发"
+        case .canceled: return "已撤销"
+        case .failed: return "触发失败"
+        case nil: return "--"
         }
     }
 }

@@ -20,10 +20,22 @@ public struct APIFuturesPlaceOrderRequest: Codable, JSONEncodable, Hashable {
     public enum APITimeInForce: String, Codable, CaseIterable {
         case gtc = "GTC"
         case ioc = "IOC"
+        case postOnly = "POST_ONLY"
+        case gtx = "GTX"
+    }
+    public enum APIPositionSide: String, Codable, CaseIterable {
+        case both = "BOTH"
+        case long = "LONG"
+        case short = "SHORT"
+    }
+    public enum APITriggerPriceType: String, Codable, CaseIterable {
+        case last = "LAST"
+        case mark = "MARK"
     }
     public var symbol: String
     public var side: APISide
     public var type: APIType
+    /** POST_ONLY（GTX 为别名）= 只做 Maker，会立即成交则整单拒绝 */
     public var timeInForce: APITimeInForce?
     /** 限价单必填 */
     public var price: String?
@@ -32,8 +44,14 @@ public struct APIFuturesPlaceOrderRequest: Codable, JSONEncodable, Hashable {
     public var reduceOnly: Bool?
     public var tpPrice: String?
     public var slPrice: String?
+    /** 双向模式必填 LONG/SHORT；单向模式可省略或 BOTH */
+    public var positionSide: APIPositionSide?
+    /** 填写即为计划委托（POST /futures/orders 或 /futures/plan-orders） */
+    public var triggerPrice: String?
+    /** 默认 LAST（后台可配置） */
+    public var triggerPriceType: APITriggerPriceType?
 
-    public init(symbol: String, side: APISide, type: APIType, timeInForce: APITimeInForce? = nil, price: String? = nil, qty: String, reduceOnly: Bool? = nil, tpPrice: String? = nil, slPrice: String? = nil) {
+    public init(symbol: String, side: APISide, type: APIType, timeInForce: APITimeInForce? = nil, price: String? = nil, qty: String, reduceOnly: Bool? = nil, tpPrice: String? = nil, slPrice: String? = nil, positionSide: APIPositionSide? = nil, triggerPrice: String? = nil, triggerPriceType: APITriggerPriceType? = nil) {
         self.symbol = symbol
         self.side = side
         self.type = type
@@ -43,6 +61,9 @@ public struct APIFuturesPlaceOrderRequest: Codable, JSONEncodable, Hashable {
         self.reduceOnly = reduceOnly
         self.tpPrice = tpPrice
         self.slPrice = slPrice
+        self.positionSide = positionSide
+        self.triggerPrice = triggerPrice
+        self.triggerPriceType = triggerPriceType
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -55,6 +76,9 @@ public struct APIFuturesPlaceOrderRequest: Codable, JSONEncodable, Hashable {
         case reduceOnly
         case tpPrice
         case slPrice
+        case positionSide
+        case triggerPrice
+        case triggerPriceType
     }
 
     // Encodable protocol methods
@@ -70,6 +94,9 @@ public struct APIFuturesPlaceOrderRequest: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(reduceOnly, forKey: .reduceOnly)
         try container.encodeIfPresent(tpPrice, forKey: .tpPrice)
         try container.encodeIfPresent(slPrice, forKey: .slPrice)
+        try container.encodeIfPresent(positionSide, forKey: .positionSide)
+        try container.encodeIfPresent(triggerPrice, forKey: .triggerPrice)
+        try container.encodeIfPresent(triggerPriceType, forKey: .triggerPriceType)
     }
 }
 

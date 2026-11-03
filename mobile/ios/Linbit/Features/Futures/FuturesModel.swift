@@ -6,9 +6,9 @@ enum FuturesKind: String, CaseIterable { case limit, market, plan, postOnly
         ["limit": "以指定价格或更优价格成交", "market": "以当前最优价格立即成交", "plan": "价格到达触发价后自动下单",
          "postOnly": "只挂单不吃单，若会立即成交则自动撤销"][rawValue]!
     }
-    var available: Bool { self == .limit || self == .market }
-    /// spec 中 FuturesPlaceOrderRequest 无触发价 / postOnly，界面可选但下单按钮禁用并提示待后端接口
-    var backendMissing: Bool { !available }
+    /// 四种委托均已接通：限价/市价 → /futures/orders；只做 Maker → timeInForce POST_ONLY；计划委托 → /futures/plan-orders
+    var available: Bool { true }
+    var backendMissing: Bool { false }
 }
 
 @MainActor
@@ -37,8 +37,17 @@ final class FuturesModel: ObservableObject {
     @Published var tpsl = false
     @Published var tpText = ""
     @Published var slText = ""
-    /// 计划委托触发价（仅界面；spec 暂无计划委托接口）
+    /// 计划委托：触发价、触发价类型、触发后市价 / 限价
     @Published var triggerText = ""
+    @Published var planTriggerType: APIFuturesPlaceOrderRequest.APITriggerPriceType = .last
+    @Published var planMarket = false
+    /// 持仓模式：ONE_WAY 合仓 / HEDGE 分仓（GET/POST /futures/position-mode）
+    @Published var positionMode: APIFuturesPositionMode.APIPositionMode = .oneWay
+    /// 进行中的止盈止损委托 / 计划委托（/futures/tpsl-orders、/futures/plan-orders，status=active）
+    @Published var tpslAlgos: [APIFuturesAlgoOrder] = []
+    @Published var planAlgos: [APIFuturesAlgoOrder] = []
+    @Published var algosLoaded = false
+    @Published var algosError: String?
     /// 风险限额档位（/futures/market/risk-tiers），用于杠杆弹窗的最大可持仓
     @Published var tiers: [APIFuturesRiskTiers200ResponseContractsInnerTiersInner] = []
     @Published var placing = false
@@ -63,12 +72,19 @@ final class FuturesModel: ObservableObject {
     var mmr: Decimal { Dec.parse(contract?.maintenanceMarginRate ?? "0.004") }
     var takerFee: Decimal { Dec.parse(contract?.takerFeeRate ?? "0.0005") }
 
-    var orderPrice: Decimal { kind == .market ? (last > 0 ? last : mark) : Dec.parse(priceText) }
+    var hedge: Bool { positionMode == .hedge }
+    var orderPrice: Decimal {
+        if kind == .market || (kind == .plan && planMarket) {
+            let t = Dec.parse(triggerText)
+            return kind == .plan && t > 0 ? t : (last > 0 ? last : mark)
+        }
+        return Dec.parse(priceText)
+    }
     var cost: Decimal { Dec.parse(costText) }
     /// 成本（保证金）× 杠杆 / 价格 = 数量，按最小数量步长向下取整
     var qty: Decimal {
         guard orderPrice > 0 else { return 0 }
-        if !isOpen, let pos = current { return Dec.parse(Dec.plain(abs(Dec.parse(pos.qty)) * Decimal(percent > 0 ? percent : 1), qtyPrec)) }
+        if !isOpen, let pos = closeTarget { return Dec.parse(Dec.plain(abs(Dec.parse(pos.qty)) * Decimal(percent > 0 ? percent : 1), qtyPrec)) }
         return Dec.parse(Dec.plain(cost * Decimal(leverage) / orderPrice, qtyPrec))
     }
     var maxOpenQty: Decimal { orderPrice > 0 ? available * Decimal(leverage) / orderPrice : 0 }
@@ -78,6 +94,19 @@ final class FuturesModel: ObservableObject {
         return long ? p * (1 - inv + mmr) : p * (1 + inv - mmr)
     }
     var current: APIFuturesPosition? { positions.first { $0.symbol == symbol && Dec.parse($0.qty) != 0 } }
+    /// 当前合约的多 / 空仓位（分仓模式下多空可同时存在）
+    func position(long: Bool) -> APIFuturesPosition? {
+        positions.first { $0.symbol == symbol && Dec.parse($0.qty) != 0 && ($0.side == .short) != long }
+    }
+    /// 平仓表单默认针对的仓位（合仓：唯一仓位；分仓：优先多仓）
+    var closeTarget: APIFuturesPosition? { hedge ? (position(long: true) ?? position(long: false)) : current }
+    var shownTpslAlgos: [APIFuturesAlgoOrder] { onlyCurrent ? tpslAlgos.filter { $0.symbol == symbol } : tpslAlgos }
+    var shownPlanAlgos: [APIFuturesAlgoOrder] { onlyCurrent ? planAlgos.filter { $0.symbol == symbol } : planAlgos }
+    /// 仓位的 positionSide（分仓必填；合仓 BOTH / nil）
+    static func side(of pos: APIFuturesPosition) -> String? {
+        if let ps = pos.positionSide, ps != .both { return ps.rawValue }
+        return nil
+    }
     var shownPositions: [APIFuturesPosition] { onlyCurrent ? positions.filter { $0.symbol == symbol } : positions }
     var shownOrders: [APIFuturesOrder] { onlyCurrent ? openOrders.filter { $0.symbol == symbol } : openOrders }
 
@@ -130,7 +159,13 @@ final class FuturesModel: ObservableObject {
     }
 
     func refreshAccount() async {
-        guard TokenStore.shared.isLoggedIn else { account = nil; positions = []; openOrders = []; accountLoaded = true; return }
+        guard TokenStore.shared.isLoggedIn else {
+            account = nil; positions = []; openOrders = []; tpslAlgos = []; planAlgos = []
+            accountLoaded = true; algosLoaded = true; return
+        }
+        async let pm = try? FuturesAPI.positionMode()
+        async let ta = FuturesAPI.tpslOrders()
+        async let pa = FuturesAPI.planOrders()
         async let a = try? FuturesAPI.account()
         async let o = try? FuturesAPI.openOrders()
         async let l = try? FuturesAPI.leverage(symbol)
@@ -143,6 +178,12 @@ final class FuturesModel: ObservableObject {
             if let mm = lv.marginMode { marginMode = mm == .isolated ? .isolated : .cross }
         }
         bonus = await bn
+        if let mode = await pm { positionMode = mode }
+        do {
+            let (t, pl) = try await (ta, pa)
+            tpslAlgos = t.orders ?? []; planAlgos = pl.orders ?? []; algosError = nil
+        } catch { if !algosLoaded { algosError = error.lbMessage } }
+        algosLoaded = true
         accountLoaded = true
     }
 
@@ -153,34 +194,109 @@ final class FuturesModel: ObservableObject {
     }
 
     var validation: String? {
-        if kind.backendMissing { return "\(kind.title)暂未开放（缺少后端接口）" }
-        if kind != .market, Dec.parse(priceText) <= 0 { return "请输入价格" }
+        if kind == .plan, Dec.parse(triggerText) <= 0 { return "请输入触发价" }
+        if kind != .market, !(kind == .plan && planMarket), Dec.parse(priceText) <= 0 { return "请输入价格" }
         if isOpen && cost <= 0 { return "请输入成本" }
         if qty <= 0 || (minQty > 0 && qty < minQty) { return "数量低于最小下单量 \(Dec.plain(minQty, qtyPrec)) \(base)" }
         if isOpen && cost > available { return "可用保证金不足" }
-        if !isOpen && current == nil { return "当前无持仓可平" }
+        if !isOpen && closeTarget == nil { return "当前无持仓可平" }
         return nil
     }
 
     /// long=true：开多 / 平空（买）；false：开空 / 平多（卖）
+    /// 分仓（HEDGE）：开多/平多 → LONG，开空/平空 → SHORT；平仓数量按对应方向仓位计算
     func place(long: Bool) async -> Bool {
-        guard !kind.backendMissing else { ToastCenter.shared.show("\(kind.title)暂未开放", .error); return false }
         placing = true; defer { placing = false }
         let side: APIFuturesPlaceOrderRequest.APISide = long ? .buy : .sell
+        var posSide: APIFuturesPlaceOrderRequest.APIPositionSide? = nil
+        var q = qty
+        if hedge {
+            let isLongPos = isOpen ? long : !long
+            posSide = isLongPos ? .long : .short
+            if !isOpen {
+                guard let pos = position(long: isLongPos) else { ToastCenter.shared.show("当前无\(isLongPos ? "多" : "空")仓可平", .error); return false }
+                q = Dec.parse(Dec.plain(abs(Dec.parse(pos.qty)) * Decimal(percent > 0 ? percent : 1), qtyPrec))
+            }
+        }
+        let isPlan = kind == .plan
+        let marketLike = kind == .market || (isPlan && planMarket)
         let req = APIFuturesPlaceOrderRequest(
-            symbol: symbol, side: side, type: kind == .market ? .market : .limit,
-            timeInForce: kind == .market ? .ioc : .gtc,
-            price: kind == .market ? nil : Dec.plain(Dec.parse(priceText), pricePrec),
-            qty: Dec.plain(qty, qtyPrec), reduceOnly: isOpen ? nil : true,
-            tpPrice: isOpen && tpsl && !tpText.isEmpty ? tpText : nil,
-            slPrice: isOpen && tpsl && !slText.isEmpty ? slText : nil)
+            symbol: symbol, side: side, type: marketLike ? .market : .limit,
+            timeInForce: kind == .postOnly ? .postOnly : (marketLike ? .ioc : .gtc),
+            price: marketLike ? nil : Dec.plain(Dec.parse(priceText), pricePrec),
+            qty: Dec.plain(q, qtyPrec),
+            // 分仓模式由 positionSide 决定开平，不再传 reduceOnly
+            reduceOnly: isOpen || hedge ? nil : true,
+            tpPrice: isOpen && tpsl && !tpText.isEmpty && !isPlan ? tpText : nil,
+            slPrice: isOpen && tpsl && !slText.isEmpty && !isPlan ? slText : nil,
+            positionSide: posSide,
+            triggerPrice: isPlan ? Dec.plain(Dec.parse(triggerText), pricePrec) : nil,
+            triggerPriceType: isPlan ? planTriggerType : nil)
+        let label = isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")
         do {
-            _ = try await FuturesAPI.place(req)
-            ToastCenter.shared.show(isOpen ? (long ? "开多委托已提交" : "开空委托已提交") : "平仓委托已提交", .success)
+            if isPlan {
+                _ = try await FuturesAPI.createPlan(req)
+                ToastCenter.shared.show("\(label)计划委托已提交", .success)
+                triggerText = ""
+            } else {
+                _ = try await FuturesAPI.place(req)
+                ToastCenter.shared.show("\(label)委托已提交", .success)
+            }
             costText = ""; percent = 0
             await refreshAccount()
             return true
         } catch { ToastCenter.shared.error(error); return false }
+    }
+
+    /// 切换持仓模式前的本地拦截：有仓位 / 普通委托 / 计划委托 / 止盈止损委托都不可切换（后端同样返回 409）
+    var positionModeBlockReason: String? {
+        var r: [String] = []
+        if !positions.isEmpty { r.append("\(positions.count) 个仓位") }
+        if !openOrders.isEmpty { r.append("\(openOrders.count) 笔挂单") }
+        if !planAlgos.isEmpty { r.append("\(planAlgos.count) 笔计划委托") }
+        if !tpslAlgos.isEmpty { r.append("\(tpslAlgos.count) 笔止盈止损委托") }
+        return r.isEmpty ? nil : "当前存在\(r.joined(separator: "、"))，请先平仓并撤销全部委托后再切换仓位模式"
+    }
+    func setPositionMode(_ mode: APIFuturesPositionMode.APIPositionMode) async -> Bool {
+        guard mode != positionMode else { return true }
+        if let reason = positionModeBlockReason { ToastCenter.shared.show(reason, .error); return false }
+        do {
+            positionMode = try await FuturesAPI.setPositionMode(mode)
+            ToastCenter.shared.show(mode == .hedge ? "已切换为分仓模式" : "已切换为合仓模式", .success)
+            await refreshAccount(); return true
+        } catch { ToastCenter.shared.error(error); return false }
+    }
+
+    /// 改单：price / qty 为空表示不修改；qty 为新的总数量（需大于已成交数量）
+    func amend(_ o: APIFuturesOrder, price: String?, qty: String?) async -> Bool {
+        guard let id = o.orderId else { return false }
+        do {
+            _ = try await FuturesAPI.amend(id, price: price, qty: qty)
+            ToastCenter.shared.show("改单成功", .success); await refreshAccount(); return true
+        } catch { ToastCenter.shared.error(error); return false }
+    }
+
+    /// 部分 / 全部止盈止损委托（POST /futures/tpsl-orders）
+    func createTpslOrder(_ pos: APIFuturesPosition, qty: String?, tp: String?, tpType: APIFuturesTpslOrderRequest.APITpTriggerPriceType,
+                         sl: String?, slType: APIFuturesTpslOrderRequest.APISlTriggerPriceType) async -> Bool {
+        let req = APIFuturesTpslOrderRequest(
+            symbol: pos.symbol ?? symbol,
+            positionSide: Self.side(of: pos).flatMap(APIFuturesTpslOrderRequest.APIPositionSide.init(rawValue:)),
+            qty: qty, tpTriggerPrice: tp, tpTriggerPriceType: tp == nil ? nil : tpType,
+            slTriggerPrice: sl, slTriggerPriceType: sl == nil ? nil : slType)
+        do {
+            _ = try await FuturesAPI.createTpsl(req)
+            ToastCenter.shared.show(qty == nil ? "止盈止损委托已提交" : "部分止盈止损已提交", .success)
+            await refreshAccount(); return true
+        } catch { ToastCenter.shared.error(error); return false }
+    }
+
+    func cancelAlgo(_ a: APIFuturesAlgoOrder) async {
+        guard let id = a.algoId else { return }
+        do {
+            if a.algoType == .plan { try await FuturesAPI.cancelPlan(id) } else { try await FuturesAPI.cancelTpsl(id) }
+            ToastCenter.shared.show("已撤销", .success); await refreshAccount()
+        } catch { ToastCenter.shared.error(error) }
     }
 
     func saveLeverage(_ v: Int, mode: APIFuturesPosition.APIMarginMode) async -> Bool {
@@ -197,7 +313,7 @@ final class FuturesModel: ObservableObject {
     }
 
     func close(_ pos: APIFuturesPosition) async {
-        do { try await FuturesAPI.close(pos.symbol ?? symbol); ToastCenter.shared.show("已提交市价平仓", .success); await refreshAccount() }
+        do { try await FuturesAPI.close(pos.symbol ?? symbol, positionSide: Self.side(of: pos)); ToastCenter.shared.show("已提交市价平仓", .success); await refreshAccount() }
         catch { ToastCenter.shared.error(error) }
     }
     func closeAll() async {
@@ -211,7 +327,7 @@ final class FuturesModel: ObservableObject {
     /// 设置 / 修改持仓止盈止损。spec：传 "" 表示清除该项，不传（nil）表示保持不变。
     func setTpsl(_ pos: APIFuturesPosition, tp: String?, sl: String?, toast: String = "止盈止损已设置") async -> Bool {
         do {
-            try await FuturesAPI.setTpsl(pos.symbol ?? symbol, tp: tp, sl: sl)
+            try await FuturesAPI.setTpsl(pos.symbol ?? symbol, tp: tp, sl: sl, positionSide: Self.side(of: pos))
             ToastCenter.shared.show(toast, .success); await refreshAccount(); return true
         } catch { ToastCenter.shared.error(error); return false }
     }
@@ -221,7 +337,7 @@ final class FuturesModel: ObservableObject {
     }
     func adjustMargin(_ pos: APIFuturesPosition, amount: Decimal) async -> Bool {
         do {
-            try await FuturesAPI.adjustMargin(pos.symbol ?? symbol, amount: NSDecimalNumber(decimal: amount).stringValue)
+            try await FuturesAPI.adjustMargin(pos.symbol ?? symbol, amount: NSDecimalNumber(decimal: amount).stringValue, positionSide: Self.side(of: pos))
             ToastCenter.shared.show(amount > 0 ? "保证金已增加" : "保证金已减少", .success); await refreshAccount(); return true
         } catch { ToastCenter.shared.error(error); return false }
     }

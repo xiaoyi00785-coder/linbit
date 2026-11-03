@@ -9,17 +9,25 @@ import Foundation
 
 public struct APIFuturesSetTpslRequest: Codable, JSONEncodable, Hashable {
 
+    public enum APIPositionSide: String, Codable, CaseIterable {
+        case both = "BOTH"
+        case long = "LONG"
+        case short = "SHORT"
+    }
     public var tpPrice: String?
     public var slPrice: String?
+    public var positionSide: APIPositionSide?
 
-    public init(tpPrice: String? = nil, slPrice: String? = nil) {
+    public init(tpPrice: String? = nil, slPrice: String? = nil, positionSide: APIPositionSide? = nil) {
         self.tpPrice = tpPrice
         self.slPrice = slPrice
+        self.positionSide = positionSide
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case tpPrice
         case slPrice
+        case positionSide
     }
 
     // Encodable protocol methods
@@ -28,6 +36,7 @@ public struct APIFuturesSetTpslRequest: Codable, JSONEncodable, Hashable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(tpPrice, forKey: .tpPrice)
         try container.encodeIfPresent(slPrice, forKey: .slPrice)
+        try container.encodeIfPresent(positionSide, forKey: .positionSide)
     }
 }
 

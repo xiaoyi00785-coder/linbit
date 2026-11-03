@@ -21,23 +21,27 @@ struct MarginModeSheet: View {
                 Text(posMode == 0 ? "合仓模式：同一合约（开多与开空）仅持有一个仓位，反向开仓会先减少已有仓位。"
                                   : "分仓模式：同一合约可同时持有多个独立仓位，每笔开仓单独计算保证金与盈亏，可分别止盈止损、平仓。")
                     .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                if posMode == 1 {
-                    InlineBanner(text: "分仓模式需后端提供仓位模式切换接口（当前仅支持合仓 one_way），暂不可切换")
+                let modeChanged = (posMode == 1) != m.hedge
+                if modeChanged, let reason = m.positionModeBlockReason {
+                    InlineBanner(text: reason)
                 }
                 if !m.positions.filter({ $0.symbol == m.symbol }).isEmpty || !m.openOrders.filter({ $0.symbol == m.symbol }).isEmpty {
                     InlineBanner(text: "当前合约存在仓位或委托，切换保证金模式可能失败")
                 }
-                LBButton(title: posMode == 1 ? "分仓模式暂未开放" : "确认", enabled: posMode == 0, loading: saving) {
+                LBButton(title: "确认", enabled: !(modeChanged && m.positionModeBlockReason != nil), loading: saving) {
                     saving = true
                     Task {
-                        let ok = await m.saveLeverage(m.leverage, mode: mode == 1 ? .isolated : .cross)
+                        var ok = true
+                        if modeChanged { ok = await m.setPositionMode(posMode == 1 ? .hedge : .oneWay) }
+                        let marginChanged = (mode == 1) != (m.marginMode == .isolated)
+                        if ok, marginChanged { ok = await m.saveLeverage(m.leverage, mode: mode == 1 ? .isolated : .cross) }
                         saving = false
                         if ok { onClose() }
                     }
                 }.padding(.top, 6)
             }.padding(.horizontal, Spacing.pageH)
         }
-        .onAppear { mode = m.marginMode == .isolated ? 1 : 0 }
+        .onAppear { mode = m.marginMode == .isolated ? 1 : 0; posMode = m.hedge ? 1 : 0 }
     }
 }
 
@@ -207,6 +211,9 @@ struct TpslSheet: View {
     @State private var slRoi = ""
     @State private var partial = false
     @State private var partialQty = ""
+    /// 触发价类型，默认标记价格
+    @State private var tpType: APIFuturesTpslOrderRequest.APITpTriggerPriceType = .mark
+    @State private var slType: APIFuturesTpslOrderRequest.APISlTriggerPriceType = .mark
     @State private var saving = false
     @State private var confirm: ConfirmRequest?
 
@@ -256,6 +263,7 @@ struct TpslSheet: View {
         .lbConfirm($confirm)
         .onAppear {
             tp = position?.tpPrice ?? m.tpText; sl = position?.slPrice ?? m.slText
+            if Router.shared.shotSheet == "tpslPartial" { partial = true }
             recomputeRoi()
         }
     }
@@ -266,7 +274,7 @@ struct TpslSheet: View {
                 Text(position?.symbol ?? m.symbol).font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
                 Text(long ? "多" : "空").font(.lb(10, .semibold)).foregroundColor(long ? p.up : p.down)
                     .padding(.horizontal, 4).frame(height: 16).background(RoundedRectangle(cornerRadius: 3).fill((long ? p.up : p.down).opacity(0.12)))
-                Text("合仓").font(.lb(10)).foregroundColor(p.textSecondary)
+                Text(m.hedge ? "分仓" : "合仓").font(.lb(10)).foregroundColor(p.textSecondary)
                 Spacer()
             }
             KVRow(k: "市场价格", v: "\(Fmt.price(m.last, precision: m.pricePrec)) USDT")
@@ -291,9 +299,14 @@ struct TpslSheet: View {
                     HStack(spacing: 3) { Image(systemName: "trash").font(.system(size: 11)); Text("清空") }
                         .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                 }
-                Button { ToastCenter.shared.show("当前仅支持按最新价触发") } label: {
-                    HStack(spacing: 3) { Text("最新"); Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)) }
+                if position != nil {
+                Menu {
+                    Button("标记价格") { setType(positive, mark: true) }
+                    Button("最新价格") { setType(positive, mark: false) }
+                } label: {
+                    HStack(spacing: 3) { Text(isMark(positive) ? "标记" : "最新"); Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)) }
                         .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
                 }
             }
             HStack(spacing: 8) {
@@ -315,11 +328,20 @@ struct TpslSheet: View {
         }
     }
 
+    private func isMark(_ tpSide: Bool) -> Bool { tpSide ? tpType == .mark : slType == .mark }
+    private func setType(_ tpSide: Bool, mark: Bool) {
+        if tpSide { tpType = mark ? .mark : .last } else { slType = mark ? .mark : .last }
+    }
+    private var maxQty: Decimal { abs(Dec.parse(position?.qty)) }
+
     private var partialRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text("类型").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                Button { partial.toggle() } label: {
+                Button {
+                    if position == nil { ToastCenter.shared.show("部分止盈止损仅适用于已有仓位"); return }
+                    partial.toggle()
+                } label: {
                     HStack(spacing: 4) {
                         Text(partial ? "部分止盈止损" : "全部止盈止损").font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary)
                         Image(systemName: "arrow.left.arrow.right").font(.system(size: 9)).foregroundColor(p.textSecondary)
@@ -329,7 +351,15 @@ struct TpslSheet: View {
             }
             if partial {
                 NumberBox(label: "平仓数量", unit: m.base, text: $partialQty, onEdit: {})
-                InlineBanner(text: "部分止盈止损需后端支持按数量设置（当前接口仅支持整仓），暂不可提交")
+                HStack(spacing: 6) {
+                    ForEach([25, 50, 75, 100], id: \.self) { pct in
+                        Button { partialQty = Dec.plain(maxQty * Decimal(pct) / 100, m.qtyPrec) } label: {
+                            Text("\(pct)%").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                                .frame(maxWidth: .infinity).frame(height: 26).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+                        }
+                    }
+                }
+                Text("可平 \(Fmt.amount(maxQty, m.qtyPrec)) \(m.base)，触发后以市价平掉所填数量").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
             }
         }
     }
@@ -343,10 +373,10 @@ struct TpslSheet: View {
                         Task { let ok = await m.clearTpsl(pos); saving = false; if ok { onClose() } }
                     }
                 }
-                LBButton(title: "修改", enabled: !partial, loading: saving) { submit() }
+                LBButton(title: partial ? "提交" : "修改", loading: saving) { submit() }
             }
         } else {
-            LBButton(title: "确定", enabled: !partial, loading: saving) { submit() }
+            LBButton(title: "确定", loading: saving) { submit() }
         }
     }
 
@@ -359,8 +389,23 @@ struct TpslSheet: View {
         let t = Dec.parse(tp), s = Dec.parse(sl)
         if !tp.isEmpty, (long ? t <= entry : t >= entry) { ToastCenter.shared.show("止盈价需\(long ? "高于" : "低于")\(position == nil ? "委托价" : "开仓价")", .error); return }
         if !sl.isEmpty, (long ? s >= entry : s <= entry) { ToastCenter.shared.show("止损价需\(long ? "低于" : "高于")\(position == nil ? "委托价" : "开仓价")", .error); return }
-        if let pos = position {
-            // 修改：空字符串表示清除该项（spec："" 清除）
+        if let pos = position, partial || tpType == .mark || slType == .mark {
+            // 部分数量或指定触发价类型 → /futures/tpsl-orders（qty 为空即全部仓位）
+            var q: String? = nil
+            if partial {
+                let v = Dec.parse(partialQty)
+                if v <= 0 { ToastCenter.shared.show("请输入平仓数量", .error); return }
+                if v > maxQty { ToastCenter.shared.show("平仓数量不能超过持仓数量", .error); return }
+                q = Dec.plain(v, m.qtyPrec)
+            }
+            if tp.isEmpty && sl.isEmpty { ToastCenter.shared.show("请至少填写止盈或止损触发价", .error); return }
+            saving = true
+            Task {
+                let ok = await m.createTpslOrder(pos, qty: q, tp: tp.isEmpty ? nil : tp, tpType: tpType, sl: sl.isEmpty ? nil : sl, slType: slType)
+                saving = false; if ok { onClose() }
+            }
+        } else if let pos = position {
+            // 整仓 + 最新价触发：沿用 /positions/{symbol}/tpsl；修改：空字符串表示清除该项（spec："" 清除）
             saving = true
             Task { let ok = await m.setTpsl(pos, tp: tp, sl: sl, toast: hasExisting ? "止盈止损已修改" : "止盈止损已设置"); saving = false; if ok { onClose() } }
         } else {
@@ -437,6 +482,59 @@ struct AdjustMarginSheet: View {
                     Task { let ok = await m.adjustMargin(position, amount: add == 0 ? v : -v); saving = false; if ok { onClose() } }
                 }
             }.padding(.horizontal, Spacing.pageH)
+        }
+    }
+}
+
+/// 改单：修改未成交限价单的价格 / 数量（PUT /futures/orders/{id}），展示已改单次数
+struct AmendOrderSheet: View {
+    @Environment(\.palette) private var p
+    @ObservedObject var m: FuturesModel
+    let order: APIFuturesOrder
+    let onClose: () -> Void
+    @State private var price = ""
+    @State private var qty = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    private var filled: Decimal { Dec.parse(order.filledQty) }
+    private var buy: Bool { order.side == "buy" }
+    var body: some View {
+        LBSheet(title: "改单", subtitle: "\(order.symbol ?? m.symbol) · \(order.type == "market" ? "市价" : "限价")", showClose: true, onClose: onClose) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    KVCell(k: "原委托价", v: Fmt.priceAuto(Dec.parse(order.price)))
+                    KVCell(k: "原数量", v: order.qty ?? "--", align: .center)
+                    KVCell(k: "已成交", v: order.filledQty ?? "0", align: .trailing)
+                }
+                NumberBox(label: "新价格", unit: m.quote, text: $price, onEdit: { error = nil })
+                NumberBox(label: "新数量（总量）", unit: m.base, text: $qty, onEdit: { error = nil })
+                HStack {
+                    Text("已改单次数").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    Spacer()
+                    Text("\(order.amendCount ?? 0) 次").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                }
+                if order.timeInForce == "POST_ONLY" || order.timeInForce == "GTX" {
+                    Text("只做 Maker 委托：若新价格会立即成交，改单将被拒绝").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                }
+                if let error { InlineBanner(text: error) }
+                LBButton(title: "确认修改", kind: buy ? .buy : .sell, loading: saving) { submit() }.padding(.top, 4)
+            }.padding(.horizontal, Spacing.pageH)
+        }
+        .onAppear { price = order.price ?? ""; qty = order.qty ?? "" }
+    }
+    private func submit() {
+        let np = Dec.parse(price), nq = Dec.parse(qty)
+        let priceChanged = !price.isEmpty && np != Dec.parse(order.price)
+        let qtyChanged = !qty.isEmpty && nq != Dec.parse(order.qty)
+        if !priceChanged && !qtyChanged { error = "价格与数量均未变化"; return }
+        if priceChanged && np <= 0 { error = "请输入有效价格"; return }
+        if qtyChanged && nq <= filled { error = "新数量需大于已成交数量 \(order.filledQty ?? "0")"; return }
+        saving = true
+        Task {
+            let ok = await m.amend(order, price: priceChanged ? Dec.plain(np, m.pricePrec) : nil, qty: qtyChanged ? Dec.plain(nq, m.qtyPrec) : nil)
+            saving = false
+            if ok { onClose() }
         }
     }
 }

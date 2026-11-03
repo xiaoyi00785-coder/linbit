@@ -15,6 +15,7 @@ public struct APIFuturesGetLeverage200Response: Codable, JSONEncodable, Hashable
     }
     public enum APIPositionMode: String, Codable, CaseIterable {
         case oneWay = "one_way"
+        case hedge = "hedge"
     }
     public var symbol: String?
     public var leverage: Int?
