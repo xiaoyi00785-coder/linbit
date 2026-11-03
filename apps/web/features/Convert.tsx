@@ -16,6 +16,7 @@ import { rest } from "@/lib/rest";
 import { toast } from "@/lib/ui";
 import { useAuthStore } from "@/lib/store";
 import { CoinIcon } from "@/components/CoinIcon";
+import { useDismiss } from "@/lib/dismiss";
 // @ts-ignore legacy
 import { Footer } from "@/legacy/App";
 
@@ -34,7 +35,7 @@ function Picker({ value, list, onPick }: { value: string; list: string[]; onPick
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
+  useDismiss(open, () => setOpen(false), ref);
   const items = list.filter((s) => s.toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <div className="cv-pick" ref={ref}>
@@ -190,7 +191,7 @@ export function Convert() {
         </section>
       )}
       {confirm && quote && (
-        <div className="fx-modal" onClick={() => setConfirm(false)}>
+        <div className="fx-modal" aria-busy={busy} onClick={() => setConfirm(false)}>
           <div className="cv-modal" onClick={(e) => e.stopPropagation()}>
             <h3>确认兑换</h3>
             <div className="lrow"><span>支付</span><b><CoinIcon s={from} size={18} /> {quote.fromAmount} {from}</b></div>

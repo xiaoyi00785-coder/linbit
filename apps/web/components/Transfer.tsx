@@ -47,9 +47,9 @@ export function TransferHost() {
   }, []);
   if (!open) return null;
   return (
-    <div className="fx-modal light" onClick={() => setOpen(false)}>
+    <div className="fx-modal light" aria-busy={busy} onClick={() => setOpen(false)}>
       <div className="trm" onClick={(e) => e.stopPropagation()}>
-        <div className="trh"><h3>划转</h3><a onClick={() => setOpen(false)}>✕</a></div>
+        <div className="trh"><h3>划转</h3><a role="button" aria-label="关闭" onClick={() => setOpen(false)}>✕</a></div>
         <div className="trw">
           <label>从<select className="fsel" value={from} onChange={(e) => setFrom(e.target.value)}>{ACCTS.filter((a) => a !== to).map((a) => <option key={a}>{a}</option>)}</select></label>
           <button className="trx" title="交换" onClick={() => { setFrom(to); setTo(from); }}>⇅</button>

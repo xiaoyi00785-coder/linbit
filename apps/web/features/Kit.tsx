@@ -8,15 +8,17 @@ import { toast, copyText } from "@/lib/ui";
 import { rest, rget } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 import { useAuth } from "@/legacy/auth";
+import { useDismiss } from "@/lib/dismiss";
 const authed = () => !!useAuthStore.getState().accessToken;
 
 type MP = Record<string, any>;
 /** transfer 统一走全局划转弹窗（components/Transfer + lib/transfer、lib/wallet） */
 export const openM = (name: string, props: MP = {}) => name === "transfer" ? openTransfer(props.from, props.to) : window.dispatchEvent(new CustomEvent("lb-modal", { detail: { name, props } }));
 
-function Box({ title, onClose, children, foot }: { title: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode }) {
+/** dismissible=false：点击遮罩 / Esc 不关闭，仅 ✕ 可关闭（用于有输入或提交中的关键弹窗） */
+function Box({ title, onClose, children, foot, dismissible = true }: { title: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; dismissible?: boolean }) {
   useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
-  return <div className="fx-modal" onClick={onClose}><div className="tk-modal" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
+  return <div className="fx-modal" data-dismissible={dismissible ? undefined : "false"} onClick={onClose}><div className="tk-modal" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
     <div className="tk-mh"><b>{title}</b><span className="tk-x" onClick={onClose}>✕</span></div>{children}{foot && <div className="tk-mf">{foot}</div>}</div></div>;
 }
 
@@ -45,7 +47,7 @@ function Security({ kind = "other", label, close }: MP) {
     if (kind === "totp") { if (!bind) return toast(be || "绑定密钥未就绪", "err"); const code = (v[fields[0]] || "").trim(); if (!/^\d{6}$/.test(code)) return toast("请输入 6 位验证码", "err");
       setBusy(true); const r = await rest<any>("POST", "/2fa/totp/verify", { code }); setBusy(false); if (r.ok) { toast("谷歌验证已开启"); close(); } else toast(r.status === 400 ? "验证码错误或已过期" : (r as any).error || "验证失败", "err"); return; }
     toast("该安全设置接口暂未开放，请稍后再试", "info"); close(); };
-  return <Box title={label || t} onClose={close} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>{busy ? "提交中…" : "确认"}</button></>}>
+  return <Box title={label || t} onClose={close} dismissible={!busy} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>{busy ? "提交中…" : "确认"}</button></>}>
     {kind === "totp" && (bind ? <><div className="kit-qr"><QRCodeSVG value={bind.otpauthUri} size={140} marginSize={2} /></div><p className="tk-txt">无法扫码？手动输入密钥：<b>{bind.secret}</b> <a role="button" onClick={() => copyText(bind.secret)}>复制</a></p></> : <p className="tk-txt">{be || "正在获取绑定密钥…"}</p>)}
     {kind === "passkey" && <p className="tk-txt">尚未添加通行密钥。通行密钥使用设备生物识别登录，更安全便捷。</p>}
     {fields.map((x) => <div key={x}><div className="tk-lbl">{x}</div><input className="kit-in" type={/密码/.test(x) ? "password" : "text"} value={v[x] || ""} onChange={(e) => setV({ ...v, [x]: e.target.value })} placeholder={"请输入" + x} /></div>)}
@@ -59,7 +61,7 @@ function Grid({ symbol = "BTCUSDT", close }: MP) {
   const authed = useAuth();
   useEffect(() => { const t = setTimeout(async () => { const q = new URLSearchParams({ symbol, mode: "arithmetic", ...v }).toString(); const r = await rest<any>("GET", "/strategy/grid/preview?" + q); setPv(r.ok ? r.data : { err: GERR[(r as any).code] || r.error }); }, 400); return () => clearTimeout(t); }, [v, symbol]);
   const go = async () => { if (!authed) { close(); location.href = "/login"; return; } setBusy(true); const r = await rest<any>("POST", "/strategy/grid", { symbol, mode: "arithmetic", ...v }); setBusy(false); if (r.ok) { toast("网格策略已创建"); close(); } else toast(GERR[(r as any).code] || r.error || "创建失败", "err"); };
-  return <Box title={"复制策略 · 现货网格 " + symbol.replace("USDT", "/USDT")} onClose={close} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={go}>{authed ? (busy ? "创建中…" : "创建") : "登录后创建"}</button></>}>
+  return <Box title={"复制策略 · 现货网格 " + symbol.replace("USDT", "/USDT")} onClose={close} dismissible={!busy} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={go}>{authed ? (busy ? "创建中…" : "创建") : "登录后创建"}</button></>}>
     {([["lowerPrice", "价格下限"], ["upperPrice", "价格上限"], ["gridCount", "网格数量"], ["investment", "投资额 (USDT)"]] as const).map(([k, t]) => <div key={k}><div className="tk-lbl">{t}</div><input className="kit-in" inputMode="decimal" value={(v as any)[k]} onChange={(e) => setV({ ...v, [k]: e.target.value.replace(/[^\d.]/g, "") })} /></div>)}
     <p className="tk-txt">{pv?.err ? "预览：" + pv.err : pv ? "预览：每格利润 " + (pv.profitPerGridPct ?? pv.profitPerGrid ?? "--") + (pv.profitPerGridPct ? "%" : "") : "预览计算中…"}</p>
   </Box>;
@@ -83,7 +85,7 @@ const defOpts = (v: string, k?: string) => (DEF.find(([r]) => r.test(v))?.[1]) |
 export function Dropdown({ k, v, opts, onChange, cls = "lsel", store, icons }: { k?: string; v: string; opts?: string[]; onChange?: (x: string) => void; cls?: string; store?: string; icons?: boolean }) {
   const [val, setVal] = useState(() => (store && typeof localStorage !== "undefined" && localStorage.getItem(store)) || v); const [o, setO] = useState(false); const r = useRef<HTMLDivElement>(null);
   useEffect(() => setVal((store && localStorage.getItem(store)) || v), [v, store]);
-  useEffect(() => { if (!o) return; const h = (e: MouseEvent) => !r.current?.contains(e.target as Node) && setO(false); document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, [o]);
+  useDismiss(o, () => setO(false), r);
   const list = opts || defOpts(v, k);
   return <div ref={r} className={cls + " kit-dd"} role="combobox" aria-expanded={o} onClick={() => setO(!o)}>{icons && <CoinIcon s={val} size={20} className="kit-ci" />}{val} <em>▾</em>
     {o && <div className="kit-menu" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{icons && <CoinIcon s={x} size={18} className="kit-ci" />}{x}</div>)}</div>}
@@ -93,7 +95,7 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 /** 日期区间：点击展开两个日期输入 + 快捷范围。 */
 export function DateRange({ preset }: { preset?: boolean }) {
   const now = new Date(); const [a, setA] = useState(preset ? iso(new Date(+now - 6 * 864e5)) : ""); const [b, setB] = useState(preset ? iso(now) : ""); const [o, setO] = useState(false); const r = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (!o) return; const h = (e: MouseEvent) => !r.current?.contains(e.target as Node) && setO(false); document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, [o]);
+  useDismiss(o, () => setO(false), r);
   const q = (n: number) => { setA(iso(new Date(+now - (n - 1) * 864e5))); setB(iso(now)); };
   return <div ref={r} className="lsel date kit-dd" onClick={() => setO(!o)}>{a ? <span>{a}</span> : <span className="lg">开始日期</span>}<span className="lg">→</span>{b ? <span>{b}</span> : <span className="lg">结束日期</span>}<em>▦</em>
     {o && <div className="kit-menu kit-date" onClick={(e) => e.stopPropagation()}><div className="tk-sel">{[7, 30, 90].map((n) => <button key={n} className="tk-chip" onClick={() => q(n)}>近{n}天</button>)}</div>
