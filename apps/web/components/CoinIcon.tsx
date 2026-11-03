@@ -11,7 +11,9 @@ export function baseOf(s: string): string {
   if (q && q[1].length >= 2) x = q[1];
   return x;
 }
-export function coinSrc(s: string) { const b = baseOf(s); return `/coins/${ALIAS[b] || b.toLowerCase()}.svg`; }
+/** 图标版本号：替换图标文件时递增，绕过 CDN / 浏览器缓存（/coins 为 max-age=86400） */
+const ICON_V = "2";
+export function coinSrc(s: string) { const b = baseOf(s); return `/coins/${ALIAS[b] || b.toLowerCase()}.svg?v=${ICON_V}`; }
 export function CoinIcon({ s, size = 20, col, className = "" }: { s: string; size?: number; col?: string; className?: string }) {
   const sym = baseOf(s);
   const [bad, setBad] = useState(false);
