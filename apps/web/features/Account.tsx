@@ -14,6 +14,7 @@ import {
   type AddressItem, type DeviceItem,
 } from "@/lib/account";
 import { CodeInput, Src } from "./common";
+import { Sessions } from "./Security";
 
 function useLoad<T>(fn: () => Promise<{ data?: T; source: "api" | "mock"; ok?: boolean; error?: string }>, init: T) {
   const [d, setD] = useState<T>(init);
@@ -120,41 +121,10 @@ export function Announcements() {
 const fmtTime = (t?: string) => (t ? new Date(t).toLocaleString("zh-CN", { hour12: false }) : "-");
 
 export function Devices() {
-  const [list, setList, src] = useLoad<DeviceItem[]>(listDevices, []);
-  const [err, setErr] = useState("");
-  const mine = typeof window !== "undefined" ? `cid:${deviceId()}` : "";
   return (
     <Shell side={<Side items={ACC} />}>
       <div className="crumb lg">个人中心 / 安全中心 / 设备管理</div>
-      <div className="lcard">
-        <h3>设备管理 <Src s={src} /></h3>
-        <p className="lg">以下为近期登录过你账户的设备。如发现陌生设备，请立即移除并修改登录密码。移除后该设备再次登录需重新验证。</p>
-        {err && <div className="fx-err">{err}</div>}
-        <div className="fx-list">
-          {list.length === 0 && <div className="lg">暂无设备</div>}
-          {list.map((d) => {
-            const cur = d.current ?? d.deviceId === mine; // 后端 current 字段优先
-            return (
-              <div key={d.deviceId} className="fx-item">
-                <div className="sp">
-                  <b>{d.name || d.userAgent || d.deviceId}</b>
-                  {cur && <span className="fx-pin" style={{ marginLeft: 8 }}>当前设备</span>}
-                  <small>{d.ip ? `IP ${d.ip} · ` : ""}首次登录 {fmtTime(d.firstSeen)}</small>
-                </div>
-                <span className="lg">最近活跃 {fmtTime(d.lastSeen)}</span>
-                {cur ? <button className="lb sm dis" disabled title="无法移除当前正在使用的设备">当前设备</button> : (
-                  <button className="lb sm" onClick={async () => {
-                    const r = await removeDevice(d.deviceId);
-                    if (!r.ok) return setErr(r.error ?? "移除失败");
-                    setErr("");
-                    setList(list.filter((x) => x.deviceId !== d.deviceId));
-                  }}>移除</button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <Sessions />
     </Shell>
   );
 }

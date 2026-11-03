@@ -181,8 +181,8 @@ let mockAddr: AddressItem[] = [
   { id: "w1", asset: "USDT", network: "TRC20", address: "TDemo0000000000000000000000000001", label: "示例钱包", whitelisted: true, createdAt: "2026-11-01T00:00:00Z" },
 ];
 let mockWl = false;
-export const sendAccountCode = (purpose: "address" | "bind" | "reset_password" = "address") =>
-  call(() => api.POST("/account/code/send", { body: { purpose } }) as never, () => ({ sent: true, channel: "sms", ttlSeconds: 60 }) as SendCodeRes);
+export const sendAccountCode = (purpose: "address" | "bind" | "reset_password" | "security" | "withdraw" = "address") =>
+  call(() => api.POST("/account/code/send", { body: { purpose } as never }) as never, () => ({ sent: true, channel: "sms", ttlSeconds: 60 }) as SendCodeRes);
 export const listAddresses = () =>
   call(async () => {
     const r = await api.GET("/account/withdraw-addresses");

@@ -1,4 +1,7 @@
 "use client";
+import { passkeyLogin, webauthnSupported } from "@/lib/security";
+import { deviceId, deviceName } from "@/lib/account";
+import { G } from "@/components/Glyph";
 import { useState } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import {
@@ -207,6 +210,20 @@ export function Login() {
             }}
           >
             {busy ? "登录中…" : "登录"}
+          </button>
+          <button
+            className={"lb wide lpk" + (busy ? " dis" : "")}
+            onClick={async () => {
+              if (!webauthnSupported()) return setErr("当前浏览器不支持通行密钥");
+              setBusy(true);
+              const r = await passkeyLogin({ deviceId: deviceId(), deviceName: deviceName() });
+              setBusy(false);
+              if (!r.ok || !r.data) return setErr(r.code === "PASSKEY_UNAVAILABLE" || r.status === 404 || r.status === undefined ? "通行密钥登录暂未启用" : r.error ?? "通行密钥登录失败");
+              setErr("");
+              finish(r.data as AuthTokens, {});
+            }}
+          >
+            <G n="key" s={16} /> 使用通行密钥登录
           </button>
         </>
       ) : (

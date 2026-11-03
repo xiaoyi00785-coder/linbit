@@ -4,7 +4,7 @@ export type AcctKey = "funding" | "spot" | "futures";
 export interface OverviewAccount { account: AcctKey; available: boolean; totalValueUsdt: string; balances: { asset: string; free: string; locked?: string; valuationUsd?: string | null }[] }
 export interface AssetsOverview { totalValueUsdt: string; accounts: OverviewAccount[]; depositAccount?: "funding" | "spot"; withdrawAccount?: "funding" | "spot"; transferable?: Record<string, string[]> }
 export interface WalletNetwork { asset: string; network: string; minDeposit?: string; confirmations?: number; memoRequired?: boolean; withdrawFee?: string; withdrawFeeAsset?: string; minWithdraw?: string; maxWithdraw?: string | null; depositEnabled?: boolean; withdrawEnabled?: boolean; estimatedArrivalMinutes?: number }
-export interface InternalTransferReq { clientId: string; asset: string; amount: string; toUid?: string; toEmail?: string; totpCode: string }
+export interface InternalTransferReq { clientId: string; asset: string; amount: string; toUid?: string; toEmail?: string; totpCode: string; fundPassword?: string }
 export interface InternalTransfer { id: string; clientId: string; direction: "out" | "in"; fromUid: string; toUid: string; toMaskedEmail?: string; asset: string; amount: string; fee: string; status: "pending" | "completed" | "failed"; failReason?: string | null; createdAt: string; completedAt?: string | null }
 type Page<T> = { items: T[]; page: number; pageSize: number; total: number };
 
@@ -19,7 +19,7 @@ export const createInternalTransfer = (b: InternalTransferReq) => rest<InternalT
 export const listInternalTransfers = (page = 1, pageSize = 20) => rest<Page<InternalTransfer>>("GET", `/wallet/internal-transfers?page=${page}&pageSize=${pageSize}`);
 
 const ERR: Record<string, string> = {
-  VALIDATION_ERROR: "参数有误，请检查", TWOFA_REQUIRED: "请先绑定谷歌验证", INVALID_TOTP: "动态码错误，请重新输入",
+  VALIDATION_ERROR: "参数有误，请检查", WITHDRAW_LOCKED: "安全设置变更后 24 小时内禁止提现", FUND_PASSWORD_INVALID: "资金密码错误，请重新输入", FUND_PASSWORD_LOCKED: "资金密码已锁定", FUND_PASSWORD_NOT_SET: "请先设置资金密码", FUND_PASSWORD_REQUIRED: "请输入资金密码", TWOFA_REQUIRED: "请先绑定谷歌验证", INVALID_TOTP: "动态码错误，请重新输入",
   INTERNAL_TRANSFER_DISABLED: "内部转账暂时关闭", RECIPIENT_NOT_FOUND: "收款方不存在，请核对 UID / 邮箱", SELF_TRANSFER: "不能转给自己",
   RECIPIENT_SUB_ACCOUNT: "不支持转入子账户", RECIPIENT_UNAVAILABLE: "收款方账户状态异常，暂无法收款", PRICE_UNAVAILABLE: "暂无法估值，请稍后再试",
   INTERNAL_TRANSFER_LIMIT_EXCEEDED: "超出 24 小时转账额度（50,000 USDT）", INSUFFICIENT_BALANCE: "可用余额不足", IDEMPOTENCY_CONFLICT: "请求重复，请刷新后重试",

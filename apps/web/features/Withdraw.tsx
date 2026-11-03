@@ -2,9 +2,11 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { useBalances } from "@/lib/queries";
-import { listWithdrawNetworks, getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type Withdrawal } from "@/lib/services";
+import { listWithdrawNetworks, getWithdrawConfig, withdraw, withdrawRecords, type WithdrawConfig, type WithdrawRequest, type Withdrawal } from "@/lib/services";
 import { Src } from "./common";
 import { toast } from "@/lib/ui";
+import { useSecurity, fmtUntil } from "@/lib/security";
+import { goto } from "@/lib/ui";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
@@ -25,6 +27,7 @@ const NETS: Record<string, string[]> = {
 const St = ({ n, t, children }: { n: string; t: string; children: React.ReactNode }) => <div className="step"><div className="stn"><b>{n}</b>{t}</div><div className="stb">{children}</div></div>;
 
 /** 提现：币种 → 网络 → 地址/memo/数量（最小额、链上网络费来自配置接口，平台不收提现手续费）→ 2FA 确认 */
+const WLOCK = "安全设置变更后 24 小时内禁止提现";
 export function Withdraw() {
   const [coinOpen, setCoinOpen] = useState(false);
   const [asset, setAsset] = useState("USDT");
@@ -39,6 +42,22 @@ export function Withdraw() {
   const [confirm, setConfirm] = useState(false);
   const [totp, setTotp] = useState("");
   const [tfa, setTfa] = useState<TwofaKind>(null);
+  const [fp, setFp] = useState("");
+  /** 资金密码错误态：invalid → 输入框下提示；unset → 引导设置；locked → 锁定提示 */
+  const [fpe, setFpe] = useState<null | "invalid" | "unset" | "missing" | { locked: string }>(null);
+  const sec = useSecurity();
+  const fpSet = !!sec.data?.fundPasswordSet;
+  const wLockUntil = sec.data?.withdrawLockedUntil && new Date(sec.data.withdrawLockedUntil) > new Date() ? sec.data.withdrawLockedUntil : null;
+  /** 资金密码 / 提现锁定错误码；返回 true 表示已处理 */
+  const fundErr = (r: { code?: string; error?: string; data?: unknown }): boolean => {
+    switch (r.code) {
+      case "FUND_PASSWORD_INVALID": setFpe("invalid"); setFp(""); return true;
+      case "FUND_PASSWORD_REQUIRED": case "FUND_PASSWORD_NOT_SET": setFpe(fpSet && r.code === "FUND_PASSWORD_REQUIRED" ? "missing" : "unset"); return true;
+      case "FUND_PASSWORD_LOCKED": setFpe({ locked: fmtUntil((r as { lockedUntil?: string }).lockedUntil) }); return true;
+      case "WITHDRAW_LOCKED": setConfirm(false); setErr(WLOCK); sec.reload(); return true;
+    }
+    return false;
+  };
   const [err, setErr] = useState("");
   const [done, setDone] = useState<Withdrawal>();
   const [records, setRecords] = useState<Withdrawal[]>([]);
@@ -198,9 +217,10 @@ export function Withdraw() {
                 <span>预计到账时间</span><b>{tab === "inner" ? "实时到账" : eta}</b>
               </div>
               {tfa === "required" && <TwofaRequired />}
+              {wLockUntil && !err && <div className="sec-lock"><b>!</b>{WLOCK}，预计 {fmtUntil(wLockUntil)} 解除。</div>}
               {err && <div className="fx-err">{err}</div>}
               {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
-              <button className="lb dark wide" disabled={!amt} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) setConfirm(true); }}>
+              <button className="lb dark wide" disabled={!amt} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) { setFpe(null); setTfa(null); setConfirm(true); } }}>
                 {tab === "inner" ? "转账" : "提现"}
               </button>
             </St>
@@ -239,26 +259,38 @@ export function Withdraw() {
               <input inputMode="numeric" maxLength={6} placeholder="6 位 2FA 动态码" value={totp} onChange={(e) => { setTotp(e.target.value.replace(/\D/g, "")); if (tfa === "invalid") setTfa(null); }} />
               <TotpErr show={tfa === "invalid"} />
             </div>
+            {fpe !== "unset" && <div className="fx-field">
+              资金密码{!fpSet && <small className="lg">（未设置可留空）</small>}
+              <input type="password" inputMode="numeric" maxLength={6} placeholder="6 位资金密码" value={fp} onChange={(e) => { setFp(e.target.value.replace(/\D/g, "")); if (fpe === "invalid" || fpe === "missing") setFpe(null); }} />
+              {fpe === "invalid" && <div className="fx-err tfa-inv">资金密码错误，请重新输入</div>}
+              {fpe === "missing" && <div className="fx-err tfa-inv">请输入资金密码</div>}
+            </div>}
+            {fpe === "unset" && <div className="tfa-req"><span><b>!</b>请先设置资金密码，设置后才能{tab === "inner" ? "转账" : "提现"}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>去设置</button></div>}
+            {fpe && typeof fpe === "object" && <div className="tfa-req"><span><b>!</b>资金密码错误次数过多，已锁定{fpe.locked ? `至 ${fpe.locked}` : ""}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>重置资金密码</button></div>}
             <button
               className="lb lime wide"
               onClick={async () => {
                 if (totp.length !== 6) return setErr("请输入 6 位 2FA 动态码");
-                setTfa(null);
+                if (fpSet && fp.length !== 6) return setFpe("missing");
+                setTfa(null); setFpe(null);
+                const fpw = fp ? { fundPassword: fp } : {};
                 if (tab === "inner") {
-                  const r = await createInternalTransfer({ clientId: newClientId(), asset, amount: amt, totpCode: totp, ...(toKey === "email" ? { toEmail: to } : { toUid: to }) });
+                  const r = await createInternalTransfer({ clientId: newClientId(), asset, amount: amt, totpCode: totp, ...fpw, ...(toKey === "email" ? { toEmail: to } : { toUid: to }) });
                   const k = twofaKind(r);
+                  if (fundErr(r)) return;
                   if (k === "invalid") { setTfa("invalid"); setTotp(""); return; }
-                  setConfirm(false); setTotp("");
+                  setConfirm(false); setTotp(""); setFp("");
                   if (k === "required") { setTfa("required"); setErr(""); return; }
                   if (r.ok) { setErr(""); setAmt(""); toast("转账成功", "ok"); setInnerDone((x) => x + 1); ov.reload(); }
                   else { const m = errMsg(r); setErr(m); if (m === SOON) toast(m, "info"); }
                   return;
                 }
-                const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp });
+                const r = await withdraw({ asset, network: net, address: addr, amount: amt, memo: memo || null, totpCode: totp, ...fpw } as WithdrawRequest);
                 const k = twofaKind(r);
+                if (fundErr(r)) return;
                 if (k === "invalid") { setTfa("invalid"); setTotp(""); return; }
                 setConfirm(false);
-                setTotp("");
+                setTotp(""); setFp("");
                 if (k === "required") { setTfa("required"); setErr(""); return; }
                 if (r.ok) { setDone(r.data); setErr(""); } else setErr(r.error ?? "提现失败");
               }}
