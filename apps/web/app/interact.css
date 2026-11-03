@@ -285,3 +285,11 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 .hdr{z-index:100}
 .dacct{margin:0 0 12px;font-size:13px}.dacct b{color:var(--lb-primary)}
 .hdr .dd.wide{width:max-content;position:fixed;top:60px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 48px)}
+/* 首页注册行：输入框与按钮不重叠，与右侧下载图标同高对齐 */
+.hero-row{align-items:center}
+.signup{height:56px;box-sizing:border-box;align-items:center;width:340px}
+.signup input{min-width:0;height:100%;color:#111}
+.signup button{height:48px}
+.stores{height:56px;box-sizing:border-box;padding:0 10px}
+.stores span svg{display:block}
+.hotf{color:#ff7a1a;vertical-align:-1px}

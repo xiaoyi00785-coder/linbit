@@ -1,4 +1,5 @@
 "use client";
+import { G } from "@/components/Glyph";
 import { useParams, useRouter } from "next/navigation";
 import { SOON, bySlug } from "@/lib/features";
 
@@ -11,7 +12,7 @@ export default function ComingSoon() {
   return (
     <main className="cs-wrap">
       <div className="cs-card">
-        <span className="cs-ic">{it.icon}</span>
+        <span className="cs-ic"><G n={it.icon} s={28} /></span>
         <em className="cs-badge">即将上线</em>
         <h1>{it.name}</h1>
         <p>{it.intro}</p>

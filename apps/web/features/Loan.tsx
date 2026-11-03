@@ -1,4 +1,5 @@
 "use client";
+import { G } from "@/components/Glyph";
 /**
  * 质押借币：对接 earn 服务 /loans/*（gateway 前缀 /loans；market、quote 公开，其余需登录）。
  * 仅移除 USDC 作为可借 / 质押币种；初始质押率以后端 initialLtv 为准（默认 80%）。
@@ -183,7 +184,7 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
           <div className="ltr e5">
             <span><CoinIcon s={market.asset} size={22} /> {market.asset}</span>
             {market.terms.map((t) => <span key={t.term}>{(Number(t.hourlyRate) * 100).toFixed(6)}% / <b>{pc(t.annualRate)}</b></span>)}
-            <span className="r"><button className="lb lime sm" onClick={() => setB(market.terms[0]?.term ?? "flexible")}>⚡ 借贷</button></span>
+            <span className="r"><button className="lb lime sm" onClick={() => setB(market.terms[0]?.term ?? "flexible")}><G n="bolt" s={14} /> 借贷</button></span>
           </div>
         ) : <div className="lg fx-empty">暂无可借币种</div>}
         {faq}
