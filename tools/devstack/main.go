@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -32,15 +33,38 @@ import (
 )
 
 const (
-	pgPort      = 5433
-	gatewayPort = "8080"
-	accountPort = "8081"
-	assetPort   = "8082"
-	enginePort  = "8083"
-	orderPort   = "8084"
 	jwtSecret   = "devstack-insecure-jwt-secret"
 	internalTok = "devstack-internal-token"
 )
+
+// Ports are overridable via environment so two devstacks (e.g. two parallel
+// smoke runs) can coexist without colliding. Set DEVSTACK_*_PORT to change them.
+var (
+	pgPort      = envInt("DEVSTACK_PG_PORT", 5433)
+	gatewayPort = envOr("DEVSTACK_GATEWAY_PORT", "8080")
+	accountPort = envOr("DEVSTACK_ACCOUNT_PORT", "8081")
+	assetPort   = envOr("DEVSTACK_ASSET_PORT", "8082")
+	enginePort  = envOr("DEVSTACK_ENGINE_PORT", "8083")
+	orderPort   = envOr("DEVSTACK_ORDER_PORT", "8084")
+)
+
+// envOr returns the env var value or def when unset/empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// envInt returns the integer env var or def when unset/invalid.
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
 
 func main() {
 	root := flag.String("root", ".", "repository root (where services/go lives)")
@@ -67,7 +91,7 @@ func run(root, execCmd string) int {
 
 	pg := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig().
 		Username("linbit").Password("linbit").Database("linbit").
-		Port(pgPort).
+		Port(uint32(pgPort)).
 		RuntimePath(runtimePath).
 		StartTimeout(90 * time.Second))
 

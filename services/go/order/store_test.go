@@ -143,3 +143,75 @@ func TestOrderLifecycle(t *testing.T) {
 		t.Fatalf("my trades: total=%d err=%v", ttotal, err)
 	}
 }
+
+// insertOrderWithStatus inserts a minimal order in the given status for tests.
+func insertOrderWithStatus(t *testing.T, store *Store, uid, status string) string {
+	t.Helper()
+	ctx := context.Background()
+	id, err := store.NextOrderID(ctx)
+	if err != nil {
+		t.Fatalf("next id: %v", err)
+	}
+	o := &Order{
+		OrderID: id, UserID: uid, Symbol: "BTCUSDT", Side: "buy", Type: "limit",
+		TimeInForce: "GTC", Price: decimal.RequireFromString("70000"), HasPrice: true,
+		Quantity: decimal.RequireFromString("0.01"), FilledQuantity: decimal.Zero,
+		Status: status, FrozenAsset: "USDT", FrozenAmount: decimal.RequireFromString("700"),
+	}
+	if err := store.InsertOrder(ctx, o); err != nil {
+		t.Fatalf("insert %s order: %v", status, err)
+	}
+	if status != "new" {
+		if err := store.UpdateFill(ctx, id, decimal.Zero, status); err != nil {
+			t.Fatalf("set status %s: %v", status, err)
+		}
+	}
+	return id
+}
+
+// TestOrderHistoryTerminalOnly verifies history returns only terminal orders
+// (filled/canceled/rejected/expired) and never live ones (new/partially_filled),
+// even when a non-terminal status filter is supplied.
+func TestOrderHistoryTerminalOnly(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	uid := testUser()
+
+	insertOrderWithStatus(t, store, uid, "new")
+	insertOrderWithStatus(t, store, uid, "partially_filled")
+	insertOrderWithStatus(t, store, uid, "filled")
+	insertOrderWithStatus(t, store, uid, "canceled")
+	insertOrderWithStatus(t, store, uid, "rejected")
+	insertOrderWithStatus(t, store, uid, "expired")
+
+	hist, total, err := store.OrderHistory(ctx, uid, "", "", 1, 50)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if total != 4 || len(hist) != 4 {
+		t.Fatalf("history total=%d len=%d, want 4 (terminal only)", total, len(hist))
+	}
+	for _, o := range hist {
+		if !terminal(o.Status) && o.Status != "expired" {
+			t.Fatalf("history contained non-terminal status %q", o.Status)
+		}
+	}
+
+	// A non-terminal status filter must match nothing.
+	_, ptotal, err := store.OrderHistory(ctx, uid, "", "partially_filled", 1, 50)
+	if err != nil {
+		t.Fatalf("history filter: %v", err)
+	}
+	if ptotal != 0 {
+		t.Fatalf("history with status=partially_filled total=%d, want 0", ptotal)
+	}
+
+	// A terminal status filter narrows to that status.
+	_, ftotal, err := store.OrderHistory(ctx, uid, "", "filled", 1, 50)
+	if err != nil {
+		t.Fatalf("history filled filter: %v", err)
+	}
+	if ftotal != 1 {
+		t.Fatalf("history with status=filled total=%d, want 1", ftotal)
+	}
+}

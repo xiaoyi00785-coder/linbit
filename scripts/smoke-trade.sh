@@ -85,6 +85,16 @@ place() {
     -d "$2"
 }
 
+# api_get <token> <path> — authenticated GET through the gateway; echoes the body.
+api_get() {
+  curl -sS "$GATEWAY_URL$2" -H "Authorization: Bearer $1"
+}
+
+# http_code <token> <path> — authenticated GET; echoes only the HTTP status code.
+http_code() {
+  curl -sS -o /dev/null -w '%{http_code}' "$GATEWAY_URL$2" -H "Authorization: Bearer $1"
+}
+
 # free_balance <token> <asset> — user's free balance for <asset> via the gateway.
 free_balance() {
   curl -sS "$GATEWAY_URL/assets/balances?pageSize=100" -H "Authorization: Bearer $1" \
@@ -129,6 +139,12 @@ BUY_RESP="$(place "$BUYER_TOKEN" \
 echo "$BUY_RESP"
 [ "$(printf '%s' "$BUY_RESP" | jq -r '.status')" = "filled" ] || fail "buy order not filled"
 
+# Precision: BTCUSDT pricePrecision=2, quantityPrecision=6 — the place response
+# must be formatted as fixed-precision decimal strings (not raw "0.01"/"70000").
+expect "buy resp quantity fmt"       "$(printf '%s' "$BUY_RESP" | jq -r '.quantity')"       "0.010000"
+expect "buy resp filledQuantity fmt" "$(printf '%s' "$BUY_RESP" | jq -r '.filledQuantity')" "0.010000"
+expect "buy resp price fmt"          "$(printf '%s' "$BUY_RESP" | jq -r '.price')"          "70000.00"
+
 say "5/6 verify balances (exact decimal)"
 # Trade: 0.01 BTC @ 70000 = 700 USDT. Both fees 0.1%.
 #   buyer (taker) fee: 0.01 * 0.001 = 0.00001 BTC
@@ -143,10 +159,61 @@ expect "seller BTC free"   "$(free_balance "$SELLER_TOKEN" BTC)"  "0.00000000"
 expect "fee account USDT"  "$(fee_balance  platform USDT)"        "0.70000000"
 expect "fee account BTC"   "$(fee_balance  platform BTC)"         "0.00001000"
 
-say "6/6 value conservation"
+say "6/9 value conservation"
 # BTC: buyer + seller + fees == 0.01 ; USDT: == 1000 (seller deposited BTC only,
 # buyer deposited USDT only, so totals are checked per the single trade).
 echo "  BTC: 0.00999 + 0 + 0.00001 = 0.01   OK"
 echo "  USDT: 300 + 699.3 + 0.7   = 1000    OK"
 
-printf '\n\033[1;32mSMOKE-TRADE PASSED\033[0m — register -> deposit -> match -> settle with exact fees\n'
+say "7/9 order history returns terminal orders only (no new/partially_filled)"
+# Both orders are now filled, so each user's history has exactly one filled order
+# and never any live (new/partially_filled) status.
+BUYER_HIST="$(api_get "$BUYER_TOKEN" "/spot/orders/history?symbol=$SYMBOL")"
+echo "$BUYER_HIST"
+HIST_TOTAL="$(printf '%s' "$BUYER_HIST" | jq -r '.total')"
+expect "buyer history total" "$HIST_TOTAL" "1"
+# Every returned status must be terminal.
+NON_TERMINAL="$(printf '%s' "$BUYER_HIST" \
+  | jq -r '[.items[] | select(.status|IN("new","partially_filled"))] | length')"
+expect "buyer history non-terminal count" "$NON_TERMINAL" "0"
+expect "buyer history status" "$(printf '%s' "$BUYER_HIST" | jq -r '.items[0].status')" "filled"
+# Precision is applied in history too.
+expect "buyer history quantity fmt" "$(printf '%s' "$BUYER_HIST" | jq -r '.items[0].quantity')" "0.010000"
+expect "buyer history price fmt"    "$(printf '%s' "$BUYER_HIST" | jq -r '.items[0].price')"    "70000.00"
+# A non-terminal status filter must return nothing.
+NEW_FILTER_TOTAL="$(api_get "$BUYER_TOKEN" "/spot/orders/history?status=new" | jq -r '.total')"
+expect "buyer history status=new total" "$NEW_FILTER_TOTAL" "0"
+
+say "8/9 trade precision (fee formatted to charging-asset precision)"
+BUYER_TRADES="$(api_get "$BUYER_TOKEN" "/spot/trades?symbol=$SYMBOL")"
+echo "$BUYER_TRADES"
+expect "buyer trade price fmt"    "$(printf '%s' "$BUYER_TRADES" | jq -r '.items[0].price')"    "70000.00"
+expect "buyer trade quantity fmt" "$(printf '%s' "$BUYER_TRADES" | jq -r '.items[0].quantity')" "0.010000"
+# buyer (taker) fee is in BTC (base) -> quantityPrecision=6
+expect "buyer trade fee fmt"      "$(printf '%s' "$BUYER_TRADES" | jq -r '.items[0].fee')"      "0.000010"
+
+say "9/9 wallet withdraw endpoints (networks + records) via gateway"
+# networks: requires auth, returns configured networks with gasFeeEstimate.
+NET_CODE="$(http_code "$BUYER_TOKEN" "/wallet/withdraw/networks?asset=USDT")"
+expect "withdraw networks status" "$NET_CODE" "200"
+NET="$(api_get "$BUYER_TOKEN" "/wallet/withdraw/networks?asset=USDT")"
+echo "$NET"
+expect "withdraw networks asset" "$(printf '%s' "$NET" | jq -r '.asset')" "USDT"
+NET_COUNT="$(printf '%s' "$NET" | jq -r '.networks | length')"
+[ "$NET_COUNT" -ge 1 ] || fail "withdraw networks empty for USDT"
+echo "  ok  withdraw networks count          = $NET_COUNT"
+GAS="$(printf '%s' "$NET" | jq -r '.networks[0].gasFeeEstimate')"
+[ -n "$GAS" ] && [ "$GAS" != "null" ] || fail "withdraw network missing gasFeeEstimate"
+echo "  ok  withdraw networks[0].gasFeeEstimate = $GAS"
+# networks require authentication through the gateway.
+NET_NOAUTH="$(curl -sS -o /dev/null -w '%{http_code}' "$GATEWAY_URL/wallet/withdraw/networks?asset=USDT")"
+expect "withdraw networks no-auth" "$NET_NOAUTH" "401"
+# records: paginated envelope (empty list for now).
+REC_CODE="$(http_code "$BUYER_TOKEN" "/wallet/withdraw/records")"
+expect "withdraw records status" "$REC_CODE" "200"
+REC="$(api_get "$BUYER_TOKEN" "/wallet/withdraw/records")"
+echo "$REC"
+expect "withdraw records total"     "$(printf '%s' "$REC" | jq -r '.total')"            "0"
+expect "withdraw records items len" "$(printf '%s' "$REC" | jq -r '.items | length')"   "0"
+
+printf '\n\033[1;32mSMOKE-TRADE PASSED\033[0m — trade+settle, history (terminal-only), precision, withdraw endpoints\n'

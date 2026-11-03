@@ -55,6 +55,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/2fa", proxy: accountProxy},
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/assets", proxy: assetProxy},
+			{prefix: "/wallet", proxy: assetProxy},
 			{prefix: "/spot", proxy: orderProxy},
 		},
 		public: []publicRoute{
@@ -67,9 +68,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	}, nil
 }
 
-// Handler returns the gateway HTTP handler.
+// Handler returns the gateway HTTP handler (CORS wraps auth + routing).
 func (g *Gateway) Handler() http.Handler {
-	return http.HandlerFunc(g.serve)
+	return g.withCORS(http.HandlerFunc(g.serve))
 }
 
 func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
