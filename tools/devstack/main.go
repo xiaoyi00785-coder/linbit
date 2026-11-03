@@ -442,6 +442,13 @@ func run(root, execCmd string) int {
 		"ADMIN_URL=http://localhost:" + adminPort,
 		"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
 		"MM_URL=http://localhost:" + mmPort,
+		// Remaining service URLs so smokes follow shifted DEVSTACK_*_PORTs
+		// instead of falling back to the default ports.
+		"FUTURES_URL=http://localhost:" + futuresPort,
+		"KYC_URL=http://localhost:" + kycPort,
+		"STRATEGY_URL=http://localhost:" + strategyPort,
+		"GROWTH_URL=http://localhost:" + growthPort,
+		"EARN_URL=http://localhost:" + earnPort,
 		"DEVSTACK_TELEGRAM_API_URL=" + tgAPI,
 	}
 	// Bootstrap super-admin credentials go only to exec'd commands (smokes),
