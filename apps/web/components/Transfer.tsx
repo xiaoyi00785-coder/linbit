@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { toast } from "@/lib/ui";
+import { ACCT_KEY, createTransfer, newClientId, transferErr } from "@/lib/transfer";
 
 const ACCTS = ["资金账户", "现货账户", "合约账户", "理财账户", "传统金融账户", "策略账户"];
 export const openTransfer = (from?: string) => window.dispatchEvent(new CustomEvent("lb:transfer", { detail: from }));
@@ -12,6 +13,17 @@ export function TransferHost() {
   const [to, setTo] = useState(ACCTS[1]);
   const [coin, setCoin] = useState("USDT");
   const [amt, setAmt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!Number(amt)) return toast("请输入划转数量", "err");
+    const f = ACCT_KEY[from], t = ACCT_KEY[to];
+    if (!f || !t) return toast("目前仅支持现货账户与合约账户之间划转", "info");
+    setBusy(true);
+    const r = await createTransfer({ clientId: newClientId(), asset: coin, amount: amt, from: f, to: t });
+    setBusy(false);
+    if (r.ok) { toast("划转成功", "ok"); setOpen(false); window.dispatchEvent(new Event("lb:balances")); }
+    else toast(transferErr(r.error, r.status), "err");
+  };
   useEffect(() => {
     const h = (e: Event) => { const f = (e as CustomEvent).detail as string | undefined; if (f && ACCTS.includes(f)) { setFrom(f); setTo(f === ACCTS[0] ? ACCTS[1] : ACCTS[0]); } setAmt(""); setOpen(true); };
     window.addEventListener("lb:transfer", h);
@@ -30,7 +42,7 @@ export function TransferHost() {
         <label className="trl">币种<select className="fsel" value={coin} onChange={(e) => setCoin(e.target.value)}>{["USDT", "BTC", "ETH"].map((a) => <option key={a}>{a}</option>)}</select></label>
         <label className="trl">数量<span className="wamt"><input inputMode="decimal" placeholder="请输入划转数量" value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} /><a className="lime2" onClick={() => setAmt("0")}>全部</a><em>{coin}</em></span></label>
         <div className="lg trv">可用 0 {coin}</div>
-        <button className="lb dark wide" onClick={() => { if (!Number(amt)) return toast("请输入划转数量", "err"); toast("可用余额不足", "err"); }}>确认划转</button>
+        <button className="lb dark wide" disabled={busy} onClick={submit}>{busy ? "划转中…" : "确认划转"}</button>
       </div>
     </div>
   );
