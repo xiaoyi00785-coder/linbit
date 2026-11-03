@@ -155,7 +155,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 登出（吊销当前刷新令牌） */
+        /**
+         * 登出（吊销该用户全部刷新令牌）
+         * @description 需要 `Authorization: Bearer <accessToken>`。服务端按访问令牌识别用户，
+         *     吊销该用户所有未吊销的刷新令牌（全部设备）。请求体可选：客户端可以带
+         *     `{refreshToken}`，服务端目前不读取它；已签发的访问令牌在过期前仍然有效。
+         */
         post: operations["logout"];
         delete?: never;
         options?: never;
@@ -7487,9 +7492,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description 可选，服务端忽略（全部刷新令牌都会被吊销） */
+                    refreshToken?: string;
+                };
+            };
+        };
         responses: {
-            /** @description 已登出 */
+            /** @description 已登出，刷新令牌已吊销 */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -7497,6 +7509,15 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            /** @description 服务器内部错误（INTERNAL） */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     bindTotp: {
@@ -12712,6 +12733,8 @@ export interface operations {
                         total?: number;
                         page?: number;
                         size?: number;
+                        /** @description 每个母账户可创建的子账户上限（管理员可调，默认 20） */
+                        limit?: number;
                     };
                 };
             };
