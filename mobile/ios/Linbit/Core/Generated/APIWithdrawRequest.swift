@@ -18,8 +18,10 @@ public struct APIWithdrawRequest: Codable, JSONEncodable, Hashable {
     public var totpCode: String?
     /** 未开启 2FA 时必填：发到用户邮箱/手机的验证码（purpose=withdraw）。 与 totpCode 二选一，由服务端按账户状态校验。  */
     public var code: String?
+    /** 资金密码（已设置且后台策略要求时必填；fundPasswordMandatory=true 时未设置将被拒绝 FUND_PASSWORD_NOT_SET） */
+    public var fundPassword: String?
 
-    public init(asset: String, network: String, address: String, amount: String, memo: String? = nil, totpCode: String? = nil, code: String? = nil) {
+    public init(asset: String, network: String, address: String, amount: String, memo: String? = nil, totpCode: String? = nil, code: String? = nil, fundPassword: String? = nil) {
         self.asset = asset
         self.network = network
         self.address = address
@@ -27,6 +29,7 @@ public struct APIWithdrawRequest: Codable, JSONEncodable, Hashable {
         self.memo = memo
         self.totpCode = totpCode
         self.code = code
+        self.fundPassword = fundPassword
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -37,6 +40,7 @@ public struct APIWithdrawRequest: Codable, JSONEncodable, Hashable {
         case memo
         case totpCode
         case code
+        case fundPassword
     }
 
     // Encodable protocol methods
@@ -50,6 +54,7 @@ public struct APIWithdrawRequest: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(memo, forKey: .memo)
         try container.encodeIfPresent(totpCode, forKey: .totpCode)
         try container.encodeIfPresent(code, forKey: .code)
+        try container.encodeIfPresent(fundPassword, forKey: .fundPassword)
     }
 }
 

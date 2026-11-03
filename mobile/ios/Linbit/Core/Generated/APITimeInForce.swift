@@ -7,8 +7,11 @@
 
 import Foundation
 
+/** PostOnly（别名 GTX）&#x3D; 只做 Maker，会立即成交则拒绝（POST_ONLY_REJECTED） */
 public enum APITimeInForce: String, Codable, CaseIterable {
     case gtc = "GTC"
     case ioc = "IOC"
     case fok = "FOK"
+    case postOnly = "PostOnly"
+    case gtx = "GTX"
 }
