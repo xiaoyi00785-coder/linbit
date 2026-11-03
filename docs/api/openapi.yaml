@@ -1304,7 +1304,9 @@ paths:
         按 sort 排序。symbols 只包含当前已上线的现货交易对；暂无交易对的分类
         （如贵金属 metals）返回空数组。id 固定：layer1 公链, metals 贵金属,
         commodities 大宗商品, stocks 股票, meme Meme, ai AI, defi DeFi,
-        layer2 Layer 2, ecosystem 生态。「全部」由前端自行处理。
+        layer2 Layer 2, ecosystem 生态, solana Solana 生态, gamefi GameFi,
+        depin DePIN, nft NFT, ton TON, lsd LSD, web3 Web3, platform 平台币,
+        payment 支付。「全部」由前端自行处理。
       operationId: listMarketCategories
       security: []
       responses:
