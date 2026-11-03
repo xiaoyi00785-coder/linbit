@@ -163,3 +163,4 @@
 .ff-mact{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.ff-f{display:flex;flex-direction:column;gap:6px;margin-top:14px;font-size:12px;color:var(--lb-light-text-2)}.ff-f>input{height:40px;border:1px solid var(--lb-light-border);border-radius:8px;padding:0 12px;outline:0;font-size:14px;color:var(--lb-card)}.ff-f>input:focus{border-color:#abe127}
 .ff-ops button{border:0;background:none;color:var(--lb-card);text-decoration:underline;cursor:pointer;font-size:12px;margin-left:10px}
 .ff-krow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--lb-light-border)}
+.por-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}.por-t th,.por-t td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--lb-card-2)}.por-t th:first-child,.por-t td:first-child{text-align:left}.por-t th{color:var(--lb-text-3);font-weight:400}

@@ -32,12 +32,14 @@ export function KycUpload({ label, side, onDone }: { label: string; side: "front
   );
 }
 
+type KycForm = Omit<KycSubmission, "documents">;
+
 export function KycBasic() {
-  const [f, setF] = useState<KycSubmission>({ firstName: "", lastName: "", country: "", idType: "id_card", idNumber: "", dateOfBirth: "" });
+  const [f, setF] = useState<KycForm>({ firstName: "", lastName: "", country: "", idType: "id_card", idNumber: "", dateOfBirth: "" });
   const [docs, setDocs] = useState<{ front?: string; selfie?: string }>({});
   const [msg, setMsg] = useState("");
   const [src, setSrc] = useState<"api" | "mock">();
-  const set = (k: keyof KycSubmission) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const set = (k: keyof KycForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const ready = f.firstName && f.lastName && f.country && f.idNumber && f.dateOfBirth && docs.front && docs.selfie;
   return (
     <Shell side={<Side items={ACC} />}>
@@ -58,7 +60,7 @@ export function KycBasic() {
         </div>
         {msg && <div className="fx-ok">{msg}</div>}
         <button className="lb lime wide" disabled={!ready} style={{ opacity: ready ? 1 : 0.5 }} onClick={async () => {
-          const r = await submitKyc(f);
+          const r = await submitKyc({ ...f, documents: { front: docs.front!, selfie: docs.selfie! } });
           setSrc(r.source);
           setMsg(r.ok ? "✓ 已提交，审核结果将通过消息通知告知" : r.error ?? "提交失败");
         }}>提交</button>
