@@ -38,6 +38,8 @@ type withdrawInput struct {
 	Amount   decimal.Decimal
 	TOTPCode string
 	Code     string
+	// FundPassword is checked by account when the fund-password policy applies.
+	FundPassword string
 }
 
 // withdrawRef is the idempotency/bookkeeping key for a withdrawal's ledger ops.
@@ -100,12 +102,12 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 	}
 
 	// Second factor (reuses account's verification via the internal endpoint).
-	vr, err := s.account.Verify2FA(ctx, userID, in.TOTPCode, in.Code)
+	vr, err := s.account.Verify2FA(ctx, userID, in.TOTPCode, in.Code, OutflowOpts{Action: "withdraw", FundPassword: in.FundPassword})
 	if err != nil {
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "二次验证服务不可用")
 	}
 	if !vr.OK {
-		return nil, errf(http.StatusUnauthorized, "TWOFA_REQUIRED", "需要有效的二次验证（TOTP 或验证码）")
+		return nil, verifyError(vr)
 	}
 
 	// Whitelist: when enabled, the destination must be a whitelisted address.

@@ -47,6 +47,7 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 	} else {
 		log.Printf("email provider: dev mock (RESEND_API_KEY/RESEND_FROM unset)")
 	}
+	mail = antiPhishingMailer{inner: mail, store: store, rec: rec}
 	codes := NewCodeService(store, mail, logSmsSender{rec: rec}, rec, rdb, now)
 	if cfg.DevMode {
 		// Dev/test: relax send throttling so smoke scripts can drive several
@@ -139,6 +140,30 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /vip/applications", s.auth(http.HandlerFunc(s.handleApplyVIP)))
 	mux.HandleFunc("GET /internal/vip/applications", s.handleInternalListVIP)
 	mux.HandleFunc("POST /internal/vip/applications/{id}/review", s.handleInternalReviewVIP)
+
+	// Security settings.
+	a := func(h http.HandlerFunc) http.Handler { return s.auth(h) }
+	mux.Handle("GET /account/security", a(s.handleSecurityOverview))
+	mux.Handle("POST /account/password/change", a(s.handleChangePassword))
+	mux.Handle("POST /account/contact/code", a(s.handleContactCode))
+	mux.Handle("PUT /account/email", a(s.handleChangeContact(channelEmail)))
+	mux.Handle("PUT /account/phone", a(s.handleChangeContact(channelSMS)))
+	mux.Handle("POST /account/fund-password", a(s.handleFundPassword("set")))
+	mux.Handle("PUT /account/fund-password", a(s.handleFundPassword("change")))
+	mux.Handle("POST /account/fund-password/reset", a(s.handleFundPassword("reset")))
+	mux.Handle("PUT /account/anti-phishing", a(s.handleAntiPhishing))
+	mux.Handle("GET /account/sessions", a(s.handleListSessions))
+	mux.Handle("DELETE /account/sessions/{id}", a(s.handleRevokeSession))
+	mux.Handle("POST /account/sessions/revoke-others", a(s.handleRevokeOtherSessions))
+	mux.Handle("GET /account/passkeys", a(s.handleListPasskeys))
+	mux.Handle("POST /account/passkeys/register/begin", a(s.handlePasskeyRegisterBegin))
+	mux.Handle("POST /account/passkeys/register/finish", a(s.handlePasskeyRegisterFinish))
+	mux.Handle("DELETE /account/passkeys/{id}", a(s.handleDeletePasskey))
+	mux.HandleFunc("POST /auth/passkey/login/begin", s.handlePasskeyLoginBegin)
+	mux.HandleFunc("POST /auth/passkey/login/finish", s.handlePasskeyLoginFinish)
+	mux.HandleFunc("GET /internal/admin/security-settings", s.handleInternalGetSecuritySettings)
+	mux.HandleFunc("PUT /internal/admin/security-settings", s.handleInternalPutSecuritySettings)
+	mux.HandleFunc("DELETE /internal/admin/users/{uid}/withdraw-lock", s.handleInternalClearWithdrawLock)
 
 	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))

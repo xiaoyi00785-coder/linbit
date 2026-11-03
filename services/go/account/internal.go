@@ -20,11 +20,20 @@ type internalVerifyRequest struct {
 	UID      string `json:"uid"`
 	TOTPCode string `json:"totpCode"`
 	Code     string `json:"code"`
+	// Optional (security settings): "withdraw" | "internal_transfer". When set,
+	// the withdrawal lock and fund-password policy are enforced too.
+	Action       string `json:"action,omitempty"`
+	FundPassword string `json:"fundPassword,omitempty"`
 }
 
+// Reasons: user_not_found, account_frozen, totp_required, totp_invalid,
+// no_contact, code_required, code_invalid, withdraw_locked,
+// fund_password_required, fund_password_invalid, fund_password_locked,
+// fund_password_not_set, internal_error.
 type internalVerifyResponse struct {
-	OK     bool   `json:"ok"`
-	Reason string `json:"reason,omitempty"`
+	OK          bool    `json:"ok"`
+	Reason      string  `json:"reason,omitempty"`
+	LockedUntil *string `json:"lockedUntil,omitempty"`
 }
 
 // handleInternalWithdrawVerify validates a withdrawal's second factor. When the
@@ -50,21 +59,26 @@ func (s *Server) handleInternalWithdrawVerify(w http.ResponseWriter, r *http.Req
 		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "account_frozen"})
 		return
 	}
+	// Second factor first (so a wrong fund password can't be probed without it).
 	if u.TOTPEnabled {
-		if req.TOTPCode == "" || !validateTOTP(u.TOTPSecret, req.TOTPCode) {
+		if req.TOTPCode == "" {
+			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_required"})
+			return
+		}
+		if !validateTOTP(u.TOTPSecret, req.TOTPCode) {
 			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_invalid"})
 			return
 		}
-		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: true})
-		return
-	}
-	if req.Code == "" {
-		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "code_required"})
+		s.finishOutflowVerify(w, r, u, req)
 		return
 	}
 	target := s.contactTarget(u, s.contactChannel(u))
 	if target == "" {
 		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "no_contact"})
+		return
+	}
+	if req.Code == "" {
+		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "code_required"})
 		return
 	}
 	verdict, err := s.codes.Verify(r.Context(), target, purposeWithdraw, req.Code)
@@ -74,6 +88,17 @@ func (s *Server) handleInternalWithdrawVerify(w http.ResponseWriter, r *http.Req
 	}
 	if verdict != codeOK {
 		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "code_invalid"})
+		return
+	}
+	s.finishOutflowVerify(w, r, u, req)
+}
+
+// finishOutflowVerify applies the withdrawal lock + fund password checks when
+// the caller names an action (new wallet); legacy callers get 2FA-only.
+func (s *Server) finishOutflowVerify(w http.ResponseWriter, r *http.Request, u *User, req internalVerifyRequest) {
+	reason, until := s.outflowCheck(r.Context(), u, req.Action, req.FundPassword)
+	if reason != "" {
+		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: reason, LockedUntil: until})
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: true})

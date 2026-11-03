@@ -305,6 +305,323 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 账户安全概览
+         * @description 2FA、邮箱/手机（脱敏）、资金密码、防钓鱼码、通行密钥数量、提现锁定状态、最近登录设备及当前安全策略。
+         */
+        get: operations["getSecurityOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/password/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 修改登录密码（原密码 + 2FA/验证码，默认注销其他会话）
+         * @description 已开启 2FA 时需 totpCode；否则需 code（POST /account/code/send purpose=security）。
+         *     成功后撤销除当前设备外的全部会话，并触发提现锁定（默认 24 小时）与安全通知邮件。
+         *     错误码：OLD_PASSWORD_INVALID、PASSWORD_UNCHANGED、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、AUTH_CODE_INVALID。
+         */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/contact/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 向新邮箱/手机发送绑定验证码（purpose=bind_new）
+         * @description 传 email 或 phone(+countryCode)。短信不可用时返回 503 SMS_UNAVAILABLE；已被他人使用返回 409 EMAIL_EXISTS/PHONE_EXISTS。
+         */
+        post: operations["sendContactCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改/绑定邮箱（新旧双重验证）
+         * @description newCode：发到新邮箱的验证码（/account/contact/code）；oldCode：发到原邮箱（未绑邮箱时为现有联系方式）的验证码
+         *     （/account/code/send purpose=security）；已开启 2FA 时另需 totpCode。成功后触发提现锁定与安全通知。
+         */
+        put: operations["changeEmail"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/phone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改/绑定手机（新旧双重验证）
+         * @description 同 /account/email，传 phone + countryCode。短信不可用时 503 SMS_UNAVAILABLE。
+         */
+        put: operations["changePhone"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/fund-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改资金密码（需原资金密码 + 2FA/验证码）
+         * @description 原资金密码连续错误达上限（默认 5 次）锁定（423 FUND_PASSWORD_LOCKED，含 lockedUntil）。成功后触发提现锁定。
+         */
+        put: operations["changeFundPassword"];
+        /**
+         * 设置资金密码（6 位数字，首次）
+         * @description 需 2FA 或 code(purpose=security)。已设置返回 409 FUND_PASSWORD_EXISTS。
+         */
+        post: operations["setFundPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/fund-password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重置资金密码（忘记时，2FA/验证码，清除锁定） */
+        post: operations["resetFundPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/anti-phishing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 设置/修改防钓鱼码（4-20 位字母数字，显示在平台所有外发邮件开头） */
+        put: operations["setAntiPhishing"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出有效登录会话（refresh token） */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 注销指定会话 */
+        delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/sessions/revoke-others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 注销除当前设备外的全部会话 */
+        post: operations["revokeOtherSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出通行密钥（Passkey / WebAuthn） */
+        get: operations["listPasskeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys/register/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 开始注册通行密钥（需 2FA/验证码）
+         * @description 返回 publicKey（PublicKeyCredentialCreationOptions，二进制字段为 base64url）与 sessionId（5 分钟有效、一次性）。未启用时 503 PASSKEY_UNAVAILABLE。
+         */
+        post: operations["beginPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys/register/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 完成注册通行密钥 */
+        post: operations["finishPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/passkeys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 删除通行密钥 */
+        delete: operations["deletePasskey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkey/login/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 通行密钥登录：获取挑战（可发现凭据，无需用户名） */
+        post: operations["beginPasskeyLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/passkey/login/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 通行密钥登录：校验断言并签发令牌 */
+        post: operations["finishPasskeyLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/account/devices": {
         parameters: {
             query?: never;
@@ -619,6 +936,9 @@ export interface paths {
          * @description Gas 从提现数量中扣除：冻结且扣减的是 amount，用户实际到账 amount − gas；
          *     amount 必须大于 gas 且不低于网络最小提现数量（否则 MIN_WITHDRAW）。
          *     未完成 KYC（level 0）不可提现（403 KYC_REQUIRED）。
+         *     二次验证错误码拆分：TWOFA_REQUIRED(403，未提供/未绑定二次验证)、INVALID_TOTP(401，TOTP 或验证码错误)。
+         *     安全设置：WITHDRAW_LOCKED(403，近期修改密码/邮箱/手机/资金密码/关闭 2FA 后锁定，默认 24h)、
+         *     FUND_PASSWORD_REQUIRED/FUND_PASSWORD_INVALID(400)、FUND_PASSWORD_LOCKED(423)、FUND_PASSWORD_NOT_SET(403)。
          */
         post: operations["createWithdrawal"];
         delete?: never;
@@ -2336,7 +2656,7 @@ export interface paths {
          * 站内转账（免手续费、实时到账，需 2FA，按 clientId 幂等）
          * @description 从资金账户（funding）转给另一位平台用户（toUid 或 toEmail 二选一）。收款方须存在、状态正常且不是子账户。
          *     24 小时滚动额度按 USDT 估值计（后台可配，默认 50000；0=不限）；功能可被后台关闭。
-         *     错误码：VALIDATION_ERROR、TWOFA_REQUIRED、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
+         *     错误码：VALIDATION_ERROR、TWOFA_REQUIRED(403)、INVALID_TOTP(401)、WITHDRAW_LOCKED(403)、FUND_PASSWORD_*、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
          *     RECIPIENT_SUB_ACCOUNT、RECIPIENT_UNAVAILABLE、PRICE_UNAVAILABLE、INTERNAL_TRANSFER_LIMIT_EXCEEDED、INSUFFICIENT_BALANCE、
          *     IDEMPOTENCY_CONFLICT(409，同 clientId 不同参数)。
          */
@@ -3524,6 +3844,96 @@ export interface components {
              * @example 123456
              */
             code?: string | null;
+            /** @description 资金密码（已设置且后台策略要求时必填；fundPasswordMandatory=true 时未设置将被拒绝 FUND_PASSWORD_NOT_SET） */
+            fundPassword?: string | null;
+        };
+        OkResponse: {
+            ok?: boolean;
+        };
+        ChangePasswordRequest: {
+            oldPassword: string;
+            newPassword: string;
+            /** @description 已开启 2FA 时必填 */
+            totpCode?: string;
+            /** @description 未开 2FA 时必填（purpose=security） */
+            code?: string;
+            /** @default true */
+            revokeOtherSessions: boolean;
+        };
+        ChangeContactRequest: {
+            email?: string;
+            phone?: string;
+            countryCode?: string;
+            /** @description 新联系方式收到的验证码（purpose=bind_new） */
+            newCode: string;
+            /** @description 原联系方式收到的验证码（purpose=security） */
+            oldCode: string;
+            /** @description 已开启 2FA 时必填 */
+            totpCode?: string;
+        };
+        FundPasswordRequest: {
+            fundPassword: string;
+            /** @description PUT（修改）时必填 */
+            oldFundPassword?: string;
+            totpCode?: string;
+            /** @description 未开 2FA 时 purpose=security 验证码 */
+            code?: string;
+        };
+        Session: {
+            id?: string;
+            deviceId?: string;
+            name?: string;
+            ip?: string;
+            userAgent?: string;
+            current?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+        };
+        Passkey: {
+            id?: string;
+            name?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            lastUsedAt?: string | null;
+        };
+        PasskeyCeremony: {
+            sessionId?: string;
+            publicKey?: {
+                [key: string]: unknown;
+            };
+        };
+        SecurityOverview: {
+            twoFactor?: {
+                enabled?: boolean;
+                /** @enum {string|null} */
+                method?: "totp" | null;
+            };
+            /** @description 脱敏 */
+            email?: string | null;
+            emailVerified?: boolean;
+            /** @description 脱敏，如 138****5678 */
+            phone?: string | null;
+            phoneVerified?: boolean;
+            fundPasswordSet?: boolean;
+            /** Format: date-time */
+            fundPasswordLockedUntil?: string | null;
+            antiPhishingSet?: boolean;
+            /** @description 首字符 + 星号 */
+            antiPhishingHint?: string | null;
+            passkeysCount?: number;
+            /** Format: date-time */
+            withdrawLockedUntil?: string | null;
+            withdrawLockReason?: string | null;
+            recentDevices?: components["schemas"]["Device"][];
+            policy?: {
+                fundPasswordForWithdraw?: boolean;
+                fundPasswordForInternalTransfer?: boolean;
+                fundPasswordMandatory?: boolean;
+                withdrawLockHours?: number;
+            };
         };
         Withdrawal: {
             /** @example wd_0001 */
@@ -4405,6 +4815,10 @@ export interface components {
             toUid?: string;
             toEmail?: string;
             totpCode: string;
+            /** @description 未开 2FA 时 purpose=withdraw 验证码 */
+            code?: string;
+            /** @description 资金密码（已设置且后台策略要求时必填） */
+            fundPassword?: string;
         };
         InternalTransfer: {
             id?: string;
@@ -4556,6 +4970,25 @@ export interface components {
                  *       "code": "AUTH_UNAUTHORIZED",
                  *       "message": "请先登录",
                  *       "requestId": "req_401demo"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description TWOFA_REQUIRED：未提供二次验证或账户未绑定任何二次验证方式（403）。
+         *     注意：提供了但错误的 TOTP/验证码返回 401 INVALID_TOTP（见各接口）。
+         */
+        Forbidden2FA: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "code": "TWOFA_REQUIRED",
+                 *       "message": "请提供两步验证码",
+                 *       "requestId": "req_403demo"
                  *     }
                  */
                 "application/json": components["schemas"]["Error"];
@@ -5320,6 +5753,498 @@ export interface operations {
             };
         };
     };
+    getSecurityOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 安全概览 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已修改 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok?: boolean;
+                        revokedSessions?: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+        };
+    };
+    sendContactCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    email?: string;
+                    phone?: string;
+                    /** @example +86 */
+                    countryCode?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已发送 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sent?: boolean;
+                        /** @enum {string} */
+                        channel?: "email" | "sms";
+                        ttlSeconds?: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["BadRequest"];
+            429: components["responses"]["BadRequest"];
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    changeEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeContactRequest"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    changePhone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeContactRequest"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            409: components["responses"]["BadRequest"];
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    changeFundPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已修改 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            423: components["responses"]["BadRequest"];
+        };
+    };
+    setFundPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已设置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    resetFundPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FundPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description 已重置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+        };
+    };
+    setAntiPhishing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example Lb2026 */
+                    antiPhishingCode: string;
+                    totpCode?: string;
+                    /** @description 未开 2FA 时 purpose=security 验证码 */
+                    code?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已设置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 会话列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["Session"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已注销 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revokeOtherSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已注销 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        revoked?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listPasskeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 列表；enabled=false 表示服务端未配置 WEBAUTHN_RP_ID */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled?: boolean;
+                        items?: components["schemas"]["Passkey"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    beginPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    totpCode?: string;
+                    code?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 注册选项 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyCeremony"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    finishPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionId: string;
+                    name?: string;
+                    /** @description navigator.credentials.create() 结果的 JSON（PublicKeyCredential.toJSON()） */
+                    credential: Record<string, never>;
+                };
+            };
+        };
+        responses: {
+            /** @description 已绑定 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["BadRequest"];
+        };
+    };
+    deletePasskey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    beginPasskeyLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 登录选项 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyCeremony"];
+                };
+            };
+            503: components["responses"]["BadRequest"];
+        };
+    };
+    finishPasskeyLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionId: string;
+                    /** @description navigator.credentials.get() 结果的 JSON */
+                    credential: Record<string, never>;
+                    deviceId?: string;
+                    deviceName?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 登录成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokens"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["BadRequest"];
+        };
+    };
     listDevices: {
         parameters: {
             query?: never;
@@ -6047,7 +6972,8 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /**
              * @description KYC_REQUIRED：未完成身份认证（KYC level 0）不可提现；或已开启提现白名单，
-             *     但目标地址不在白名单内
+             *     但目标地址不在白名单内；TWOFA_REQUIRED：未提供/未绑定二次验证；WITHDRAW_LOCKED：安全设置变更后的锁定期；
+             *     FUND_PASSWORD_NOT_SET：后台要求资金密码但尚未设置
              */
             403: {
                 headers: {

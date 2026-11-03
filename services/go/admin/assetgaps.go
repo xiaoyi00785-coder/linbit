@@ -18,6 +18,13 @@ func (s *Server) assetGapRoutes(a func(pattern, perm string, h http.HandlerFunc)
 	wallet := func() string { return s.cfg.WalletURL }
 	order := func() string { return s.cfg.OrderURL }
 	futures := func() string { return s.cfg.FuturesURL }
+	account := func() string { return s.cfg.AccountURL }
+
+	// Account security policy (withdraw lock hours, fund-password policy) and
+	// manual release of a user's post-change withdrawal lock.
+	a("GET /admin/v1/security-settings", permUserView, s.gapRead(account, "/internal/admin/security-settings"))
+	a("PUT /admin/v1/security-settings", permUserEdit, s.gapWrite(account, http.MethodPut, "/internal/admin/security-settings", "security", "settings_update"))
+	a("DELETE /admin/v1/users/{userId}/withdraw-lock", permUserEdit, s.gapWrite(account, http.MethodDelete, "/internal/admin/users/{userId}/withdraw-lock", "security", "withdraw_lock_release"))
 
 	a("GET /admin/v1/asset-settings", permLedgerView, s.gapRead(asset, "/internal/admin/asset-settings"))
 	a("PUT /admin/v1/asset-settings", permSymbolEdit, s.gapWrite(asset, http.MethodPut, "/internal/admin/asset-settings", "asset", "settings_update"))

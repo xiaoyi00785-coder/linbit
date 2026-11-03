@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"github.com/linbit/platform/services/go/common"
@@ -20,6 +21,15 @@ type Config struct {
 	// DevMode exposes the internal "last verification code" endpoint and records
 	// plaintext codes in memory. Never enable in production.
 	DevMode bool
+
+	// --- security settings ---
+	// SMSEnabled: a real SMS provider is wired. When false (and not DevMode)
+	// SMS-dependent flows return 503 SMS_UNAVAILABLE.
+	SMSEnabled bool
+	// WebAuthn relying party (passkeys). RPID e.g. "cowa.click"; empty disables passkeys.
+	WebAuthnRPID      string
+	WebAuthnRPName    string
+	WebAuthnRPOrigins []string
 
 	// --- email provider (Resend). Both empty -> dev mock sender. ---
 	ResendAPIKey string
@@ -47,19 +57,23 @@ type Config struct {
 // LoadConfig reads configuration from the environment.
 func LoadConfig() Config {
 	return Config{
-		Port:             common.Env("PORT", "8081"),
-		DatabaseURL:      common.MustEnv("DATABASE_URL"),
-		JWTSecret:        common.MustEnv("JWT_SECRET"),
-		AccessTTL:        time.Duration(common.EnvInt("ACCESS_TTL_SECONDS", 3600)) * time.Second,
-		RefreshTTL:       time.Duration(common.EnvInt("REFRESH_TTL_SECONDS", 7*24*3600)) * time.Second,
-		ResetTokenTTL:    time.Duration(common.EnvInt("RESET_TOKEN_TTL_SECONDS", 600)) * time.Second,
-		AssetInternalURL: common.Env("ASSET_INTERNAL_URL", ""),
-		InternalToken:    common.Env("INTERNAL_TOKEN", ""),
-		RedisURL:         common.Env("REDIS_URL", ""),
-		DevMode:          common.Env("DEV_MODE", "") == "true",
-		ResendAPIKey:     common.Env("RESEND_API_KEY", ""),
-		ResendFrom:       common.Env("RESEND_FROM", ""),
-		ResendURL:        common.Env("RESEND_API_URL", "https://api.resend.com/emails"),
+		Port:              common.Env("PORT", "8081"),
+		DatabaseURL:       common.MustEnv("DATABASE_URL"),
+		JWTSecret:         common.MustEnv("JWT_SECRET"),
+		AccessTTL:         time.Duration(common.EnvInt("ACCESS_TTL_SECONDS", 3600)) * time.Second,
+		RefreshTTL:        time.Duration(common.EnvInt("REFRESH_TTL_SECONDS", 7*24*3600)) * time.Second,
+		ResetTokenTTL:     time.Duration(common.EnvInt("RESET_TOKEN_TTL_SECONDS", 600)) * time.Second,
+		AssetInternalURL:  common.Env("ASSET_INTERNAL_URL", ""),
+		InternalToken:     common.Env("INTERNAL_TOKEN", ""),
+		RedisURL:          common.Env("REDIS_URL", ""),
+		DevMode:           common.Env("DEV_MODE", "") == "true",
+		SMSEnabled:        common.Env("SMS_ENABLED", "") == "true",
+		WebAuthnRPID:      common.Env("WEBAUTHN_RP_ID", ""),
+		WebAuthnRPName:    common.Env("WEBAUTHN_RP_NAME", "Linbit"),
+		WebAuthnRPOrigins: splitCSV(common.Env("WEBAUTHN_RP_ORIGINS", "")),
+		ResendAPIKey:      common.Env("RESEND_API_KEY", ""),
+		ResendFrom:        common.Env("RESEND_FROM", ""),
+		ResendURL:         common.Env("RESEND_API_URL", "https://api.resend.com/emails"),
 
 		StorageBackend:   common.Env("STORAGE_BACKEND", "local"),
 		AvatarDir:        common.Env("AVATAR_STORAGE_DIR", "data/avatars"),
@@ -70,4 +84,14 @@ func LoadConfig() Config {
 		S3Endpoint:       common.Env("S3_ENDPOINT", ""),
 		S3PublicBase:     common.Env("S3_PUBLIC_BASE", ""),
 	}
+}
+
+func splitCSV(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
