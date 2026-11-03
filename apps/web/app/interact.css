@@ -295,3 +295,25 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 .hotf{color:#ff7a1a;vertical-align:-1px}
 
 .rh h1{font-size:48px;line-height:1.25;margin:12px 0 18px}.rcp{display:inline-flex;gap:8px;align-items:center;color:#cfd2d2;font-size:14px}.rcp b{font-size:20px}.rh .pill{margin-top:28px;display:flex}.rlogin{min-width:180px;height:56px;justify-content:center;align-items:center;font-weight:600;color:#fff;background:linear-gradient(180deg,#2a2b2b,#141515);border:1px solid rgba(255,255,255,.18);border-radius:999px}.rlogin:hover{border-color:rgba(255,255,255,.35)}
+
+/* mega-menu grid aligned to reference */
+.hdr .dd.wide{background:#1c1c1c;padding:16px 0;width:max-content;height:auto}
+.hdr .dd.wide .ddcols{display:grid;gap:0}
+.hdr .dd.wide .ddcols.c2{grid-template-columns:repeat(2,248px)}
+.hdr .dd.wide .ddcols.c3{grid-template-columns:repeat(3,250px)}
+.hdr .dd.wide .ddcols>div{display:flex;flex-direction:column;flex-wrap:nowrap;min-width:0;padding:0 8px;border-left:1px solid rgba(255,255,255,.08);max-height:none}
+.hdr .dd.wide .ddcols>div:first-child{border-left:0}
+.hdr .dd.wide .ddcols h5{font-size:15px;margin:4px 8px 8px}
+.hdr .dd.wide .dit{display:flex;align-items:center;gap:12px;height:65px;padding:0 8px;box-sizing:border-box}
+.hdr .dd.wide .ddi{width:28px;height:28px;flex:0 0 28px}
+.hdr .dd.wide .dit>div{overflow:hidden}
+.hdr .dd.wide .dit b{font-size:14px;line-height:20px}
+.hdr .dd.wide .dit small{font-size:12px;line-height:18px;overflow:hidden;text-overflow:ellipsis}
+.hdr .dd.wide .dit .new,.hdr .dd.wide .soon-b{flex:none}
+.hdr .dd.wide:has(.ddcols.c2){width:498px}
+.hdr .dd.wide:has(.ddcols.c3){width:752px}
+.hdr .dd.wide .ddcols{width:100%}
+.hdr .dd.wide{height:auto!important;max-height:none!important;overflow:visible!important}
+.hdr .dd.wide:has(.ddcols.c2){width:540px}
+.hdr .dd.wide .ddcols.c2{grid-template-columns:repeat(2,270px)}
+.hdr .dd.wide .ddcols{height:auto!important;max-height:none!important}
