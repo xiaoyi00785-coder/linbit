@@ -30,3 +30,7 @@ export function installUiDelegates() {
     else if (t.dataset.toast) toast(t.dataset.toast, (t.dataset.kind as ToastKind) || "ok");
   });
 }
+
+/** 无路由上下文的按钮跳转 / 复制 */
+export const goto = (p: string) => { if (typeof window !== "undefined") window.location.assign(p); };
+export const copyTxt = (t: string, msg = "已复制") => { navigator.clipboard?.writeText(t).catch(() => {}); toast(msg); };

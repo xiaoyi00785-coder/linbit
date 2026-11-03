@@ -1,5 +1,11 @@
 // @ts-nocheck
 "use client";
+import { openTransfer } from "@/components/Transfer";
+import { goto, copyTxt } from "@/lib/ui";
+import { useOverview } from "@/lib/wallet";
+import {G,SOCIAL} from "@/components/Glyph";
+import { MenuIcon } from "../components/MenuIcon";
+import { SideIcon } from "../components/SideIcon";
 import { toast } from '@/lib/ui'
 import { openM, Dropdown, DateRange, Refresh } from '@/features/Kit'
 import { CoinIcon } from '@/components/CoinIcon'
@@ -11,31 +17,33 @@ import { MOCK } from './auth'
 import { useProfile } from './Pages'
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox">▤</div><span>暂无数据</span></div>
-const Eye=()=><span className="eye">◉</span>
+const Eye=()=><span className="eye"><G n="eye" s={14}/></span>
 const U=()=><CoinIcon s="USDT" size={22}/>
-const ACCTS=[['/assets/overview','▰','资产总览'],['/assets/funding-account','●','资金账户'],['/assets/trading-account','◧','合约账户'],['/assets/spot-account','◎','现货账户'],['/assets/earn-account','◒','理财账户'],['/assets/tradfi-account','⌂','传统金融账户'],['/assets/bots-account','◙','策略账户']]
+const ACCTS=[['/assets/overview','overview','资产总览'],['/assets/funding-account','funding','资金账户'],['/assets/trading-account','futures','合约账户'],['/assets/spot-account','spot','现货账户'],['/assets/earn-account','earn','理财账户'],['/assets/tradfi-account','tradfi','传统金融账户'],['/assets/bots-account','bots','策略账户']]
 export const RECS=[['funding','资金记录'],['futures','合约记录'],['spot','现货记录'],['tradfi','传统金融记录']]
 export const ORDS=[['futures','合约订单'],['spot','现货订单'],['buy','买币订单'],['earn','理财订单'],['convert','闪兑记录'],['tradfi','传统金融订单'],['loan','借贷订单']]
 function ASide(){const p=useLocation().pathname;const[h,setH]=useState(p.startsWith('/assets/history'));const[o,setO]=useState(p.startsWith('/orders'))
-return <aside className="lside a2">{ACCTS.map(([to,i,t])=><NavLink key={to} to={to} className="lsi"><span className="lsic">{i}</span>{t}</NavLink>)}
-<div className="lsi" onClick={()=>setH(!h)}><span className="lsic">▤</span>资金流水<em>{h?'▴':'▾'}</em></div>{h&&RECS.map(([k,t])=><NavLink key={k} to={'/assets/history/'+k} className="lsi sub">{t}</NavLink>)}
-<div className="lsi" onClick={()=>setO(!o)}><span className="lsic">≣</span>订单中心<em>{o?'▴':'▾'}</em></div>{o&&ORDS.map(([k,t])=><NavLink key={k} to={'/orders/'+k} className="lsi sub">{t}</NavLink>)}</aside>}
+return <aside className="lside a2">{ACCTS.map(([to,i,t])=><NavLink key={to} to={to} className="lsi"><span className="lsic"><SideIcon n={i}/></span>{t}</NavLink>)}
+<div className="lsi" onClick={()=>setH(!h)}><span className="lsic"><SideIcon n="records"/></span>资金流水<em>{h?'▴':'▾'}</em></div>{h&&RECS.map(([k,t])=><NavLink key={k} to={'/assets/history/'+k} className="lsi sub">{t}</NavLink>)}
+<div className="lsi" onClick={()=>setO(!o)}><span className="lsic"><SideIcon n="orders"/></span>订单中心<em>{o?'▴':'▾'}</em></div>{o&&ORDS.map(([k,t])=><NavLink key={k} to={'/orders/'+k} className="lsi sub">{t}</NavLink>)}</aside>}
 const AS=({children})=><main className="light"><div className="lwrap">{<ASide/>}<section className="lmain a2">{children}</section></div></main>
-const Head=({t,btns})=>{const n=useNavigate();return <div className="lhead"><h2>{t}</h2><div className="lbtns">{btns.map(([b,to],i)=><button key={b} className={i?'lb':'lb dark'} onClick={()=>to?n(to):b==='划转'?openM('transfer',{from:t}):toast(b+' 即将上线','info')}>{b}</button>)}</div></div>}
-const Val=({t='资产估值',children,set})=><div className="lcard v"><div className="lg">{t}(USDT) <Eye/>{set&&<span className="vset">⚙</span>}</div><div className="big">0 <small>USDT ▾</small></div><div className="lg">≈ $0</div>{children}</div>
+const Head=({t,btns})=>{const n=useNavigate();return <div className="lhead"><h2>{t}</h2><div className="lbtns">{btns.map(([b,to],i)=><button key={b} className={i?'lb':'lb dark'} onClick={()=>to?n(to):b==='划转'?openTransfer(t):toast(b+' 即将上线','info')}>{b}</button>)}</div></div>}
+const fmtV=v=>{const n=Number(v||0);return n.toLocaleString('en-US',{maximumFractionDigits:n>=1?2:8})}
+// 估值来自 GET /assets/overview；all=全部账户，acct=单账户；接口未上线时显示 0
+const Val=({t='资产估值',children,set,acct,all})=>{const ov=useOverview();const d=ov.data;const v=all?d?.totalValueUsdt:acct?d?.accounts?.find(a=>a.account===acct)?.totalValueUsdt:0;return <div className="lcard v"><div className="lg">{t}(USDT) <Eye/>{set&&<span className="vset"><G n="gear" s={14}/></span>}</div><div className="big">{fmtV(v)} <small>USDT ▾</small></div><div className="lg">≈ ${fmtV(v)}</div>{children}</div>}
 const TH=({c,s})=><div className="lth t2">{c.map((x,i)=><span key={x}>{x}{s&&i>0&&i<c.length-1&&<em className="srt">⇅</em>}</span>)}</div>
 const Srch=()=><><span className="sp"/><span className="lsearch">⌕ 搜索币种</span><label className="lchk"><i/>隐藏小于 1 USD 的资产</label></>
-const URow=({v})=>{const n=useNavigate();return <div className="ltr"><span><U/> USDT</span>{v.map((x,i)=><span key={i} className={x.lime?'lime2 act':''}>{x.lime?x.lime.map(l=><a key={l} onClick={()=>l==='划转'?openM('transfer'):n(l==='交易'?'/futures':'/assets/history/funding')}>{l}</a>):x==='u'?<>0<small className="lg d">≈ $0</small></>:x}</span>)}</div>}
-export function AOverview(){const n=useNavigate();const[t,setT]=useState(0);return <AS><Val><div className="lg">今日盈亏 <b className="lk">0 USDT</b></div><div className="lbtns l"><button className="lb dark" onClick={()=>n('/deposit')}>充值</button><button className="lb" onClick={()=>n('/withdraw')}>提现</button><button className="lb" onClick={()=>openM('transfer')}>划转</button></div><span className="vchev">⌄</span></Val>
+const URow=({v})=>{const n=useNavigate();return <div className="ltr"><span><U/> USDT</span>{v.map((x,i)=><span key={i} className={x.lime?'lime2 act':''}>{x.lime?x.lime.map(l=><a key={l} onClick={()=>l==='划转'?openTransfer():n(l==='交易'?'/futures':'/assets/history/funding')}>{l}</a>):x==='u'?<>0<small className="lg d">≈ $0</small></>:x}</span>)}</div>}
+export function AOverview(){const n=useNavigate();const[t,setT]=useState(0);return <AS><Val all><div className="lg">今日盈亏 <b className="lk">0 USDT</b></div><div className="lbtns l"><button className="lb dark" onClick={()=>n('/deposit')}>充值</button><button className="lb" onClick={()=>n('/withdraw')}>提现</button><button className="lb" onClick={()=>openTransfer()}>划转</button></div><span className="vchev">⌄</span></Val>
 <div className="lcard"><h3>我的资产</h3><div className="ltabs">{['币种','账户'].map((x,i)=><b key={x} className={t===i?'on':''} onClick={()=>setT(i)}>{x}</b>)}<Srch/></div>{t?<><TH c={['账户','资产估值','占比']}/>{ACCTS.slice(1).map(([to,,a])=><div className="ltr" key={a}><span>{a}</span><span>0 USDT</span><span>0%</span></div>)}</>:<><TH c={['币种','数量','价格','占比']}/><Empty/></>}</div>
 <div className="lcard"><div className="lrow"><h3>近期充值记录</h3><Link to="/assets/history/funding" className="lmore">全部 ›</Link></div><TH c={['时间','类型','数量','状态']}/><Empty/></div></AS>}
-export function AFunding(){return <AS><Head t="资金账户" btns={[['充值','/deposit'],['提现','/withdraw'],['划转']]}/><Val set/><div className="lcard"><div className="ltabs"><h3>资产明细</h3><Srch/></div><TH s c={['资产','账户余额','可用','冻结','折合','操作']}/><Empty/></div></AS>}
-export function AFutures(){return <AS><Head t="合约账户" btns={[['充值','/deposit'],['划转'],['合约记录','/assets/history/futures'],['订单明细','/orders/futures']]}/><Val t="总资产"><div className="lrow2"><span className="lg">今日盈亏 <b className="lk">0 ≈ $0 ›</b></span><span className="lg">未实现盈亏 <b className="lk">0 USDT</b></span></div></Val>
+export function AFunding(){return <AS><Head t="资金账户" btns={[['充值','/deposit'],['提现','/withdraw'],['划转']]}/><Val set acct="funding"/><div className="lcard"><div className="ltabs"><h3>资产明细</h3><Srch/></div><TH s c={['资产','账户余额','可用','冻结','折合','操作']}/><Empty/></div></AS>}
+export function AFutures(){return <AS><Head t="合约账户" btns={[['充值','/deposit'],['划转'],['合约记录','/assets/history/futures'],['订单明细','/orders/futures']]}/><Val t="总资产" acct="futures"><div className="lrow2"><span className="lg">今日盈亏 <b className="lk">0 ≈ $0 ›</b></span><span className="lg">未实现盈亏 <b className="lk">0 USDT</b></span></div></Val>
 <div className="lcard"><div className="ltabs"><h3>合约资产明细</h3><Srch/></div><TH c={['资产','可用','账户余额','仓位保证金','委托占用','未实现盈亏','体验金','抵扣金','操作']}/><URow v={['u','u','0','0','0','0','0',{lime:['交易','划转']}]}/></div></AS>}
-export function ASpot(){return <AS><Head t="现货账户" btns={[['充值','/deposit'],['提现','/withdraw'],['划转'],['现货记录','/assets/history/spot']]}/><Val/><div className="lcard"><div className="ltabs"><h3>资产明细</h3><Srch/></div><TH s c={['资产','账户余额','可用','冻结','折合','操作']}/><Empty/></div></AS>}
+export function ASpot(){return <AS><Head t="现货账户" btns={[['充值','/deposit'],['提现','/withdraw'],['划转'],['现货记录','/assets/history/spot']]}/><Val acct="spot"><div className="lg" style={{marginTop:6}}>今日盈亏 <b className="lk" style={{display:'inline'}}>0 USDT</b></div><div className="vaf">{['可用','冻结'].map(x=><div key={x}><span className="lg">{x}</span><b>0 USDT</b><small className="lg">≈ $0</small></div>)}</div></Val><div className="lcard"><div className="ltabs"><h3>资产明细</h3><Srch/></div><TH s c={['资产','账户余额','可用','冻结','折合','操作']}/><Empty/></div></AS>}
 export function ATradfi(){return <AS><Head t="传统金融账户" btns={[['充值','/deposit'],['划转'],['传统金融订单','/orders/tradfi'],['传统金融记录','/assets/history/tradfi']]}/><Val t="总资产"><div className="lg" style={{marginTop:14}}>未实现盈亏</div><b className="lk">0 USDT</b><div className="lg">≈ $0</div></Val>
 <div className="lcard"><TH s c={['资产','可用','账户余额','仓位保证金','委托占用','未实现盈亏','操作']}/><URow v={['u','u','0','0','0',{lime:['划转']}]}/></div></AS>}
-export function ABots(){return <AS><Head t="策略账户" btns={[['创建策略','/strategy'],['划转']]}/><Val/><div className="lcard"><h3>运行中的策略</h3><TH c={['策略','交易对','投入','总收益','运行时长','操作']}/><Empty/></div></AS>}
+export function ABots(){return <AS><Head t="策略账户" btns={[['创建策略','/strategy'],['划转']]}/><Val/><div className="lcard"><h3>我的策略</h3><div className="seg"><b className="on">现货网格</b></div><TH c={['策略','交易对','投入','总收益','运行时长','操作']}/><Empty/></div></AS>}
 const EARN_T=['理财宝','简单赚币','链上赚币','VIP 私享理财','质押借币']
 export function AEarn(){const[t,setT]=useState(0);const[s,setS]=useState(0);return <AS><Head t="理财账户" btns={[['理财总览','/earn'],['理财订单','/orders/earn'],['现货记录','/assets/history/spot']]}/><Val/>
 <div className="lcard"><div className="ltabs">{EARN_T.map((x,i)=><b key={x} className={t===i?'on':''} onClick={()=>setT(i)}>{x}</b>)}</div><div className="estat">{['资产估值','24h 收益','累计收益'].map(x=><div key={x}><span className="lg">{x}</span><b>0</b><small className="lg">≈ $0</small></div>)}</div>
@@ -43,19 +51,20 @@ export function AEarn(){const[t,setT]=useState(0);const[s,setS]=useState(0);retu
 // —— 记录 / 订单（通用） ——
 const Sel=({k,v,w})=><div><span className="flab">{k}</span><Dropdown k={k} v={v}/></div>
 const Dt=({v})=><div><span className="flab">&nbsp;</span><DateRange preset={v}/></div>
-function Rec({t,tabs,fil,cols,extra,live}){const[i,setI]=useState(0);if(live)return <AS><h2 className="lh2">{t}</h2>{live}</AS>;const f=typeof fil==='function'?fil(i):fil;const c=typeof cols==='function'?cols(i):cols;return <AS><h2 className="lh2">{t}</h2><div className="lcard rec">{tabs&&<div className="ltabs">{tabs.map((x,j)=><b key={x} className={i===j?'on':''} onClick={()=>setI(j)}>{x}</b>)}</div>}<div className="lfil">{f}<span className="sp"/>{extra}<Refresh cls="lb sm g"/></div><div className="lth t2 sm">{c.map(x=><span key={x}>{x}</span>)}</div><Empty/></div></AS>}
+function Rec({t,tabs,fil,cols,extra,live,sub}){const[i,setI]=useState(0);const[si,setSi]=useState(0);if(live)return <AS><h2 className="lh2">{t}</h2>{live}</AS>;const f=typeof fil==='function'?fil(i):fil;const c=typeof cols==='function'?cols(i):cols;return <AS><h2 className="lh2">{t}</h2><div className="lcard rec">{tabs&&<div className="ltabs">{tabs.map((x,j)=><b key={x} className={i===j?'on':''} onClick={()=>{setI(j);setSi(0)}}>{x}</b>)}</div>}{sub&&sub(i)&&<div className="lsub">{sub(i).map((x,j)=><b key={x} className={si===j?'on':''} onClick={()=>setSi(j)}>{x}</b>)}</div>}<div className="lfil">{f}<span className="sp"/>{extra}<Refresh cls="lb sm g rfb"/></div><div className="lth t2 sm">{c.map(x=><span key={x}>{x}</span>)}</div><Empty/></div></AS>}
 const R={funding:{t:'资金记录',tabs:['充值','提现','划转','分发'],fil:i=>[<Sel key={1} k="币种" v="全部"/>,i<2&&<Sel key={2} k="类型" v={i?'链上提现':'链上充值'}/>,i===2&&<Sel key={4} k="账户" v="全部"/>,<Sel key={3} k="状态" v="全部"/>,<Dt key={5}/>],cols:i=>i===2?['时间','币种','数量','从','到','状态']:i===3?['时间','币种','数量','类型','备注']:['时间','类型','币种','网络','数量','状态','链上交易']},
 futures:{t:'合约记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','合约']},
 spot:{t:'现货记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','余额']},
 tradfi:{t:'传统金融记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','品种']}}
 export function Records(){const{k}=useParams();const r=R[k]||R.funding;return <Rec key={k} {...r}/>}
-const HC=<label className="lchk" key="hc"><i/>隐藏已撤销</label>
+function HideCanceled(){const[on,setOn]=useState(false);return <label className={"lchk"+(on?" on":"")} onClick={()=>setOn(!on)}><i/>隐藏已撤销</label>}
+const HC=<HideCanceled key="hc"/>
 const O={futures:{t:'合约订单',tabs:['历史委托','历史仓位','成交明细','已实现盈亏'],fil:[<Sel key={1} k="合约" v="全部"/>,<Sel key={2} k="委托" v="限价 | 市价"/>,<Sel key={3} k="类型" v="全部"/>,<Sel key={4} k="日期" v="最近 7 天"/>,<Dt key={5} v/>],extra:HC,cols:i=>i===1?['合约','方向','开仓均价','平仓均价','最大持仓','已实现盈亏','开仓时间','平仓时间']:i===2?['合约','方向','成交价','成交数量','手续费','角色','成交时间']:i===3?['合约','类型','金额','时间']:['合约','已成交 | 总量','方向','成交均价','委托价','委托类型','状态','订单号','下单时间','成交/撤销时间']},
-spot:{t:'现货订单',tabs:['当前委托','历史委托','成交明细'],fil:[<Sel key={1} k="委托类型" v="限价 | 市价"/>,<Sel key={2} k="交易对" v="全部"/>],cols:['交易对','下单时间','方向','委托价','已成交','委托数量','委托金额','止盈/止损','委托类型','全部撤销']},
+spot:{t:'现货订单',tabs:['当前委托','历史委托','成交明细'],fil:i=>[<Sel key={1} k="委托类型" v="限价 | 市价"/>,<Sel key={2} k="交易对" v="全部"/>,i>0&&<Sel key={3} k="日期" v="最近 7 天"/>,i>0&&<Dt key={4} v/>],extra:HC,cols:['交易对','下单时间','方向','委托价','已成交','委托数量','委托金额','止盈/止损','委托类型','全部撤销']},
 buy:{t:'买币订单',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="状态" v="全部"/>,<Dt key={3} v/>],cols:['时间','支付','获得','价格','渠道','状态']},
-earn:{t:'理财订单',tabs:['申购','赎回','收益'],fil:[<Sel key={1} k="产品" v="全部"/>,<Sel key={2} k="币种" v="全部"/>,<Dt key={3} v/>],cols:['时间','产品','币种','数量','参考年化','状态']},
-convert:{t:'闪兑记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Dt key={2} v/>],cols:['时间','支付','获得','价格','状态']},
-tradfi:{t:'传统金融订单',tabs:['当前委托','历史委托','历史仓位','成交明细'],fil:[<Sel key={1} k="品种" v="全部"/>,<Sel key={2} k="类型" v="限价 | 市价"/>,<Dt key={3} v/>],cols:['品种','方向','委托价','数量','已成交','状态','时间']},
+earn:{t:'理财订单',tabs:['理财宝','简单赚币','链上赚币','VIP 私享理财'],sub:i=>i===1?['活期','定期','闪赚']:null,fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="订单类型" v="全部"/>,<Sel key={3} k="日期" v="最近 7 天"/>,<Dt key={4} v/>],cols:['币种','产品类型','订单类型','数量','创建时间','完成时间','订单状态']},
+convert:{t:'闪兑记录',fil:[<Sel key={1} k="日期" v="最近 7 天"/>,<Dt key={2} v/>],cols:['时间','支付','获得','价格','状态']},
+tradfi:{t:'传统金融订单',tabs:['历史委托','成交明细','已实现盈亏'],fil:[<Sel key={1} k="品种" v="全部"/>,<Sel key={2} k="订单类型" v="全部"/>,<Sel key={3} k="日期" v="最近 7 天"/>,<Dt key={4} v/>],extra:HC,cols:['品种','数量','成交均价','成交数量','委托价','方向','订单类型','状态','订单号','下单时间']},
 loan:{t:'借贷订单',tabs:['借款记录','还款记录','质押率调整记录','强平记录'],fil:[<Sel key={1} k="订单类型" v="活期"/>,<Sel key={2} k="借款币种" v="全部"/>,<Sel key={3} k="质押币种" v="全部"/>,<Sel key={4} k="状态" v="全部"/>,<Sel key={5} k="借款时间" v="最近 7 天"/>,<Dt key={6} v/>],cols:['借款时间','订单类型','借款币种','初始借款','质押币种','初始质押','小时 / 年化利率','状态']}}
 export function OrdersX(){const{k}=useParams();const r=O[k]||O.futures;return <Rec key={k} {...r} live={k==='loan'?<LoanRecords/>:null}/>}
 // —— 积分商城（深色，参数取自业务规则） ——
@@ -69,4 +78,4 @@ export function Points(){const n=useNavigate();return <main className="pts"><div
 <h2 className="pth2">活动规则</h2><ol className="prul">{['活动仅限 linbit 已注册用户参与，需先点击“立即报名”，报名后完成的任务才计入积分。','积分仅在本期活动内有效，活动结束后清零，不跨期累计。','体验金、抵扣金将发放至卡券中心，激活时需满足合约账户余额要求。','任务进度每天 UTC 0 点重置，每档奖品每人限兑换一次。','奖励仅限体验金 / 抵扣金，不提供实物奖品，不可折现。','如发现刷量、对敲等违规行为，平台有权取消资格并收回奖励。'].map(x=><li key={x}>{x}</li>)}</ol></div><Footer/></main>}
 // —— 头像下拉菜单 ——
 export function AvatarMenu(){const p=useProfile();return <div className="avm"><div className="avc">{p.avatar?<img className="ava" src={p.avatar} alt="" style={{width:44,height:44,borderRadius:'50%',objectFit:'cover'}}/>:<div className="ava" style={{width:44,height:44}}><i/></div>}<div><b>{p.name}</b><small>UID: {p.uid} ⧉</small><small className="lg">{p.acct}</small></div><span className="avv">▭ {p.kyc?'已认证':'未认证'}</span></div>
-{[['▣','总览','/setting/dashboard'],['🔒','账户与安全','/setting/security'],['👤','身份认证','/setting/kyc',1],['🎁','福利中心','/rewards'],['👥','邀请好友','/invite'],['⚙','设置','/setting/settings'],['⌘','API 管理','/setting/api']].map(([i,t,to,k])=><Link key={t} to={to} className="avi"><span>{i}</span>{t}{k&&<em>未认证</em>}</Link>)}<Link to="/login" className="avo">退出登录</Link></div>}
+{[['overview','总览','/setting/dashboard'],['lock','账户与安全','/setting/security'],['kyc','身份认证','/setting/kyc',1],['gift','福利中心','/rewards'],['invite','邀请好友','/invite'],['settings','设置','/setting/settings'],['api','API 管理','/setting/api']].map(([i,t,to,k])=><Link key={t} to={to} className="avi"><span><SideIcon n={i}/></span>{t}{k&&<em>未认证</em>}</Link>)}<Link to="/login" className="avo">退出登录</Link></div>}

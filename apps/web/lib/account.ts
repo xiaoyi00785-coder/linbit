@@ -41,7 +41,7 @@ async function call<T>(
     const { data, error, response } = await fn();
     if (response.ok) return { ok: true, data: (data ?? (true as unknown)) as T, source: "api" };
     // 网关可达时的 4xx/5xx 都如实返回（之前 5xx 会落到 mock，导致"验证码已发送"误报）
-    return { ok: false, error: errMsg(error, response.status), source: "api" };
+    return { ok: false, error: errMsg(error, response.status), code: (error as { code?: string } | undefined)?.code, source: "api" };
   } catch {
     /* 网络错误 → mock */
   }
@@ -193,8 +193,8 @@ let mockAddr: AddressItem[] = [
   { id: "w1", asset: "USDT", network: "TRC20", address: "TDemo0000000000000000000000000001", label: "示例钱包", whitelisted: true, createdAt: "2026-11-01T00:00:00Z" },
 ];
 let mockWl = false;
-export const sendAccountCode = (purpose: "address" | "bind" | "reset_password" = "address") =>
-  call(() => api.POST("/account/code/send", { body: { purpose } }) as never, () => ({ sent: true, channel: "sms", ttlSeconds: 60 }) as SendCodeRes);
+export const sendAccountCode = (purpose: "address" | "bind" | "reset_password" | "security" | "withdraw" = "address") =>
+  call(() => api.POST("/account/code/send", { body: { purpose } as never }) as never, () => ({ sent: true, channel: "sms", ttlSeconds: 60 }) as SendCodeRes);
 export const listAddresses = () =>
   call(async () => {
     const r = await api.GET("/account/withdraw-addresses");
