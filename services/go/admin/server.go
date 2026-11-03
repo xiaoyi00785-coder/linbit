@@ -126,6 +126,17 @@ func (s *Server) Routes() http.Handler {
 	a("GET /admin/v1/vip/applications", permVIPView, s.handleVIPApplications)
 	a("POST /admin/v1/vip/applications/{id}/approve", permVIPReview, s.handleVIPReview("approve"))
 	a("POST /admin/v1/vip/applications/{id}/reject", permVIPReview, s.handleVIPReview("reject"))
+	// market maker (writes need mm:edit + 2FA, all audited)
+	a("GET /admin/v1/mm/status", permMMView, s.handleMMGet("/internal/mm/status"))
+	a("GET /admin/v1/mm/pairs", permMMView, s.handleMMGet("/internal/mm/pairs"))
+	a("PUT /admin/v1/mm/pairs/{market}/{symbol}", permMMEdit, s.handleMMUpdatePair)
+	a("POST /admin/v1/mm/start", permMMEdit, s.handleMMRun("start"))
+	a("POST /admin/v1/mm/stop", permMMEdit, s.handleMMRun("stop"))
+	a("POST /admin/v1/mm/testnet-seed", permMMEdit, s.handleMMSeed)
+	a("POST /admin/v1/mm/futures-transfer", permMMEdit, s.handleMMTransfer)
+	// daily solvency reconciliation
+	a("GET /admin/v1/solvency/latest", permMMView, s.handleSolvencyLatest)
+	a("POST /admin/v1/solvency/run", permMMEdit, s.handleSolvencyRun)
 
 	s.registerEarnRoutes(a)
 

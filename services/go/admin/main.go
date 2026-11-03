@@ -42,6 +42,7 @@ func main() {
 		log.Fatalf("bootstrap: %v", err)
 	}
 	go srv.RunScheduler(context.Background())
+	go srv.RunSolvencyDaily(context.Background())
 
 	addr := ":" + cfg.Port
 	log.Printf("admin service listening on %s (2fa=%v idle=%s feeNotice=%s)", addr, cfg.Require2FA, cfg.SessionIdle, cfg.FeeNotice)

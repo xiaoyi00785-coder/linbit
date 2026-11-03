@@ -26,6 +26,11 @@ type Config struct {
 	EarnURL    string
 	OrderURL   string
 	MarketURL  string
+	MMURL      string
+
+	// Market maker / solvency.
+	MMUserID        string // MM_USER_ID (default mm:main)
+	SolvencyHourUTC int    // SOLVENCY_HOUR_UTC: daily reconciliation hour (default 1); -1 disables
 
 	// Security.
 	Require2FA      bool          // ADMIN_REQUIRE_2FA (default true)
@@ -81,6 +86,10 @@ func LoadConfig() Config {
 		EarnURL:    common.Env("EARN_INTERNAL_URL", "http://localhost:8092"),
 		OrderURL:   common.Env("ORDER_INTERNAL_URL", "http://localhost:8084"),
 		MarketURL:  common.Env("MARKET_URL", "http://localhost:8085"),
+		MMURL:      common.Env("MM_INTERNAL_URL", "http://localhost:8093"),
+
+		MMUserID:        common.Env("MM_USER_ID", "mm:main"),
+		SolvencyHourUTC: common.EnvInt("SOLVENCY_HOUR_UTC", 1),
 
 		Require2FA:      common.Env("ADMIN_REQUIRE_2FA", "true") != "false",
 		SessionIdle:     time.Duration(common.EnvInt("ADMIN_SESSION_IDLE_MINUTES", 30)) * time.Minute,
