@@ -2716,7 +2716,7 @@ paths:
     get:
       tags:
       - Futures
-      summary: 资金费率历史
+      summary: 资金费率历史（按交易对分页，新到旧）
       operationId: futuresFundingHistory
       security: []
       parameters:
@@ -2730,6 +2730,21 @@ paths:
         required: false
         schema:
           type: integer
+          description: 默认 100，最大 1000
+      - name: startTime
+        in: query
+        required: false
+        description: 起始时间（毫秒，含）
+        schema:
+          type: integer
+          format: int64
+      - name: endTime
+        in: query
+        required: false
+        description: 结束时间（毫秒，含）；翻页时传上一页的 nextEndTime
+        schema:
+          type: integer
+          format: int64
       responses:
         '200':
           description: OK
@@ -2740,6 +2755,12 @@ paths:
                 properties:
                   symbol:
                     type: string
+                  fundingIntervalHours:
+                    type: integer
+                  nextEndTime:
+                    type: integer
+                    format: int64
+                    description: 本页满额时返回，作为下一页的 endTime
                   history:
                     type: array
                     items:
@@ -2758,7 +2779,7 @@ paths:
     get:
       tags:
       - Futures
-      summary: 标记价 / 指数价历史
+      summary: 标记价 / 指数价历史（原始采样或按周期聚合的 K 线）
       operationId: futuresMarkHistory
       security: []
       parameters:
@@ -2772,6 +2793,28 @@ paths:
         required: false
         schema:
           type: integer
+          description: 默认 200，最大 2000
+      - name: interval
+        in: query
+        required: false
+        description: 不传返回原始采样；传入则返回标记价 K 线
+        schema:
+          type: string
+          enum: [1m, 5m, 15m, 30m, 1h, 4h, 1d]
+      - name: startTime
+        in: query
+        required: false
+        description: 起始时间（毫秒，含）
+        schema:
+          type: integer
+          format: int64
+      - name: endTime
+        in: query
+        required: false
+        description: 结束时间（毫秒，含）；翻页时传上一页的 nextEndTime
+        schema:
+          type: integer
+          format: int64
       responses:
         '200':
           description: OK
@@ -2782,11 +2825,39 @@ paths:
                 properties:
                   symbol:
                     type: string
+                  interval:
+                    type: string
+                  sampleSeconds:
+                    type: integer
+                    description: 原始采样间隔（秒）
+                  nextEndTime:
+                    type: integer
+                    format: int64
                   history:
                     type: array
+                    description: 不传 interval 时为 time/indexPrice/markPrice；传 interval 时为 openTime/open/high/low/close/indexClose
                     items:
                       type: object
                       properties:
+                        openTime:
+                          type: integer
+                          format: int64
+                        open:
+                          type: string
+                          description: 十进制字符串
+                        high:
+                          type: string
+                          description: 十进制字符串
+                        low:
+                          type: string
+                          description: 十进制字符串
+                        close:
+                          type: string
+                          description: 十进制字符串
+                        indexClose:
+                          type: string
+                          description: 十进制字符串
+
                         time:
                           type: integer
                           format: int64
@@ -2863,6 +2934,273 @@ paths:
                         time:
                           type: integer
                           format: int64
+  /futures/market/insurance-fund/history:
+    get:
+      tags:
+      - Futures
+      summary: 保险基金历史余额（定时快照，新到旧）
+      operationId: futuresInsuranceFundHistory
+      security: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          description: 默认 200，最大 2000
+      - name: startTime
+        in: query
+        required: false
+        description: 起始时间（毫秒，含）
+        schema:
+          type: integer
+          format: int64
+      - name: endTime
+        in: query
+        required: false
+        description: 结束时间（毫秒，含）；翻页时传上一页的 nextEndTime
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asset:
+                    type: string
+                  snapshotMinutes:
+                    type: integer
+                  nextEndTime:
+                    type: integer
+                    format: int64
+                  history:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        time:
+                          type: integer
+                          format: int64
+                        asset:
+                          type: string
+                        balance:
+                          type: string
+                          description: 十进制字符串
+                        equity:
+                          type: string
+                          description: 十进制字符串
+  /futures/market/risk-tiers:
+    get:
+      tags:
+      - Futures
+      summary: 仓位档位（每档名义价值区间、最大杠杆、维持保证金率）
+      operationId: futuresRiskTiers
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        description: 不传返回全部合约
+        schema:
+          type: string
+          example: BTCUSDT
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contracts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                        marginAsset:
+                          type: string
+                        tiers:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              tier:
+                                type: integer
+                              minNotional:
+                                type: string
+                                description: 名义价值下限（USDT，不含）
+                              maxNotional:
+                                type: string
+                                description: 名义价值上限（USDT，含）
+                              maxLeverage:
+                                type: integer
+                              maintenanceMarginRate:
+                                type: string
+                              maintenanceAmount:
+                                type: string
+                                description: 维持保证金速算额
+        '400':
+          description: UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /futures/market/isolated-params:
+    get:
+      tags:
+      - Futures
+      summary: 逐仓参数（每个合约的杠杆、保证金率、强平费率、数量限制等）
+      operationId: futuresIsolatedParams
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: false
+        description: 不传返回全部合约
+        schema:
+          type: string
+          example: BTCUSDT
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  defaultMarginMode:
+                    type: string
+                  contracts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                        marginAsset:
+                          type: string
+                        marginModes:
+                          type: array
+                          items:
+                            type: string
+                        maxLeverage:
+                          type: integer
+                        defaultLeverage:
+                          type: integer
+                        maintenanceMarginRate:
+                          type: string
+                          description: 第一档维持保证金率
+                        liquidationFeeRate:
+                          type: string
+                          description: 强平手续费率（进入保险基金）
+                        minQty:
+                          type: string
+                        maxQty:
+                          type: string
+                        tickSize:
+                          type: string
+                        makerFeeRate:
+                          type: string
+                        takerFeeRate:
+                          type: string
+                        fundingIntervalHours:
+                          type: integer
+                        marginAdjustable:
+                          type: boolean
+                          description: 逐仓可追加/减少保证金
+                        tiers:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              tier:
+                                type: integer
+                              minNotional:
+                                type: string
+                                description: 名义价值下限（USDT，不含）
+                              maxNotional:
+                                type: string
+                                description: 名义价值上限（USDT，含）
+                              maxLeverage:
+                                type: integer
+                              maintenanceMarginRate:
+                                type: string
+                              maintenanceAmount:
+                                type: string
+                                description: 维持保证金速算额
+        '400':
+          description: UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /futures/market/index:
+    get:
+      tags:
+      - Futures
+      summary: 当前指数价格与成分交易所（Binance 主、OKX 备，当前生效来源权重为 1）
+      operationId: futuresIndex
+      security: []
+      parameters:
+      - name: symbol
+        in: query
+        required: true
+        schema:
+          type: string
+          example: BTCUSDT
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbol:
+                    type: string
+                  indexPrice:
+                    type: string
+                    description: 十进制字符串；为 0 表示指数暂不可用
+                  markPrice:
+                    type: string
+                  indexUpdatedAt:
+                    type: integer
+                    format: int64
+                  source:
+                    type: string
+                    description: 当前生效来源（binance / okx / binance-tradfi / okx-swap / local）
+                  method:
+                    type: string
+                    description: primary_failover：按顺序取第一个新鲜来源，不做加权平均
+                  components:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        exchange:
+                          type: string
+                        price:
+                          type: string
+                        weight:
+                          type: string
+                          description: '"1" 为当前生效来源，其余 "0"'
+                        fresh:
+                          type: boolean
+                        updatedAt:
+                          type: integer
+                          format: int64
+        '400':
+          description: UNKNOWN_SYMBOL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /futures/account:
     get:
       tags:

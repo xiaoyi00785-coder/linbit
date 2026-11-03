@@ -177,52 +177,6 @@ func (s *Server) hKlines(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "interval": iv, "source": source, "klines": out})
 }
 
-func (s *Server) hFundingHistory(w http.ResponseWriter, r *http.Request) {
-	c, err := s.contract(r.URL.Query().Get("symbol"))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	rows, err := s.db.QueryContext(r.Context(), `SELECT funding_time, rate, mark_price FROM fut_funding_history WHERE symbol=$1 ORDER BY funding_time DESC LIMIT $2`, c.Symbol, limitParam(r, 100, 1000))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	defer rows.Close()
-	out := []map[string]any{}
-	for rows.Next() {
-		var at time.Time
-		var rate, mark decimal.Decimal
-		if rows.Scan(&at, &rate, &mark) == nil {
-			out = append(out, map[string]any{"fundingTime": at.UnixMilli(), "fundingRate": rate, "markPrice": mark})
-		}
-	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "history": out})
-}
-
-func (s *Server) hMarkHistory(w http.ResponseWriter, r *http.Request) {
-	c, err := s.contract(r.URL.Query().Get("symbol"))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	rows, err := s.db.QueryContext(r.Context(), `SELECT ts, index_price, mark_price FROM fut_mark_history WHERE symbol=$1 ORDER BY ts DESC LIMIT $2`, c.Symbol, limitParam(r, 200, 2000))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	defer rows.Close()
-	out := []map[string]any{}
-	for rows.Next() {
-		var at time.Time
-		var ip, mp decimal.Decimal
-		if rows.Scan(&at, &ip, &mp) == nil {
-			out = append(out, map[string]any{"time": at.UnixMilli(), "indexPrice": ip, "markPrice": mp})
-		}
-	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "history": out})
-}
-
 func (s *Server) hInsurance(w http.ResponseWriter, r *http.Request) {
 	bal, _, err := readAccount(r.Context(), s.db, insuranceUser)
 	if err != nil {

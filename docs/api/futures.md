@@ -147,6 +147,7 @@ Errors: INVALID_PROFIT_SHARE, INVALID_NICKNAME, INVALID_BIO, ALREADY_TRADER, TRA
 | FUTURES_MARKET_PRICE_BAND | 0.05 | Market order protection band |
 | FUTURES_TICK_MS | 1000 | Risk / price loop interval |
 | FUTURES_MARK_SAMPLE_SECONDS | 60 | Mark price sampling interval |
+| FUTURES_INSURANCE_SNAPSHOT_MINUTES | 60 | Insurance-fund balance snapshot interval (fut_insurance_snapshots, public history) |
 | FUTURES_INDEX_STALE_SECONDS | 30 | Index staleness threshold (fail closed) |
 | FUTURES_FUNDING_HOURS | 8 | Funding interval |
 | FUTURES_FUNDING_INTEREST | 0.0001 | Interest rate per period |

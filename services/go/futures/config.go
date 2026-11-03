@@ -22,10 +22,11 @@ type Config struct {
 	DefaultLeverage   int    // FUTURES_DEFAULT_LEVERAGE (20, matches the UI)
 	DefaultMarginMode string // FUTURES_DEFAULT_MARGIN_MODE (cross, matches the UI)
 
-	MarketBand      decimal.Decimal // FUTURES_MARKET_PRICE_BAND (0.05): market orders fill only within mark ±5%
-	TickInterval    time.Duration   // FUTURES_TICK_MS (1000): index/mark refresh, TP/SL, liquidation scan
-	MarkSampleEvery time.Duration   // FUTURES_MARK_SAMPLE_SECONDS (60): mark-price history resolution
-	IndexStale      time.Duration   // FUTURES_INDEX_STALE_SECONDS (30): keep last index this long if source fails
+	MarketBand         decimal.Decimal // FUTURES_MARKET_PRICE_BAND (0.05): market orders fill only within mark ±5%
+	TickInterval       time.Duration   // FUTURES_TICK_MS (1000): index/mark refresh, TP/SL, liquidation scan
+	MarkSampleEvery    time.Duration   // FUTURES_MARK_SAMPLE_SECONDS (60): mark-price history resolution
+	IndexStale         time.Duration   // FUTURES_INDEX_STALE_SECONDS (30): keep last index this long if source fails
+	InsuranceSnapEvery time.Duration   // FUTURES_INSURANCE_SNAPSHOT_MINUTES (60): insurance-fund history resolution
 
 	FundingInterval time.Duration   // FUTURES_FUNDING_HOURS (8): settles at 00/08/16 UTC
 	FundingInterest decimal.Decimal // FUTURES_FUNDING_INTEREST (0.0001 per interval)
@@ -80,6 +81,7 @@ func LoadConfig() Config {
 		TickInterval:         time.Duration(common.EnvInt("FUTURES_TICK_MS", 1000)) * time.Millisecond,
 		MarkSampleEvery:      time.Duration(common.EnvInt("FUTURES_MARK_SAMPLE_SECONDS", 60)) * time.Second,
 		IndexStale:           time.Duration(common.EnvInt("FUTURES_INDEX_STALE_SECONDS", 30)) * time.Second,
+		InsuranceSnapEvery:   time.Duration(common.EnvInt("FUTURES_INSURANCE_SNAPSHOT_MINUTES", 60)) * time.Minute,
 		FundingInterval:      time.Duration(common.EnvInt("FUTURES_FUNDING_HOURS", 8)) * time.Hour,
 		FundingInterest:      decEnv("FUTURES_FUNDING_INTEREST", "0.0001"),
 		FundingClamp:         decEnv("FUTURES_FUNDING_CLAMP", "0.0005"),
