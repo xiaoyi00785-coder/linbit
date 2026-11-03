@@ -40,3 +40,4 @@ body{overflow-x:clip}
 .of .pt.sm b.on{color:var(--lb-text);border-bottom-color:var(--lb-primary);font-weight:600}
 .inp input[aria-invalid=true]{color:var(--lb-down)}
 .inp input{min-height:40px;font-size:14px}
+@media (max-width:1023px){.box.ml,.box.mc{max-width:100%;overflow-x:auto}.mlg{min-width:0}}
