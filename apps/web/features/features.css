@@ -163,3 +163,8 @@
 .ff-mact{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.ff-f{display:flex;flex-direction:column;gap:6px;margin-top:14px;font-size:12px;color:var(--lb-light-text-2)}.ff-f>input{height:40px;border:1px solid var(--lb-light-border);border-radius:8px;padding:0 12px;outline:0;font-size:14px;color:var(--lb-card)}.ff-f>input:focus{border-color:#abe127}
 .ff-ops button{border:0;background:none;color:var(--lb-card);text-decoration:underline;cursor:pointer;font-size:12px;margin-left:10px}
 .ff-krow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--lb-light-border)}
+.tk-tif{display:flex;gap:6px;margin:6px 0}.tk-tif b{flex:1;text-align:center;font-size:12px;font-weight:400;padding:5px 0;border:1px solid var(--lb-card-2);border-radius:6px;color:var(--lb-text-2);cursor:pointer}.tk-tif b.on{border-color:#abe127;color:#abe127}
+.tk-tt{background:transparent;border:0;color:var(--lb-text-2);font-size:12px;outline:0;cursor:pointer}.tk-tt option{background:#1b1d22}
+.tk-ck2{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--lb-text-2);margin:6px 0;cursor:pointer}.tk-ck2 input{accent-color:#abe127}
+.tk-tp2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.tk-ed{display:grid;gap:10px}.tk-ed .inp{margin:0}
