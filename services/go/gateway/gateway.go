@@ -122,6 +122,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		routes: []route{
 			{prefix: "/auth", proxy: accountProxy},
 			{prefix: "/2fa", proxy: accountProxy},
+			// Fee rates are computed by the order service (spot + futures); must
+			// precede the /account prefix.
+			{prefix: "/account/fee-rates", proxy: orderProxy},
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/notifications", proxy: accountProxy},
 			{prefix: "/vip", proxy: accountProxy},

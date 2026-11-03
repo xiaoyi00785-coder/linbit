@@ -119,6 +119,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleListAddresses)))
 	mux.Handle("POST /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleCreateAddress)))
 	mux.Handle("DELETE /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handleDeleteAddress)))
+	mux.Handle("PATCH /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handlePatchAddress)))
 	mux.Handle("GET /account/favorites", s.auth(http.HandlerFunc(s.handleListFavorites)))
 	mux.Handle("PUT /account/favorites", s.auth(http.HandlerFunc(s.handleReplaceFavorites)))
 	mux.Handle("PUT /account/favorites/{symbol}", s.auth(http.HandlerFunc(s.handleAddFavorite)))
@@ -177,6 +178,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /internal/admin/users", s.handleInternalAdminUsers)
 	mux.HandleFunc("GET /internal/users/feed", s.handleInternalUsersFeed)
 	mux.HandleFunc("GET /internal/users/profile", s.handleInternalUserProfile)
+	mux.HandleFunc("GET /internal/users/lookup", s.handleInternalUserLookup)
 	mux.HandleFunc("GET /internal/admin/users/{uid}", s.handleInternalAdminUser)
 	mux.HandleFunc("POST /internal/admin/users/{uid}/status", s.handleInternalAdminSetStatus)
 

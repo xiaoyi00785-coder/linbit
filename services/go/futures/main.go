@@ -38,6 +38,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("init: %v", err)
 	}
+	if err := srv.reloadFeeOverrides(context.Background()); err != nil {
+		log.Printf("load fee overrides: %v", err)
+	}
 	ctx := context.Background()
 	go srv.RunTicker(ctx)
 	go srv.RunTransferRetry(ctx)

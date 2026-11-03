@@ -207,6 +207,7 @@ type balanceDelta struct {
 	asset  string
 	free   decimal.Decimal
 	locked decimal.Decimal
+	acct   string // "" / "spot" = balances, "funding" = funding_balances
 }
 
 // Settle applies one matched trade in a single transaction with double-entry
@@ -292,7 +293,10 @@ func (s *Store) applyDeltas(ctx context.Context, tx *sql.Tx, deltas []balanceDel
 	// Merge duplicates and sort for a stable lock order.
 	merged := map[string]*balanceDelta{}
 	for _, d := range deltas {
-		key := d.userID + "\x00" + d.asset
+		if d.acct == AcctSpot {
+			d.acct = ""
+		}
+		key := d.acct + "\x00" + d.userID + "\x00" + d.asset
 		if m, ok := merged[key]; ok {
 			m.free = m.free.Add(d.free)
 			m.locked = m.locked.Add(d.locked)
@@ -309,18 +313,22 @@ func (s *Store) applyDeltas(ctx context.Context, tx *sql.Tx, deltas []balanceDel
 
 	for _, k := range keys {
 		d := merged[k]
+		table := "balances"
+		if d.acct == AcctFunding {
+			table = "funding_balances"
+		}
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO asset_accounts (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, d.userID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO balances (user_id, asset) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			`INSERT INTO `+table+` (user_id, asset) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
 			d.userID, d.asset); err != nil {
 			return err
 		}
 		var freeStr, lockedStr string
 		if err := tx.QueryRowContext(ctx,
-			`SELECT free::text, locked::text FROM balances
+			`SELECT free::text, locked::text FROM `+table+`
 			 WHERE user_id = $1 AND asset = $2 FOR UPDATE`,
 			d.userID, d.asset).Scan(&freeStr, &lockedStr); err != nil {
 			return err
@@ -331,7 +339,7 @@ func (s *Store) applyDeltas(ctx context.Context, tx *sql.Tx, deltas []balanceDel
 			return ErrInsufficient
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE balances SET free = $3, locked = $4 WHERE user_id = $1 AND asset = $2`,
+			`UPDATE `+table+` SET free = $3, locked = $4 WHERE user_id = $1 AND asset = $2`,
 			d.userID, d.asset, newFree.String(), newLocked.String()); err != nil {
 			return err
 		}

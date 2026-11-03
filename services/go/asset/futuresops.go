@@ -21,6 +21,14 @@ const FuturesAccount = "system:futures"
 
 // FuturesTransfer moves amount out of (toFutures=true) or back into the user's free balance.
 func (s *Store) FuturesTransfer(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string, toFutures bool) error {
+	return s.FuturesTransferAcct(ctx, AcctSpot, userID, asset, amount, ref, toFutures)
+}
+
+// FuturesTransferAcct is FuturesTransfer against a chosen wallet (spot|funding).
+func (s *Store) FuturesTransferAcct(ctx context.Context, acct, userID, asset string, amount decimal.Decimal, ref string, toFutures bool) error {
+	if !validAcct(acct) {
+		return ErrInvalidAccount
+	}
 	if amount.Sign() <= 0 {
 		return ErrInvalidAmount
 	}
@@ -36,11 +44,11 @@ func (s *Store) FuturesTransfer(ctx context.Context, userID, asset string, amoun
 	if err := claimRef(ctx, tx, ref, op, userID, asset, amount); err != nil {
 		return err
 	}
-	if err := s.applyDeltas(ctx, tx, []balanceDelta{{userID: userID, asset: asset, free: delta}}); err != nil {
+	if err := s.applyDeltas(ctx, tx, []balanceDelta{{userID: userID, asset: asset, free: delta, acct: acct}}); err != nil {
 		return err
 	}
 	lines := []ledgerLine{
-		{Account: userAcct(userID, "free"), Asset: asset, Direction: "credit", Amount: amount},
+		{Account: acctBucket(userID, acct, "free"), Asset: asset, Direction: "credit", Amount: amount},
 		{Account: FuturesAccount, Asset: asset, Direction: "debit", Amount: amount},
 	}
 	if !toFutures {
@@ -64,12 +72,18 @@ func (s *Server) handleFuturesTransfer(toFutures bool) http.HandlerFunc {
 			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "金额不合法")
 			return
 		}
-		err = s.store.FuturesTransfer(r.Context(), req.UserID, strings.ToUpper(req.Asset), amount, req.Ref, toFutures)
+		acct := req.Account
+		if acct == "" {
+			acct = AcctSpot // legacy callers: spot wallet
+		}
+		err = s.store.FuturesTransferAcct(r.Context(), acct, req.UserID, strings.ToUpper(req.Asset), amount, req.Ref, toFutures)
 		switch {
 		case errors.Is(err, ErrAlreadyApplied):
 			common.WriteJSON(w, http.StatusOK, map[string]string{"status": "already_applied"})
 		case errors.Is(err, ErrInsufficient):
 			common.WriteError(w, http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")
+		case errors.Is(err, ErrInvalidAccount):
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 不合法")
 		case err != nil:
 			log.Printf("futures transfer: %v", err)
 			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")

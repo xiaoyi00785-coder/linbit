@@ -641,6 +641,33 @@ paths:
               example: { code: ADDRESS_EXISTS, message: 该地址已在地址簿中 }
 
   /account/withdraw-addresses/{id}:
+    patch:
+      tags: [Account]
+      summary: 修改提现地址（label / memo / 白名单标记；需验证码或 2FA）
+      operationId: updateWithdrawAddress
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+                memo: { type: string }
+                whitelisted: { type: boolean }
+                totpCode: { type: string }
+                code: { type: string, description: 未开启 2FA 时提供（purpose=address） }
+      responses:
+        "200":
+          description: 更新后的地址
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WithdrawAddress" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [Account]
       summary: 删除提现地址（需验证码或 2FA）
@@ -4228,6 +4255,168 @@ paths:
                   pageSize: { type: integer }
                   total: { type: integer }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /assets/overview:
+    get:
+      tags: [Assets]
+      summary: 资产总览（资金账户 funding / 现货 spot / 合约 futures 分账户余额与 USDT 估值）
+      description: |
+        充值默认入 funding、提现默认从 funding 扣（后台可配置为 spot，见 depositAccount/withdrawAccount）。
+        合约账户只接受 USDT 划转。价格缺失时该币 valuationUsd 为 null 且不计入合计；合约服务不可用时 futures.available=false。
+      operationId: getAssetsOverview
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssetsOverview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /wallet/networks:
+    get:
+      tags: [Wallet]
+      summary: 币种网络参数（充提开关、最小充值、确认数、Memo、提现手续费/最小提现）
+      operationId: listWalletNetworks
+      parameters:
+        - { name: asset, in: query, required: false, description: 不传返回全部网络, schema: { type: string, example: USDT } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [networks]
+                properties:
+                  asset: { type: string, example: USDT }
+                  networks: { type: array, items: { $ref: "#/components/schemas/WalletNetwork" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /wallet/internal-transfer:
+    post:
+      tags: [Wallet]
+      summary: 站内转账（免手续费、实时到账，需 2FA，按 clientId 幂等）
+      description: |
+        从资金账户（funding）转给另一位平台用户（toUid 或 toEmail 二选一）。收款方须存在、状态正常且不是子账户。
+        24 小时滚动额度按 USDT 估值计（后台可配，默认 50000；0=不限）；功能可被后台关闭。
+        错误码：VALIDATION_ERROR、TWOFA_REQUIRED、INTERNAL_TRANSFER_DISABLED(403)、RECIPIENT_NOT_FOUND(404)、SELF_TRANSFER、
+        RECIPIENT_SUB_ACCOUNT、RECIPIENT_UNAVAILABLE、PRICE_UNAVAILABLE、INTERNAL_TRANSFER_LIMIT_EXCEEDED、INSUFFICIENT_BALANCE、
+        IDEMPOTENCY_CONFLICT(409，同 clientId 不同参数)。
+      operationId: createInternalTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InternalTransferRequest" }
+      responses:
+        "200":
+          description: 完成（或同 clientId 重放返回原结果）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InternalTransfer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+  /wallet/internal-transfers:
+    get:
+      tags: [Wallet]
+      summary: 站内转账记录（转出 + 已到账的转入）
+      operationId: listInternalTransfers
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/InternalTransfer" } }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /spot/orders/conditional:
+    post:
+      tags: [Spot]
+      summary: 条件单（止损 stop / 止盈 take_profit / 计划委托 trigger），最新成交价穿越触发价后下限价或市价单
+      description: |
+        创建时即冻结所需资金；触发后释放并按普通下单流程提交子订单（orderId 回填）。
+        方向：stop 买=up 卖=down；take_profit 买=down 卖=up；trigger 按当前价自动判断或传 triggerDirection。
+        错误码：VALIDATION_ERROR、TRIGGER_WOULD_IMMEDIATELY_FIRE、CONDITIONAL_LIMIT_EXCEEDED（每人最多 50 个未触发）、INSUFFICIENT_BALANCE、IDEMPOTENCY_CONFLICT。
+      operationId: createConditionalOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConditionalOrderRequest" }
+      responses:
+        "201":
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConditionalOrder" }
+        "200":
+          description: 同 clientOrderId 重放
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConditionalOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      tags: [Spot]
+      summary: 条件单列表（默认 status=open 即 pending/triggering；all 或具体状态）
+      operationId: listConditionalOrders
+      parameters:
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [open, all, pending, triggering, triggered, canceled, failed] } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConditionalOrder" } }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /spot/orders/conditional/{id}:
+    delete:
+      tags: [Spot]
+      summary: 撤销未触发的条件单（释放冻结；已撤销重复调用返回 200）
+      operationId: cancelConditionalOrder
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 已撤销
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConditionalOrder" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/BadRequest" }
+  /account/fee-rates:
+    get:
+      tags: [Account]
+      summary: 我的手续费率（现货 + 合约 maker/taker，含后台个人费率覆盖）
+      description: VIP 仅提供服务权益，费率统一（vipLevel 恒为 0）；合约服务不可用时 futures 为 null。
+      operationId: getFeeRates
+      parameters:
+        - { name: symbol, in: query, required: false, schema: { type: string, example: BTCUSDT } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeeRates" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /admin/v1/home/placements:
     get:
       tags: [Admin]
@@ -5538,8 +5727,10 @@ components:
         asset: { type: string, example: USDT }
         network: { type: string, example: TRC20 }
         address: { type: string, example: TXy1Z9DemoAddr000000000000000000000 }
-        memo: { type: string, nullable: true, example: null }
+        memo: { type: string, nullable: true, example: null, description: memoRequired=true 时为必填的充值 Memo/Tag }
         minDeposit: { type: string, nullable: true, example: "1.00000000" }
+        memoRequired: { type: boolean }
+        confirmations: { type: integer }
 
     Deposit:
       type: object
@@ -5685,7 +5876,8 @@ components:
 
     TimeInForce:
       type: string
-      enum: [GTC, IOC, FOK]
+      description: PostOnly（别名 GTX）= 只做 Maker，会立即成交则拒绝（POST_ONLY_REJECTED）
+      enum: [GTC, IOC, FOK, PostOnly, GTX]
 
     PlaceOrderRequest:
       type: object
@@ -5701,6 +5893,7 @@ components:
           example: "76768.40"
         quantity: { type: string, example: "0.01000000" }
         timeInForce: { $ref: "#/components/schemas/TimeInForce" }
+        postOnly: { type: boolean, description: 等价于 timeInForce=PostOnly；会立即成交时返回 POST_ONLY_REJECTED }
         clientOrderId: { type: string, nullable: true, example: cli-20261102-001 }
 
     Order:
@@ -6959,6 +7152,128 @@ components:
               market: { type: string }
               sort: { type: integer }
               createdAt: { type: string, format: date-time }
+    AssetsOverviewAccount:
+      type: object
+      properties:
+        account: { type: string, enum: [funding, spot, futures] }
+        available: { type: boolean }
+        totalValueUsdt: { type: string, example: "1234.56" }
+        balances:
+          type: array
+          items:
+            type: object
+            properties:
+              asset: { type: string }
+              free: { type: string }
+              locked: { type: string }
+              total: { type: string }
+              valuationUsd: { type: string, nullable: true }
+    AssetsOverview:
+      type: object
+      properties:
+        totalValueUsdt: { type: string }
+        accounts: { type: array, items: { $ref: "#/components/schemas/AssetsOverviewAccount" } }
+        depositAccount: { type: string, enum: [funding, spot] }
+        withdrawAccount: { type: string, enum: [funding, spot] }
+        transferable:
+          type: object
+          additionalProperties: true
+          example: { funding: [spot, futures], spot: [funding, futures], futures: [funding, spot], futuresAssets: [USDT] }
+    WalletNetwork:
+      type: object
+      properties:
+        asset: { type: string, example: USDT }
+        network: { type: string, example: TRC20 }
+        minDeposit: { type: string }
+        confirmations: { type: integer }
+        memoRequired: { type: boolean }
+        withdrawFee: { type: string }
+        withdrawFeeAsset: { type: string }
+        minWithdraw: { type: string }
+        maxWithdraw: { type: string, nullable: true }
+        depositEnabled: { type: boolean }
+        withdrawEnabled: { type: boolean }
+        estimatedArrivalMinutes: { type: integer }
+    InternalTransferRequest:
+      type: object
+      required: [clientId, asset, amount, totpCode]
+      properties:
+        clientId: { type: string, maxLength: 64 }
+        asset: { type: string, example: USDT }
+        amount: { type: string, example: "10" }
+        toUid: { type: string }
+        toEmail: { type: string }
+        totpCode: { type: string }
+    InternalTransfer:
+      type: object
+      properties:
+        id: { type: string }
+        clientId: { type: string }
+        direction: { type: string, enum: [out, in] }
+        fromUid: { type: string }
+        toUid: { type: string }
+        toMaskedEmail: { type: string }
+        asset: { type: string }
+        amount: { type: string }
+        fee: { type: string, example: "0" }
+        status: { type: string, enum: [pending, completed, failed] }
+        failReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+    ConditionalOrderRequest:
+      type: object
+      required: [symbol, side, type, triggerPrice]
+      properties:
+        symbol: { type: string, example: BTCUSDT }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        type: { $ref: "#/components/schemas/OrderType" }
+        kind: { type: string, enum: [stop, take_profit, trigger], default: trigger }
+        triggerPrice: { type: string }
+        triggerDirection: { type: string, enum: [up, down], description: 仅 kind=trigger 且无最新价时需要 }
+        price: { type: string, nullable: true, description: limit 子单必填 }
+        quantity: { type: string, nullable: true }
+        quoteOrderQty: { type: string, nullable: true, description: 市价买按金额 }
+        timeInForce: { $ref: "#/components/schemas/TimeInForce" }
+        clientOrderId: { type: string, nullable: true }
+    ConditionalOrder:
+      type: object
+      properties:
+        id: { type: string }
+        clientOrderId: { type: string, nullable: true }
+        symbol: { type: string }
+        side: { type: string }
+        kind: { type: string, enum: [stop, take_profit, trigger] }
+        type: { type: string, enum: [limit, market] }
+        triggerPrice: { type: string }
+        triggerDirection: { type: string, enum: [up, down] }
+        price: { type: string, nullable: true }
+        quantity: { type: string, nullable: true }
+        quoteOrderQty: { type: string, nullable: true }
+        timeInForce: { type: string }
+        status: { type: string, enum: [pending, triggering, triggered, canceled, failed] }
+        orderId: { type: string, nullable: true, description: 触发后生成的现货订单 }
+        frozenAsset: { type: string }
+        frozenAmount: { type: string }
+        failReason: { type: string }
+        createdAt: { type: string, format: date-time }
+        triggeredAt: { type: string, format: date-time, nullable: true }
+    FeePair:
+      type: object
+      properties:
+        maker: { type: string, example: "0.001" }
+        taker: { type: string, example: "0.001" }
+    FeeRates:
+      type: object
+      properties:
+        symbol: { type: string }
+        vipLevel: { type: integer, example: 0 }
+        spot: { $ref: "#/components/schemas/FeePair" }
+        futures:
+          allOf: [{ $ref: "#/components/schemas/FeePair" }]
+          nullable: true
+        overridden: { type: boolean }
+        source: { type: string, enum: [default, override] }
+        note: { type: string }
     TransferRequest:
       type: object
       required: [clientId, asset, amount, from, to]
@@ -6966,8 +7281,8 @@ components:
         clientId: { type: string, maxLength: 64, example: "c-20261103-0001" }
         asset: { type: string, example: USDT }
         amount: { type: string, example: "100" }
-        from: { type: string, enum: [spot, futures] }
-        to: { type: string, enum: [spot, futures] }
+        from: { type: string, enum: [funding, spot, futures], description: 涉及 futures 时仅支持 USDT }
+        to: { type: string, enum: [funding, spot, futures] }
     Transfer:
       type: object
       properties:

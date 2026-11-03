@@ -10,8 +10,9 @@ type Config struct {
 	DatabaseURL   string
 	InternalToken string
 	RedisURL      string
-	MarketURL     string // market-data (index prices for convert)
+	MarketURL     string // MARKET_URL: index prices (convert + USDT valuation)
 	OrderURL      string // order service (convert hedge IOC orders)
+	FuturesURL    string // FUTURES_INTERNAL_URL: futures wallet for /assets/overview
 	Convert       ConvertDefaults
 }
 
@@ -24,6 +25,7 @@ func LoadConfig() Config {
 		RedisURL:      common.Env("REDIS_URL", ""),
 		MarketURL:     common.Env("MARKET_URL", "http://localhost:8085"),
 		OrderURL:      common.Env("ORDER_URL", "http://localhost:8084"),
+		FuturesURL:    common.Env("FUTURES_INTERNAL_URL", "http://localhost:8089"),
 		Convert:       loadConvertDefaults(),
 	}
 }

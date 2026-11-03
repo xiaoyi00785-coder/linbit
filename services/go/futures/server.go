@@ -18,6 +18,7 @@ import (
 //	internal /internal/dev/*              (X-Internal-Token + DEV_MODE)
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+	s.feeOverrideRoutes(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -170,7 +171,7 @@ func (s *Server) hTransfer(w http.ResponseWriter, r *http.Request, uid string) {
 }
 
 func (s *Server) hTransfers(w http.ResponseWriter, r *http.Request, uid string) {
-	rows, err := s.db.QueryContext(r.Context(), `SELECT ref, direction, amount, status, created_at, kind FROM fut_transfers WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`, uid, limitParam(r, 50, 200))
+	rows, err := s.db.QueryContext(r.Context(), `SELECT ref, direction, amount, status, created_at, kind FROM fut_transfers WHERE user_id=$1 AND direction IN ('in','out') ORDER BY created_at DESC LIMIT $2`, uid, limitParam(r, 50, 200))
 	if err != nil {
 		writeErr(w, err)
 		return

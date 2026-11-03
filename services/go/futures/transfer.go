@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -28,7 +29,7 @@ import (
 // (futures_in / futures_out vs system:futures) + fut_bills (transfer_in/out).
 
 var (
-	transferAccounts = map[string]bool{"spot": true, "futures": true}
+	transferAccounts = map[string]bool{"funding": true, "spot": true, "futures": true}
 	knownAccounts    = map[string]bool{"spot": true, "futures": true, "earn": true, "funding": true, "margin": true, "copy": true}
 	clientIDRe       = regexp.MustCompile(`^[A-Za-z0-9_\-:.]{1,64}$`)
 )
@@ -41,8 +42,9 @@ type transferReq struct {
 	ClientID string `json:"clientId"`
 }
 
-// validateTransfer checks the request and returns the futures direction
-// ("in" = spot->futures, "out" = futures->spot). Pure; unit tested.
+// validateTransfer checks the request and returns the direction: "in" =
+// spot|funding -> futures, "out" = futures -> spot|funding, "internal" =
+// spot <-> funding. Pure; unit tested.
 func validateTransfer(req *transferReq, minAmt decimal.Decimal) (dir string, amt decimal.Decimal, err error) {
 	req.Asset = strings.ToUpper(strings.TrimSpace(req.Asset))
 	req.From = strings.ToLower(strings.TrimSpace(req.From))
@@ -55,7 +57,7 @@ func validateTransfer(req *transferReq, minAmt decimal.Decimal) (dir string, amt
 		return "", amt, bad("VALIDATION_ERROR", "clientId 必填，1-64 位字母数字或 _-:.")
 	}
 	amt, perr := decimal.NewFromString(strings.TrimSpace(req.Amount))
-	if perr != nil || amt.Sign() <= 0 || amt.Exponent() < -8 || amt.LessThan(minAmt) {
+	if perr != nil || amt.Sign() <= 0 || amt.Exponent() < -8 || ((req.From == "futures" || req.To == "futures") && amt.LessThan(minAmt)) {
 		return "", amt, bad("VALIDATION_ERROR", "金额不合法（最小 "+minAmt.String()+"，最多 8 位小数）")
 	}
 	if req.From == req.To {
@@ -67,42 +69,73 @@ func validateTransfer(req *transferReq, minAmt decimal.Decimal) (dir string, amt
 			if a == "earn" {
 				msg = "理财账户请使用申购/赎回，不支持直接划转"
 			} else if !knownAccounts[a] {
-				msg = "from/to 必须为 spot 或 futures"
+				msg = "from/to 必须为 funding、spot 或 futures"
 			}
 			return "", amt, bad("ACCOUNT_NOT_SUPPORTED", msg)
 		}
 	}
+	if req.From != "futures" && req.To != "futures" {
+		if !assetRe.MatchString(req.Asset) {
+			return "", amt, bad("VALIDATION_ERROR", "asset 不合法")
+		}
+		return "internal", amt, nil
+	}
 	if req.Asset != "USDT" {
 		return "", amt, bad("VALIDATION_ERROR", "合约账户仅支持 USDT")
 	}
-	if req.From == "spot" {
+	if req.To == "futures" {
 		return "in", amt, nil
 	}
 	return "out", amt, nil
 }
 
+var assetRe = regexp.MustCompile(`^[A-Z0-9]{2,15}$`)
+
+// walletOf is the asset-service wallet on the non-futures side of a request.
+func walletOf(req *transferReq) string {
+	if req.From == "funding" || req.To == "funding" {
+		return "funding"
+	}
+	return "spot"
+}
+
 // transferByClientID looks up an earlier transfer with the same clientId.
 func (s *Server) transferByClientID(ctx context.Context, q queryer, uid, clientID, dir string, amount decimal.Decimal) (string, string, bool, error) {
-	var ref, d, st string
+	return s.transferByClientIDW(ctx, q, uid, clientID, dir, amount, "")
+}
+
+// transferByClientIDW also requires the same wallet ("" = don't care).
+func (s *Server) transferByClientIDW(ctx context.Context, q queryer, uid, clientID, dir string, amount decimal.Decimal, wallet string) (string, string, bool, error) {
+	var ref, d, st, wl string
 	var amt decimal.Decimal
-	err := q.QueryRowContext(ctx, `SELECT ref, direction, amount, status FROM fut_transfers WHERE user_id=$1 AND client_id=$2`, uid, clientID).Scan(&ref, &d, &amt, &st)
+	err := q.QueryRowContext(ctx, `SELECT ref, direction, amount, status, wallet FROM fut_transfers WHERE user_id=$1 AND client_id=$2`, uid, clientID).Scan(&ref, &d, &amt, &st, &wl)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", false, nil
 	}
 	if err != nil {
 		return "", "", false, err
 	}
-	if d != dir || !amt.Equal(amount) {
+	if d != dir || !amt.Equal(amount) || (wallet != "" && wl != wallet) {
 		return "", "", true, &apiError{http.StatusConflict, "IDEMPOTENCY_CONFLICT", "clientId 已用于另一笔不同的划转"}
 	}
 	return ref, st, true, nil
 }
 
 func accountsOf(dir string) (string, string) {
-	if dir == "in" {
-		return "spot", "futures"
+	return accountsOfRow(dir, "spot", "", "")
+}
+
+func accountsOfRow(dir, wallet, from, to string) (string, string) {
+	if dir == "internal" {
+		return from, to
 	}
-	return "futures", "spot"
+	if wallet == "" {
+		wallet = "spot"
+	}
+	if dir == "in" {
+		return wallet, "futures"
+	}
+	return "futures", wallet
 }
 
 // POST /assets/transfer {asset, amount, from, to, clientId}
@@ -116,7 +149,13 @@ func (s *Server) hAssetTransfer(w http.ResponseWriter, r *http.Request, uid stri
 		writeErr(w, err)
 		return
 	}
-	ref, status, err := s.TransferIdem(r.Context(), uid, dir, amt, req.ClientID)
+	wallet := walletOf(&req)
+	var ref, status string
+	if dir == "internal" {
+		ref, status, err = s.InternalTransfer(r.Context(), uid, req.Asset, req.From, req.To, amt, req.ClientID)
+	} else {
+		ref, status, err = s.TransferWallet(r.Context(), uid, dir, wallet, amt, req.ClientID)
+	}
 	if err != nil {
 		if a, ok := asAPI(err); ok && a.Code == "INVALID_AMOUNT" {
 			err = bad("VALIDATION_ERROR", a.Message)
@@ -125,15 +164,14 @@ func (s *Server) hAssetTransfer(w http.ResponseWriter, r *http.Request, uid stri
 		return
 	}
 	if status == "failed" {
-		common.WriteError(w, http.StatusBadRequest, "INSUFFICIENT_BALANCE", "现货可用余额不足")
+		common.WriteError(w, http.StatusBadRequest, "INSUFFICIENT_BALANCE", "转出账户可用余额不足")
 		return
 	}
 	code := http.StatusOK
 	if status == "pending" {
 		code = http.StatusAccepted
 	}
-	from, to := accountsOf(dir)
-	common.WriteJSON(w, code, map[string]any{"id": ref, "clientId": req.ClientID, "asset": "USDT", "amount": amt.String(), "from": from, "to": to, "status": status})
+	common.WriteJSON(w, code, map[string]any{"id": ref, "clientId": req.ClientID, "asset": req.Asset, "amount": amt.String(), "from": req.From, "to": req.To, "status": status})
 }
 
 // GET /assets/transfers?page&pageSize&asset — unified history (includes
@@ -163,7 +201,8 @@ func (s *Server) hAssetTransfers(w http.ResponseWriter, r *http.Request, uid str
 		writeErr(w, err)
 		return
 	}
-	rows, err := s.db.QueryContext(r.Context(), `SELECT ref, COALESCE(client_id,''), asset, direction, amount, status, kind, created_at, updated_at
+	rows, err := s.db.QueryContext(r.Context(), `SELECT ref, COALESCE(client_id,''), asset, direction, amount, status, kind, created_at, updated_at,
+		wallet, COALESCE(from_account,''), COALESCE(to_account,'')
 		FROM fut_transfers WHERE user_id=$1 AND ($2='' OR asset=$2) ORDER BY created_at DESC, ref DESC LIMIT $3 OFFSET $4`, uid, asset, size, (page-1)*size)
 	if err != nil {
 		writeErr(w, err)
@@ -172,14 +211,14 @@ func (s *Server) hAssetTransfers(w http.ResponseWriter, r *http.Request, uid str
 	defer rows.Close()
 	items := []map[string]any{}
 	for rows.Next() {
-		var ref, cid, as, dir, st, kind string
+		var ref, cid, as, dir, st, kind, wl, fa, ta string
 		var amt decimal.Decimal
 		var at, up time.Time
-		if err := rows.Scan(&ref, &cid, &as, &dir, &amt, &st, &kind, &at, &up); err != nil {
+		if err := rows.Scan(&ref, &cid, &as, &dir, &amt, &st, &kind, &at, &up, &wl, &fa, &ta); err != nil {
 			writeErr(w, err)
 			return
 		}
-		from, to := accountsOf(dir)
+		from, to := accountsOfRow(dir, wl, fa, ta)
 		var cidv any
 		if cid != "" {
 			cidv = cid
@@ -188,4 +227,64 @@ func (s *Server) hAssetTransfers(w http.ResponseWriter, r *http.Request, uid str
 			"status": st, "kind": kind, "createdAt": at.UTC(), "updatedAt": up.UTC()})
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "page": page, "pageSize": size, "total": total})
+}
+
+// InternalTransfer moves any asset between the user's spot and funding wallets
+// (asset service only; futures is not involved). Idempotent on clientId; a
+// network failure leaves the row pending for RunTransferRetry.
+func (s *Server) InternalTransfer(ctx context.Context, uid, asset, from, to string, amount decimal.Decimal, clientID string) (string, string, error) {
+	if amount.Sign() <= 0 || amount.Exponent() < -8 {
+		return "", "", bad("VALIDATION_ERROR", "划转金额不合法")
+	}
+	var cid any
+	if clientID != "" {
+		cid = clientID
+		if ref, st, found, err := s.internalByClientID(ctx, uid, clientID, asset, from, to, amount); err != nil || found {
+			return ref, st, err
+		}
+	}
+	ref := newRef("acx")
+	res, err := s.db.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status, client_id, asset, kind, from_account, to_account)
+		VALUES ($1,$2,'internal',$3,'pending',$4,$5,'account_transfer',$6,$7)
+		ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING`, ref, uid, amount, cid, asset, from, to)
+	if err != nil {
+		return "", "", err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		r, st, _, err := s.internalByClientID(ctx, uid, clientID, asset, from, to, amount)
+		return r, st, err
+	}
+	return ref, s.completeInternal(ctx, ref, uid, asset, from, to, amount), nil
+}
+
+func (s *Server) internalByClientID(ctx context.Context, uid, clientID, asset, from, to string, amount decimal.Decimal) (string, string, bool, error) {
+	var ref, d, st, as, fa, ta string
+	var amt decimal.Decimal
+	err := s.db.QueryRowContext(ctx, `SELECT ref, direction, amount, status, asset, COALESCE(from_account,''), COALESCE(to_account,'')
+		FROM fut_transfers WHERE user_id=$1 AND client_id=$2`, uid, clientID).Scan(&ref, &d, &amt, &st, &as, &fa, &ta)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	if d != "internal" || as != asset || fa != from || ta != to || !amt.Equal(amount) {
+		return "", "", true, &apiError{http.StatusConflict, "IDEMPOTENCY_CONFLICT", "clientId 已用于另一笔不同的划转"}
+	}
+	return ref, st, true, nil
+}
+
+func (s *Server) completeInternal(ctx context.Context, ref, uid, asset, from, to string, amount decimal.Decimal) string {
+	err := s.asset.AccountTransfer(ctx, uid, asset, from, to, amount, ref)
+	if err == ErrSpotInsufficient {
+		s.markTransfer(ctx, ref, "failed", from+" balance insufficient")
+		return "failed"
+	}
+	if err != nil {
+		log.Printf("futures: account transfer %s pending: %v", ref, err)
+		s.markTransfer(ctx, ref, "pending", err.Error())
+		return "pending"
+	}
+	_, _ = s.db.ExecContext(ctx, `UPDATE fut_transfers SET status='done', attempts=attempts+1, updated_at=now() WHERE ref=$1 AND status='pending'`, ref)
+	return "done"
 }

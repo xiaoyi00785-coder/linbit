@@ -23,6 +23,11 @@ type Network struct {
 	GasFeeAsset             string          // kept equal to Asset in all built-in networks
 	EstimatedArrivalMinutes int
 	AddressPrefix           string // prefix used by the mock chain's address generator
+	// Admin-controllable flags (zero value = enabled / no memo) so existing
+	// literal Network values keep their behaviour.
+	MemoRequired     bool
+	DepositDisabled  bool
+	WithdrawDisabled bool
 }
 
 // NetworkRegistry indexes networks by asset and by (asset, network).
@@ -34,12 +39,34 @@ type NetworkRegistry struct {
 // Lookup returns the Network for an (asset, network) pair.
 func (r NetworkRegistry) Lookup(asset, network string) (Network, bool) {
 	n, ok := r.byPair[pairKey(asset, network)]
+	if ok {
+		n = applyOverlay(n)
+	}
 	return n, ok
 }
 
 // ForAsset returns all networks configured for an asset (nil if none).
 func (r NetworkRegistry) ForAsset(asset string) []Network {
-	return r.byAsset[strings.ToUpper(asset)]
+	src := r.byAsset[strings.ToUpper(asset)]
+	if src == nil {
+		return nil
+	}
+	out := make([]Network, len(src))
+	for i, n := range src {
+		out[i] = applyOverlay(n)
+	}
+	return out
+}
+
+// All returns every configured network with admin overrides applied.
+func (r NetworkRegistry) All() []Network {
+	out := make([]Network, 0, len(r.byPair))
+	for _, list := range r.byAsset {
+		for _, n := range list {
+			out = append(out, applyOverlay(n))
+		}
+	}
+	return out
 }
 
 func pairKey(asset, network string) string {
@@ -90,6 +117,9 @@ type networkJSON struct {
 	GasFeeAsset             string `json:"gasFeeAsset"`
 	EstimatedArrivalMinutes int    `json:"estimatedArrivalMinutes"`
 	AddressPrefix           string `json:"addressPrefix"`
+	MemoRequired            bool   `json:"memoRequired"`
+	DepositDisabled         bool   `json:"depositDisabled"`
+	WithdrawDisabled        bool   `json:"withdrawDisabled"`
 }
 
 func (j networkJSON) toNetwork() Network {
@@ -110,6 +140,9 @@ func (j networkJSON) toNetwork() Network {
 		GasFeeAsset:             j.GasFeeAsset,
 		EstimatedArrivalMinutes: j.EstimatedArrivalMinutes,
 		AddressPrefix:           j.AddressPrefix,
+		MemoRequired:            j.MemoRequired,
+		DepositDisabled:         j.DepositDisabled,
+		WithdrawDisabled:        j.WithdrawDisabled,
 	}
 }
 

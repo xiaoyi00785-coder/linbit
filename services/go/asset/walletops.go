@@ -38,6 +38,12 @@ func claimRef(ctx context.Context, tx *sql.Tx, ref, op, userID, asset string, am
 // Deposit credits a confirmed on-chain deposit to the user's free balance
 // (counterparty: system:external). Idempotent on ref.
 func (s *Store) Deposit(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
+	return s.DepositTo(ctx, AcctSpot, userID, asset, amount, ref)
+}
+
+// DepositTo credits a confirmed on-chain deposit to the given wallet (spot or
+// funding). Idempotent on ref.
+func (s *Store) DepositTo(ctx context.Context, acct, userID, asset string, amount decimal.Decimal, ref string) error {
 	if amount.Sign() <= 0 {
 		return ErrInvalidAmount
 	}
@@ -50,11 +56,11 @@ func (s *Store) Deposit(ctx context.Context, userID, asset string, amount decima
 	if err := claimRef(ctx, tx, ref, "deposit", userID, asset, amount); err != nil {
 		return err
 	}
-	if err := s.applyDeltas(ctx, tx, []balanceDelta{{userID: userID, asset: asset, free: amount}}); err != nil {
+	if err := s.applyDeltas(ctx, tx, []balanceDelta{{userID: userID, asset: asset, free: amount, acct: acct}}); err != nil {
 		return err
 	}
 	lines := []ledgerLine{
-		{Account: userAcct(userID, "free"), Asset: asset, Direction: "debit", Amount: amount},
+		{Account: acctBucket(userID, acct, "free"), Asset: asset, Direction: "debit", Amount: amount},
 		{Account: "system:external", Asset: asset, Direction: "credit", Amount: amount},
 	}
 	if err := s.writeJournal(ctx, tx, userID, "deposit", ref, lines); err != nil {
@@ -89,8 +95,12 @@ func (s *Store) WithdrawComplete(ctx context.Context, userID, asset string, amou
 	if err := claimRef(ctx, tx, ref, "withdraw_complete", userID, asset, amount.Add(gas)); err != nil {
 		return err
 	}
+	acct, err := freezeAccountTx(ctx, tx, ref)
+	if err != nil {
+		return err
+	}
 	deltas := []balanceDelta{
-		{userID: userID, asset: asset, locked: amount.Add(gas).Neg()},
+		{userID: userID, asset: asset, locked: amount.Add(gas).Neg(), acct: acct},
 	}
 	if gas.Sign() > 0 {
 		deltas = append(deltas, balanceDelta{userID: feeAccount, asset: asset, free: gas})
@@ -100,7 +110,7 @@ func (s *Store) WithdrawComplete(ctx context.Context, userID, asset string, amou
 	}
 
 	lines := []ledgerLine{
-		{Account: userAcct(userID, "locked"), Asset: asset, Direction: "credit", Amount: amount.Add(gas)},
+		{Account: acctBucket(userID, acct, "locked"), Asset: asset, Direction: "credit", Amount: amount.Add(gas)},
 	}
 	if amount.Sign() > 0 {
 		lines = append(lines, ledgerLine{Account: "system:external", Asset: asset, Direction: "debit", Amount: amount})

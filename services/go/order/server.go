@@ -20,11 +20,12 @@ type Server struct {
 	asset  *AssetClient
 	engine Matching
 	fees   *feeOverrides
+	ufees  *userFeeCache
 }
 
 // NewServer constructs a Server.
 func NewServer(cfg Config, store *Store, asset *AssetClient, engine Matching) *Server {
-	return &Server{cfg: cfg, store: store, asset: asset, engine: engine, fees: &feeOverrides{}}
+	return &Server{cfg: cfg, store: store, asset: asset, engine: engine, fees: &feeOverrides{}, ufees: &userFeeCache{m: map[string]userFee{}}}
 }
 
 // Routes returns the order service HTTP handler. The /spot/* paths mirror
@@ -38,6 +39,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /spot/orders/open", s.withUser(s.handleOpenOrders))
 	mux.HandleFunc("GET /spot/orders/history", s.withUser(s.handleHistory))
 	mux.HandleFunc("GET /spot/trades", s.withUser(s.handleTrades))
+	mux.HandleFunc("POST /spot/orders/conditional", s.withUser(s.handleCondCreate))
+	mux.HandleFunc("GET /spot/orders/conditional", s.withUser(s.handleCondList))
+	mux.HandleFunc("DELETE /spot/orders/conditional/{id}", s.withUser(s.handleCondCancel))
+	mux.HandleFunc("GET /account/fee-rates", s.withUser(s.handleFeeRates))
 	s.adminRoutes(mux)
 	s.internalRoutes(mux)
 	return mux
@@ -66,6 +71,8 @@ type placeOrderRequest struct {
 	QuoteOrderQty *string `json:"quoteOrderQty"` // market-buy budget (extension)
 	TimeInForce   *string `json:"timeInForce"`
 	ClientOrderID *string `json:"clientOrderId"`
+	// PostOnly is an alias for timeInForce=PostOnly (also accepted as "GTX").
+	PostOnly *bool `json:"postOnly,omitempty"`
 }
 
 type orderDTO struct {
@@ -113,42 +120,59 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request, userID stri
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
 		return
 	}
-
-	o, sym, errCode, errMsg := s.buildOrder(r.Context(), userID, req)
-	if errCode != "" {
-		common.WriteError(w, http.StatusBadRequest, errCode, errMsg)
+	dto, perr := s.placeOrder(r.Context(), userID, req)
+	if perr != nil {
+		common.WriteError(w, perr.status, perr.code, perr.msg)
 		return
+	}
+	common.WriteJSON(w, http.StatusCreated, dto)
+}
+
+// placeError is a placement failure mapped to an HTTP error.
+type placeError struct {
+	status int
+	code   string
+	msg    string
+}
+
+func perrf(status int, code, msg string) *placeError { return &placeError{status, code, msg} }
+
+// placeOrder validates, freezes, persists, submits and settles one order. It is
+// shared by POST /spot/orders and the conditional-order trigger worker.
+func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRequest) (*orderDTO, *placeError) {
+	o, sym, errCode, errMsg := s.buildOrder(ctx, userID, req)
+	if errCode != "" {
+		if errCode == "INTERNAL" {
+			return nil, perrf(http.StatusInternalServerError, errCode, errMsg)
+		}
+		return nil, perrf(http.StatusBadRequest, errCode, errMsg)
 	}
 
 	// Freeze funds before the order can match, so a fill can never settle against
 	// money the user does not have. Reject on insufficient balance.
-	if err := s.asset.Freeze(r.Context(), userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID); err != nil {
+	if err := s.asset.Freeze(ctx, userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID); err != nil {
 		if errors.Is(err, ErrInsufficient) {
-			common.WriteError(w, http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")
-			return
+			return nil, perrf(http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")
 		}
 		log.Printf("place: freeze: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
+		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
 
-	if err := s.store.InsertOrder(r.Context(), o); err != nil {
+	if err := s.store.InsertOrder(ctx, o); err != nil {
 		log.Printf("place: insert order: %v", err)
 		// Best-effort release of the funds we just froze.
-		_ = s.asset.Unfreeze(r.Context(), userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
+		_ = s.asset.Unfreeze(ctx, userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID)
+		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
 
 	// Submit to the matching engine and settle whatever it reports.
-	rep, err := s.engine.Submit(r.Context(), s.placeCommand(o))
+	rep, err := s.engine.Submit(ctx, s.placeCommand(o))
 	if err != nil {
 		log.Printf("place: engine submit: %v", err)
 		// The engine never saw the order (or we never saw its reply): unwind.
-		_ = s.store.UpdateFill(r.Context(), o.OrderID, decimal.Zero, "rejected")
-		s.releaseLeftover(r.Context(), o)
-		common.WriteError(w, http.StatusBadGateway, "ENGINE_UNAVAILABLE", "撮合引擎不可用")
-		return
+		_ = s.store.UpdateFill(ctx, o.OrderID, decimal.Zero, "rejected")
+		s.releaseLeftover(ctx, o)
+		return nil, perrf(http.StatusBadGateway, "ENGINE_UNAVAILABLE", "撮合引擎不可用")
 	}
 
 	if rep.Status == "rejected" {
@@ -156,25 +180,26 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request, userID stri
 		if rep.RejectReason != nil {
 			reason = *rep.RejectReason
 		}
-		_ = s.store.UpdateFill(r.Context(), o.OrderID, decimal.Zero, "rejected")
-		s.releaseLeftover(r.Context(), o)
-		common.WriteError(w, http.StatusBadRequest, "ORDER_REJECTED", reason)
-		return
+		_ = s.store.UpdateFill(ctx, o.OrderID, decimal.Zero, "rejected")
+		s.releaseLeftover(ctx, o)
+		if strings.Contains(reason, "post_only") {
+			return nil, perrf(http.StatusBadRequest, "POST_ONLY_REJECTED", "只做 Maker 订单会立即成交，已被拒绝")
+		}
+		return nil, perrf(http.StatusBadRequest, "ORDER_REJECTED", reason)
 	}
 
-	if err := s.applyReport(r.Context(), o, sym, rep); err != nil {
+	if err := s.applyReport(ctx, o, sym, rep); err != nil {
 		log.Printf("place: apply report: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "成交结算失败")
-		return
+		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "成交结算失败")
 	}
 
-	fresh, err := s.store.GetOrder(r.Context(), userID, o.OrderID)
+	fresh, err := s.store.GetOrder(ctx, userID, o.OrderID)
 	if err != nil {
 		log.Printf("place: reload order: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
+		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
-	common.WriteJSON(w, http.StatusCreated, toOrderDTO(fresh, sym))
+	dto := toOrderDTO(fresh, sym)
+	return &dto, nil
 }
 
 // buildOrder validates the request against the symbol rules and computes the
@@ -203,12 +228,25 @@ func (s *Server) buildOrder(ctx context.Context, userID string, req placeOrderRe
 
 	tif := "GTC"
 	if req.TimeInForce != nil && *req.TimeInForce != "" {
-		tif = *req.TimeInForce
+		tif = normalizeTIF(*req.TimeInForce)
+	}
+	postOnly := req.PostOnly != nil && *req.PostOnly
+	if postOnly {
+		if typ == "market" {
+			return nil, nil, "VALIDATION_ERROR", "市价单不支持只做 Maker"
+		}
+		if req.TimeInForce != nil && *req.TimeInForce != "" && tif != "PostOnly" && tif != "GTC" {
+			return nil, nil, "VALIDATION_ERROR", "postOnly 与 timeInForce 冲突"
+		}
+		tif = "PostOnly"
 	}
 	if typ == "market" {
+		if tif == "PostOnly" {
+			return nil, nil, "VALIDATION_ERROR", "市价单不支持只做 Maker"
+		}
 		tif = "IOC" // market orders are immediate-or-cancel by nature
 	} else if !validTIF(tif) {
-		return nil, nil, "VALIDATION_ERROR", "timeInForce 必须为 GTC/IOC/FOK/PostOnly"
+		return nil, nil, "VALIDATION_ERROR", "timeInForce 必须为 GTC/IOC/FOK/PostOnly/GTX"
 	}
 
 	o := &Order{
@@ -470,8 +508,8 @@ func (s *Server) applyReport(ctx context.Context, taker *Order, sym *SymbolConfi
 			buyerOrder, sellerOrder = t.TakerOrderID, t.MakerOrderID
 			buyerRole, sellerRole = "taker", "maker"
 		}
-		buyerFeeBase := qty.Mul(s.feeRate(buyerRole))
-		sellerFeeQuote := quoteAmount.Mul(s.feeRate(sellerRole))
+		buyerFeeBase := qty.Mul(s.userFeeRate(buyerUser, buyerRole))
+		sellerFeeQuote := quoteAmount.Mul(s.userFeeRate(sellerUser, sellerRole))
 
 		if err := s.asset.Settle(ctx, SettleParams{
 			TradeID:        t.TradeID,
@@ -564,6 +602,17 @@ func (s *Server) feeRate(role string) decimal.Decimal {
 }
 
 // ---- helpers ----
+
+// normalizeTIF maps aliases onto the engine's TIF names (GTX = PostOnly).
+func normalizeTIF(tif string) string {
+	switch strings.ToUpper(strings.TrimSpace(tif)) {
+	case "GTX", "POSTONLY", "POST_ONLY":
+		return "PostOnly"
+	case "GTC", "IOC", "FOK":
+		return strings.ToUpper(strings.TrimSpace(tif))
+	}
+	return tif
+}
 
 func validTIF(tif string) bool {
 	switch tif {

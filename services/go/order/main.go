@@ -46,6 +46,11 @@ func main() {
 		log.Printf("load fee overrides: %v (using env defaults)", err)
 	}
 
+	if err := srv.LoadUserFees(context.Background()); err != nil {
+		log.Printf("load user fee overrides: %v", err)
+	}
+	go srv.RunBackground(context.Background())
+
 	addr := ":" + cfg.Port
 	log.Printf("order service listening on %s (engine=%s asset=%s)", addr, cfg.EngineURL, cfg.AssetInternalURL)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

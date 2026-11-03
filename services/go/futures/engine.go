@@ -436,7 +436,7 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 			if r.Type == "market" {
 				rp = mark.Mul(dOne.Add(s.cfg.MarketBand))
 			}
-			reserve = money(qty.Mul(rp).Div(decimal.NewFromInt(int64(lev))).Add(qty.Mul(rp).Mul(c.TakerFee)))
+			reserve = money(qty.Mul(rp).Div(decimal.NewFromInt(int64(lev))).Add(qty.Mul(rp).Mul(s.reserveTaker(uid, c))))
 			st, err := s.state(ctx, tx, uid)
 			if err != nil {
 				return err
@@ -568,11 +568,13 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 			}
 			qty = dmin(qty, cl)
 		}
-		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, signed(maker.Side, qty), px, c.MakerFee, maker.Leverage, maker.Mode, maker.TP, maker.SL)
+		mRate, _, _ := s.userFees(maker.UserID, c)
+		_, tRate, _ := s.userFees(taker.UserID, c)
+		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, signed(maker.Side, qty), px, mRate, maker.Leverage, maker.Mode, maker.TP, maker.SL)
 		if err != nil {
 			return nil, err
 		}
-		tfee, _, tbonus, err := s.fill(ctx, tx, c, taker.UserID, signed(taker.Side, qty), px, c.TakerFee, taker.Leverage, taker.Mode, taker.TP, taker.SL)
+		tfee, _, tbonus, err := s.fill(ctx, tx, c, taker.UserID, signed(taker.Side, qty), px, tRate, taker.Leverage, taker.Mode, taker.TP, taker.SL)
 		if err != nil {
 			return nil, err
 		}
@@ -826,6 +828,15 @@ func (s *Server) Transfer(ctx context.Context, uid, dir string, amount decimal.D
 // with the same clientId returns the original ref/status (no second move);
 // the same clientId with a different direction/amount is IDEMPOTENCY_CONFLICT.
 func (s *Server) TransferIdem(ctx context.Context, uid, dir string, amount decimal.Decimal, clientID string) (string, string, error) {
+	return s.TransferWallet(ctx, uid, dir, "spot", amount, clientID)
+}
+
+// TransferWallet is TransferIdem with the asset-service wallet (spot|funding)
+// on the non-futures side.
+func (s *Server) TransferWallet(ctx context.Context, uid, dir, wallet string, amount decimal.Decimal, clientID string) (string, string, error) {
+	if wallet != "spot" && wallet != "funding" {
+		return "", "", bad("VALIDATION_ERROR", "wallet 不合法")
+	}
 	if amount.LessThan(s.cfg.MinTransfer) || amount.Exponent() < -8 {
 		return "", "", bad("INVALID_AMOUNT", "划转金额不合法")
 	}
@@ -835,23 +846,23 @@ func (s *Server) TransferIdem(ctx context.Context, uid, dir string, amount decim
 	var cid any
 	if clientID != "" {
 		cid = clientID
-		if ref, st, found, err := s.transferByClientID(ctx, s.db, uid, clientID, dir, amount); err != nil || found {
+		if ref, st, found, err := s.transferByClientIDW(ctx, s.db, uid, clientID, dir, amount, wallet); err != nil || found {
 			return ref, st, err
 		}
 	}
 	ref := newRef("fut")
 	switch dir {
 	case "in":
-		res, err := s.db.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status, client_id) VALUES ($1,$2,'in',$3,'pending',$4)
-			ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING`, ref, uid, amount, cid)
+		res, err := s.db.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status, client_id, wallet) VALUES ($1,$2,'in',$3,'pending',$4,$5)
+			ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING`, ref, uid, amount, cid, wallet)
 		if err != nil {
 			return "", "", err
 		}
 		if n, _ := res.RowsAffected(); n == 0 { // lost a race with the same clientId
-			r, st, _, err := s.transferByClientID(ctx, s.db, uid, clientID, dir, amount)
+			r, st, _, err := s.transferByClientIDW(ctx, s.db, uid, clientID, dir, amount, wallet)
 			return r, st, err
 		}
-		return ref, s.completeIn(ctx, ref, uid, amount), nil
+		return ref, s.completeIn(ctx, ref, uid, wallet, amount), nil
 	case "out":
 		replay := ""
 		err := s.withTx(ctx, func(tx *sql.Tx) error {
@@ -863,7 +874,7 @@ func (s *Server) TransferIdem(ctx context.Context, uid, dir string, amount decim
 				return err
 			}
 			if clientID != "" { // re-check under the account lock (serialises per user)
-				r, rs, found, err := s.transferByClientID(ctx, tx, uid, clientID, dir, amount)
+				r, rs, found, err := s.transferByClientIDW(ctx, tx, uid, clientID, dir, amount, wallet)
 				if err != nil {
 					return err
 				}
@@ -875,7 +886,7 @@ func (s *Server) TransferIdem(ctx context.Context, uid, dir string, amount decim
 			if st.Available.LessThan(amount) {
 				return bad("INSUFFICIENT_BALANCE", "可划转余额不足")
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status, client_id) VALUES ($1,$2,'out',$3,'pending',$4)`, ref, uid, amount, cid); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO fut_transfers (ref, user_id, direction, amount, status, client_id, wallet) VALUES ($1,$2,'out',$3,'pending',$4,$5)`, ref, uid, amount, cid, wallet); err != nil {
 				return err
 			}
 			return addBalance(ctx, tx, uid, "", "transfer_out", amount.Neg(), ref)
@@ -886,7 +897,7 @@ func (s *Server) TransferIdem(ctx context.Context, uid, dir string, amount decim
 		if replay != "" {
 			return ref, replay, nil
 		}
-		return ref, s.completeOut(ctx, ref, uid, amount), nil
+		return ref, s.completeOut(ctx, ref, uid, wallet, amount), nil
 	}
 	return "", "", bad("VALIDATION_ERROR", "direction 必须为 in 或 out")
 }
@@ -895,8 +906,8 @@ func (s *Server) markTransfer(ctx context.Context, ref, status, errMsg string) {
 	_, _ = s.db.ExecContext(ctx, `UPDATE fut_transfers SET status=$2, attempts=attempts+1, last_error=NULLIF($3,''), updated_at=now() WHERE ref=$1 AND status='pending'`, ref, status, errMsg)
 }
 
-func (s *Server) completeIn(ctx context.Context, ref, uid string, amount decimal.Decimal) string {
-	err := s.asset.Move(ctx, uid, amount, ref, true)
+func (s *Server) completeIn(ctx context.Context, ref, uid, wallet string, amount decimal.Decimal) string {
+	err := s.asset.MoveWallet(ctx, wallet, uid, amount, ref, true)
 	if err == ErrSpotInsufficient {
 		s.markTransfer(ctx, ref, "failed", "spot balance insufficient")
 		return "failed"
@@ -923,8 +934,8 @@ func (s *Server) completeIn(ctx context.Context, ref, uid string, amount decimal
 	return "done"
 }
 
-func (s *Server) completeOut(ctx context.Context, ref, uid string, amount decimal.Decimal) string {
-	if err := s.asset.Move(ctx, uid, amount, ref, false); err != nil {
+func (s *Server) completeOut(ctx context.Context, ref, uid, wallet string, amount decimal.Decimal) string {
+	if err := s.asset.MoveWallet(ctx, wallet, uid, amount, ref, false); err != nil {
 		log.Printf("futures: transfer-out %s pending: %v", ref, err)
 		s.markTransfer(ctx, ref, "pending", err.Error())
 		return "pending"
@@ -942,27 +953,30 @@ func (s *Server) RunTransferRetry(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		rows, err := s.db.QueryContext(ctx, `SELECT ref, user_id, direction, amount FROM fut_transfers WHERE status='pending' AND updated_at < now() - interval '3 seconds' ORDER BY created_at LIMIT 50`)
+		rows, err := s.db.QueryContext(ctx, `SELECT ref, user_id, direction, amount, wallet, asset, COALESCE(from_account,''), COALESCE(to_account,'') FROM fut_transfers WHERE status='pending' AND updated_at < now() - interval '3 seconds' ORDER BY created_at LIMIT 50`)
 		if err != nil {
 			continue
 		}
 		type tr struct {
-			ref, uid, dir string
-			amt           decimal.Decimal
+			ref, uid, dir, wallet, asset, from, to string
+			amt                                    decimal.Decimal
 		}
 		var list []tr
 		for rows.Next() {
 			var x tr
-			if rows.Scan(&x.ref, &x.uid, &x.dir, &x.amt) == nil {
+			if rows.Scan(&x.ref, &x.uid, &x.dir, &x.amt, &x.wallet, &x.asset, &x.from, &x.to) == nil {
 				list = append(list, x)
 			}
 		}
 		rows.Close()
 		for _, x := range list {
-			if x.dir == "in" {
-				s.completeIn(ctx, x.ref, x.uid, x.amt)
-			} else {
-				s.completeOut(ctx, x.ref, x.uid, x.amt)
+			switch x.dir {
+			case "in":
+				s.completeIn(ctx, x.ref, x.uid, x.wallet, x.amt)
+			case "internal":
+				s.completeInternal(ctx, x.ref, x.uid, x.asset, x.from, x.to, x.amt)
+			default:
+				s.completeOut(ctx, x.ref, x.uid, x.wallet, x.amt)
 			}
 		}
 	}

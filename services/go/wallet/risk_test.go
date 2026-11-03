@@ -19,8 +19,9 @@ func defaultThresholds() RiskThresholds {
 }
 
 // TestDecideBoundaries pins the rules-file thresholds:
-//   ≤1000U and score ≤20 → auto; ≥5000U or score >40 → review;
-//   in-between → MiddleAction (default review).
+//
+//	≤1000U and score ≤20 → auto; ≥5000U or score >40 → review;
+//	in-between → MiddleAction (default review).
 func TestDecideBoundaries(t *testing.T) {
 	th := defaultThresholds()
 	cases := []struct {
