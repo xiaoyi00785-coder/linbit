@@ -23,9 +23,11 @@ const CODE_MSG: Record<string, string> = {
   RATE_LIMITED: "发送太频繁，请稍后再试",
   EMAIL_UNAVAILABLE: "邮件暂时无法发送",
   SMS_UNAVAILABLE: "短信暂时无法发送",
+  INVALID_EMAIL: "邮箱格式不正确",
 };
 const errMsg = (e: unknown, status: number) => {
   const x = e as { code?: string; message?: string } | undefined;
+  if (x?.code === "INVALID_EMAIL" && x.message) return x.message; // 后端文案优先
   if (x?.code && CODE_MSG[x.code]) return CODE_MSG[x.code];
   if (status === 429) return CODE_MSG.RATE_LIMITED;
   return x?.message ?? `HTTP ${status}`;
