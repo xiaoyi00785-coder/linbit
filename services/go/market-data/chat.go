@@ -24,7 +24,8 @@ import (
 // a logged-in user (gateway X-User-Id) with kycLevel >= cfg.minKycLevel, not
 // muted/banned, within the rate limit and free of links / contact info.
 // WS: subscribe "chat:{room}" on /ws; frames data = {type:"message",message} or
-// {type:"delete",id}.
+// {type:"delete",id}. WS frames are broadcast and carry no `mine`; clients mark
+// their own messages by matching message.id with the id returned by POST.
 
 // ChatConfig is the admin-tunable chat configuration (stored as JSONB).
 type ChatConfig struct {
@@ -71,6 +72,20 @@ type chatMessage struct {
 	Text      string    `json:"text"`
 	ClientID  string    `json:"clientId,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+	// Mine is true when the sender is the authenticated requester. It is set on
+	// REST responses only (nil → omitted for anonymous readers and for the
+	// broadcast WS frames, which are identical for every subscriber).
+	Mine *bool `json:"mine,omitempty"`
+}
+
+// mineFlag returns the `mine` value for a message by author as seen by requester
+// (nil when the requester is anonymous).
+func mineFlag(author, requester string) *bool {
+	if requester == "" {
+		return nil
+	}
+	v := author == requester
+	return &v
 }
 
 type chatRoom struct {
@@ -298,7 +313,7 @@ func (c *Chat) hRooms(w http.ResponseWriter, r *http.Request) {
 
 const chatCols = `id, room, uid, client_id, text, created_at`
 
-func scanChat(rows *sql.Rows) ([]chatMessage, error) {
+func scanChat(rows *sql.Rows, requester string) ([]chatMessage, error) {
 	out := []chatMessage{}
 	for rows.Next() {
 		var m chatMessage
@@ -308,6 +323,7 @@ func scanChat(rows *sql.Rows) ([]chatMessage, error) {
 		}
 		m.Sender = maskUID(uid)
 		m.ClientID = ""
+		m.Mine = mineFlag(uid, requester)
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -339,7 +355,7 @@ func (c *Chat) hMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	items, err := scanChat(rows)
+	items, err := scanChat(rows, r.Header.Get("X-User-Id"))
 	if err != nil {
 		intErr(w, "chat messages", err)
 		return
@@ -385,7 +401,7 @@ func (c *Chat) hPost(w http.ResponseWriter, r *http.Request) {
 	err := c.srv.store.db.QueryRowContext(ctx, `SELECT id, room, text, created_at FROM chat_messages WHERE uid=$1 AND client_id=$2`, uid, in.ClientID).
 		Scan(&m.ID, &m.Room, &m.Text, &m.CreatedAt)
 	if err == nil {
-		m.Sender, m.ClientID = maskUID(uid), in.ClientID
+		m.Sender, m.ClientID, m.Mine = maskUID(uid), in.ClientID, mineFlag(uid, uid)
 		common.WriteJSON(w, http.StatusOK, m)
 		return
 	}
@@ -449,7 +465,7 @@ func (c *Chat) hPost(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) { // lost a race with the same clientId
 		_ = c.srv.store.db.QueryRowContext(ctx, `SELECT id, room, text, created_at FROM chat_messages WHERE uid=$1 AND client_id=$2`, uid, in.ClientID).
 			Scan(&m.ID, &m.Room, &m.Text, &m.CreatedAt)
-		m.Sender, m.ClientID = maskUID(uid), in.ClientID
+		m.Sender, m.ClientID, m.Mine = maskUID(uid), in.ClientID, mineFlag(uid, uid)
 		common.WriteJSON(w, http.StatusOK, m)
 		return
 	}
@@ -459,7 +475,7 @@ func (c *Chat) hPost(w http.ResponseWriter, r *http.Request) {
 	}
 	m.Room, m.Text, m.Sender = room, text, maskUID(uid)
 	c.srv.hub.Broadcast("chat:"+room, map[string]any{"type": "message", "message": m})
-	m.ClientID = in.ClientID
+	m.ClientID, m.Mine = in.ClientID, mineFlag(uid, uid)
 	common.WriteJSON(w, http.StatusCreated, m)
 }
 

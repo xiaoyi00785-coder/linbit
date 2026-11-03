@@ -3848,6 +3848,7 @@ export interface paths {
          * 聊天室列表（公开；general + spot.{SYM} + futures.{SYM}，含在线人数与发言规则；功能开关 chat 关闭时 403 FEATURE_DISABLED）
          * @description 实时推送：在现有 /ws 上订阅频道 `chat:{room}`（如 `chat:spot.BTCUSDT`）。
          *     帧 data 为 `{type:"message", message: ChatMessage}` 或 `{type:"delete", id}`。
+         *     推送帧是广播，不含 `mine` 和 `clientId`；客户端用发言接口返回的消息 `id` 与推送 `message.id` 比对来识别自己的消息。
          */
         get: operations["listChatRooms"];
         put?: never;
@@ -6724,11 +6725,14 @@ export interface components {
         };
         ChatRoom: {
             /** @example spot.BTCUSDT */
-            id?: string;
+            id: string;
             /** @enum {string} */
-            kind?: "general" | "spot" | "futures";
+            type: "general" | "spot" | "futures";
+            /** @description general 房间不返回 */
             symbol?: string;
-            online?: number;
+            /** @example BTC/USDT 现货 */
+            name: string;
+            online: number;
         };
         ChatRules: {
             maxLength?: number;
@@ -6739,14 +6743,17 @@ export interface components {
         };
         ChatMessage: {
             /** Format: int64 */
-            id?: number;
-            room?: string;
+            id: number;
+            room: string;
             /** @description 脱敏昵称，如 用户***1234 */
-            sender?: string;
-            text?: string;
+            sender: string;
+            text: string;
+            /** @description 仅发言接口的响应返回（发送者自己的 clientId）；历史与推送不返回 */
+            clientId?: string;
+            /** @description 发送者是否为当前登录用户；仅历史与发言接口返回，匿名请求与 WS 推送不返回 */
             mine?: boolean;
             /** Format: date-time */
-            createdAt?: string;
+            createdAt: string;
         };
         ChatAdminMessage: components["schemas"]["ChatMessage"] & {
             uid?: string;
