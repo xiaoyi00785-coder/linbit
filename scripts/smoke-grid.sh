@@ -108,6 +108,16 @@ wait_bot() { # wait_bot <token> <id> <jq-condition>
   done
   fail "bot $2 never satisfied $3: $b"
 }
+wait_orders() { # wait_orders <token> <id> <jq-condition on open orders>
+  local o
+  for _ in $(seq 1 60); do
+    tick; o="$(ok "$(api "$1" GET "/strategy/grid/$2/orders?status=open")" orders)"
+    [ "$(jq -r "$3" <<<"$o")" = "true" ] && { printf '%s' "$o"; return 0; }
+    sleep 0.2
+  done
+  fail "bot $2 orders never satisfied $3: $o"
+}
+LAYOUT='[.items[]|"\(.side)@\(.price)"]|sort'
 grid() { api "${TOK[G]}" POST /strategy/grid "$1"; }
 
 say "gateway access"
@@ -174,16 +184,17 @@ OPEN="$(ok "$(api "${TOK[G]}" GET /spot/orders/open)" open | jq '[.items[]]|leng
 
 say "cycle: buy@49000 fills -> sell@50000 -> fills -> buy@49000 again"
 spot "${TOK[N]}" '{"symbol":"BTCUSDT","side":"sell","type":"limit","price":"49000","quantity":"0.005065"}' >/dev/null
+# openOrders is already 4 before the fill is processed; wait for the
+# replacement sell@50000 itself rather than racing the fill handler.
+OO="$(wait_orders "${TOK[G]}" "$B1" '[.items[]|select(.side=="sell" and .price=="50000")]|length==1 and (.items|length)==4')"
 B="$(wait_bot "${TOK[G]}" "$B1" '.openOrders==4 and (.levels|length)==5')"
-OO="$(ok "$(api "${TOK[G]}" GET "/strategy/grid/$B1/orders?status=open")" orders)"
-jq -e '[.items[]|select(.side=="sell" and .price=="50000")]|length==1' <<<"$OO" >/dev/null || fail "no sell@50000: $OO"
 # N lifts M's remaining 50000 ask first (time priority), then the bot's sell.
 spot "${TOK[N]}" '{"symbol":"BTCUSDT","side":"buy","type":"limit","price":"50000","quantity":"0.02"}' >/dev/null
 B="$(wait_bot "${TOK[G]}" "$B1" '.cycles==1')"
 GP="$(jq -r .gridProfit <<<"$B")"
 python3 -c 'import sys; from decimal import Decimal as D; sys.exit(0 if D("4.5")<D(sys.argv[1])<D("5.1") else 1)' "$GP" || fail "grid profit $GP"
-OO="$(ok "$(api "${TOK[G]}" GET "/strategy/grid/$B1/orders?status=open")" orders)"
-[ "$(jq -c '[.items[]|"\(.side)@\(.price)"]|sort' <<<"$OO")" = '["buy@48000","buy@49000","sell@51000","sell@52000"]' ] || fail "layout after cycle: $OO"
+OO="$(wait_orders "${TOK[G]}" "$B1" "($LAYOUT) == [\"buy@48000\",\"buy@49000\",\"sell@51000\",\"sell@52000\"]")"
+B="$(ok "$(api "${TOK[G]}" GET "/strategy/grid/$B1")" "bot1 after cycle")"
 jq -e '.totalProfit and .profitRate and .unrealizedPnl and .runtimeSeconds>=0 and .maxDrawdown' <<<"$B" >/dev/null || fail "stats: $B"
 
 say "bot ledger == spot balances (G holds nothing else)"
