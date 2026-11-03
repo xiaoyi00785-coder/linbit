@@ -68,6 +68,7 @@ func (s *Server) Routes() http.Handler {
 	// Internal / admin.
 	mux.HandleFunc("POST /internal/scan", s.internal(s.handleScan))
 	mux.HandleFunc("POST /internal/process", s.internal(s.handleProcess))
+	mux.HandleFunc("GET /internal/solvency/holdings", s.internal(s.handleHoldings))
 	mux.HandleFunc("GET /internal/admin/withdrawals", s.internal(s.handleAdminList))
 	mux.HandleFunc("POST /internal/admin/withdrawals/{id}/approve", s.internal(s.handleAdminApprove))
 	mux.HandleFunc("POST /internal/admin/withdrawals/{id}/reject", s.internal(s.handleAdminReject))
