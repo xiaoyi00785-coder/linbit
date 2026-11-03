@@ -16,6 +16,8 @@ struct ChatRoomView: View {
     @State private var cooldownUntil = Date.distantPast
     @State private var report: ChatMessage?
     @State private var sub: WSSubscription?
+    /// 本机发言接口返回的消息 id（WS 推送没有 mine / clientId，用 id 判断是否自己发的）
+    @State private var myIds: Set<Int64> = []
 
     var body: some View {
         FeatureShell(title: "聊天室") {
@@ -66,8 +68,9 @@ struct ChatRoomView: View {
         }
     }
     private func title(_ r: ChatRoom) -> String {
-        if r.id == "general" { return "综合" }
-        return (r.symbol ?? r.id) + (r.kind == "futures" ? " 永续" : "")
+        if let n = r.name, !n.isEmpty { return n }
+        if r.id == "general" || r.type == "general" { return "综合" }
+        return (r.symbol ?? r.id) + (r.type == "futures" ? " 永续" : "")
     }
 
     private var list: some View {
@@ -84,7 +87,7 @@ struct ChatRoomView: View {
     }
 
     private func bubble(_ msg: ChatMessage) -> some View {
-        let mine = msg.mine == true
+        let mine = isMine(msg)
         return HStack(alignment: .top) {
             if mine { Spacer(minLength: 50) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
@@ -133,7 +136,7 @@ struct ChatRoomView: View {
         state = .loading
         do {
             let r = try await ChatAPI.rooms()
-            rooms = r.rooms ?? [ChatRoom(id: "general", kind: "general", symbol: nil, online: nil)]
+            rooms = r.rooms ?? [ChatRoom(id: "general", type: "general", symbol: nil, name: "综合", online: nil)]
             rules = r.rules
             if !rooms.contains(where: { $0.id == room }), let f = rooms.first { room = f.id }
             await loadMessages()
@@ -159,14 +162,18 @@ struct ChatRoomView: View {
     }
     private func loadOlder() async {
         guard let first = messages.first, let r = try? await ChatAPI.messages(room, before: first.id) else { return }
-        messages = (r.items ?? []).sorted { $0.id < $1.id } + messages; hasMore = r.hasMore ?? false
+        let have = Set(messages.map(\.id))
+        messages = (r.items ?? []).filter { !have.contains($0.id) }.sorted { $0.id < $1.id } + messages; hasMore = r.hasMore ?? false
     }
+    /// REST 历史用 mine 字段；WS 推送用发言接口返回的 id 比对
+    private func isMine(_ msg: ChatMessage) -> Bool { msg.mine == true || myIds.contains(msg.id) }
     private func send() async {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         sending = true; defer { sending = false }
         do {
             let msg = try await ChatAPI.send(room, text: t)
             text = ""
+            myIds.insert(msg.id)
             if !messages.contains(where: { $0.id == msg.id }) { messages.append(msg) }
             cooldownUntil = Date().addingTimeInterval(Double(rules?.minIntervalMs ?? 0) / 1000)
         } catch { ToastCenter.shared.error(error) }

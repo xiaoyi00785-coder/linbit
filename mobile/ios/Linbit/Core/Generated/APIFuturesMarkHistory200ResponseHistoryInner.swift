@@ -9,19 +9,42 @@ import Foundation
 
 public struct APIFuturesMarkHistory200ResponseHistoryInner: Codable, JSONEncodable, Hashable {
 
+    public var openTime: Int64?
+    /** 十进制字符串 */
+    public var _open: String?
+    /** 十进制字符串 */
+    public var high: String?
+    /** 十进制字符串 */
+    public var low: String?
+    /** 十进制字符串 */
+    public var close: String?
+    /** 十进制字符串 */
+    public var indexClose: String?
     public var time: Int64?
     /** 十进制字符串 */
     public var indexPrice: String?
     /** 十进制字符串 */
     public var markPrice: String?
 
-    public init(time: Int64? = nil, indexPrice: String? = nil, markPrice: String? = nil) {
+    public init(openTime: Int64? = nil, _open: String? = nil, high: String? = nil, low: String? = nil, close: String? = nil, indexClose: String? = nil, time: Int64? = nil, indexPrice: String? = nil, markPrice: String? = nil) {
+        self.openTime = openTime
+        self._open = _open
+        self.high = high
+        self.low = low
+        self.close = close
+        self.indexClose = indexClose
         self.time = time
         self.indexPrice = indexPrice
         self.markPrice = markPrice
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
+        case openTime
+        case _open = "open"
+        case high
+        case low
+        case close
+        case indexClose
         case time
         case indexPrice
         case markPrice
@@ -31,6 +54,12 @@ public struct APIFuturesMarkHistory200ResponseHistoryInner: Codable, JSONEncodab
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(openTime, forKey: .openTime)
+        try container.encodeIfPresent(_open, forKey: ._open)
+        try container.encodeIfPresent(high, forKey: .high)
+        try container.encodeIfPresent(low, forKey: .low)
+        try container.encodeIfPresent(close, forKey: .close)
+        try container.encodeIfPresent(indexClose, forKey: .indexClose)
         try container.encodeIfPresent(time, forKey: .time)
         try container.encodeIfPresent(indexPrice, forKey: .indexPrice)
         try container.encodeIfPresent(markPrice, forKey: .markPrice)

@@ -10,15 +10,26 @@ import Foundation
 public struct APIFuturesMarkHistory200Response: Codable, JSONEncodable, Hashable {
 
     public var symbol: String?
+    public var interval: String?
+    /** 原始采样间隔（秒） */
+    public var sampleSeconds: Int?
+    public var nextEndTime: Int64?
+    /** 不传 interval 时为 time/indexPrice/markPrice；传 interval 时为 openTime/open/high/low/close/indexClose */
     public var history: [APIFuturesMarkHistory200ResponseHistoryInner]?
 
-    public init(symbol: String? = nil, history: [APIFuturesMarkHistory200ResponseHistoryInner]? = nil) {
+    public init(symbol: String? = nil, interval: String? = nil, sampleSeconds: Int? = nil, nextEndTime: Int64? = nil, history: [APIFuturesMarkHistory200ResponseHistoryInner]? = nil) {
         self.symbol = symbol
+        self.interval = interval
+        self.sampleSeconds = sampleSeconds
+        self.nextEndTime = nextEndTime
         self.history = history
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case symbol
+        case interval
+        case sampleSeconds
+        case nextEndTime
         case history
     }
 
@@ -27,6 +38,9 @@ public struct APIFuturesMarkHistory200Response: Codable, JSONEncodable, Hashable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(symbol, forKey: .symbol)
+        try container.encodeIfPresent(interval, forKey: .interval)
+        try container.encodeIfPresent(sampleSeconds, forKey: .sampleSeconds)
+        try container.encodeIfPresent(nextEndTime, forKey: .nextEndTime)
         try container.encodeIfPresent(history, forKey: .history)
     }
 }
