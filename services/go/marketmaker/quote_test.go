@@ -40,7 +40,7 @@ func TestLadderSymmetric(t *testing.T) {
 func TestInventorySkew(t *testing.T) {
 	p := defPair()
 	// all base, no quote -> fully long: mid shifts down, no buys
-	inv := spotInventory(p, d("100000"), d("1"), d("0"))
+	inv := spotInventory(p, d("100000"), d("1"), d("0"), Baseline{})
 	if !inv.Imbalance.Equal(d("1")) || inv.AllowBuy || !inv.AllowSell {
 		t.Fatalf("%+v", inv)
 	}
@@ -54,7 +54,7 @@ func TestInventorySkew(t *testing.T) {
 		}
 	}
 	// balanced
-	inv = spotInventory(p, d("100000"), d("0.1"), d("10000"))
+	inv = spotInventory(p, d("100000"), d("0.1"), d("10000"), Baseline{})
 	if !inv.Imbalance.IsZero() || !inv.AllowBuy || !inv.AllowSell {
 		t.Fatalf("%+v", inv)
 	}

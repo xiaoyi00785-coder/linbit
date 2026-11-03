@@ -203,3 +203,40 @@ func validateSingleSeed(asset, amount string, assets []string, reason, max strin
 	}
 	return ""
 }
+
+// PUT /admin/v1/mm/baselines/{asset} {targetBase?|clearTarget?|resetStart?, reason, totpCode}
+// Sets the spot inventory baseline excluded from max_position (net position cap).
+func (s *Server) handleMMUpdateBaseline(w http.ResponseWriter, r *http.Request) {
+	a := actorOf(r)
+	asset := strings.ToUpper(r.PathValue("asset"))
+	var body map[string]json.RawMessage
+	if err := common.DecodeJSON(r, &body); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求格式错误")
+		return
+	}
+	var code, reason string
+	_ = json.Unmarshal(body["totpCode"], &code)
+	_ = json.Unmarshal(body["reason"], &reason)
+	if strings.TrimSpace(reason) == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "reason 必填")
+		return
+	}
+	out := map[string]json.RawMessage{}
+	for _, k := range []string{"targetBase", "clearTarget", "resetStart"} {
+		if v, ok := body[k]; ok {
+			out[k] = v
+		}
+	}
+	if !s.verify2FA(w, a, code) {
+		return
+	}
+	out["updatedBy"], _ = json.Marshal(a.Username)
+	u, err := s.call(r.Context(), http.MethodPut, s.cfg.MMURL, "/internal/mm/baselines/"+url.PathEscape(asset), out)
+	if err != nil {
+		upstreamErr(w, "mm baseline", err)
+		return
+	}
+	delete(out, "updatedBy")
+	s.audit(r, a, "mm", "update_baseline", "mm:baseline/"+asset, levelHigh, resultOf(u), nil, out, reason)
+	relay(w, u)
+}

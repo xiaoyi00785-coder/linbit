@@ -60,6 +60,8 @@ type Maker struct {
 	feedDown  map[string]bool
 	lastCycle time.Time
 	alert     func(string)
+	seedCache map[string]decimal.Decimal
+	seedAt    time.Time
 }
 
 func key(market, sym string) string { return market + "/" + sym }
@@ -157,11 +159,16 @@ func (m *Maker) Cycle(ctx context.Context) {
 	}
 	m.mu.Lock()
 	stopping := m.wasRun && !running
+	starting := running && !m.wasRun
 	m.running, m.wasRun = running, running
 	m.lastCycle = time.Now()
 	m.mu.Unlock()
 
+	if starting {
+		m.captureStartBaselines(ctx)
+	}
 	var balances map[string]decimal.Decimal
+	var baselines map[string]Baseline
 	var positions map[string]decimal.Decimal
 	var newlyDown, recovered []string
 	for _, p := range pairs {
@@ -226,7 +233,15 @@ func (m *Maker) Cycle(ctx context.Context) {
 					continue
 				}
 			}
-			inv = spotInventory(p, index, balances[strings.ToUpper(r.Base)], balances[strings.ToUpper(r.Quote)])
+			if baselines == nil {
+				if baselines, err = m.Baselines(ctx); err != nil {
+					// fail closed: unknown baseline -> no quotes this pass
+					m.fail(st, "baseline: "+err.Error())
+					baselines = nil
+					continue
+				}
+			}
+			inv = spotInventory(p, index, balances[strings.ToUpper(r.Base)], balances[strings.ToUpper(r.Quote)], baselines[strings.ToUpper(r.Base)])
 		} else {
 			if positions == nil {
 				if positions, err = m.futuresPositions(ctx); err != nil {

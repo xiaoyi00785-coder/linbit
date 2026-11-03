@@ -3854,6 +3854,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/mm/baselines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 做市现货库存基线（max_position 只限制净头寸 = 当前 base − baseline）
+         * @description 基线优先级：admin targetBase > 测试网 mm_testnet_seed 注资量（seed）> 首次启动时余额（start）> 0（none）。
+         *     GET /admin/v1/mm/status 中每个现货对的 inventory 同时给出 baseQty/baseline/baselineSource/netQty/netValue。
+         */
+        get: operations["adminMMBaselines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/mm/baselines/{asset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 设置/清除库存基线（主网库存目标）；totpCode + reason 必填，审计 update_baseline */
+        put: operations["adminMMSetBaseline"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/chat/config": {
         parameters: {
             query?: never;
@@ -4278,6 +4316,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MMBaseline: {
+            asset?: string;
+            /** @description 生效基线数量 */
+            baseline?: string;
+            /** @enum {string} */
+            source?: "admin" | "seed" | "start" | "none";
+            targetBase?: string | null;
+            startBase?: string | null;
+            seedQty?: string;
+            updatedBy?: string;
+        };
         ConvertPairs: {
             assets?: {
                 asset?: string;
@@ -13074,6 +13123,80 @@ export interface operations {
             };
             /** @description SEED_DISABLED（主网/生产）或无权限 */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminMMBaselines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["MMBaseline"][];
+                    };
+                };
+            };
+        };
+    };
+    adminMMSetBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description 管理员设定的库存目标（基础资产数量）
+                     * @example 6666.66666666
+                     */
+                    targetBase?: string;
+                    /** @description 清除 targetBase */
+                    clearTarget?: boolean;
+                    /** @description 清除启动基线，下次启动重新采集 */
+                    resetStart?: boolean;
+                    reason: string;
+                    totpCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MMBaseline"];
+                };
+            };
+            /** @description VALIDATION_ERROR / INVALID_PARAM */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TOTP_INVALID */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
