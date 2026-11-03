@@ -199,6 +199,7 @@ services:
       MARKET_URL: http://market-data:8085
       WALLET_INTERNAL_URL: http://wallet:8086
       KYC_INTERNAL_URL: http://kyc:8087
+      FUTURES_INTERNAL_URL: http://futures:8089
       # First super admin, created only when the admin_users table is empty.
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
@@ -241,6 +242,7 @@ services:
       # Empty = use each contract's maintenance margin rate.
       FUTURES_LIQUIDATION_FEE_RATE: ${FUTURES_LIQUIDATION_FEE_RATE:-}
       # Copy trading (profit share 0–50% fixed by product rules; settled daily).
+      FUTURES_COPY_AUTO_APPROVE: ${FUTURES_COPY_AUTO_APPROVE:-false}
       FUTURES_COPY_MIN_AMOUNT: ${FUTURES_COPY_MIN_AMOUNT:-50}
       FUTURES_COPY_DEFAULT_SHARE: ${FUTURES_COPY_DEFAULT_SHARE:-0.10}
       FUTURES_COPY_SETTLE_HOUR_UTC: ${FUTURES_COPY_SETTLE_HOUR_UTC:-16}

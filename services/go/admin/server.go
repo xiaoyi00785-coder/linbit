@@ -108,6 +108,10 @@ func (s *Server) Routes() http.Handler {
 	a("GET /admin/v1/announcements", permContentEdit, s.handleListAnnouncements)
 	a("POST /admin/v1/announcements", permContentEdit, s.handleCreateAnnouncement)
 
+	a("GET /admin/v1/copy/applications", permCopyView, s.handleCopyApplications)
+	a("POST /admin/v1/copy/applications/{uid}/approve", permCopyReview, s.handleCopyReview("approve"))
+	a("POST /admin/v1/copy/applications/{uid}/reject", permCopyReview, s.handleCopyReview("reject"))
+
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
 
 	if s.cfg.DevMode {

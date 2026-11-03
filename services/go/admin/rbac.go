@@ -35,25 +35,27 @@ const (
 	permCouponApprove  = "coupon:approve"
 	permContentEdit    = "content:edit"
 	permAuditView      = "audit:view"
+	permCopyView       = "copy:view"
+	permCopyReview     = "copy:review"
 	permAdminManage    = "admin:manage"
 )
 
 var allPerms = []string{permUserView, permUserEdit, permUserPII, permKYCView, permKYCApprove,
 	permWithdrawView, permWithdrawFirst, permWithdrawSecond, permLedgerView, permSymbolView,
 	permSymbolEdit, permFeeView, permFeeEdit, permFeeApprove, permRewardView, permRewardEdit,
-	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage}
+	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview}
 
 // rolePerms is the RBAC matrix from prototypes/admin/DESIGN.md §3.
 var rolePerms = map[string][]string{
 	roleSuper:         allPerms,
-	roleOperations:    {permUserView, permUserEdit, permKYCView, permSymbolView, permRewardView, permRewardEdit, permContentEdit},
+	roleOperations:    {permCopyView, permCopyReview, permUserView, permUserEdit, permKYCView, permSymbolView, permRewardView, permRewardEdit, permContentEdit},
 	roleKYCReviewer:   {permUserView, permKYCView, permKYCApprove},
 	roleFinanceFirst:  {permUserView, permWithdrawView, permWithdrawFirst, permLedgerView, permCouponApprove, permRewardView},
 	roleFinanceSecond: {permUserView, permFeeView, permWithdrawView, permWithdrawSecond, permLedgerView, permFeeApprove, permCouponApprove, permRewardView, permRewardApprove},
-	roleRisk:          {permUserView, permUserEdit, permKYCView, permWithdrawView, permLedgerView},
+	roleRisk:          {permCopyView, permUserView, permUserEdit, permKYCView, permWithdrawView, permLedgerView},
 	roleSupport:       {permUserView, permKYCView, permLedgerView},
 	roleMarketing:     {permRewardView, permRewardEdit, permContentEdit},
-	roleAuditor:       {permUserView, permKYCView, permWithdrawView, permLedgerView, permSymbolView, permFeeView, permRewardView, permAuditView},
+	roleAuditor:       {permCopyView, permUserView, permKYCView, permWithdrawView, permLedgerView, permSymbolView, permFeeView, permRewardView, permAuditView},
 }
 
 func validRole(r string) bool { _, ok := rolePerms[r]; return ok }

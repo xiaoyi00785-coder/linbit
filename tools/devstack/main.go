@@ -268,6 +268,7 @@ func run(root, execCmd string) int {
 			"KYC_INTERNAL_URL=http://localhost:" + kycPort,
 			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
 			"MARKET_URL=http://localhost:" + marketPort,
+			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
 			"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
 			"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
 			"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,

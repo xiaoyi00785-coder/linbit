@@ -161,7 +161,7 @@ Errors: INVALID_PROFIT_SHARE, INVALID_NICKNAME, INVALID_BIO, ALREADY_TRADER, TRA
 | FUTURES_COPY_MAX_FOLLOWERS | 2000 | Max live followers per trader |
 | FUTURES_COPY_DEFAULT_SHARE | 0.10 | Profit share when a trader does not set one (product range fixed at 0–50%) |
 | FUTURES_COPY_TRADER_MIN_EQUITY | 100 | Futures equity required to apply as a trader |
-| FUTURES_COPY_AUTO_APPROVE | true | Applications become active immediately (false = pending, approve via internal API) |
+| FUTURES_COPY_AUTO_APPROVE | false | Applications stay `pending` until approved/rejected in the admin console (`/admin/v1/copy/applications`); `true` = active immediately (dev only) |
 | FUTURES_COPY_SETTLE_HOUR_UTC | 16 | Daily profit-share settlement hour (UTC; 16 = 00:00 UTC+8) |
 | FUTURES_COPY_MAX_RATIO | 10 | Max ratio for ratio-mode follows |
 

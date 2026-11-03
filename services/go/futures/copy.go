@@ -55,6 +55,7 @@ type Trader struct {
 	Bio         string          `json:"bio"`
 	ProfitShare decimal.Decimal `json:"profitShare"`
 	Status      string          `json:"status"`
+	ReviewNote  string          `json:"reviewNote,omitempty"` // rejection reason
 	CreatedAt   time.Time       `json:"createdAt"`
 }
 
@@ -126,8 +127,8 @@ func (s *Server) loadTraders(ctx context.Context) error {
 
 func (s *Server) getTrader(ctx context.Context, uid string) (Trader, error) {
 	var t Trader
-	err := s.db.QueryRowContext(ctx, `SELECT user_id, nickname, bio, profit_share, status, created_at FROM fut_copy_traders WHERE user_id=$1`, uid).
-		Scan(&t.UserID, &t.Nickname, &t.Bio, &t.ProfitShare, &t.Status, &t.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT user_id, nickname, bio, profit_share, status, review_note, created_at FROM fut_copy_traders WHERE user_id=$1`, uid).
+		Scan(&t.UserID, &t.Nickname, &t.Bio, &t.ProfitShare, &t.Status, &t.ReviewNote, &t.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return t, bad("TRADER_NOT_FOUND", "交易员不存在")
 	}
@@ -174,7 +175,7 @@ func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trad
 	if len([]rune(bio)) > 280 {
 		return Trader{}, bad("INVALID_BIO", "简介最多 280 个字符")
 	}
-	if t, err := s.getTrader(ctx, uid); err == nil && t.Status != "closed" {
+	if t, err := s.getTrader(ctx, uid); err == nil && t.Status != "closed" && t.Status != "rejected" {
 		return t, bad("ALREADY_TRADER", "已是交易员或申请审核中")
 	}
 	st, err := s.state(ctx, s.db, uid)
@@ -189,7 +190,7 @@ func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trad
 		status = "active"
 	}
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO fut_copy_traders (user_id, nickname, bio, profit_share, status) VALUES ($1,$2,$3,$4,$5)
-		ON CONFLICT (user_id) DO UPDATE SET nickname=$2, bio=$3, profit_share=$4, status=$5, updated_at=now()`, uid, nick, bio, share, status); err != nil {
+		ON CONFLICT (user_id) DO UPDATE SET nickname=$2, bio=$3, profit_share=$4, status=$5, review_note='', reviewed_by='', reviewed_at=NULL, created_at=now(), updated_at=now()`, uid, nick, bio, share, status); err != nil {
 		return Trader{}, err
 	}
 	if status == "active" {
@@ -896,6 +897,8 @@ func (s *Server) copyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /futures/copy/follows/{id}", s.user(s.hUnfollow))
 	mux.HandleFunc("GET /futures/copy/follows/{id}/trades", s.user(s.hFollowTrades))
 	mux.HandleFunc("POST /internal/copy/traders/{id}/status", s.internalOnly(s.hTraderStatus))
+	mux.HandleFunc("GET /internal/copy/applications", s.internalOnly(s.hTraderApplications))
+	mux.HandleFunc("POST /internal/copy/applications/{id}/review", s.internalOnly(s.hTraderReview))
 	mux.HandleFunc("POST /internal/dev/copy/settle", s.dev(s.hDevCopySettle))
 }
 
@@ -1244,3 +1247,117 @@ func (s *Server) hDevCopySettle(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]string{"period": req.Period})
 }
+
+// ---- manual review of trader applications (admin console) ----
+
+// GET /internal/copy/applications?status=pending|active|rejected|closed|all&page=&pageSize=
+func (s *Server) hTraderApplications(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	status := q.Get("status")
+	if status == "" {
+		status = "pending"
+	}
+	page, _ := strconv.Atoi(q.Get("page"))
+	size, _ := strconv.Atoi(q.Get("pageSize"))
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	where, args := "", []any{}
+	if status != "all" {
+		where, args = "WHERE status=$1", append(args, status)
+	}
+	var total int
+	if err := s.db.QueryRowContext(r.Context(), `SELECT count(*) FROM fut_copy_traders `+where, args...).Scan(&total); err != nil {
+		writeErr(w, err)
+		return
+	}
+	args = append(args, size, (page-1)*size)
+	n := len(args)
+	rows, err := s.db.QueryContext(r.Context(), fmt.Sprintf(`SELECT user_id, nickname, bio, profit_share, status, review_note, reviewed_by, reviewed_at, created_at
+		FROM fut_copy_traders %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, n-1, n), args...)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	type app struct {
+		Trader
+		ReviewedBy string     `json:"reviewedBy"`
+		ReviewedAt *time.Time `json:"reviewedAt"`
+		Equity     string     `json:"equity"`
+	}
+	items := []app{}
+	for rows.Next() {
+		var a app
+		if err := rows.Scan(&a.UserID, &a.Nickname, &a.Bio, &a.ProfitShare, &a.Status, &a.ReviewNote, &a.ReviewedBy, &a.ReviewedAt, &a.CreatedAt); err != nil {
+			rows.Close()
+			writeErr(w, err)
+			return
+		}
+		items = append(items, a)
+	}
+	rows.Close()
+	for i := range items {
+		if st, err := s.state(r.Context(), s.db, items[i].UserID); err == nil {
+			items[i].Equity = money(st.Equity).String()
+		}
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "total": total, "page": page, "pageSize": size})
+}
+
+// POST /internal/copy/applications/{id}/review {decision: approve|reject, reason, reviewer}
+// Only pending applications can be decided; a rejection needs a reason.
+func (s *Server) hTraderReview(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Decision string `json:"decision"`
+		Reason   string `json:"reason"`
+		Reviewer string `json:"reviewer"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	status := map[string]string{"approve": "active", "reject": "rejected"}[req.Decision]
+	if status == "" {
+		writeErr(w, bad("INVALID_DECISION", "decision 必须为 approve 或 reject"))
+		return
+	}
+	if status == "rejected" && req.Reason == "" {
+		writeErr(w, bad("REASON_REQUIRED", "驳回必须填写原因"))
+		return
+	}
+	uid := r.PathValue("id")
+	s.mu.Lock()
+	res, err := s.db.ExecContext(r.Context(), `UPDATE fut_copy_traders SET status=$2, review_note=$3, reviewed_by=$4, reviewed_at=now(), updated_at=now()
+		WHERE user_id=$1 AND status='pending'`, uid, status, req.Reason, req.Reviewer)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n == 1 && status == "active" {
+			s.traders[uid] = true
+		} else if n == 0 {
+			err = errNotPending
+		}
+	}
+	s.mu.Unlock()
+	if errors.Is(err, errNotPending) {
+		if _, e := s.getTrader(r.Context(), uid); e != nil {
+			writeErr(w, e)
+			return
+		}
+		common.WriteError(w, http.StatusConflict, "NOT_PENDING", "该申请不在待审核状态")
+		return
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	t, err := s.getTrader(r.Context(), uid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, t)
+}
+
+var errNotPending = errors.New("not pending")

@@ -16,6 +16,7 @@ Every write (and failed/forbidden attempts) is written to the append-only `audit
 | Fees | `GET fees`, `GET/POST fee-changes`, `POST fee-changes/{id}/approve\|reject\|rollback` | fee:view / fee:edit / fee:approve |
 | Coupons | `GET/POST coupons`, `POST coupons/{id}/approve\|reject` | reward:edit / coupon:approve |
 | Rewards | `GET/POST rewards`, `POST rewards/{id}/approve\|reject` (2FA) | reward:edit / reward:approve |
+| Copy trading | `GET copy/applications?status=pending\|active\|rejected\|closed\|all&page&pageSize`, `POST copy/applications/{uid}/approve` (2FA), `…/reject` (reason + 2FA); proxied to futures `/internal/copy/applications`, audited as module `copy` (high) | copy:view / copy:review |
 | Content | `GET/POST announcements`; public `GET /announcements` | content:edit |
 | Audit | `GET audit-logs?adminId&module&action&level&result&target&from&to&page&size` | audit:view |
 
@@ -23,4 +24,5 @@ Workflows:
 - Withdrawal second review when amount ≥ `ADMIN_WITHDRAW_SECOND_REVIEW_USDT` (5000), risk > `ADMIN_WITHDRAW_SECOND_REVIEW_RISK` (40) or no USDT price; second reviewer must differ (`SAME_REVIEWER`).
 - Fee change: submitted by super_admin; needs approvals from a different super_admin **and** a finance_second; then scheduled ≥ `ADMIN_FEE_NOTICE_HOURS` (24h) out with a public announcement. Rollback creates a new change through the same flow.
 - Coupon template with budget (face × quantity) > `ADMIN_COUPON_FINANCE_THRESHOLD` (10000) waits for finance.
+- Copy-trading trader applications (`FUTURES_COPY_AUTO_APPROVE=false`, default) stay `pending` until reviewed; only pending ones can be decided (`NOT_PENDING`). A rejected applicant sees `reviewNote` on `GET /futures/copy/trader` and may re-apply. Roles: operations (view + review), risk/auditor (view), super_admin (all).
 - Manual reward > `ADMIN_REWARD_FINANCE_THRESHOLD` (1000 USDT) waits for finance_second; creator can never approve their own request (`SELF_APPROVAL`).

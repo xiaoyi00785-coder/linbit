@@ -35,7 +35,7 @@ type Config struct {
 	CopyMaxFollowers    int             // FUTURES_COPY_MAX_FOLLOWERS (2000 per trader, per the UI)
 	CopyDefaultShare    decimal.Decimal // FUTURES_COPY_DEFAULT_SHARE (0.10) when the applicant omits it
 	CopyTraderMinEquity decimal.Decimal // FUTURES_COPY_TRADER_MIN_EQUITY (100 USDT futures equity to apply)
-	CopyAutoApprove     bool            // FUTURES_COPY_AUTO_APPROVE (true)
+	CopyAutoApprove     bool            // FUTURES_COPY_AUTO_APPROVE (false: applications wait for admin review)
 	CopySettleHourUTC   int             // FUTURES_COPY_SETTLE_HOUR_UTC (16 = 00:00 UTC+8)
 	CopyMaxRatio        decimal.Decimal // FUTURES_COPY_MAX_RATIO (10)
 	ADLEnabled          bool            // FUTURES_ADL_ENABLED (true): auto-deleverage when the insurance fund cannot cover a bankruptcy
@@ -84,7 +84,7 @@ func LoadConfig() Config {
 		CopyMaxFollowers:    common.EnvInt("FUTURES_COPY_MAX_FOLLOWERS", 2000),
 		CopyDefaultShare:    decEnv("FUTURES_COPY_DEFAULT_SHARE", "0.10"),
 		CopyTraderMinEquity: decEnv("FUTURES_COPY_TRADER_MIN_EQUITY", "100"),
-		CopyAutoApprove:     strings.ToLower(common.Env("FUTURES_COPY_AUTO_APPROVE", "true")) != "false",
+		CopyAutoApprove:     strings.ToLower(common.Env("FUTURES_COPY_AUTO_APPROVE", "false")) == "true",
 		CopySettleHourUTC:   common.EnvInt("FUTURES_COPY_SETTLE_HOUR_UTC", 16),
 		CopyMaxRatio:        decEnv("FUTURES_COPY_MAX_RATIO", "10"),
 		ADLEnabled:          strings.ToLower(common.Env("FUTURES_ADL_ENABLED", "true")) != "false",

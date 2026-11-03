@@ -25,6 +25,10 @@ ASSET_URL="${ASSET_URL:-http://localhost:8082}"
 ACCOUNT_URL="${ACCOUNT_URL:-http://localhost:8081}"
 FUTURES_URL="${FUTURES_URL:-http://localhost:8089}"
 INTERNAL_TOKEN="${INTERNAL_TOKEN:-}"
+ADMIN_URL="${ADMIN_URL:-http://localhost:8088}"
+SA_USER="${ADMIN_BOOTSTRAP_USERNAME:-}"
+SA_PASS="${ADMIN_BOOTSTRAP_PASSWORD:-}"
+SA_TOTP="${ADMIN_BOOTSTRAP_TOTP_SECRET:-}"
 PASSWORD="Str0ng-Passw0rd!"
 TS="$(date +%s%N)"
 
@@ -32,6 +36,22 @@ say()  { printf '\n\033[1;34m== %s ==\033[0m\n' "$1"; }
 fail() { printf '\033[1;31mSMOKE-COPY FAILED: %s\033[0m\n' "$1" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || fail "jq is required"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+
+[ -n "$SA_USER" ] && [ -n "$SA_PASS" ] && [ -n "$SA_TOTP" ] || fail "ADMIN_BOOTSTRAP_* not set"
+totp() {
+  python3 - "$1" <<'PY'
+import base64, hmac, struct, sys, time
+s = sys.argv[1].strip().upper(); s += "=" * (-len(s) % 8)
+k = base64.b32decode(s); c = struct.pack(">Q", int(time.time()) // 30)
+h = hmac.new(k, c, "sha1").digest(); o = h[-1] & 15
+print("%06d" % ((struct.unpack(">I", h[o:o+4])[0] & 0x7fffffff) % 1000000))
+PY
+}
+A() { curl -sS -X "$2" "$ADMIN_URL$3" -H 'Content-Type: application/json' -H "Authorization: Bearer $1" ${4:+-d "$4"}; }
+alogin() {
+  curl -sS -X POST "$ADMIN_URL/admin/v1/auth/login" -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$1\",\"password\":\"$2\",\"totpCode\":\"$(totp "$3")\"}" | jq -r '.token // empty'
+}
 
 # eq <actual> <expected> <label> — decimal compare with 1e-6 tolerance.
 eq() {
@@ -117,7 +137,31 @@ r="$(api "${TOK[T]}" POST /futures/copy/trader '{"nickname":"Alpha","profitShare
 r="$(api "${TOK[P]}" POST /futures/copy/trader '{"nickname":"Poor","profitShare":"0.1"}')"
 ok "$r" "P apply (1000 equity >= 100)" >/dev/null
 r="$(ok "$(api "${TOK[T]}" POST /futures/copy/trader '{"nickname":"Alpha","bio":"BTC trend","profitShare":"0.3"}')" "T apply")"
-[ "$(jq -r .status <<<"$r")" = "active" ] || fail "auto approve: $r"
+[ "$(jq -r .status <<<"$r")" = "pending" ] || fail "application should wait for review: $r"
+r="$(api "${TOK[F]}" POST /futures/copy/follows "{\"traderId\":\"${UID_[T]}\",\"amount\":\"100\"}")"
+[ "$(errcode "$r")" = "TRADER_NOT_ACTIVE" ] || fail "follow pending trader: $r"
+
+say "admin review (RBAC + 2FA + audit)"
+SA="$(alogin "$SA_USER" "$SA_PASS" "$SA_TOTP")"; [ -n "$SA" ] || fail "admin login"
+[ "$(curl -sS -o /dev/null -w '%{http_code}' "$ADMIN_URL/admin/v1/copy/applications")" = "401" ] || fail "applications open without session"
+L="$(A "$SA" GET "/admin/v1/copy/applications?status=pending")"
+[ "$(jq --arg t "${UID_[T]}" '[.items[]|select(.traderId==$t)]|length' <<<"$L")" = "1" ] || fail "T not in pending list: $L"
+r="$(A "$SA" POST "/admin/v1/copy/applications/${UID_[P]}/reject" "{\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .code <<<"$r")" = "REASON_REQUIRED" ] || fail "reject without reason: $r"
+r="$(A "$SA" POST "/admin/v1/copy/applications/${UID_[P]}/reject" '{"reason":"x","totpCode":"000000"}')"
+[ "$(jq -r .code <<<"$r")" = "TOTP_INVALID" ] || fail "reject without 2FA: $r"
+r="$(A "$SA" POST "/admin/v1/copy/applications/${UID_[P]}/reject" "{\"reason\":\"带单经验不足\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .status <<<"$r")" = "rejected" ] || fail "reject: $r"
+[ "$(ok "$(api "${TOK[P]}" GET /futures/copy/trader)" "P trader" | jq -r .reviewNote)" = "带单经验不足" ] || fail "reject reason not visible to applicant"
+r="$(A "$SA" POST "/admin/v1/copy/applications/${UID_[P]}/approve" "{\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .code <<<"$r")" = "NOT_PENDING" ] || fail "approve rejected app: $r"
+r="$(ok "$(api "${TOK[P]}" POST /futures/copy/trader '{"nickname":"Poor2","profitShare":"0.1"}')" "P re-apply after rejection")"
+[ "$(jq -r .status <<<"$r")" = "pending" ] || fail "re-apply status: $r"
+r="$(A "$SA" POST "/admin/v1/copy/applications/${UID_[T]}/approve" "{\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .status <<<"$r")" = "active" ] || fail "approve T: $r"
+AU="$(A "$SA" GET "/admin/v1/audit-logs?module=copy")"
+[ "$(jq '[.items[]|select(.module=="copy")]|length' <<<"$AU")" -ge 2 ] || fail "copy review not audited: $AU"
+echo "  ok  reject needs reason + 2FA, applicant sees reason, re-apply, approve, audited"
 r="$(ok "$(api "${TOK[T]}" PATCH /futures/copy/trader '{"profitShare":"0.2"}')" "T patch")"
 eq "$(jq -r .profitShare <<<"$r")" 0.2 "share after patch"
 r="$(api "${TOK[T]}" POST /futures/copy/trader '{"nickname":"Again"}')"
@@ -221,7 +265,8 @@ done
 D="$(curl -sS "$GATEWAY_URL/futures/copy/traders/${UID_[T]}?days=7")"
 [ "$(jq '.trader.curve|length' <<<"$D")" -ge 1 ] || fail "curve: $D"
 S="$(curl -sS "$GATEWAY_URL/futures/copy/summary")"
-[ "$(jq -r .traders <<<"$S")" -ge 2 ] && [ "$(jq -r .totalFollowers <<<"$S")" -ge 2 ] || fail "summary: $S"
+[ "$(jq -r .traders <<<"$S")" -ge 1 ] && [ "$(jq -r .totalFollowers <<<"$S")" -ge 2 ] || fail "summary: $S"
+[ "$(jq --arg p "${UID_[P]}" '[.traders[]|select(.traderId==$p)]|length' <<<"$L")" = "0" ] || fail "pending applicant on leaderboard"
 eq "$(jq -r .maxProfitShare <<<"$S")" 0.5 "max share"
 
 say "update params, unfollow returns balance"
