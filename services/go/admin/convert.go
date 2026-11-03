@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/linbit/platform/services/go/common"
 )
@@ -25,7 +26,10 @@ func (s *Server) handleAssetGet(path string, keys []string) http.HandlerFunc {
 	}
 }
 
-// PUT /admin/v1/convert/config {spreadBps?, minUsdt?, maxUsdt?, assets?:[{asset,enabled}], reason, totpCode}
+// PUT /admin/v1/convert/config {spreadBps?, minUsdt?, maxUsdt?, depegBps?,
+// hedge?:{enabled?, slippageBps?, maxOrderUsdt?, maxHourUsdt?, unhedgedAlertUsdt?, unhedgedAlertMinutes?},
+// assets?:[{asset, enabled?, hedgeEnabled?, hedgeMinQty?}], reason, totpCode}
+// Every change (incl. the hedge switches) needs 2FA + a reason and is audited.
 func (s *Server) handleConvertConfig(w http.ResponseWriter, r *http.Request) {
 	a := actorOf(r)
 	var body map[string]json.RawMessage
@@ -39,6 +43,10 @@ func (s *Server) handleConvertConfig(w http.ResponseWriter, r *http.Request) {
 	delete(body, "totpCode")
 	delete(body, "reason")
 	if !s.verify2FA(w, a, code) {
+		return
+	}
+	if strings.TrimSpace(reason) == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请填写变更原因 reason")
 		return
 	}
 	before, _ := s.call(r.Context(), http.MethodGet, s.cfg.AssetURL, "/internal/convert/config", nil)

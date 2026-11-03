@@ -207,6 +207,12 @@ func run(root, execCmd string) int {
 			"INTERNAL_TOKEN=" + internalTok,
 			"REDIS_URL=" + redisURL,
 			"MARKET_URL=http://localhost:" + marketPort,
+			// 闪兑 hedge IOC orders + depeg/hedge alerts.
+			"ORDER_URL=http://localhost:" + orderPort,
+			"TELEGRAM_API_URL=" + tgAPI,
+			"TELEGRAM_BOT_TOKEN=devstack-telegram-token",
+			"TELEGRAM_CHAT_ID=devstack-chat",
+			"CONVERT_HEDGE_INTERVAL_SECONDS=" + envOr("DEVSTACK_CONVERT_HEDGE_INTERVAL_SECONDS", "5"),
 		},
 		"engine": {
 			"BIND=127.0.0.1:" + enginePort,
@@ -466,7 +472,7 @@ func run(root, execCmd string) int {
 		// for the default collateral/futures pairs. DEVSTACK_INDEX_SEED="none"
 		// disables; format "BTCUSDT=50000,ETHUSDT=2500". Smokes (-exec) pin
 		// their own prices and are not affected.
-		seedDevIndex("http://localhost:"+marketPort, envOr("DEVSTACK_INDEX_SEED", "BTCUSDT=50000,ETHUSDT=2500,SOLUSDT=150,BNBUSDT=600,TRXUSDT=0.12"))
+		seedDevIndex("http://localhost:"+marketPort, envOr("DEVSTACK_INDEX_SEED", "BTCUSDT=50000,ETHUSDT=2500,SOLUSDT=150,BNBUSDT=600,TRXUSDT=0.12,USDCUSDT=1"))
 		// Standalone mode: block until interrupted.
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

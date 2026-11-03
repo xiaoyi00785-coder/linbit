@@ -20,6 +20,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,20 @@ type ConvertDefaults struct {
 	MaxUSDT     decimal.Decimal // CONVERT_MAX_USDT (50000)
 	QuoteTTL    time.Duration   // CONVERT_QUOTE_TTL_SECONDS (10)
 	PriceMaxAge time.Duration   // CONVERT_PRICE_MAX_AGE_SECONDS (15): older index = stale
+
+	DepegCheck      time.Duration // CONVERT_DEPEG_CHECK_SECONDS (5): monitor interval
+	HedgeEnabled    bool          // CONVERT_HEDGE_ENABLED (default true only when WALLET_CHAIN=testnet); admin switch overrides
+	HedgeUserID     string        // CONVERT_HEDGE_USER_ID (system:hedge)
+	HedgeInterval   time.Duration // CONVERT_HEDGE_INTERVAL_SECONDS (5)
+	HedgeBackoff    time.Duration // CONVERT_HEDGE_BACKOFF_SECONDS (5): first retry delay, doubles
+	HedgeBackoffMax time.Duration // CONVERT_HEDGE_BACKOFF_MAX_SECONDS (300)
+}
+
+func envBool(k string, d bool) bool {
+	if v, err := strconv.ParseBool(common.Env(k, "")); err == nil {
+		return v
+	}
+	return d
 }
 
 func loadConvertDefaults() ConvertDefaults {
@@ -59,6 +74,13 @@ func loadConvertDefaults() ConvertDefaults {
 		MaxUSDT:     dec("CONVERT_MAX_USDT", "50000"),
 		QuoteTTL:    time.Duration(atoi("CONVERT_QUOTE_TTL_SECONDS", 10)) * time.Second,
 		PriceMaxAge: time.Duration(atoi("CONVERT_PRICE_MAX_AGE_SECONDS", 15)) * time.Second,
+
+		DepegCheck:      time.Duration(atoi("CONVERT_DEPEG_CHECK_SECONDS", 5)) * time.Second,
+		HedgeEnabled:    envBool("CONVERT_HEDGE_ENABLED", common.Env("WALLET_CHAIN", "") == "testnet"),
+		HedgeUserID:     common.Env("CONVERT_HEDGE_USER_ID", "system:hedge"),
+		HedgeInterval:   time.Duration(atoi("CONVERT_HEDGE_INTERVAL_SECONDS", 5)) * time.Second,
+		HedgeBackoff:    time.Duration(atoi("CONVERT_HEDGE_BACKOFF_SECONDS", 5)) * time.Second,
+		HedgeBackoffMax: time.Duration(atoi("CONVERT_HEDGE_BACKOFF_MAX_SECONDS", 300)) * time.Second,
 	}
 }
 
@@ -86,13 +108,29 @@ type ConvertConfig struct {
 	MaxUSDT   string             `json:"maxUsdt"`
 	UpdatedBy string             `json:"updatedBy"`
 	UpdatedAt int64              `json:"updatedAt"`
+	DepegBps  int                `json:"depegBps"` // USDC/USDT pause threshold (50 = 0.5%)
+	Hedge     HedgeConfig        `json:"hedge"`
 	Assets    []ConvertAssetConf `json:"assets"`
 }
 
+// HedgeConfig: automatic spot hedging of the system:convert position.
+type HedgeConfig struct {
+	Enabled              bool   `json:"enabled"`       // effective global switch
+	EnabledSource        string `json:"enabledSource"` // admin | env_default
+	SlippageBps          int    `json:"slippageBps"`   // IOC limit = index ± slippage
+	MaxOrderUSDT         string `json:"maxOrderUsdt"`
+	MaxHourUSDT          string `json:"maxHourUsdt"`
+	UnhedgedAlertUSDT    string `json:"unhedgedAlertUsdt"`
+	UnhedgedAlertMinutes int    `json:"unhedgedAlertMinutes"`
+	Account              string `json:"account"` // hedge account user id
+}
+
 type ConvertAssetConf struct {
-	Asset     string `json:"asset"`
-	Precision int    `json:"precision"`
-	Enabled   bool   `json:"enabled"`
+	Asset        string `json:"asset"`
+	Precision    int    `json:"precision"`
+	Enabled      bool   `json:"enabled"`
+	HedgeEnabled bool   `json:"hedgeEnabled"`
+	HedgeMinQty  string `json:"hedgeMinQty"`
 }
 
 func (s *Store) convertConfig(ctx context.Context, def ConvertDefaults) (ConvertConfig, error) {
@@ -103,12 +141,22 @@ func (s *Store) convertConfig(ctx context.Context, def ConvertDefaults) (Convert
 	var c ConvertConfig
 	var mn, mx string
 	var at time.Time
-	if err := s.db.QueryRowContext(ctx, `SELECT spread_bps, min_usdt::text, max_usdt::text, updated_by, updated_at FROM convert_config WHERE id=1`).
-		Scan(&c.SpreadBps, &mn, &mx, &c.UpdatedBy, &at); err != nil {
+	var hen sql.NullBool
+	var ho, hh, ha string
+	h := &c.Hedge
+	if err := s.db.QueryRowContext(ctx, `SELECT spread_bps, min_usdt::text, max_usdt::text, updated_by, updated_at, depeg_bps, hedge_enabled,
+		hedge_slippage_bps, hedge_max_order_usdt::text, hedge_max_hour_usdt::text, hedge_unhedged_alert_usdt::text, hedge_unhedged_alert_minutes
+		FROM convert_config WHERE id=1`).
+		Scan(&c.SpreadBps, &mn, &mx, &c.UpdatedBy, &at, &c.DepegBps, &hen, &h.SlippageBps, &ho, &hh, &ha, &h.UnhedgedAlertMinutes); err != nil {
 		return c, err
 	}
 	c.MinUSDT, c.MaxUSDT, c.UpdatedAt = decimal.RequireFromString(mn).String(), decimal.RequireFromString(mx).String(), at.UnixMilli()
-	rows, err := s.db.QueryContext(ctx, `SELECT asset, precision, enabled FROM convert_assets ORDER BY sort, asset`)
+	h.MaxOrderUSDT, h.MaxHourUSDT, h.UnhedgedAlertUSDT = decimal.RequireFromString(ho).String(), decimal.RequireFromString(hh).String(), decimal.RequireFromString(ha).String()
+	h.Enabled, h.EnabledSource, h.Account = def.HedgeEnabled, "env_default", def.HedgeUserID
+	if hen.Valid {
+		h.Enabled, h.EnabledSource = hen.Bool, "admin"
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT asset, precision, enabled, hedge_enabled, hedge_min_qty::text FROM convert_assets ORDER BY sort, asset`)
 	if err != nil {
 		return c, err
 	}
@@ -116,9 +164,10 @@ func (s *Store) convertConfig(ctx context.Context, def ConvertDefaults) (Convert
 	c.Assets = []ConvertAssetConf{}
 	for rows.Next() {
 		var a ConvertAssetConf
-		if err := rows.Scan(&a.Asset, &a.Precision, &a.Enabled); err != nil {
+		if err := rows.Scan(&a.Asset, &a.Precision, &a.Enabled, &a.HedgeEnabled, &a.HedgeMinQty); err != nil {
 			return c, err
 		}
+		a.HedgeMinQty = decimal.RequireFromString(a.HedgeMinQty).String()
 		c.Assets = append(c.Assets, a)
 	}
 	return c, rows.Err()
@@ -257,6 +306,9 @@ func (s *Server) quote(ctx context.Context, userID string, req quoteReq) (*Quote
 	if from == to || !ok1 || !ok2 || !fc.Enabled || !tc.Enabled {
 		return nil, cerr(http.StatusBadRequest, "PAIR_NOT_SUPPORTED", "不支持该币对")
 	}
+	if err := s.pairGuard(ctx, from, to); err != nil {
+		return nil, err
+	}
 	var fa, ta decimal.Decimal
 	if req.FromAmount != "" && req.ToAmount != "" {
 		return nil, cerr(http.StatusBadRequest, "VALIDATION_ERROR", "fromAmount 和 toAmount 只能填一个")
@@ -328,7 +380,10 @@ func scanOrder(sc interface{ Scan(...any) error }) (ConvertOrder, error) {
 
 // AcceptQuote fills a quote atomically. Idempotent: accepting an already
 // filled quote returns the same order (replay=true).
-func (s *Store) AcceptQuote(ctx context.Context, userID, quoteID string, now time.Time, usdtValue func(asset string, amt decimal.Decimal) decimal.Decimal) (ConvertOrder, bool, error) {
+//
+// guard (may be nil) is re-checked for the quote's pair before filling, so a
+// quote issued just before a depeg pause cannot be accepted after it.
+func (s *Store) AcceptQuote(ctx context.Context, userID, quoteID string, now time.Time, usdtValue func(asset string, amt decimal.Decimal) decimal.Decimal, guard func(from, to string) error) (ConvertOrder, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ConvertOrder{}, false, err
@@ -350,6 +405,11 @@ func (s *Store) AcceptQuote(ctx context.Context, userID, quoteID string, now tim
 	}
 	if !now.Before(exp) {
 		return ConvertOrder{}, false, ErrQuoteExpired
+	}
+	if guard != nil {
+		if err := guard(from, to); err != nil {
+			return ConvertOrder{}, false, err
+		}
 	}
 	fromAmt, toAmt := decimal.RequireFromString(fa), decimal.RequireFromString(ta)
 	ref := "convert:" + quoteID
@@ -416,6 +476,9 @@ func (s *Server) convertRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /internal/convert/config", s.internal(s.handleConvertConfigPut))
 	mux.HandleFunc("GET /internal/convert/orders", s.internal(s.handleConvertOrders))
 	mux.HandleFunc("GET /internal/convert/position", s.internal(s.handleConvertPosition))
+	mux.HandleFunc("GET /internal/convert/hedges", s.internal(s.handleConvertHedges))
+	mux.HandleFunc("GET /internal/convert/events", s.internal(s.handleConvertEvents))
+	mux.HandleFunc("POST /internal/convert/hedge/run", s.internal(s.handleHedgeRun))
 }
 
 func (s *Server) user(next http.HandlerFunc) http.HandlerFunc {
@@ -459,7 +522,10 @@ func (s *Server) handleConvertPairs(w http.ResponseWriter, r *http.Request) {
 		ToPrecision   int    `json:"toPrecision"`
 		SpreadBps     int    `json:"spreadBps"`
 		Route         string `json:"route"` // direct | via_usdt | stable
+		Paused        bool   `json:"paused"`
+		PauseReason   string `json:"pauseReason,omitempty"` // depeg | price_unavailable
 	}
+	var depeg *DepegState
 	assets := []map[string]any{}
 	pairs := []pair{}
 	for _, a := range cfg.Assets {
@@ -475,6 +541,13 @@ func (s *Server) handleConvertPairs(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case stablecoins[a.Asset] && stablecoins[b.Asset]:
 				p.SpreadBps, p.Route = 0, "stable"
+				if isDepegGuarded(a.Asset, b.Asset) {
+					if depeg == nil {
+						st := s.checkDepeg(r.Context())
+						depeg = &st
+					}
+					p.Paused, p.PauseReason = depeg.Paused, depeg.Reason
+				}
 			case !stablecoins[a.Asset] && !stablecoins[b.Asset]:
 				p.Route = "via_usdt"
 			}
@@ -520,7 +593,8 @@ func (s *Server) handleConvertAccept(w http.ResponseWriter, r *http.Request) {
 		}
 		return decimal.Zero
 	}
-	o, replay, err := s.store.AcceptQuote(r.Context(), uid, req.QuoteID, s.now(), value)
+	o, replay, err := s.store.AcceptQuote(r.Context(), uid, req.QuoteID, s.now(), value,
+		func(from, to string) error { return s.pairGuard(r.Context(), from, to) })
 	if err != nil {
 		writeConvertErr(w, "accept", err)
 		return
@@ -582,9 +656,20 @@ func (s *Server) handleConvertConfigPut(w http.ResponseWriter, r *http.Request) 
 		SpreadBps *int    `json:"spreadBps"`
 		MinUSDT   *string `json:"minUsdt"`
 		MaxUSDT   *string `json:"maxUsdt"`
-		Assets    []struct {
-			Asset   string `json:"asset"`
-			Enabled bool   `json:"enabled"`
+		DepegBps  *int    `json:"depegBps"`
+		Hedge     *struct {
+			Enabled              *bool   `json:"enabled"`
+			SlippageBps          *int    `json:"slippageBps"`
+			MaxOrderUSDT         *string `json:"maxOrderUsdt"`
+			MaxHourUSDT          *string `json:"maxHourUsdt"`
+			UnhedgedAlertUSDT    *string `json:"unhedgedAlertUsdt"`
+			UnhedgedAlertMinutes *int    `json:"unhedgedAlertMinutes"`
+		} `json:"hedge"`
+		Assets []struct {
+			Asset        string  `json:"asset"`
+			Enabled      *bool   `json:"enabled"`
+			HedgeEnabled *bool   `json:"hedgeEnabled"`
+			HedgeMinQty  *string `json:"hedgeMinQty"`
 		} `json:"assets"`
 		UpdatedBy string `json:"updatedBy"`
 	}
@@ -621,10 +706,49 @@ func (s *Server) handleConvertConfigPut(w http.ResponseWriter, r *http.Request) 
 		bad("minUsdt/maxUsdt 不合法")
 		return
 	}
+	depeg := cur.DepegBps
+	if req.DepegBps != nil {
+		depeg = *req.DepegBps
+	}
+	if depeg < 1 || depeg > 1000 {
+		bad("depegBps 必须在 1–1000 之间")
+		return
+	}
+	h := cur.Hedge
+	hmo, hmh, hal := decimal.RequireFromString(h.MaxOrderUSDT), decimal.RequireFromString(h.MaxHourUSDT), decimal.RequireFromString(h.UnhedgedAlertUSDT)
+	var hen *bool
+	if req.Hedge != nil {
+		hq := req.Hedge
+		hen = hq.Enabled
+		if hq.SlippageBps != nil {
+			h.SlippageBps = *hq.SlippageBps
+		}
+		if hq.UnhedgedAlertMinutes != nil {
+			h.UnhedgedAlertMinutes = *hq.UnhedgedAlertMinutes
+		}
+		if !parse(hq.MaxOrderUSDT, &hmo) || !parse(hq.MaxHourUSDT, &hmh) || !parse(hq.UnhedgedAlertUSDT, &hal) || hmo.GreaterThan(hmh) {
+			bad("hedge 限额不合法（maxOrderUsdt ≤ maxHourUsdt，均 > 0）")
+			return
+		}
+	}
+	if h.SlippageBps < 1 || h.SlippageBps > 500 {
+		bad("hedge.slippageBps 必须在 1–500 之间")
+		return
+	}
+	if h.UnhedgedAlertMinutes < 1 || h.UnhedgedAlertMinutes > 1440 {
+		bad("hedge.unhedgedAlertMinutes 必须在 1–1440 之间")
+		return
+	}
 	for _, a := range req.Assets {
 		if _, ok := cur.asset(strings.ToUpper(a.Asset)); !ok {
 			bad("未知币种 " + a.Asset)
 			return
+		}
+		if a.HedgeMinQty != nil {
+			if v, err := decimal.NewFromString(*a.HedgeMinQty); err != nil || v.Sign() < 0 {
+				bad("hedgeMinQty 不合法")
+				return
+			}
 		}
 	}
 	tx, err := s.store.db.BeginTx(r.Context(), nil)
@@ -642,8 +766,15 @@ func (s *Server) handleConvertConfigPut(w http.ResponseWriter, r *http.Request) 
 		writeConvertErr(w, "config update", err)
 		return
 	}
+	if _, err := tx.ExecContext(r.Context(), `UPDATE convert_config SET depeg_bps=$1, hedge_enabled=COALESCE($2, hedge_enabled), hedge_slippage_bps=$3,
+		hedge_max_order_usdt=$4, hedge_max_hour_usdt=$5, hedge_unhedged_alert_usdt=$6, hedge_unhedged_alert_minutes=$7 WHERE id=1`,
+		depeg, hen, h.SlippageBps, hmo.String(), hmh.String(), hal.String(), h.UnhedgedAlertMinutes); err != nil {
+		writeConvertErr(w, "config update", err)
+		return
+	}
 	for _, a := range req.Assets {
-		if _, err := tx.ExecContext(r.Context(), `UPDATE convert_assets SET enabled=$2 WHERE asset=$1`, strings.ToUpper(a.Asset), a.Enabled); err != nil {
+		if _, err := tx.ExecContext(r.Context(), `UPDATE convert_assets SET enabled=COALESCE($2, enabled), hedge_enabled=COALESCE($3, hedge_enabled),
+			hedge_min_qty=COALESCE($4::numeric, hedge_min_qty) WHERE asset=$1`, strings.ToUpper(a.Asset), a.Enabled, a.HedgeEnabled, a.HedgeMinQty); err != nil {
 			writeConvertErr(w, "config asset", err)
 			return
 		}
@@ -661,9 +792,34 @@ func (s *Server) handleConvertPosition(w http.ResponseWriter, r *http.Request) {
 		writeConvertErr(w, "position", err)
 		return
 	}
-	items := []map[string]string{}
-	for a, v := range pos {
-		items = append(items, map[string]string{"asset": a, "position": v.String()})
+	hedgeBal, err := s.store.accountTotals(r.Context(), s.cfg.Convert.HedgeUserID)
+	if err != nil {
+		writeConvertErr(w, "position hedge", err)
+		return
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"account": ConvertAccount, "items": items})
+	seen := map[string]bool{}
+	assets := []string{}
+	for a := range pos {
+		seen[a] = true
+		assets = append(assets, a)
+	}
+	for a := range hedgeBal {
+		if !seen[a] {
+			assets = append(assets, a)
+		}
+	}
+	sort.Strings(assets)
+	state := s.hedger().snapshot()
+	items := []map[string]any{}
+	for _, a := range assets {
+		it := map[string]any{"asset": a, "position": pos[a].String(), "hedgeBalance": hedgeBal[a].String(),
+			"netPosition": pos[a].Add(hedgeBal[a]).String()}
+		if st, ok := state[a]; ok {
+			it["hedge"] = st
+		}
+		items = append(items, it)
+	}
+	cfg, _ := s.store.convertConfig(r.Context(), s.cfg.Convert)
+	common.WriteJSON(w, http.StatusOK, map[string]any{"account": ConvertAccount, "hedgeAccount": s.cfg.Convert.HedgeUserID,
+		"hedgeEnabled": cfg.Hedge.Enabled, "depeg": s.checkDepeg(r.Context()), "items": items})
 }

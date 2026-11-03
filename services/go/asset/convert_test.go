@@ -11,13 +11,12 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-
 func testCfg() ConvertConfig {
 	return ConvertConfig{SpreadBps: 20, MinUSDT: "10", MaxUSDT: "50000"}
 }
 
 func TestPriceQuoteFromAmount(t *testing.T) {
-	usdt, btc := ConvertAssetConf{"USDT", 6, true}, ConvertAssetConf{"BTC", 8, true}
+	usdt, btc := ConvertAssetConf{"USDT", 6, true, false, "0"}, ConvertAssetConf{"BTC", 8, true, false, "0"}
 	fa, ta, rate, idx, sp, err := PriceQuote(testCfg(), usdt, btc, d("1"), d("50000"), d("1000"), decimal.Zero)
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +31,7 @@ func TestPriceQuoteFromAmount(t *testing.T) {
 }
 
 func TestPriceQuoteToAmountAndCross(t *testing.T) {
-	btc, eth := ConvertAssetConf{"BTC", 8, true}, ConvertAssetConf{"ETH", 8, true}
+	btc, eth := ConvertAssetConf{"BTC", 8, true, false, "0"}, ConvertAssetConf{"ETH", 8, true, false, "0"}
 	fa, ta, _, idx, _, err := PriceQuote(testCfg(), btc, eth, d("50000"), d("2500"), decimal.Zero, d("1"))
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +49,7 @@ func TestPriceQuoteToAmountAndCross(t *testing.T) {
 }
 
 func TestPriceQuoteStableAndLimits(t *testing.T) {
-	usdt, usdc := ConvertAssetConf{"USDT", 6, true}, ConvertAssetConf{"USDC", 6, true}
+	usdt, usdc := ConvertAssetConf{"USDT", 6, true, false, "0"}, ConvertAssetConf{"USDC", 6, true, false, "0"}
 	_, ta, _, _, sp, err := PriceQuote(testCfg(), usdc, usdt, d("1"), d("1"), d("100"), decimal.Zero)
 	if err != nil || !ta.Equal(d("100")) || sp != 0 {
 		t.Fatalf("stable: ta=%s sp=%d err=%v", ta, sp, err)
@@ -67,7 +66,9 @@ func TestPriceQuoteStableAndLimits(t *testing.T) {
 func TestQuoteStalePrice(t *testing.T) {
 	now := time.Now()
 	s := &Server{cfg: Config{Convert: ConvertDefaults{PriceMaxAge: 15 * time.Second}}, now: func() time.Time { return now },
-		prices: func(ctx context.Context, a string) (decimal.Decimal, time.Time, error) { return d("50000"), now.Add(-time.Minute), nil }}
+		prices: func(ctx context.Context, a string) (decimal.Decimal, time.Time, error) {
+			return d("50000"), now.Add(-time.Minute), nil
+		}}
 	_, err := s.usdtPrice(context.Background(), "BTC")
 	var ce *convertErr
 	if !errors.As(err, &ce) || ce.code != "PRICE_UNAVAILABLE" || ce.status != http.StatusServiceUnavailable {
@@ -99,7 +100,7 @@ func TestConvertAcceptDB(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, rp, err := store.AcceptQuote(ctx, uid, q.QuoteID, now, val)
+			_, rp, err := store.AcceptQuote(ctx, uid, q.QuoteID, now, val, nil)
 			if err != nil {
 				t.Errorf("accept %d: %v", i, err)
 			}
@@ -129,16 +130,16 @@ func TestConvertAcceptDB(t *testing.T) {
 	}
 	// insufficient
 	q2, _ := s.quote(ctx, uid, quoteReq{From: "USDT", To: "BTC", FromAmount: "600"})
-	if _, _, err := store.AcceptQuote(ctx, uid, q2.QuoteID, now, val); !errors.Is(err, ErrInsufficient) {
+	if _, _, err := store.AcceptQuote(ctx, uid, q2.QuoteID, now, val, nil); !errors.Is(err, ErrInsufficient) {
 		t.Fatalf("want insufficient, got %v", err)
 	}
 	// expired
 	q3, _ := s.quote(ctx, uid, quoteReq{From: "USDT", To: "BTC", FromAmount: "100"})
-	if _, _, err := store.AcceptQuote(ctx, uid, q3.QuoteID, now.Add(11*time.Second), val); !errors.Is(err, ErrQuoteExpired) {
+	if _, _, err := store.AcceptQuote(ctx, uid, q3.QuoteID, now.Add(11*time.Second), val, nil); !errors.Is(err, ErrQuoteExpired) {
 		t.Fatalf("want expired, got %v", err)
 	}
 	// someone else's quote
-	if _, _, err := store.AcceptQuote(ctx, "other-"+uid, q3.QuoteID, now, val); !errors.Is(err, ErrQuoteNotFound) {
+	if _, _, err := store.AcceptQuote(ctx, "other-"+uid, q3.QuoteID, now, val, nil); !errors.Is(err, ErrQuoteNotFound) {
 		t.Fatalf("want not found, got %v", err)
 	}
 }

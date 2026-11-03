@@ -14,6 +14,8 @@ if [ "${SMOKE_INNER:-}" != "1" ]; then
   echo "== booting devstack =="
   ROOT="$(pwd)"
   cd tools/devstack
+  # the hedge loop is driven explicitly via /internal/convert/hedge/run
+  export DEVSTACK_CONVERT_HEDGE_INTERVAL_SECONDS="${DEVSTACK_CONVERT_HEDGE_INTERVAL_SECONDS:-0}"
   exec go run . -root "$ROOT" -exec "SMOKE_INNER=1 bash scripts/smoke-convert.sh"
 fi
 
@@ -21,6 +23,8 @@ GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 ACCOUNT_URL="${ACCOUNT_URL:-http://localhost:8081}"
 ASSET_URL="${ASSET_URL:-http://localhost:8082}"
 MARKET_URL="${MARKET_URL:-http://localhost:8085}"
+ORDER_URL="${ORDER_URL:-http://localhost:8084}"
+TG_URL="${DEVSTACK_TELEGRAM_API_URL:-http://127.0.0.1:18099}"
 ADMIN_URL="${ADMIN_URL:-http://localhost:8088}"
 INTERNAL_TOKEN="${INTERNAL_TOKEN:-}"
 SA_USER="${ADMIN_BOOTSTRAP_USERNAME:-}"
@@ -33,7 +37,30 @@ SMOKE_NAME="CONVERT"
 [ -n "$SA_USER" ] && [ -n "$SA_PASS" ] && [ -n "$SA_TOTP" ] || fail "ADMIN_BOOTSTRAP_* not set"
 fresh() { local s; s=$(( 30 - $(date +%s) % 30 )); [ "$s" -lt 4 ] && sleep "$s"; return 0; }
 idx() { internal "$MARKET_URL" POST /internal/dev/index "{\"symbol\":\"$1\",\"price\":\"$2\"}" >/dev/null; }
-idx BTCUSDT 50000; idx ETHUSDT 2500
+idx BTCUSDT 50000; idx ETHUSDT 2500; idx USDCUSDT 1
+
+# --- fake Telegram API (alerts) ---------------------------------------------
+TGLOG="$(mktemp)"; TGPORT="${TG_URL##*:}"
+python3 - "$TGPORT" "$TGLOG" <<'PY' &
+import http.server, sys, json
+port, log = int(sys.argv[1]), sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0); b = self.rfile.read(n).decode()
+        try:
+            d = json.loads(b)
+        except Exception:
+            from urllib.parse import parse_qs; d = {k: v[0] for k, v in parse_qs(b).items()}
+        with open(log, "a") as f: f.write(json.dumps({"text": d.get("text")}, ensure_ascii=False) + "\n")
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+        self.wfile.write(b'{"ok":true}')
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
+PY
+TGPID=$!
+trap 'kill $TGPID 2>/dev/null; rm -f "$TGLOG"' EXIT
+sleep 0.5
+tg_wait() { for _ in $(seq 1 40); do grep -q "$1" "$TGLOG" && return 0; sleep 0.25; done; fail "telegram alert missing: $1"; }
 
 say "pairs (public)"
 P="$(curl -sS "$GATEWAY_URL/convert/pairs")"
@@ -124,6 +151,63 @@ jq -e '.items[] | select(.asset=="BTC")' <<<"$PZ" >/dev/null || fail "position: 
 SV="$(A "$SA" POST /admin/v1/solvency/run '{}')"
 CP="$(jq -r '.lines[] | select(.asset=="BTC") | .convertPosition' <<<"$SV")"
 python3 -c "import sys;from decimal import Decimal as D;sys.exit(0 if D(sys.argv[1])<0 else 1)" "$CP" || fail "solvency BTC convertPosition: $CP"
+echo "  ok"
+
+say "USDC depeg guard (pause / resume)"
+idx USDCUSDT 0.99
+[ "$(errcode "$(api "$TOK" POST /convert/quote '{"from":"USDC","to":"USDT","fromAmount":"20"}')")" = PAIR_PAUSED_DEPEG ] || fail "depeg pause USDC->USDT"
+[ "$(errcode "$(api "$TOK" POST /convert/quote '{"from":"USDT","to":"USDC","fromAmount":"20"}')")" = PAIR_PAUSED_DEPEG ] || fail "depeg pause USDT->USDC"
+P="$(curl -sS "$GATEWAY_URL/convert/pairs")"
+jq -e '.pairs[] | select(.from=="USDC" and .to=="USDT" and .paused==true)' <<<"$P" >/dev/null || fail "pairs paused flag: $P"
+tg_wait "USDC 脱锚"
+idx USDCUSDT 1.001
+ok "$(api "$TOK" POST /convert/quote '{"from":"USDC","to":"USDT","fromAmount":"20"}')" depeg-resume >/dev/null
+tg_wait "闪兑恢复"
+EV="$(A "$SA" GET '/admin/v1/convert/events?pageSize=50')"
+jq -e '[.items[].kind] | index("pair_paused") and index("pair_resumed")' <<<"$EV" >/dev/null || fail "depeg audit events: $EV"
+idx USDCUSDT 1
+echo "  ok"
+
+say "spot hedge: switch off / thin depth partial / fill / alert"
+hrun() { internal "$ASSET_URL" POST /internal/convert/hedge/run '{}'; }
+NET0="$(jq -r '.items[] | select(.asset=="BTC") | .netPosition' <<<"$(A "$SA" GET /admin/v1/convert/position)")"
+python3 -c "import sys;from decimal import Decimal as D;sys.exit(0 if D(sys.argv[1])<D('-0.001') else 1)" "$NET0" || fail "need BTC short to hedge: $NET0"
+# devstack is WALLET_CHAIN=mock -> default OFF; nothing must be placed
+[ "$(jq '.orders|length' <<<"$(hrun)")" = 0 ] || fail "hedge ran while switched off"
+[ "$(jq -r '.code // .error.code' <<<"$(A "$SA" PUT /admin/v1/convert/config "{\"hedge\":{\"enabled\":true},\"totpCode\":\"$(fresh; totp "$SA_TOTP")\"}")")" = VALIDATION_ERROR ] || fail "hedge switch needs reason"
+fresh; C="$(A "$SA" PUT /admin/v1/convert/config "{\"hedge\":{\"enabled\":true,\"slippageBps\":50,\"unhedgedAlertUsdt\":\"10\",\"unhedgedAlertMinutes\":1},\"reason\":\"smoke hedge on\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
+[ "$(jq -r .hedge.enabled <<<"$C")" = true ] || fail "hedge enable: $C"
+read -r MTOK MUID < <(register "cvm$TS@example.com")
+credit "$MUID" BTC 2
+mk() { ok "$(api "$MTOK" POST /spot/orders "{\"symbol\":\"BTCUSDT\",\"side\":\"sell\",\"type\":\"limit\",\"price\":\"$1\",\"quantity\":\"$2\",\"timeInForce\":\"GTC\"}")" "maker $1" >/dev/null; }
+mk 50400 0.5     # above the 50 bps cap (50250): must never be taken
+mk 50100 0.003   # thin depth inside the cap
+R="$(hrun)"
+O="$(jq -c '.orders[] | select(.asset=="BTC")' <<<"$R")"
+[ "$(jq -r .status <<<"$O")" = partial ] || fail "thin depth partial: $R"
+eq "$(jq -r .filledQty <<<"$O")" 0.003 "partial filled qty"
+eq "$(jq -r .limitPrice <<<"$O")" 50250 "slippage cap price"
+# remainder stays unhedged > 1 min above 10 USDT -> Telegram + audit event
+sleep 62; hrun >/dev/null
+tg_wait "未对冲敞口"
+jq -e '[.items[].kind] | index("unhedged_alert")' <<<"$(A "$SA" GET '/admin/v1/convert/events?kind=unhedged_alert')" >/dev/null || fail "unhedged event"
+mk 50150 1       # depth arrives
+R="$(hrun)"
+[ "$(jq -r '.orders[] | select(.asset=="BTC") | .status' <<<"$R")" = filled ] || fail "hedge fill: $R"
+HG="$(A "$SA" GET '/admin/v1/convert/hedges?asset=BTC')"
+[ "$(jq -r .total <<<"$HG")" -ge 2 ] || fail "admin hedges: $HG"
+jq -e '.items | all(.limitPrice|tonumber <= 50250)' <<<"$HG" >/dev/null || fail "cap: $HG"
+PZ="$(A "$SA" GET /admin/v1/convert/position)"
+NET="$(jq -r '.items[] | select(.asset=="BTC") | .netPosition' <<<"$PZ")"
+python3 -c "import sys;from decimal import Decimal as D;sys.exit(0 if abs(D(sys.argv[1]))<D('0.0002') else 1)" "$NET" || fail "BTC net after hedge: $PZ"
+SV="$(A "$SA" POST /admin/v1/solvency/run '{}')"
+HB="$(jq -r '.lines[] | select(.asset=="BTC") | .hedgeBalance' <<<"$SV")"
+python3 -c "import sys;from decimal import Decimal as D;sys.exit(0 if D(sys.argv[1])>0 else 1)" "$HB" || fail "solvency hedgeBalance: $SV"
+# switch off again: new exposure is not hedged
+credit "$UID_" USDT 500
+fresh; A "$SA" PUT /admin/v1/convert/config "{\"hedge\":{\"enabled\":false},\"reason\":\"smoke hedge off\",\"totpCode\":\"$(totp "$SA_TOTP")\"}" >/dev/null
+ok "$(api "$TOK" POST /convert/accept "$(jq -c '{quoteId}' <<<"$(ok "$(api "$TOK" POST /convert/quote '{"from":"USDT","to":"BTC","fromAmount":"100"}')" q-off)")")" accept-off >/dev/null
+[ "$(jq '.orders|length' <<<"$(hrun)")" = 0 ] || fail "hedge ran after switch off"
 echo "  ok"
 
 printf '\n\033[1;32mSMOKE-CONVERT PASSED\033[0m\n'

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/linbit/platform/services/go/common"
@@ -18,6 +19,10 @@ type Server struct {
 	store  *Store
 	prices PriceSource
 	now    func() time.Time
+
+	depeg     depegGuard
+	hedge     *Hedger
+	hedgeOnce sync.Once
 }
 
 // NewServer constructs a Server.

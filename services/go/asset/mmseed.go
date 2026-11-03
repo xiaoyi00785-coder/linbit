@@ -69,11 +69,16 @@ type Liability struct {
 	// ConvertPosition: net system:convert position (platform, not user funds).
 	// Negative = the platform paid this asset out via convert and must cover it.
 	ConvertPosition string `json:"convertPosition"`
+	// HedgeBalance: balance of the convert hedge account (system:hedge,
+	// platform-owned, excluded from Total). NetPosition = ConvertPosition +
+	// HedgeBalance is the platform's real convert exposure.
+	HedgeBalance string `json:"hedgeBalance"`
+	NetPosition  string `json:"netPosition"`
 }
 
 // Liabilities sums every account-holder balance per asset (platform system:*
 // accounts excluded; funds moved to futures are counted by the futures service).
-func (s *Store) Liabilities(ctx context.Context, mmUser string) ([]Liability, error) {
+func (s *Store) Liabilities(ctx context.Context, mmUser, hedgeUser string) ([]Liability, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT b.asset,
 		       COALESCE(SUM(b.free + b.locked), 0)::text,
@@ -93,7 +98,7 @@ func (s *Store) Liabilities(ctx context.Context, mmUser string) ([]Liability, er
 		for _, p := range []*string{&l.Total, &l.MarketMaker, &l.VirtualSeed} {
 			*p = decimal.RequireFromString(*p).String()
 		}
-		l.ConvertPosition = "0"
+		l.ConvertPosition, l.HedgeBalance, l.NetPosition = "0", "0", "0"
 		out = append(out, l)
 	}
 	if err := rows.Err(); err != nil {
@@ -103,16 +108,29 @@ func (s *Store) Liabilities(ctx context.Context, mmUser string) ([]Liability, er
 	if err != nil {
 		return nil, err
 	}
-	for a, v := range pos {
-		found := false
+	hedge, err := s.accountTotals(ctx, hedgeUser)
+	if err != nil {
+		return nil, err
+	}
+	line := func(a string) *Liability {
 		for i := range out {
 			if out[i].Asset == a {
-				out[i].ConvertPosition, found = v.String(), true
+				return &out[i]
 			}
 		}
-		if !found {
-			out = append(out, Liability{Asset: a, Total: "0", MarketMaker: "0", VirtualSeed: "0", ConvertPosition: v.String()})
+		out = append(out, Liability{Asset: a, Total: "0", MarketMaker: "0", VirtualSeed: "0", ConvertPosition: "0", HedgeBalance: "0", NetPosition: "0"})
+		return &out[len(out)-1]
+	}
+	for a, v := range pos {
+		line(a).ConvertPosition = v.String()
+	}
+	for a, v := range hedge {
+		if v.Sign() != 0 || pos[a].Sign() != 0 {
+			line(a).HedgeBalance = v.String()
 		}
+	}
+	for i := range out {
+		out[i].NetPosition = pos[out[i].Asset].Add(hedge[out[i].Asset]).String()
 	}
 	return out, nil
 }
@@ -157,11 +175,11 @@ func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
 
 // GET /internal/solvency/liabilities
 func (s *Server) handleLiabilities(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.Liabilities(r.Context(), mmUserID())
+	items, err := s.store.Liabilities(r.Context(), mmUserID(), s.cfg.Convert.HedgeUserID)
 	if err != nil {
 		log.Printf("liabilities: %v", err)
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"mmUserId": mmUserID(), "items": items})
+	common.WriteJSON(w, http.StatusOK, map[string]any{"mmUserId": mmUserID(), "hedgeUserId": s.cfg.Convert.HedgeUserID, "items": items})
 }

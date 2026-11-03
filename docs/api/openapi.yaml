@@ -1876,7 +1876,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503":
-          description: PRICE_UNAVAILABLE（无指数价格或价格过期）
+          description: PRICE_UNAVAILABLE（无指数价格或价格过期）；PAIR_PAUSED_DEPEG（USDC 偏离 1 超过 depegBps，USDC↔USDT 自动暂停；价格缺失/过期同样视为暂停）
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2204,6 +2204,8 @@ components:
               toPrecision: { type: integer }
               spreadBps: { type: integer }
               route: { type: string, enum: [direct, via_usdt, stable] }
+              paused: { type: boolean, description: 仅 USDC↔USDT 出现；true 表示脱锚保护暂停中 }
+              pauseReason: { type: string, enum: [depeg, price_unavailable], description: paused=true 时的原因 }
         minUsdt: { type: string, example: "10" }
         maxUsdt: { type: string, example: "50000" }
         spreadBps: { type: integer, example: 20 }
