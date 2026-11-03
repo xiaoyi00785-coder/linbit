@@ -18,7 +18,10 @@ targets:
       path: Linbit/Info.plist
       properties:
         CFBundleDisplayName: Linbit
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchLogo
+          UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         LBAPIBase: https://api.cowa.click
         LBWSURL: wss://api.cowa.click/ws
