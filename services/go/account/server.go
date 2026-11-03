@@ -126,6 +126,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /internal/account/kyc-level", s.handleInternalGetKYCLevel)
 	mux.HandleFunc("POST /internal/account/kyc-level", s.handleInternalSetKYCLevel)
 	mux.HandleFunc("GET /internal/admin/users", s.handleInternalAdminUsers)
+	mux.HandleFunc("GET /internal/users/feed", s.handleInternalUsersFeed)
+	mux.HandleFunc("GET /internal/users/profile", s.handleInternalUserProfile)
 	mux.HandleFunc("GET /internal/admin/users/{uid}", s.handleInternalAdminUser)
 	mux.HandleFunc("POST /internal/admin/users/{uid}/status", s.handleInternalAdminSetStatus)
 

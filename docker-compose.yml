@@ -200,6 +200,7 @@ services:
       WALLET_INTERNAL_URL: http://wallet:8086
       KYC_INTERNAL_URL: http://kyc:8087
       FUTURES_INTERNAL_URL: http://futures:8089
+      GROWTH_INTERNAL_URL: http://growth:8091
       # First super admin, created only when the admin_users table is empty.
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
@@ -275,6 +276,33 @@ services:
       market-data:
         condition: service_started
 
+  growth:
+    build:
+      context: .
+      dockerfile: services/go/growth/Dockerfile
+    environment:
+      PORT: "8091"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      ASSET_INTERNAL_URL: http://asset:8082
+      ORDER_INTERNAL_URL: http://order:8084
+      FUTURES_INTERNAL_URL: http://futures:8089
+      GROWTH_SETTLE_HOUR_UTC: ${GROWTH_SETTLE_HOUR_UTC:-16}
+      GROWTH_PARTNER_AUTO_APPROVE: ${GROWTH_PARTNER_AUTO_APPROVE:-false}
+      GROWTH_INVITE_BASE_URL: ${GROWTH_INVITE_BASE_URL:-https://linbit.example.com/r/}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      account:
+        condition: service_started
+      asset:
+        condition: service_started
+      order:
+        condition: service_started
+      futures:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -290,6 +318,7 @@ services:
       KYC_URL: http://kyc:8087
       FUTURES_URL: http://futures:8089
       STRATEGY_URL: http://strategy:8090
+      GROWTH_URL: http://growth:8091
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
@@ -311,6 +340,8 @@ services:
       futures:
         condition: service_started
       strategy:
+        condition: service_started
+      growth:
         condition: service_started
 
 volumes:

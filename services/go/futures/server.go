@@ -47,6 +47,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /futures/trades", s.user(s.hMyTrades))
 	// dev
 	s.copyRoutes(mux)
+	s.tradeFeedRoutes(mux)
 	mux.HandleFunc("POST /internal/dev/index", s.dev(s.hDevIndex))
 	mux.HandleFunc("POST /internal/dev/tick", s.dev(s.hDevTick))
 	mux.HandleFunc("POST /internal/dev/funding", s.dev(s.hDevFunding))

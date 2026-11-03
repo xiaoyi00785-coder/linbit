@@ -111,6 +111,10 @@ func (s *Server) Routes() http.Handler {
 	a("GET /admin/v1/copy/applications", permCopyView, s.handleCopyApplications)
 	a("POST /admin/v1/copy/applications/{uid}/approve", permCopyReview, s.handleCopyReview("approve"))
 	a("POST /admin/v1/copy/applications/{uid}/reject", permCopyReview, s.handleCopyReview("reject"))
+	a("GET /admin/v1/partners", permPartnerView, s.handlePartnerApplications)
+	a("POST /admin/v1/partners/{uid}/approve", permPartnerReview, s.handlePartnerReview("approve"))
+	a("POST /admin/v1/partners/{uid}/reject", permPartnerReview, s.handlePartnerReview("reject"))
+	a("POST /admin/v1/partners/{uid}/disable", permPartnerReview, s.handlePartnerReview("disable"))
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
 

@@ -17,6 +17,7 @@ MODULES=(
   services/go/kyc
   services/go/futures
   services/go/strategy
+  services/go/growth
   services/go/admin
   services/go/order
   services/go/market-data

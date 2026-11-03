@@ -48,6 +48,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /internal/reward", s.internal(s.handleReward))
 	mux.HandleFunc("POST /internal/futures/transfer-out", s.internal(s.handleFuturesTransfer(true)))
 	mux.HandleFunc("POST /internal/futures/transfer-in", s.internal(s.handleFuturesTransfer(false)))
+	mux.HandleFunc("POST /internal/system-transfer", s.internal(s.handleSystemTransfer))
+	mux.HandleFunc("GET /internal/ops/feed", s.internal(s.handleOpsFeed))
 	return mux
 }
 

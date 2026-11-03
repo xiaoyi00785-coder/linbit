@@ -53,6 +53,7 @@ var (
 	walletPort   = envOr("DEVSTACK_WALLET_PORT", "8086")
 	kycPort      = envOr("DEVSTACK_KYC_PORT", "8087")
 	strategyPort = envOr("DEVSTACK_STRATEGY_PORT", "8090")
+	growthPort   = envOr("DEVSTACK_GROWTH_PORT", "8091")
 	adminPort    = envOr("DEVSTACK_ADMIN_PORT", "8088")
 	futuresPort  = envOr("DEVSTACK_FUTURES_PORT", "8089")
 )
@@ -133,7 +134,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -269,6 +270,7 @@ func run(root, execCmd string) int {
 			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
 			"MARKET_URL=http://localhost:" + marketPort,
 			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+			"GROWTH_INTERNAL_URL=http://localhost:" + growthPort,
 			"ADMIN_BOOTSTRAP_USERNAME=" + adminUser,
 			"ADMIN_BOOTSTRAP_PASSWORD=" + adminPass,
 			"ADMIN_BOOTSTRAP_TOTP_SECRET=" + adminTOTP,
@@ -297,6 +299,18 @@ func run(root, execCmd string) int {
 			"GRID_SQUARE_MIN_RUN_SECONDS=0",
 			"DEV_MODE=true",
 		},
+		"growth": {
+			"PORT=" + growthPort,
+			"DATABASE_URL=" + databaseURL,
+			"INTERNAL_TOKEN=" + internalTok,
+			"ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
+			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
+			"FUTURES_INTERNAL_URL=http://localhost:" + futuresPort,
+			"GROWTH_SYNC_MS=500",
+			// Dev mode exposes the manual sync / settle endpoints.
+			"DEV_MODE=true",
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
@@ -309,6 +323,7 @@ func run(root, execCmd string) int {
 			"ADMIN_URL=http://localhost:" + adminPort,
 			"FUTURES_URL=http://localhost:" + futuresPort,
 			"STRATEGY_URL=http://localhost:" + strategyPort,
+			"GROWTH_URL=http://localhost:" + growthPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
@@ -332,6 +347,7 @@ func run(root, execCmd string) int {
 		{"admin", "http://localhost:" + adminPort + "/healthz"},
 		{"futures", "http://localhost:" + futuresPort + "/healthz"},
 		{"strategy", "http://localhost:" + strategyPort + "/healthz"},
+		{"growth", "http://localhost:" + growthPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 

@@ -59,6 +59,7 @@ type CreateUserParams struct {
 	PasswordHash  string
 	EmailVerified bool
 	PhoneVerified bool
+	InviteCode    string
 }
 
 const userColumns = `id, uid, email, phone, country_code, password_hash, nickname, avatar_url,
@@ -80,10 +81,10 @@ func (s *Store) CreateUser(ctx context.Context, p CreateUserParams) (*User, erro
 		phone = *p.Phone
 	}
 	row := s.db.QueryRowContext(ctx,
-		`INSERT INTO users (email, phone, country_code, password_hash, email_verified, phone_verified)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO users (email, phone, country_code, password_hash, email_verified, phone_verified, invite_code)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+userColumns,
-		email, phone, p.CountryCode, p.PasswordHash, p.EmailVerified, p.PhoneVerified)
+		email, phone, p.CountryCode, p.PasswordHash, p.EmailVerified, p.PhoneVerified, normalizeInviteCode(p.InviteCode))
 	u, err := s.scanUser(row)
 	if err != nil {
 		if constraint := uniqueConstraint(err); constraint != "" {

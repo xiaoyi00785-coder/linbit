@@ -231,7 +231,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	params := CreateUserParams{PasswordHash: hash, CountryCode: id.countryCode}
+	params := CreateUserParams{PasswordHash: hash, CountryCode: id.countryCode, InviteCode: req.InviteCode}
 	if id.channel == channelEmail {
 		params.Email = &id.target
 		params.EmailVerified = true
