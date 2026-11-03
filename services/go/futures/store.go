@@ -179,6 +179,8 @@ type Position struct {
 	Iso       decimal.Decimal
 	Realized  decimal.Decimal
 	TP, SL    decimal.NullDecimal
+	TPType    string // LAST | MARK
+	SLType    string
 	UpdatedAt time.Time
 	Side      string // position side: BOTH (one-way) | LONG | SHORT (hedge)
 	// lifecycle accumulators (position history)
@@ -188,12 +190,12 @@ type Position struct {
 	MaxQty, Fees, Funding decimal.Decimal
 }
 
-const posCols = `user_id, symbol, qty, entry_price, margin_mode, leverage, iso_margin, realized_pnl, tp_price, sl_price, updated_at, position_side, opened_at, open_qty, open_quote, close_qty, close_quote, max_qty, acc_fee, acc_funding`
+const posCols = `user_id, symbol, qty, entry_price, margin_mode, leverage, iso_margin, realized_pnl, tp_price, sl_price, updated_at, position_side, opened_at, open_qty, open_quote, close_qty, close_quote, max_qty, acc_fee, acc_funding, tp_trigger_type, sl_trigger_type`
 
 func scanPos(sc interface{ Scan(...any) error }) (Position, error) {
 	var p Position
 	err := sc.Scan(&p.UserID, &p.Symbol, &p.Qty, &p.Entry, &p.Mode, &p.Leverage, &p.Iso, &p.Realized, &p.TP, &p.SL, &p.UpdatedAt,
-		&p.Side, &p.OpenedAt, &p.OpenQty, &p.OpenQuote, &p.CloseQty, &p.CloseQuote, &p.MaxQty, &p.Fees, &p.Funding)
+		&p.Side, &p.OpenedAt, &p.OpenQty, &p.OpenQuote, &p.CloseQty, &p.CloseQuote, &p.MaxQty, &p.Fees, &p.Funding, &p.TPType, &p.SLType)
 	return p, err
 }
 
@@ -215,22 +217,23 @@ func loadPosition(ctx context.Context, q queryer, uid, sym, side string, forUpda
 	}
 	p, err := scanPos(q.QueryRowContext(ctx, qs, uid, sym, side))
 	if errors.Is(err, sql.ErrNoRows) {
-		return Position{UserID: uid, Symbol: sym, Side: side}, false, nil
+		return Position{UserID: uid, Symbol: sym, Side: side, TPType: "MARK", SLType: "MARK"}, false, nil
 	}
 	return p, err == nil, err
 }
 
 func savePosition(ctx context.Context, tx queryer, p Position) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO fut_positions (user_id, symbol, qty, entry_price, margin_mode, leverage, iso_margin, realized_pnl, tp_price, sl_price, updated_at,
-		  position_side, opened_at, open_qty, open_quote, close_qty, close_quote, max_qty, acc_fee, acc_funding)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), $11,$12,$13,$14,$15,$16,$17,$18,$19)
+		  position_side, opened_at, open_qty, open_quote, close_qty, close_quote, max_qty, acc_fee, acc_funding, tp_trigger_type, sl_trigger_type)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		ON CONFLICT (user_id, symbol, position_side) DO UPDATE SET qty=EXCLUDED.qty, entry_price=EXCLUDED.entry_price,
 		  margin_mode=EXCLUDED.margin_mode, leverage=EXCLUDED.leverage, iso_margin=EXCLUDED.iso_margin,
 		  realized_pnl=EXCLUDED.realized_pnl, tp_price=EXCLUDED.tp_price, sl_price=EXCLUDED.sl_price, updated_at=now(),
 		  opened_at=EXCLUDED.opened_at, open_qty=EXCLUDED.open_qty, open_quote=EXCLUDED.open_quote, close_qty=EXCLUDED.close_qty,
-		  close_quote=EXCLUDED.close_quote, max_qty=EXCLUDED.max_qty, acc_fee=EXCLUDED.acc_fee, acc_funding=EXCLUDED.acc_funding`,
+		  close_quote=EXCLUDED.close_quote, max_qty=EXCLUDED.max_qty, acc_fee=EXCLUDED.acc_fee, acc_funding=EXCLUDED.acc_funding,
+		  tp_trigger_type=EXCLUDED.tp_trigger_type, sl_trigger_type=EXCLUDED.sl_trigger_type`,
 		p.UserID, p.Symbol, p.Qty, p.Entry, p.Mode, p.Leverage, p.Iso, p.Realized, p.TP, p.SL,
-		normSide(p.Side), p.OpenedAt, p.OpenQty, p.OpenQuote, p.CloseQty, p.CloseQuote, p.MaxQty, p.Fees, p.Funding)
+		normSide(p.Side), p.OpenedAt, p.OpenQty, p.OpenQuote, p.CloseQty, p.CloseQuote, p.MaxQty, p.Fees, p.Funding, trigOr(p.TPType), trigOr(p.SLType))
 	return err
 }
 
@@ -273,6 +276,8 @@ type Order struct {
 	Source      string              `json:"source"`
 	TP          decimal.NullDecimal `json:"tpPrice"`
 	SL          decimal.NullDecimal `json:"slPrice"`
+	TPType      string              `json:"tpTriggerPriceType"`
+	SLType      string              `json:"slTriggerPriceType"`
 	PosSide     string              `json:"positionSide"`
 	AmendCount  int                 `json:"amendCount"`
 	AlgoID      sql.NullInt64       `json:"-"`
@@ -283,11 +288,11 @@ type Order struct {
 	UpdatedAt   time.Time           `json:"updatedAt"`
 }
 
-const orderCols = `id, user_id, symbol, side, type, tif, price, qty, filled, filled_quote, reserved, fee, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price, cancel_reason, created_at, updated_at, position_side, amend_count, algo_id`
+const orderCols = `id, user_id, symbol, side, type, tif, price, qty, filled, filled_quote, reserved, fee, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price, cancel_reason, created_at, updated_at, position_side, amend_count, algo_id, tp_trigger_type, sl_trigger_type`
 
 func scanOrder(sc interface{ Scan(...any) error }) (Order, error) {
 	var o Order
-	err := sc.Scan(&o.ID, &o.UserID, &o.Symbol, &o.Side, &o.Type, &o.TIF, &o.Price, &o.Qty, &o.Filled, &o.FilledQuote, &o.Reserved, &o.Fee, &o.Status, &o.ReduceOnly, &o.Leverage, &o.Mode, &o.Source, &o.TP, &o.SL, &o.Reason, &o.CreatedAt, &o.UpdatedAt, &o.PosSide, &o.AmendCount, &o.AlgoID)
+	err := sc.Scan(&o.ID, &o.UserID, &o.Symbol, &o.Side, &o.Type, &o.TIF, &o.Price, &o.Qty, &o.Filled, &o.FilledQuote, &o.Reserved, &o.Fee, &o.Status, &o.ReduceOnly, &o.Leverage, &o.Mode, &o.Source, &o.TP, &o.SL, &o.Reason, &o.CreatedAt, &o.UpdatedAt, &o.PosSide, &o.AmendCount, &o.AlgoID, &o.TPType, &o.SLType)
 	if err == nil {
 		o.CancelWhy = o.Reason.String
 		o.AvgPrice = "0"
@@ -350,4 +355,12 @@ func cancelUserOrders(ctx context.Context, tx queryer, uid, symbol, why string) 
 		}
 	}
 	return nil
+}
+
+// trigOr defaults an empty trigger price type to MARK (pre-existing behaviour).
+func trigOr(t string) string {
+	if t == "LAST" {
+		return "LAST"
+	}
+	return "MARK"
 }

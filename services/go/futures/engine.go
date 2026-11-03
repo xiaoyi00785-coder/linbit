@@ -112,6 +112,8 @@ type PosView struct {
 	Liq         string  `json:"liquidationPrice"`
 	TP          *string `json:"tpPrice"`
 	SL          *string `json:"slPrice"`
+	TPType      string  `json:"tpTriggerPriceType"`
+	SLType      string  `json:"slTriggerPriceType"`
 	ADLRank     int     `json:"adlRank"`
 	pos         Position
 	mark, upnl  decimal.Decimal
@@ -204,6 +206,7 @@ func (s *Server) state(ctx context.Context, q queryer, uid string) (AcctState, e
 		t := c.tierFor(p.Qty.Abs().Mul(v.mark))
 		v.Liq = liqPrice(p.Qty, p.Entry, M.Add(t.MaintAmount), t.MMR).Round(8).String()
 		v.TP, v.SL = nullStr(p.TP), nullStr(p.SL)
+		v.TPType, v.SLType = trigOr(p.TPType), trigOr(p.SLType)
 	}
 	if st.Positions == nil {
 		st.Positions = []PosView{}
@@ -227,7 +230,7 @@ type Trade struct {
 // isolated-margin movement, and fee = |d|*px*feeRate (by position value, on open
 // and on close alike) moved to the fee account. A position that goes flat (or
 // flips in one-way mode) is written to fut_position_history.
-func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid, posSide string, d, px, feeRate decimal.Decimal, lev int, mode string, tp, sl decimal.NullDecimal) (fee, pnl, bonus decimal.Decimal, err error) {
+func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid, posSide string, d, px, feeRate decimal.Decimal, lev int, mode string, tp, sl decimal.NullDecimal, tpT, slT string) (fee, pnl, bonus decimal.Decimal, err error) {
 	if _, _, err = lockAccount(ctx, tx, uid); err != nil {
 		return
 	}
@@ -299,10 +302,10 @@ func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid, posSide 
 		p.OpenedAt = sql.NullTime{}
 	} else if (tp.Valid || sl.Valid) && closed.LessThan(d.Abs()) {
 		if tp.Valid {
-			p.TP = tp
+			p.TP, p.TPType = tp, trigOr(tpT)
 		}
 		if sl.Valid {
-			p.SL = sl
+			p.SL, p.SLType = sl, trigOr(slT)
 		}
 	}
 	if oldQ.Sign() != 0 && nq.Sign() != 0 && oldQ.Sign() != nq.Sign() {
@@ -350,6 +353,9 @@ type PlaceReq struct {
 	ReduceOnly bool   `json:"reduceOnly"`
 	TP         string `json:"tpPrice"`
 	SL         string `json:"slPrice"`
+	// TPType / SLType: trigger price type for the attached TP / SL (LAST | MARK, default MARK).
+	TPType string `json:"tpTriggerPriceType"`
+	SLType string `json:"slTriggerPriceType"`
 	// PositionSide: BOTH (default, one-way mode) or LONG/SHORT (hedge mode).
 	PositionSide string `json:"positionSide"`
 	// TriggerPrice turns the request into a plan (conditional) order; see algo.go.
@@ -447,6 +453,14 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 	if err != nil {
 		return Order{}, nil, err
 	}
+	tpT, err := normTrigger(r.TPType, "MARK")
+	if err != nil {
+		return Order{}, nil, bad("VALIDATION_ERROR", "tpTriggerPriceType 只能是 LAST 或 MARK")
+	}
+	slT, err := normTrigger(r.SLType, "MARK")
+	if err != nil {
+		return Order{}, nil, bad("VALIDATION_ERROR", "slTriggerPriceType 只能是 LAST 或 MARK")
+	}
 	mark, ok := s.mark(c.Symbol)
 	if !ok {
 		return Order{}, nil, errMarkUnavail
@@ -525,9 +539,9 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 		if r.algoID > 0 {
 			algo = r.algoID
 		}
-		row := tx.QueryRowContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, tif, price, qty, reserved, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price, position_side, algo_id)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'new',$9,$10,$11,$12,$13,$14,$15,$16) RETURNING `+orderCols,
-			uid, c.Symbol, r.Side, r.Type, r.TIF, price, qty, reserve, r.ReduceOnly, lev, mode, r.source, tp, sl, posSide, algo)
+		row := tx.QueryRowContext(ctx, `INSERT INTO fut_orders (user_id, symbol, side, type, tif, price, qty, reserved, status, reduce_only, leverage, margin_mode, source, tp_price, sl_price, position_side, algo_id, tp_trigger_type, sl_trigger_type)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'new',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING `+orderCols,
+			uid, c.Symbol, r.Side, r.Type, r.TIF, price, qty, reserve, r.ReduceOnly, lev, mode, r.source, tp, sl, posSide, algo, tpT, slT)
 		if o, err = scanOrder(row); err != nil {
 			return err
 		}
@@ -647,11 +661,11 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 		}
 		mRate, _, _ := s.userFees(maker.UserID, c)
 		_, tRate, _ := s.userFees(taker.UserID, c)
-		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, maker.PosSide, signed(maker.Side, qty), px, mRate, maker.Leverage, maker.Mode, maker.TP, maker.SL)
+		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, maker.PosSide, signed(maker.Side, qty), px, mRate, maker.Leverage, maker.Mode, maker.TP, maker.SL, maker.TPType, maker.SLType)
 		if err != nil {
 			return nil, err
 		}
-		tfee, _, tbonus, err := s.fill(ctx, tx, c, taker.UserID, taker.PosSide, signed(taker.Side, qty), px, tRate, taker.Leverage, taker.Mode, taker.TP, taker.SL)
+		tfee, _, tbonus, err := s.fill(ctx, tx, c, taker.UserID, taker.PosSide, signed(taker.Side, qty), px, tRate, taker.Leverage, taker.Mode, taker.TP, taker.SL, taker.TPType, taker.SLType)
 		if err != nil {
 			return nil, err
 		}
@@ -847,10 +861,20 @@ func (s *Server) AdjustMargin(ctx context.Context, uid, sym, posSide string, del
 }
 
 // SetTPSL sets/clears the position-level take-profit / stop-loss (mark-triggered).
-func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl decimal.NullDecimal, clearTP, clearSL bool) error {
+func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl decimal.NullDecimal, clearTP, clearSL bool, tpT, slT string) error {
 	c, err := s.contract(sym)
 	if err != nil {
 		return err
+	}
+	if tpT != "" {
+		if tpT, err = normTrigger(tpT, "MARK"); err != nil {
+			return err
+		}
+	}
+	if slT != "" {
+		if slT, err = normTrigger(slT, "MARK"); err != nil {
+			return err
+		}
 	}
 	if posSide, err = s.pickSide(ctx, uid, c.Symbol, posSide); err != nil {
 		return err
@@ -868,19 +892,35 @@ func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl d
 			return errMarkUnavail
 		}
 		long := p.Qty.Sign() > 0
+		refFor := func(cur, want string) decimal.Decimal {
+			t := cur
+			if want != "" {
+				t = want
+			}
+			if r, ok := s.triggerRef(c.Symbol, trigOr(t)); ok {
+				return r
+			}
+			return m
+		}
 		if tp.Valid {
-			if long != tp.Decimal.GreaterThan(m) {
+			if long != tp.Decimal.GreaterThan(refFor(p.TPType, tpT)) {
 				return bad("INVALID_TPSL", "止盈价方向不正确（多仓需高于标记价，空仓需低于标记价）")
 			}
 			p.TP = tp
+			if tpT != "" {
+				p.TPType = tpT
+			}
 		} else if clearTP {
 			p.TP = decimal.NullDecimal{}
 		}
 		if sl.Valid {
-			if long != sl.Decimal.LessThan(m) {
+			if long != sl.Decimal.LessThan(refFor(p.SLType, slT)) {
 				return bad("INVALID_TPSL", "止损价方向不正确（多仓需低于标记价，空仓需高于标记价）")
 			}
 			p.SL = sl
+			if slT != "" {
+				p.SLType = slT
+			}
 		} else if clearSL {
 			p.SL = decimal.NullDecimal{}
 		}
