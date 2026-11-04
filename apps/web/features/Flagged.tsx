@@ -13,6 +13,7 @@ import { toast } from "@/lib/ui";
 import { CoinIcon } from "@/components/CoinIcon";
 import { Footer } from "@/legacy/App";
 import type { components, paths } from "@linbit/api-client";
+import { trimFixed } from "@/lib/format";
 
 /* ---------- 接口类型：全部来自 openapi 生成的 schema.ts ---------- */
 type S = components["schemas"];
@@ -130,7 +131,7 @@ export function Events() {
           <div className="ff-inp"><input inputMode="decimal" placeholder={`最少 ${p.minStake}`} value={stake} onChange={(e) => setStake(e.target.value.replace(/[^\d.]/g, ""))} /><span>{p.stakeAsset}</span></div>
           <div className="ff-chips sm">{["10", "50", "100", "500"].map((v) => <button key={v} onClick={() => setStake(v)}>{v}</button>)}</div>
           <div className="ff-row"><span>赔率</span><b>{(ratio * 100).toFixed(0)}%</b></div>
-          <div className="ff-row"><span>预计盈利</span><b>{stake ? num(String(+stake * ratio)) : "--"} {p.stakeAsset}</b></div>
+          <div className="ff-row"><span>预计盈利</span><b>{stake ? num(trimFixed(+stake * ratio, 8)) : "--"} {p.stakeAsset}</b></div>
           {!p.enabled && <div className="ff-note">事件合约暂未开放下单</div>}
           <div className="ff-ud"><button className="up" disabled={busy || !p.enabled || !prod || prod.paused || !prod.priceAvailable} onClick={() => place("up")}>看涨</button><button className="dn" disabled={busy || !p.enabled || !prod || prod.paused || !prod.priceAvailable} onClick={() => place("down")}>看跌</button></div>
         </div>

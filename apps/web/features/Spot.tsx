@@ -9,7 +9,7 @@ import {
   type Order, type SpotTrade,
 } from "@/lib/services";
 import { SPOT_FEE } from "@/lib/fees";
-import { fmtSig } from "@/lib/format";
+import { fmtSig, fmtAmt, fmtFeeStr } from "@/lib/format";
 import { useFeeSchedule } from "@/lib/live";
 import type { PlaceOrderRequest } from "@/lib/services";
 import { Src } from "./common";
@@ -75,7 +75,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
     if (byAmt) {
       if (!amt.trim()) return setMsg({ ok: false, t: "请输入买入金额" });
       if (!(an > 0)) return setMsg({ ok: false, t: "金额必须大于 0" });
-      if (authed && an > avail) return setMsg({ ok: false, t: `可用 USDT 不足（可用 ${avail}）` });
+      if (authed && an > avail) return setMsg({ ok: false, t: `可用 USDT 不足（可用 ${fmtAmt(avail)}）` });
     } else {
       if (!qty.trim()) return setMsg({ ok: false, t: "请输入数量" });
       if (!(q > 0) || !isFinite(q)) return setMsg({ ok: false, t: "数量必须大于 0" });
@@ -108,7 +108,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       {byAmt ? <div className="inp"><small>金额(USDT)</small><input inputMode="decimal" aria-label="买入金额" placeholder="按金额买入" value={amt} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "金额不能为负数" }); return; } setMsg(undefined); setAmt(fix(num(v), 2)); setPc(0); }} aria-invalid={amt !== "" && !(an > 0)} /><em>USDT</em></div> :
       <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "数量不能为负数" }); return; } setMsg(undefined); setQty(fix(num(v), pair.qp)); }} aria-invalid={qty !== "" && !(q > 0)} /><em>{B}</em></div>}
       <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} {...btnProps(() => setByPct(p), `${p}%`)} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
-      <div className="kv2 g"><span>可用</span><span>{authed ? `${avail} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
+      <div className="kv2 g"><span>可用</span><span>{authed ? `${fmtAmt(avail)} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
       {byAmt ? <div className="kv2 g"><span>预估数量</span><span>{q ? `${q.toFixed(pair.qp)} ${B}` : "--"}</span></div> : <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>}
       <div className="kv2 g"><span>预估手续费（{+(rate * 100).toFixed(4)}%）</span><span>{fee}</span></div>
       {msg && <div className={msg.ok ? "fx-ok" : "fx-err"} style={{ fontSize: 12, margin: "6px 0" }}>{msg.t}</div>}
@@ -161,7 +161,7 @@ export function SpotOrders({ symbol: SYMBOL }: { symbol: string }) {
           <tbody>
             {tab === 2
               ? (rows as SpotTrade[]).map((r) => (
-                <tr key={r.tradeId}><td>{t(r.createdAt)}</td><td>{r.symbol}</td><td className={r.side === "buy" ? "up" : "down"}>{r.side === "buy" ? "买入" : "卖出"}</td><td>{r.price}</td><td>{r.quantity}</td><td>{r.fee ?? "-"} {r.feeAsset ?? ""}</td><td>{r.role === "maker" ? "Maker" : "Taker"}</td></tr>
+                <tr key={r.tradeId}><td>{t(r.createdAt)}</td><td>{r.symbol}</td><td className={r.side === "buy" ? "up" : "down"}>{r.side === "buy" ? "买入" : "卖出"}</td><td>{r.price}</td><td>{r.quantity}</td><td>{fmtFeeStr(r.fee)} {r.feeAsset ?? ""}</td><td>{r.role === "maker" ? "Maker" : "Taker"}</td></tr>
               ))
               : (rows as Order[]).map((o) => (
                 <tr key={o.orderId}><td>{t(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : "市价"}</td><td className={o.side === "buy" ? "up" : "down"}>{o.side === "buy" ? "买入" : "卖出"}</td><td>{o.price ?? "市价"}</td><td>{o.quantity}</td><td>{o.filledQuantity}</td><td>{ST[o.status] ?? o.status}</td><td>{tab === 0 && <a className="lime2" style={{ cursor: "pointer" }} onClick={() => cancel(o)}>撤单</a>}</td></tr>

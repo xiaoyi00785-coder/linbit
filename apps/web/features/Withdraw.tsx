@@ -15,6 +15,7 @@ import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, new
 import { Ico } from "@/legacy/App";
 // @ts-ignore
 import { coins } from "@/legacy/data";
+import { fmtAmt, trimFixed } from "@/lib/format";
 
 const coinOf = (s: string) => (coins as { s: string; col: string }[]).find((x) => x.s === s) ?? { col: "var(--lb-usdt)", s };
 
@@ -145,13 +146,13 @@ export function Withdraw() {
   const addrE = tab === "chain" ? addressError(net, addr) : "";
   const fmtE = amountError(amt, { dp: 8 });
   const amtE = fmtE || (!amt ? "" :
-    n > freeN ? `可用余额不足（可用 ${free} ${asset}）` :
+    n > freeN ? `可用余额不足（可用 ${fmtAmt(free)} ${asset}）` :
     tab === "chain" && n < min ? `最小提现数量 ${min} ${asset}` :
     tab === "chain" && n > max ? `单笔最大提现 ${maxS} ${asset}` :
     tab === "chain" && n <= fee ? `提现数量需大于链上网络费（Gas）${fee} ${asset}` : "");
   const amtOk = !!amt && !amtE;
   // 到账数量：数量无效或不足以覆盖手续费时显示 --，绝不显示负数或误导性的 0
-  const receive = amtOk && n > fee ? String(+(n - fee).toFixed(8)) : "--";
+  const receive = amtOk && n > fee ? trimFixed(n - fee, 8) : "--";
 
   const check = () => {
     if (!addr) return "请输入提现地址";
@@ -225,7 +226,7 @@ export function Withdraw() {
                 {amtE && <div className="fx-err fe-inline">{amtE}</div>}
               </div>
               <div className="wkv">
-                <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{free} {asset}</b>
+                <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{fmtAmt(free)} {asset}</b>
                 {tab === "inner" ? <><span>24 小时额度</span><b>50,000 USDT</b></> : <>
                 <span>单笔最小提现</span><b>{min || "--"} {asset}</b>
                 <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
