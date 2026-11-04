@@ -98,7 +98,8 @@ struct LoanBorrowView: View {
         let minAmt = m["minAmount"].d
         let amtErr: String? = amount.isEmpty ? nil : (Dec.parse(amount) < minAmt ? "最低借款 \(jAmt(m["minAmount"], 0)) \(asset)"
             : (Dec.parse(amount) > m["userLimit"].d && m["userLimit"].d > 0 ? "超过个人借款上限 \(jAmt(m["userLimit"], 0)) \(asset)" : nil))
-        let ok = !amount.isEmpty && amtErr == nil && !termOff && !quote.isNull && !quoting
+        // 没有报价（或报价里没有所需质押数量）时不能提交，不能用 0 兜底
+        let ok = !amount.isEmpty && amtErr == nil && !termOff && !quote.isNull && quote["collateral"].d > 0 && !quoting
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if let error { InlineBanner(text: error) }
@@ -153,9 +154,10 @@ struct LoanBorrowView: View {
     private func borrow(_ c: String, _ t: String) async {
         error = nil
         if LoanDemo.state != nil { return }
+        guard let collateral = quote["collateral"].s, Dec.parse(collateral) > 0 else { return }
         loading = true; defer { loading = false }
         do {
-            _ = try await LoanAPI.borrow(.init(collateralAsset: c, amount: amount, collateralAmount: quote["collateral"].s ?? "0", term: t))
+            _ = try await LoanAPI.borrow(.init(collateralAsset: c, amount: amount, collateralAmount: collateral, term: t))
             Haptics.success(); ToastCenter.shared.show("借币成功", .success); amount = ""; onDone()
         } catch { self.error = securityMessage(error); Haptics.error() }
     }
@@ -232,8 +234,14 @@ struct LoanListView: View {
                 HStack(spacing: 8) {
                     LBButton(title: "还款", height: 34) { action = (l, 0); showAction = true }
                     LBButton(title: "追加质押", kind: .secondary, height: 34) { action = (l, 1); showAction = true }
-                    LBButton(title: "续期", kind: .outline, height: 34) {
-                        confirm = .init(title: "续期", message: "按当前利率续借一个相同期限，未结利息将计入新本金。", confirmTitle: "确认续期") { Task { await renew(l) } }
+                    // 活期借款无需续借（后端返回 TERM_NOT_RENEWABLE），不显示续期按钮
+                    if !isFlexible(l) {
+                        LBButton(title: "续期", kind: .outline, height: 34) {
+                            let asset = l["asset"].s ?? "USDT"
+                            confirm = .init(title: "续期",
+                                            message: "续期将先从资金账户扣除当前未结利息 \(jAmt(l["interest"])) \(asset)，再将到期日顺延一个相同期限（已逾期则从现在起算），本金不变。请确保资金账户余额充足。",
+                                            confirmTitle: "确认续期") { Task { await renew(l) } }
+                        }
                     }
                 }
             } else {
@@ -243,6 +251,9 @@ struct LoanListView: View {
             }
         }.lbCard()
     }
+
+    /// 活期借款：期限为 flex，或没有到期时间
+    private func isFlexible(_ l: J) -> Bool { l["term"].s == "flex" || l["dueAt"].isNull }
 
     private func renew(_ l: J) async {
         banner = nil
