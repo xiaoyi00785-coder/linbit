@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// 截图演示状态：SecShot.raw = "<prefix>:<state>"
 enum DemoShot {
