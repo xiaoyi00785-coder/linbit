@@ -17,6 +17,7 @@ type priceState struct {
 	IndexAt  time.Time
 	Mark     decimal.Decimal
 	Last     decimal.Decimal
+	LastAt   time.Time       // when Last was traded here (zero: loaded at startup)
 	LastRate decimal.Decimal // last settled funding rate (mark basis)
 	PremSum  decimal.Decimal
 	PremN    int64
@@ -47,12 +48,18 @@ func (s *Server) mark(sym string) (decimal.Decimal, bool) {
 	return ps.Mark, true
 }
 
-func (s *Server) setLast(sym string, px decimal.Decimal) {
+// setLast records a batch of fills: last price/time and the live kline bars.
+func (s *Server) setLast(sym string, trades []Trade) {
+	if len(trades) == 0 {
+		return
+	}
+	now := s.now()
 	s.pmu.Lock()
 	if ps := s.prices[sym]; ps != nil {
-		ps.Last = px
+		ps.Last, ps.LastAt = trades[len(trades)-1].Price, now
 	}
 	s.pmu.Unlock()
+	s.live.addTrades(sym, trades, now)
 }
 
 func (s *Server) snapshot(sym string) priceState {

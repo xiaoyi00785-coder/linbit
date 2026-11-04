@@ -48,6 +48,13 @@ type Hub struct {
 // markChannelRe matches the futures mark-price channel pushed by the futures service.
 var markChannelRe = regexp.MustCompile(`^mark:[A-Z0-9]{2,30}$`)
 
+// relayChannelRe matches every public channel the futures service may push:
+// mark:{SYMBOL}, futures-ticker:{SYMBOL}, futures-kline:{SYMBOL}:{interval}.
+var relayChannelRe = regexp.MustCompile(`^(mark|futures-ticker):[A-Z0-9]{2,30}$|^futures-kline:[A-Z0-9]{2,30}:(1m|5m|15m|30m|1h|4h|1d|1w)$`)
+
+// indexChannelRe matches the "index:{SYMBOL}" alias of mark:{SYMBOL} (same payload).
+var indexChannelRe = regexp.MustCompile(`^index:[A-Z0-9]{2,30}$`)
+
 // Relay broadcasts a frame produced by another service and remembers it as the
 // channel snapshot for new subscribers.
 func (h *Hub) Relay(channel string, data json.RawMessage) {
@@ -56,8 +63,16 @@ func (h *Hub) Relay(channel string, data json.RawMessage) {
 		h.last = map[string]json.RawMessage{}
 	}
 	h.last[channel] = data
+	alias := ""
+	if strings.HasPrefix(channel, "mark:") {
+		alias = "index:" + channel[len("mark:"):]
+		h.last[alias] = data
+	}
 	h.lmu.Unlock()
 	h.Broadcast(channel, data)
+	if alias != "" {
+		h.Broadcast(alias, data)
+	}
 }
 
 // NewHub builds a hub over the given snapshot source.
@@ -349,6 +364,14 @@ func (c *wsClient) validateChannel(channel string) (code, msg string) {
 		if !markChannelRe.MatchString(channel) {
 			return "SUB_INVALID", "无效的标记价格频道: " + channel
 		}
+	case "index":
+		if !indexChannelRe.MatchString(channel) {
+			return "SUB_INVALID", "无效的指数价格频道: " + channel
+		}
+	case "futures-ticker", "futures-kline":
+		if !relayChannelRe.MatchString(channel) {
+			return "SUB_INVALID", "无效的合约行情频道: " + channel
+		}
 	case "chat":
 		if len(parts) != 2 || c.hub.chatValidate == nil {
 			return "SUB_INVALID", "无效的聊天室频道: " + channel
@@ -385,7 +408,7 @@ func (c *wsClient) sendInitial(channel string) {
 		if d, ok := c.hub.snap.KlineFrame(parts[1], parts[2]); ok {
 			c.sendData(channel, d)
 		}
-	case "mark":
+	case "mark", "index", "futures-ticker", "futures-kline":
 		c.hub.lmu.RLock()
 		d, ok := c.hub.last[channel]
 		c.hub.lmu.RUnlock()

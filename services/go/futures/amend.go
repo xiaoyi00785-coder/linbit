@@ -150,7 +150,7 @@ func (s *Server) amendLocked(ctx context.Context, uid string, id int64, r AmendR
 		return Order{}, nil, err
 	}
 	if len(trades) > 0 {
-		s.setLast(c.Symbol, trades[len(trades)-1].Price)
+		s.setLast(c.Symbol, trades)
 	}
 	return o, trades, nil
 }

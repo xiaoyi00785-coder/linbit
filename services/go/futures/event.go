@@ -641,13 +641,16 @@ func (s *Server) pushWS(ctx context.Context, uid, channel string, data any) {
 }
 
 // pushMarks relays the current mark/index/funding of every contract to the
-// public WS channel "mark:{SYMBOL}" (market-data /internal/ws/broadcast). Async,
-// best effort, at most one in flight.
+// public WS channel "mark:{SYMBOL}" (market-data /internal/ws/broadcast; it
+// re-emits each as "index:{SYMBOL}"), plus "futures-ticker:{SYMBOL}" and
+// "futures-kline:{SYMBOL}:{interval}" (livefeed.go). Async, best effort, at
+// most one in flight; the ticker's DB reads run off the tick loop.
 func (s *Server) pushMarks(ctx context.Context) {
 	if s.cfg.MarketURL == "" || s.cfg.InternalToken == "" || !s.markPushing.CompareAndSwap(false, true) {
 		return
 	}
-	nf := s.nextFunding(s.now()).UnixMilli()
+	now := s.now()
+	nf := s.nextFunding(now).UnixMilli()
 	frames := make([]map[string]any, 0, len(s.symbols))
 	for _, sym := range s.symbols {
 		ps := s.snapshot(sym)
@@ -657,11 +660,14 @@ func (s *Server) pushMarks(ctx context.Context) {
 		frames = append(frames, map[string]any{"channel": "mark:" + sym, "data": map[string]any{
 			"symbol": sym, "markPrice": ps.Mark, "indexPrice": ps.Index,
 			"fundingRate": s.predictedRate(ps), "nextFundingTime": nf}})
+		s.live.addIndex(sym, ps.Index, now)
 	}
-	body, _ := json.Marshal(map[string]any{"frames": frames})
 	go func() {
 		defer s.markPushing.Store(false)
-		req, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodPost, strings.TrimRight(s.cfg.MarketURL, "/")+"/internal/ws/broadcast", bytes.NewReader(body))
+		bctx := context.WithoutCancel(ctx)
+		frames = append(frames, s.liveFrames(bctx)...)
+		body, _ := json.Marshal(map[string]any{"frames": frames})
+		req, err := http.NewRequestWithContext(bctx, http.MethodPost, strings.TrimRight(s.cfg.MarketURL, "/")+"/internal/ws/broadcast", bytes.NewReader(body))
 		if err != nil {
 			return
 		}

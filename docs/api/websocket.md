@@ -153,6 +153,32 @@ WebSocket 经 gateway 的 `/ws` 路由转发到 market-data 服务，与 REST �
 {"channel":"mark:BTCUSDT","ts":1767225600000,"data":{"symbol":"BTCUSDT","markPrice":"67000.1","indexPrice":"67001.5","fundingRate":"0.0001","nextFundingTime":1767254400000}}
 ```
 
+### `index:<symbol>` — 合约指数价格（`mark:<symbol>` 别名）
+
+与 `mark:<symbol>` 同一帧数据（含 `indexPrice`），仅频道名不同；同频率推送、订阅时回放最近一帧。
+
+```json
+{"channel":"index:BTCUSDT","ts":1767225600000,"data":{"symbol":"BTCUSDT","markPrice":"67000.1","indexPrice":"67001.5","fundingRate":"0.0001","nextFundingTime":1767254400000}}
+```
+
+### `futures-ticker:<symbol>` — 合约 24h 行情
+
+每个风控 tick（约 1s）推送，订阅时回放最近一帧。`data` 与 `GET /futures/market/ticker?symbol=` 返回对象完全一致（含 `lastPrice`/`priceSource`/`markPrice`/`indexPrice`/`fundingRate`/`nextFundingTime`/24h 统计/`openInterest` 及现货兼容别名 `high`/`low`/`volume`/`quoteVolume`/`priceChangePercent`）。24h 统计与持仓量最多缓存 5s，价格字段每帧实时。
+
+`lastPrice` 取值顺序：最近 5s 内的成交价（`priceSource: "trade"`，`FUTURES_LAST_TRADE_FRESH_SECONDS`）→ 盘口中间价（`mid`）→ 指数价（`index`）→ 标记价（`mark`）。REST 同此规则。
+
+```json
+{"channel":"futures-ticker:BTCUSDT","ts":1767225600000,"data":{"symbol":"BTCUSDT","lastPrice":"67001.5","priceSource":"index","markPrice":"67000.1","indexPrice":"67001.5","fundingRate":"0.0001","lastFundingRate":"0.0001","nextFundingTime":1767254400000,"openPrice24h":"66000","highPrice24h":"67500","lowPrice24h":"65800","volume24h":"12.5","turnover24h":"832000.12","priceChangePercent24h":"0.015174","openInterest":"3.2","priceAvailable":true,"high":"67500","low":"65800","quoteVolume":"832000.12","volume":"12.5","priceChangePercent":"1.52"}}
+```
+
+### `futures-kline:<symbol>:<interval>` — 合约 K 线（当前未收盘根）
+
+`interval`：`1m` `5m` `15m` `30m` `1h` `4h` `1d` `1w`（小写）。每个风控 tick 推送当前根，订阅时回放最近一帧。规则同 `GET /futures/market/klines`：该周期内有合约成交则为成交 K 线（含 `volume`/`turnover`），否则为指数 K 线（`source: "index"`，量为 0）。`time`/`openTime` 为开盘时间（毫秒）；`closed` 恒为 `false`，出现新的 `time` 即表示上一根已收盘。合约服务重启后的第一根只覆盖重启后的价格，客户端应与 REST 当前根合并 high/low。
+
+```json
+{"channel":"futures-kline:BTCUSDT:1m","ts":1767225600000,"data":{"symbol":"BTCUSDT","interval":"1m","time":1767225600000,"openTime":1767225600000,"open":"67000","high":"67010.5","low":"66990","close":"67001.5","volume":"0","turnover":"0","closed":false,"source":"index"}}
+```
+
 ## 用户频道（需鉴权）
 
 ### `orders` — 订单更新

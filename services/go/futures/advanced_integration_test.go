@@ -165,11 +165,11 @@ func TestAdvancedHedgeHistoryAlgo(t *testing.T) {
 	// price moves up: liquidity for both triggers
 	place(t, s, ctx, "u:c", PlaceReq{Side: "buy", Type: "limit", Price: "101000", Qty: "0.01"})
 	s.setMark("BTCUSDT", "101600")
-	s.setLast("BTCUSDT", decimal.RequireFromString("101600"))
+	s.setLast("BTCUSDT", []Trade{{Price: decimal.RequireFromString("101600")}})
 	s.mu.Lock()
 	s.triggerAlgos(ctx) // TP (MARK) fires; its fill moves LAST to 101000
 	s.mu.Unlock()
-	s.setLast("BTCUSDT", decimal.RequireFromString("101600"))
+	s.setLast("BTCUSDT", []Trade{{Price: decimal.RequireFromString("101600")}})
 	s.mu.Lock()
 	s.triggerAlgos(ctx) // plan (LAST) fires
 	s.mu.Unlock()

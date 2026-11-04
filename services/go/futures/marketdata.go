@@ -28,30 +28,48 @@ func (s *Server) hContracts(w http.ResponseWriter, r *http.Request) {
 		"leverage": s.cfg.DefaultLeverage, "marginMode": s.cfg.DefaultMarginMode, "positionMode": "one_way"}})
 }
 
-func (s *Server) ticker(r *http.Request, sym string) map[string]any {
-	ps := s.snapshot(sym)
-	var open, high, low, vol, turn decimal.NullDecimal
-	_ = s.db.QueryRowContext(r.Context(), `SELECT (array_agg(price ORDER BY id))[1], max(price), min(price), sum(qty), sum(qty*price)
-		FROM fut_trades WHERE symbol=$1 AND created_at > now() - interval '24 hours'`, sym).Scan(&open, &high, &low, &vol, &turn)
-	var oi decimal.Decimal
-	_ = s.db.QueryRowContext(r.Context(), `SELECT COALESCE(sum(qty),0) FROM fut_positions WHERE symbol=$1 AND qty > 0`, sym).Scan(&oi)
-	last, src := s.displayPrice(r, sym, ps)
+// tickerStats is the DB-derived part of a ticker (24h window + open interest).
+// idxDerived marks open/high/low taken from the index history (no local
+// trades in 24h), which the live price may extend.
+type tickerStats struct {
+	open, high, low, vol, turn decimal.NullDecimal
+	oi                         decimal.Decimal
+	idxDerived                 bool
+}
+
+func (s *Server) loadTickerStats(ctx context.Context, sym string) tickerStats {
+	var st tickerStats
+	_ = s.db.QueryRowContext(ctx, `SELECT (array_agg(price ORDER BY id))[1], max(price), min(price), sum(qty), sum(qty*price)
+		FROM fut_trades WHERE symbol=$1 AND created_at > now() - interval '24 hours'`, sym).Scan(&st.open, &st.high, &st.low, &st.vol, &st.turn)
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(sum(qty),0) FROM fut_positions WHERE symbol=$1 AND qty > 0`, sym).Scan(&st.oi)
 	// No local trades in 24h: derive open/high/low from the index-price
 	// history (fut_mark_history) so the day change matches the spot ticker and
 	// the market cards instead of a flat 0%. Volume stays 0 (never fabricated).
-	if !open.Valid {
+	if !st.open.Valid {
 		var io, ih, il decimal.NullDecimal
-		if s.db.QueryRowContext(r.Context(), `SELECT (array_agg(index_price ORDER BY ts))[1], max(index_price), min(index_price)
+		if s.db.QueryRowContext(ctx, `SELECT (array_agg(index_price ORDER BY ts))[1], max(index_price), min(index_price)
 			FROM fut_mark_history WHERE symbol=$1 AND ts > now() - interval '24 hours' AND index_price > 0`, sym).Scan(&io, &ih, &il) == nil && io.Valid {
-			open, high, low = io, ih, il
-			if last.Sign() > 0 {
-				if last.GreaterThan(high.Decimal) {
-					high.Decimal = last
-				}
-				if last.LessThan(low.Decimal) {
-					low.Decimal = last
-				}
-			}
+			st.open, st.high, st.low, st.idxDerived = io, ih, il, true
+		}
+	}
+	return st
+}
+
+func (s *Server) ticker(r *http.Request, sym string) map[string]any {
+	ctx := r.Context()
+	return s.buildTicker(ctx, sym, s.snapshot(sym), s.loadTickerStats(ctx, sym))
+}
+
+// buildTicker assembles the REST/WS ticker from live prices and 24h stats.
+func (s *Server) buildTicker(ctx context.Context, sym string, ps priceState, st tickerStats) map[string]any {
+	open, high, low, vol, turn := st.open, st.high, st.low, st.vol, st.turn
+	last, src := s.displayPrice(ctx, sym, ps)
+	if st.idxDerived && last.Sign() > 0 {
+		if last.GreaterThan(high.Decimal) {
+			high.Decimal = last
+		}
+		if last.LessThan(low.Decimal) {
+			low.Decimal = last
 		}
 	}
 	change := dZero
@@ -78,7 +96,7 @@ func (s *Server) ticker(r *http.Request, sym string) map[string]any {
 		"nextFundingTime": s.nextFunding(s.now()).UnixMilli(),
 		"openPrice24h":    z(open), "highPrice24h": z(high), "lowPrice24h": z(low),
 		"volume24h": zv(vol), "turnover24h": money(zv(turn)), "priceChangePercent24h": change,
-		"openInterest": oi, "priceAvailable": ps.Mark.Sign() > 0,
+		"openInterest": st.oi, "priceAvailable": ps.Mark.Sign() > 0,
 		// Spot-ticker-compatible aliases so the UI can share one ticker shape.
 		"high": z(high), "low": z(low), "quoteVolume": money(zv(turn)), "volume": zv(vol),
 		"priceChangePercent": change.Mul(decimal.NewFromInt(100)).Round(2),
@@ -302,12 +320,15 @@ func (s *Server) hInsurance(w http.ResponseWriter, r *http.Request) {
 }
 
 // displayPrice: last trade, else mid of best bid/ask, else index, else mark.
-func (s *Server) displayPrice(r *http.Request, sym string, ps priceState) (decimal.Decimal, string) {
-	if ps.Last.Sign() > 0 {
+func (s *Server) displayPrice(ctx context.Context, sym string, ps priceState) (decimal.Decimal, string) {
+	// The last trade is shown only while fresh: on a thin book fills arrive
+	// every 10-20s, and a stale fill froze lastPrice while mark/index moved
+	// every tick. Older than LastTradeFresh falls through to mid/index.
+	if ps.Last.Sign() > 0 && !ps.LastAt.IsZero() && s.now().Sub(ps.LastAt) <= s.cfg.LastTradeFresh {
 		return ps.Last, "trade"
 	}
 	var bid, ask decimal.NullDecimal
-	_ = s.db.QueryRowContext(r.Context(), `SELECT
+	_ = s.db.QueryRowContext(ctx, `SELECT
 		(SELECT max(price) FROM fut_orders WHERE symbol=$1 AND side='buy' AND type='limit' AND status IN ('new','partially_filled')),
 		(SELECT min(price) FROM fut_orders WHERE symbol=$1 AND side='sell' AND type='limit' AND status IN ('new','partially_filled'))`, sym).Scan(&bid, &ask)
 	if bid.Valid && ask.Valid && bid.Decimal.Sign() > 0 && ask.Decimal.GreaterThanOrEqual(bid.Decimal) {

@@ -25,7 +25,8 @@ func (s *Server) hWSPush(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /internal/ws/broadcast {frames:[{channel, data}]}: public frames relayed
-// from the futures service (only "mark:{SYMBOL}" channels are accepted).
+// from the futures service (only mark:{SYMBOL}, futures-ticker:{SYMBOL} and
+// futures-kline:{SYMBOL}:{interval} are accepted; mark is re-emitted as index:{SYMBOL}).
 func (s *Server) hWSBroadcast(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Frames []struct {
@@ -39,7 +40,7 @@ func (s *Server) hWSBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 	n := 0
 	for _, f := range in.Frames {
-		if markChannelRe.MatchString(f.Channel) && len(f.Data) > 0 {
+		if relayChannelRe.MatchString(f.Channel) && len(f.Data) > 0 {
 			s.hub.Relay(f.Channel, f.Data)
 			n++
 		}
