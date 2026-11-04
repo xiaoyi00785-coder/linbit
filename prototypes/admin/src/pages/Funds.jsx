@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { DataTable, Drawer, Kpi, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilter } from '../ui.jsx'
-import { deposits, fmt } from '../mock.js'
-import { ApiState, Confirm, DemoBadge } from '../ui.jsx'
+import { ApiState, Confirm, DataTable, Drawer, Kpi, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilter } from '../ui.jsx'
+import { Profile30d } from './Common.jsx'
+import { useQ } from './Trade.jsx'
+const fmt = num
 import { api, ft, items, num, useApi } from '../api.js'
 const WST = { pending_review: '待审核', approved: '已批准', processing: '广播中', completed: '已完成', rejected: '已驳回', failed: '失败', canceled: '已取消' }
 const mapWd = w => { const st = w.status === 'pending_review' ? (w.review && w.review.stage === 'second' ? '待复核' : '待初审') : (WST[w.status] || w.status)
@@ -13,19 +14,16 @@ const lv = l => <Tag k={l === '高' ? 'bad' : l === '中' ? 'wn' : 'ok'}>{l}</Ta
 function WdDrawer({ w, onClose, onDone }) {
   const { say, me } = useApp(); const [m, setM] = useState(null)
   const stage = w.status === '待初审' ? 1 : w.status === '待复核' || w.status === '待二审' ? 2 : 4
-  const checks0 = [['账户状态正常、未冻结', true], ['24h 安全冷却（改密/解绑 2FA）', w.risk < 85, w.risk < 85 ? '无' : '改密后 3h'], ['提现地址在白名单', w.whitelist, w.whitelist ? '是' : '否'],
-    ['首次使用的新地址', !w.newAddr, w.newAddr ? '新地址' : '历史地址'], ['链上地址风险（KYT）', w.risk < 70, w.risk < 70 ? '低风险' : '关联混币器 12%'], ['单笔/日累计限额（≤ 20,000 USDT）', true, '日累计 ' + fmt(w.amt) ],
-    ['充提比 / 未交易直接提现', w.risk < 60, w.risk < 60 ? '正常' : '充值后 2h 内全额提现'], ['资产对账（账户余额 = 流水汇总）', true, '平衡'], ['同 IP / 设备关联账户', w.risk < 50, w.risk < 50 ? '0' : '3 个关联账户']]
   const checks = [['风险分（≤ 40 单人初审，> 40 或 ≥ 5,000 USDT 需复核）', w.risk <= 40, '风险分 ' + w.risk], ['需第二人复核', !(w.review && w.review.needsSecondReview), w.review && w.review.needsSecondReview ? '是' : '否']]
   const act = (dec) => async ({ totpCode, reason }) => { await api(`withdrawals/${w.id}/${dec}`, { method: 'POST', body: dec === 'approve' ? { comment: reason, totpCode } : { reason, comment: reason, totpCode } }); onDone && onDone(); onClose(); return dec === 'approve' ? (stage === 1 && w.review && w.review.needsSecondReview ? '初审通过，已流转至复核' : '已放行，进入签名队列') : '已驳回，资金已解冻退回' }
   return <Drawer width={720} title={`提现审核 · ${w.id}`} extra={<>{wst(w.status)}<Tag k={w.level === '高' ? 'bad' : 'wn'}>风险分 {w.risk}</Tag></>} onClose={onClose}
-    footer={stage < 4 ? <><button className="btn">挂起 / 联系用户</button><button className="btn d" onClick={() => setM('rej')}>驳回</button><button className="btn p" onClick={() => setM('ok')}>{stage === 1 ? '初审通过' : '复核通过并放行'}</button></> : null}>
+    footer={stage < 4 ? <><button className="btn d" onClick={() => setM('rej')}>驳回</button><button className="btn p" onClick={() => setM('ok')}>{stage === 1 ? '初审通过' : '复核通过并放行'}</button></> : null}>
     <div className="steps"><div className="done">用户提交</div><div className={stage > 1 ? 'done' : 'cur'}>风控检查 + 初审</div><div className={stage > 2 ? 'done' : stage === 2 ? 'cur' : ''}>复核（第二人）</div><div className={stage > 3 ? 'done' : ''}>签名广播</div><div className={w.status === '已完成' ? 'done' : ''}>链上确认</div></div>
     <dl className="kv"><dt>UID</dt><dd>{w.uid}</dd><dt>币种 / 网络</dt><dd>{w.coin} · {w.net}</dd><dt>提现数量</dt><dd className="num" style={{ fontSize: 16, fontWeight: 600 }}>{fmt(w.amt, w.coin === 'USDT' ? 2 : 4)} {w.coin}</dd>
       <dt>费用</dt><dd>链上 Gas {w.fee} {w.coin} · 平台手续费 0 · 预计到账 {num(w.amt - (+w.fee || 0), 4)} {w.coin}</dd><dt>折合 USDT</dt><dd>{w.review && w.review.usdtValue || '-'}</dd><dt>到账地址</dt><dd style={{ wordBreak: 'break-all' }}>{w.addr}</dd><dt>初审意见</dt><dd>{w.review && w.review.firstComment || '-'}</dd><dt>申请时间</dt><dd>{w.time}</dd><dt>初审人</dt><dd>{w.first}</dd><dt>复核人</dt><dd>{w.second}</dd></dl>
     <div className="sec">风控检查 <span className="muted" style={{ fontWeight: 400 }}>规则引擎自动执行 · 任一项失败即强制进入人工复核</span></div>
     {checks.map(([l, ok, v]) => <div className="chk" key={l}><span className={ok ? 'up' : 'down'}>{ok ? '✓' : '✕'}</span>{l}<span className="s muted">{v || '通过'}</span></div>)}
-    <div className="sec">近 30 日资金画像 <DemoBadge /></div><div className="grid g4">{[['充值', '$42,100'], ['提现', '$18,300'], ['交易量', '$1.28M'], ['盈亏', '+$2,410']].map(([a, b]) => <div className="card kpi" key={a}><div className="l">{a}</div><div className="v num" style={{ fontSize: 15 }}>{b}</div></div>)}</div>
+    <div className="sec">近 30 日资金画像</div><Profile30d uid={w.uid} />
     {m && <Confirm danger={m === 'rej'} title={m === 'ok' ? (stage === 1 ? '初审通过' : '复核通过并放行') : '驳回提现'} okText="确认" reasonLabel={m === 'ok' ? '审批意见' : '驳回原因'} onClose={() => setM(null)} onOk={act(m === 'ok' ? 'approve' : 'reject')}
       rows={[['单号', w.id], ['数量', w.amount + ' ' + w.coin], ['地址', w.addr]]} note={m === 'ok' ? `双人审批：初审与复核不能为同一管理员（当前：${me.user}）。` : '驳回后冻结资金退回用户可用余额。'} />}
   </Drawer>
@@ -54,13 +52,16 @@ export function Withdraw() {
       <div className="muted" style={{ marginTop: 8 }}>阈值由业务确认，暂不开放修改；如需调整走「系统设置 → 变更单」。</div></Modal>}</>
 }
 
+const D_ST = { completed: ['已入账', 'ok'], pending: ['确认中', 'in'], confirming: ['确认中', 'in'], manual: ['待人工', 'wn'], failed: ['失败', 'bad'], returned: ['已退回', 'bad'] }
 export function Deposit() {
-  const [rows, set] = useFilter(deposits, (r, f) => (has(r.uid, f.k) || has(r.txid, f.k)) && eq(r.status, f.s))
-  return <><PageHead title="充值记录" desc="链上监听自动入账；确认数不足、未知币种、地址错误（需人工找回）进入待人工"><DemoBadge /><button className="btn">导出</button></PageHead>
-    <DataTable rows={rows} filters={<><input className="in" placeholder="UID / TxID" onChange={set('k')} /><select className="sel" onChange={set('s')}><option>全部</option><option>已入账</option><option>确认中</option><option>待人工</option><option>已退回</option></select></>}
-      cols={[{ t: '单号', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '币种', k: 'coin' }, { t: '网络', k: 'net' }, { t: '数量', r: 1, num: 1, render: r => fmt(r.amt) }, { t: '确认数', k: 'conf' }, { t: 'TxID', k: 'txid' },
-        { t: '时间', k: 'time' }, { t: '状态', render: r => <Tag k={r.status === '已入账' ? 'ok' : r.status === '待人工' ? 'wn' : r.status === '已退回' ? 'bad' : 'in'}>{r.status}</Tag> },
-        { t: '操作', render: r => r.status === '待人工' ? <a className="btn g">人工入账</a> : <a className="btn g">详情</a> }]} /></>
+  const [f, v] = useQ(); const q = useApi('deposits', { ...f, size: 200 })
+  return <><PageHead title="充值记录" desc="链上监听自动入账记录" />
+    <div className="card"><div className="filters"><input className="in" placeholder="UID" onChange={v('uid')} /><input className="in" placeholder="TxHash" onChange={v('txHash')} /><input className="in" placeholder="币种" onChange={v('asset')} />
+      <select className="sel" onChange={v('status')}><option value="">全部状态</option><option value="completed">已入账</option><option value="confirming">确认中</option></select></div></div>
+    <ApiState q={q}>{q.data && q.data.total > items(q.data).length && <div className="muted">共 {q.data.total} 条，显示最新 {items(q.data).length} 条，请用筛选缩小范围</div>}
+      <DataTable rows={items(q.data)} cols={[{ t: 'ID', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '币种', k: 'asset' }, { t: '网络', k: 'network' }, { t: '数量', r: 1, num: 1, render: r => num(r.amount, 4) }, { t: '确认数', k: 'confirmations' },
+        { t: 'TxHash', render: r => <span style={{ wordBreak: 'break-all' }}>{r.txHash}</span> }, { t: '时间', render: r => ft(r.createdAt) }, { t: '入账', render: r => ft(r.creditedAt) },
+        { t: '状态', render: r => { const [l, k] = D_ST[r.status] || [r.status, '']; return <Tag k={k}>{l}</Tag> } }]} /></ApiState></>
 }
 
 const TX = { deposit: '充值', withdraw: '提现', withdrawal: '提现', transfer: '划转', trade: '现货成交', fee: '手续费', funding: '资金费', liquidation: '强平', copy_profit: '跟单分润', reward: '活动奖励' }

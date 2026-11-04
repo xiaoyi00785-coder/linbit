@@ -116,7 +116,6 @@ export function ApiState({ q, children }) {
   if (q.error) return <div className="card pad"><div className="banner bad">加载失败：{q.error.message}{q.error.code ? ` (${q.error.code})` : ''}</div><button className="btn" onClick={q.reload}>重试</button></div>
   return children
 }
-export const DemoBadge = () => <Tag k="wn">演示数据 · 接口未提供</Tag>
 /** 加载骨架屏 */
 export const Skeleton = ({ rows = 6 }) => <div className="card pad">{Array.from({ length: rows }, (_, i) => <div key={i} className="skel" style={{ width: (60 + (i * 13) % 40) + '%' }} />)}</div>
 /** 空状态 */

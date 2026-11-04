@@ -1,7 +1,7 @@
 # linbit 管理后台 · UI/UX 设计说明（v0.2）
 
 > 范围：linbit 交易所运营后台（Back Office）。依据：`linbit-platform-excluded/business-rules.md`、`linbit-platform/docs/api`、`linbit-backend/services`（gateway / account / asset / kyc / wallet / order / market-data / admin / risk，Rust 撮合引擎）。
-> 原型：本目录 React + Vite，全部 Mock 数据（示例用户 `lb_Demo8K2` / UID `80000001` / `demo***@example.com` / 邀请码 `LB8DEMO`）。颜色只来自 `src/tokens.css` 的 `:root --lb-*` 变量（主色 #abe127，背景 #070808）。
+> 原型：本目录 React + Vite，数据全部来自 admin/v1 接口。颜色只来自 `src/tokens.css` 的 `:root --lb-*` 变量（主色 #abe127，背景 #070808）。
 
 ## 1. 设计原则
 1. **密度优先**：13px 正文、32px 行高的表格，一屏展示 12–15 行；数字使用等宽数字（tabular-nums），金额右对齐。

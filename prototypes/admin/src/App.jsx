@@ -17,8 +17,6 @@ const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users':
   campaigns: O.Campaigns, rewards: O.Rewards, points: O.Points, copy: O.Copy, rebate: O.Rebate, content: O.Content, admins: S.Admins, audit: S.Audit, settings: S.Settings,
   wallets: X.Wallets, liquidation: X.Liquidation, partners: X.Partners, coupons: X.Coupons, notify: X.Notify }
 
-// 后端尚未提供接口、仍为演示数据的页面
-const DEMO = new Set(['dashboard', 'risk-users', 'deposit', 'wallets', 'spot-orders', 'positions', 'grid', 'liquidation', 'coins', 'futures', 'campaigns', 'points', 'copy', 'rebate', 'settings'])
 const parse = () => { const [k, q] = (location.hash.slice(2) || 'dashboard').split('?'); return { key: ROUTES[k] ? k : 'dashboard', q: Object.fromEntries(new URLSearchParams(q || '')) } }
 
 export default function App() {
@@ -46,7 +44,7 @@ export default function App() {
           <div className="ibtn" title="待办">☑<span className="dot" /></div><div className="ibtn" title="通知">🔔</div>
           <div className="me"><div className="av">{meV.user.slice(0, 2).toUpperCase()}</div><div style={{ lineHeight: 1.2 }}>{meV.user}<div className="muted" style={{ fontSize: 11 }}>{meV.role}</div></div>
             <a className="btn g" style={{ marginLeft: 8 }} onClick={logout}>退出</a></div></header>
-        <main className="content" key={r.key}>{DEMO.has(r.key) && <div className="banner">本页为演示数据：admin/v1 暂未提供对应接口，操作不会生效。</div>}<Page /></main>
+        <main className="content" key={r.key}><Page /></main>
       </div>
     </div>{toast && <div className="toast">✓ {toast}</div>}
   </Ctx.Provider>

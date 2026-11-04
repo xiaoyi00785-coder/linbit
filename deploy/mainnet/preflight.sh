@@ -58,5 +58,10 @@ else
   fi
 fi
 
+# Admin back office must not ship demo/mock data (every page reads admin/v1).
+root=$(cd "$(dirname "$0")/../.." && pwd)
+if out=$("$root/scripts/check-admin-no-demo.sh" "$root/prototypes/admin/src" 2>&1); then ok "admin frontend has no demo/mock data"
+else fail "admin frontend still references demo/mock data: $(echo "$out" | tail -n +2 | head -5 | tr '\n' ' ')"; fi
+
 echo "preflight: $fails failure(s)"
 [ $fails = 0 ]

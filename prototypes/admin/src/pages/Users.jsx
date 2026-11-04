@@ -1,16 +1,14 @@
 import { useState } from 'react'
 import { DataTable, Drawer, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilter } from '../ui.jsx'
-import { Confirm } from '../ui.jsx'
-import { fmt, ledger, positions, users } from '../mock.js'
-import { ApiState, DemoBadge } from '../ui.jsx'
+import { ApiState } from '../ui.jsx'
+import { Profile30d } from './Common.jsx'
 import { API_BASE, getToken, api, ft, items, KYC_LV, KYC_ST, num, USER_ST, useApi } from '../api.js'
 const mapUser = u => ({ ...u, id: u.uid, nick: u.nickname || '-', email: u.email || '-', phone: u.phone || '-', country: u.countryCode || '-', kyc: KYC_LV(u.kycLevel), status: USER_ST[u.status] || u.status, raw: u.status, tfa: u.totpEnabled, reg: ft(u.createdAt), identity: '-', risk: '-', inviter: '-', last: '-' })
 const stTag = s => <Tag k={s === '正常' ? 'ok' : s === '冻结' ? 'bad' : 'wn'}>{s}</Tag>
-const riskTag = r => <Tag k={r === '高' ? 'bad' : r === '中' ? 'wn' : 'ok'}>{r}</Tag>
 
 export function FreezeModal({ user, onClose, onDone }) {
   const { say } = useApp(); const [scope, setScope] = useState(['提现']); const [reason, setReason] = useState(''); const [code, setCode] = useState(''); const [err, setErr] = useState('')
-  const unfreeze = user.raw === 'frozen'
+  const unfreeze = !!user.raw && user.raw !== 'active'
   const submit = async () => { setErr(''); try { await api(`users/${user.uid}/${unfreeze ? 'unfreeze' : 'freeze'}`, { method: 'POST', body: { reason, totpCode: code } }); say(unfreeze ? '已解冻' : '已冻结'); onDone && onDone(); onClose() } catch (e) { setErr(e.message) } }
   const opts = ['登录', '交易', '提现', '划转', '充值入账', '跟单/带单']
   return <Modal title={`冻结 / 限制账户 · UID ${user.uid}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>取消</button><button className="btn d" disabled={!reason.trim() || code.length < 6} onClick={submit}>{unfreeze ? '提交解冻' : '提交冻结'}</button></>}>
@@ -28,27 +26,26 @@ export function FreezeModal({ user, onClose, onDone }) {
 
 export function UserDrawer({ u, onClose, onChanged }) {
   const bal = useApi('users/' + u.uid + '/balances')
-  const [adj, setAdj] = useState(false)
   const [tab, setTab] = useState('base'); const [fz, setFz] = useState(false)
+  const pos = useApi(tab === 'pos' ? 'futures/positions' : null, { uid: u.uid, size: 200 }); const dev = useApi(tab === 'log' ? `users/${u.uid}/devices` : null)
   return <Drawer width={760} title={<>{u.nick} <span className="muted" style={{ fontWeight: 400 }}>UID {u.uid}</span></>} extra={<>{stTag(u.status)}<Tag k="gd">{u.identity}</Tag></>} onClose={onClose}
-    footer={<><button className="btn">重置 2FA</button><button className="btn">设为合伙人</button><button className="btn" onClick={() => setAdj(true)}>人工调账</button><button className="btn d" onClick={() => setFz(true)}>{u.raw === 'frozen' ? '解冻' : '冻结 / 限制'}</button></>}>
-    <div className="grid g4" style={{ marginBottom: 12 }}>{[['总资产估值', '$' + num(items(bal.data).reduce((a, b) => a + (+b.valuationUsd || 0), 0))], ['30 日交易量', '-'], ['累计手续费', '-'], ['邀请人数', '-']].map(([l, v]) => <div key={l} className="card kpi"><div className="l">{l}</div><div className="v num" style={{ fontSize: 16 }}>{v}</div></div>)}</div>
-    <div className="card"><Tabs value={tab} onChange={setTab} items={[['base', '基本信息'], ['asset', '资产'], ['pos', '持仓'], ['log', '登录/设备'], ['note', '备注与工单']]} />
+    footer={<><button className="btn d" onClick={() => setFz(true)}>{u.raw && u.raw !== 'active' ? '解冻' : '冻结 / 限制'}</button></>}>
+    <div className="grid g4" style={{ marginBottom: 12 }}>{[['总资产估值', '$' + num(items(bal.data).reduce((a, b) => a + (+b.valuationUsd || 0), 0))]].map(([l, v]) => <div key={l} className="card kpi"><div className="l">{l}</div><div className="v num" style={{ fontSize: 16 }}>{v}</div></div>)}</div>
+    <div className="sec" style={{ marginTop: 0 }}>近 30 日资金画像</div><div style={{ marginBottom: 12 }}><Profile30d uid={u.uid} /></div>
+    <div className="card"><Tabs value={tab} onChange={setTab} items={[['base', '基本信息'], ['asset', '资产'], ['pos', '持仓'], ['log', '登录/设备']]} />
       <div style={{ padding: 14 }}>
         {tab === 'base' && <dl className="kv"><dt>昵称</dt><dd>{u.nick}</dd><dt>邮箱</dt><dd>{u.email} {u.emailVerified ? <Tag k="ok">已验证</Tag> : <Tag k="wn">未验证</Tag>}</dd><dt>手机</dt><dd>{u.phone}</dd><dt>国家/地区</dt><dd>{u.country}</dd>
           <dt>KYC</dt><dd>{u.kyc}</dd><dt>2FA</dt><dd>{u.tfa ? <Tag k="ok">Google 验证器</Tag> : <Tag k="wn">未开启</Tag>}</dd><dt>状态说明</dt><dd>{u.statusReason || '-'}</dd><dt>注册时间</dt><dd>{u.reg}</dd></dl>}
         {tab === 'asset' && <ApiState q={bal}><table className="t"><thead><tr><th>币种</th><th className="r">可用</th><th className="r">冻结</th><th className="r">合计</th><th className="r">估值 USD</th></tr></thead><tbody>
           {items(bal.data).map(r => <tr key={r.asset}><td>{r.asset}</td><td className="r num">{num(r.free, 4)}</td><td className="r num">{num(r.locked, 4)}</td><td className="r num">{num(r.total, 4)}</td><td className="r num">{num(r.valuationUsd)}</td></tr>)}</tbody></table></ApiState>}
-        {tab !== 'base' && tab !== 'asset' && <div style={{ marginBottom: 8 }}><DemoBadge /></div>}
-        {tab === 'pos' && <table className="t"><thead><tr><th>合约</th><th>方向</th><th>杠杆</th><th className="r">仓位</th><th className="r">未实现盈亏</th></tr></thead><tbody>
-          {positions.slice(0, 5).map(p => <tr key={p.id}><td>{p.sym}</td><td className={p.side === '多' ? 'up' : 'down'}>{p.side}</td><td>{p.lev}x</td><td className="r num">{fmt(p.size, 0)}</td><td className={'r num ' + (p.upnl > 0 ? 'up' : 'down')}>{fmt(p.upnl)}</td></tr>)}</tbody></table>}
-        {tab === 'log' && <table className="t"><thead><tr><th>时间</th><th>IP</th><th>设备</th><th>结果</th></tr></thead><tbody>
-          {[0, 1, 2, 3, 4].map(i => <tr key={i}><td>{ledger[i].time}</td><td>203.0.113.{20 + i}</td><td>{['iOS App 6.2', 'Chrome / macOS', 'Android App 6.1'][i % 3]}</td><td>{i === 3 ? <Tag k="bad">密码错误</Tag> : <Tag k="ok">成功</Tag>}</td></tr>)}</tbody></table>}
-        {tab === 'note' && <><div className="tl"><div><b>cs_he</b> · 2026-10-30 · 用户反馈无法提现，已指导完成 2FA 绑定</div><div><b>risk_sun</b> · 2026-10-12 · 新设备登录 + 改密，触发 24h 提现冷却</div></div><textarea className="in" rows="3" placeholder="添加内部备注…" /></>}
+        {tab === 'pos' && <ApiState q={pos}><table className="t"><thead><tr><th>合约</th><th>方向</th><th>杠杆</th><th className="r">数量</th><th className="r">开仓价</th><th className="r">未实现盈亏</th></tr></thead><tbody>
+          {items(pos.data).map(p => <tr key={p.symbol + p.positionSide}><td>{p.symbol}</td><td className={+p.qty > 0 ? 'up' : 'down'}>{+p.qty > 0 ? '多' : '空'}</td><td>{p.leverage}x</td><td className="r num">{p.qty}</td><td className="r num">{num(p.entryPrice, 4)}</td><td className={'r num ' + (+p.unrealizedPnl >= 0 ? 'up' : 'down')}>{num(p.unrealizedPnl)}</td></tr>)}
+          {!items(pos.data).length && <tr><td colSpan="6" className="muted">无持仓</td></tr>}</tbody></table></ApiState>}
+        {tab === 'log' && <ApiState q={dev}><table className="t"><thead><tr><th>设备</th><th>IP</th><th>UA</th><th>首次</th><th>最近</th></tr></thead><tbody>
+          {items(dev.data).map(d => <tr key={d.id}><td>{d.name || '-'}</td><td>{d.ip || '-'}</td><td style={{ maxWidth: 260, wordBreak: 'break-all' }}>{d.userAgent || '-'}</td><td>{ft(d.firstSeen)}</td><td>{ft(d.lastSeen)}</td></tr>)}
+          {!items(dev.data).length && <tr><td colSpan="5" className="muted">无设备记录</td></tr>}</tbody></table></ApiState>}
       </div></div>
     {fz && <FreezeModal user={u} onClose={() => setFz(false)} onDone={onChanged} />}
-    {adj && <Confirm danger title={`人工调账 · UID ${u.uid}`} okText="提交调账单（待复核）" onClose={() => setAdj(false)} rows={[['账户', '现货账户 · USDT'], ['方向', '贷（增加）'], ['金额', '50.00 USDT'], ['关联工单', 'TK-20261102-118']]}
-      note="调账单需财务复审后入账，借贷双边分录同步写入资产流水。" />}
   </Drawer>
 }
 
@@ -91,7 +88,7 @@ export function Kyc() {
       {err && <div className="banner bad">{err}</div>}
       <div className="sec">证件材料</div><ApiState q={det}><div className="grid g3">{(d.documents || []).map(x => <DocImg key={x.fileId || x.side} d={x} />)}{!(d.documents || []).length && <span className="muted">无证件文件</span>}</div></ApiState>
       <div className="sec">用户填写</div><dl className="kv"><dt>姓名</dt><dd>{cur.name}</dd><dt>证件类型</dt><dd>{cur.idType}</dd><dt>证件号</dt><dd>{cur.idNumber}</dd><dt>出生日期</dt><dd>{cur.dateOfBirth}</dd><dt>国家</dt><dd>{cur.country}</dd><dt>审核时间</dt><dd>{ft(cur.reviewedAt)}</dd></dl>
-      <div className="sec">自动检查 <DemoBadge /></div><div className="muted">OCR / 人脸比对 / AML 筛查服务尚未接入，当前为人工审核。</div>
+      
       {rej && <Modal title="驳回原因" onClose={() => setRej(false)} footer={<><button className="btn" onClick={() => setRej(false)}>取消</button><button className="btn d" disabled={!reason.trim()} onClick={() => decide('reject')}>确认驳回</button></>}>
         {['证件照片模糊/反光', '证件信息与填写不一致', '人脸比对未通过', '证件已过期', '不支持的国家/地区'].map(x => <label key={x} className="chk"><input type="radio" name="rj" onChange={() => setReason(x)} /> {x}</label>)}
         <textarea className="in" rows="3" placeholder="对用户展示的说明（必填）" value={reason} onChange={e => setReason(e.target.value)} /></Modal>}
@@ -99,10 +96,11 @@ export function Kyc() {
 }
 
 export function RiskList() {
-  // 演示数据：风控名单接口未提供
-  const rows = users.filter(u => u.risk !== '低' || u.status !== '正常')
-  return <><PageHead title="风险名单" desc="由风控引擎打标（多账户关联、刷量、短线套利返佣、异常登录）+ 人工维护"><DemoBadge /><button className="btn p">+ 加入名单</button></PageHead>
-    <DataTable rows={rows} filters={<><input className="in" placeholder="UID" /><select className="sel"><option>全部标签</option><option>多账户关联</option><option>对敲刷量</option><option>短线返佣套利</option><option>异常登录</option></select></>}
-      cols={[{ t: 'UID', k: 'uid' }, { t: '昵称', k: 'nick' }, { t: '风险', render: r => riskTag(r.risk) }, { t: '命中规则', render: r => ['同设备 6 账户', '对敲成交 32 笔', '持仓 < 60s 占比 82%', '异地登录'][+r.uid % 4] },
-        { t: '处置', render: r => stTag(r.status) }, { t: '最近活动', k: 'last' }, { t: '操作', render: () => <><a className="btn g">查看</a><a className="btn g">移出</a></> }]} /></>
+  const [uid, setUid] = useState(''); const q = useApi('risk-users', { uid: uid.trim(), size: 200 }); const [cur, setCur] = useState(null)
+  return <><PageHead title="风险名单" desc="被冻结、限制提现或停用的账户（来自用户状态）；可在此解除" />
+    <div className="card"><div className="filters"><input className="in" placeholder="UID" value={uid} onChange={e => setUid(e.target.value)} /></div></div>
+    <ApiState q={q}><DataTable rowKey="uid" rows={items(q.data).map(mapUser)} cols={[{ t: 'UID', k: 'uid' }, { t: '昵称', k: 'nick' }, { t: '邮箱', k: 'email' }, { t: 'KYC', k: 'kyc' },
+      { t: '状态', render: r => stTag(r.status) }, { t: '原因', render: r => r.reason || '-' }, { t: '变更时间', render: r => ft(r.changedAt) },
+      { t: '操作', render: r => <a className="btn g" onClick={e => { e.stopPropagation(); setCur(r) }}>解除</a> }]} /></ApiState>
+    {cur && <FreezeModal user={cur} onClose={() => setCur(null)} onDone={q.reload} />}</>
 }
