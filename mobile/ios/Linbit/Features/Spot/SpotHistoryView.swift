@@ -4,7 +4,7 @@ import UIKit
 /// 历史记录（对照图 #23）：当前委托 / 历史委托 / 成交明细；筛选「币对 ▾」「委托类型 ▾」；全部撤销
 struct SpotHistoryView: View {
     @Environment(\.palette) private var p
-    @State private var tab = Router.shared.shotSheet == "spotHistoryCond" ? 3 : 0
+    @State private var tab = Router.shared.shotSheet == "spotHistoryCond" ? 3 : (Router.shared.shotSheet == "spotHistoryAmount" ? 1 : 0)
     @State private var symbol: String? = nil
     @State private var type: APIOrderType? = nil
     @State private var open: Loadable<[APIOrder]> = .loading
@@ -120,6 +120,9 @@ struct SpotHistoryView: View {
     private func reload() async {
         guard tab != 3 else { return }
         state = .loading; page = 1; hasMore = true
+        if Router.shared.shotSheet == "spotHistoryAmount", tab == 1 {
+            orders = APIOrder.amountDemo; hasMore = false; state = .loaded(()); return
+        }
         do {
             switch tab {
             case 0: open = .loaded(try await SpotAPI.open(symbol: symbol))
@@ -173,7 +176,7 @@ struct HistoryOrderRow: View {
             }
             Text(Fmt.dateTime(o.createdAt)).font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
             HStack {
-                kv("委托价", o.price ?? "市价"); kv("委托数量", o.quantity); kv("已成交", o.filledQuantity, end: true)
+                kv("委托价", o.price ?? "市价"); kv("委托数量", o.qtyText); kv("已成交", o.filledQuantity, end: true)
             }
         }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12).contentShape(Rectangle())
     }
@@ -221,7 +224,7 @@ struct OrderDetailSheet: View {
                 kv("交易对", o.symbol.replacingOccurrences(of: "USDT", with: "/USDT"))
                 kv("方向", o.side == .buy ? "买入" : "卖出", c: o.side == .buy ? p.up : p.down)
                 kv("类型", o.type == .limit ? "限价单" : "市价单")
-                kv("委托价", o.price ?? "市价"); kv("委托数量", o.quantity); kv("已成交", o.filledQuantity)
+                kv("委托价", o.price ?? "市价"); kv("委托数量", o.qtyText); kv("已成交", o.filledQuantity)
                 kv("状态", o.status.title); kv("时间", Fmt.dateTime(o.createdAt))
                 HStack {
                     Text("订单号").font(.lb(FontSize.label)).foregroundColor(p.textSecondary); Spacer()

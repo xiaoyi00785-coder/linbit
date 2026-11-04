@@ -347,7 +347,7 @@ struct OpenOrderRow: View {
             Text(Fmt.dateTime(o.createdAt)).font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
             HStack {
                 kv("委托价", o.price ?? "市价")
-                kv("已成交/数量", "\(o.filledQuantity)/\(o.quantity)")
+                kv("已成交/数量", "\(o.filledQuantity)/\(o.qtyText)")
                 kv("状态", o.status == .partiallyFilled ? "部分成交" : "未成交", alignEnd: true)
             }
         }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)

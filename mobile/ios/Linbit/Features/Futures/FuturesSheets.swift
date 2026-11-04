@@ -480,7 +480,8 @@ struct AdjustMarginSheet: View {
                     NumberBox(label: "数量", unit: "USDT", text: $amount, onEdit: {})
                     KVRow(k: add == 0 ? "可增加" : "可减少", v: "\(Fmt.amount(add == 0 ? m.available : Dec.parse(position.margin), 2)) USDT")
                     KVRow(k: "当前保证金", v: "\(Fmt.amount(Dec.parse(position.margin), 2)) USDT")
-                    KVRow(k: "当前强平价", v: position.liquidationPrice ?? "--")
+                    KVRow(k: "当前强平价", v: position.liqText)
+                    if let tip = position.liqTip { InlineBanner(text: tip) }
                 }
                 LBButton(title: isolated ? "确认" : "知道了", enabled: !isolated || Dec.parse(amount) > 0, loading: saving) {
                     guard isolated else { onClose(); return }

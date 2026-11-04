@@ -17,15 +17,17 @@ public struct APIOrder: Codable, JSONEncodable, Hashable {
     public var type: APIOrderType
     /** 限价，按 pricePrecision 格式化的十进制字符串；市价单为 null。 */
     public var price: String?
-    /** 下单数量，按 quantityPrecision 格式化的十进制字符串。 */
+    /** 下单数量，按 quantityPrecision 格式化的十进制字符串。按金额下的市价买单（quoteOrderQty）为 0。 */
     public var quantity: String
+    /** 仅按金额下的市价买单返回：计价币金额（按 pricePrecision 格式化）；其他订单不返回该字段。实际成交数量见 filledQuantity。 */
+    public var quoteOrderQty: String?
     /** 已成交数量，按 quantityPrecision 格式化的十进制字符串。 */
     public var filledQuantity: String
     public var status: APIOrderStatus
     public var timeInForce: APITimeInForce?
     public var createdAt: Date
 
-    public init(orderId: String, clientOrderId: String? = nil, symbol: String, side: APIOrderSide, type: APIOrderType, price: String? = nil, quantity: String, filledQuantity: String, status: APIOrderStatus, timeInForce: APITimeInForce? = nil, createdAt: Date) {
+    public init(orderId: String, clientOrderId: String? = nil, symbol: String, side: APIOrderSide, type: APIOrderType, price: String? = nil, quantity: String, quoteOrderQty: String? = nil, filledQuantity: String, status: APIOrderStatus, timeInForce: APITimeInForce? = nil, createdAt: Date) {
         self.orderId = orderId
         self.clientOrderId = clientOrderId
         self.symbol = symbol
@@ -33,6 +35,7 @@ public struct APIOrder: Codable, JSONEncodable, Hashable {
         self.type = type
         self.price = price
         self.quantity = quantity
+        self.quoteOrderQty = quoteOrderQty
         self.filledQuantity = filledQuantity
         self.status = status
         self.timeInForce = timeInForce
@@ -47,6 +50,7 @@ public struct APIOrder: Codable, JSONEncodable, Hashable {
         case type
         case price
         case quantity
+        case quoteOrderQty
         case filledQuantity
         case status
         case timeInForce
@@ -64,6 +68,7 @@ public struct APIOrder: Codable, JSONEncodable, Hashable {
         try container.encode(type, forKey: .type)
         try container.encodeIfPresent(price, forKey: .price)
         try container.encode(quantity, forKey: .quantity)
+        try container.encodeIfPresent(quoteOrderQty, forKey: .quoteOrderQty)
         try container.encode(filledQuantity, forKey: .filledQuantity)
         try container.encode(status, forKey: .status)
         try container.encodeIfPresent(timeInForce, forKey: .timeInForce)
