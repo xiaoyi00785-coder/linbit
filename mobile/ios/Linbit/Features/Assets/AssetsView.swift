@@ -38,6 +38,12 @@ struct AssetsView: View {
                 case .deposit(let a): if let a { DepositView(asset: a) } else { CoinPickerView(mode: .deposit) }
                 case .transfer: TransferView()
                 case .records, .history: RecordsView()
+                case .overview: AssetOverviewView()
+                case .accountTransfer: AccountTransferView()
+                case .internalTransfer: InternalTransferView()
+                case .withdrawRecords: WithdrawRecordsView()
+                case .addressBook: AddressBookView()
+                case .networks(let a): WalletNetworksView(asset: a)
                 }
             }
             .navigationDestination(for: DepositTarget.self) { DepositView(asset: $0.asset) }
@@ -109,6 +115,8 @@ struct AssetsView: View {
                 Text("总资产估值").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
                 Button { m.hideAmount.toggle() } label: { Image(systemName: m.hideAmount ? "eye.slash" : "eye").font(.system(size: 12)).foregroundColor(p.textSecondary) }
                 Spacer()
+                NavigationLink(value: AssetsRoute.overview) { Image(systemName: "square.grid.2x2").font(.system(size: 16)).foregroundColor(p.textPrimary) }
+                    .padding(.trailing, 12).accessibilityLabel("资产总览")
                 NavigationLink(value: AssetsRoute.records) { Image(systemName: "doc.text.magnifyingglass").font(.system(size: 16)).foregroundColor(p.textPrimary) }
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -232,11 +240,22 @@ struct WithdrawSheet: View {
             VStack(spacing: 12) {
                 card("arrow.up.right.circle", "链上提币", "往钱包或交易所转出数字货币", badge: nil)
                 card("arrow.left.arrow.right.circle", "内部转账", "立即向其他 Linbit 用户转出数字货币", badge: "0 手续费")
+                HStack(spacing: 20) {
+                    link("提现记录", .withdrawRecords); link("地址簿", .addressBook); link("币种网络", .networks(nil))
+                }.padding(.top, 4)
             }.padding(.horizontal, Spacing.pageH).padding(.bottom, 28)
         }
     }
+    private func link(_ t: String, _ r: AssetsRoute) -> some View {
+        Button { onClose(); Router.shared.open(r) } label: {
+            Text(t).font(.lb(FontSize.small)).foregroundColor(p.textSecondary).underline()
+        }
+    }
     private func card(_ icon: String, _ t: String, _ s: String, badge: String?) -> some View {
-        Button { onClose(); ToastCenter.shared.show("\(t)将在提现阶段开放") } label: {
+        Button {
+            onClose()
+            if t == "内部转账" { Router.shared.open(.internalTransfer) } else { ToastCenter.shared.show("\(t)将在提现阶段开放") }
+        } label: {
             HStack(spacing: 14) {
                 Image(systemName: icon).font(.system(size: 20)).foregroundColor(p.textPrimary)
                 VStack(alignment: .leading, spacing: 3) {
