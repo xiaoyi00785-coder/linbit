@@ -10,6 +10,7 @@ plugins {
 android {
     namespace = "click.cowa.linbit"
     compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "click.cowa.linbit"

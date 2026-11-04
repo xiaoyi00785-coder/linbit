@@ -34,13 +34,12 @@ mobile/android
 ## 构建
 
 ```bash
-# 需要 JDK 17 与 Android SDK（ANDROID_HOME），platform 35 / build-tools 34
+# 需要 JDK 17 与 Android SDK（ANDROID_HOME），platform 35 / build-tools 35.0.0
 cd mobile/android
-gradle wrapper --gradle-version 8.9      # 仓库规则不提交二进制，所以不带 gradle-wrapper.jar；生成一次即可（已被 .gitignore）
-./gradlew assembleDebug testDebugUnitTest lint
+./gradlew assembleDebug testDebugUnitTest lint   # gradle-wrapper.jar 已入库（Gradle 8.9，distributionSha256Sum 已固定）
 ```
 
-CI（`.github/workflows/android.yml`）使用 `gradle/actions/setup-gradle` 安装 Gradle 8.9，直接运行 `gradle assembleDebug testDebugUnitTest lint`。
+CI（`.github/workflows/android.yml`）先用 `gradle/actions/wrapper-validation` 校验 wrapper，再用 `./gradlew assembleDebug testDebugUnitTest lint` 构建。
 
 ### 重新生成资源
 

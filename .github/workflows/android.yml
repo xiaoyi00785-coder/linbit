@@ -1,13 +1,13 @@
 # Linbit Android CI：assembleDebug + 单元测试 + Lint，并上传 debug APK / 报告
-# 工程在 mobile/android；仓库规则不提交二进制文件，所以不提交 gradle-wrapper.jar，CI 用 setup-gradle 安装 Gradle 8.9 直接运行。
+# 工程在 mobile/android；gradle-wrapper.jar 入库（评审认可的例外），CI 先做 wrapper-validation 再用 ./gradlew 构建。
 name: Android
 
 on:
   push:
     branches: [main, "feat/android-*"]
-    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
+    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "docs/api/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
   pull_request:
-    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
+    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "docs/api/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 permissions:
@@ -35,17 +35,19 @@ jobs:
       # ubuntu-latest 镜像自带 Android SDK（ANDROID_HOME）；只确保需要的平台 / 构建工具与许可已就绪
       - name: Prepare Android SDK
         run: |
-          set -euo pipefail
+          # 不开 pipefail：`yes` 在 sdkmanager 退出后会收到 SIGPIPE，管道状态应取 sdkmanager 的退出码
+          set -eu
           echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
           SDKM="$(command -v sdkmanager || true)"
           [ -z "$SDKM" ] && SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKM" --licenses >/dev/null || true
-          "$SDKM" "platforms;android-35" "build-tools;34.0.0" >/dev/null
+          yes | "$SDKM" --licenses >/dev/null
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" >/dev/null
 
-      - name: Setup Gradle 8.9
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Setup Gradle（使用仓库内 wrapper：Gradle 8.9，已固定校验和）
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
 
       - name: Generated resources are up to date (vector drawables / tokens)
         run: |
@@ -60,7 +62,7 @@ jobs:
 
       - name: Assemble debug, unit tests, lint
         working-directory: ${{ env.ANDROID_DIR }}
-        run: gradle --no-daemon --stacktrace assembleDebug testDebugUnitTest lint
+        run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest lint
 
       - name: Upload debug APK
         if: always()
