@@ -195,7 +195,7 @@ export function Withdraw() {
                 <div className="fx-field">
                   提现网络
                   <NetPicker out coin={asset} net={net} setNet={setNet}
-                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: i?.minWithdraw || undefined, recommended: (i as { recommended?: boolean } | undefined)?.recommended === true || undefined }; })} />
+                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: i?.minWithdraw || undefined, recommended: i?.recommended === true || undefined }; })} />
                 </div>
                 <div className="fx-field">
                   <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>

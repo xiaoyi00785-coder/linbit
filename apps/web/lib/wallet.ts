@@ -1,10 +1,12 @@
+import type { components } from "@linbit/api-client";
 import { rest, useRest, type RestResult } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
-/** 资产/钱包新接口（feat/spot-asset-gaps @2039887，docs/api/openapi.yaml）。类型本地镜像，主干合并后可换成 api-client schema。 */
+/** 资产/钱包新接口（feat/spot-asset-gaps @2039887，docs/api/openapi.yaml）。除 WalletNetwork 外为本地镜像。 */
 export type AcctKey = "funding" | "spot" | "futures";
 export interface OverviewAccount { account: AcctKey; available: boolean; totalValueUsdt: string; balances: { asset: string; free: string; locked?: string; valuationUsd?: string | null; priceUsd?: string | null }[] }
 export interface AssetsOverview { totalValueUsdt: string; accounts: OverviewAccount[]; depositAccount?: "funding" | "spot"; withdrawAccount?: "funding" | "spot"; transferable?: Record<string, string[]> }
-export interface WalletNetwork { asset: string; network: string; minDeposit?: string; confirmations?: number; memoRequired?: boolean; withdrawFee?: string; withdrawFeeAsset?: string; minWithdraw?: string; maxWithdraw?: string | null; depositEnabled?: boolean; withdrawEnabled?: boolean; estimatedArrivalMinutes?: number }
+/** 派生自 api-client WalletNetwork（含 recommended、sortOrder）；asset / network 在本端为必填。 */
+export type WalletNetwork = Omit<components["schemas"]["WalletNetwork"], "asset" | "network"> & { asset: string; network: string };
 export interface InternalTransferReq { clientId: string; asset: string; amount: string; toUid?: string; toEmail?: string; totpCode: string; fundPassword?: string }
 export interface InternalTransfer { id: string; clientId: string; direction: "out" | "in"; fromUid: string; toUid: string; toMaskedEmail?: string; asset: string; amount: string; fee: string; status: "pending" | "completed" | "failed"; failReason?: string | null; createdAt: string; completedAt?: string | null }
 type Page<T> = { items: T[]; page: number; pageSize: number; total: number };
