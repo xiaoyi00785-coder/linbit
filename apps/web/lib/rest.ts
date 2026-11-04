@@ -61,6 +61,11 @@ export async function rget<T>(p: string, demo?: () => T): Promise<RestResult<T>>
   return r;
 }
 
+/** 余额变化全局事件（划转成功等） */
+export const BALANCES_EVT = "lb:balances";
+const BAL_RE = /(asset|balance|wallet|account|overview|funding|earn|margin)/i;
+export const emitBalances = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event(BALANCES_EVT)); };
+
 /** React hook：加载 + 刷新；loading 用于骨架屏 */
 export function useRest<T>(path: string | null, demo?: () => T) {
   const [st, set] = useState<{ loading: boolean; res?: RestResult<T> }>({ loading: !!path });
@@ -74,5 +79,12 @@ export function useRest<T>(path: string | null, demo?: () => T) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
   useEffect(() => { load(); }, [load]);
+  // 划转/下单等改变余额后广播 BALANCES_EVT：所有余额类接口实例静默重取
+  useEffect(() => {
+    if (!path || !BAL_RE.test(path)) return;
+    const f = () => load(true);
+    window.addEventListener(BALANCES_EVT, f);
+    return () => window.removeEventListener(BALANCES_EVT, f);
+  }, [load, path]);
   return { loading: st.loading, data: st.res?.data, source: st.res?.source, error: st.res?.ok === false ? st.res.error : undefined, status: st.res?.status, reload: load, refresh: () => load(true) };
 }

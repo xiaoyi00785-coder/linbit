@@ -1,4 +1,5 @@
 "use client";
+import { emitBalances } from "@/lib/rest";
 import { Dropdown } from "@/features/Kit";
 import { useEffect, useState } from "react";
 import { goto, toast } from "@/lib/ui";
@@ -36,7 +37,7 @@ export function TransferHost() {
     setBusy(true);
     const r = await createTransfer({ clientId: newClientId(), asset: coin, amount: amt, from: f as AcctKey, to: t as AcctKey });
     setBusy(false);
-    if (r.ok) { toast("划转成功", "ok"); setOpen(false); ov.reload(); window.dispatchEvent(new Event("lb:balances")); window.dispatchEvent(new Event("lb-refresh")); }
+    if (r.ok) { toast("划转成功", "ok"); setOpen(false); ov.reload(); emitBalances(); }
     else if (twofaKind(r) === "required") { if (await twofaBound()) toast(MSG_TOTP_MISSING, "err"); else { toast(MSG_TWOFA_REQUIRED, "err"); setOpen(false); goto(TWOFA_BIND); } }
     else toast(errMsg(r), "err");
   };
