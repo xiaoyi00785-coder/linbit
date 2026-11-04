@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,6 +61,9 @@ func (s *Server) ticker(r *http.Request, sym string) map[string]any {
 		"openPrice24h":    z(open), "highPrice24h": z(high), "lowPrice24h": z(low),
 		"volume24h": zv(vol), "turnover24h": money(zv(turn)), "priceChangePercent24h": change,
 		"openInterest": oi, "priceAvailable": ps.Mark.Sign() > 0,
+		// Spot-ticker-compatible aliases so the UI can share one ticker shape.
+		"high": z(high), "low": z(low), "quoteVolume": money(zv(turn)), "volume": zv(vol),
+		"priceChangePercent": change.Mul(decimal.NewFromInt(100)).Round(2),
 	}
 }
 
@@ -128,7 +132,18 @@ func (s *Server) hTrades(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"trades": out})
 }
 
-var klineSec = map[string]int64{"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
+var klineSec = map[string]int64{"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
+
+// klineAlias accepts the chart's upper-case labels (1H/4H/1D/1W).
+var klineAlias = map[string]string{"1H": "1h", "4H": "4h", "1D": "1d", "1W": "1w"}
+
+// klineAnchor aligns weekly buckets to Monday 00:00 UTC (same as market-data).
+func klineAnchor(sec int64) int64 {
+	if sec == 604800 {
+		return 345600 // 1970-01-05T00:00:00Z
+	}
+	return 0
+}
 
 func (s *Server) hKlines(w http.ResponseWriter, r *http.Request) {
 	c, err := s.contract(r.URL.Query().Get("symbol"))
@@ -140,41 +155,95 @@ func (s *Server) hKlines(w http.ResponseWriter, r *http.Request) {
 	if iv == "" {
 		iv = "1m"
 	}
+	if a, ok := klineAlias[iv]; ok {
+		iv = a
+	}
 	sec, ok := klineSec[iv]
 	if !ok {
-		writeErr(w, bad("VALIDATION_ERROR", "interval 仅支持 1m/5m/15m/30m/1h/4h/1d"))
+		writeErr(w, bad("VALIDATION_ERROR", "interval 仅支持 1m/5m/15m/30m/1h/4h/1d/1w"))
 		return
 	}
 	n := limitParam(r, 200, 1000)
+	anchor := klineAnchor(sec)
 	rows, err := s.db.QueryContext(r.Context(), `SELECT b, (array_agg(price ORDER BY id))[1], max(price), min(price), (array_agg(price ORDER BY id DESC))[1], sum(qty), sum(qty*price)
-		FROM (SELECT id, price, qty, (floor(extract(epoch from created_at) / $2) * $2)::bigint AS b FROM fut_trades
+		FROM (SELECT id, price, qty, (floor((extract(epoch from created_at) - $4) / $2) * $2 + $4)::bigint AS b FROM fut_trades
 		      WHERE symbol=$1 AND created_at >= now() - make_interval(secs => $2 * $3)) t
-		GROUP BY b ORDER BY b`, c.Symbol, sec, n)
+		GROUP BY b ORDER BY b`, c.Symbol, sec, n, anchor)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	defer rows.Close()
-	out := []map[string]any{}
+	trade := []klineBar{}
 	for rows.Next() {
-		var b int64
-		var o, h, l, cl, v, t decimal.Decimal
-		if rows.Scan(&b, &o, &h, &l, &cl, &v, &t) == nil {
-			out = append(out, map[string]any{"openTime": b * 1000, "open": o, "high": h, "low": l, "close": cl, "volume": v, "turnover": money(t)})
+		var b klineBar
+		if rows.Scan(&b.Open, &b.O, &b.H, &b.L, &b.C, &b.V, &b.T) == nil {
+			trade = append(trade, b)
 		}
 	}
 	rows.Close()
-	source := "trade"
-	if len(out) == 0 {
-		// No trades in the window: fall back to index-price candles from
-		// fut_mark_history (volume 0), flagged source=index.
-		out = s.indexKlines(r, c.Symbol, sec, n)
-		source = "index"
-		if len(out) == 0 {
-			source = "none"
-		}
+	// Index candles fill every bucket without futures trades, so a thin
+	// market still has continuous history (MA on 4h/1d/1w, a real 1w chart).
+	// Preferred: market-data's index-backed klines (Binance-backfilled
+	// history); fallback: fut_mark_history samples.
+	idx, _ := s.market.Klines(r.Context(), c.Symbol, iv, n)
+	if len(idx) == 0 {
+		idx = s.indexKlines(r, c.Symbol, sec, n, anchor)
 	}
+	out, source := mergeFutKlines(trade, idx, n)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "interval": iv, "source": source, "klines": out})
+}
+
+// klineBar is one candle; Open is the bucket open time in unix seconds.
+type klineBar struct {
+	Open          int64
+	O, H, L, C, V decimal.Decimal
+	T             decimal.Decimal
+	Index         bool
+}
+
+// mergeFutKlines unions trade and index candles by bucket (trade wins), keeps
+// the newest n, and reports source: trade | index | mixed | none.
+func mergeFutKlines(trade, idx []klineBar, n int) ([]map[string]any, string) {
+	byT := map[int64]klineBar{}
+	for _, b := range idx {
+		b.Index, b.V, b.T = true, dZero, dZero
+		byT[b.Open] = b
+	}
+	for _, b := range trade {
+		b.Index = false
+		byT[b.Open] = b
+	}
+	keys := make([]int64, 0, len(byT))
+	for k := range byT {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	if n > 0 && len(keys) > n {
+		keys = keys[len(keys)-n:]
+	}
+	out := make([]map[string]any, 0, len(keys))
+	hasT, hasI := false, false
+	for _, k := range keys {
+		b := byT[k]
+		m := map[string]any{"openTime": b.Open * 1000, "open": b.O, "high": b.H, "low": b.L, "close": b.C, "volume": b.V, "turnover": money(b.T)}
+		if b.Index {
+			m["source"] = "index"
+			hasI = true
+		} else {
+			hasT = true
+		}
+		out = append(out, m)
+	}
+	switch {
+	case hasT && hasI:
+		return out, "mixed"
+	case hasT:
+		return out, "trade"
+	case hasI:
+		return out, "index"
+	}
+	return out, "none"
 }
 
 func (s *Server) hInsurance(w http.ResponseWriter, r *http.Request) {
@@ -236,21 +305,20 @@ func (s *Server) displayPrice(r *http.Request, sym string, ps priceState) (decim
 }
 
 // indexKlines builds OHLC candles from the recorded index price history.
-func (s *Server) indexKlines(r *http.Request, sym string, sec int64, n int) []map[string]any {
-	out := []map[string]any{}
+func (s *Server) indexKlines(r *http.Request, sym string, sec int64, n int, anchor int64) []klineBar {
+	out := []klineBar{}
 	rows, err := s.db.QueryContext(r.Context(), `SELECT b, (array_agg(index_price ORDER BY ts))[1], max(index_price), min(index_price), (array_agg(index_price ORDER BY ts DESC))[1]
-		FROM (SELECT ts, index_price, (floor(extract(epoch from ts) / $2) * $2)::bigint AS b FROM fut_mark_history
+		FROM (SELECT ts, index_price, (floor((extract(epoch from ts) - $4) / $2) * $2 + $4)::bigint AS b FROM fut_mark_history
 		      WHERE symbol=$1 AND index_price > 0 AND ts >= now() - make_interval(secs => $2 * $3)) t
-		GROUP BY b ORDER BY b`, sym, sec, n)
+		GROUP BY b ORDER BY b`, sym, sec, n, anchor)
 	if err != nil {
 		return out
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var b int64
-		var o, h, l, cl decimal.Decimal
-		if rows.Scan(&b, &o, &h, &l, &cl) == nil {
-			out = append(out, map[string]any{"openTime": b * 1000, "open": o, "high": h, "low": l, "close": cl, "volume": dZero, "turnover": money(dZero), "source": "index"})
+		var b klineBar
+		if rows.Scan(&b.Open, &b.O, &b.H, &b.L, &b.C) == nil {
+			out = append(out, b)
 		}
 	}
 	return out

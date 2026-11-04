@@ -430,26 +430,23 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 	if r.source == "" {
 		r.source = "user"
 	}
-	qty, err := decimal.NewFromString(strings.TrimSpace(r.Qty))
-	if err != nil || !isStep(qty, c.MinQty) {
-		return Order{}, nil, bad("INVALID_QTY", fmt.Sprintf("数量须为 %s 的整数倍", c.MinQty))
-	}
-	if qty.GreaterThan(c.MaxQty) {
-		return Order{}, nil, bad("INVALID_QTY", "超过单笔最大数量")
-	}
-	var price decimal.NullDecimal
-	if r.Type == "limit" {
-		p, err := decimal.NewFromString(strings.TrimSpace(r.Price))
-		if err != nil || !isStep(p, c.Tick) {
-			return Order{}, nil, bad("INVALID_PRICE", fmt.Sprintf("价格须为 %s 的整数倍", c.Tick))
-		}
-		price = decimal.NullDecimal{Decimal: p, Valid: true}
-	}
-	tp, err := optDec(r.TP)
+	qty, err := checkQty(c, r.Qty)
 	if err != nil {
 		return Order{}, nil, err
 	}
-	sl, err := optDec(r.SL)
+	var price decimal.NullDecimal
+	if r.Type == "limit" {
+		p, err := checkPrice(c, r.Price, "价格")
+		if err != nil {
+			return Order{}, nil, err
+		}
+		price = decimal.NullDecimal{Decimal: p, Valid: true}
+	}
+	tp, err := checkOptPrice(c, r.TP, "止盈价")
+	if err != nil {
+		return Order{}, nil, err
+	}
+	sl, err := checkOptPrice(c, r.SL, "止损价")
 	if err != nil {
 		return Order{}, nil, err
 	}
@@ -745,8 +742,8 @@ func (s *Server) SetLeverage(ctx context.Context, uid, sym string, lev int, mode
 		if mode == "" {
 			mode = curMode
 		}
-		if lev < 1 || lev > c.MaxLeverage {
-			return bad("INVALID_LEVERAGE", fmt.Sprintf("杠杆倍数范围 1-%d", c.MaxLeverage))
+		if err := checkLeverage(c, lev); err != nil {
+			return err
 		}
 		if mode != "cross" && mode != "isolated" {
 			return bad("VALIDATION_ERROR", "marginMode 必须为 cross 或 isolated")

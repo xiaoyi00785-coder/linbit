@@ -91,3 +91,15 @@ func (c *Candle) add(price, qty decimal.Decimal) {
 	c.QuoteVolume = c.QuoteVolume.Add(price.Mul(qty))
 	c.Trades++
 }
+
+// intervalAlias maps the chart's upper-case labels to interval names. "1M"
+// is deliberately absent (it would be ambiguous with 1m).
+var intervalAlias = map[string]string{"1H": "1h", "4H": "4h", "1D": "1d", "1W": "1w"}
+
+// normInterval resolves an alias (1H/4H/1D/1W) to its canonical name.
+func normInterval(name string) string {
+	if v, ok := intervalAlias[name]; ok {
+		return v
+	}
+	return name
+}

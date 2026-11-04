@@ -476,6 +476,31 @@ paths:
                 createdAt: "2026-01-05T08:30:00Z"
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /account/preferences:
+    get:
+      tags: [Account]
+      summary: 用户偏好（计价货币唯一来源）
+      description: 前端所有法币折算统一读取 quoteCurrency；未设置时返回系统默认（ACCOUNT_DEFAULT_QUOTE_CURRENCY）。
+      operationId: getAccountPreferences
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AccountPreferences" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [Account]
+      summary: 设置计价货币（传空字符串恢复默认）
+      operationId: updateAccountPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quoteCurrency: { type: string, example: USD }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AccountPreferences" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /account/profile:
     patch:
       tags: [Account]
@@ -1802,6 +1827,17 @@ paths:
         payment 支付。「全部」由前端自行处理。
       operationId: listMarketCategories
       security: []
+      parameters:
+        - name: market
+          in: query
+          required: false
+          description: spot（默认）只含现货交易对；futures 只含交易中的永续合约
+          schema: { type: string, enum: [spot, futures] }
+        - name: nonEmpty
+          in: query
+          required: false
+          description: true 时剔除没有交易对的分类（前端据此隐藏空标签，如 stocks）
+          schema: { type: boolean }
       responses:
         "200":
           description: 分类列表
@@ -1831,6 +1867,35 @@ paths:
           description: 传入则返回单个对象；不传则返回全部交易对的数组
           schema: { type: string }
           example: BTCUSDT
+        - name: symbols
+          in: query
+          required: false
+          description: 逗号分隔，仅返回这些交易对（数组）
+          schema: { type: string }
+          example: BTCUSDT,ETHUSDT
+        - name: category
+          in: query
+          required: false
+          description: 仅返回该分类（/market/categories 的 id）下的交易对
+          schema: { type: string }
+        - name: sort
+          in: query
+          required: false
+          description: >
+            服务端排序字段：symbol（默认，升序）、lastPrice、priceChangePercent、high、low、quoteVolume、baseVolume（数值字段默认降序）。
+            兼容别名：gainers = priceChangePercent desc，losers = priceChangePercent asc，volume = quoteVolume desc。
+            并列按 symbol 升序；priceSource=none 的交易对始终排最后。
+          schema: { type: string, enum: [symbol, lastPrice, priceChangePercent, high, low, quoteVolume, baseVolume, gainers, losers, volume] }
+        - name: order
+          in: query
+          required: false
+          description: 排序方向，显式传入时覆盖字段/别名的默认方向
+          schema: { type: string, enum: [asc, desc] }
+        - name: limit
+          in: query
+          required: false
+          description: 排序后截取前 N 条
+          schema: { type: integer, minimum: 1 }
       responses:
         "200":
           description: >
@@ -2772,6 +2837,7 @@ paths:
       - name: interval
         in: query
         required: true
+        description: 1m/5m/15m/30m/1h/4h/1d/1w（大小写别名 1H/4H/1D/1W 亦可）
         schema:
           type: string
           example: 1m
@@ -5355,8 +5421,10 @@ paths:
       - Announcements
       summary: 公告列表（已发布，最多 100 条）
       operationId: listAnnouncements
-      description: 公开只读，网关仅转发 GET/HEAD；其他方法返回 405。/admin/* 仍不经网关暴露。
+      description: 公开只读，网关仅转发 GET/HEAD；其他方法返回 405。/admin/* 仍不经网关暴露。置顶（pinned）优先，再按发布时间倒序。
       security: []
+      parameters:
+        - { name: category, in: query, required: false, schema: { type: string } }
       responses:
         '200':
           description: OK
@@ -5736,6 +5804,36 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/FeeRates" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /admin/v1/announcements/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    put:
+      tags: [Admin]
+      summary: 修改公告（部分字段；需 content 编辑权限，审计）
+      operationId: adminUpdateAnnouncement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category: { type: string }
+                title: { type: string }
+                body: { type: string }
+                publishAt: { type: string, format: date-time }
+                pinned: { type: boolean }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Announcement" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [Admin]
+      summary: 删除公告（需 content 编辑权限，审计）
+      operationId: adminDeleteAnnouncement
+      responses:
+        "204": { description: Deleted }
+        "404": { description: NOT_FOUND, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /admin/v1/home/placements:
     get:
       tags: [Admin]
@@ -7137,6 +7235,7 @@ components:
         emailVerified: { type: boolean, example: true }
         phoneVerified: { type: boolean, example: true }
         withdrawWhitelistEnabled: { type: boolean, example: false }
+        quoteCurrency: { type: string, description: 计价货币（用户偏好，未设置时为系统默认，见 /account/preferences）, example: CNY }
         createdAt: { type: string, format: date-time, example: "2026-01-05T08:30:00Z" }
         inviteCode: { type: string, nullable: true, description: 本人的邀请码（来自 growth 服务，首次读取时自动生成）；growth 不可达时为 null, example: LB8K2Q }
 
@@ -7440,15 +7539,31 @@ components:
       properties:
         sessionId: { type: string }
         publicKey: { type: object, additionalProperties: true }
+    AccountPreferences:
+      type: object
+      required: [quoteCurrency, defaultQuoteCurrency, supportedQuoteCurrencies]
+      properties:
+        quoteCurrency: { type: string, description: 生效的计价货币, example: CNY }
+        defaultQuoteCurrency: { type: string, example: CNY }
+        supportedQuoteCurrencies: { type: array, items: { type: string }, example: [CNY, USD, EUR, HKD, JPY, KRW, GBP] }
+    SecurityLevel:
+      type: object
+      required: [score, max, level, missing]
+      properties:
+        score: { type: integer, minimum: 0, maximum: 5, description: 已完成项数（邮箱验证、手机验证、2FA/通行密钥、资金密码、防钓鱼码） }
+        max: { type: integer, example: 5 }
+        level: { type: string, enum: [low, medium, high] }
+        missing: { type: array, items: { type: string, enum: [email, phone, twoFactor, fundPassword, antiPhishing] } }
     SecurityOverview:
       type: object
       properties:
+        securityLevel: { $ref: "#/components/schemas/SecurityLevel" }
         twoFactor:
           type: object
           properties:
             enabled: { type: boolean }
             method: { type: string, nullable: true, enum: [totp, null] }
-        email: { type: string, nullable: true, description: 脱敏 }
+        email: { type: string, nullable: true, description: 脱敏，与全站一致：保留前 min(3, len-1) 个字符 + ***@域名，如 ali***@example.com }
         emailVerified: { type: boolean }
         phone: { type: string, nullable: true, description: 脱敏，如 138****5678 }
         phoneVerified: { type: boolean }
@@ -8105,6 +8220,7 @@ components:
           type: integer
     FuturesContract:
       type: object
+      required: [symbol, maxLeverage, tickSize, minQty, maxQty]
       properties:
         symbol:
           type: string
@@ -8120,13 +8236,16 @@ components:
           description: 十进制字符串
         tickSize:
           type: string
-          description: 十进制字符串
+          description: 最小价格变动（十进制字符串，始终返回）；价格/触发价/止盈止损须为其整数倍
+          example: "0.1"
         minQty:
           type: string
-          description: 十进制字符串
+          description: 最小下单量，同时为数量步长（十进制字符串，始终返回）
+          example: "0.001"
         maxQty:
           type: string
-          description: 十进制字符串
+          description: 单笔最大下单量（十进制字符串，始终返回）
+          example: "100"
         makerFeeRate:
           type: string
           description: 十进制字符串
@@ -8215,6 +8334,21 @@ components:
           description: 十进制字符串
         priceAvailable:
           type: boolean
+        high:
+          type: string
+          description: 24h 最高价（= highPrice24h，与现货 Ticker 同名字段）
+        low:
+          type: string
+          description: 24h 最低价（= lowPrice24h）
+        quoteVolume:
+          type: string
+          description: 24h 成交额（计价币，= turnover24h）
+        volume:
+          type: string
+          description: 24h 成交量（张/基础币，= volume24h）
+        priceChangePercent:
+          type: string
+          description: 24h 涨跌幅，百分比（2 位小数，如 "1.23" 表示 1.23%）；priceChangePercent24h 为小数比率
     FuturesDepth:
       type: object
       properties:
@@ -8269,7 +8403,7 @@ components:
           type: string
         source:
           type: string
-          description: "trades / index。现货：有成交的周期用成交 K 线，无成交的周期用指数价 K 线补齐（单根 source=index、volume=0）"
+          description: "合约：trade / index / mixed / none（成交 K 线与指数价 K 线按周期合并，成交优先；单根指数补齐 source=index、volume=0）。现货：有成交的周期用成交 K 线，无成交的周期用指数价 K 线补齐（单根 source=index、volume=0）"
         klines:
           type: array
           items:
@@ -8957,6 +9091,12 @@ components:
         publishAt:
           type: string
           format: date-time
+        date:
+          type: string
+          description: 发布日期（UTC，YYYY-MM-DD）
+          example: "2026-11-03"
+        pinned:
+          type: boolean
 
     PorSnapshotInput:
       type: object

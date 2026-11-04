@@ -270,24 +270,21 @@ func (s *Server) CreatePlan(ctx context.Context, uid string, r PlaceReq) (AlgoOr
 	if strings.TrimSpace(r.TP) != "" || strings.TrimSpace(r.SL) != "" {
 		return AlgoOrder{}, bad("VALIDATION_ERROR", "计划委托暂不支持附带止盈止损，请在成交后设置")
 	}
-	qty, err := decimal.NewFromString(strings.TrimSpace(r.Qty))
-	if err != nil || qty.Sign() <= 0 || !isStep(qty, c.MinQty) {
-		return AlgoOrder{}, bad("INVALID_QTY", fmt.Sprintf("数量须为 %s 的整数倍", c.MinQty))
-	}
-	if qty.GreaterThan(c.MaxQty) {
-		return AlgoOrder{}, bad("INVALID_QTY", "超过单笔最大数量")
+	qty, err := checkQty(c, r.Qty)
+	if err != nil {
+		return AlgoOrder{}, err
 	}
 	var price decimal.NullDecimal
 	if typ == "limit" {
-		p, err := decimal.NewFromString(strings.TrimSpace(r.Price))
-		if err != nil || p.Sign() <= 0 || !isStep(p, c.Tick) {
-			return AlgoOrder{}, bad("INVALID_PRICE", fmt.Sprintf("价格须为 %s 的整数倍", c.Tick))
+		p, err := checkPrice(c, r.Price, "价格")
+		if err != nil {
+			return AlgoOrder{}, err
 		}
 		price = decimal.NullDecimal{Decimal: p, Valid: true}
 	}
-	trig, err := decimal.NewFromString(strings.TrimSpace(r.TriggerPrice))
-	if err != nil || trig.Sign() <= 0 || !isStep(trig, c.Tick) {
-		return AlgoOrder{}, bad("INVALID_PRICE", fmt.Sprintf("触发价须为 %s 的整数倍", c.Tick))
+	trig, err := checkPrice(c, r.TriggerPrice, "触发价")
+	if err != nil {
+		return AlgoOrder{}, err
 	}
 	var a AlgoOrder
 	err = s.withTx(ctx, func(tx *sql.Tx) error {

@@ -11,27 +11,9 @@ import (
 
 // ---- users ----
 
-func maskEmail(e string) string {
-	at := strings.IndexByte(e, '@')
-	if at <= 0 {
-		return e
-	}
-	if at <= 2 {
-		return e[:1] + "***" + e[at:]
-	}
-	return e[:2] + "***" + e[at:]
-}
+func maskEmail(e string) string { return common.MaskEmail(e) }
 
-func maskPhone(p string) string {
-	if len(p) <= 4 {
-		return "****"
-	}
-	keep := 3
-	if len(p) < 7 {
-		keep = 1
-	}
-	return p[:keep] + "****" + p[len(p)-4:]
-}
+func maskPhone(p string) string { return common.MaskPhone(p) }
 
 func maskUser(m map[string]interface{}) {
 	if e, ok := m["email"].(string); ok && e != "" {

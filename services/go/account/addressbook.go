@@ -90,16 +90,10 @@ type userLookupResponse struct {
 }
 
 func maskEmail(e string) string {
-	at := strings.IndexByte(e, '@')
-	if at <= 0 {
+	if strings.IndexByte(e, '@') <= 0 {
 		return ""
 	}
-	name := e[:at]
-	keep := 1
-	if len(name) > 3 {
-		keep = 2
-	}
-	return name[:keep] + "***" + e[at:]
+	return common.MaskEmail(e)
 }
 
 // handleInternalUserLookup: GET /internal/users/lookup?uid=|email= — used by

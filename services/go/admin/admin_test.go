@@ -45,7 +45,7 @@ func TestRBACMatrix(t *testing.T) {
 
 func TestMasking(t *testing.T) {
 	for in, want := range map[string]string{
-		"alice@example.com": "al***@example.com",
+		"alice@example.com": "ali***@example.com",
 		"ab@x.io":           "a***@x.io",
 		"bad":               "bad",
 	} {
@@ -55,7 +55,7 @@ func TestMasking(t *testing.T) {
 	}
 	for in, want := range map[string]string{
 		"13812345678": "138****5678",
-		"12345":       "1****2345",
+		"12345":       "12***45",
 		"123":         "****",
 	} {
 		if got := maskPhone(in); got != want {
@@ -64,7 +64,7 @@ func TestMasking(t *testing.T) {
 	}
 	m := map[string]interface{}{"email": "alice@example.com", "phone": "13812345678"}
 	maskUser(m)
-	if m["email"] != "al***@example.com" || m["phone"] != "138****5678" {
+	if m["email"] != "ali***@example.com" || m["phone"] != "138****5678" {
 		t.Errorf("maskUser: %v", m)
 	}
 }

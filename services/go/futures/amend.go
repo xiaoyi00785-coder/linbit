@@ -73,13 +73,13 @@ func (s *Server) amendLocked(ctx context.Context, uid string, id int64, r AmendR
 		}
 		px, qty := o.Price.Decimal, o.Qty
 		if v := strings.TrimSpace(r.Price); v != "" {
-			if px, err = decimal.NewFromString(v); err != nil || px.Sign() <= 0 || !isStep(px, c.Tick) {
-				return bad("INVALID_PRICE", fmt.Sprintf("价格须为 %s 的整数倍", c.Tick))
+			if px, err = checkPrice(c, v, "价格"); err != nil {
+				return err
 			}
 		}
 		if v := strings.TrimSpace(r.Qty); v != "" {
-			if qty, err = decimal.NewFromString(v); err != nil || qty.Sign() <= 0 || !isStep(qty, c.MinQty) {
-				return bad("INVALID_QTY", fmt.Sprintf("数量须为 %s 的整数倍", c.MinQty))
+			if qty, err = checkQty(c, v); err != nil {
+				return err
 			}
 		}
 		if px.Equal(o.Price.Decimal) && qty.Equal(o.Qty) {
@@ -87,9 +87,6 @@ func (s *Server) amendLocked(ctx context.Context, uid string, id int64, r AmendR
 		}
 		if !qty.GreaterThan(o.Filled) {
 			return bad("INVALID_QTY", "修改后的数量必须大于已成交数量")
-		}
-		if qty.GreaterThan(c.MaxQty) {
-			return bad("INVALID_QTY", "超过单笔最大数量")
 		}
 		if (o.TP.Valid && (o.Side == "buy") != o.TP.Decimal.GreaterThan(px)) || (o.SL.Valid && (o.Side == "buy") != o.SL.Decimal.LessThan(px)) {
 			return bad("INVALID_TPSL", "修改后价格与附带的止盈/止损方向冲突")

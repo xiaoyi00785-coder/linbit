@@ -237,6 +237,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 用户偏好（计价货币唯一来源）
+         * @description 前端所有法币折算统一读取 quoteCurrency；未设置时返回系统默认（ACCOUNT_DEFAULT_QUOTE_CURRENCY）。
+         */
+        get: operations["getAccountPreferences"];
+        /** 设置计价货币（传空字符串恢复默认） */
+        put: operations["updateAccountPreferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/account/profile": {
         parameters: {
             query?: never;
@@ -3377,7 +3398,7 @@ export interface paths {
         };
         /**
          * 公告列表（已发布，最多 100 条）
-         * @description 公开只读，网关仅转发 GET/HEAD；其他方法返回 405。/admin/* 仍不经网关暴露。
+         * @description 公开只读，网关仅转发 GET/HEAD；其他方法返回 405。/admin/* 仍不经网关暴露。置顶（pinned）优先，再按发布时间倒序。
          */
         get: operations["listAnnouncements"];
         put?: never;
@@ -3705,6 +3726,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/announcements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** 修改公告（部分字段；需 content 编辑权限，审计） */
+        put: operations["adminUpdateAnnouncement"];
+        post?: never;
+        /** 删除公告（需 content 编辑权限，审计） */
+        delete: operations["adminDeleteAnnouncement"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5079,6 +5120,11 @@ export interface components {
             /** @example false */
             withdrawWhitelistEnabled?: boolean;
             /**
+             * @description 计价货币（用户偏好，未设置时为系统默认，见 /account/preferences）
+             * @example CNY
+             */
+            quoteCurrency?: string;
+            /**
              * Format: date-time
              * @example 2026-01-05T08:30:00Z
              */
@@ -5450,13 +5496,44 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        AccountPreferences: {
+            /**
+             * @description 生效的计价货币
+             * @example CNY
+             */
+            quoteCurrency: string;
+            /** @example CNY */
+            defaultQuoteCurrency: string;
+            /**
+             * @example [
+             *       "CNY",
+             *       "USD",
+             *       "EUR",
+             *       "HKD",
+             *       "JPY",
+             *       "KRW",
+             *       "GBP"
+             *     ]
+             */
+            supportedQuoteCurrencies: string[];
+        };
+        SecurityLevel: {
+            /** @description 已完成项数（邮箱验证、手机验证、2FA/通行密钥、资金密码、防钓鱼码） */
+            score: number;
+            /** @example 5 */
+            max: number;
+            /** @enum {string} */
+            level: "low" | "medium" | "high";
+            missing: ("email" | "phone" | "twoFactor" | "fundPassword" | "antiPhishing")[];
+        };
         SecurityOverview: {
+            securityLevel?: components["schemas"]["SecurityLevel"];
             twoFactor?: {
                 enabled?: boolean;
                 /** @enum {string|null} */
                 method?: "totp" | null;
             };
-            /** @description 脱敏 */
+            /** @description 脱敏，与全站一致：保留前 min(3 */
             email?: string | null;
             emailVerified?: boolean;
             /** @description 脱敏，如 138****5678 */
@@ -6163,18 +6240,27 @@ export interface components {
         };
         FuturesContract: {
             /** @example BTCUSDT */
-            symbol?: string;
+            symbol: string;
             baseAsset?: string;
             quoteAsset?: string;
-            maxLeverage?: number;
+            maxLeverage: number;
             /** @description 十进制字符串 */
             maintenanceMarginRate?: string;
-            /** @description 十进制字符串 */
-            tickSize?: string;
-            /** @description 十进制字符串 */
-            minQty?: string;
-            /** @description 十进制字符串 */
-            maxQty?: string;
+            /**
+             * @description 最小价格变动（十进制字符串，始终返回）；价格/触发价/止盈止损须为其整数倍
+             * @example 0.1
+             */
+            tickSize: string;
+            /**
+             * @description 最小下单量，同时为数量步长（十进制字符串，始终返回）
+             * @example 0.001
+             */
+            minQty: string;
+            /**
+             * @description 单笔最大下单量（十进制字符串，始终返回）
+             * @example 100
+             */
+            maxQty: string;
             /** @description 十进制字符串 */
             makerFeeRate?: string;
             /** @description 十进制字符串 */
@@ -6226,6 +6312,16 @@ export interface components {
             /** @description 十进制字符串 */
             openInterest?: string;
             priceAvailable?: boolean;
+            /** @description 24h 最高价（= highPrice24h，与现货 Ticker 同名字段） */
+            high?: string;
+            /** @description 24h 最低价（= lowPrice24h） */
+            low?: string;
+            /** @description 24h 成交额（计价币，= turnover24h） */
+            quoteVolume?: string;
+            /** @description 24h 成交量（张/基础币，= volume24h） */
+            volume?: string;
+            /** @description 24h 涨跌幅，百分比（2 位小数，如 "1.23" 表示 1.23%）；priceChangePercent24h 为小数比率 */
+            priceChangePercent?: string;
         };
         /** @description bids/asks 为 [price, qty] */
         FuturesDepth: {
@@ -6251,7 +6347,7 @@ export interface components {
         FuturesKlines: {
             symbol?: string;
             interval?: string;
-            /** @description trades / index。现货：有成交的周期用成交 K 线，无成交的周期用指数价 K 线补齐（单根 source=index、volume=0） */
+            /** @description 合约：trade / index / mixed / none（成交 K 线与指数价 K 线按周期合并，成交优先；单根指数补齐 source=index、volume=0）。现货：有成交的周期用成交 K 线，无成交的周期用指数价 K 线补齐（单根 source=index、volume=0） */
             source?: string;
             klines?: {
                 /** Format: int64 */
@@ -6667,6 +6763,12 @@ export interface components {
             body?: string;
             /** Format: date-time */
             publishAt?: string;
+            /**
+             * @description 发布日期（UTC，YYYY-MM-DD）
+             * @example 2026-11-03
+             */
+            date?: string;
+            pinned?: boolean;
         };
         PorSnapshotInput: {
             /**
@@ -8116,6 +8218,56 @@ export interface operations {
                     "application/json": components["schemas"]["Account"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getAccountPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPreferences"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    updateAccountPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example USD */
+                    quoteCurrency?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPreferences"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -10003,7 +10155,12 @@ export interface operations {
     };
     listMarketCategories: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description spot（默认）只含现货交易对；futures 只含交易中的永续合约 */
+                market?: "spot" | "futures";
+                /** @description true 时剔除没有交易对的分类（前端据此隐藏空标签，如 stocks） */
+                nonEmpty?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10049,6 +10206,19 @@ export interface operations {
                  * @example BTCUSDT
                  */
                 symbol?: string;
+                /**
+                 * @description 逗号分隔，仅返回这些交易对（数组）
+                 * @example BTCUSDT,ETHUSDT
+                 */
+                symbols?: string;
+                /** @description 仅返回该分类（/market/categories 的 id）下的交易对 */
+                category?: string;
+                /** @description 服务端排序字段：symbol（默认，升序）、lastPrice、priceChangePercent、high、low、quoteVolume、baseVolume（数值字段默认降序）。 兼容别名：gainers = priceChangePercent desc，losers = priceChangePercent asc，volume = quoteVolume desc。 并列按 symbol 升序；priceSource=none 的交易对始终排最后。 */
+                sort?: "symbol" | "lastPrice" | "priceChangePercent" | "high" | "low" | "quoteVolume" | "baseVolume" | "gainers" | "losers" | "volume";
+                /** @description 排序方向，显式传入时覆盖字段/别名的默认方向 */
+                order?: "asc" | "desc";
+                /** @description 排序后截取前 N 条 */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -10704,6 +10874,7 @@ export interface operations {
         parameters: {
             query: {
                 symbol: unknown;
+                /** @description 1m/5m/15m/30m/1h/4h/1d/1w（大小写别名 1H/4H/1D/1W 亦可） */
                 interval: string;
                 limit?: number;
             };
@@ -13006,7 +13177,9 @@ export interface operations {
     };
     listAnnouncements: {
         parameters: {
-            query?: never;
+            query?: {
+                category?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13573,6 +13746,78 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    adminUpdateAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    category?: string;
+                    title?: string;
+                    body?: string;
+                    /** Format: date-time */
+                    publishAt?: string;
+                    pinned?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminDeleteAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     adminListPlacements: {

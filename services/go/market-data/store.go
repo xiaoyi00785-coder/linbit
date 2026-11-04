@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
@@ -137,6 +138,48 @@ func (s *Store) RecentKlines(ctx context.Context, symbol, interval string, limit
 		c.QuoteVolume = decimal.RequireFromString(qv)
 		c.Closed = true
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// RecentTakerTrades reads public trades since `since` from the order service's
+// `trades` table (shared DB; one taker row per engine trade), ascending, capped
+// at max rows (newest kept). Used only for restart recovery.
+func (s *Store) RecentTakerTrades(ctx context.Context, since time.Time, max int) ([]TradeEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT trade_id, symbol, side, price, quantity, created_at FROM (
+		SELECT id, trade_id, symbol, side, price, quantity, created_at FROM trades
+		WHERE role = 'taker' AND created_at >= $1 ORDER BY created_at DESC, id DESC LIMIT $2) t
+		ORDER BY created_at, id`, since, max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TradeEvent
+	for rows.Next() {
+		var ev TradeEvent
+		if err := rows.Scan(&ev.TradeID, &ev.Symbol, &ev.TakerSide, &ev.Price, &ev.Quantity, &ev.Time); err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
+	}
+	return out, rows.Err()
+}
+
+// FuturesSymbols lists trading perpetual contracts from the futures service's
+// fut_contracts table (shared DB).
+func (s *Store) FuturesSymbols(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT symbol FROM fut_contracts WHERE status = 'trading' ORDER BY sort, symbol`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var sym string
+		if err := rows.Scan(&sym); err != nil {
+			return nil, err
+		}
+		out = append(out, sym)
 	}
 	return out, rows.Err()
 }
