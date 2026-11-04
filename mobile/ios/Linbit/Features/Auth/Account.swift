@@ -41,6 +41,7 @@ struct UserCenterView: View {
     @State private var tab = 0
     @State private var confirm: ConfirmRequest?
     @State private var showSwitch = false
+    @ObservedObject private var flags = AppFeatures.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,6 +76,12 @@ struct UserCenterView: View {
                     row("子账户", value: nil) {
                         Router.shared.showUserCenter = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.subAccounts) }
+                    }
+                    if flags.isOn("supportTickets") {
+                        row("帮助中心 · 我的工单", value: nil) {
+                            Router.shared.showUserCenter = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.support) }
+                        }
                     }
                     row("切换账号", value: nil) { showSwitch = true }
                     Button {

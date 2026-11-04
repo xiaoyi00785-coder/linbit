@@ -29,7 +29,7 @@ env:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -118,6 +118,10 @@ jobs:
           done
           # 账户安全：概览 / 资料 / 邮箱手机 / 资金密码 / 防钓鱼码 / 设备会话 / 通行密钥 / 关闭 2FA（日间 + 夜间，含错误/空态）
           for screen in home-avatar security-avatar security-avatar-crop security-avatar-uploading security-avatar-error security security-error kyc-none kyc-pending kyc-rejected kyc-approved kyc-form kyc-form2 kyc-form2-full kyc-error security-profile security-profile-error security-email security-email-error security-phone security-fund security-fund-error security-fund-reset security-antiphishing security-antiphishing-error security-devices security-sessions security-devices-error security-devices-empty security-passkeys security-passkeys-empty security-passkeys-add security-2fa-disable security-2fa-disable-error; do
+            for mode in light dark; do shoot "$screen" "$mode"; done
+          done
+          # 客服工单：列表（全部/空/错误）/ 新建（含 429 倒计时、错误）/ 详情（待处理/已回复/已关闭/409 关闭/429 倒计时/错误）（日间 + 夜间）
+          for screen in support-list support-list-empty support-list-error support-create support-create-ratelimit support-create-error support-detail-open support-detail-replied support-detail-closed support-detail-conflict support-detail-ratelimit support-detail-error; do
             for mode in light dark; do shoot "$screen" "$mode"; done
           done
           # 资产模块：总览 / 网络 / 账户划转 / 内部转账 / 提现记录 / 地址簿（日间 + 夜间）

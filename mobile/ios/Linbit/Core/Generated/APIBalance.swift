@@ -15,13 +15,16 @@ public struct APIBalance: Codable, JSONEncodable, Hashable {
     public var locked: String
     public var total: String
     public var valuationUsd: String?
+    /** 实时指数价（USDT 计价）；客户端单价必须用此字段，不要用 valuationUsd/数量 反推。无价格时省略 */
+    public var priceUsd: String?
 
-    public init(asset: String, free: String, locked: String, total: String, valuationUsd: String? = nil) {
+    public init(asset: String, free: String, locked: String, total: String, valuationUsd: String? = nil, priceUsd: String? = nil) {
         self.asset = asset
         self.free = free
         self.locked = locked
         self.total = total
         self.valuationUsd = valuationUsd
+        self.priceUsd = priceUsd
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -30,6 +33,7 @@ public struct APIBalance: Codable, JSONEncodable, Hashable {
         case locked
         case total
         case valuationUsd
+        case priceUsd
     }
 
     // Encodable protocol methods
@@ -41,6 +45,7 @@ public struct APIBalance: Codable, JSONEncodable, Hashable {
         try container.encode(locked, forKey: .locked)
         try container.encode(total, forKey: .total)
         try container.encodeIfPresent(valuationUsd, forKey: .valuationUsd)
+        try container.encodeIfPresent(priceUsd, forKey: .priceUsd)
     }
 }
 
