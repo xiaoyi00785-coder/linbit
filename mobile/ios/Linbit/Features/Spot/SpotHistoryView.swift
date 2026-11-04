@@ -4,7 +4,7 @@ import UIKit
 /// 历史记录（对照图 #23）：当前委托 / 历史委托 / 成交明细；筛选「币对 ▾」「委托类型 ▾」；全部撤销
 struct SpotHistoryView: View {
     @Environment(\.palette) private var p
-    @State private var tab = 0
+    @State private var tab = Router.shared.shotSheet == "spotHistoryCond" ? 3 : 0
     @State private var symbol: String? = nil
     @State private var type: APIOrderType? = nil
     @State private var open: Loadable<[APIOrder]> = .loading
@@ -19,7 +19,7 @@ struct SpotHistoryView: View {
     @State private var confirm: ConfirmRequest?
     @State private var detail: APIOrder?
 
-    private let tabs = ["当前委托", "历史委托", "成交明细"]
+    private let tabs = ["当前委托", "历史委托", "成交明细", "条件单"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,7 +28,7 @@ struct SpotHistoryView: View {
                 .padding(.horizontal, Spacing.pageH).frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 16) {
                 chip(symbol.map { $0.replacingOccurrences(of: "USDT", with: "/USDT") } ?? "币对") { showPair = true }
-                if tab != 2 { chip(type.map { $0 == .limit ? "限价单" : "市价单" } ?? "委托类型") { showType = true } }
+                if tab < 2 { chip(type.map { $0 == .limit ? "限价单" : "市价单" } ?? "委托类型") { showType = true } }
                 Spacer()
                 if tab == 0 {
                     let n = filteredOpen.count
@@ -41,7 +41,7 @@ struct SpotHistoryView: View {
                     }.buttonStyle(PressableStyle())
                 }
             }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
-            content
+            if tab == 3 { SpotConditionalList(symbol: symbol).id(symbol ?? "all") } else { content }
         }
         .background(p.bg.ignoresSafeArea())
         .navigationBarHidden(true)
@@ -118,6 +118,7 @@ struct SpotHistoryView: View {
     }
 
     private func reload() async {
+        guard tab != 3 else { return }
         state = .loading; page = 1; hasMore = true
         do {
             switch tab {
