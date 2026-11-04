@@ -147,7 +147,7 @@ export function Withdraw() {
     n > freeN ? `可用余额不足（可用 ${free} ${asset}）` :
     tab === "chain" && n < min ? `最小提现数量 ${min} ${asset}` :
     tab === "chain" && n > max ? `单笔最大提现 ${maxS} ${asset}` :
-    tab === "chain" && n <= fee ? `提现数量需大于网络手续费 ${fee} ${asset}` : "");
+    tab === "chain" && n <= fee ? `提现数量需大于链上网络费（Gas）${fee} ${asset}` : "");
   const amtOk = !!amt && !amtE;
   // 到账数量：数量无效或不足以覆盖手续费时显示 --，绝不显示负数或误导性的 0
   const receive = amtOk && n > fee ? String(+(n - fee).toFixed(8)) : "--";
@@ -230,7 +230,8 @@ export function Withdraw() {
                 <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
               </div>
               <div className="wkv wdiv">
-                <span>手续费 <Src s={cfgSrc} /></span><b>{tab === "inner" ? "0" : feeS ?? "--"} {asset}</b>
+                <span>平台手续费</span><b>0 {asset}</b>
+                {tab !== "inner" && <><span>链上网络费（Gas）<Src s={cfgSrc} /></span><b>{feeS ?? "--"} {asset}</b></>}
                 <span>到账数量</span><b>{tab === "inner" ? (amtOk ? amt : "--") : receive} {asset}</b>
                 <span>预计到账时间</span><b>{tab === "inner" ? "实时到账" : eta}</b>
               </div>
@@ -246,7 +247,7 @@ export function Withdraw() {
           <div className="dtips">
             <div className="lcard sm">
               <b>温馨提示</b>
-              <p className="lg">请确认设备安全，谨防信息被篡改或泄露。<br/>谨防诈骗！linbit 不会向你索要账户密码等敏感信息，也不会要求私下转账或提现。<br/>linbit 不收取提现手续费，仅扣除链上网络费（Gas）。</p>
+              <p className="lg">请确认设备安全，谨防信息被篡改或泄露。<br/>谨防诈骗！linbit 不会向你索要账户密码等敏感信息，也不会要求私下转账或提现。<br/>linbit 不收取平台提现手续费，仅从提现数量中扣除链上网络费（Gas），到账数量 = 提现数量 − Gas。<br/>USDT 单笔最小提现 12 USDT。</p>
             </div>
             <div className="lcard sm">
               <b>常见问题</b>
@@ -272,14 +273,15 @@ export function Withdraw() {
           <div onClick={(e) => e.stopPropagation()}>
             <span className="fx-x" role="button" aria-label="关闭" onClick={() => { if (!sending) setConfirm(false); }}>✕</span>
             <h3>安全验证</h3>
-            <p className="lg">{tab === "inner" ? `站内转账 ${amt} ${asset} 至 ${to}，免手续费，实时到账` : `提现 ${amt} ${asset}（${net}），到账 ${receive} ${asset}`}</p>
+            <p className="lg">{tab === "inner" ? `站内转账 ${amt} ${asset} 至 ${to}，免手续费，实时到账` : `提现 ${amt} ${asset}（${net}），扣除链上 Gas ${feeS ?? "--"} ${asset}，到账 ${receive} ${asset}（平台不收手续费）`}</p>
             <div className="fx-field">
               谷歌验证器动态码
               <input inputMode="numeric" maxLength={6} placeholder="6 位 2FA 动态码" value={totp} onChange={(e) => { setTotp(e.target.value.replace(/\D/g, "")); if (tfa === "invalid") setTfa(null); }} />
               <TotpErr show={tfa === "invalid"} />
             </div>
-            {fpe !== "unset" && <div className="fx-field">
-              资金密码{!fpSet && <small className="lg">（未设置可留空）</small>}
+            {fpe !== "unset" && !fpSet && <div className="lg fp-unset">你尚未设置资金密码，本次无需填写。建议前往 <a role="button" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>安全中心</a> 设置以提升资金安全。</div>}
+            {fpe !== "unset" && fpSet && <div className="fx-field">
+              资金密码
               <input type="password" inputMode="numeric" maxLength={6} placeholder="6 位资金密码" value={fp} onChange={(e) => { setFp(e.target.value.replace(/\D/g, "")); if (fpe === "invalid" || fpe === "missing") setFpe(null); }} />
               {fpe === "invalid" && <div className="fx-err tfa-inv">资金密码错误，请重新输入</div>}
               {fpe === "missing" && <div className="fx-err tfa-inv">请输入资金密码</div>}

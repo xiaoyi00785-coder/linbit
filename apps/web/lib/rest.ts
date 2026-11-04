@@ -31,13 +31,15 @@ export const rget = <T,>(p: string, demo?: () => T) => rest<T>("GET", p, undefin
 /** React hook：加载 + 刷新；loading 用于骨架屏 */
 export function useRest<T>(path: string | null, demo?: () => T) {
   const [st, set] = useState<{ loading: boolean; res?: RestResult<T> }>({ loading: !!path });
-  const load = useCallback(async () => {
+  /** silent=true：后台刷新（轮询/下单后），保留现有数据，不切回骨架屏 */
+  const load = useCallback(async (silent?: unknown) => {
     if (!path) return;
-    set((s) => ({ ...s, loading: true }));
+    if (silent !== true) set((s) => ({ ...s, loading: true }));
     const res = await rget<T>(path, demo);
-    set({ loading: false, res });
+    // 后台刷新失败时保留上次成功的数据
+    set((s) => (silent === true && !res.ok && s.res?.ok ? { ...s, loading: false } : { loading: false, res }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
   useEffect(() => { load(); }, [load]);
-  return { loading: st.loading, data: st.res?.data, source: st.res?.source, error: st.res?.ok === false ? st.res.error : undefined, status: st.res?.status, reload: load };
+  return { loading: st.loading, data: st.res?.data, source: st.res?.source, error: st.res?.ok === false ? st.res.error : undefined, status: st.res?.status, reload: load, refresh: () => load(true) };
 }

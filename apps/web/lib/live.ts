@@ -12,7 +12,8 @@ export function useFeeSchedule(kind: "spot" | "futures" = "futures"): { maker: n
   const [v, setV] = useState<{ maker: number; taker: number } | null>(null);
   useEffect(() => {
     let live = true;
-    (feeP ??= rget<{ spot?: FeePair; futures?: FeePair | null }>("/spot/fee-schedule").then((r) => (r.ok && r.source === "api" ? r.data ?? null : null))).then((d) => live && setV(num(d?.[kind])));
+    // 失败（如旧网关对游客 401）不缓存，下次挂载/登录后重试
+    (feeP ??= rget<{ spot?: FeePair; futures?: FeePair | null }>("/spot/fee-schedule").then((r) => { const d = r.ok && r.source === "api" ? r.data ?? null : null; if (!d) feeP = null; return d; })).then((d) => live && setV(num(d?.[kind])));
     return () => { live = false; };
   }, [kind]);
   return v;

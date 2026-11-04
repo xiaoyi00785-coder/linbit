@@ -168,16 +168,47 @@ export function fmtFixed(v: string | number | undefined | null, digits: number, 
   return group ? n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : n.toFixed(digits);
 }
 
+// ---------------- 首屏预取 / 缓存 ----------------
+// 交易页首屏：ticker 与 depth 在页面脚本加载时即并行请求（不等组件挂载），结果按交易对缓存，二次进入即时显示
+const tickerCache = new Map<string, Ticker>();
+const depthCache = new Map<string, Book>();
+const tickerP = new Map<string, Promise<Ticker | null>>();
+const depthP = new Map<string, Promise<Book>>();
+function fetchTicker(symbol: string) {
+  let p = tickerP.get(symbol);
+  if (!p) {
+    p = rest<Ticker[] | Ticker>(`/market/ticker?symbol=${symbol}`).then((d) => { const x = Array.isArray(d) ? d[0] : d; if (x) tickerCache.set(symbol, x); return x ?? null; }).finally(() => tickerP.delete(symbol));
+    tickerP.set(symbol, p);
+  }
+  return p;
+}
+function fetchDepth(symbol: string, limit: number) {
+  const k = symbol + ":" + limit;
+  let p = depthP.get(k);
+  if (!p) {
+    p = rest<Book>(`/market/depth?symbol=${symbol}&limit=${limit}`).then((d) => { depthCache.set(symbol, d); return d; }).finally(() => depthP.delete(k));
+    depthP.set(k, p);
+  }
+  return p;
+}
+/** 预取某交易对的 ticker + 深度（失败静默），供路由/页面在挂载前调用 */
+export function prefetchMarket(symbol: string, limit = 50) {
+  if (!symbol) return;
+  fetchTicker(symbol).catch(() => null);
+  fetchDepth(symbol, limit).catch(() => null);
+}
+
 // ---------------- Hooks ----------------
 /** 单交易对 24h ticker：REST 快照 + ticker 频道。 */
 export function useTicker(symbol: string) {
-  const [t, setT] = useState<Ticker | null>(null);
+  const [t, setT] = useState<Ticker | null>(() => tickerCache.get(symbol) ?? null);
   const [src, setSrc] = useState<Source>("loading");
   useEffect(() => {
     if (!symbol) return;
     let live = true;
-    rest<Ticker[] | Ticker>(`/market/ticker?symbol=${symbol}`)
-      .then((d) => { if (!live) return; const x = Array.isArray(d) ? d[0] : d; if (x) setT(x); setSrc("api"); })
+    setT(tickerCache.get(symbol) ?? null);
+    fetchTicker(symbol)
+      .then((x) => { if (!live) return; if (x) setT(x); setSrc("api"); })
       .catch(() => live && setSrc((s) => (s === "api" ? s : "mock")));
     const un = marketWS.subscribe(`ticker:${symbol}`, (d) => { setT(d); setSrc("api"); });
     return () => { live = false; un(); };
@@ -254,7 +285,7 @@ function applyLevels(side: Level[], upd: Level[], desc: boolean): Level[] {
 }
 /** 订单簿：REST 快照 + depth 频道（订阅首帧为全量，其后为增量，量 0 删除价位）。 */
 export function useOrderBook(symbol: string, limit = 50) {
-  const [book, setBook] = useState<Book | null>(null);
+  const [book, setBook] = useState<Book | null>(() => depthCache.get(symbol) ?? null);
   const [src, setSrc] = useState<Source>("loading");
   const first = useRef(true);
   const status = useWsStatus();
@@ -263,13 +294,15 @@ export function useOrderBook(symbol: string, limit = 50) {
     if (!symbol) return;
     let live = true;
     first.current = true;
-    rest<Book>(`/market/depth?symbol=${symbol}&limit=${limit}`)
+    setBook(depthCache.get(symbol) ?? null);
+    fetchDepth(symbol, limit)
       .then((d) => { if (!live) return; setBook((b) => (b && b.lastUpdateId >= d.lastUpdateId ? b : d)); setSrc("api"); })
       .catch(() => live && setSrc((s) => (s === "api" ? s : "mock")));
     const un = marketWS.subscribe(`depth:${symbol}`, (d) => {
       setSrc("api");
       if (first.current) {
         first.current = false;
+        depthCache.set(symbol, { lastUpdateId: d.lastUpdateId, bids: applyLevels([], d.bids || [], true), asks: applyLevels([], d.asks || [], false) });
         setBook({ lastUpdateId: d.lastUpdateId, bids: applyLevels([], d.bids || [], true), asks: applyLevels([], d.asks || [], false) });
         return;
       }

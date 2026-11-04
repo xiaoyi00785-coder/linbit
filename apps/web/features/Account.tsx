@@ -122,7 +122,8 @@ function AnnItem({ a, open, toggle }: { a: Announcement; open: boolean; toggle: 
 export function Announcements() {
   const [list, , src] = useLoad<Announcement[]>(listAnnouncements, []);
   const [cat, setCat] = useState("全部");
-  const [openId, setOpenId] = useState<string | null>(null);
+  // 支持 /announcements?id=123 深链：直接展开对应公告
+  const [openId, setOpenId] = useState<string | null>(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("id") : null));
   const cats = ["全部", ...Array.from(new Set(list.map((a) => a.category)))];
   return (
     <main className="light"><div className="lwrap"><section className="lmain" style={{ width: "100%" }}>
