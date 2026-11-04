@@ -14,12 +14,12 @@ export const DEP_NETS_FALLBACK: Record<string, string[]> = {
 /** 网络代码归一化：大写并去掉括号、空格、连字符等非字母数字字符，使 SOL / Solana、ARBITRUM / "Arbitrum One"、BEP20 / "BEP20(BSC)" 落到同一个键。 */
 const netKey = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-/** 网络展示名（中文，写法：名称（代码）；仲裁一按参考设计不带括号）。接口与下单仍用原始代码。 */
+/** 网络展示名（中文，写法：名称（代码））。接口与下单仍用原始代码。 */
 const NET_NAMES: Record<string, string> = {
   TRC20: "Tron（TRC20）", TRX: "Tron（TRC20）", TRON: "Tron（TRC20）",
   ERC20: "以太坊（ERC20）", ETH: "以太坊（ERC20）", ETHEREUM: "以太坊（ERC20）",
   BEP20: "BNB智能链（BEP20）", BEP20BSC: "BNB智能链（BEP20）", BSC: "BNB智能链（BEP20）", BNB: "BNB智能链（BEP20）", BNBSMARTCHAIN: "BNB智能链（BEP20）",
-  ARBITRUM: "仲裁一", ARBITRUMONE: "仲裁一", ARB: "仲裁一",
+  ARBITRUM: "Arbitrum One（ARB）", ARBITRUMONE: "Arbitrum One（ARB）", ARB: "Arbitrum One（ARB）",
   SOL: "Solana（SOL）", SOLANA: "Solana（SOL）",
   BTC: "比特币（BTC）", BITCOIN: "比特币（BTC）",
   POLYGON: "Polygon（MATIC）", MATIC: "Polygon（MATIC）", POL: "Polygon（MATIC）",
@@ -29,6 +29,15 @@ const NET_NAMES: Record<string, string> = {
   BASE: "Base",
 };
 export const netLabel = (code?: string | null) => (code ? NET_NAMES[netKey(code)] ?? code : "");
+
+/**
+ * 提现最小额的唯一取值：接口值（已过 positiveAmount）与本地兜底下限（DEFAULT_MIN_WITHDRAW）取较大者，返回展示用字符串。
+ * 占位符、下拉、「单笔最小提现」行与超限校验都用它，避免各处不一致；两者都没有则为 undefined。
+ */
+export function withdrawMin(apiMin: string | undefined, floor?: number): string | undefined {
+  if (!floor || floor <= 0) return apiMin;
+  return apiMin !== undefined && Number(apiMin) >= floor ? apiMin : String(floor);
+}
 
 /**
  * 接口金额字符串 → 展示用字符串：仅当它是 > 0 的十进制数时返回（去掉尾零，不经过浮点）；
