@@ -78,3 +78,49 @@ assert.equal(withdrawMin(undefined, 12), "12");
 assert.equal(withdrawMin("0.0005", undefined), "0.0005");
 assert.equal(withdrawMin(undefined, undefined), undefined);
 console.log("net-display ok");
+// QA 批次 1（主网 5e65414）
+import { fmtVolume, fmtFeeEst } from "../lib/format.ts";
+import { stLabel, KNOWN_STATUSES } from "../lib/orderStatus.ts";
+import { etaMinutes, withdrawTip } from "../lib/assetDisplay.ts";
+// 1. 零 / 缺失成交额统一 "--"
+for (const v of [0, "0", "0.00", "0.00000000", "", undefined, null, "abc", NaN, -5]) assert.equal(fmtVolume(v), "--", String(v));
+assert.equal(fmtVolume("1234567.891"), "1,234,567.89");
+assert.equal(fmtVolume(0.5, 4), "0.5000");
+// 7. 预估手续费：最多 8 位（基础币）/ 4 位（USDT），不输出 0.00000006383
+assert.equal(fmtFeeEst(0.00000006383, 8), "0.00000006");
+assert.equal(fmtFeeEst(0.0000638, 8), "0.0000638");
+assert.equal(fmtFeeEst(0.123456789, 8), "0.12345679");
+assert.equal(fmtFeeEst(0.5, 8), "0.5");
+assert.equal(fmtFeeEst(0.00000000383, 8), "< 0.00000001");
+assert.equal(fmtFeeEst(0.00123456, 4), "0.0012");
+assert.equal(fmtFeeEst(0.00001, 4), "< 0.0001");
+assert.equal(fmtFeeEst(0, 8), "--");
+assert.equal(fmtFeeEst(undefined, 8), "--");
+assert.doesNotMatch(fmtFeeEst(1e-7, 8), /e/i);
+// 6. 状态：已知枚举都有中文，done = 已完成；上下文覆盖
+assert.equal(stLabel("done"), "已完成");
+assert.equal(stLabel("DONE"), "已完成");
+assert.equal(stLabel("completed"), "已完成");
+assert.equal(stLabel("pending", "deposit"), "确认中");
+assert.equal(stLabel("pending", "withdraw"), "审核中");
+assert.equal(stLabel("pending"), "待处理");
+assert.equal(stLabel(undefined), "--");
+assert.equal(stLabel("brand_new_enum"), "brand_new_enum");
+for (const k of KNOWN_STATUSES) assert.match(stLabel(k), /[\u4e00-\u9fa5]/, k + " has a Chinese label");
+for (const k of ["new", "filled", "canceled", "rejected", "failed", "completed", "done", "processing", "pending", "success", "settled", "running", "stopped"]) assert.ok(KNOWN_STATUSES.includes(k), k);
+// 5. 提现网络下拉也带预计到账（后端 estimatedArrivalMinutes），缺失 / 0 不编造；提示随币种 / 网络变化
+assert.equal(etaMinutes(30), 30);
+for (const v of [0, -1, NaN, undefined, null, "5"]) assert.equal(etaMinutes(v), undefined, String(v));
+const wdNets = { ok: true, source: "api", data: { networks: [
+  { asset: "BTC", network: "BTC", minWithdraw: "0.001", withdrawEnabled: true, estimatedArrivalMinutes: 30 },
+  { asset: "BTC", network: "LN", minWithdraw: "0.0001", withdrawEnabled: true },
+] } };
+const wd = netInfosOf("BTC", wdNets, true);
+assert.equal(wd[0].eta, 30);
+assert.equal(wd[0].min, "0.001");
+assert.equal(wd[1].eta, undefined);
+assert.equal(withdrawTip("USDT", "TRC20", "12", undefined), "当前选择 USDT · Tron（TRC20）：单笔最小提现 12 USDT。");
+assert.equal(withdrawTip("BTC", "BTC", "0.001", 30), "当前选择 BTC · 比特币（BTC）：单笔最小提现 0.001 BTC，预计到账约 30 分钟。");
+assert.equal(withdrawTip("ETH", "ERC20", undefined, undefined), undefined);
+assert.doesNotMatch(withdrawTip("BTC", "BTC", "0.001", undefined), /USDT|12/);
+console.log("qa-batch1 ok");

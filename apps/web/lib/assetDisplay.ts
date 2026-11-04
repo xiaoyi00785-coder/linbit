@@ -65,6 +65,18 @@ const NET_ICON: Record<string, string> = {
 };
 export const netIcon = (code: string): string | null => NET_ICON[netKey(code)] ?? null;
 
+/** 预计到账分钟数：只认后端给的正数（0 / 缺失 / 非数值 ⇒ undefined，绝不编造默认值）。充值与提现共用。 */
+export function etaMinutes(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+}
+
+/** 提现页「温馨提示」里随币种 / 网络变化的一句：最小提现额（withdrawMin 的唯一取值）+ 后端给出的预计到账时间；两者都缺失时返回 undefined（不展示）。 */
+export function withdrawTip(asset: string, network: string | undefined, min: string | undefined, eta: number | undefined): string | undefined {
+  if (!min && !eta) return undefined;
+  const head = `当前选择 ${asset}${network ? ` · ${netLabel(network)}` : ""}：`;
+  return head + [min ? `单笔最小提现 ${min} ${asset}` : "", eta ? `预计到账约 ${eta} 分钟` : ""].filter(Boolean).join("，") + "。";
+}
+
 /** 网络下拉的一行：附加信息只取后端字段（minDeposit / minWithdraw / estimatedArrivalMinutes / recommended），缺失则不展示，绝不编造。 */
 export type NetInfo = { network: string; min?: string; eta?: number; recommended?: boolean };
 export function netInfosOf(asset: string, r: NetRes, out = false): NetInfo[] {
@@ -74,7 +86,7 @@ export function netInfosOf(asset: string, r: NetRes, out = false): NetInfo[] {
       .map((x) => ({
         network: x.network,
         min: positiveAmount(out ? x.minWithdraw : x.minDeposit),
-        eta: !out && typeof x.estimatedArrivalMinutes === "number" && x.estimatedArrivalMinutes > 0 ? x.estimatedArrivalMinutes : undefined,
+        eta: etaMinutes(x.estimatedArrivalMinutes), // 充值与提现同一份后端字段，提现下拉也要展示
         recommended: x.recommended === true || undefined,
       }));
   }

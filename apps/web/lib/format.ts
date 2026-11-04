@@ -16,10 +16,45 @@ export function fmtPct(value: string | number | undefined): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-/** 根据涨跌返回 token 文字颜色类。 */
-export function changeClass(value: string | number | undefined): string {
-  const n = typeof value === "string" ? Number(value) : value ?? 0;
-  return n >= 0 ? "text-lb-up" : "text-lb-down";
+/** 24h 涨跌方向：>0 涨、<0 跌；0 / 缺失 / 非数值为 flat（无方向）。颜色、箭头、符号都从这里取，保证一致。 */
+export type ChangeDir = "up" | "down" | "flat";
+export function changeDir(value: string | number | null | undefined): ChangeDir {
+  if (value === null || value === undefined || value === "") return "flat";
+  const n = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(n) || n === 0) return "flat";
+  return n > 0 ? "up" : "down";
+}
+
+/** 价格 / 涨跌幅的静态文字颜色类：按 24h 涨跌符号取 up / down，无方向为 flat（继承默认文字色）。
+ *  tick 闪烁（components/Flash）只做背景瞬时效果，不参与静态颜色。 */
+export function changeClass(value: string | number | null | undefined): ChangeDir {
+  return changeDir(value);
+}
+
+/**
+ * 24h 成交额 / 成交量统一格式化（全站共用）：缺失、非数值、0 或负数一律显示 "--"，
+ * 避免同一指标在行情页显示 "--"、合约页头显示 "0.00"。其余按 digits 位小数加千分位。
+ */
+export function fmtVolume(value: string | number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || value === "") return "--";
+  const n = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(n) || n <= 0) return "--";
+  return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/**
+ * 预估手续费展示（全站共用）：最多 maxDp 位小数、去尾零；0 / 非数值为 "--"；
+ * 小于最小可显示单位（10^-maxDp）的非零费用显示为 "< 0.0…1"，不输出 0.00000006383 这类过长小数或科学计数法。
+ * 基础币（BTC 等）用 8 位，USDT 用 4 位（与合约下单面板的预估手续费一致）。
+ */
+export function fmtFeeEst(value: string | number | null | undefined, maxDp = 8): string {
+  if (value === null || value === undefined || value === "") return "--";
+  const n = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(n) || n <= 0) return "--";
+  const min = 10 ** -maxDp;
+  if (n < min) return `< ${min.toFixed(maxDp)}`;
+  const s = n.toFixed(maxDp);
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
 }
 
 /** 自适应精度：保留 sig 位有效数字（至少 minDp 位小数，最多 maxDp），去尾零，绝不输出科学计数法 */
