@@ -3731,6 +3731,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/spot/fee-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 平台默认手续费率（公开，不含个人覆盖）
+         * @description 小数表示（0.001 = 0.1%）。首页/营销文案的费率必须读此接口，不要写死。合约为默认费率（首个合约），各合约费率见 /futures/market/contracts；合约服务不可用时 futures 为 null。
+         */
+        get: operations["getFeeSchedule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/announcements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 公告详情（已发布）
+         * @description 公开只读；未发布或不存在返回 404。网关仅转发 /announcements/{数字id} 的 GET/HEAD。
+         */
+        get: operations["getAnnouncement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/announcements/{id}": {
         parameters: {
             query?: never;
@@ -5552,7 +5592,13 @@ export interface components {
             max: number;
             /** @enum {string} */
             level: "low" | "medium" | "high";
-            missing: ("email" | "phone" | "twoFactor" | "fundPassword" | "antiPhishing")[];
+            missing: ("emailVerified" | "phoneVerified" | "twoFactor" | "fundPassword" | "antiPhishing")[];
+            /** @description 每一项的完成状态（固定 5 项、固定顺序）；清单必须按此渲染，✓ 数量恒等于 score */
+            items?: {
+                /** @enum {string} */
+                key: "emailVerified" | "phoneVerified" | "twoFactor" | "fundPassword" | "antiPhishing";
+                ok: boolean;
+            }[];
         };
         SecurityOverview: {
             securityLevel?: components["schemas"]["SecurityLevel"];
@@ -13774,6 +13820,60 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getFeeSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        spot: components["schemas"]["FeePair"];
+                        futures: components["schemas"]["FeePair"] | null;
+                    };
+                };
+            };
+        };
+    };
+    getAnnouncement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     adminUpdateAnnouncement: {

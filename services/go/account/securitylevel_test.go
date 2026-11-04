@@ -22,3 +22,16 @@ func TestMaskEmailMatchesWeb(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestSecurityLevelItemsMatchScore(t *testing.T) {
+	l := computeSecurityLevel(true, false, true, true, true)
+	n := 0
+	for _, it := range l.Items {
+		if it.OK {
+			n++
+		}
+	}
+	if len(l.Items) != 5 || n != l.Score || l.Score != 4 || len(l.Missing) != 1 || l.Missing[0] != "phoneVerified" {
+		t.Fatalf("%+v", l)
+	}
+}

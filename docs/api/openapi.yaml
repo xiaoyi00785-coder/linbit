@@ -5804,6 +5804,46 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/FeeRates" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /spot/fee-schedule:
+    get:
+      tags: [Account]
+      summary: 平台默认手续费率（公开，不含个人覆盖）
+      description: 小数表示（0.001 = 0.1%）。首页/营销文案的费率必须读此接口，不要写死。合约为默认费率（首个合约），各合约费率见 /futures/market/contracts；合约服务不可用时 futures 为 null。
+      operationId: getFeeSchedule
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [spot, futures]
+                properties:
+                  spot: { $ref: "#/components/schemas/FeePair" }
+                  futures:
+                    nullable: true
+                    allOf: [{ $ref: "#/components/schemas/FeePair" }]
+  /announcements/{id}:
+    get:
+      tags: [Announcements]
+      summary: 公告详情（已发布）
+      operationId: getAnnouncement
+      description: 公开只读；未发布或不存在返回 404。网关仅转发 /announcements/{数字id} 的 GET/HEAD。
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /admin/v1/announcements/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -7603,7 +7643,16 @@ components:
         score: { type: integer, minimum: 0, maximum: 5, description: 已完成项数（邮箱验证、手机验证、2FA/通行密钥、资金密码、防钓鱼码） }
         max: { type: integer, example: 5 }
         level: { type: string, enum: [low, medium, high] }
-        missing: { type: array, items: { type: string, enum: [email, phone, twoFactor, fundPassword, antiPhishing] } }
+        missing: { type: array, items: { type: string, enum: [emailVerified, phoneVerified, twoFactor, fundPassword, antiPhishing] } }
+        items:
+          type: array
+          description: 每一项的完成状态（固定 5 项、固定顺序）；清单必须按此渲染，✓ 数量恒等于 score
+          items:
+            type: object
+            required: [key, ok]
+            properties:
+              key: { type: string, enum: [emailVerified, phoneVerified, twoFactor, fundPassword, antiPhishing] }
+              ok: { type: boolean }
     SecurityOverview:
       type: object
       properties:

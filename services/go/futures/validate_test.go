@@ -22,7 +22,7 @@ func code(err error) string {
 
 func TestCheckQty(t *testing.T) {
 	c := vc()
-	for raw, want := range map[string]string{"0.001": "", "1.234": "", "100": "", "0.0005": "INVALID_QTY",
+	for raw, want := range map[string]string{"0.001": "", "1.234": "", "100": "", "0.0005": "INVALID_QTY", "0.0001": "INVALID_QTY",
 		"0.0015": "INVALID_QTY", "100.001": "INVALID_QTY", "0": "INVALID_QTY", "-1": "INVALID_QTY", "abc": "INVALID_QTY"} {
 		if _, err := checkQty(c, raw); code(err) != want {
 			t.Errorf("qty %s: got %q want %q (%v)", raw, code(err), want, err)
@@ -32,7 +32,7 @@ func TestCheckQty(t *testing.T) {
 
 func TestCheckPriceAndTPSL(t *testing.T) {
 	c := vc()
-	for raw, want := range map[string]string{"65000.1": "", "65000.15": "INVALID_PRICE", "0": "INVALID_PRICE", "x": "INVALID_PRICE"} {
+	for raw, want := range map[string]string{"65000.1": "", "65000.15": "INVALID_PRICE", "65000.123456": "INVALID_PRICE", "0": "INVALID_PRICE", "x": "INVALID_PRICE"} {
 		if _, err := checkPrice(c, raw, "价格"); code(err) != want {
 			t.Errorf("price %s: got %q want %q", raw, code(err), want)
 		}
@@ -50,7 +50,7 @@ func TestCheckPriceAndTPSL(t *testing.T) {
 
 func TestCheckLeverage(t *testing.T) {
 	c := vc()
-	for lev, ok := range map[int]bool{1: true, 125: true, 200: true, 0: false, 201: false, -5: false} {
+	for lev, ok := range map[int]bool{1: true, 125: true, 200: true, 0: false, 201: false, 500: false, -5: false} {
 		if err := checkLeverage(c, lev); (err == nil) != ok {
 			t.Errorf("lev %d: err=%v", lev, err)
 		}

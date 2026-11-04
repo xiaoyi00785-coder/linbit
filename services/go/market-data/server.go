@@ -210,6 +210,14 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sortTickersBy(out, field, desc)
+	// Rankings: gainers only lists rising symbols, losers only falling ones
+	// (a short list beats padding the losers board with +0.10%).
+	switch strings.ToLower(strings.TrimSpace(q.Get("sort"))) {
+	case "gainers":
+		out = filterTickersByChange(out, 1)
+	case "losers":
+		out = filterTickersByChange(out, -1)
+	}
 	if lim := atoiDefault(q.Get("limit"), 0, 1, 1000); lim > 0 && len(out) > lim {
 		out = out[:lim]
 	}
@@ -394,4 +402,17 @@ func atoiDefault(s string, def, min, max int) int {
 		return max
 	}
 	return n
+}
+
+// filterTickersByChange keeps tickers whose priceChangePercent has the given
+// sign (1 = strictly positive, -1 = strictly negative). Order is preserved.
+func filterTickersByChange(in []tickerDTO, sign int) []tickerDTO {
+	out := in[:0]
+	for _, t := range in {
+		d, err := decimal.NewFromString(t.PriceChangePercent)
+		if err == nil && d.Sign() == sign {
+			out = append(out, t)
+		}
+	}
+	return out
 }

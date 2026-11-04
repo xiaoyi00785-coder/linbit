@@ -43,6 +43,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /spot/orders/conditional", s.withUser(s.handleCondList))
 	mux.HandleFunc("DELETE /spot/orders/conditional/{id}", s.withUser(s.handleCondCancel))
 	mux.HandleFunc("GET /account/fee-rates", s.withUser(s.handleFeeRates))
+	mux.HandleFunc("GET /spot/fee-schedule", s.handleFeeSchedule) // public default rates
 	s.adminRoutes(mux)
 	s.internalRoutes(mux)
 	return mux

@@ -334,6 +334,24 @@ func TestPublicAnnouncementsProxied(t *testing.T) {
 	}
 }
 
+func TestAnnouncementDetailProxied(t *testing.T) {
+	adm := newAdminRecorder()
+	defer adm.server.Close()
+	other := newUpstream()
+	defer other.server.Close()
+	h := newTestGatewayCfg(t, Config{AccountURL: other.server.URL, AssetURL: other.server.URL, AdminURL: adm.server.URL})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/announcements/42", nil))
+	if w.Code != http.StatusOK || adm.hits != 1 || adm.lastPath != "/announcements/42" {
+		t.Fatalf("status=%d hits=%d path=%q", w.Code, adm.hits, adm.lastPath)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/announcements/42", nil))
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status=%d", w.Code)
+	}
+}
+
 func TestAdminStillBlockedWithAnnouncements(t *testing.T) {
 	adm := newAdminRecorder()
 	defer adm.server.Close()
@@ -342,7 +360,7 @@ func TestAdminStillBlockedWithAnnouncements(t *testing.T) {
 	h := newTestGatewayCfg(t, Config{AccountURL: other.server.URL, AssetURL: other.server.URL, AdminURL: adm.server.URL})
 	paths := []string{"/admin", "/admin/", "/admin/v1/announcements", "/admin/v1/auth/login", "//admin/v1/users",
 		"/ADMIN/v1/announcements", "/admin/../admin/v1/me", "/announcements/../admin/v1/me", "/internal/x",
-		"/announcements/1", "/announcements/", "/announcementsx"}
+		"/announcements/", "/announcements/01", "/announcements/1/x", "/announcements/abc", "/announcementsx"}
 	for _, p := range paths {
 		for _, m := range []string{"GET", "POST"} {
 			w := httptest.NewRecorder()

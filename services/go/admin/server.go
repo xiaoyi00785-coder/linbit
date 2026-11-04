@@ -54,6 +54,7 @@ func (s *Server) Routes() http.Handler {
 	})
 	// Public (no admin auth): published announcements.
 	mux.HandleFunc("GET /announcements", s.handlePublicAnnouncements)
+	mux.HandleFunc("GET /announcements/{id}", s.handlePublicAnnouncement)
 
 	a := func(pattern, perm string, h http.HandlerFunc) {
 		mux.HandleFunc(pattern, s.guard(s.authed(perm, h)))

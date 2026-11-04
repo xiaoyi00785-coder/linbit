@@ -36,6 +36,24 @@ func (s *Server) ticker(r *http.Request, sym string) map[string]any {
 	var oi decimal.Decimal
 	_ = s.db.QueryRowContext(r.Context(), `SELECT COALESCE(sum(qty),0) FROM fut_positions WHERE symbol=$1 AND qty > 0`, sym).Scan(&oi)
 	last, src := s.displayPrice(r, sym, ps)
+	// No local trades in 24h: derive open/high/low from the index-price
+	// history (fut_mark_history) so the day change matches the spot ticker and
+	// the market cards instead of a flat 0%. Volume stays 0 (never fabricated).
+	if !open.Valid {
+		var io, ih, il decimal.NullDecimal
+		if s.db.QueryRowContext(r.Context(), `SELECT (array_agg(index_price ORDER BY ts))[1], max(index_price), min(index_price)
+			FROM fut_mark_history WHERE symbol=$1 AND ts > now() - interval '24 hours' AND index_price > 0`, sym).Scan(&io, &ih, &il) == nil && io.Valid {
+			open, high, low = io, ih, il
+			if last.Sign() > 0 {
+				if last.GreaterThan(high.Decimal) {
+					high.Decimal = last
+				}
+				if last.LessThan(low.Decimal) {
+					low.Decimal = last
+				}
+			}
+		}
+	}
 	change := dZero
 	if open.Valid && open.Decimal.Sign() > 0 && last.Sign() > 0 {
 		change = last.Sub(open.Decimal).Div(open.Decimal).Round(6)

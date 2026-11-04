@@ -303,14 +303,24 @@ type securityLevel struct {
 	Level string `json:"level"` // low | medium | high
 	// Missing lists the unset items (emailVerified, phoneVerified, twoFactor, fundPassword, antiPhishing).
 	Missing []string `json:"missing"`
+	// Items is the per-check status the score is computed from, in display
+	// order; clients must render the checklist from this (not their own checks)
+	// so the ✓ marks always add up to score.
+	Items []securityItem `json:"items"`
+}
+
+type securityItem struct {
+	Key string `json:"key"` // emailVerified | phoneVerified | twoFactor | fundPassword | antiPhishing
+	OK  bool   `json:"ok"`
 }
 
 func computeSecurityLevel(emailV, phoneV, twoFA, fund, anti bool) securityLevel {
-	l := securityLevel{Max: 5, Missing: []string{}}
+	l := securityLevel{Max: 5, Missing: []string{}, Items: []securityItem{}}
 	for _, it := range []struct {
 		ok   bool
 		name string
 	}{{emailV, "emailVerified"}, {phoneV, "phoneVerified"}, {twoFA, "twoFactor"}, {fund, "fundPassword"}, {anti, "antiPhishing"}} {
+		l.Items = append(l.Items, securityItem{Key: it.name, OK: it.ok})
 		if it.ok {
 			l.Score++
 		} else {

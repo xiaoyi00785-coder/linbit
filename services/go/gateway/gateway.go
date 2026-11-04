@@ -117,7 +117,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		annDirector(r)
 		// Pin the upstream path and strip any credentials: the admin service
 		// only ever sees an anonymous GET /announcements.
-		r.URL.Path = "/announcements"
+		// Only /announcements or /announcements/<digits> ever reach admin.
+		if annPath(r.URL.Path) == "" {
+			r.URL.Path = "/announcements"
+		}
 		r.URL.RawPath = ""
 		r.Header.Del("Authorization")
 		r.Header.Del("Cookie")
@@ -207,6 +210,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
 			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
+			{method: http.MethodGet, path: "/spot/fee-schedule"},                 // public default fee rates (order)
 			{method: http.MethodGet, path: "/growth/config"},                     // invite/newcomer numbers (read-only)
 			{method: http.MethodGet, path: "/home/hot"},                          // home hot list (read-only)
 			{method: "", path: "/ws", optionalAuth: true},                        // market WebSocket; a token unlocks private channels (event:orders)
@@ -237,7 +241,7 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Public, read-only announcements (admin service public handler only).
-	if r.URL.Path == "/announcements" {
+	if annPath(r.URL.Path) != "" {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			common.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "仅支持 GET")
@@ -387,4 +391,23 @@ func bearer(r *http.Request) string {
 func hiddenPath(raw string) bool {
 	p := strings.ToLower(path.Clean("/" + raw))
 	return strings.HasPrefix(p, "/internal") || p == "/admin" || strings.HasPrefix(p, "/admin/")
+}
+
+// annPath returns p when it is exactly the public announcements list
+// (/announcements) or one announcement detail (/announcements/<digits>, no
+// leading zero, at most 18 digits); otherwise "".
+func annPath(p string) string {
+	if p == "/announcements" {
+		return p
+	}
+	id, ok := strings.CutPrefix(p, "/announcements/")
+	if !ok || id == "" || len(id) > 18 || id[0] == '0' {
+		return ""
+	}
+	for i := 0; i < len(id); i++ {
+		if id[i] < '0' || id[i] > '9' {
+			return ""
+		}
+	}
+	return p
 }

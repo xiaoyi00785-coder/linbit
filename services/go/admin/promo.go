@@ -427,6 +427,31 @@ func (s *Server) handlePublicAnnouncements(w http.ResponseWriter, r *http.Reques
 	common.WriteJSON(w, http.StatusOK, map[string]interface{}{"items": items})
 }
 
+// handlePublicAnnouncement returns one published announcement (detail page).
+// Unpublished (future publish_at) or missing ids answer 404.
+func (s *Server) handlePublicAnnouncement(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "公告不存在")
+		return
+	}
+	var d announcementDTO
+	var at time.Time
+	err = s.db.QueryRowContext(r.Context(), `SELECT id, category, title, body, publish_at, pinned FROM announcements WHERE id=$1 AND publish_at <= $2`,
+		id, s.now()).Scan(&d.ID, &d.Category, &d.Title, &d.Body, &at, &d.Pinned)
+	if errors.Is(err, sql.ErrNoRows) {
+		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "公告不存在")
+		return
+	}
+	if err != nil {
+		internalErr(w, "announcement", err)
+		return
+	}
+	d.PublishAt = fmtTime(at)
+	d.Date = at.UTC().Format("2006-01-02")
+	common.WriteJSON(w, http.StatusOK, d)
+}
+
 func (s *Server) handleListAnnouncements(w http.ResponseWriter, r *http.Request) {
 	items, err := s.queryAnnouncements(r.Context(), false, r.URL.Query().Get("category"))
 	if err != nil {

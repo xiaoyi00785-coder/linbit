@@ -133,6 +133,23 @@ func (s *Server) handleFeeRates(w http.ResponseWriter, r *http.Request, userID s
 	common.WriteJSON(w, http.StatusOK, out)
 }
 
+// handleFeeSchedule is the public, user-independent fee schedule (fractions,
+// 0.001 = 0.1%): the single source the marketing copy ("taker fee as low as
+// …") must read instead of hardcoding. Futures comes from the futures service
+// default (no user override); per-contract rates are in
+// /futures/market/contracts.
+func (s *Server) handleFeeSchedule(w http.ResponseWriter, r *http.Request) {
+	m, t := s.currentFees()
+	out := map[string]any{"spot": feePair{m.String(), t.String()}, "futures": nil}
+	if fut, _, err := s.futuresFees(r.Context(), "", ""); err == nil {
+		out["futures"] = fut
+	} else if !errors.Is(err, errNoFutures) {
+		log.Printf("fee-schedule: futures: %v", err)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	common.WriteJSON(w, http.StatusOK, out)
+}
+
 var errNoFutures = errors.New("futures not configured")
 
 func (s *Server) futuresFees(ctx context.Context, userID, symbol string) (*feePair, bool, error) {
