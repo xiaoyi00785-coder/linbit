@@ -188,6 +188,13 @@ struct RootTabView: View {
         case "loan-repay": SecShot.raw = "loan:repay"; router.feature = .loans
         case "loan-collateral": SecShot.raw = "loan:collateral"; router.feature = .loans
         case "loan-error": SecShot.raw = "loan:error"; router.feature = .loans
+        case "tradfi-list": SecShot.raw = "tradfi:list"; router.feature = .tradfi
+        case "tradfi-metal": SecShot.raw = "tradfi:metal"; router.feature = .tradfi
+        case "tradfi-empty": SecShot.raw = "tradfi:empty"; router.feature = .tradfi
+        case "tradfi-restricted": SecShot.raw = "tradfi:restricted"; router.feature = .tradfi
+        case "tradfi-disabled": SecShot.raw = "tradfi:disabled"; router.feature = .tradfi
+        case "tradfi-unavailable": SecShot.raw = "tradfi:unavailable"; router.feature = .tradfi
+        case "tradfi-error": SecShot.raw = "tradfi:error"; router.feature = .tradfi
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
         case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security

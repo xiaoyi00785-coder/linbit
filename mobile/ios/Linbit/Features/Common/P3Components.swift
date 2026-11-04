@@ -173,7 +173,7 @@ struct FeatureHost: View {
         case .partner: PartnerView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .kyc: KycView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .changePassword: ChangePasswordView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
-        case .tradfi: FeatureShell(title: "TradFi") { ComingSoonView(title: "TradFi", note: "股票、贵金属等传统金融资产交易即将上线") }
+        case .tradfi: TradFiView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         }
     }
 }

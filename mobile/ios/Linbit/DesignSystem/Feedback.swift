@@ -289,6 +289,8 @@ enum ErrorText {
         "TERM_OFFLINE": "该借款期限已暂停",
         "TERM_QUOTA_EXCEEDED": "该期限借款额度已售罄",
         "UNSUPPORTED_COLLATERAL": "不支持该质押币种",
+        "REGION_RESTRICTED": "根据当地法规，该服务暂不向您所在的国家或地区开放",
+        "SERVICE_UNAVAILABLE": "服务暂不可用，请稍后再试",
         "CONTACT_UNCHANGED": "新旧联系方式相同",
         "EMAIL_EXISTS": "该邮箱已被其他账户使用",
         "PHONE_EXISTS": "该手机号已被其他账户使用",
