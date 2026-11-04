@@ -136,6 +136,15 @@ function useAcct(initial: Kind = "邮箱") {
   return { kind, valid, target, shown, ui, msg, touch: () => setTouched(true) };
 }
 
+/** 密码规则：8–PWD_MAX 位、含字母、含数字；返回未满足项 */
+export const pwdMissing = (p: string) => [p.length < 8 || p.length > PWD_MAX ? `${p.length < 8 ? "至少 8 位" : `最多 ${PWD_MAX} 位`}` : "", /[A-Za-z]/.test(p) ? "" : "包含字母", /\d/.test(p) ? "" : "包含数字"].filter(Boolean);
+/** 实时规则提示：输入后逐项显示 ✓/✗ */
+function PwdRules({ pwd, show }: { pwd: string; show: boolean }) {
+  if (!pwd && !show) return null;
+  const R: [string, boolean][] = [[`8–${PWD_MAX} 位`, pwd.length >= 8 && pwd.length <= PWD_MAX], ["包含字母", /[A-Za-z]/.test(pwd)], ["包含数字", /\d/.test(pwd)]];
+  return <ul className="pwd-rules" aria-live="polite" data-testid="pwd-rules">{R.map(([t, ok]) => <li key={t} className={ok ? "ok" : "no"}>{ok ? "✓" : "✗"} {t}</li>)}</ul>;
+}
+
 /** 注册：账户+密码 → 验证码（POST /auth/code/send → POST /auth/register） */
 export function Register() {
   const a = useAcct();
@@ -148,7 +157,8 @@ export function Register() {
   const [busy, setBusy] = useState(false);
   const finish = useFinish();
   const authed = useGuestOnly();
-  const validPwd = pwd.length >= 8 && pwd.length <= PWD_MAX && /[A-Za-z]/.test(pwd) && /\d/.test(pwd);
+  const validPwd = pwdMissing(pwd).length === 0;
+  const [tried, setTried] = useState(false);
   const send = async () => {
     const r = await sendAuthCode("register", a.target());
     return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error };
@@ -162,6 +172,7 @@ export function Register() {
         <>
           {a.ui}
           <Pwd placeholder={`设置密码（8–${PWD_MAX} 位，含字母和数字）`} value={pwd} onChange={setPwd} />
+          <PwdRules pwd={pwd} show={tried} />
           <input className="ai" aria-label="邀请码（选填）" maxLength={32} placeholder="邀请码（选填）" value={invite} onChange={(e) => setInvite(e.target.value.trim())} />
           <label className="agree" onClick={() => setAgree(!agree)}>
             <i className={agree ? "on" : ""}>{agree && "✓"}</i>
@@ -173,12 +184,15 @@ export function Register() {
           <button
             className={"abtn" + (agree && a.valid && validPwd && !busy ? "" : " dis")}
             disabled={busy}
-            aria-disabled={!(agree && a.valid && validPwd)}
             onClick={async () => {
-              if (!a.valid) { a.touch(); return setErr(a.msg); }
-              if (!pwd) return setErr("请输入密码");
-              if (!validPwd) return setErr(`密码需为 8–${PWD_MAX} 位，且同时包含字母和数字`);
-              if (!agree) return setErr("请先同意服务条款");
+              setTried(true);
+              // 一次性列出全部缺失项：账户 + 密码规则 + 条款
+              const miss: string[] = [];
+              if (!a.valid) { a.touch(); miss.push(a.msg || "请输入正确的邮箱或手机号"); }
+              if (!pwd) miss.push("请输入密码");
+              else if (!validPwd) miss.push("密码还需：" + pwdMissing(pwd).join("、"));
+              if (!agree) miss.push("请先同意服务条款");
+              if (miss.length) return setErr(miss.join("；"));
               setBusy(true);
               const r = await send();
               setBusy(false);
@@ -414,12 +428,13 @@ export function ForgotPassword() {
       {step === 2 && (
         <>
           <input className="ai" type="password" placeholder={`新密码（8–${PWD_MAX} 位，含字母和数字）`} maxLength={PWD_MAX} value={pwd} onChange={(e) => setPwd(e.target.value)} />
+          <PwdRules pwd={pwd} show={!!err} />
           <input className="ai" type="password" placeholder="确认新密码" value={pwd2} onChange={(e) => setPwd2(e.target.value)} />
           {err && <div className="fx-err">{err}</div>}
           <button
             className={"abtn" + (busy ? " dis" : "")}
             onClick={async () => {
-              if (pwd.length < 8 || pwd.length > PWD_MAX || !/[A-Za-z]/.test(pwd) || !/\d/.test(pwd)) return setErr(`密码需为 8–${PWD_MAX} 位，且同时包含字母和数字`);
+              if (pwdMissing(pwd).length) return setErr("密码还需：" + pwdMissing(pwd).join("、"));
               if (pwd !== pwd2) return setErr("两次输入的密码不一致");
               if (!tok || Date.now() > tok.exp) {
                 setTok(null);

@@ -9,6 +9,7 @@ import {
   type Order, type SpotTrade,
 } from "@/lib/services";
 import { SPOT_FEE } from "@/lib/fees";
+import { fmtSig } from "@/lib/format";
 import { useFeeSchedule } from "@/lib/live";
 import type { PlaceOrderRequest } from "@/lib/services";
 import { Src } from "./common";
@@ -43,6 +44,9 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   // 按金额买入时，数量按最新价估算（仅用于展示）
   const q = byAmt ? (last ? an / last : 0) : Number(qty) || 0;
   const bal = useBalances();
+  // 下单/撤单后（EVT）刷新可用余额：撮合与冻结异步，事件到达时再拉一次
+  const balRefetch = bal.refetch;
+  useEffect(() => { const f = () => { void balRefetch(); }; window.addEventListener(EVT, f); return () => window.removeEventListener(EVT, f); }, [balRefetch]);
   const freeOf = (a: string) => Number(((bal.data as any)?.items || []).find((x: any) => x.asset === a)?.free) || 0;
   const avail = side === "buy" ? freeOf("USDT") : freeOf(B);
   const [pc, setPc] = useState(0);
@@ -63,9 +67,8 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const fs = useFeeSchedule("spot");
   const rate = fs ? (type === "market" ? fs.taker : Math.max(fs.maker, fs.taker)) : SPOT_FEE.taker;
   // 买入从所得基础币扣，卖出从所得 USDT 扣；小额按 8 位有效小数显示，避免恒为 0.000000
-  const fmtFee = (v: number, dp: number) => (v > 0 ? v.toFixed(dp).replace(/\.?0+$/, "") || "0" : "0");
   const feeV = side === "buy" ? q * rate : q * px * rate;
-  const fee = !q || (side === "sell" && !px) ? "--" : side === "buy" ? `${fmtFee(feeV, Math.max(8, pair.qp))} ${B}` : `${fmtFee(feeV, 8)} USDT`;
+  const fee = !q || (side === "sell" && !px) ? "--" : side === "buy" ? `${fmtSig(feeV)} ${B}` : `${fmtSig(feeV)} USDT`;
 
   const submit = async () => {
     if (!authed) return nav("/login");
@@ -90,7 +93,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
     const r = await placeSpotOrder(body);
     setBusy(false);
     setMsg(r.ok ? { ok: true, t: `下单成功 #${r.data?.orderId}（${r.data?.status}）` } : { ok: false, t: r.error ?? "下单失败" });
-    if (r.ok) { setQty(""); setAmt(""); setPc(0); bump(); window.setTimeout(bump, 800); }
+    if (r.ok) { setQty(""); setAmt(""); setPc(0); bump(); window.setTimeout(bump, 800); window.setTimeout(bump, 2500); }
   };
 
   return (

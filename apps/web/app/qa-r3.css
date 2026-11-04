@@ -84,3 +84,4 @@ body,:lang(sk),:lang(cs),:lang(el){font-family:-apple-system,BlinkMacSystemFont,
 .lb.lime.dis,.lb.lime[aria-disabled="true"]{background:var(--lb-light-border)!important;color:var(--lb-text-2)!important;cursor:not-allowed;box-shadow:none}
 .notice-t{color:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-decoration:none}.notice-t:hover{color:#abe127}
 .tk-obsk{display:flex;flex-direction:column;gap:6px;padding:6px 0}.tk-obsk .sk,.tk-midsk{display:block;height:14px;border-radius:3px;background:linear-gradient(90deg,#1c1c1c 25%,#2a2a2a 50%,#1c1c1c 75%);background-size:200% 100%;animation:skq 1.2s infinite linear}.tk-midsk{display:inline-block;width:90px;height:18px;vertical-align:middle}.fp-unset{font-size:12px;margin:8px 0}.fp-unset a{color:#abe127;cursor:pointer}
+.pwd-rules{list-style:none;display:flex;gap:14px;margin:-4px 0 10px;padding:0;font-size:12px}.pwd-rules .ok{color:#abe127}.pwd-rules .no{color:#8a8f98}

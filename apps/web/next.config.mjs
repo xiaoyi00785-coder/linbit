@@ -28,6 +28,8 @@ const nextConfig = {
     return [
       { source: "/assets/futures-account", destination: "/assets/trading-account", permanent: false },
       { source: "/earn/wealth", destination: "/earn", permanent: false },
+      // 费率说明页统一在 /p/费率
+      { source: "/fees", destination: "/p/%E8%B4%B9%E7%8E%87", permanent: false },
       ...[
         ["funding", "funding-account"], ["futures", "trading-account"], ["spot", "spot-account"],
         ["earn", "earn-account"], ["tradfi", "tradfi-account"], ["bot", "bots-account"], ["bots", "bots-account"],

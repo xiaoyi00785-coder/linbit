@@ -11,7 +11,7 @@ import { useDismiss } from "@/lib/dismiss";
 import { btnProps, onActivate, tabProps } from "@/lib/a11y";
 import { CoinIcon } from "@/components/CoinIcon";
 import type { components } from "@linbit/api-client";
-import { fmtFixed, restBase, useOrderBook, useRecentTrades, useSymbols, useTicker, type Level, type SymbolMeta } from "@/lib/market";
+import { fmtFixed, marketWS, restBase, useOrderBook, useRecentTrades, useSymbols, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
 export type Contract = { symbol: string; baseAsset: string; quoteAsset: string; maxLeverage: number; maintenanceMarginRate: string; tickSize: string; minQty: string; maxQty: string; makerFeeRate: string; takerFeeRate: string };
@@ -102,17 +102,47 @@ function useFutDepth(sym: string, on: boolean) {
   }, [sym, on]);
   return b;
 }
+/**
+ * 合约 ticker（含标记价）：模块级共享 store，同一交易对全页只有一个轮询，
+ * 顶部行情栏、仓位行、止盈止损弹窗读同一份数据，避免各自轮询造成的价格不一致。
+ */
+const FUT_POLL_MS = 2000;
+const futStore = new Map<string, { t: any; subs: Set<(t: any) => void>; timer?: ReturnType<typeof setInterval>; onVis?: () => void; unWs?: () => void }>();
+function futSub(sym: string, f: (t: any) => void) {
+  let e = futStore.get(sym);
+  if (!e) { e = { t: null, subs: new Set() }; futStore.set(sym, e); }
+  const ent = e;
+  ent.subs.add(f);
+  if (!ent.timer) {
+    const get = () => { if (document.hidden) return; fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => { const x = j && (j.tickers ?? [j]).find((y: any) => y.symbol === sym); if (x) { ent.t = normFutT(x); ent.subs.forEach((g) => g(ent.t)); } }).catch(() => {}); };
+    get(); ent.timer = setInterval(get, FUT_POLL_MS);
+    ent.onVis = get; document.addEventListener("visibilitychange", get);
+    // 标记价实时推送（WS mark:{symbol}，约 1s）；轮询仍提供 24h 行情等其余字段
+    ent.unWs = marketWS.subscribe(`mark:${sym}`, (d: any) => {
+      if (!d || !Number(d.markPrice)) return;
+      ent.t = { ...(ent.t ?? {}), markPrice: d.markPrice, indexPrice: d.indexPrice ?? ent.t?.indexPrice, fundingRate: d.fundingRate ?? ent.t?.fundingRate, nextFundingTime: d.nextFundingTime ?? ent.t?.nextFundingTime };
+      ent.subs.forEach((g) => g(ent.t));
+    });
+  }
+  return () => {
+    ent.subs.delete(f);
+    if (!ent.subs.size) { clearInterval(ent.timer); ent.timer = undefined; ent.unWs?.(); ent.unWs = undefined; if (ent.onVis) document.removeEventListener("visibilitychange", ent.onVis); }
+  };
+}
 function useFutTicker(sym: string, on: boolean) {
-  const [t, setT] = useState<any>(null);
+  const [t, setT] = useState<any>(() => (on ? futStore.get(sym)?.t ?? null : null));
   useEffect(() => {
-    if (!on) return;
-    let dead = false;
-    const get = () => !document.hidden && fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => !dead && j && setT(normFutT((j.tickers ?? [j]).find((x: any) => x.symbol === sym)))).catch(() => {});
-    get(); const i = setInterval(get, 5000);
-    const v = () => get(); document.addEventListener("visibilitychange", v);
-    return () => { dead = true; clearInterval(i); document.removeEventListener("visibilitychange", v); };
+    if (!on || !sym) return;
+    setT(futStore.get(sym)?.t ?? null);
+    return futSub(sym, setT);
   }, [sym, on]);
   return t;
+}
+/** 统一标记价：共享 ticker 有值用它，否则回退到接口快照（如仓位里的 markPrice） */
+export function useMarkPrice(sym: string, fallback?: string | number): string {
+  const t = useFutTicker(sym, true);
+  const m = t?.markPrice;
+  return m != null && Number(m) ? String(m) : fallback != null ? String(fallback) : "--";
 }
 export { useFutTicker };
 
