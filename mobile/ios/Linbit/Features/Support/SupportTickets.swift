@@ -43,12 +43,24 @@ struct PickedImage: Identifiable, Equatable {
         guard d.count <= SupportAPI.maxImageBytes else { return .failure(.size) }
         return .success(PickedImage(data: d, mime: kind.0, ext: kind.1))
     }
+
+    /// 相册里选出的图片：先校验格式 / 大小，再去掉 EXIF（含 GPS 定位）等元数据，处理后再校验一次。
+    /// 去不干净时返回 .process，不会退回去上传原图。
+    static func fromLibrary(_ d: Data) -> Result<PickedImage, SupportPickError> {
+        switch validate(d) {
+        case let .failure(e): return .failure(e)
+        case let .success(img):
+            guard let clean = ImageMetadataStripper.strip(img.data, mime: img.mime) else { return .failure(.process) }
+            return validate(clean)
+        }
+    }
 }
 
 enum SupportPickError: Error {
-    case format, size, count
+    case format, size, count, process
     var text: String {
         switch self {
+        case .process: return "无法处理所选图片，请换一张再试"
         case .format: return "仅支持 JPG / PNG / WEBP 格式图片"
         case .size: return "单张图片不能超过 5MB"
         case .count: return "每条消息最多上传 3 张图片"
@@ -272,7 +284,7 @@ struct SupportImagePicker: View {
                 for it in sel {
                     guard images.count < SupportAPI.maxImagesPerMessage else { err = SupportPickError.count.text; break }
                     guard let d = try? await it.loadTransferable(type: Data.self) else { err = "无法读取所选图片"; continue }
-                    switch PickedImage.validate(d) {
+                    switch PickedImage.fromLibrary(d) {
                     case let .success(img): images.append(img)
                     case let .failure(e): err = e.text
                     }
