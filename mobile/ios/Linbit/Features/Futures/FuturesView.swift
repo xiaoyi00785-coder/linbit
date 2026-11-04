@@ -67,7 +67,7 @@ struct FuturesTradeView: View {
         }
         .task {
             // 截图：把 K 线 / 委托区滚动到画面内
-            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (["ordersTpsl", "ordersPlan", "pnl", "pnlError", "pnlEmpty"].contains(router.shotSheet ?? "") ? "lb.bottom" : nil)
+            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (["ordersTpsl", "ordersPlan", "pnl", "pnlError", "pnlEmpty", "liq"].contains(router.shotSheet ?? "") ? "lb.bottom" : nil)
             guard let target else { return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             proxy.scrollTo(target, anchor: .top)
@@ -107,7 +107,7 @@ struct FuturesTradeView: View {
         case "ordersTpsl": bottomTab = 1; orderFilter = 1
         case "ordersPlan": bottomTab = 1; orderFilter = 2
         case "plan": m.kind = .plan
-        case "pnl", "pnlError", "pnlEmpty": applyPnlDemo(router.shotSheet ?? "")
+        case "pnl", "pnlError", "pnlEmpty", "liq": applyPnlDemo(router.shotSheet ?? "")
         default: break
         }
     }
@@ -119,6 +119,17 @@ struct FuturesTradeView: View {
         let entry = Dec.plain(ref * Decimal(string: "0.985")!, m.pricePrec)
         m.positions = k == "pnlEmpty" ? [] : [APIFuturesPosition(symbol: m.symbol, side: .long, qty: "0.050", entryPrice: entry, markPrice: Dec.plain(ref, m.pricePrec),
                                                                marginMode: .cross, leverage: 20, margin: Dec.plain(Dec.parse(entry) * Decimal(string: "0.05")! / 20, 2))]
+        if k == "liq" {
+            let mark = Dec.plain(ref, m.pricePrec)
+            m.positions = [
+                APIFuturesPosition(symbol: m.symbol, side: .long, qty: "0.050", entryPrice: entry, markPrice: mark, marginMode: .cross, leverage: 2,
+                                   margin: Dec.plain(Dec.parse(entry) * Decimal(string: "0.05")! / 2, 2), liquidationPrice: "0"),
+                APIFuturesPosition(symbol: m.symbol, side: .short, qty: "0.020", entryPrice: entry, markPrice: mark, marginMode: .isolated, leverage: 1,
+                                   margin: Dec.plain(Dec.parse(entry) * Decimal(string: "0.02")!, 2), liquidationPrice: Dec.plain(ref * 12, m.pricePrec)),
+                APIFuturesPosition(symbol: m.symbol, side: .long, qty: "0.010", entryPrice: entry, markPrice: mark, marginMode: .isolated, leverage: 20,
+                                   margin: Dec.plain(Dec.parse(entry) * Decimal(string: "0.01")! / 20, 2), liquidationPrice: Dec.plain(ref * Decimal(string: "0.955")!, m.pricePrec)),
+            ]
+        }
         switch k {
         case "pnlError": m.todayPnl = .failed("网络异常，请稍后重试")
         case "pnlEmpty": m.todayPnl = .loaded(APIFuturesTodayPnl200Response(asset: "USDT", since: 0, pnl: "0", realizedPnl: "0", funding: "0", fee: "0", liquidationFee: "0", insuranceCover: "0"))
@@ -139,7 +150,7 @@ struct FuturesTradeView: View {
         case "plan": m.kind = .plan
         case "ordersTpsl": bottomTab = 1; orderFilter = 1; return
         case "ordersPlan": bottomTab = 1; orderFilter = 2; return
-        case "pnl", "pnlError", "pnlEmpty": applyPnlDemo(router.shotSheet ?? ""); return
+        case "pnl", "pnlError", "pnlEmpty", "liq": applyPnlDemo(router.shotSheet ?? ""); return
         case "modeHedge": m.positionMode = .hedge; showMode = true
         case "tpslPartial": showTpslForm = true
         case "amend":
@@ -571,8 +582,11 @@ struct PositionCard: View {
             }
             HStack {
                 KVCell(k: "标记价格", v: Fmt.priceAuto(markV))
-                KVCell(k: "强平价格", v: pos.liquidationPrice.map { Fmt.priceAuto(Dec.parse($0)) } ?? "--", align: .center)
+                KVCell(k: "强平价格", v: pos.liqText, align: .center)
                 KVCell(k: "止盈/止损", v: lbTpslText(pos.tpPrice, pos.tpTriggerPriceType?.rawValue, pos.slPrice, pos.slTriggerPriceType?.rawValue), align: .trailing)
+            }
+            if let tip = pos.liqTip {
+                Text(tip).font(.lb(FontSize.small)).foregroundColor(p.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 8) {
                 btn(pos.marginMode == .isolated ? "调整保证金" : "保证金", onMargin)

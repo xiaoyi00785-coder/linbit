@@ -109,7 +109,7 @@ jobs:
           for screen in home markets spot assets login futures futures-chart futures-plan futures-history futures-position-history futures-algo-history futures-tiers futures-funding \
                         event earn strategy swap chat subaccounts welfare \
                         spot-plan spot-market-amount spot-fee spot-conditional spot-history-conditional \
-                        futures-pnl futures-pnl-empty futures-pnl-error password-register password-reset password-change; do
+                        futures-liq spot-history-amount futures-pnl futures-pnl-empty futures-pnl-error password-register password-reset password-change; do
             for mode in light dark; do shoot "$screen" "$mode"; done
           done
           for screen in futures-leverage futures-mode futures-tpsl futures-kind futures-tools event-confirm \
