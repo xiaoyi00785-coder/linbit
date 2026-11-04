@@ -263,6 +263,12 @@ struct TpslSheet: View {
         .lbConfirm($confirm)
         .onAppear {
             tp = position?.tpPrice ?? m.tpText; sl = position?.slPrice ?? m.slText
+            if let pos = position {
+                if pos.tpTriggerPriceType == .last { tpType = .last }
+                if pos.slTriggerPriceType == .last { slType = .last }
+            } else {
+                tpType = m.orderTpType == .last ? .last : .mark; slType = m.orderSlType == .last ? .last : .mark
+            }
             if Router.shared.shotSheet == "tpslPartial" { partial = true }
             recomputeRoi()
         }
@@ -299,7 +305,7 @@ struct TpslSheet: View {
                     HStack(spacing: 3) { Image(systemName: "trash").font(.system(size: 11)); Text("清空") }
                         .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                 }
-                if position != nil {
+                do {
                 Menu {
                     Button("标记价格") { setType(positive, mark: true) }
                     Button("最新价格") { setType(positive, mark: false) }
@@ -389,7 +395,7 @@ struct TpslSheet: View {
         let t = Dec.parse(tp), s = Dec.parse(sl)
         if !tp.isEmpty, (long ? t <= entry : t >= entry) { ToastCenter.shared.show("止盈价需\(long ? "高于" : "低于")\(position == nil ? "委托价" : "开仓价")", .error); return }
         if !sl.isEmpty, (long ? s >= entry : s <= entry) { ToastCenter.shared.show("止损价需\(long ? "低于" : "高于")\(position == nil ? "委托价" : "开仓价")", .error); return }
-        if let pos = position, partial || tpType == .mark || slType == .mark {
+        if let pos = position, partial {
             // 部分数量或指定触发价类型 → /futures/tpsl-orders（qty 为空即全部仓位）
             var q: String? = nil
             if partial {
@@ -405,11 +411,12 @@ struct TpslSheet: View {
                 saving = false; if ok { onClose() }
             }
         } else if let pos = position {
-            // 整仓 + 最新价触发：沿用 /positions/{symbol}/tpsl；修改：空字符串表示清除该项（spec："" 清除）
+            // 整仓：/positions/{symbol}/tpsl，带触发价类型；修改：空字符串表示清除该项（spec："" 清除）
             saving = true
-            Task { let ok = await m.setTpsl(pos, tp: tp, sl: sl, toast: hasExisting ? "止盈止损已修改" : "止盈止损已设置"); saving = false; if ok { onClose() } }
+            Task { let ok = await m.setTpsl(pos, tp: tp, sl: sl, tpType: tpType == .mark ? .mark : .last, slType: slType == .mark ? .mark : .last, toast: hasExisting ? "止盈止损已修改" : "止盈止损已设置"); saving = false; if ok { onClose() } }
         } else {
-            m.tpsl = !(tp.isEmpty && sl.isEmpty); m.tpText = tp; m.slText = sl; onClose()
+            m.tpsl = !(tp.isEmpty && sl.isEmpty); m.tpText = tp; m.slText = sl
+            m.orderTpType = tpType == .mark ? .mark : .last; m.orderSlType = slType == .mark ? .mark : .last; onClose()
         }
     }
 }
@@ -535,6 +542,114 @@ struct AmendOrderSheet: View {
             let ok = await m.amend(order, price: priceChanged ? Dec.plain(np, m.pricePrec) : nil, qty: qtyChanged ? Dec.plain(nq, m.qtyPrec) : nil)
             saving = false
             if ok { onClose() }
+        }
+    }
+}
+
+/// 修改条件委托（计划委托 / 止盈止损委托）：与改单弹窗同风格。仅提交有变化的字段，至少一项。
+struct AmendAlgoSheet: View {
+    @Environment(\.palette) private var p
+    @ObservedObject var m: FuturesModel
+    let algo: APIFuturesAlgoOrder
+    let onClose: () -> Void
+    @State private var trigger = ""
+    @State private var mark = true
+    @State private var market = false
+    @State private var price = ""
+    @State private var qty = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    private var isPlan: Bool { algo.algoType == .plan }
+    private var buy: Bool { algo.side == "buy" }
+    private var title: String { isPlan ? "修改计划委托" : (algo.algoType == .tp ? "修改止盈委托" : "修改止损委托") }
+    /// 止盈止损数量上限：对应仓位数量
+    private var maxQty: Decimal? {
+        guard !isPlan else { return nil }
+        let ps = algo.positionSide ?? "BOTH"
+        let pos = m.positions.first { ($0.symbol ?? "") == (algo.symbol ?? m.symbol) && (ps == "BOTH" || FuturesModel.side(of: $0) == ps) }
+        return pos.map { abs(Dec.parse($0.qty)) }
+    }
+
+    var body: some View {
+        LBSheet(title: title, subtitle: "\(algo.symbol ?? m.symbol) · \(isPlan ? "计划委托" : "止盈止损")", showClose: true, onClose: onClose) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    KVCell(k: "原触发价(\(algo.triggerPriceType == .last ? "最新" : "标记"))", v: Fmt.priceAuto(Dec.parse(algo.triggerPrice)))
+                    KVCell(k: "原委托价", v: algo.orderType == .market || (algo.price ?? "").isEmpty ? "市价" : Fmt.priceAuto(Dec.parse(algo.price)), align: .center)
+                    KVCell(k: "原数量", v: (algo.qty ?? "").isEmpty ? "全部仓位" : (algo.qty ?? ""), align: .trailing)
+                }
+                HStack(spacing: 8) {
+                    Text("触发价类型").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    Spacer()
+                    chip("标记价格", mark) { mark = true; error = nil }
+                    chip("最新价格", !mark) { mark = false; error = nil }
+                }
+                NumberBox(label: "新触发价", unit: m.quote, text: $trigger, onEdit: { error = nil })
+                if isPlan {
+                    HStack(spacing: 8) {
+                        Text("委托类型").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                        Spacer()
+                        chip("限价", !market) { market = false; error = nil }
+                        chip("市价", market) { market = true; error = nil }
+                    }
+                    if !market { NumberBox(label: "新委托价", unit: m.quote, text: $price, onEdit: { error = nil }) }
+                }
+                NumberBox(label: isPlan ? "新数量" : "新数量（留空为全部仓位）", unit: m.base, text: $qty, onEdit: { error = nil })
+                if let mq = maxQty { Text("最多 \(Dec.plain(mq, m.qtyPrec)) \(m.base)（当前持仓）").font(.lb(FontSize.small)).foregroundColor(p.textTertiary) }
+                Text("未修改的项将保持原值").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                if let error { InlineBanner(text: error) }
+                LBButton(title: "确认修改", kind: buy ? .buy : .sell, loading: saving) { submit() }.padding(.top, 4)
+            }.padding(.horizontal, Spacing.pageH)
+        }
+        .onAppear {
+            trigger = algo.triggerPrice ?? ""; mark = algo.triggerPriceType != .last
+            market = algo.orderType == .market || (algo.price ?? "").isEmpty
+            price = algo.price ?? ""; qty = algo.qty ?? ""
+        }
+    }
+
+    private func chip(_ t: String, _ on: Bool, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            Text(t).font(.lb(FontSize.small, on ? .medium : .regular)).foregroundColor(on ? p.textPrimary : p.textSecondary)
+                .padding(.horizontal, 10).frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: Radius.xs).fill(on ? p.fillStrong : p.fill))
+        }
+    }
+
+    private func submit() {
+        var r = APIFuturesAlgoAmendRequest()
+        let nt = Dec.parse(trigger)
+        if !trigger.isEmpty && nt != Dec.parse(algo.triggerPrice) {
+            if nt <= 0 { error = "请输入有效触发价"; return }
+            r.triggerPrice = Dec.plain(nt, m.pricePrec)
+        }
+        let oldMark = algo.triggerPriceType != .last
+        if mark != oldMark { r.triggerPriceType = mark ? .mark : .last }
+        if isPlan {
+            let oldMarket = algo.orderType == .market || (algo.price ?? "").isEmpty
+            if market {
+                if !oldMarket { r.orderType = .market }
+            } else {
+                let np = Dec.parse(price)
+                if np <= 0 { error = "请输入有效委托价"; return }
+                if oldMarket || np != Dec.parse(algo.price) { r.orderType = .limit; r.price = Dec.plain(np, m.pricePrec) }
+            }
+        }
+        if !qty.isEmpty && Dec.parse(qty) != Dec.parse(algo.qty) {
+            let nq = Dec.parse(qty)
+            if nq <= 0 { error = "请输入有效数量"; return }
+            if let mq = maxQty, nq > mq { error = "数量不能超过持仓数量"; return }
+            r.qty = Dec.plain(nq, m.qtyPrec)
+        }
+        if r.triggerPrice == nil && r.triggerPriceType == nil && r.orderType == nil && r.price == nil && r.qty == nil {
+            error = "请至少修改一项"; return
+        }
+        saving = true
+        Task {
+            let e = await m.amendAlgo(algo, r)
+            saving = false
+            if let e { error = e } else { onClose() }
         }
     }
 }

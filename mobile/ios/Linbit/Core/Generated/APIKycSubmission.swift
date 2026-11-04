@@ -27,9 +27,9 @@ public struct APIKycSubmission: Codable, JSONEncodable, Hashable {
     public var dateOfBirth: Date
     /** 1 = 基础认证（不填默认 1）；2 = 高级认证（需基础认证已通过） */
     public var level: APILevel?
-    public var documents: APIKycSubmissionDocuments?
+    public var documents: APIKycSubmissionDocuments
 
-    public init(firstName: String, lastName: String, country: String, idType: APIIdType, idNumber: String, dateOfBirth: Date, level: APILevel? = nil, documents: APIKycSubmissionDocuments? = nil) {
+    public init(firstName: String, lastName: String, country: String, idType: APIIdType, idNumber: String, dateOfBirth: Date, level: APILevel? = nil, documents: APIKycSubmissionDocuments) {
         self.firstName = firstName
         self.lastName = lastName
         self.country = country
@@ -62,7 +62,7 @@ public struct APIKycSubmission: Codable, JSONEncodable, Hashable {
         try container.encode(idNumber, forKey: .idNumber)
         try container.encode(dateOfBirth, forKey: .dateOfBirth)
         try container.encodeIfPresent(level, forKey: .level)
-        try container.encodeIfPresent(documents, forKey: .documents)
+        try container.encode(documents, forKey: .documents)
     }
 }
 

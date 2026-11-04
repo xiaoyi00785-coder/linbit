@@ -21,9 +21,13 @@ public struct APIAccount: Codable, JSONEncodable, Hashable {
     public var emailVerified: Bool?
     public var phoneVerified: Bool?
     public var withdrawWhitelistEnabled: Bool?
+    /** 计价货币（用户偏好，未设置时为系统默认，见 /account/preferences） */
+    public var quoteCurrency: String?
     public var createdAt: Date
+    /** 本人的邀请码（来自 growth 服务，首次读取时自动生成）；growth 不可达时为 null */
+    public var inviteCode: String?
 
-    public init(uid: String, email: String? = nil, phone: String? = nil, countryCode: String? = nil, nickname: String? = nil, avatarUrl: String? = nil, kycLevel: Int, twoFactorEnabled: Bool, emailVerified: Bool? = nil, phoneVerified: Bool? = nil, withdrawWhitelistEnabled: Bool? = nil, createdAt: Date) {
+    public init(uid: String, email: String? = nil, phone: String? = nil, countryCode: String? = nil, nickname: String? = nil, avatarUrl: String? = nil, kycLevel: Int, twoFactorEnabled: Bool, emailVerified: Bool? = nil, phoneVerified: Bool? = nil, withdrawWhitelistEnabled: Bool? = nil, quoteCurrency: String? = nil, createdAt: Date, inviteCode: String? = nil) {
         self.uid = uid
         self.email = email
         self.phone = phone
@@ -35,7 +39,9 @@ public struct APIAccount: Codable, JSONEncodable, Hashable {
         self.emailVerified = emailVerified
         self.phoneVerified = phoneVerified
         self.withdrawWhitelistEnabled = withdrawWhitelistEnabled
+        self.quoteCurrency = quoteCurrency
         self.createdAt = createdAt
+        self.inviteCode = inviteCode
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -50,7 +56,9 @@ public struct APIAccount: Codable, JSONEncodable, Hashable {
         case emailVerified
         case phoneVerified
         case withdrawWhitelistEnabled
+        case quoteCurrency
         case createdAt
+        case inviteCode
     }
 
     // Encodable protocol methods
@@ -68,7 +76,9 @@ public struct APIAccount: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(emailVerified, forKey: .emailVerified)
         try container.encodeIfPresent(phoneVerified, forKey: .phoneVerified)
         try container.encodeIfPresent(withdrawWhitelistEnabled, forKey: .withdrawWhitelistEnabled)
+        try container.encodeIfPresent(quoteCurrency, forKey: .quoteCurrency)
         try container.encode(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(inviteCode, forKey: .inviteCode)
     }
 }
 

@@ -9,8 +9,9 @@ import Foundation
 
 public struct APISecurityOverview: Codable, JSONEncodable, Hashable {
 
+    public var securityLevel: APISecurityLevel?
     public var twoFactor: APISecurityOverviewTwoFactor?
-    /** 脱敏 */
+    /** 脱敏，与全站一致：保留前 min(3 */
     public var email: String?
     public var emailVerified: Bool?
     /** 脱敏，如 138****5678 */
@@ -27,7 +28,8 @@ public struct APISecurityOverview: Codable, JSONEncodable, Hashable {
     public var recentDevices: [APIDevice]?
     public var policy: APISecurityOverviewPolicy?
 
-    public init(twoFactor: APISecurityOverviewTwoFactor? = nil, email: String? = nil, emailVerified: Bool? = nil, phone: String? = nil, phoneVerified: Bool? = nil, fundPasswordSet: Bool? = nil, fundPasswordLockedUntil: Date? = nil, antiPhishingSet: Bool? = nil, antiPhishingHint: String? = nil, passkeysCount: Int? = nil, withdrawLockedUntil: Date? = nil, withdrawLockReason: String? = nil, recentDevices: [APIDevice]? = nil, policy: APISecurityOverviewPolicy? = nil) {
+    public init(securityLevel: APISecurityLevel? = nil, twoFactor: APISecurityOverviewTwoFactor? = nil, email: String? = nil, emailVerified: Bool? = nil, phone: String? = nil, phoneVerified: Bool? = nil, fundPasswordSet: Bool? = nil, fundPasswordLockedUntil: Date? = nil, antiPhishingSet: Bool? = nil, antiPhishingHint: String? = nil, passkeysCount: Int? = nil, withdrawLockedUntil: Date? = nil, withdrawLockReason: String? = nil, recentDevices: [APIDevice]? = nil, policy: APISecurityOverviewPolicy? = nil) {
+        self.securityLevel = securityLevel
         self.twoFactor = twoFactor
         self.email = email
         self.emailVerified = emailVerified
@@ -45,6 +47,7 @@ public struct APISecurityOverview: Codable, JSONEncodable, Hashable {
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
+        case securityLevel
         case twoFactor
         case email
         case emailVerified
@@ -65,6 +68,7 @@ public struct APISecurityOverview: Codable, JSONEncodable, Hashable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(securityLevel, forKey: .securityLevel)
         try container.encodeIfPresent(twoFactor, forKey: .twoFactor)
         try container.encodeIfPresent(email, forKey: .email)
         try container.encodeIfPresent(emailVerified, forKey: .emailVerified)

@@ -14,13 +14,18 @@ public struct APIAnnouncement: Codable, JSONEncodable, Hashable {
     public var title: String?
     public var body: String?
     public var publishAt: Date?
+    /** 发布日期（UTC，YYYY-MM-DD） */
+    public var date: String?
+    public var pinned: Bool?
 
-    public init(id: Int64? = nil, category: String? = nil, title: String? = nil, body: String? = nil, publishAt: Date? = nil) {
+    public init(id: Int64? = nil, category: String? = nil, title: String? = nil, body: String? = nil, publishAt: Date? = nil, date: String? = nil, pinned: Bool? = nil) {
         self.id = id
         self.category = category
         self.title = title
         self.body = body
         self.publishAt = publishAt
+        self.date = date
+        self.pinned = pinned
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -29,6 +34,8 @@ public struct APIAnnouncement: Codable, JSONEncodable, Hashable {
         case title
         case body
         case publishAt
+        case date
+        case pinned
     }
 
     // Encodable protocol methods
@@ -40,6 +47,8 @@ public struct APIAnnouncement: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(title, forKey: .title)
         try container.encodeIfPresent(body, forKey: .body)
         try container.encodeIfPresent(publishAt, forKey: .publishAt)
+        try container.encodeIfPresent(date, forKey: .date)
+        try container.encodeIfPresent(pinned, forKey: .pinned)
     }
 }
 

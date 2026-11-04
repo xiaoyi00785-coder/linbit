@@ -40,6 +40,9 @@ final class FuturesModel: ObservableObject {
     /// 计划委托：触发价、触发价类型、触发后市价 / 限价
     @Published var triggerText = ""
     @Published var planTriggerType: APIFuturesPlaceOrderRequest.APITriggerPriceType = .last
+    /// 下单附带止盈止损的触发价类型（默认标记价格）
+    @Published var orderTpType: APIFuturesPlaceOrderRequest.APITpTriggerPriceType = .mark
+    @Published var orderSlType: APIFuturesPlaceOrderRequest.APISlTriggerPriceType = .mark
     @Published var planMarket = false
     /// 持仓模式：ONE_WAY 合仓 / HEDGE 分仓（GET/POST /futures/position-mode）
     @Published var positionMode: APIFuturesPositionMode.APIPositionMode = .oneWay
@@ -229,6 +232,8 @@ final class FuturesModel: ObservableObject {
             reduceOnly: isOpen || hedge ? nil : true,
             tpPrice: isOpen && tpsl && !tpText.isEmpty && !isPlan ? tpText : nil,
             slPrice: isOpen && tpsl && !slText.isEmpty && !isPlan ? slText : nil,
+            tpTriggerPriceType: isOpen && tpsl && !tpText.isEmpty && !isPlan ? orderTpType : nil,
+            slTriggerPriceType: isOpen && tpsl && !slText.isEmpty && !isPlan ? orderSlType : nil,
             positionSide: posSide,
             triggerPrice: isPlan ? Dec.plain(Dec.parse(triggerText), pricePrec) : nil,
             triggerPriceType: isPlan ? planTriggerType : nil)
@@ -291,6 +296,15 @@ final class FuturesModel: ObservableObject {
         } catch { ToastCenter.shared.error(error); return false }
     }
 
+    /// 修改计划委托 / 止盈止损委托
+    func amendAlgo(_ a: APIFuturesAlgoOrder, _ r: APIFuturesAlgoAmendRequest) async -> String? {
+        do {
+            _ = try await FuturesAPI.amendAlgo(a, r)
+            ToastCenter.shared.show(a.algoType == .plan ? "计划委托已修改" : "止盈止损已修改", .success)
+            await refreshAccount(); return nil
+        } catch { return error.lbMessage }
+    }
+
     func cancelAlgo(_ a: APIFuturesAlgoOrder) async {
         guard let id = a.algoId else { return }
         do {
@@ -325,9 +339,10 @@ final class FuturesModel: ObservableObject {
         catch { ToastCenter.shared.error(error) }
     }
     /// 设置 / 修改持仓止盈止损。spec：传 "" 表示清除该项，不传（nil）表示保持不变。
-    func setTpsl(_ pos: APIFuturesPosition, tp: String?, sl: String?, toast: String = "止盈止损已设置") async -> Bool {
+    func setTpsl(_ pos: APIFuturesPosition, tp: String?, sl: String?, tpType: APIFuturesSetTpslRequest.APITpTriggerPriceType? = nil,
+                 slType: APIFuturesSetTpslRequest.APISlTriggerPriceType? = nil, toast: String = "止盈止损已设置") async -> Bool {
         do {
-            try await FuturesAPI.setTpsl(pos.symbol ?? symbol, tp: tp, sl: sl, positionSide: Self.side(of: pos))
+            try await FuturesAPI.setTpsl(pos.symbol ?? symbol, tp: tp, sl: sl, positionSide: Self.side(of: pos), tpType: tpType, slType: slType)
             ToastCenter.shared.show(toast, .success); await refreshAccount(); return true
         } catch { ToastCenter.shared.error(error); return false }
     }

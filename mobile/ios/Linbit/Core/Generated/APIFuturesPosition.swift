@@ -17,6 +17,14 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         case cross = "cross"
         case isolated = "isolated"
     }
+    public enum APITpTriggerPriceType: String, Codable, CaseIterable {
+        case last = "LAST"
+        case mark = "MARK"
+    }
+    public enum APISlTriggerPriceType: String, Codable, CaseIterable {
+        case last = "LAST"
+        case mark = "MARK"
+    }
     public enum APIPositionSide: String, Codable, CaseIterable {
         case both = "BOTH"
         case long = "LONG"
@@ -49,10 +57,12 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
     public var liquidationPrice: String?
     public var tpPrice: String?
     public var slPrice: String?
+    public var tpTriggerPriceType: APITpTriggerPriceType?
+    public var slTriggerPriceType: APISlTriggerPriceType?
     public var adlRank: Int?
     public var positionSide: APIPositionSide?
 
-    public init(symbol: String? = nil, side: APISide? = nil, qty: String? = nil, entryPrice: String? = nil, markPrice: String? = nil, notional: String? = nil, unrealizedPnl: String? = nil, roe: String? = nil, realizedPnl: String? = nil, marginMode: APIMarginMode? = nil, leverage: Int? = nil, margin: String? = nil, maintenanceMargin: String? = nil, liquidationPrice: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, adlRank: Int? = nil, positionSide: APIPositionSide? = nil) {
+    public init(symbol: String? = nil, side: APISide? = nil, qty: String? = nil, entryPrice: String? = nil, markPrice: String? = nil, notional: String? = nil, unrealizedPnl: String? = nil, roe: String? = nil, realizedPnl: String? = nil, marginMode: APIMarginMode? = nil, leverage: Int? = nil, margin: String? = nil, maintenanceMargin: String? = nil, liquidationPrice: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, tpTriggerPriceType: APITpTriggerPriceType? = nil, slTriggerPriceType: APISlTriggerPriceType? = nil, adlRank: Int? = nil, positionSide: APIPositionSide? = nil) {
         self.symbol = symbol
         self.side = side
         self.qty = qty
@@ -69,6 +79,8 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         self.liquidationPrice = liquidationPrice
         self.tpPrice = tpPrice
         self.slPrice = slPrice
+        self.tpTriggerPriceType = tpTriggerPriceType
+        self.slTriggerPriceType = slTriggerPriceType
         self.adlRank = adlRank
         self.positionSide = positionSide
     }
@@ -90,6 +102,8 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         case liquidationPrice
         case tpPrice
         case slPrice
+        case tpTriggerPriceType
+        case slTriggerPriceType
         case adlRank
         case positionSide
     }
@@ -114,6 +128,8 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(liquidationPrice, forKey: .liquidationPrice)
         try container.encodeIfPresent(tpPrice, forKey: .tpPrice)
         try container.encodeIfPresent(slPrice, forKey: .slPrice)
+        try container.encodeIfPresent(tpTriggerPriceType, forKey: .tpTriggerPriceType)
+        try container.encodeIfPresent(slTriggerPriceType, forKey: .slTriggerPriceType)
         try container.encodeIfPresent(adlRank, forKey: .adlRank)
         try container.encodeIfPresent(positionSide, forKey: .positionSide)
     }
