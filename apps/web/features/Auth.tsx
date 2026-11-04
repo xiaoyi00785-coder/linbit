@@ -136,6 +136,15 @@ function useAcct(initial: Kind = "邮箱") {
   return { kind, valid, target, shown, ui, msg, touch: () => setTouched(true) };
 }
 
+/** 密码规则：8–PWD_MAX 位、含字母、含数字；返回未满足项 */
+export const pwdMissing = (p: string) => [p.length < 8 || p.length > PWD_MAX ? `${p.length < 8 ? "至少 8 位" : `最多 ${PWD_MAX} 位`}` : "", /[A-Za-z]/.test(p) ? "" : "包含字母", /\d/.test(p) ? "" : "包含数字"].filter(Boolean);
+/** 实时规则提示：输入后逐项显示 ✓/✗ */
+function PwdRules({ pwd, show }: { pwd: string; show: boolean }) {
+  if (!pwd && !show) return null;
+  const R: [string, boolean][] = [[`8–${PWD_MAX} 位`, pwd.length >= 8 && pwd.length <= PWD_MAX], ["包含字母", /[A-Za-z]/.test(pwd)], ["包含数字", /\d/.test(pwd)]];
+  return <ul className="pwd-rules" aria-live="polite" data-testid="pwd-rules">{R.map(([t, ok]) => <li key={t} className={ok ? "ok" : "no"}>{ok ? "✓" : "✗"} {t}</li>)}</ul>;
+}
+
 /** 注册：账户+密码 → 验证码（POST /auth/code/send → POST /auth/register） */
 export function Register() {
   const a = useAcct();
@@ -148,7 +157,8 @@ export function Register() {
   const [busy, setBusy] = useState(false);
   const finish = useFinish();
   const authed = useGuestOnly();
-  const validPwd = pwd.length >= 8 && /[A-Za-z]/.test(pwd) && /\d/.test(pwd);
+  const validPwd = pwdMissing(pwd).length === 0;
+  const [tried, setTried] = useState(false);
   const send = async () => {
     const r = await sendAuthCode("register", a.target());
     return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error };
@@ -162,6 +172,7 @@ export function Register() {
         <>
           {a.ui}
           <Pwd placeholder={`设置密码（8–${PWD_MAX} 位，含字母和数字）`} value={pwd} onChange={setPwd} />
+          <PwdRules pwd={pwd} show={tried} />
           <input className="ai" aria-label="邀请码（选填）" maxLength={32} placeholder="邀请码（选填）" value={invite} onChange={(e) => setInvite(e.target.value.trim())} />
           <label className="agree" onClick={() => setAgree(!agree)}>
             <i className={agree ? "on" : ""}>{agree && "✓"}</i>
@@ -175,9 +186,10 @@ export function Register() {
             disabled={busy}
             aria-disabled={!(agree && a.valid && validPwd)}
             onClick={async () => {
+              setTried(true);
               if (!a.valid) { a.touch(); return setErr(a.msg); }
               if (!pwd) return setErr("请输入密码");
-              if (!validPwd) return setErr("密码需 8 位以上且包含字母和数字");
+              if (!validPwd) return setErr("密码还需：" + pwdMissing(pwd).join("、"));
               if (!agree) return setErr("请先同意服务条款");
               setBusy(true);
               const r = await send();

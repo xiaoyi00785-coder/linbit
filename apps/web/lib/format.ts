@@ -21,3 +21,12 @@ export function changeClass(value: string | number | undefined): string {
   const n = typeof value === "string" ? Number(value) : value ?? 0;
   return n >= 0 ? "text-lb-up" : "text-lb-down";
 }
+
+/** 自适应精度：保留 sig 位有效数字（至少 minDp 位小数，最多 maxDp），去尾零，绝不输出科学计数法 */
+export function fmtSig(v: number, sig = 4, minDp = 2, maxDp = 12): string {
+  if (!isFinite(v) || v === 0) return "0";
+  const a = Math.abs(v);
+  const dp = Math.min(maxDp, Math.max(minDp, sig - 1 - Math.floor(Math.log10(a))));
+  const s = v.toFixed(dp);
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+}

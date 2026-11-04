@@ -19,12 +19,6 @@ const nextConfig = {
   // 本地联调：NEXT_PUBLIC_API_BASE=/gw 且 API_PROXY_TARGET=http://localhost:8080 时，
   // 由 Next 同源代理到网关，避免浏览器 CORS（网关当前未返回 CORS 头）
   // 旧/错误链接兜底：合约账户实际页面为 /assets/trading-account；/earn/wealth 无对应产品页 → 理财总览
-  async redirects() {
-    return [
-      { source: "/assets/futures-account", destination: "/assets/trading-account", permanent: false },
-      { source: "/earn/wealth", destination: "/earn", permanent: false },
-    ];
-  },
   async rewrites() {
     const t = process.env.API_PROXY_TARGET;
     return t ? [{ source: "/gw/:path*", destination: `${t}/:path*` }] : [];
@@ -34,7 +28,13 @@ const nextConfig = {
     return [
       ["funding", "funding-account"], ["futures", "trading-account"], ["spot", "spot-account"],
       ["earn", "earn-account"], ["tradfi", "tradfi-account"], ["bot", "bots-account"], ["bots", "bots-account"],
-    ].map(([a, b]) => ({ source: `/assets/${a}`, destination: `/assets/${b}`, permanent: false }));
+    ].map(([a, b]) => ({ source: `/assets/${a}`, destination: `/assets/${b}`, permanent: false })).concat([
+      // 注意：同一对象里只能有一个 redirects()，原先重复定义导致前一组失效，已合并
+      { source: "/assets/futures-account", destination: "/assets/trading-account", permanent: false },
+      { source: "/earn/wealth", destination: "/earn", permanent: false },
+      // 费率说明页统一在 /p/费率
+      { source: "/fees", destination: "/p/%E8%B4%B9%E7%8E%87", permanent: false },
+    ]);
   },
   eslint: {
     // 构建时跳过 ESLint（本仓库未配置 eslint）
