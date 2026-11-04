@@ -24,7 +24,7 @@ func IsMainnet() bool { return Network() == "mainnet" }
 var mainnetForbiddenTrue = []string{
 	"DEV_MODE", "NEXT_PUBLIC_ENABLE_MOCK", "NEXT_PUBLIC_DEMO", "ENABLE_MOCK",
 	"MM_TESTNET_SEED", "ADMIN_MM_SEED", "TESTNET_FAUCET", "FAUCET_ENABLED",
-	"VIRTUAL_BALANCES", "TRADFI_VIRTUAL_INVENTORY",
+	"VIRTUAL_BALANCES", "TRADFI_VIRTUAL_INVENTORY", "ADMIN_USER_CREDIT_ENABLED",
 }
 
 func truthy(v string) bool {
