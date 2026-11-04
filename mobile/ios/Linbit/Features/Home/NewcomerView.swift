@@ -59,7 +59,7 @@ struct NewcomerView: View {
     private func cta(_ c: String?) {
         switch c {
         case "login": session.present(.login)
-        case "kyc": Router.shared.feature = nil; Router.shared.showUserCenter = true
+        case "kyc": Router.shared.feature = .kyc
         case "continue", "enroll", "open": Router.shared.feature = nil; Router.shared.tab = .spot
         default: ToastCenter.shared.show("奖励领取即将开放")
         }
