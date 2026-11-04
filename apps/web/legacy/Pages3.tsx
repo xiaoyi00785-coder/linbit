@@ -19,6 +19,7 @@ import { signOut } from './auth'
 import { asset } from '@/lib/asset';
 import { useRest } from '@/lib/rest';
 import { useAuthStore } from '@/lib/store';
+import { fmtAmt, fmtFeeStr } from '@/lib/format'
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div>
 const Eye=()=><span className="eye"><G n="eye" s={14}/></span>
@@ -32,7 +33,7 @@ return <aside className="lside a2">{ACCTS.map(([to,i,t])=><NavLink key={to} to={
 <div className="lsi" onClick={()=>setO(!o)}><span className="lsic"><SideIcon n="orders"/></span>订单中心<em>{o?'▴':'▾'}</em></div>{o&&ORDS.map(([k,t])=><NavLink key={k} to={'/orders/'+k} className="lsi sub">{t}</NavLink>)}</aside>}
 const AS=({children})=><main className="light"><div className="lwrap">{<ASide/>}<section className="lmain a2">{children}</section></div></main>
 const Head=({t,btns})=>{const n=useNavigate();return <div className="lhead"><h2>{t}</h2><div className="lbtns">{btns.map(([b,to],i)=><button key={b} className={i?'lb':'lb dark'} onClick={()=>to?n(to):b==='划转'?openTransfer(t):toast(b+' 即将上线','info')}>{b}</button>)}</div></div>}
-const fmtV=v=>{const n=Number(v||0);return n.toLocaleString('en-US',{maximumFractionDigits:n>=1?2:8})}
+const fmtV=v=>{const n=Number(v||0);return Math.abs(n)>=1?n.toLocaleString('en-US',{maximumFractionDigits:2}):fmtAmt(n)}
 // 估值来自 GET /assets/overview；all=全部账户，acct=单账户；接口未上线时显示 0
 const Val=({t='资产估值',children,set,acct,all})=>{const ov=useOverview();const d=ov.data;const v=all?d?.totalValueUsdt:acct?d?.accounts?.find(a=>a.account===acct)?.totalValueUsdt:0;const bad=!d&&!ov.loading;const ld=!d&&ov.loading;return <div className="lcard v"><div className="lg">{t}(USDT) <Eye/>{set&&<span className="vset"><G n="gear" s={14}/></span>}</div><div className="big" aria-busy={ld||undefined}>{ld?<i className="sk-in" data-testid="val-skel" style={{width:160,height:28}}/>:bad?'--':fmtV(v)} <small>USDT ▾</small></div><div className="lg">{ld?'≈ $--':bad?<>{ov.status===401?'登录已过期，请重新登录':'资产加载失败'} <a onClick={()=>ov.status===401?goto('/login'):ov.reload()}>{ov.status===401?'去登录':'重试'}</a></>:<>≈ ${fmtV(v)}</>}</div>{children}</div>}
 // 账户内各币种余额（来自 /assets/overview 的 accounts[].balances）
@@ -80,20 +81,25 @@ const ACCT_={funding:'资金账户',spot:'现货账户',futures:'合约账户',e
 const BILL_={realized_pnl:'已实现盈亏',fee:'手续费',funding:'资金费',transfer_in:'转入',transfer_out:'转出',liquidation:'强平',liquidation_fee:'强平手续费',insurance_cover:'保险基金补偿',bonus:'体验金'}
 function Live({path,pick,row}){const isA=useAuthStore(st=>st.isAuthed);const r=useRest(isA&&path?path:null);if(!isA)return <Empty/>;if(r.loading&&!r.data)return <div style={{padding:16}}><div className="lb-skel" style={{height:60}}/></div>;const L=(r.data&&pick(r.data))||[];if(!L.length)return r.error?<div className="lempty"><span>{r.error} <a onClick={()=>r.reload()}>重试</a></span></div>:<Empty/>;return <>{L.map((x,k)=><div className="ltr" key={x.id??x.orderId??x.tradeId??k}>{row(x).map((c,ci)=><span key={ci}>{c}</span>)}</div>)}</>}
 const items_=d=>d.items
-const FUND_ROWS=i=>i===0?<Live path="/wallet/deposit/records?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),'链上充值',x.asset,x.network,fmtV(x.amount),st_(x.status),x.txId?String(x.txId).slice(0,10)+'…':'--']}/>
- :i===1?<Live path="/wallet/withdraw/records?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),'链上提现',x.asset,x.network,fmtV(x.amount),st_(x.status),'--']}/>
- :i===2?<Live path="/assets/transfers?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),x.asset,fmtV(x.amount),ACCT_[x.from]||x.from,ACCT_[x.to]||x.to,st_(x.status)]}/>:<Empty/>
+// 全部：充值 + 提现 + 划转 合并按时间倒序（默认 tab，避免默认停在空的「充值」）
+function FundAll(){const isA=useAuthStore(st=>st.isAuthed);const P=['/wallet/deposit/records?page=1&pageSize=50','/wallet/withdraw/records?page=1&pageSize=50','/assets/transfers?page=1&pageSize=50'];const a=useRest(isA?P[0]:null),b=useRest(isA?P[1]:null),c=useRest(isA?P[2]:null);if(!isA)return <Empty/>;const R3=[a,b,c];if(R3.some(r=>r.loading&&!r.data))return <div style={{padding:16}} aria-busy="true"><div className="lb-skel" style={{height:60}}/></div>;
+const L=[...(a.data?.items||[]).map(x=>({...x,_k:'链上充值'})),...(b.data?.items||[]).map(x=>({...x,_k:'链上提现'})),...(c.data?.items||[]).map(x=>({...x,_k:'划转 '+(ACCT_[x.from]||x.from||'')+'→'+(ACCT_[x.to]||x.to||'')}))].sort((x,y)=>+new Date(y.createdAt)-+new Date(x.createdAt));
+if(!L.length){const e=R3.find(r=>r.error);return e?<div className="lempty"><span>{e.error} <a onClick={()=>R3.forEach(r=>r.reload())}>重试</a></span></div>:<Empty/>}
+return <>{L.map((x,k)=><div className="ltr" key={x._k+(x.id??k)}>{[tm(x.createdAt),x._k,x.asset,fmtV(x.amount),st_(x.status)].map((v,ci)=><span key={ci}>{v}</span>)}</div>)}</>}
+const FUND_ROWS=i=>i===0?<FundAll/>:(j=>j===0?<Live path="/wallet/deposit/records?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),'链上充值',x.asset,x.network,fmtV(x.amount),st_(x.status),x.txId?String(x.txId).slice(0,10)+'…':'--']}/>
+ :j===1?<Live path="/wallet/withdraw/records?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),'链上提现',x.asset,x.network,fmtV(x.amount),st_(x.status),'--']}/>
+ :j===2?<Live path="/assets/transfers?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),x.asset,fmtV(x.amount),ACCT_[x.from]||x.from,ACCT_[x.to]||x.to,st_(x.status)]}/>:<Empty/>)(i-1)
 const FUT_BILLS=()=><Live path="/futures/bills?limit=200" pick={d=>d.bills} row={x=>[tm(x.time),'USDT',BILL_[x.kind]||x.kind,fmtV(x.amount),x.symbol||'--']}/>
 const SPOT_REC=()=><Live path="/spot/trades?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),x.symbol,x.side==='buy'?'买入':'卖出',fmtV(x.quantity),'--']}/>
 const sd=v=>/buy|long/i.test(v)?'买入':'卖出'
 const FUT_ORD=i=>i===1?<Live path="/futures/positions/history?limit=200" pick={d=>d.positions} row={x=>[x.symbol,x.side==='long'?'多':'空',x.entryPrice,x.closePrice,x.maxQty,fmtV(x.realizedPnl),tm(x.openTime),tm(x.closeTime)]}/>
- :i===2?<Live path="/futures/trades?limit=200" pick={d=>d.trades} row={x=>[x.symbol,sd(x.side),x.price,x.qty,x.fee,x.role==='maker'?'Maker':'Taker',tm(x.time)]}/>
+ :i===2?<Live path="/futures/trades?limit=200" pick={d=>d.trades} row={x=>[x.symbol,sd(x.side),x.price,x.qty,fmtFeeStr(x.fee),x.role==='maker'?'Maker':'Taker',tm(x.time)]}/>
  :i===3?<Live path="/futures/bills?limit=200" pick={d=>(d.bills||[]).filter(b=>/pnl/i.test(b.kind))} row={x=>[x.symbol||'--',BILL_[x.kind]||x.kind,fmtV(x.amount),tm(x.time)]}/>
  :<Live path="/futures/orders?limit=200" pick={d=>(d.orders||[]).filter(o=>o.status!=='NEW'&&o.status!=='PARTIALLY_FILLED')} row={x=>[x.symbol,`${x.filledQty} | ${x.qty}`,sd(x.side),x.avgPrice||'--',x.price&&+x.price?x.price:'市价',x.type==='limit'?'限价':'市价',st_(x.status),x.orderId,tm(x.createdAt),tm(x.updatedAt)]}/>
-const SPOT_ORD=i=>i===2?<Live path="/spot/trades?page=1&pageSize=50" pick={items_} row={x=>[x.symbol,x.side==='buy'?'买入':'卖出',x.price,x.quantity,fmtV(+x.price*+x.quantity),x.fee!=null?x.fee+' '+(x.feeAsset||''):'--',x.role==='maker'?'Maker':'Taker',tm(x.createdAt)]}/>
+const SPOT_ORD=i=>i===2?<Live path="/spot/trades?page=1&pageSize=50" pick={items_} row={x=>[x.symbol,x.side==='buy'?'买入':'卖出',x.price,x.quantity,fmtV(+x.price*+x.quantity),x.fee!=null?fmtFeeStr(x.fee)+' '+(x.feeAsset||''):'--',x.role==='maker'?'Maker':'Taker',tm(x.createdAt)]}/>
  :<Live path={i?'/spot/orders/history?page=1&pageSize=50':'/spot/orders/open?page=1&pageSize=50'} pick={items_} row={x=>[x.symbol,tm(x.createdAt),x.side==='buy'?'买入':'卖出',x.price||'市价',x.filledQuantity,x.quantity,x.price?fmtV(+x.price*+x.quantity):'--','--',x.type==='limit'?'限价':'市价',st_(x.status)]}/>
 const CONV_ROWS=()=><Live path="/convert/orders?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),`${fmtV(x.fromAmount)} ${x.from}`,`${fmtV(x.toAmount)} ${x.to}`,x.rate,st_(x.status)]}/>
-const R={funding:{rows:FUND_ROWS,t:'资金记录',tabs:['充值','提现','划转','分发'],fil:i=>[<Sel key={1} k="币种" v="全部"/>,i<2&&<Sel key={2} k="类型" v={i?'链上提现':'链上充值'}/>,i===2&&<Sel key={4} k="账户" v="全部"/>,<Sel key={3} k="状态" v="全部"/>,<Dt key={5}/>],cols:i=>i===2?['时间','币种','数量','从','到','状态']:i===3?['时间','币种','数量','类型','备注']:['时间','类型','币种','网络','数量','状态','链上交易']},
+const R={funding:{rows:FUND_ROWS,t:'资金记录',tabs:['全部','充值','提现','划转','分发'],fil:i=>[<Sel key={1} k="币种" v="全部"/>,(i===1||i===2)&&<Sel key={2} k="类型" v={i===2?'链上提现':'链上充值'}/>,i===3&&<Sel key={4} k="账户" v="全部"/>,<Sel key={3} k="状态" v="全部"/>,<Dt key={5}/>],cols:i=>i===0?['时间','类型','币种','数量','状态']:i===3?['时间','币种','数量','从','到','状态']:i===4?['时间','币种','数量','类型','备注']:['时间','类型','币种','网络','数量','状态','链上交易']},
 futures:{rows:FUT_BILLS,t:'合约记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','合约']},
 spot:{rows:SPOT_REC,t:'现货记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','余额']},
 tradfi:{t:'传统金融记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','品种']}}

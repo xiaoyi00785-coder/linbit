@@ -23,6 +23,7 @@ function PnlCell({ p }: { p: Pos }) {
 }
 function MarkCell({ sym, fb }: { sym: string; fb: string }) { return <>{useMarkPrice(sym, fb)}</>; }
 import { tabProps } from "@/lib/a11y";
+import { fmtFeeStr } from "@/lib/format";
 
 type S = components["schemas"];
 type Algo = S["FuturesAlgoOrder"];
@@ -99,7 +100,7 @@ export function FutOrders({ symbol }: { symbol?: string }) {
         : tab === 2 ? algoTable(PL, "plan")
         : tab === 3 ? algoTable(TS, "tpsl")
         : tab === 6 ? (FL.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>方向</th><th>成交价</th><th>成交量</th><th>手续费</th><th>角色</th></tr></thead><tbody>
-            {FL.map((t) => <tr key={t.tradeId}><td>{fmtLocal(t.time)}</td><td>{t.symbol}</td><td className={t.side === "buy" ? "up" : "down"}>{t.side === "buy" ? "买入" : "卖出"}</td><td>{t.price}</td><td>{t.qty}</td><td>{t.fee}</td><td>{t.role === "maker" ? "Maker" : "Taker"}</td></tr>)}
+            {FL.map((t) => <tr key={t.tradeId}><td>{fmtLocal(t.time)}</td><td>{t.symbol}</td><td className={t.side === "buy" ? "up" : "down"}>{t.side === "buy" ? "买入" : "卖出"}</td><td>{t.price}</td><td>{t.qty}</td><td>{fmtFeeStr(t.fee)}</td><td>{t.role === "maker" ? "Maker" : "Taker"}</td></tr>)}
           </tbody></table> : empty)
         : tab === 5 ? (PH.length ? <table className="sotbl"><thead><tr><th>平仓时间</th><th>合约</th><th>方向</th><th>开仓均价</th><th>平仓均价</th><th>最大持仓</th><th>已实现盈亏</th><th>手续费 / 资金费</th><th>状态</th></tr></thead><tbody>
             {PH.map((p) => <tr key={p.id}><td>{fmtLocal(p.closeTime)}</td><td>{p.symbol}</td><td className={p.side === "long" ? "up" : "down"}>{p.side === "long" ? "多" : "空"} {p.leverage}x</td><td>{p.entryPrice}</td><td>{p.closePrice}</td><td>{p.maxQty}</td><td className={+(p.netPnl ?? p.realizedPnl ?? 0) >= 0 ? "up" : "down"}>{p.netPnl ?? p.realizedPnl}</td><td>{p.fee} / {p.fundingFee}</td><td>{ST[p.status ?? ""] ?? p.status}</td></tr>)}
