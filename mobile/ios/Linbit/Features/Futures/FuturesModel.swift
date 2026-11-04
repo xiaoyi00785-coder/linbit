@@ -56,6 +56,14 @@ final class FuturesModel: ObservableObject {
     @Published var placing = false
     @Published var onlyCurrent = false
     @Published var now = Date()
+    /// 今日盈亏（GET /futures/pnl/today）
+    @Published var todayPnl: Loadable<APIFuturesTodayPnl200Response> = .idle
+    /// WS mark:<symbol> 实时标记价格（symbol -> 价格）
+    @Published var wsMarks: [String: Decimal] = [:]
+    @Published var wsFunding: [String: (rate: Decimal, next: Int64?)] = [:]
+    /// 截图演示：未登录 CI 下注入示例仓位 / 今日盈亏
+    var shotDemo = false
+    private var markSubs: [String: WSSubscription] = [:]
 
     private var loop: Task<Void, Never>?
 
@@ -68,9 +76,30 @@ final class FuturesModel: ObservableObject {
     var minQty: Decimal { Dec.parse(contract?.minQty) }
     private var spotLast: Decimal { MarketStore.shared.spot.first { $0.symbol == symbol }?.last ?? 0 }
     var last: Decimal { ticker?.effectivePrice(spot: spotLast) ?? spotLast }
-    var mark: Decimal { let m = Dec.parse(ticker?.markPrice); return m > 0 ? m : last }
+    var mark: Decimal {
+        if let w = wsMarks[symbol], w > 0 { return w }
+        let m = Dec.parse(ticker?.markPrice); return m > 0 ? m : last
+    }
+    /// 某合约的实时标记价：WS 优先，其次仓位 / 行情接口返回值
+    func markPrice(for sym: String?, fallback: String? = nil) -> Decimal {
+        if let s = sym, let w = wsMarks[s], w > 0 { return w }
+        if sym == symbol { let m = Dec.parse(ticker?.markPrice); if m > 0 { return m } }
+        return Dec.parse(fallback)
+    }
+    /// 按实时标记价重算未实现盈亏与收益率（多：(mark-entry)*qty；空：(entry-mark)*qty；收益率 = 盈亏 / 保证金）
+    func livePnl(_ pos: APIFuturesPosition) -> (pnl: Decimal, roe: Decimal, mark: Decimal) {
+        let mk = markPrice(for: pos.symbol, fallback: pos.markPrice)
+        let entry = Dec.parse(pos.entryPrice), q = abs(Dec.parse(pos.qty))
+        guard mk > 0, entry > 0, q > 0 else { return (Dec.parse(pos.unrealizedPnl), Dec.parse(pos.roe) * 100, mk) }
+        let pnl = (pos.side == .short ? entry - mk : mk - entry) * q
+        let margin = Dec.parse(pos.margin)
+        let roe = margin > 0 ? pnl / margin * 100 : Dec.parse(pos.roe) * 100
+        return (pnl, roe, mk)
+    }
+    /// 全部仓位的实时未实现盈亏合计
+    var liveUnrealized: Decimal { positions.reduce(0) { $0 + livePnl($1).pnl } }
     var changePct: Decimal { Dec.parse(ticker?.priceChangePercent24h) }
-    var fundingRate: Decimal { Dec.parse(ticker?.fundingRate) * 100 }
+    var fundingRate: Decimal { if let f = wsFunding[symbol] { return f.rate * 100 }; return Dec.parse(ticker?.fundingRate) * 100 }
     var available: Decimal { Dec.parse(account?.availableBalance) }
     var mmr: Decimal { Dec.parse(contract?.maintenanceMarginRate ?? "0.004") }
     var takerFee: Decimal { Dec.parse(contract?.takerFeeRate ?? "0.0005") }
@@ -125,6 +154,8 @@ final class FuturesModel: ObservableObject {
         await refreshMarket()
         await refreshAccount()
         if priceText.isEmpty, last > 0 { priceText = Dec.plain(last, pricePrec) }
+        syncMarkSubs()
+        await loadTodayPnl()
         loop = Task { [weak self] in
             var n = 0
             while !Task.isCancelled {
@@ -132,11 +163,42 @@ final class FuturesModel: ObservableObject {
                 guard let self else { return }
                 self.now = Date(); n += 1
                 if n % 3 == 0 { await self.refreshMarket() }
-                if n % 6 == 0 { await self.refreshAccount() }
+                if n % 6 == 0 { await self.refreshAccount(); self.syncMarkSubs() }
+                if n % 30 == 0 { await self.loadTodayPnl(silent: true) }
             }
         }
     }
-    func stop() { loop?.cancel(); loop = nil }
+    /// 离开页面：停止轮询并退订全部 mark:<symbol>
+    func stop() {
+        loop?.cancel(); loop = nil
+        for s in markSubs.values { s.cancel() }
+        markSubs = [:]
+    }
+
+    /// 订阅当前合约 + 持仓合约的 mark:<symbol>，退订不再需要的
+    func syncMarkSubs() {
+        let want = Set([symbol] + positions.compactMap(\.symbol))
+        for (s, sub) in markSubs where !want.contains(s) { sub.cancel(); markSubs[s] = nil; wsMarks[s] = nil }
+        for s in want where markSubs[s] == nil {
+            markSubs[s] = MarketSocket.shared.subscribe("mark:\(s)") { [weak self] frame in
+                guard let mk = try? JSONDecoder().decode(WSMark.self, from: frame.data) else { return }
+                let v = Dec.parse(mk.markPrice)
+                Task { @MainActor in
+                    guard let self, v > 0 else { return }
+                    self.wsMarks[mk.symbol] = v
+                    if let r = mk.fundingRate { self.wsFunding[mk.symbol] = (Dec.parse(r), mk.nextFundingTime) }
+                }
+            }
+        }
+    }
+
+    func loadTodayPnl(silent: Bool = false) async {
+        if shotDemo { return }
+        guard TokenStore.shared.isLoggedIn else { todayPnl = .idle; return }
+        if !silent || todayPnl.value == nil { if todayPnl.value == nil { todayPnl = .loading } }
+        do { todayPnl = .loaded(try await FuturesAPI.todayPnl()) }
+        catch { if !silent || todayPnl.value == nil { todayPnl = .failed(error.lbMessage) } }
+    }
 
     func switchSymbol(_ s: String) async {
         stop(); symbol = s; priceText = ""; costText = ""; percent = 0; ticker = nil; book = OrderBook()
@@ -162,6 +224,7 @@ final class FuturesModel: ObservableObject {
     }
 
     func refreshAccount() async {
+        if shotDemo { accountLoaded = true; algosLoaded = true; return }
         guard TokenStore.shared.isLoggedIn else {
             account = nil; positions = []; openOrders = []; tpslAlgos = []; planAlgos = []
             accountLoaded = true; algosLoaded = true; return

@@ -37,6 +37,14 @@ struct AuthFlow: View {
             }
         }
         .background(p.bg)
+        .onAppear {
+            // 截图路由：直接展示注册 / 重置的设置密码页
+            switch Router.shared.shotSheet {
+            case "pwdRegister": m.id.email = "demo@linbit.com"; path = [.setPassword]; Router.shared.shotSheet = "pwdShotBad"
+            case "pwdReset": m.id.email = "demo@linbit.com"; path = [.forgotNew("shot")]; Router.shared.shotSheet = "pwdShotGood"
+            default: break
+            }
+        }
     }
 }
 
@@ -334,12 +342,12 @@ struct SetPasswordView: View {
     @ObservedObject var m: AuthModel
     @Binding var path: [AuthFlow.Step]
     let mode: Mode
-    @State private var pwd = ""
+    @State private var pwd = Router.shared.shotSheet == "pwdShotBad" ? "linbitpass" : (Router.shared.shotSheet == "pwdShotGood" ? "linbit2026" : "")
     @State private var pwd2 = ""
     @State private var error: String?
 
     var rules: [(String, Bool)] {
-        [("8 位以上", pwd.count >= 8), ("包含字母", pwd.contains(where: \.isLetter)), ("包含数字", pwd.contains(where: \.isNumber))]
+        PasswordRule.rules(pwd)
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -348,7 +356,7 @@ struct SetPasswordView: View {
                 AuthHeader(title: mode == .register ? "设置密码" : "重置密码",
                            subtitle: Text(mode == .register ? m.id.masked : "为保障资金安全，重置密码后 24 小时内禁止提现。"))
                 FieldLabel(text: "密码").padding(.bottom, 8)
-                LBTextField(placeholder: "设置密码", text: $pwd, secure: true)
+                LBTextField(placeholder: "8-64 位，含字母和数字", text: $pwd, secure: true, error: PasswordRule.hint(pwd))
                 HStack(spacing: 14) {
                     ForEach(rules, id: \.0) { r in
                         HStack(spacing: 4) {
@@ -369,6 +377,7 @@ struct SetPasswordView: View {
     }
 
     private func submit() async {
+        if let h = PasswordRule.hint(pwd) { error = h; return }
         m.loading = true; defer { m.loading = false }
         do {
             switch mode {

@@ -34,9 +34,24 @@ struct AccountId: Equatable {
 }
 
 enum PasswordRule {
-    /// 8 位以上，含字母和数字
-    static func ok(_ s: String) -> Bool {
-        s.count >= 8 && s.contains(where: \.isLetter) && s.contains(where: \.isNumber)
+    /// 8–64 位，至少包含一个英文字母和一个数字（与服务端规则一致）
+    static let minLen = 8, maxLen = 64
+    static func hasLetter(_ s: String) -> Bool { s.contains { $0.isASCII && $0.isLetter } }
+    static func hasDigit(_ s: String) -> Bool { s.contains { $0.isASCII && $0.isNumber } }
+    static func lengthOK(_ s: String) -> Bool { (minLen...maxLen).contains(s.count) }
+    static func ok(_ s: String) -> Bool { lengthOK(s) && hasLetter(s) && hasDigit(s) }
+    /// 逐条规则（界面勾选提示）
+    static func rules(_ s: String) -> [(String, Bool)] {
+        [("8-64 位", lengthOK(s)), ("包含字母", hasLetter(s)), ("包含数字", hasDigit(s))]
+    }
+    /// 不合规时的中文提示；空串不提示
+    static func hint(_ s: String) -> String? {
+        if s.isEmpty { return nil }
+        if s.count < minLen { return "密码至少 8 位" }
+        if s.count > maxLen { return "密码不能超过 64 位" }
+        if !hasLetter(s) { return "密码需至少包含一个英文字母" }
+        if !hasDigit(s) { return "密码需至少包含一个数字" }
+        return nil
     }
 }
 
@@ -84,6 +99,13 @@ enum AuthAPI {
                                                                                          countryCode: id.ccOrNil, code: code), auth: false)
     }
 
+    static func sendSecurityCode() async throws {
+        let _: APISendCodeResponse = try await api.post("/account/code/send", body: APISendCodeAuthedRequest(purpose: .security))
+    }
+    static func changePassword(old: String, new: String, totp: String?, code: String?) async throws {
+        let _: APIChangePassword200Response = try await api.post("/account/password/change",
+            body: APIChangePasswordRequest(oldPassword: old, newPassword: new, totpCode: totp, code: code))
+    }
     static func resetPassword(token: String, newPassword: String) async throws {
         let _: EmptyResponse = try await api.post("/auth/password/reset", body: APIPasswordResetRequest(resetToken: token, newPassword: newPassword), auth: false)
     }

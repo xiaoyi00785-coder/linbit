@@ -245,6 +245,9 @@ enum ErrorText {
         "HAS_POSITION": "存在持仓，请先全部平仓后再切换",
         "HAS_OPEN_ORDERS": "存在挂单或条件委托，请先全部撤销后再切换",
         "COPY_TRADER_ONE_WAY": "带单交易员仅支持合仓模式",
+        "OLD_PASSWORD_INVALID": "原密码错误",
+        "PASSWORD_UNCHANGED": "新密码不能与原密码相同",
+        "AUTH_CODE_INVALID": "验证码错误或已过期",
     ]
 }
 
