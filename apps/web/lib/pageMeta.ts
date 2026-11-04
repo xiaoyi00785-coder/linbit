@@ -8,7 +8,7 @@ const T: [string, string][] = [
   ["/assets/spot-account", "现货账户"], ["/assets/earn-account", "理财账户"], ["/assets/tradfi-account", "传统金融账户"],
   ["/assets/bots-account", "策略账户"], ["/assets", "资产"],
   ["/setting/api", "API 管理"], ["/setting/kyc", "身份认证"], ["/setting/address", "提现地址管理"], ["/setting/devices", "设备管理"], ["/setting/dashboard", "个人中心"], ["/setting/security", "安全设置"], ["/setting", "账户设置"],
-  ["/earn/vip", "VIP 专享"], ["/earn/loan", "质押借币"], ["/earn", "理财"],
+  ["/earn/loan", "质押借币"], ["/earn", "理财"],
   ["/notifications", "消息通知"], ["/announcements", "公告中心"], ["/login", "登录"], ["/register", "注册"],
   ["/forgot-password", "找回密码"], ["/invite", "邀请返佣"], ["/rewards", "奖励中心"], ["/coupons", "卡券中心"],
   ["/points", "积分中心"], ["/events", "活动中心"], ["/copy", "跟单交易"], ["/strategy", "策略交易"],

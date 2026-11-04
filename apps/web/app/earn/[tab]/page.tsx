@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 
 const View = dynamic(() => import("@/legacy/Pages2").then((m) => m.EarnHub as ComponentType<any>), { ssr: false });
 /** EarnHub 支持的子页；其余（如旧链接 /earn/wealth）回到理财总览，避免空白页 */
-const TABS = new Set(["vip", "loan", "bao", "simple", "onchain"]);
+const TABS = new Set(["loan", "bao", "simple", "onchain"]);
 
 export default function Page() {
   const { tab } = useParams<{ tab: string }>();

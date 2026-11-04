@@ -28,7 +28,9 @@ const nextConfig = {
     return [
       { source: "/assets/futures-account", destination: "/assets/trading-account", permanent: false },
       { source: "/earn/wealth", destination: "/earn", permanent: false },
-      // 费率说明页统一在 /p/费率
+      // 费率说明页统一在 /p/费率；无 VIP 等级，旧 VIP 页一并指向费率页
+      { source: "/earn/vip", destination: "/p/%E8%B4%B9%E7%8E%87", permanent: false },
+      { source: "/vip", destination: "/p/%E8%B4%B9%E7%8E%87", permanent: false },
       { source: "/fees", destination: "/p/%E8%B4%B9%E7%8E%87", permanent: false },
       ...[
         ["funding", "funding-account"], ["futures", "trading-account"], ["spot", "spot-account"],
