@@ -226,7 +226,7 @@ struct HomeView: View {
                 RoundedRectangle(cornerRadius: 4).fill(p.brand).frame(width: 54, height: 34)
                     .rotationEffect(.degrees(-8)).position(x: 27, y: 19)
                 RoundedRectangle(cornerRadius: 4).fill(p.primary).frame(width: 62, height: 39)
-                    .overlay(IconView(icon: .logo, size: 10).padding(5), alignment: .topLeading)
+                    .overlay(IconView(icon: .logo, size: 10, tint: p.bg).padding(5), alignment: .topLeading)
                     .position(x: 44.5, y: 41)
             }
             .frame(width: 76, height: 70)
