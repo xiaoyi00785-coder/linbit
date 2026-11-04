@@ -7,12 +7,14 @@ import { useNavigate } from "@/lib/router";
 import { useAuthStore } from "@/lib/store";
 import { rest } from "@/lib/rest";
 import { toast } from "@/lib/ui";
+import { useDismiss } from "@/lib/dismiss";
+import { btnProps, onActivate, tabProps } from "@/lib/a11y";
 import { CoinIcon } from "@/components/CoinIcon";
 import type { components } from "@linbit/api-client";
 import { fmtFixed, restBase, useOrderBook, useRecentTrades, useSymbols, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
-export type Contract = { symbol: string; baseAsset: string; quoteAsset: string; maxLeverage: number; maintenanceMarginRate: string; tickSize: string; minQty: string; makerFeeRate: string; takerFeeRate: string };
+export type Contract = { symbol: string; baseAsset: string; quoteAsset: string; maxLeverage: number; maintenanceMarginRate: string; tickSize: string; minQty: string; maxQty?: string; makerFeeRate: string; takerFeeRate: string };
 const decOf = (s?: string) => (s && s.includes(".") ? s.split(".")[1].replace(/0+$/, "").length : 0);
 let ctP: Promise<Contract[]> | null = null;
 export function loadContracts() {
@@ -56,26 +58,23 @@ export function useTradePair(fut: boolean, initial?: string): [PairMeta, PairMet
 export function PairPicker({ cur, list, pick, fut }: { cur: PairMeta; list: PairMeta[]; pick: (s: string) => void; fut: boolean }) {
   const [o, setO] = useState(false);
   const [q, setQ] = useState("");
-  useEffect(() => {
-    if (!o) return;
-    const c = () => setO(false);
-    const k = (e: KeyboardEvent) => e.key === "Escape" && setO(false);
-    const t = setTimeout(() => window.addEventListener("click", c));
-    window.addEventListener("keydown", k);
-    return () => { clearTimeout(t); window.removeEventListener("click", c); window.removeEventListener("keydown", k); };
-  }, [o]);
+  const r = useRef<HTMLSpanElement>(null);
+  useDismiss(o, () => setO(false), r);
+  // 搜索：去首尾空格、忽略 "/" "-" 与大小写，"btc/usdt"、" BTC-USDT " 都能命中 BTCUSDT
+  const nq = q.trim().toUpperCase().replace(/[\s/\-_]/g, "");
+  const hits = list.filter((x) => x.symbol.toUpperCase().includes(nq) || (x.base + x.quote).toUpperCase().includes(nq));
   return (
-    <span className="pair tk-pp" data-guide="pair" onClick={() => setO(!o)}>
+    <span ref={r} className="pair tk-pp" data-guide="pair" role="button" tabIndex={0} aria-haspopup="listbox" aria-expanded={o} onClick={() => setO(!o)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setO(!o); } }}>
       <CoinIcon s={cur.base} size={22} /> {fut ? cur.symbol : `${cur.base}/${cur.quote}`} ▾
       {o && (
-        <div className="tk-pop" onClick={(e) => e.stopPropagation()}>
-          <input autoFocus placeholder="搜索交易对" value={q} onChange={(e) => setQ(e.target.value.toUpperCase())} />
-          {list.filter((x) => x.symbol.includes(q)).map((x) => (
-            <div key={x.symbol} className={"tk-opt" + (x.symbol === cur.symbol ? " on" : "")} onClick={() => { pick(x.symbol); setO(false); }}>
+        <div className="tk-pop" role="listbox" onClick={(e) => e.stopPropagation()}>
+          <input autoFocus placeholder="搜索交易对" aria-label="搜索交易对" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && hits[0]) { pick(hits[0].symbol); setO(false); } }} />
+          {hits.map((x) => (
+            <div key={x.symbol} role="option" tabIndex={0} aria-selected={x.symbol === cur.symbol} className={"tk-opt" + (x.symbol === cur.symbol ? " on" : "")} onClick={() => { pick(x.symbol); setO(false); }} onKeyDown={onActivate(() => { pick(x.symbol); setO(false); })}>
               <CoinIcon s={x.base} size={18} /> {fut ? x.symbol : `${x.base}/${x.quote}`}
             </div>
           ))}
-          {!list.length && <div className="tk-opt g">加载中…</div>}
+          {!list.length ? <div className="tk-opt g">加载中…</div> : !hits.length && <div className="tk-opt g tk-none">未找到匹配“{q.trim()}”的交易对</div>}
         </div>
       )}
     </span>
@@ -143,6 +142,8 @@ export function OrderBookPanel({ fut, pair }: { fut: boolean; pair: PairMeta }) 
   const steps = useMemo(() => [0, 1, 2, 3].map((i) => 10 ** (i - pp)), [pp]);
   const [si, setSi] = useState(0);
   const [po, setPo] = useState(false);
+  const precRef = useRef<HTMLSpanElement>(null);
+  useDismiss(po, () => setPo(false), precRef);
   useEffect(() => setSi(0), [symbol]);
   const step = steps[si];
   const sd = Math.max(0, -Math.round(Math.log10(step)));
@@ -173,13 +174,13 @@ export function OrderBookPanel({ fut, pair }: { fut: boolean; pair: PairMeta }) 
   const empty = <div className="tk-empty">暂无挂单</div>;
   return (
     <div data-guide="book" className="ob">
-      <div className="pt">{["订单簿", "最新成交"].map((x, i) => <b key={x} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}</div>
+      <div className="pt" role="tablist">{["订单簿", "最新成交"].map((x, i) => <b key={x} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}</div>
       {tab === 0 ? (
         <>
           <div className="obt">
             <span className="tk-views">{VIEWS.map((v) => <button key={v.k} className={"tk-vb" + (view === v.k ? " on" : "")} data-tip={v.tip} aria-label={v.tip} onClick={() => setView(v.k)}><ViewIcon k={v.k} /></button>)}</span>
-            <span className="tk-prec" onClick={() => setPo(!po)}>{step.toFixed(sd)} ▾
-              {po && <div className="tk-pop sm" onClick={(e) => e.stopPropagation()}>{steps.map((s, i) => <div key={s} className={"tk-opt" + (i === si ? " on" : "")} onClick={() => { setSi(i); setPo(false); }}>{s.toFixed(Math.max(0, -Math.round(Math.log10(s))))}</div>)}</div>}
+            <span ref={precRef} className="tk-prec" role="button" tabIndex={0} aria-label="价格精度" aria-haspopup="listbox" aria-expanded={po} onClick={() => setPo(!po)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setPo(!po); } }}>{step.toFixed(sd)} ▾
+              {po && <div className="tk-pop sm" onClick={(e) => e.stopPropagation()}>{steps.map((s, i) => <div key={s} role="option" tabIndex={0} aria-selected={i === si} onKeyDown={onActivate(() => { setSi(i); setPo(false); })} className={"tk-opt" + (i === si ? " on" : "")} onClick={() => { setSi(i); setPo(false); }}>{s.toFixed(Math.max(0, -Math.round(Math.log10(s))))}</div>)}</div>}
             </span>
           </div>
           <div className="obh"><span>价格({pair.quote})</span><span>数量({base})</span><span>累计({base})</span></div>
@@ -222,7 +223,7 @@ export function Modal({ title, onClose, children, foot }: { title: string; onClo
   );
 }
 function Opt({ on, t, d, onClick }: { on: boolean; t: string; d?: string; onClick: () => void }) {
-  return <div className={"tk-opt2" + (on ? " on" : "")} onClick={onClick}><b>{t}</b>{d && <small>{d}</small>}{on && <i className="tk-ck">✓</i>}</div>;
+  return <div role="radio" aria-checked={on} tabIndex={0} onKeyDown={onActivate(onClick)} className={"tk-opt2" + (on ? " on" : "")} onClick={onClick}><b>{t}</b>{d && <small>{d}</small>}{on && <i className="tk-ck">✓</i>}</div>;
 }
 
 type PlaceReq = components["schemas"]["FuturesPlaceOrderRequest"];
@@ -253,7 +254,16 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const [tpTT, setTpTT] = useState<"LAST" | "MARK">("MARK");
   const [slTT, setSlTT] = useState<"LAST" | "MARK">("MARK");
   useFillPrice((p) => { setPrice(p); if (ty === "market") setTy("limit"); });
-  useEffect(() => { setSt(readLocal(pair.symbol)); setPrice(""); }, [pair.symbol]);
+  // 切换合约：重置价格、数量、比例与条件单输入
+  useEffect(() => { setSt(readLocal(pair.symbol)); setPrice(""); setQty(""); setPc(0); setTrig(""); setTp(""); setSl(""); }, [pair.symbol]);
+  const ftk = useFutTicker(pair.symbol, true);
+  const mark = Number(ftk?.markPrice) || Number(ftk?.lastPrice) || 0;
+  // 价格按 tickSize 对齐；数量按 minQty / maxQty 与数量精度校验
+  const tick = Number(c?.tickSize) || 10 ** -pair.pp;
+  const tickDp = Math.max(pair.pp, decOf(c?.tickSize));
+  const snap = (v: string) => { const n = Number(v); if (!v || !n) return v; const k = Math.round(n / tick); return (Math.max(1, k) * tick).toFixed(tickDp); };
+  const cut = (v: string, d: number) => { v = v.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1"); const [a, b] = v.split("."); return b === undefined ? a : a + "." + b.slice(0, d); };
+  const minQ = Number(c?.minQty) || 0, maxQ = Number(c?.maxQty) || 0;
   const save = (n: typeof st) => { setSt(n); localStorage.setItem(LS(pair.symbol), JSON.stringify(n)); };
   // 已登录：读取后端杠杆/保证金模式 + 合约账户可用
   useEffect(() => {
@@ -282,7 +292,10 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     return false;
   };
   const qn = Number(qty) || 0;
-  const px = ty === "market" ? Number(price) || 0 : Number(price) || 0;
+  // 市价单 / 平仓未填价格：保证金与手续费按标记价（无则最新价）估算
+  const px = ty === "market" || (act === 1 && !Number(price)) ? mark : Number(price) || 0;
+  const qErr = !qn ? "" : minQ && qn < minQ ? `最小下单数量 ${c?.minQty} ${pair.base}` : maxQ && qn > maxQ ? `最大下单数量 ${c?.maxQty} ${pair.base}` : "";
+  const pErr = ty !== "market" && Number(price) && Math.abs(Number(price) / tick - Math.round(Number(price) / tick)) > 1e-6 ? `价格需为 ${c?.tickSize ?? tick} 的整数倍` : "";
   const notional = qn * px;
   const margin = st.lev ? notional / st.lev : 0;
   const fee = notional * Number(c?.takerFeeRate ?? 0.0005);
@@ -290,6 +303,8 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     if (!authed) return nav("/login");
     if (!qty.trim()) return toast("请输入数量", "err");
     if (!(qn > 0) || !isFinite(qn)) return toast("数量必须大于 0", "err");
+    if (qErr) return toast(qErr, "err");
+    if (pErr) return toast(pErr, "err");
     if (ty !== "market" && !Number(price)) return toast("请输入价格", "err");
     if (ty === "plan" && !Number(trig)) return toast("请输入触发价", "err");
     const hedge = st.mode.pos === "split";
@@ -322,37 +337,43 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     toast(ty === "plan" ? "计划委托已提交" : "下单成功"); setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
   };
   const setByPct = (p: number) => {
-    setPc(p);
     const a = Number(avail) || 0;
-    if (a && px) setQty(((a * st.lev * p) / 100 / px).toFixed(pair.qp));
+    if (!a) { setPc(0); if (p > 0) toast(authed ? "合约账户可用余额为 0，请先划转" : "请先登录", "info"); return; }
+    if (!px) { setPc(0); if (p > 0) toast("请先输入价格", "info"); return; }
+    setPc(p);
+    let q = Math.floor(((a * st.lev * p) / 100 / px) * 10 ** pair.qp) / 10 ** pair.qp;
+    if (maxQ) q = Math.min(q, maxQ);
+    setQty(q ? q.toFixed(pair.qp) : "");
   };
   const L = st.mode;
   return (
     <div data-guide="form" className="of">
       <div className="selrow tk-sel">
-        <button className="tk-chip" onClick={() => setModal("mode")}>{L.margin === "cross" ? "全仓" : "逐仓"} {L.pos === "merged" ? "单向" : "双向"}</button>
-        <button className="tk-chip long" onClick={() => setModal("lev")}>{st.lev}x</button>
-        <button className="tk-chip short" onClick={() => setModal("lev")}>{st.lev}x</button>
+        <button className="tk-chip" onClick={() => setModal("mode")}>{L.margin === "cross" ? "全仓" : "逐仓"}<i className="tk-dot" aria-hidden="true">·</i>{L.pos === "merged" ? "单向" : "双向"}</button>
+        <button className="tk-chip long" aria-label={`多仓杠杆 ${st.lev}x，点击调整`} onClick={() => setModal("lev")}>多 {st.lev}x</button>
+        <button className="tk-chip short" aria-label={`空仓杠杆 ${st.lev}x，点击调整`} onClick={() => setModal("lev")}>空 {st.lev}x</button>
         <button className="tk-chip ic" data-tip="计算器" aria-label="计算器" onClick={() => setModal("calc")}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="1.5" width="10" height="13" rx="1.5" /><path d="M5.5 4.5h5M5.5 8h1M9.5 8h1M5.5 11h1M9.5 11h1" /></svg>
         </button>
       </div>
-      <div className="seg">{["开仓", "平仓"].map((x, i) => <b key={x} className={act === i ? "on" : ""} onClick={() => setAct(i as 0 | 1)}>{x}</b>)}</div>
-      <div className="pt sm">{([["limit", "限价"], ["market", "市价"], ["plan", "计划委托"]] as const).map(([k, x]) => <b key={k} className={ty === k ? "on" : ""} onClick={() => setTy(k)}>{x}</b>)}</div>
+      <div className="seg" role="tablist" aria-label="开平仓">{["开仓", "平仓"].map((x, i) => <b key={x} {...tabProps(act === i, () => setAct(i as 0 | 1))} className={act === i ? "on" : ""} onClick={() => setAct(i as 0 | 1)}>{x}</b>)}</div>
+      <div className="pt sm" role="tablist" aria-label="订单类型">{([["limit", "限价"], ["market", "市价"], ["plan", "计划委托"]] as const).map(([k, x]) => <b key={k} {...tabProps(ty === k, () => setTy(k))} className={ty === k ? "on" : ""} onClick={() => setTy(k)}>{x}</b>)}</div>
       <div className="kv2"><span>可用</span><b>{avail != null ? fmtFixed(avail, 4) : "--"} USDT</b></div>
-      {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="触发价类型" value={trigType} onChange={(e) => setTrigType(e.target.value as "LAST" | "MARK")}><option value="LAST">最新价</option><option value="MARK">标记价</option></select></div>}
-      {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
-      <div className="inp"><small>数量</small><input inputMode="decimal" value={qty} onChange={(e) => { if (/-/.test(e.target.value)) { toast("数量不能为负数", "err"); return; } setQty(e.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1")); setPc(0); }} aria-invalid={qty !== "" && !(qn > 0)} /><em>{pair.base}</em></div>
-      <div className="slider lb-sl"><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="比例" /></div>
-      {ty === "limit" && <div className="tk-tif">{TIF.map(([k, x]) => <b key={k} className={tif === k ? "on" : ""} onClick={() => setTif(k)}>{x}</b>)}</div>}
+      {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(cut(e.target.value, tickDp))} onBlur={() => setTrig(snap(trig))} /><select className="tk-tt" aria-label="触发价类型" value={trigType} onChange={(e) => setTrigType(e.target.value as "LAST" | "MARK")}><option value="LAST">最新价</option><option value="MARK">标记价</option></select></div>}
+      {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => setPrice(cut(e.target.value, tickDp))} onBlur={() => setPrice(snap(price))} aria-invalid={!!pErr} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
+      {pErr && <div className="tk-ferr" role="alert">{pErr}</div>}
+      <div className="inp"><small>数量</small><input inputMode="decimal" aria-label="数量" placeholder={minQ ? `最小 ${c?.minQty}` : ""} aria-invalid={!!qErr} value={qty} onChange={(e) => { if (/-/.test(e.target.value)) { toast("数量不能为负数", "err"); return; } setQty(cut(e.target.value, pair.qp).replace(/(\..*)\./g, "$1")); setPc(0); }} aria-invalid={qty !== "" && !(qn > 0)} /><em>{pair.base}</em></div>
+      {qErr && <div className="tk-ferr" role="alert">{qErr}</div>}
+      <div className="slider lb-sl"><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} {...btnProps(() => setByPct(p), `${p}%`)} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="比例" /></div>
+      {ty === "limit" && <div className="tk-tif" role="tablist" aria-label="生效时间">{TIF.map(([k, x]) => <b key={k} {...tabProps(tif === k, () => setTif(k))} className={tif === k ? "on" : ""} onClick={() => setTif(k)}>{x}</b>)}</div>}
       {act === 0 && <label className="tk-ck2"><input type="checkbox" checked={tpsl} onChange={(e) => setTpsl(e.target.checked)} />止盈/止损</label>}
       {act === 0 && tpsl && <div className="tk-tp2"><div className="inp"><small>止盈</small><input inputMode="decimal" placeholder="触发价" value={tp} onChange={(e) => setTp(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止盈触发价类型" value={tpTT} onChange={(e) => setTpTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div><div className="inp"><small>止损</small><input inputMode="decimal" placeholder="触发价" value={sl} onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止损触发价类型" value={slTT} onChange={(e) => setSlTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div></div>}
       <div className="kv2 g"><span>保证金</span><span>{fmtFixed(margin, 4)} USDT</span></div>
       <div className="kv2 g"><span>预估手续费（{(Number(c?.takerFeeRate ?? 0.0005) * 100).toFixed(2)}%）</span><span>{fmtFixed(fee, 4)} USDT</span></div>
       {authed ? (
         <div className="tk-btns">
-          <button className="lbtn tk-long" disabled={busy} onClick={() => submit(act === 0 ? "buy" : "buy")}>{act === 0 ? "开多" : "平空"}</button>
-          <button className="lbtn tk-short" disabled={busy} onClick={() => submit("sell")}>{act === 0 ? "开空" : "平多"}</button>
+          <button className="lbtn tk-long" disabled={busy || !!qErr || !!pErr} onClick={() => submit(act === 0 ? "buy" : "buy")}>{act === 0 ? "开多" : "平空"}</button>
+          <button className="lbtn tk-short" disabled={busy || !!qErr || !!pErr} onClick={() => submit("sell")}>{act === 0 ? "开空" : "平多"}</button>
         </div>
       ) : <button className="lbtn" onClick={() => nav("/login")}>登录/注册</button>}
 
@@ -379,14 +400,20 @@ function ModeModal({ mode, onClose, onOk }: { mode: Mode; onClose: () => void; o
 }
 
 function LevModal({ lev, max, onClose, onOk }: { lev: number; max: number; onClose: () => void; onOk: (v: number) => void }) {
-  const [v, setV] = useState(lev);
+  // 输入框与滑杆同一范围 1..max；文本原样保留以便提示错误（-1、1.5、空值），失焦时夹紧为合法整数
+  const [raw, setRaw] = useState(String(lev));
   const clamp = (x: number) => Math.max(1, Math.min(max, Math.round(x) || 1));
+  const n = Number(raw);
+  const err = raw.trim() === "" ? "请输入杠杆倍数" : !/^\d+$/.test(raw.trim()) ? "杠杆须为整数" : n < 1 || n > max ? `杠杆范围 1–${max}x` : "";
+  const v = err ? clamp(Number.isFinite(n) ? n : 1) : n;
+  const set = (x: number) => setRaw(String(clamp(x)));
   const presets = [1, 5, 10, 20, 50, 100, 125, 150, 200].filter((x) => x <= max);
   return (
-    <Modal title="调整杠杆" onClose={onClose} foot={<><button className="tk-b2" onClick={onClose}>取消</button><button className="tk-b1" onClick={() => onOk(clamp(v))}>确认</button></>}>
-      <div className="tk-levin"><button onClick={() => setV(clamp(v - 1))}>−</button><input inputMode="numeric" value={v} onChange={(e) => setV(Number(e.target.value.replace(/\D/g, "")) || 1)} onBlur={() => setV(clamp(v))} /><span>x</span><button onClick={() => setV(clamp(v + 1))}>+</button></div>
-      <input className="tk-range" type="range" min={1} max={max} value={v} onChange={(e) => setV(+e.target.value)} aria-label="杠杆" />
-      <div className="tk-presets">{presets.map((p) => <span key={p} className={v === p ? "on" : ""} onClick={() => setV(p)}>{p}x</span>)}</div>
+    <Modal title="调整杠杆" onClose={onClose} foot={<><button className="tk-b2" onClick={onClose}>取消</button><button className="tk-b1" disabled={!!err} onClick={() => !err && onOk(v)}>确认</button></>}>
+      <div className={"tk-levin" + (err ? " err" : "")}><button aria-label="减少杠杆" onClick={() => set(v - 1)}>−</button><input inputMode="numeric" aria-label="杠杆倍数" aria-invalid={!!err} value={raw} onChange={(e) => setRaw(e.target.value.replace(/[^\d.\-]/g, ""))} onBlur={() => set(Number.isFinite(n) ? n : 1)} /><span>x</span><button aria-label="增加杠杆" onClick={() => set(v + 1)}>+</button></div>
+      {err && <div className="tk-ferr" role="alert">{err}</div>}
+      <input className="tk-range" type="range" min={1} max={max} step={1} value={v} onChange={(e) => setRaw(e.target.value)} aria-label="杠杆" />
+      <div className="tk-presets">{presets.map((p) => <span key={p} {...btnProps(() => setRaw(String(p)))} className={v === p && !err ? "on" : ""} onClick={() => setRaw(String(p))}>{p}x</span>)}</div>
       <p className="tk-txt">最大杠杆 {max}x。杠杆越高，强平风险越大，请谨慎设置。</p>
       {v >= 50 && <p className="tk-txt down">当前杠杆较高，价格小幅波动即可能触发强平。</p>}
     </Modal>
@@ -410,8 +437,8 @@ function CalcModal({ pair, lev: l0, max, onClose }: { pair: PairMeta; lev: numbe
   const n = (k: string, v: string, set: (v: string) => void, u = "USDT") => <div className="inp"><small>{k}</small><input inputMode="decimal" value={v} onChange={(ev) => set(ev.target.value.replace(/[^\d.]/g, ""))} /><em>{u}</em></div>;
   return (
     <Modal title="计算器" onClose={onClose}>
-      <div className="pt sm">{["收益", "目标价格", "强平价格"].map((t, i) => <b key={t} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{t}</b>)}</div>
-      <div className="seg">{(["long", "short"] as const).map((k) => <b key={k} className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "long" ? "做多" : "做空"}</b>)}</div>
+      <div className="pt sm" role="tablist">{["收益", "目标价格", "强平价格"].map((t, i) => <b key={t} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{t}</b>)}</div>
+      <div className="seg" role="tablist">{(["long", "short"] as const).map((k) => <b key={k} {...tabProps(side === k, () => setSide(k))} className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "long" ? "做多" : "做空"}</b>)}</div>
       <div className="kv2"><span>杠杆</span><span><input className="tk-levsm" value={lev} onChange={(ev) => setLev(Math.max(1, Math.min(max, +ev.target.value.replace(/\D/g, "") || 1)))} />x</span></div>
       {n("开仓价格", entry, setEntry)}
       {tab === 0 && <>{n("平仓价格", exit, setExit)}{n("数量", qty, setQty, pair.base)}</>}

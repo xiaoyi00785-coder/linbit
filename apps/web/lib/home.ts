@@ -7,9 +7,18 @@ export type Newcomer = { available: boolean; total?: string; asset?: string; lin
 export function useHome() {
   const [slots, setSlots] = useState<Record<string, Placement[]> | null>(null);
   const [nc, setNc] = useState<Newcomer | null>(null);
+  // 新人礼包金额：/home/newcomer 优先，/growth/config.newcomer 兜底；两者返回前 ncReady=false，调用方展示骨架
+  const [ncReady, setReady] = useState(false);
   useEffect(() => {
     rget<{ slots: Record<string, Placement[]> }>("/home/placements?slots=carousel,promo_bar&platform=web&locale=zh-CN").then((r) => r.ok && r.data?.slots && setSlots(r.data.slots));
-    rget<Newcomer>("/home/newcomer").then((r) => r.ok && r.data && setNc(r.data));
+    Promise.all([
+      rget<Newcomer>("/home/newcomer"),
+      rget<{ payoutAsset?: string; newcomer?: { available?: boolean; total?: string } }>("/growth/config"),
+    ]).then(([h, g]) => {
+      if (h.ok && h.data) setNc(h.data);
+      else if (g.ok && g.data?.newcomer?.total) setNc({ available: g.data.newcomer.available !== false, total: g.data.newcomer.total, asset: g.data.payoutAsset || "USDT" });
+      setReady(true);
+    });
   }, []);
-  return { carousel: slots?.carousel || [], bar: slots?.promo_bar?.[0] || null, newcomer: nc?.available ? nc : null };
+  return { carousel: slots?.carousel || [], bar: slots?.promo_bar?.[0] || null, newcomer: nc?.available ? nc : null, ncReady };
 }

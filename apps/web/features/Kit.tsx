@@ -84,11 +84,11 @@ const defOpts = (v: string, k?: string) => (DEF.find(([r]) => r.test(v))?.[1]) |
 /** 下拉选择：点击展开，选中后回写并派发 lb-filter 事件。 */
 export function Dropdown({ k, v, opts, onChange, cls = "lsel", store, icons }: { k?: string; v: string; opts?: string[]; onChange?: (x: string) => void; cls?: string; store?: string; icons?: boolean }) {
   const [val, setVal] = useState(() => (store && typeof localStorage !== "undefined" && localStorage.getItem(store)) || v); const [o, setO] = useState(false); const r = useRef<HTMLDivElement>(null);
-  useEffect(() => setVal((store && localStorage.getItem(store)) || v), [v, store]);
+  useEffect(() => { const h = () => setVal((store && localStorage.getItem(store)) || v); h(); if (!store) return; window.addEventListener("lb-filter", h); return () => window.removeEventListener("lb-filter", h); }, [v, store]);
   useDismiss(o, () => setO(false), r);
   const list = opts || defOpts(v, k);
-  return <div ref={r} className={cls + " kit-dd"} role="combobox" aria-expanded={o} onClick={() => setO(!o)}>{icons && <CoinIcon s={val} size={20} className="kit-ci" />}{val} <em>▾</em>
-    {o && <div className="kit-menu" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{icons && <CoinIcon s={x} size={18} className="kit-ci" />}{x}</div>)}</div>}
+  return <div ref={r} className={cls + " kit-dd"} role="combobox" aria-expanded={o} aria-haspopup="listbox" tabIndex={0} onClick={() => setO(!o)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setO(!o); } }}>{icons && <CoinIcon s={val} size={20} className="kit-ci" />}{val} <em>▾</em>
+    {o && <div className="kit-menu" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} role="option" aria-selected={x === val} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLElement).click(); }} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{icons && <CoinIcon s={x} size={18} className="kit-ci" />}{x}</div>)}</div>}
   </div>;
 }
 const iso = (d: Date) => d.toISOString().slice(0, 10);

@@ -174,7 +174,7 @@ export function SecurityCenter() {
         <div className="lcard"><h3>安全中心</h3><div className="fx-err">{res ? secMsg(res) : "加载失败"}</div></div>
       ) : <>
         {wLock && <div className="sec-lock big"><b>!</b>安全设置变更后 {s.policy?.withdrawLockHours ?? 24} 小时内禁止提现，预计 {fmtUntil(s.withdrawLockedUntil)} 解除{s.withdrawLockReason ? `（${s.withdrawLockReason}）` : ""}。</div>}
-        <div className="lcard"><div className="slv"><div className="sring"><b>{score}/{checks.length}</b></div><div><b className={lvl[1]}>{lvl[0]}</b><div className="lg">安全等级</div></div><div className="schk">{checks.map(([x, ok]) => <span key={x} className={ok ? "ok" : ""}><i>✓</i>{x}</span>)}</div></div></div>
+        <div className="lcard"><div className="slv"><div className="sring"><b>{score}/{checks.length}</b></div><div><b className={lvl[1]}>{lvl[0]}</b><div className="lg">安全等级</div></div><div className="schk">{checks.map(([x, ok]) => <span key={x} className={ok ? "ok" : ""}><i aria-hidden="true">{ok ? "✓" : ""}</i>{x}<span className="sr-only">{ok ? "（已设置）" : "（未设置）"}</span></span>)}</div></div></div>
         <div className="lcard"><h3>基础安全设置</h3>
           <Row icon={<G n="lock" s={18} />} t="登录密码" d="用于登录账户，修改后其他设备将退出登录" ok s="已设置"><button className="lb sm" onClick={() => setM("password")}>修改</button></Row>
           <Row icon={<G n="mail" s={18} />} t="邮箱验证" d="用于登录、提币、修改安全设置" ok={!!s.emailVerified} s={s.email ? maskEmail(s.email) : "未绑定"}><button className="lb sm" onClick={() => setM("email")}>{s.email ? "更换" : "绑定"}</button></Row>
