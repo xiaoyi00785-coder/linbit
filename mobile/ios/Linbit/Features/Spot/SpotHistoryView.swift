@@ -183,7 +183,7 @@ struct HistoryOrderRow: View {
     private func kv(_ k: String, _ v: String, end: Bool = false) -> some View {
         VStack(alignment: end ? .trailing : .leading, spacing: 3) {
             Text(k).font(.lb(11)).foregroundColor(p.textSecondary)
-            Text(v).font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+            Text(v).font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary).lineLimit(1).minimumScaleFactor(0.8)
         }.frame(maxWidth: .infinity, alignment: end ? .trailing : .leading)
     }
 }
