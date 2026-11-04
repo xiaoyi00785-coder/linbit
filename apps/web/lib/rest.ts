@@ -10,7 +10,27 @@ import { MOCK_ENABLED } from "./mockFlag";
 
 export interface RestResult<T> { ok: boolean; data?: T; error?: string; code?: string; status?: number; source: "api" | "demo" }
 
-export async function rest<T>(method: string, path: string, body?: unknown, demo?: () => T): Promise<RestResult<T>> {
+// 访问令牌过期 / 被吊销时用 refreshToken 换新令牌（并发请求共用一次刷新）；刷新失败则本地退出，
+// 页面显示未登录，而不是把 401 静默显示成 0 余额。
+let refreshing: Promise<boolean> | null = null;
+export function refreshAccess(): Promise<boolean> {
+  if (refreshing) return refreshing;
+  const { refreshToken, email } = useAuthStore.getState();
+  if (!refreshToken) return Promise.resolve(false);
+  refreshing = (async () => {
+    try {
+      const r = await fetch(API_BASE + "/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken }) });
+      if (!r.ok) { if (r.status === 400 || r.status === 401) useAuthStore.getState().logout(); return false; }
+      const j = await r.json();
+      if (!j?.accessToken) return false;
+      useAuthStore.getState().login({ accessToken: j.accessToken, refreshToken: j.refreshToken || refreshToken, email });
+      return true;
+    } catch { return false; } finally { setTimeout(() => { refreshing = null; }, 0); }
+  })();
+  return refreshing;
+}
+
+export async function rest<T>(method: string, path: string, body?: unknown, demo?: () => T, retried = false): Promise<RestResult<T>> {
   const tok = useAuthStore.getState().accessToken;
   try {
     const r = await fetch(API_BASE + path, {
@@ -18,6 +38,9 @@ export async function rest<T>(method: string, path: string, body?: unknown, demo
       headers: { ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+    if (r.status === 401 && tok && !retried && !path.startsWith("/auth/")) {
+      if (await refreshAccess()) return rest<T>(method, path, body, demo, true);
+    }
     const txt = await r.text();
     const j = txt ? JSON.parse(txt) : {};
     if (r.ok) return { ok: true, data: j as T, status: r.status, source: "api" };

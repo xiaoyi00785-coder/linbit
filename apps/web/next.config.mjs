@@ -22,6 +22,13 @@ const nextConfig = {
     const t = process.env.API_PROXY_TARGET;
     return t ? [{ source: "/gw/:path*", destination: `${t}/:path*` }] : [];
   },
+  // 旧链接兼容：资产中心子页的实际路径带 -account 后缀
+  async redirects() {
+    return [
+      ["funding", "funding-account"], ["futures", "trading-account"], ["spot", "spot-account"],
+      ["earn", "earn-account"], ["tradfi", "tradfi-account"], ["bot", "bots-account"], ["bots", "bots-account"],
+    ].map(([a, b]) => ({ source: `/assets/${a}`, destination: `/assets/${b}`, permanent: false }));
+  },
   eslint: {
     // 构建时跳过 ESLint（本仓库未配置 eslint）
     ignoreDuringBuilds: true,
