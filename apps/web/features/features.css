@@ -178,3 +178,28 @@ i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border
 
 .tk-only{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--lb-text-2);cursor:pointer;margin-left:12px;white-space:nowrap}.tk-only input{accent-color:#abe127;margin:0}
 .por-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}.por-t th,.por-t td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--lb-card-2)}.por-t th:first-child,.por-t td:first-child{text-align:left}.por-t th{color:var(--lb-text-3);font-weight:400}
+/* 客服工单（深色主题 #070808 + 主色 #abe127） */
+.tk .ff-btn{white-space:nowrap;flex-shrink:0}
+.tk .ff-btn.pri{background:#abe127;color:#070808;border-color:#abe127;font-weight:600}
+.tk .ff-btn.pri:hover:not(:disabled){background:#bdf03a;border-color:#bdf03a}
+.tk .ff-btn:focus-visible,.tk .ff-tabs button:focus-visible,.tk .tk-att button:focus-visible,.tk a:focus-visible{outline:2px solid #abe127;outline-offset:2px}
+.tk .tk-card{width:auto;max-width:760px}
+.tk .tk-in{width:100%;box-sizing:border-box;border:1px solid var(--lb-light-border);border-radius:8px;background:var(--lb-light-fill);color:var(--lb-card);font:inherit;font-size:14px;padding:10px 12px;outline:0}
+.tk select.tk-in{height:40px;padding:0 32px 0 12px;appearance:none;white-space:nowrap;text-overflow:ellipsis;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c4c6c9' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
+.tk select.tk-in option{background:#101112;color:#eaecef}
+.tk textarea.tk-in{resize:vertical;min-height:96px;line-height:1.6}
+.tk .tk-in:focus{border-color:#abe127}
+.tk .ff-f>span{display:flex;justify-content:space-between}.tk .tk-cnt{font-style:normal;opacity:.6}
+.tk .tk-err{color:#f6465d;font-size:12px;margin:12px 0 0}
+.tk .ff-tag.ok{background:rgba(171,225,39,.14);color:#abe127}.tk .ff-tag.mut{opacity:.6}
+.tk .tk-att{display:inline-flex;align-items:center;gap:6px}.tk .tk-att button{border:0;background:none;color:inherit;cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
+.tk .tk-sub{margin:8px 0 16px;font-size:18px}
+.tk .tk-msgs{display:grid;gap:12px;max-width:760px}
+.tk .tk-sup{border-left:3px solid #abe127}
+.tk .tk-img{max-width:160px;max-height:120px;border-radius:6px;object-fit:cover;display:block}
+.tk .tk-tr{cursor:pointer}.tk .tk-tr:hover td{background:var(--lb-light-fill)}
+.tk .ff-t td,.tk .ff-t th{white-space:nowrap}.tk .ff-t td:first-child{white-space:normal}
+.tk .ff-tabs button{white-space:nowrap}.tk .ff-tabs button.on{background:var(--lb-light-fill);color:#abe127}
+.tk .tk-total{margin:0 0 8px}.tk .tk-row{display:flex;gap:8px}
+.tk .ff-bar{flex-wrap:wrap}
+@media (max-width:640px){.tk .ff-t th:nth-child(4),.tk .ff-t td:nth-child(4){display:none}.tk .tk-tabs{overflow-x:auto;max-width:100%}}

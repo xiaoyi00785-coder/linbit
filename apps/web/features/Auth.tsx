@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { useHome } from "@/lib/home";
 import { AuthSkel } from "@/components/AuthSkel";
 import { Link, useNavigate } from "@/lib/router";
+/** 登录后回跳：仅接受站内路径（/xxx，拒绝 //host 与协议） */
+const safeRedirect = () => { if (typeof window === "undefined") return ""; const r = new URLSearchParams(window.location.search).get("redirect") || ""; return /^\/(?![\/\\])/.test(r) ? r : ""; };
 import {
   COUNTRIES, displayAccount, isChallenge, login, loginErrMsg, loginResend, loginVerify, register, resetPassword, verifyResetCode,
   sendAuthCode, setMe, toE164, type AuthTokens, type LoginChallenge, type Target,
@@ -56,7 +58,7 @@ function useGuestOnly() {
   const nav = useNavigate();
   const tok = useAuthStore((s) => s.accessToken);
   // 已登录：/login、/register → 资产页；经邀请短链 /r/{code}（带 inviteCode）进入 → 首页（邀请码仅对新用户有效，不再进入注册）
-  useEffect(() => { if (tok) nav(new URLSearchParams(window.location.search).has("inviteCode") ? "/" : "/assets", { replace: true } as any); }, [tok, nav]);
+  useEffect(() => { if (tok) nav(safeRedirect() || (new URLSearchParams(window.location.search).has("inviteCode") ? "/" : "/assets"), { replace: true } as any); }, [tok, nav]);
   return !!tok;
 }
 
@@ -85,7 +87,7 @@ function useFinish() {
     setMe(null);
     store.login({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, email: t.email ?? null });
     setAuthed(true);
-    nav("/assets");
+    nav(safeRedirect() || "/assets");
   };
 }
 
