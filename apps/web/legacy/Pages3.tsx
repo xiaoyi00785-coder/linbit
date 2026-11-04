@@ -82,7 +82,6 @@ const tm=v=>{if(v==null||v==='')return '--';const d=new Date(typeof v==='number'
 const ST_={completed:'已完成',pending:'处理中',processing:'处理中',failed:'失败',rejected:'已拒绝',canceled:'已撤销',success:'成功',filled:'已成交',FILLED:'已成交',NEW:'未成交',PARTIALLY_FILLED:'部分成交',CANCELED:'已撤销',REJECTED:'已拒绝',EXPIRED:'已过期',closed:'已平仓',liquidated:'强平',adl:'自动减仓',new:'未成交',open:'未成交',partially_filled:'部分成交',partial:'部分成交',done:'已完成',cancelled:'已撤销',expired:'已过期',triggered:'已触发'}
 const st_=v=>stLabel(v)
 const ACCT_={funding:'资金账户',spot:'现货账户',futures:'合约账户',earn:'理财账户'}
-const FEE_KINDS=new Set(['fee','funding','liquidation_fee'])
 const BILL_={realized_pnl:'已实现盈亏',fee:'手续费',funding:'资金费',transfer_in:'转入',transfer_out:'转出',liquidation:'强平',liquidation_fee:'强平手续费',insurance_cover:'保险基金补偿',bonus:'体验金'}
 function Live({path,pick,row}){const isA=useAuthStore(st=>st.isAuthed);const r=useRest(isA&&path?path:null);if(!isA)return <Empty/>;if(r.loading&&!r.data)return <div style={{padding:16}}><div className="lb-skel" style={{height:60}}/></div>;const L=(r.data&&pick(r.data))||[];if(!L.length)return r.error?<div className="lempty"><span>{r.error} <a onClick={()=>r.reload()}>重试</a></span></div>:<Empty/>;return <>{L.map((x,k)=><div className="ltr" key={x.id??x.orderId??x.tradeId??k}>{row(x).map((c,ci)=><span key={ci}>{c}</span>)}</div>)}</>}
 const items_=d=>d.items
@@ -94,12 +93,12 @@ return <>{L.map((x,k)=><div className="ltr" key={x._k+(x.id??k)}>{[tm(x.createdA
 const FUND_ROWS=i=>i===0?<FundAll/>:(j=>j===0?<Live path="/wallet/deposit/records?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),'链上充值',x.asset,x.network,fmtV(x.amount),st_(x.status),x.txId?String(x.txId).slice(0,10)+'…':'--']}/>
  :j===1?<Live path="/wallet/withdraw/records?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),'链上提现',x.asset,x.network,fmtV(x.amount),st_(x.status),'--']}/>
  :j===2?<Live path="/assets/transfers?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),x.asset,fmtV(x.amount),ACCT_[x.from]||x.from,ACCT_[x.to]||x.to,st_(x.status)]}/>:<Empty/>)(i-1)
-const FUT_BILLS=()=><Live path="/futures/bills?limit=200" pick={d=>d.bills} row={x=>[tm(x.time),'USDT',BILL_[x.kind]||x.kind,FEE_KINDS.has(x.kind)?fmtFeeExact(x.amount):fmtV(x.amount),x.symbol||'--']}/>
+const FUT_BILLS=()=><Live path="/futures/bills?limit=200" pick={d=>d.bills} row={x=>[tm(x.time),'USDT',BILL_[x.kind]||x.kind,fmtFeeExact(x.amount),x.symbol||'--']}/>
 // 现货记录：现货成交 + 涉及现货账户的划转（GET /assets/transfers，from/to 含 spot），按时间倒序合并
 function SpotRec(){const isA=useAuthStore(st=>st.isAuthed);const a=useRest(isA?'/spot/trades?page=1&pageSize=50':null),b=useRest(isA?'/assets/transfers?page=1&pageSize=100':null);if(!isA)return <Empty/>;if([a,b].some(r=>r.loading&&!r.data))return <div style={{padding:16}} aria-busy="true"><div className="lb-skel" style={{height:60}}/></div>;const L=spotRecords(a.data?.items,b.data?.items,v=>fmtV(v));if(!L.length){const e=[a,b].find(r=>r.error);return e?<div className="lempty"><span>{e.error} <a onClick={()=>{a.reload();b.reload()}}>重试</a></span></div>:<Empty/>}return <>{L.map(x=><div className="ltr" key={x.k}>{[tm(x.t),...x.row,'--'].map((c,ci)=><span key={ci}>{c}</span>)}</div>)}</>}
 const SPOT_REC=()=><SpotRec/>
 const sd=v=>/buy|long/i.test(v)?'买入':'卖出'
-const FUT_ORD=i=>i===1?<Live path="/futures/positions/history?limit=200" pick={d=>d.positions} row={x=>[x.symbol,x.side==='long'?'多':'空',x.entryPrice,x.closePrice,x.maxQty,fmtV(x.realizedPnl),tm(x.openTime),tm(x.closeTime)]}/>
+const FUT_ORD=i=>i===1?<Live path="/futures/positions/history?limit=200" pick={d=>d.positions} row={x=>[x.symbol,x.side==='long'?'多':'空',x.entryPrice,x.closePrice,x.maxQty,fmtFeeExact(x.realizedPnl),tm(x.openTime),tm(x.closeTime)]}/>
  :i===2?<Live path="/futures/trades?limit=200" pick={d=>d.trades} row={x=>[x.symbol,sd(x.side),x.price,x.qty,fmtFeeExact(x.fee),x.role==='maker'?'Maker':'Taker',tm(x.time)]}/>
  :i===3?<Live path="/futures/bills?limit=200" pick={d=>(d.bills||[]).filter(b=>/pnl/i.test(b.kind))} row={x=>[x.symbol||'--',BILL_[x.kind]||x.kind,fmtV(x.amount),tm(x.time)]}/>
  :<Live path="/futures/orders?limit=200" pick={d=>(d.orders||[]).filter(o=>!isOpenStatus(o.status))} row={x=>[x.symbol,`${x.filledQty} | ${x.qty}`,sd(x.side),x.avgPrice||'--',x.price&&+x.price?x.price:'市价',x.type==='limit'?'限价':'市价',st_(x.status),x.orderId,tm(x.createdAt),tm(x.updatedAt)]}/>

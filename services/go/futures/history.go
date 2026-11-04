@@ -118,7 +118,7 @@ func (s *Server) hPositionHistory(w http.ResponseWriter, r *http.Request, uid st
 			return
 		}
 		h.Entry, h.Close, h.MaxQty, h.ClosedQty = e.String(), c.String(), mq.String(), cq.String()
-		h.Realized, h.Fees, h.Funding, h.Net = money(rp).String(), money(f).String(), money(fu).String(), money(n).String()
+		h.Realized, h.Fees, h.Funding, h.Net = feeStr(money(rp)), feeStr(money(f)), feeStr(money(fu)), feeStr(money(n))
 		out = append(out, h)
 	}
 	var next any

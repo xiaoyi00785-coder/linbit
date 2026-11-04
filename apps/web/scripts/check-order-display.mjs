@@ -34,3 +34,6 @@ assert.deepEqual(recs[0].row, ["USDT", "划转转出（合约账户）", "-100"]
 assert.equal(fmtFeeExact("-0.00383840"), "-0.00383840");
 assert.equal(fmtFeeExact("-0.00383384"), "-0.00383384");
 console.log("asset-display r8 ok");
+assert.equal(fmtFeeExact("-0.00911000"), "-0.00911000");
+assert.equal(fmtFeeExact("-0.03540000"), "-0.03540000");
+console.log("pnl-exact ok");

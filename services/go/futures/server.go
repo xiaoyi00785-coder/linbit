@@ -433,9 +433,9 @@ func (s *Server) hTodayPnl(w http.ResponseWriter, r *http.Request, uid string) {
 		}
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{
-		"asset": "USDT", "since": since.UnixMilli(), "pnl": total,
-		"realizedPnl": by["realized_pnl"], "funding": by["funding"], "fee": by["fee"],
-		"liquidationFee": by["liquidation_fee"], "insuranceCover": by["insurance_cover"],
+		"asset": "USDT", "since": since.UnixMilli(), "pnl": feeStr(total),
+		"realizedPnl": feeStr(by["realized_pnl"]), "funding": feeStr(by["funding"]), "fee": feeStr(by["fee"]),
+		"liquidationFee": feeStr(by["liquidation_fee"]), "insuranceCover": feeStr(by["insurance_cover"]),
 	})
 }
 
