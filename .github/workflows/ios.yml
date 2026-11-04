@@ -115,6 +115,10 @@ jobs:
                         futures-orders-tpsl futures-orders-plan futures-amend futures-algo-amend-plan futures-algo-amend-tpsl futures-mode-hedge futures-tpsl-partial earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
             shoot "$screen" light
           done
+          # 资产模块：总览 / 网络 / 账户划转 / 内部转账 / 提现记录 / 地址簿（日间 + 夜间）
+          for screen in assets-overview assets-networks assets-account-transfer assets-internal-transfer assets-withdraw-records assets-address-book; do
+            for mode in light dark; do shoot "$screen" "$mode"; done
+          done
           # 启动动画：开始 / 中间 / 结束 三个时刻（冻结进度），日间 + 夜间
           for screen in splash-start splash-mid splash-end; do
             for mode in light dark; do shoot "$screen" "$mode"; done
