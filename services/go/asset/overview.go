@@ -77,6 +77,8 @@ func (s *Server) valued(ctx context.Context, name string, bs []Balance, cache ma
 		if p := s.indexPrice(ctx, b.Asset, cache); p != nil {
 			v := b.Total().Mul(*p).StringFixed(2)
 			d.ValuationUsd = &v
+			ps := p.String()
+			d.PriceUsd = &ps
 			total = total.Add(b.Total().Mul(*p))
 		}
 		acc.Balances = append(acc.Balances, d)

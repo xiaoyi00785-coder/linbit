@@ -137,7 +137,7 @@ export function useWsStatus() {
 }
 
 // ---------------- 精度 / 格式化 ----------------
-const DEFAULT_META: Record<string, SymbolMeta> = {
+export const DEFAULT_META: Record<string, SymbolMeta> = {
   BTCUSDT: { symbol: "BTCUSDT", base: "BTC", quote: "USDT", pricePrecision: 2, quantityPrecision: 6 },
   ETHUSDT: { symbol: "ETHUSDT", base: "ETH", quote: "USDT", pricePrecision: 2, quantityPrecision: 5 },
 };

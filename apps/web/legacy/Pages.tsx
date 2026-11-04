@@ -23,6 +23,8 @@ import { EarnTabs, SecModal } from './Pages2'
 import { setAuthed } from './auth'
 import { inviteCodeOf } from '@/lib/site'
 import { DepositAddr } from '@/features/DepositAddr'
+import { getNetworks } from '@/lib/wallet'
+import { depositNetsOf } from '@/lib/assetDisplay'
 import { useMe, displayAccount, updateProfile, setMe, uploadAvatar, avatarSrc } from '@/lib/account'
 import { asset } from '@/lib/asset';
 export const Empty=()=><div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div>
@@ -44,11 +46,13 @@ export function EarnAcct(){const[t,setT]=useState('理财宝');return <Shell sid
 export function Orders(){const loc=useLocation();const name=(ORD.find(o=>o[0]===loc.pathname)||ORD[0])[1];const[t,setT]=useState(0);return <Shell side={<AssetSide/>}><h2 className="lh2">{name}</h2><div className="ltabs">{['当前委托','历史委托','成交明细','资金流水'].map((x,i)=><b key={x} className={t===i?'on':''} onClick={()=>setT(i)}>{x}</b>)}</div>
 <div className="lfil">{[['合约','全部'],['类型','限价 | 市价'],['方向','全部'],['日期','最近 7 天']].map(([k,v])=><div key={k}><span className="lg">{k}</span><Dropdown k={k} v={v}/></div>)}<div><span className="lg">&nbsp;</span><DateRange preset/></div><span className="sp"/><span className="lg">隐藏已撤销</span><Refresh/></div><TH c={['时间','合约 / 类型','方向','价格','数量','成交均价','已成交','状态','操作']}/><Empty/></Shell>}
 export const NETS=['TRC20','ERC20','BEP20(BSC)','Solana','Arbitrum One']
+// 充值网络按币种取自 GET /wallet/networks?asset=（wallet_network_settings 生效值，只列 depositEnabled）；接口不可用时按币种回退，绝不把 USDT 的网络套到其他币种
+function useDepositNets(asset){const[l,setL]=useState(null);useEffect(()=>{let live=true;setL(null);getNetworks(asset).then(r=>{if(live)setL(depositNetsOf(asset,r))}).catch(()=>{if(live)setL(depositNetsOf(asset,null))});return()=>{live=false}},[asset]);return l}
 function Step({n,t,children}){return <div className="step"><div className="stn"><b>{n}</b>{t}</div><div className="stb">{children}</div></div>}
 function Tips({buy}){const n=useNavigate();return <div className="dtips"><div className="lcard sm"><b>温馨提示</b><p className="lg">请确认设备安全，谨防信息被篡改或泄露。</p></div><div className="lcard sm"><b>常见问题</b><p className="lg">1. 如何把数字资产充值到 linbit 账户？<br/>2. 充值未到账怎么办？<br/>3. 地址填错如何处理？</p></div>{buy&&<button className="lb dark" onClick={()=>n('/buy')}>去买币 →</button>}</div>}
-export function Deposit({out}){const[sec,setSec]=useState(false);const[c,setC]=useState('USDT');const[net,setNet]=useState('');const[open,setOpen]=useState(false);return <main className="light"><div className="dwrap"><div className="crumb lg">资产 / {out?'提现':'充值'}</div><h1 className="dh">{out?'提现':'充值'}</h1><div className="dgrid"><div>
+export function Deposit({out}){const[sec,setSec]=useState(false);const[c,setC]=useState('USDT');const[net,setNet]=useState('');const[open,setOpen]=useState(false);const nets=useDepositNets(c);return <main className="light"><div className="dwrap"><div className="crumb lg">资产 / {out?'提现':'充值'}</div><h1 className="dh">{out?'提现':'充值'}</h1><div className="dgrid"><div>
 <Step n="1" t="选择币种"><Dropdown cls="lsel big2" icons v={c} opts={['USDT','BTC','ETH']} onChange={x=>{setC(x);setNet('')}}/><div className="chips cchips">{['BTC','ETH','USDT'].map(x=><span key={x} className={c===x?'on':''} onClick={()=>{setC(x);setNet('')}}><Ico c={{s:x}} s={14}/>{x}</span>)}</div></Step>
-<Step n="2" t="选择网络"><div className="lsel big2" onClick={()=>setOpen(!open)}>{net||<span className="lg">请选择网络</span>}<em>▾</em></div>{open&&<div className="lmenu">{NETS.map(x=><a key={x} onClick={()=>{setNet(x);setOpen(false)}}>{x}</a>)}</div>}</Step>
+<Step n="2" t="选择网络"><div className="lsel big2" onClick={()=>setOpen(!open)}>{net||<span className="lg">请选择网络</span>}<em>▾</em></div>{open&&<div className="lmenu">{nets==null?<span className="lg">加载中…</span>:nets.length?nets.map(x=><a key={x} onClick={()=>{setNet(x);setOpen(false)}}>{x}</a>):<span className="lg">该币种暂不支持充值</span>}</div>}</Step>
 {out?<Step n="3" t="提现地址与数量"><div className="lsel big2"><span className="lg">输入或粘贴地址</span></div><div className="lsel big2"><span className="lg">最小提现 10 USDT</span><em className="lime2">全部</em></div><div className="lrow lg"><span>资金账户可用 0 USDT</span><span>网络费（链上 Gas）≈1 USDT</span></div><button className="lb dark wide" onClick={()=>setSec(true)}>提现</button>{sec&&<SecModal onClose={()=>setSec(false)}/>}</Step>
 :net&&<Step n="3" t="充值地址"><div className="lg dacct">到账账户：<b>资金账户</b>（可划转至现货 / 合约）</div><DepositAddr asset={c} network={net}/></Step>}
 </div><Tips buy={!out}/></div><div className="lcard"><div className="lrow"><h3>{out?'提现记录':'充值记录'}</h3><a className="lmore" onClick={()=>goto(location.pathname.includes('withdraw')?'/assets/history/funding':'/assets/history/funding')}>全部记录 ›</a></div><TH c={['时间','资产','数量','类型','状态']}/><Empty/></div></div></main>}

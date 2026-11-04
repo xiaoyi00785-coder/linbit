@@ -12,7 +12,7 @@ import { useDismiss } from "@/lib/dismiss";
 import { btnProps, onActivate, tabProps } from "@/lib/a11y";
 import { CoinIcon } from "@/components/CoinIcon";
 import type { components } from "@linbit/api-client";
-import { fmtFixed, marketWS, restBase, useOrderBook, useRecentTrades, useSymbols, useTicker, type Level, type SymbolMeta } from "@/lib/market";
+import { fmtFixed, marketWS, restBase, useOrderBook, useRecentTrades, useSymbols, DEFAULT_META, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
 export type Contract = { symbol: string; baseAsset: string; quoteAsset: string; maxLeverage: number; maintenanceMarginRate: string; tickSize: string; minQty: string; maxQty: string; makerFeeRate: string; takerFeeRate: string };
@@ -48,7 +48,8 @@ export function useTradePair(fut: boolean, initial?: string): [PairMeta, PairMet
     history.replaceState(history.state, "", u);
   };
   // 路径里的交易对不存在时（列表已加载），回退到默认交易对并修正地址栏
-  const loaded = list.length > 0;
+  // 现货列表初始是内置默认元数据（只含主流币），必须等接口返回后再判断，否则 AAPLUSDT 等会被误改成 BTCUSDT
+  const loaded = fut ? list.length > 0 : meta !== DEFAULT_META && list.length > 0;
   useEffect(() => {
     if (!loaded || !sym || list.some((x) => x.symbol === sym)) return;
     const u = new URL(location.href);
