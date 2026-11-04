@@ -61,6 +61,9 @@ func (s *Server) ticker(r *http.Request, sym string) map[string]any {
 		"openPrice24h":    z(open), "highPrice24h": z(high), "lowPrice24h": z(low),
 		"volume24h": zv(vol), "turnover24h": money(zv(turn)), "priceChangePercent24h": change,
 		"openInterest": oi, "priceAvailable": ps.Mark.Sign() > 0,
+		// Spot-ticker-compatible aliases so the UI can share one ticker shape.
+		"high": z(high), "low": z(low), "quoteVolume": money(zv(turn)), "volume": zv(vol),
+		"priceChangePercent": change.Mul(decimal.NewFromInt(100)).Round(2),
 	}
 }
 

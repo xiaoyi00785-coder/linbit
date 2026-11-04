@@ -92,3 +92,34 @@ func TestDropEmptyCategories(t *testing.T) {
 		t.Fatalf("got %+v", out)
 	}
 }
+
+func TestSortTickersByFieldOrder(t *testing.T) {
+	base := []tickerDTO{
+		{Symbol: "AAA", LastPrice: "5", High: "9", QuoteVolume: "10", PriceSource: "trade"},
+		{Symbol: "BBB", LastPrice: "50", High: "60", QuoteVolume: "1", PriceSource: "trade"},
+		{Symbol: "CCC", LastPrice: "0.5", High: "1", QuoteVolume: "100", PriceSource: "index"},
+	}
+	run := func(sort, order string) string {
+		f, d, e := parseTickerSort(sort, order)
+		if e != "" {
+			return "ERR"
+		}
+		ts := append([]tickerDTO(nil), base...)
+		sortTickersBy(ts, f, d)
+		s := ""
+		for _, x := range ts {
+			s += x.Symbol
+		}
+		return s
+	}
+	cases := map[[2]string]string{
+		{"lastPrice", "asc"}: "CCCAAABBB", {"lastPrice", ""}: "BBBAAACCC", {"high", "desc"}: "BBBAAACCC",
+		{"quoteVolume", "asc"}: "BBBAAACCC", {"volume", ""}: "CCCAAABBB", {"symbol", "desc"}: "CCCBBBAAA",
+		{"bogus", ""}: "ERR", {"high", "up"}: "ERR",
+	}
+	for k, want := range cases {
+		if got := run(k[0], k[1]); got != want {
+			t.Errorf("%v: %s want %s", k, got, want)
+		}
+	}
+}

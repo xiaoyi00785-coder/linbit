@@ -204,25 +204,69 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 			out = append(out, t)
 		}
 	}
-	sortBy := strings.ToLower(strings.TrimSpace(q.Get("sort")))
-	switch sortBy {
-	case "", "symbol", "gainers", "losers", "volume":
-	default:
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "sort 仅支持 gainers/losers/volume/symbol")
+	field, desc, err := parseTickerSort(q.Get("sort"), q.Get("order"))
+	if err != "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err)
 		return
 	}
-	sortTickers(out, sortBy)
+	sortTickersBy(out, field, desc)
 	if lim := atoiDefault(q.Get("limit"), 0, 1, 1000); lim > 0 && len(out) > lim {
 		out = out[:lim]
 	}
 	common.WriteJSON(w, http.StatusOK, out)
 }
 
-// sortTickers orders tickers for rankings (pure; unit tested). gainers: change
-// desc; losers: change asc; volume: quoteVolume desc. Ties (and "symbol" / "")
-// fall back to symbol asc so the order is deterministic. Symbols without a
-// price (priceSource none) always sink to the end.
+// parseTickerSort maps ?sort=&order= to a ticker field and direction.
+// Fields: symbol | lastPrice | priceChangePercent | high | low | quoteVolume |
+// volume(base). Aliases: gainers = priceChangePercent desc, losers =
+// priceChangePercent asc, volume = quoteVolume desc (kept for compat; "volume"
+// is quote volume). Default order: desc for numeric fields, asc for symbol;
+// an explicit order=asc|desc always wins.
+func parseTickerSort(sortRaw, orderRaw string) (field string, desc bool, errMsg string) {
+	switch strings.ToLower(strings.TrimSpace(sortRaw)) {
+	case "", "symbol":
+		field = "symbol"
+	case "gainers":
+		field, desc = "priceChangePercent", true
+	case "losers":
+		field = "priceChangePercent"
+	case "volume", "quotevolume":
+		field, desc = "quoteVolume", true
+	case "lastprice", "price":
+		field, desc = "lastPrice", true
+	case "pricechangepercent", "change":
+		field, desc = "priceChangePercent", true
+	case "high":
+		field, desc = "high", true
+	case "low":
+		field, desc = "low", true
+	case "basevolume":
+		field, desc = "baseVolume", true
+	default:
+		return "", false, "sort 仅支持 symbol/lastPrice/priceChangePercent/high/low/quoteVolume/baseVolume/gainers/losers/volume"
+	}
+	switch strings.ToLower(strings.TrimSpace(orderRaw)) {
+	case "":
+	case "asc":
+		desc = false
+	case "desc":
+		desc = true
+	default:
+		return "", false, "order 仅支持 asc/desc"
+	}
+	return field, desc, ""
+}
+
+// sortTickers keeps the alias-only API (used by tests).
 func sortTickers(ts []tickerDTO, by string) {
+	f, d, _ := parseTickerSort(by, "")
+	sortTickersBy(ts, f, d)
+}
+
+// sortTickersBy orders tickers (pure). Ties fall back to symbol asc so the
+// order is deterministic; symbols without a price (priceSource none) always
+// sink to the end regardless of direction.
+func sortTickersBy(ts []tickerDTO, field string, desc bool) {
 	num := func(v string) decimal.Decimal {
 		d, err := decimal.NewFromString(v)
 		if err != nil {
@@ -230,19 +274,36 @@ func sortTickers(ts []tickerDTO, by string) {
 		}
 		return d
 	}
+	val := func(t tickerDTO) string {
+		switch field {
+		case "lastPrice":
+			return t.LastPrice
+		case "priceChangePercent":
+			return t.PriceChangePercent
+		case "high":
+			return t.High
+		case "low":
+			return t.Low
+		case "quoteVolume":
+			return t.QuoteVolume
+		case "baseVolume":
+			return t.Volume
+		}
+		return ""
+	}
 	sort.SliceStable(ts, func(i, j int) bool {
 		a, b := ts[i], ts[j]
 		if (a.PriceSource == "none") != (b.PriceSource == "none") {
 			return b.PriceSource == "none"
 		}
 		var c int
-		switch by {
-		case "gainers":
-			c = num(b.PriceChangePercent).Cmp(num(a.PriceChangePercent))
-		case "losers":
-			c = num(a.PriceChangePercent).Cmp(num(b.PriceChangePercent))
-		case "volume":
-			c = num(b.QuoteVolume).Cmp(num(a.QuoteVolume))
+		if field == "symbol" {
+			c = strings.Compare(a.Symbol, b.Symbol)
+		} else {
+			c = num(val(a)).Cmp(num(val(b)))
+		}
+		if desc {
+			c = -c
 		}
 		if c != 0 {
 			return c < 0

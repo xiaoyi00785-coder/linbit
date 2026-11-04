@@ -1881,8 +1881,16 @@ paths:
         - name: sort
           in: query
           required: false
-          description: 服务端排序（排行榜）。gainers/losers 按 24h priceChangePercent，volume 按 quoteVolume 降序；并列按 symbol；priceSource=none 的排最后
-          schema: { type: string, enum: [gainers, losers, volume, symbol] }
+          description: >
+            服务端排序字段：symbol（默认，升序）、lastPrice、priceChangePercent、high、low、quoteVolume、baseVolume（数值字段默认降序）。
+            兼容别名：gainers = priceChangePercent desc，losers = priceChangePercent asc，volume = quoteVolume desc。
+            并列按 symbol 升序；priceSource=none 的交易对始终排最后。
+          schema: { type: string, enum: [symbol, lastPrice, priceChangePercent, high, low, quoteVolume, baseVolume, gainers, losers, volume] }
+        - name: order
+          in: query
+          required: false
+          description: 排序方向，显式传入时覆盖字段/别名的默认方向
+          schema: { type: string, enum: [asc, desc] }
         - name: limit
           in: query
           required: false
@@ -8212,6 +8220,7 @@ components:
           type: integer
     FuturesContract:
       type: object
+      required: [symbol, maxLeverage, tickSize, minQty, maxQty]
       properties:
         symbol:
           type: string
@@ -8227,13 +8236,16 @@ components:
           description: 十进制字符串
         tickSize:
           type: string
-          description: 十进制字符串
+          description: 最小价格变动（十进制字符串，始终返回）；价格/触发价/止盈止损须为其整数倍
+          example: "0.1"
         minQty:
           type: string
-          description: 十进制字符串
+          description: 最小下单量，同时为数量步长（十进制字符串，始终返回）
+          example: "0.001"
         maxQty:
           type: string
-          description: 十进制字符串
+          description: 单笔最大下单量（十进制字符串，始终返回）
+          example: "100"
         makerFeeRate:
           type: string
           description: 十进制字符串
@@ -8322,6 +8334,21 @@ components:
           description: 十进制字符串
         priceAvailable:
           type: boolean
+        high:
+          type: string
+          description: 24h 最高价（= highPrice24h，与现货 Ticker 同名字段）
+        low:
+          type: string
+          description: 24h 最低价（= lowPrice24h）
+        quoteVolume:
+          type: string
+          description: 24h 成交额（计价币，= turnover24h）
+        volume:
+          type: string
+          description: 24h 成交量（张/基础币，= volume24h）
+        priceChangePercent:
+          type: string
+          description: 24h 涨跌幅，百分比（2 位小数，如 "1.23" 表示 1.23%）；priceChangePercent24h 为小数比率
     FuturesDepth:
       type: object
       properties:

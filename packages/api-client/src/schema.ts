@@ -6240,18 +6240,27 @@ export interface components {
         };
         FuturesContract: {
             /** @example BTCUSDT */
-            symbol?: string;
+            symbol: string;
             baseAsset?: string;
             quoteAsset?: string;
-            maxLeverage?: number;
+            maxLeverage: number;
             /** @description 十进制字符串 */
             maintenanceMarginRate?: string;
-            /** @description 十进制字符串 */
-            tickSize?: string;
-            /** @description 十进制字符串 */
-            minQty?: string;
-            /** @description 十进制字符串 */
-            maxQty?: string;
+            /**
+             * @description 最小价格变动（十进制字符串，始终返回）；价格/触发价/止盈止损须为其整数倍
+             * @example 0.1
+             */
+            tickSize: string;
+            /**
+             * @description 最小下单量，同时为数量步长（十进制字符串，始终返回）
+             * @example 0.001
+             */
+            minQty: string;
+            /**
+             * @description 单笔最大下单量（十进制字符串，始终返回）
+             * @example 100
+             */
+            maxQty: string;
             /** @description 十进制字符串 */
             makerFeeRate?: string;
             /** @description 十进制字符串 */
@@ -6303,6 +6312,16 @@ export interface components {
             /** @description 十进制字符串 */
             openInterest?: string;
             priceAvailable?: boolean;
+            /** @description 24h 最高价（= highPrice24h，与现货 Ticker 同名字段） */
+            high?: string;
+            /** @description 24h 最低价（= lowPrice24h） */
+            low?: string;
+            /** @description 24h 成交额（计价币，= turnover24h） */
+            quoteVolume?: string;
+            /** @description 24h 成交量（张/基础币，= volume24h） */
+            volume?: string;
+            /** @description 24h 涨跌幅，百分比（2 位小数，如 "1.23" 表示 1.23%）；priceChangePercent24h 为小数比率 */
+            priceChangePercent?: string;
         };
         /** @description bids/asks 为 [price, qty] */
         FuturesDepth: {
@@ -10194,8 +10213,10 @@ export interface operations {
                 symbols?: string;
                 /** @description 仅返回该分类（/market/categories 的 id）下的交易对 */
                 category?: string;
-                /** @description 服务端排序（排行榜）。gainers/losers 按 24h priceChangePercent，volume 按 quoteVolume 降序；并列按 symbol；priceSource=none 的排最后 */
-                sort?: "gainers" | "losers" | "volume" | "symbol";
+                /** @description 服务端排序字段：symbol（默认，升序）、lastPrice、priceChangePercent、high、low、quoteVolume、baseVolume（数值字段默认降序）。 兼容别名：gainers = priceChangePercent desc，losers = priceChangePercent asc，volume = quoteVolume desc。 并列按 symbol 升序；priceSource=none 的交易对始终排最后。 */
+                sort?: "symbol" | "lastPrice" | "priceChangePercent" | "high" | "low" | "quoteVolume" | "baseVolume" | "gainers" | "losers" | "volume";
+                /** @description 排序方向，显式传入时覆盖字段/别名的默认方向 */
+                order?: "asc" | "desc";
                 /** @description 排序后截取前 N 条 */
                 limit?: number;
             };
