@@ -147,6 +147,12 @@ struct RootTabView: View {
         case "kyc-form2": SecShot.raw = "kyc:form2"; router.feature = .kyc
         case "kyc-form2-full": SecShot.raw = "kyc:form2full"; router.feature = .kyc
         case "kyc-error": SecShot.raw = "kyc:error"; router.feature = .kyc
+        case "notif-list": SecShot.raw = "notif:list"; router.feature = .notifications
+        case "notif-empty": SecShot.raw = "notif:empty"; router.feature = .notifications
+        case "notif-error": SecShot.raw = "notif:error"; router.feature = .notifications
+        case "notif-settings": SecShot.raw = "notif:settings"; router.feature = .notifications
+        case "notif-settings-error": SecShot.raw = "notif:settings-error"; router.feature = .notifications
+        case "home-bell": SecShot.raw = "notif:list"; router.tab = .home
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
         case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security
