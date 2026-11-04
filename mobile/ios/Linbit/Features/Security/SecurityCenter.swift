@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// MARK: - 账户安全中心（EasiCoin 风格：安全等级卡 + 分组行；子页面在本页内切换）
+// MARK: - 账户安全中心（安全等级卡 + 分组行；子页面在本页内切换）
 enum SecPage: String, Identifiable {
     case profile, email, phone, fundPassword, antiPhishing, devices, passkeys, disable2fa, changePassword, bind2fa
     var id: String { rawValue }
