@@ -11,7 +11,7 @@ import {
   type Order, type SpotTrade,
 } from "@/lib/services";
 import { SPOT_FEE } from "@/lib/fees";
-import { fmtSig, fmtAmt, fmtFeeStr } from "@/lib/format";
+import { fmtSig, fmtAmt, fmtFeeStr, fmtFeeEst } from "@/lib/format";
 import { useFeeSchedule } from "@/lib/live";
 import type { PlaceOrderRequest } from "@/lib/services";
 import { Src } from "./common";
@@ -77,9 +77,9 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   // 费率来自 GET /spot/fee-schedule（不可用时回退平台默认 0.1%）；限价按 maker 估算上限取 max(maker,taker)，市价按 taker
   const fs = useFeeSchedule("spot");
   const rate = fs ? (type === "market" ? fs.taker : Math.max(fs.maker, fs.taker)) : SPOT_FEE.taker;
-  // 买入从所得基础币扣，卖出从所得 USDT 扣；小额按 8 位有效小数显示，避免恒为 0.000000
+  // 买入从所得基础币扣（最多 8 位小数），卖出从所得 USDT 扣（最多 4 位小数，与合约面板一致）；统一走 fmtFeeEst，小额不出现 0.00000006383 这类长小数
   const feeV = side === "buy" ? q * rate : q * px * rate;
-  const fee = !q || (side === "sell" && !px) ? "--" : side === "buy" ? `${fmtSig(feeV)} ${B}` : `${fmtSig(feeV)} USDT`;
+  const fee = !q || (side === "sell" && !px) ? "--" : side === "buy" ? `${fmtFeeEst(feeV, 8)} ${B}` : `${fmtFeeEst(feeV, 4)} USDT`;
 
   const inflight = useRef(false); // 同步防重复提交（busy 状态要等重渲染才禁用按钮）
   const submit = async () => {
