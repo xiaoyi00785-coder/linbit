@@ -169,6 +169,16 @@ struct RootTabView: View {
         case "partner-team": SecShot.raw = "partner:team"; router.feature = .partner
         case "partner-empty": SecShot.raw = "partner:empty"; router.feature = .partner
         case "partner-error": SecShot.raw = "partner:error"; router.feature = .partner
+        case "copy-list": SecShot.raw = "copy:list"; router.feature = .copyTrading
+        case "copy-empty": SecShot.raw = "copy:empty"; router.feature = .copyTrading
+        case "copy-error": SecShot.raw = "copy:error"; router.feature = .copyTrading
+        case "copy-detail": SecShot.raw = "copy:detail"; router.feature = .copyTrading
+        case "copy-follow": SecShot.raw = "copy:follow"; router.feature = .copyTrading
+        case "copy-follow-error": SecShot.raw = "copy:follow-error"; router.feature = .copyTrading
+        case "copy-follows": SecShot.raw = "copy:follows"; router.feature = .copyTrading
+        case "copy-follows-empty": SecShot.raw = "copy:follows-empty"; router.feature = .copyTrading
+        case "copy-become": SecShot.raw = "copy:become"; router.feature = .copyTrading
+        case "copy-become-error": SecShot.raw = "copy:become-error"; router.feature = .copyTrading
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
         case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security
