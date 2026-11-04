@@ -10,6 +10,7 @@ import Foundation
 public struct APIListWalletNetworks200Response: Codable, JSONEncodable, Hashable {
 
     public var asset: String?
+    /** 按 asset、sortOrder（升序）、network 排序 */
     public var networks: [APIWalletNetwork]
 
     public init(asset: String? = nil, networks: [APIWalletNetwork]) {
