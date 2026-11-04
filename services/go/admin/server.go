@@ -95,6 +95,7 @@ func (s *Server) Routes() http.Handler {
 	a("PATCH /admin/v1/symbols/{symbol}", permSymbolEdit, s.handlePatchSymbol)
 
 	s.assetGapRoutes(a)
+	s.viewRoutes(a)
 	a("GET /admin/v1/fees", permFeeView, s.handleGetFees)
 	a("GET /admin/v1/fee-changes", permFeeView, s.handleListFeeChanges)
 	a("POST /admin/v1/fee-changes", permFeeEdit, s.handleSubmitFeeChange)

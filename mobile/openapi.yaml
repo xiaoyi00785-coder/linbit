@@ -6919,6 +6919,301 @@ paths:
                 type: object
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/TradFiDeviation" } }
+  /admin/v1/dashboard/summary:
+    get:
+      tags: [Admin]
+      summary: 数据看板汇总（用户/KYC/充提/现货与合约 24h/持仓/强平/保险基金/30 日趋势/待办）（dash:view）
+      operationId: adminDashboardSummary
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/v1/risk-users:
+    get:
+      tags: [Admin]
+      summary: 风险名单：非 active 状态用户（user:view）
+      operationId: adminListRiskUsers
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/deposits:
+    get:
+      tags: [Admin]
+      summary: 充值记录（ledger:view）
+      operationId: adminListDeposits
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: asset, in: query, required: false, schema: { type: string } }
+        - { name: network, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: txHash, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/spot/orders:
+    get:
+      tags: [Admin]
+      summary: 现货订单（ledger:view；status=open 表示 new+partially_filled）
+      operationId: adminListSpotOrders
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: side, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/futures/positions:
+    get:
+      tags: [Admin]
+      summary: 合约持仓（含标记价、名义价值、未实现盈亏）（ledger:view）
+      operationId: adminListFuturesPositions
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: side, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/futures/liquidations:
+    get:
+      tags: [Admin]
+      summary: 强平记录 + 保险基金余额 insurance[]（ledger:view）
+      operationId: adminListLiquidations
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/futures/contracts:
+    get:
+      tags: [Admin]
+      summary: 合约参数与未平仓量（symbol:view）
+      operationId: adminListFuturesContracts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/v1/grids:
+    get:
+      tags: [Admin]
+      summary: 现货网格策略（ledger:view）
+      operationId: adminListGrids
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: symbol, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/copy/traders:
+    get:
+      tags: [Admin]
+      summary: 带单交易员（跟随人数、跟单本金、累计分润）（copy:view）
+      operationId: adminListCopyTraders
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/rebate/commissions:
+    get:
+      tags: [Admin]
+      summary: 返佣明细 + summary30d（partner:view）
+      operationId: adminListCommissions
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: sourceUid, in: query, required: false, schema: { type: string } }
+        - { name: kind, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/points/redemptions:
+    get:
+      tags: [Admin]
+      summary: 积分兑换记录（reward:view）
+      operationId: adminListPointsRedemptions
+      parameters:
+        - { name: uid, in: query, required: false, schema: { type: string } }
+        - { name: campaignId, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+  /admin/v1/users/{uid}/devices:
+    get:
+      tags: [Admin]
+      summary: 用户登录设备（user:view）
+      operationId: adminListUserDevices
+      parameters:
+        - { name: uid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/v1/users/{uid}/profile30d:
+    get:
+      tags: [Admin]
+      summary: 用户近 30 日充提与成交额（user:view）
+      operationId: adminUserProfile30d
+      parameters:
+        - { name: uid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/v1/wallet/hot:
+    get:
+      tags: [Admin]
+      summary: 热钱包余额（withdraw:view；未配置真实链时 404）
+      operationId: adminWalletHot
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /admin/v1/wallet/sweeps:
+    get:
+      tags: [Admin]
+      summary: 归集记录（withdraw:view；未配置真实链时 404）
+      operationId: adminWalletSweeps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 components:
   securitySchemes:
     bearerAuth:
