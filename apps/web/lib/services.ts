@@ -109,13 +109,13 @@ export function submitKyc(body: KycSubmission) {
 
 /** 缺口：POST /auth/verification-code（注册 / 找回密码 / 提现安全验证） */
 /** 已对接：GET /wallet/withdraw/networks?asset=（网络列表 + gasFeeEstimate）。
- *  平台不收提现手续费，仅收链上 Gas。接口未实现（404/5xx/网络错误）时回退 mock。 */
+ *  手续费 = 接口返回的 withdrawFee（wallet_network_settings 生效值）。接口未实现（404/5xx/网络错误）时回退 mock。 */
 export interface WithdrawConfig {
   asset: string;
   network: string;
   minAmount: string;
   maxAmount: string;
-  /** 链上网络费（Gas）预估，平台不另收手续费 */
+  /** 提现手续费：接口 gasFeeEstimate（= wallet_network_settings.withdraw_fee 生效值） */
   gasFeeEstimate: string;
   gasFeeAsset: string;
   estimatedArrivalMinutes?: number | null;

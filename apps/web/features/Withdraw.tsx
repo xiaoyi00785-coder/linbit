@@ -28,7 +28,7 @@ const NETS: Record<string, string[]> = {
 
 const St = ({ n, t, children }: { n: string; t: string; children: React.ReactNode }) => <div className="step"><div className="stn"><b>{n}</b>{t}</div><div className="stb">{children}</div></div>;
 
-/** 提现：币种 → 网络 → 地址/memo/数量（最小额、链上网络费来自配置接口，平台不收提现手续费）→ 2FA 确认 */
+/** 提现：币种 → 网络 → 地址/memo/数量（最小额、提现手续费来自 wallet_network_settings 配置接口，接口不可用时显示 --）→ 2FA 确认 */
 const WLOCK = "安全设置变更后 24 小时内禁止提现";
 export function Withdraw() {
   const [coinOpen, setCoinOpen] = useState(false);
@@ -127,7 +127,8 @@ export function Withdraw() {
   const n = Number(amt);
   const minS = ni?.minWithdraw ?? cfg?.minAmount;
   const maxS = ni ? ni.maxWithdraw ?? undefined : cfg?.maxAmount;
-  const feeS = ni?.withdrawFee ?? cfg?.gasFeeEstimate;
+  // 手续费只认接口值（wallet_network_settings.withdraw_fee 生效值），mock 回退时不展示估算值
+  const feeS = ni?.withdrawFee ?? (cfgSrc === "api" ? cfg?.gasFeeEstimate : undefined);
   const eta = ni?.estimatedArrivalMinutes ? `约 ${ni.estimatedArrivalMinutes} 分钟` : "约 5 分钟";
   const memoReq = ni?.memoRequired ?? cfg?.memoRequired;
   const min = Math.max(Number(minS ?? 0) || 0, DEFAULT_MIN_WITHDRAW[asset] ?? 0);

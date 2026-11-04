@@ -11,7 +11,7 @@ import { Link, useNavigate, useParams } from '@/lib/router'
 import { QRCodeSVG } from 'qrcode.react'
 import { useGrowthConfig, useEarnProducts, pct } from '@/lib/growth'
 const pctApr=v=>v==null||v===''?'--':(Number(v)*100).toFixed(2).replace(/\.?0+$/,'')+'%'
-const aprOf=p=>pctApr(p.apr)+(Number(p.bonusApr)>0?' + '+pctApr(p.bonusApr):'')
+const aprOf=p=>{const b=Number(p.bonusApr),a=Number(p.apr);return b>a?pctApr(p.apr)+' ~ '+pctApr(p.bonusApr):pctApr(p.apr)} // bonusApr 为首段额度（bonusQuota）内的阶梯利率，非叠加；与 /earn/products 的 aprMax 一致
 const Empty=({t})=><div className="lg" style={{padding:'32px 0',textAlign:'center'}}>{t}</div>
 import { downloadUrl } from '@/lib/siteUrls'
 import { Ico, Footer } from './App'

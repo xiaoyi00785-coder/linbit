@@ -146,6 +146,9 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 		if errCode == "INTERNAL" {
 			return nil, perrf(http.StatusInternalServerError, errCode, errMsg)
 		}
+		if errCode == "ENGINE_UNAVAILABLE" {
+			return nil, perrf(http.StatusBadGateway, errCode, errMsg)
+		}
 		return nil, perrf(http.StatusBadRequest, errCode, errMsg)
 	}
 
@@ -266,8 +269,11 @@ func (s *Server) buildOrder(ctx context.Context, userID string, req placeOrderRe
 
 	if typ == "market" && side == "buy" {
 		// Market buy by quote budget: freeze the quote amount.
-		if req.QuoteOrderQty == nil {
-			return nil, nil, "VALIDATION_ERROR", "市价买单需提供 quoteOrderQty"
+		if req.QuoteOrderQty == nil || *req.QuoteOrderQty == "" {
+			if req.Quantity == nil || *req.Quantity == "" {
+				return nil, nil, "VALIDATION_ERROR", "市价买单需提供 quantity 或 quoteOrderQty"
+			}
+			return s.marketBuyByQty(ctx, o, sym, *req.Quantity)
 		}
 		budget, err := decimal.NewFromString(*req.QuoteOrderQty)
 		if err != nil || budget.Sign() <= 0 {
@@ -348,6 +354,13 @@ func (s *Server) placeCommand(o *Order) EngineCommand {
 		Type:        o.Type,
 		TimeInForce: o.TimeInForce,
 		Quantity:    o.Quantity.String(),
+	}
+	if o.Type == "market" && o.Side == "buy" && !o.HasQuoteQty && o.HasPrice {
+		// Market buy by base quantity: the engine prices market buys by quote
+		// budget only, so it is sent as an IOC limit capped at the protection
+		// price (best ask + slippage). Unfilled remainder is released.
+		cmd.Type = "limit"
+		cmd.TimeInForce = "IOC"
 	}
 	if o.HasPrice {
 		cmd.Price = o.Price.String()
@@ -742,4 +755,55 @@ func toTradeDTO(t TradeRow, sym *SymbolConfig) tradeDTO {
 		d.FeeAsset = &fa
 	}
 	return d
+}
+
+// marketBuySlippage caps how far above the best ask a market buy placed by base
+// quantity may fill (slippage protection). Overridable via MARKET_BUY_SLIPPAGE.
+var marketBuySlippage = decimal.RequireFromString(common.Env("MARKET_BUY_SLIPPAGE", "0.05"))
+
+// marketBuyByQty completes a market buy given in base quantity: it freezes
+// qty × protectionPrice of quote, where protectionPrice = bestAsk × (1+slippage)
+// rounded up to the pair's price precision. The order is stored as type=market
+// with that protection price, and submitted to the engine as IOC limit.
+func (s *Server) marketBuyByQty(ctx context.Context, o *Order, sym *SymbolConfig, qtyStr string) (*Order, *SymbolConfig, string, string) {
+	qty, err := decimal.NewFromString(qtyStr)
+	if err != nil || qty.Sign() <= 0 {
+		return nil, nil, "VALIDATION_ERROR", "quantity 不合法"
+	}
+	if !precisionOK(qty, sym.QuantityPrecision) {
+		return nil, nil, "VALIDATION_ERROR", "数量精度超出限制"
+	}
+	if qty.LessThan(sym.MinQuantity) {
+		return nil, nil, "VALIDATION_ERROR", "低于最小下单数量"
+	}
+	bt, ok := s.engine.(BookTop)
+	if !ok {
+		return nil, nil, "VALIDATION_ERROR", "市价买单需提供 quoteOrderQty"
+	}
+	askStr, err := bt.BestAsk(ctx, sym.Symbol)
+	if err != nil {
+		log.Printf("buildOrder: best ask: %v", err)
+		return nil, nil, "ENGINE_UNAVAILABLE", "撮合引擎不可用"
+	}
+	ask, err := decimal.NewFromString(askStr)
+	if askStr == "" || err != nil || ask.Sign() <= 0 {
+		return nil, nil, "NO_LIQUIDITY", "当前无卖单，暂时无法市价买入"
+	}
+	protect := ask.Mul(decimal.NewFromInt(1).Add(marketBuySlippage)).RoundCeil(int32(sym.PricePrecision))
+	notional := protect.Mul(qty)
+	if ask.Mul(qty).LessThan(sym.MinNotional) {
+		return nil, nil, "VALIDATION_ERROR", "低于最小下单额"
+	}
+	o.Quantity = qty
+	o.Price = protect
+	o.HasPrice = true
+	o.FrozenAsset = sym.Quote
+	o.FrozenAmount = notional
+	orderID, err := s.store.NextOrderID(ctx)
+	if err != nil {
+		log.Printf("buildOrder: next id: %v", err)
+		return nil, nil, "INTERNAL", "服务器内部错误"
+	}
+	o.OrderID = orderID
+	return o, sym, "", ""
 }

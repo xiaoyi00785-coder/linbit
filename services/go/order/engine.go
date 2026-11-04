@@ -111,3 +111,41 @@ func (m *HTTPMatching) Submit(ctx context.Context, cmd EngineCommand) (*ExecRepo
 	}
 	return &report, nil
 }
+
+// BookTop is optionally implemented by a Matching backend that can report the
+// best ask of a symbol's book. It prices market buys placed by base quantity.
+type BookTop interface {
+	BestAsk(ctx context.Context, symbol string) (string, error)
+}
+
+// BestAsk reads the engine's depth snapshot and returns the lowest ask price
+// ("" when the ask side is empty).
+func (m *HTTPMatching) BestAsk(ctx context.Context, symbol string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.url+"/engine/depth?symbol="+symbol, nil)
+	if err != nil {
+		return "", err
+	}
+	if m.token != "" {
+		req.Header.Set("X-Internal-Token", m.token)
+	}
+	resp, err := m.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("engine depth returned %d", resp.StatusCode)
+	}
+	var snap struct {
+		Asks []struct {
+			Price string `json:"price"`
+		} `json:"asks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&snap); err != nil {
+		return "", err
+	}
+	if len(snap.Asks) == 0 {
+		return "", nil
+	}
+	return snap.Asks[0].Price, nil
+}

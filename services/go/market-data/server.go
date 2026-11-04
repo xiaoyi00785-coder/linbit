@@ -210,13 +210,11 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sortTickersBy(out, field, desc)
-	// Rankings: gainers only lists rising symbols, losers only falling ones
-	// (a short list beats padding the losers board with +0.10%).
-	switch strings.ToLower(strings.TrimSpace(q.Get("sort"))) {
-	case "gainers":
+	// Rankings: gainers only lists rising symbols. losers is the FULL tracked
+	// list strictly ascending by 24h change (acceptance r5: the losers board must
+	// be complete, not just the falling subset); priceless symbols sink last.
+	if strings.EqualFold(strings.TrimSpace(q.Get("sort")), "gainers") {
 		out = filterTickersByChange(out, 1)
-	case "losers":
-		out = filterTickersByChange(out, -1)
 	}
 	if lim := atoiDefault(q.Get("limit"), 0, 1, 1000); lim > 0 && len(out) > lim {
 		out = out[:lim]

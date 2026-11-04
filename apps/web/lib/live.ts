@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSymbols } from "./market";
 import { rget } from "./rest";
+import { maxApr, type EarnAprFields } from "./earn";
 
 type FeePair = { maker?: string; taker?: string };
 let feeP: Promise<{ spot?: FeePair; futures?: FeePair | null } | null> | null = null;
@@ -22,7 +23,7 @@ export function useFeeSchedule(kind: "spot" | "futures" = "futures"): { maker: n
 export const useFutFeeRates = () => useFeeSchedule("futures");
 export const feePct = (r: number) => `${+(r * 100).toFixed(3)}%`;
 
-type EarnProduct = { kind?: string; apr?: string; bonusApr?: string };
+type EarnProduct = EarnAprFields & { kind?: string };
 const aprP: Record<string, Promise<number | null>> = {};
 /** 理财最高 APR：GET /earn/products?kind=…，取 max(apr)。失败/无产品 → null（调用方隐藏标签） */
 export function useMaxApr(kind: "fixed" | "flexible" | "" = "fixed"): number | null {
@@ -30,8 +31,7 @@ export function useMaxApr(kind: "fixed" | "flexible" | "" = "fixed"): number | n
   useEffect(() => {
     let live = true;
     (aprP[kind] ??= rget<{ items?: EarnProduct[] }>("/earn/products" + (kind ? "?kind=" + kind : "")).then((r) => {
-      const l = (r.ok && r.source === "api" ? r.data?.items ?? [] : []).map((p) => Number(p.apr)).filter((x) => Number.isFinite(x) && x > 0);
-      return l.length ? Math.max(...l) : null;
+      return maxApr(r.ok && r.source === "api" ? r.data?.items ?? [] : []);
     })).then((x) => live && setV(x));
     return () => { live = false; };
   }, [kind]);

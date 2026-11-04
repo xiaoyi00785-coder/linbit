@@ -921,6 +921,17 @@ func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl d
 		} else if clearSL {
 			p.SL = decimal.NullDecimal{}
 		}
+		// POST /futures/positions/{sym}/tpsl 是"替换"语义：撤掉该持仓已有的全仓止盈/止损条件单，避免新旧两组并存。
+		var kinds []string
+		if tp.Valid || clearTP {
+			kinds = append(kinds, "tp")
+		}
+		if sl.Valid || clearSL {
+			kinds = append(kinds, "sl")
+		}
+		if err := cancelPositionTPSL(ctx, tx, uid, c.Symbol, posSide, kinds); err != nil {
+			return err
+		}
 		return savePosition(ctx, tx, p)
 	})
 }

@@ -76,33 +76,33 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	accountProxy := httputil.NewSingleHostReverseProxy(account)
-	assetProxy := httputil.NewSingleHostReverseProxy(asset)
-	walletProxy := httputil.NewSingleHostReverseProxy(wallet)
-	orderProxy := httputil.NewSingleHostReverseProxy(order)
+	accountProxy := newProxy(account)
+	assetProxy := newProxy(asset)
+	walletProxy := newProxy(wallet)
+	orderProxy := newProxy(order)
 	// ReverseProxy transparently tunnels WebSocket upgrades (used by /ws).
-	marketProxy := httputil.NewSingleHostReverseProxy(market)
-	kycProxy := httputil.NewSingleHostReverseProxy(kyc)
+	marketProxy := newProxy(market)
+	kycProxy := newProxy(kyc)
 	futures, err := url.Parse(cfg.FuturesURL)
 	if err != nil {
 		return nil, err
 	}
-	futuresProxy := httputil.NewSingleHostReverseProxy(futures)
+	futuresProxy := newProxy(futures)
 	strategy, err := url.Parse(cfg.StrategyURL)
 	if err != nil {
 		return nil, err
 	}
-	strategyProxy := httputil.NewSingleHostReverseProxy(strategy)
+	strategyProxy := newProxy(strategy)
 	growth, err := url.Parse(cfg.GrowthURL)
 	if err != nil {
 		return nil, err
 	}
-	growthProxy := httputil.NewSingleHostReverseProxy(growth)
+	growthProxy := newProxy(growth)
 	earn, err := url.Parse(cfg.EarnURL)
 	if err != nil {
 		return nil, err
 	}
-	earnProxy := httputil.NewSingleHostReverseProxy(earn)
+	earnProxy := newProxy(earn)
 	adminURL := cfg.AdminURL
 	if adminURL == "" {
 		adminURL = "http://localhost:8088"
@@ -111,7 +111,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	annProxy := httputil.NewSingleHostReverseProxy(admin)
+	annProxy := newProxy(admin)
 	annDirector := annProxy.Director
 	annProxy.Director = func(r *http.Request) {
 		annDirector(r)
@@ -411,6 +411,19 @@ func annPath(p string) string {
 		if id[i] < '0' || id[i] > '9' {
 			return ""
 		}
+	}
+	return p
+}
+
+// newProxy is a single-host reverse proxy whose transport failures (connection
+// refused/reset, timeout) answer a JSON 502 with code UPSTREAM_UNAVAILABLE
+// instead of the stdlib's empty-body 502, so clients can tell a transient
+// upstream hiccup from a business error and retry.
+func newProxy(u *url.URL) *httputil.ReverseProxy {
+	p := httputil.NewSingleHostReverseProxy(u)
+	p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("gateway: upstream %s %s %s: %v", u.Host, r.Method, r.URL.Path, err)
+		common.WriteError(w, http.StatusBadGateway, "UPSTREAM_UNAVAILABLE", "服务暂时不可用，请稍后重试")
 	}
 	return p
 }

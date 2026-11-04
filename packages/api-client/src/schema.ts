@@ -5718,6 +5718,7 @@ export interface components {
          * @enum {string}
          */
         TimeInForce: "GTC" | "IOC" | "FOK" | "PostOnly" | "GTX";
+        /** @description limit 单需 price + quantity；market 卖单需 quantity；market 买单 quantity（按基础币数量， 以 最优卖价×(1+MARKET_BUY_SLIPPAGE，默认 5%) 为保护价冻结并按 IOC 成交，无卖单返回 NO_LIQUIDITY） 与 quoteOrderQty（按计价币金额）二选一。 */
         PlaceOrderRequest: {
             /** @example BTCUSDT */
             symbol: string;
@@ -5728,8 +5729,16 @@ export interface components {
              * @example 76768.40
              */
             price?: string | null;
-            /** @example 0.01000000 */
-            quantity: string;
+            /**
+             * @description 基础币数量；limit 单与 market 卖单必填，market 买单与 quoteOrderQty 二选一
+             * @example 0.01000000
+             */
+            quantity?: string | null;
+            /**
+             * @description 仅 market 买单：按计价币金额下单（与 quantity 二选一）
+             * @example 100
+             */
+            quoteOrderQty?: string | null;
             timeInForce?: components["schemas"]["TimeInForce"];
             /** @description 等价于 timeInForce=PostOnly；会立即成交时返回 POST_ONLY_REJECTED */
             postOnly?: boolean;

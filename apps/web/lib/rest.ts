@@ -49,7 +49,17 @@ export async function rest<T>(method: string, path: string, body?: unknown, demo
   } catch { /* 网络错误 → demo */ }
   return demo && MOCK_ENABLED ? { ok: true, data: demo(), source: "demo" } : { ok: false, error: "服务暂不可用", source: "demo" };
 }
-export const rget = <T,>(p: string, demo?: () => T) => rest<T>("GET", p, undefined, demo);
+// GET 是幂等的：网关瞬时不可达（网络错误 / 无业务码 5xx / UPSTREAM_UNAVAILABLE）时稍等重试，最多 2 次，
+// 避免下单后立即刷新仓位等场景因上游短暂抖动显示"接口不可达"。
+const transient = <T,>(r: RestResult<T>) => r.source === "demo" || r.code === "UPSTREAM_UNAVAILABLE";
+export async function rget<T>(p: string, demo?: () => T): Promise<RestResult<T>> {
+  let r = await rest<T>("GET", p, undefined, demo);
+  for (let i = 0; i < 2 && transient(r); i++) {
+    await new Promise((ok) => setTimeout(ok, 400 * (i + 1)));
+    r = await rest<T>("GET", p, undefined, demo);
+  }
+  return r;
+}
 
 /** React hook：加载 + 刷新；loading 用于骨架屏 */
 export function useRest<T>(path: string | null, demo?: () => T) {
@@ -59,8 +69,8 @@ export function useRest<T>(path: string | null, demo?: () => T) {
     if (!path) return;
     if (silent !== true) set((s) => ({ ...s, loading: true }));
     const res = await rget<T>(path, demo);
-    // 后台刷新失败时保留上次成功的数据
-    set((s) => (silent === true && !res.ok && s.res?.ok ? { ...s, loading: false } : { loading: false, res }));
+    // 刷新失败（后台刷新出错 / 瞬时不可达回退演示）时保留上一次真实数据，不切成空/演示数据
+    set((s) => (s.res?.ok && s.res.source === "api" && ((silent === true && !res.ok) || res.source === "demo") ? { loading: false, res: s.res } : { loading: false, res }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
   useEffect(() => { load(); }, [load]);

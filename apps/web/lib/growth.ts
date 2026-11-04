@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { components } from "@linbit/api-client";
 import { api } from "./api";
+import { maxApr, onSale } from "./earn";
 
 export type GrowthConfig = components["schemas"]["GrowthConfig"];
 export type ProofOfReserves = components["schemas"]["ProofOfReserves"];
@@ -25,8 +26,7 @@ const loadGrowth = cached(async () => {
 
 const loadMaxFixedApr = cached(async () => {
   const { data } = await api.GET("/earn/products", { params: { query: { kind: "fixed" } } });
-  const aprs = (data?.items ?? []).map((p) => Number(p.aprMax || p.apr)).filter((n) => Number.isFinite(n) && n > 0);
-  return aprs.length ? Math.max(...aprs) : null;
+  return maxApr(data?.items ?? []);
 });
 
 function useLoad<T>(load: () => Promise<T | null>) {
@@ -57,7 +57,7 @@ export function useProofOfReserves() {
 
 const loadEarnProducts = cached(async () => {
   const { data } = await api.GET("/earn/products", {});
-  return (data?.items ?? []).filter((p) => !p.status || p.status === "online" || p.status === "active");
+  return (data?.items ?? []).filter(onSale);
 });
 /** GET /earn/products（理财总览：推荐与全部产品均以此为准，勿写死 APR） */
 export const useEarnProducts = () => useLoad(loadEarnProducts);

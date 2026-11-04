@@ -188,6 +188,19 @@ func (s *Server) CreateTPSL(ctx context.Context, uid string, r TPSLReq) ([]AlgoO
 		if n == 0 {
 			return bad("VALIDATION_ERROR", "请填写止盈或止损触发价")
 		}
+		// 全仓止盈止损是"设置/修改"语义：同一持仓方向上已有的全仓 tp/sl 由新的替换（先撤旧，再挂新），
+		// 而不是叠加出第二组。部分数量的止盈止损仍可多组并存。
+		if !qty.Valid {
+			var kinds []string
+			for _, l := range legs {
+				if strings.TrimSpace(l.trig) != "" {
+					kinds = append(kinds, l.kind)
+				}
+			}
+			if err := cancelPositionTPSL(ctx, tx, uid, c.Symbol, side, kinds); err != nil {
+				return err
+			}
+		}
 		if err := s.checkAlgoLimit(ctx, tx, uid, c.Symbol, n, cfg); err != nil {
 			return err
 		}
@@ -523,4 +536,16 @@ func (s *Server) cancelAlgo(kinds ...string) userHandler {
 		}
 		common.WriteJSON(w, http.StatusOK, map[string]any{"order": a})
 	}
+}
+
+// cancelPositionTPSL cancels the active whole-position (qty IS NULL) tp/sl algo
+// orders of the given kinds on one position side, so a new pair replaces them.
+func cancelPositionTPSL(ctx context.Context, tx *sql.Tx, uid, sym, posSide string, kinds []string) error {
+	if len(kinds) == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE fut_algo_orders SET status='canceled', updated_at=now()
+		WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND kind = ANY($4) AND qty IS NULL AND status='active'`,
+		uid, sym, posSide, "{"+strings.Join(kinds, ",")+"}")
+	return err
 }
