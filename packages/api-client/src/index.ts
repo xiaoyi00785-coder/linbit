@@ -31,6 +31,11 @@ export interface CreateApiClientOptions {
   getAccessToken?: () => string | null | undefined;
   /** 返回本机设备 ID，自动附加 X-Device-Id 头（设备列表据此标记当前设备）。 */
   getDeviceId?: () => string | null | undefined;
+  /**
+   * 收到 401 时调用，用 refreshToken 换新令牌；返回 true 则用新令牌重试一次原请求。
+   * 并发去重由调用方负责（web 端 refreshAccess 已共用一次刷新）。
+   */
+  onUnauthorized?: () => Promise<boolean>;
 }
 
 /** 默认指向本地 Prism mock server。 */
@@ -43,7 +48,7 @@ export const DEFAULT_BASE_URL = "http://localhost:4010";
 export function createApiClient(
   options: CreateApiClientOptions = {},
 ): LinbitClient {
-  const { baseUrl = DEFAULT_BASE_URL, getAccessToken, getDeviceId } = options;
+  const { baseUrl = DEFAULT_BASE_URL, getAccessToken, getDeviceId, onUnauthorized } = options;
   const client = createClient<paths>({ baseUrl });
 
   if (getAccessToken) {
@@ -61,6 +66,26 @@ export function createApiClient(
       },
     };
     client.use(authMiddleware);
+  }
+
+  if (getAccessToken && onUnauthorized) {
+    // 保存未消费的请求副本，401 刷新成功后重试一次；刷新接口本身不重试。
+    const pristine = new WeakMap<Request, Request>();
+    const refreshMiddleware: Middleware = {
+      onRequest({ request }) {
+        pristine.set(request, request.clone());
+        return request;
+      },
+      async onResponse({ request, response }) {
+        if (response.status !== 401 || request.url.includes("/auth/")) return response;
+        const copy = pristine.get(request);
+        if (!copy || !(await onUnauthorized().catch(() => false))) return response;
+        const token = getAccessToken();
+        if (token) copy.headers.set("Authorization", `Bearer ${token}`);
+        return fetch(copy);
+      },
+    };
+    client.use(refreshMiddleware);
   }
 
   return client;

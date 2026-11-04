@@ -10,4 +10,6 @@ export const api = createApiClient({
   getAccessToken: () => useAuthStore.getState().accessToken,
   // 与登录时提交的 deviceId 一致（lb_device_id），让设备列表能标出当前设备
   getDeviceId: () => (typeof window === "undefined" ? null : localStorage.getItem("lb_device_id")),
+  // 401 → 刷新令牌后重试一次（与 rest.ts 共用同一次刷新；动态 import 避免循环依赖）
+  onUnauthorized: () => import("./rest").then((m) => m.refreshAccess()),
 });
