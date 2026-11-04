@@ -119,6 +119,19 @@ function AnnItem({ a, open, toggle }: { a: Announcement; open: boolean; toggle: 
   );
 }
 
+/** 深链 ?id= 不在列表中：单独拉详情；404/非法 id → 公告不存在或已下线 */
+function AnnDeep({ id, onClose }: { id: string; onClose: () => void }) {
+  const [d, setD] = useState<AnnDetail | null>(null);
+  useEffect(() => { setD(null); getAnnouncement(id).then(setD); }, [id]);
+  return (
+    <div className="fx-item ann-item on" data-testid="ann-deep" style={{ flexDirection: "column", alignItems: "stretch", marginBottom: 12 }}>
+      {!d ? <i className="sk" style={{ display: "block", height: 48 }} /> : d.state === "ok" ? <><b>{d.title}</b><small className="lg">{d.date}</small><div style={{ marginTop: 10, whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{d.body || "（无正文）"}</div></> : (
+        <div className="fx-empty" role="status" style={{ padding: "24px 0" }}><p>{d.state === "notfound" ? "公告不存在或已下线" : d.error}</p><button type="button" className="lb dark" onClick={onClose}>返回公告列表</button></div>
+      )}
+    </div>
+  );
+}
+
 export function Announcements() {
   const [list, , src] = useLoad<Announcement[]>(listAnnouncements, []);
   const [cat, setCat] = useState("全部");
@@ -129,6 +142,7 @@ export function Announcements() {
     <main className="light"><div className="lwrap"><section className="lmain" style={{ width: "100%" }}>
       <h2 className="lh2">公告中心 <Src s={src} /></h2>
       <Tabs items={cats} cur={cat} set={setCat} />
+      {src && openId && !list.some((a) => a.id === openId) && <AnnDeep id={openId} onClose={() => { setOpenId(null); window.history.replaceState(null, "", "/announcements"); }} />}
       <div className="fx-list">
         {!src ? <Skel n={4} h={52} /> : list.filter((a) => cat === "全部" || a.category === cat).length === 0 ? (
           <div className="fx-empty" role="status"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" /><path d="M8 9h8M8 12h5" /></svg><p>暂无公告</p><small>平台最新公告发布后将显示在这里</small></div>
