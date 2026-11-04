@@ -8,12 +8,20 @@ settings:
     SWIFT_VERSION: "5.9"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: ""   # TODO: TestFlight 前填 Apple Team ID
+    DEVELOPMENT_TEAM: ""   # TODO: TestFlight 前填 Apple Team ID（不在仓库中猜测，可用 xcodebuild DEVELOPMENT_TEAM=XXXX 覆盖）
+    # 通行密钥 / 通用链接域名：须与后端 WEBAUTHN_RP_ID 一致（mainnet 默认 www.cowa.click），可用 LB_ASSOCIATED_DOMAIN=... 覆盖
+    LB_ASSOCIATED_DOMAIN: www.cowa.click
 targets:
   Linbit:
     type: application
     platform: iOS
     sources: [Linbit]
+    entitlements:
+      path: Linbit/Linbit.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:$(LB_ASSOCIATED_DOMAIN)
+          - webcredentials:$(LB_ASSOCIATED_DOMAIN)
     info:
       path: Linbit/Info.plist
       properties:
@@ -28,4 +36,5 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: click.cowa.linbit
+        CODE_SIGN_ENTITLEMENTS: Linbit/Linbit.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

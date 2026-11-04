@@ -157,6 +157,11 @@ struct RootTabView: View {
         case "security-passkeys-add": router.shotSheet = "sec:passkeys:add"; SecShot.raw = "sec:passkeys:add"; router.feature = .security
         case "security-2fa-disable": router.shotSheet = "sec:disable2fa"; SecShot.raw = "sec:disable2fa"; router.feature = .security
         case "security-2fa-disable-error": router.shotSheet = "sec:disable2fa:error"; SecShot.raw = "sec:disable2fa:error"; router.feature = .security
+        case "security-avatar": router.shotSheet = "sec:profile:avatar"; SecShot.raw = "sec:profile:avatar"; router.feature = .security
+        case "security-avatar-crop": router.shotSheet = "sec:profile:crop"; SecShot.raw = "sec:profile:crop"; router.feature = .security
+        case "security-avatar-uploading": router.shotSheet = "sec:profile:uploading"; SecShot.raw = "sec:profile:uploading"; router.feature = .security
+        case "security-avatar-error": router.shotSheet = "sec:profile:avatar-error"; SecShot.raw = "sec:profile:avatar-error"; router.feature = .security
+        case "home-avatar": SecShot.raw = "sec:home"
         case "password-change": router.shotSheet = "changePwd"; router.feature = .changePassword
         case "login":
             router.tab = .home

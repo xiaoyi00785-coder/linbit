@@ -256,6 +256,9 @@ enum ErrorText {
         "PASSKEY_UNAVAILABLE": "通行密钥功能暂未开放",
         "TOTP_NOT_BOUND": "请先绑定身份验证器",
         "TOTP_NOT_ENABLED": "身份验证器未开启",
+        "FILE_TOO_LARGE": "头像过大，请选择 2MB 以内的图片",
+        "UNSUPPORTED_MEDIA_TYPE": "仅支持 JPG、PNG、WebP 格式的图片",
+        "STORAGE_UNAVAILABLE": "头像服务暂不可用，请稍后再试",
         "OLD_PASSWORD_INVALID": "原密码错误",
         "PASSWORD_UNCHANGED": "新密码不能与原密码相同",
     ]
