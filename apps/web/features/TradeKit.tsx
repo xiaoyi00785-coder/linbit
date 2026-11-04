@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { normSymbol } from "./symbol";
 import { useNavigate } from "@/lib/router";
 import { useAuthStore } from "@/lib/store";
-import { rest, BALANCES_EVT } from "@/lib/rest";
+import { rest, BALANCES_EVT, type RestResult } from "@/lib/rest";
 import { toast } from "@/lib/ui";
 import { useDismiss } from "@/lib/dismiss";
 import { btnProps, onActivate, tabProps } from "@/lib/a11y";
@@ -297,6 +297,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const [pc, setPc] = useState(0);
   const [modal, setModal] = useState<"" | "mode" | "lev" | "calc">("");
   const [busy, setBusy] = useState(false);
+  const inflight = useRef(false); // 同步防重复提交：双击在重渲染前也只会发出一次请求
   const [avail, setAvail] = useState<string | null>(null);
   const [tif, setTif] = useState<Tif>("GTC");
   const [trigType, setTrigType] = useState<"LAST" | "MARK">("LAST");
@@ -355,6 +356,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const margin = st.lev ? notional / st.lev : 0;
   const fee = c?.takerFeeRate != null ? notional * Number(c.takerFeeRate) : null; // 费率只取合约数据，无数据不估算
   const submit = async (side: "buy" | "sell") => {
+    if (inflight.current) return;
     if (!authed) return nav("/login");
     if (!qty.trim()) return toast("请输入数量", "err");
     if (!(qn > 0) || !isFinite(qn)) return toast("数量必须大于 0", "err");
@@ -385,14 +387,16 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       tpTriggerPriceType: act === 0 && tpsl && tp ? tpTT : undefined,
       slTriggerPriceType: act === 0 && tpsl && sl ? slTT : undefined,
     };
-    setBusy(true);
-    const r = await rest<any>("POST", "/futures/orders", body);
-    setBusy(false);
+    inflight.current = true; setBusy(true);
+    let r: RestResult<any>;
+    try { r = await rest<any>("POST", "/futures/orders", body); }
+    catch { r = { ok: false, error: "服务暂不可用", source: "api" }; }
+    finally { inflight.current = false; setBusy(false); }
     if (!r.ok) {
       const e = r.error ?? "";
       const M: Record<string, string> = { POST_ONLY_REJECTED: "只做 Maker 订单会立即成交，已被拒绝", POST_ONLY_DISABLED: "只做 Maker 暂未开放", TRIGGER_DEVIATION: "触发价偏离当前价格过大", ALGO_LIMIT: "条件单数量已达上限", INVALID_TPSL: "止盈止损价格不合理", POSITION_SIDE_REQUIRED: "双向持仓需指定仓位方向", POSITION_SIDE_MISMATCH: "仓位方向与持仓模式不一致", REDUCE_ONLY_REJECTED: "无可平仓位" };
       const k = Object.keys(M).find((x) => e.includes(x));
-      return toast(k ? M[k] : e || "下单失败", "err");
+      return toast(k ? M[k] : (r.status && r.status >= 500 && !r.code) || r.source === "demo" ? "服务暂不可用，下单未提交成功，请稍后重试" : e || "下单失败", "err", 4000);
     }
     if (ty === "plan") toast("计划委托已提交"); else { const o = futOrderOf(r.data); const m = orderToast(o.status, o.filledQty); toast(m.t, m.ok ? undefined : "err"); } setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
   };

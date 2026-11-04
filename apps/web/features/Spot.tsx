@@ -2,7 +2,7 @@
 /** 现货下单面板与委托列表：对接 /spot/*（@linbit/api-client），API 不可达时回退本地 mock */
 import { stLabel, orderToast } from "@/lib/orderStatus";
 import { orderQtyText } from "@/lib/orderDisplay";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { btnProps, tabProps } from "@/lib/a11y";
 import { useNavigate } from "@/lib/router";
 import { useAuthStore } from "@/lib/store";
@@ -81,7 +81,9 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const feeV = side === "buy" ? q * rate : q * px * rate;
   const fee = !q || (side === "sell" && !px) ? "--" : side === "buy" ? `${fmtSig(feeV)} ${B}` : `${fmtSig(feeV)} USDT`;
 
+  const inflight = useRef(false); // 同步防重复提交（busy 状态要等重渲染才禁用按钮）
   const submit = async () => {
+    if (inflight.current) return;
     if (!authed) return nav("/login");
     if (byAmt) {
       if (!amt.trim()) return setMsg({ ok: false, t: "请输入买入金额" });
@@ -104,8 +106,11 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       timeInForce: type === "limit" ? "GTC" : "IOC",
       clientOrderId: `web-${Date.now()}`,
     } as PlaceOrderRequest & { quoteOrderQty?: string };
-    const r = await placeSpotOrder(body);
-    setBusy(false);
+    inflight.current = true;
+    let r: Awaited<ReturnType<typeof placeSpotOrder>>;
+    try { r = await placeSpotOrder(body); }
+    catch { r = { ok: false, error: "服务暂不可用" } as Awaited<ReturnType<typeof placeSpotOrder>>; }
+    finally { inflight.current = false; setBusy(false); }
     setMsg(r.ok ? (() => { const d: any = r.data; const m = orderToast(d?.status, d?.filledQuantity); return { ok: m.ok, t: `${m.t} #${d?.orderId}` }; })() : { ok: false, t: r.error ?? "下单失败" });
     if (r.ok) { setQty(""); setAmt(""); setPc(0); bump(); window.setTimeout(bump, 800); window.setTimeout(bump, 2500); }
   };

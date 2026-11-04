@@ -73,16 +73,23 @@ export function FutOrders({ symbol }: { symbol?: string }) {
     const id = window.setInterval(() => { if (document.visibilityState === "visible") posRef.current.refresh(); }, 3000);
     return () => window.clearInterval(id);
   }, [authed]);
-  const del = async (path: string, ok: string) => {
+  // 防重复点击：同一撤单/平仓请求在途时忽略再次点击（ref 同步生效，不依赖重渲染）
+  const inflight = useRef(new Set<string>());
+  const once = async (key: string, fn: () => Promise<void>) => {
+    if (inflight.current.has(key)) return;
+    inflight.current.add(key);
+    try { await fn(); } catch { toast("网络异常，请稍后重试", "err", 4000); } finally { inflight.current.delete(key); }
+  };
+  const del = (path: string, ok: string) => once("del " + path, async () => {
     const r = await rest("DELETE", path);
-    if (!r.ok) return toast(r.error || "撤单失败", "err");
+    if (!r.ok) return toast(r.error || "撤单失败", "err", 4000);
     toast(ok); reloadAll();
-  };
-  const close = async (p: Pos) => {
+  });
+  const close = (p: Pos) => once(`close ${p.symbol} ${p.positionSide ?? ""}`, async () => {
     const r = await rest<any>("POST", `/futures/positions/${p.symbol}/close`, p.positionSide && p.positionSide !== "BOTH" ? { positionSide: p.positionSide } : {});
-    if (!r.ok) return toast(r.error || "平仓失败", "err");
+    if (!r.ok) return toast(r.error || "平仓失败", "err", 4000);
     const o = futOrderOf(r.data); const m = closeToast(o.status, o.filledQty); toast(m.t, m.ok ? undefined : "err"); reloadAll();
-  };
+  });
   const rlRef = useRef(reloadAll); rlRef.current = reloadAll;
   useEffect(() => { const f = () => rlRef.current(); window.addEventListener("lb-fut-orders", f); return () => window.removeEventListener("lb-fut-orders", f); }, []);
   const labels = [`仓位(${P.length})`, `当前委托(${O.length})`, `计划委托(${PL.length})`, `止盈止损(${TS.length})`, "历史委托", "历史仓位", "成交明细"];

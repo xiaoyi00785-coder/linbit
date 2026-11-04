@@ -32,16 +32,16 @@ function Img({ a }: { a: TicketAttachment }) {
     : <span className="ff-mut">{u === false ? "图片加载失败" : "图片加载中…"}</span>;
 }
 
-function Attach({ ids, setIds }: { ids: TicketAttachment[]; setIds: (f: (x: TicketAttachment[]) => TicketAttachment[]) => void }) {
-  const inp = useRef<HTMLInputElement>(null); const [busy, setBusy] = useState(false);
+function Attach({ ids, setIds, onBusy }: { ids: TicketAttachment[]; setIds: (f: (x: TicketAttachment[]) => TicketAttachment[]) => void; onBusy: (b: boolean) => void }) {
+  const inp = useRef<HTMLInputElement>(null); const [busy, setBusyRaw] = useState(false);
+  const setBusy = (b: boolean) => { setBusyRaw(b); onBusy(b); };
   const pick = async (fs: FileList | null) => {
     if (!fs) return;
     setBusy(true);
-    for (const f of Array.from(fs).slice(0, ATTACH_MAX - ids.length)) {
+    try { for (const f of Array.from(fs).slice(0, ATTACH_MAX - ids.length)) {
       const r = await uploadAttachment(f);
       if (r.ok && r.data) { const d = r.data; setIds((x) => [...x, d]); } else toast(ticketErr(r), "err");
-    }
-    setBusy(false); if (inp.current) inp.current.value = "";
+    } } finally { setBusy(false); } if (inp.current) inp.current.value = "";
   };
   return <div className="ff-f"><span>图片附件（选填，最多 {ATTACH_MAX} 张，JPG/PNG/WEBP，单张 ≤ 5 MB）</span>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -53,13 +53,13 @@ function Attach({ ids, setIds }: { ids: TicketAttachment[]; setIds: (f: (x: Tick
 
 function NewTicket({ onDone }: { onDone: (t: Ticket) => void }) {
   const [cat, setCat] = useState<TicketCategory | "">(""); const [sub, setSub] = useState(""); const [body, setBody] = useState("");
-  const [att, setAtt] = useState<TicketAttachment[]>([]); const [busy, setBusy] = useState(false);
+  const [att, setAtt] = useState<TicketAttachment[]>([]); const [busy, setBusy] = useState(false); const [upl, setUpl] = useState(false);
   const [tried, setTried] = useState(false);
   const ok = !!cat && sub.trim().length > 0 && sub.length <= 120 && body.trim().length > 0 && body.length <= 5000;
   const miss = !cat ? "请选择问题分类" : !sub.trim() ? "请填写标题" : !body.trim() ? "请填写问题描述" : "";
   const go = async () => {
     setTried(true);
-    if (!ok || !cat || busy) return; setBusy(true);
+    if (!ok || !cat || busy || upl) return; setBusy(true);
     const r = await createTicket({ category: cat, subject: sub.trim(), content: body.trim(), attachments: att.map((a) => a.id) });
     setBusy(false);
     if (r.ok && r.data) { toast("工单已提交，客服回复后会通过站内消息通知您"); onDone(r.data); } else toast(ticketErr(r), "err");
@@ -68,23 +68,23 @@ function NewTicket({ onDone }: { onDone: (t: Ticket) => void }) {
     <label className="ff-f"><span>问题分类</span><select className="tk-in" value={cat} onChange={(e) => setCat(e.target.value as TicketCategory)}><option value="">请选择</option>{CATEGORIES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
     <label className="ff-f"><span>标题 <em className="tk-cnt">{sub.length}/120</em></span><input className="tk-in" value={sub} maxLength={120} onChange={(e) => setSub(e.target.value)} placeholder="一句话描述问题" /></label>
     <label className="ff-f"><span>问题描述 <em className="tk-cnt">{body.length}/5000</em></span><textarea className="tk-in" value={body} maxLength={5000} rows={6} onChange={(e) => setBody(e.target.value)} placeholder="请描述问题经过，涉及充提时可附上币种、网络与交易哈希。请勿填写密码、验证码或助记词。" /></label>
-    <Attach ids={att} setIds={setAtt} />
+    <Attach ids={att} setIds={setAtt} onBusy={setUpl} />
     <p className="ff-mut">客服不会索要您的密码、验证码或私钥；工单中的链接不会被打开。</p>
     {tried && miss && <p className="tk-err" role="alert">{miss}</p>}
-    <div className="ff-mact"><Link className="ff-btn" href="/support/tickets">取消</Link><button type="button" className="ff-btn pri" disabled={busy} aria-busy={busy} onClick={go} data-testid="tk-submit">{busy ? "提交中…" : "提交工单"}</button></div>
+    <div className="ff-mact"><Link className="ff-btn" href="/support/tickets">取消</Link><button type="button" className="ff-btn pri" disabled={busy || upl} aria-busy={busy} onClick={go} data-testid="tk-submit">{busy ? "提交中…" : upl ? "等待图片上传…" : "提交工单"}</button></div>
   </div>;
 }
 
 function Thread({ id }: { id: string }) {
   const [t, setT] = useState<Ticket | null>(null); const [err, setErr] = useState("");
-  const [body, setBody] = useState(""); const [att, setAtt] = useState<TicketAttachment[]>([]); const [busy, setBusy] = useState(false);
+  const [body, setBody] = useState(""); const [att, setAtt] = useState<TicketAttachment[]>([]); const [busy, setBusy] = useState(false); const [upl, setUpl] = useState(false);
   const [ask, setAsk] = useState(false); const [closing, setClosing] = useState(false);
   const load = useCallback(() => { setErr(""); getTicket(id).then((r) => (r.ok && r.data ? setT(r.data) : setErr(ticketErr(r)))); }, [id]);
   useEffect(() => { load(); }, [load]);
   if (err) return <Empty t={err}><div className="tk-row"><button type="button" className="ff-btn" onClick={load}>重试</button><Link className="ff-btn" href="/support/tickets">返回我的工单</Link></div></Empty>;
   if (!t) return <div className="ff-skel" aria-label="加载中" />;
   const send = async () => {
-    if (busy || !body.trim()) return; setBusy(true); const r = await replyTicket(id, body.trim(), att.map((a) => a.id)); setBusy(false);
+    if (busy || upl || !body.trim()) return; setBusy(true); const r = await replyTicket(id, body.trim(), att.map((a) => a.id)); setBusy(false);
     if (r.ok && r.data) { setT(r.data); setBody(""); setAtt([]); } else toast(ticketErr(r), "err");
   };
   const close = async () => { setClosing(true); const r = await closeTicket(id); setClosing(false); setAsk(false); if (r.ok && r.data) { setT(r.data); toast("工单已关闭"); } else toast(ticketErr(r), "err"); };
@@ -107,8 +107,8 @@ function Thread({ id }: { id: string }) {
     {t.status === "closed" ? <p className="ff-mut" style={{ marginTop: 16 }}>工单已关闭。如有新问题，请 <Link href="/support/tickets?new=1">重新提交工单</Link>。</p>
       : <div className="ff-card tk-card" style={{ marginTop: 16 }}>
         <label className="ff-f"><span>补充回复 <em className="tk-cnt">{body.length}/5000</em></span><textarea className="tk-in" value={body} maxLength={5000} rows={4} onChange={(e) => setBody(e.target.value)} /></label>
-        <Attach ids={att} setIds={setAtt} />
-        <div className="ff-mact"><button type="button" className="ff-btn pri" disabled={!body.trim() || busy} aria-busy={busy} onClick={send} data-testid="tk-send">{busy ? "发送中…" : "发送"}</button></div>
+        <Attach ids={att} setIds={setAtt} onBusy={setUpl} />
+        <div className="ff-mact"><button type="button" className="ff-btn pri" disabled={!body.trim() || busy || upl} aria-busy={busy} onClick={send} data-testid="tk-send">{busy ? "发送中…" : upl ? "等待图片上传…" : "发送"}</button></div>
       </div>}
   </>;
 }
