@@ -9,7 +9,7 @@ enum SecPage: String, Identifiable {
 
 /// 截图（CI 未登录）用：Router.shotSheet = "sec:<page>[:state]"，注入演示数据
 enum SecShot {
-    static var raw: String? { let s = Router.shared.shotSheet; return s?.hasPrefix("sec:") == true ? s : nil }
+    static var raw: String?   // 由截图路由写入（非 MainActor，供 @State 初始值读取）
     static var parts: [String] { raw.map { $0.split(separator: ":").map(String.init) } ?? [] }
     static var on: Bool { raw != nil }
     static var page: SecPage? { parts.count > 1 ? SecPage(rawValue: parts[1]) : nil }
