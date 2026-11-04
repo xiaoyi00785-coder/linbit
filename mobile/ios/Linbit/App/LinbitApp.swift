@@ -125,6 +125,12 @@ struct RootTabView: View {
         case "sub-create": router.shotSheet = "subCreate"; router.feature = .subAccounts
         case "account-switch": router.shotSheet = "accountSwitch"; router.feature = .subAccounts
         case "welfare": router.feature = .welfare
+        case "futures-pnl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "pnl"
+        case "futures-pnl-error": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "pnlError"
+        case "futures-pnl-empty": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "pnlEmpty"
+        case "password-register": router.tab = .home; router.shotSheet = "pwdRegister"; session.present(.register)
+        case "password-reset": router.tab = .home; router.shotSheet = "pwdReset"; session.present(.login)
+        case "password-change": router.shotSheet = "changePwd"; router.feature = .changePassword
         case "login":
             router.tab = .home
             session.present(.login)

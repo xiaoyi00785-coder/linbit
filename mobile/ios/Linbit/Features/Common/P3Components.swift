@@ -146,7 +146,7 @@ struct Sparkline: View {
 
 /// 全屏二级功能页（从首页宫格、现货顶栏进入）
 enum FeaturePage: String, Identifiable {
-    case earn, strategy, gridCreate, swap, chat, subAccounts, welfare, copyTrading, tradfi, futuresHistory, futuresRiskTiers, futuresFunding
+    case earn, strategy, gridCreate, swap, chat, subAccounts, welfare, copyTrading, tradfi, futuresHistory, futuresRiskTiers, futuresFunding, changePassword
     var id: String { rawValue }
 }
 
@@ -166,6 +166,7 @@ struct FeatureHost: View {
         case .futuresHistory: FuturesHistoryView(symbol: Router.shared.futuresSymbol)
         case .futuresRiskTiers: FuturesRiskTiersView(symbol: Router.shared.futuresSymbol)
         case .futuresFunding: FuturesFundingHistoryView(symbol: Router.shared.futuresSymbol)
+        case .changePassword: ChangePasswordView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .tradfi: FeatureShell(title: "TradFi") { ComingSoonView(title: "TradFi", note: "股票、贵金属等传统金融资产交易即将上线") }
         }
     }

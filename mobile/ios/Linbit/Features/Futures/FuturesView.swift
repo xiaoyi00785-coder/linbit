@@ -67,7 +67,7 @@ struct FuturesTradeView: View {
         }
         .task {
             // 截图：把 K 线 / 委托区滚动到画面内
-            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (router.shotSheet == "ordersTpsl" || router.shotSheet == "ordersPlan" ? "lb.bottom" : nil)
+            let target: String? = router.shotSheet == "chart" ? "lb.chart" : (["ordersTpsl", "ordersPlan", "pnl", "pnlError", "pnlEmpty"].contains(router.shotSheet ?? "") ? "lb.bottom" : nil)
             guard let target else { return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             proxy.scrollTo(target, anchor: .top)
@@ -107,8 +107,25 @@ struct FuturesTradeView: View {
         case "ordersTpsl": bottomTab = 1; orderFilter = 1
         case "ordersPlan": bottomTab = 1; orderFilter = 2
         case "plan": m.kind = .plan
+        case "pnl", "pnlError", "pnlEmpty": applyPnlDemo(router.shotSheet ?? "")
         default: break
         }
+    }
+
+    /// 截图演示（CI 未登录）：注入示例仓位与今日盈亏三种状态，标记价仍取实时 WS
+    private func applyPnlDemo(_ k: String) {
+        m.shotDemo = true; bottomTab = 0
+        let ref = m.mark > 0 ? m.mark : 78000
+        let entry = Dec.plain(ref * Decimal(string: "0.985")!, m.pricePrec)
+        m.positions = k == "pnlEmpty" ? [] : [APIFuturesPosition(symbol: m.symbol, side: .long, qty: "0.050", entryPrice: entry, markPrice: Dec.plain(ref, m.pricePrec),
+                                                               marginMode: .cross, leverage: 20, margin: Dec.plain(Dec.parse(entry) * Decimal(string: "0.05")! / 20, 2))]
+        switch k {
+        case "pnlError": m.todayPnl = .failed("网络异常，请稍后重试")
+        case "pnlEmpty": m.todayPnl = .loaded(APIFuturesTodayPnl200Response(asset: "USDT", since: 0, pnl: "0", realizedPnl: "0", funding: "0", fee: "0", liquidationFee: "0", insuranceCover: "0"))
+        default: m.todayPnl = .loaded(APIFuturesTodayPnl200Response(asset: "USDT", since: 0, pnl: "37.4215", realizedPnl: "42.18", funding: "-1.2345", fee: "-3.524", liquidationFee: "0", insuranceCover: "0"))
+        }
+        m.accountLoaded = true
+        m.syncMarkSubs()
     }
 
     private func applyShot() {
@@ -122,6 +139,7 @@ struct FuturesTradeView: View {
         case "plan": m.kind = .plan
         case "ordersTpsl": bottomTab = 1; orderFilter = 1; return
         case "ordersPlan": bottomTab = 1; orderFilter = 2; return
+        case "pnl", "pnlError", "pnlEmpty": applyPnlDemo(router.shotSheet ?? ""); return
         case "modeHedge": m.positionMode = .hedge; showMode = true
         case "tpslPartial": showTpslForm = true
         case "amend":
@@ -337,9 +355,16 @@ struct FuturesTradeView: View {
     }
 
     @ViewBuilder private var positionsList: some View {
-        if !session.isLoggedIn {
+        if !session.isLoggedIn && !m.shotDemo {
             EmptyBlock(text: "登录后查看仓位", actions: [("登录 / 注册", { session.present(.login) })])
-        } else if !m.accountLoaded {
+        } else {
+            TodayPnlCard(state: m.todayPnl, unrealized: m.liveUnrealized, hasPositions: !m.positions.isEmpty) { Task { await m.loadTodayPnl() } }
+            positionsBody
+        }
+    }
+
+    @ViewBuilder private var positionsBody: some View {
+        if !m.accountLoaded {
             SkeletonList(rows: 2)
         } else if m.shownPositions.isEmpty {
             // 对照图 #22：充值 / 模拟盘 / 跟单交易
@@ -349,7 +374,7 @@ struct FuturesTradeView: View {
         } else {
             LazyVStack(spacing: 0) {
                 ForEach(m.shownPositions, id: \.self) { pos in
-                    PositionCard(pos: pos, onTpsl: { tpslTarget = pos; showTpslForm = true },
+                    PositionCard(pos: pos, live: m.livePnl(pos), onTpsl: { tpslTarget = pos; showTpslForm = true },
                                  onMargin: { marginTarget = pos },
                                  onClose: {
                         confirm = .init(title: "市价平仓", message: "确定以市价平掉 \(pos.symbol ?? "") \(pos.side == .short ? "空" : "多")仓 \(pos.qty ?? "") 吗？",
@@ -512,12 +537,15 @@ struct EmptyBlock: View {
 struct PositionCard: View {
     @Environment(\.palette) private var p
     let pos: APIFuturesPosition
+    /// 按 WS 实时标记价重算的盈亏 / 收益率 / 标记价
+    var live: (pnl: Decimal, roe: Decimal, mark: Decimal)? = nil
     let onTpsl: () -> Void
     let onMargin: () -> Void
     let onClose: () -> Void
     var body: some View {
         let long = pos.side != .short
-        let pnl = Dec.parse(pos.unrealizedPnl), roe = Dec.parse(pos.roe) * 100
+        let pnl = live?.pnl ?? Dec.parse(pos.unrealizedPnl), roe = live?.roe ?? Dec.parse(pos.roe) * 100
+        let markV = (live?.mark ?? 0) > 0 ? live!.mark : Dec.parse(pos.markPrice)
         let pc = pnl < 0 ? p.down : p.up
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
@@ -542,7 +570,7 @@ struct PositionCard: View {
                 KVCell(k: "开仓价格", v: Fmt.priceAuto(Dec.parse(pos.entryPrice)), align: .trailing)
             }
             HStack {
-                KVCell(k: "标记价格", v: Fmt.priceAuto(Dec.parse(pos.markPrice)))
+                KVCell(k: "标记价格", v: Fmt.priceAuto(markV))
                 KVCell(k: "强平价格", v: pos.liquidationPrice.map { Fmt.priceAuto(Dec.parse($0)) } ?? "--", align: .center)
                 KVCell(k: "止盈/止损", v: lbTpslText(pos.tpPrice, pos.tpTriggerPriceType?.rawValue, pos.slPrice, pos.slTriggerPriceType?.rawValue), align: .trailing)
             }
@@ -739,4 +767,61 @@ struct AlgoOrderRow: View {
         case nil: return "--"
         }
     }
+}
+
+/// 今日盈亏卡片（UTC 00:00 起）：合计 / 已实现盈亏 / 资金费 / 手续费 + 实时未实现盈亏
+struct TodayPnlCard: View {
+    @Environment(\.palette) private var p
+    let state: Loadable<APIFuturesTodayPnl200Response>
+    let unrealized: Decimal
+    let hasPositions: Bool
+    let retry: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("今日盈亏(USDT)").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                    .underline(true, color: p.textTertiary.opacity(0.4))
+                Text("UTC 00:00 起").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                Spacer()
+                if hasPositions {
+                    Text("未实现 ").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                    + Text(signed(unrealized)).font(.lbNum(FontSize.small, .medium)).foregroundColor(color(unrealized))
+                }
+            }
+            switch state {
+            case .idle, .loading:
+                HStack(spacing: 8) {
+                    ForEach(0..<4, id: \.self) { _ in RoundedRectangle(cornerRadius: 3).fill(p.fill).frame(height: 30) }
+                }.redacted(reason: .placeholder)
+            case let .failed(msg):
+                HStack {
+                    Text("今日盈亏加载失败：\(msg)").font(.lb(FontSize.small)).foregroundColor(p.down).lineLimit(2)
+                    Spacer()
+                    Button(action: retry) {
+                        Text("重试").font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary)
+                            .padding(.horizontal, 10).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+                    }.buttonStyle(PressableStyle())
+                }
+            case let .loaded(v):
+                let total = Dec.parse(v.pnl), realized = Dec.parse(v.realizedPnl), funding = Dec.parse(v.funding)
+                let fee = Dec.parse(v.fee) + Dec.parse(v.liquidationFee), other = Dec.parse(v.insuranceCover)
+                if total == 0 && realized == 0 && funding == 0 && fee == 0 && other == 0 {
+                    Text("今日暂无已实现盈亏、资金费或手续费记录").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                } else {
+                    Text(signed(total)).font(.lbNum(FontSize.title, .semibold)).foregroundColor(color(total))
+                    HStack {
+                        KVCell(k: "已实现盈亏", v: signed(realized), vColor: color(realized))
+                        KVCell(k: "资金费", v: signed(funding), align: .center, vColor: color(funding))
+                        KVCell(k: "手续费", v: signed(fee), align: .trailing, vColor: color(fee))
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.bgElevated))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border))
+        .padding(.horizontal, Spacing.pageH).padding(.top, 10)
+    }
+    private func signed(_ d: Decimal) -> String { (d > 0 ? "+" : "") + Fmt.amount(d, 4) }
+    private func color(_ d: Decimal) -> Color { d > 0 ? p.up : (d < 0 ? p.down : p.textPrimary) }
 }

@@ -214,6 +214,13 @@ struct SecurityView: View {
                     Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(p.textSecondary)
                 }.padding(.horizontal, Spacing.pageH).frame(height: 50)
             }.buttonStyle(RowPressStyle()).disabled(session.account?.twoFactorEnabled == true)
+            NavigationLink { ChangePasswordView() } label: {
+                HStack {
+                    Text("修改登录密码").font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(p.textSecondary)
+                }.padding(.horizontal, Spacing.pageH).frame(height: 50)
+            }.buttonStyle(RowPressStyle())
             Spacer()
         }
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
@@ -322,5 +329,92 @@ struct QRImage: View {
         guard let out = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
               let cg = CIContext().createCGImage(out, from: out.extent) else { return nil }
         return UIImage(cgImage: cg)
+    }
+}
+
+// MARK: 修改登录密码（POST /account/password/change）
+struct ChangePasswordView: View {
+    @Environment(\.palette) private var p
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: Session
+    var onBack: (() -> Void)? = nil
+    @State private var old = ""
+    @State private var pwd = Router.shared.shotSheet == "changePwd" ? "linbit" : ""
+    @State private var pwd2 = ""
+    @State private var code = ""
+    @State private var loading = false
+    @State private var sending = false
+    @State private var cooldown = 0
+    @State private var error: String?
+
+    private var useTotp: Bool { session.account?.twoFactorEnabled == true }
+    private var mismatch: String? { !pwd2.isEmpty && pwd2 != pwd ? "两次输入的密码不一致" : nil }
+    private var canSubmit: Bool { !old.isEmpty && PasswordRule.ok(pwd) && pwd == pwd2 && code.count == 6 }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            NavBar(title: "修改登录密码", onBack: onBack)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    InlineBanner(text: "修改成功后将退出其他设备的登录，且 24 小时内禁止提现。")
+                    LBTextField(label: "原密码", placeholder: "输入当前登录密码", text: $old, secure: true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        LBTextField(label: "新密码", placeholder: "8-64 位，含字母和数字", text: $pwd, secure: true, error: PasswordRule.hint(pwd))
+                        HStack(spacing: 14) {
+                            ForEach(PasswordRule.rules(pwd), id: \.0) { r in
+                                HStack(spacing: 4) {
+                                    Image(systemName: r.1 ? "checkmark.circle.fill" : "circle").font(.system(size: 11))
+                                    Text(r.0).font(.lb(FontSize.small))
+                                }.foregroundColor(r.1 ? p.up : p.textTertiary)
+                            }
+                        }
+                    }
+                    LBTextField(label: "确认新密码", placeholder: "再次输入新密码", text: $pwd2, secure: true, error: mismatch)
+                    if useTotp {
+                        LBTextField(label: "身份验证器验证码", placeholder: "6 位验证码", text: $code, keyboard: .numberPad)
+                    } else {
+                        LBTextField(label: "验证码", placeholder: "6 位验证码", text: $code, keyboard: .numberPad) {
+                            Button { Task { await send() } } label: {
+                                Text(cooldown > 0 ? "\(cooldown)s" : (sending ? "发送中" : "获取验证码"))
+                                    .font(.lb(FontSize.small, .medium)).foregroundColor(cooldown > 0 ? p.textTertiary : p.brand)
+                            }.disabled(cooldown > 0 || sending)
+                        }
+                    }
+                    if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
+                    LBButton(title: "确认修改", enabled: canSubmit, loading: loading) { Task { await submit() } }.padding(.top, 8)
+                }.padding(Spacing.pageH)
+            }
+        }
+        .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
+        .onChange(of: pwd) { _ in error = nil }
+        .onChange(of: code) { v in code = String(v.filter(\.isNumber).prefix(6)); error = nil }
+    }
+
+    private func send() async {
+        sending = true; defer { sending = false }
+        do {
+            try await AuthAPI.sendSecurityCode()
+            ToastCenter.shared.show("验证码已发送", .success)
+            cooldown = 60
+            Task { while cooldown > 0 { try? await Task.sleep(nanoseconds: 1_000_000_000); cooldown -= 1 } }
+        } catch { self.error = error.lbMessage }
+    }
+
+    private func submit() async {
+        if let h = PasswordRule.hint(pwd) { error = h; return }
+        guard pwd == pwd2 else { error = "两次输入的密码不一致"; return }
+        loading = true; defer { loading = false }
+        do {
+            try await AuthAPI.changePassword(old: old, new: pwd, totp: useTotp ? code : nil, code: useTotp ? nil : code)
+            ToastCenter.shared.show("登录密码已修改", .success)
+            if let onBack { onBack() } else { dismiss() }
+        } catch let e as APIFailure {
+            switch e.code {
+            case "INVALID_TOTP": error = "身份验证器验证码错误"
+            case "TWOFA_REQUIRED": error = "请输入身份验证器验证码"
+            case "OLD_PASSWORD_INVALID", "PASSWORD_UNCHANGED", "AUTH_CODE_INVALID": error = ErrorText.map[e.code ?? ""]
+            default: error = e.lbMessage
+            }
+        } catch { self.error = error.lbMessage }
     }
 }

@@ -207,3 +207,12 @@ final class WSSubscription {
     func cancel() { cancelAction() }
     deinit { cancelAction() }
 }
+
+/// mark:<symbol> 频道帧（合约标记价格，约 1s 一帧）
+struct WSMark: Decodable {
+    let symbol: String
+    let markPrice: String
+    let indexPrice: String?
+    let fundingRate: String?
+    let nextFundingTime: Int64?
+}

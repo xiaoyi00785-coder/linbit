@@ -2,6 +2,8 @@ import Foundation
 
 /// 合约行情 / 历史 / 风险数据接口（均来自 docs/api/openapi.yaml，未自行新增路径）
 extension FuturesAPI {
+    /// 今日（UTC 00:00 起）合约已实现盈亏汇总
+    static func todayPnl() async throws -> APIFuturesTodayPnl200Response { try await api.get("/futures/pnl/today", auth: true) }
     static func klines(_ symbol: String, interval: String, limit: Int = 120) async throws -> [APIFuturesKlinesKlinesInner] {
         let r: APIFuturesKlines = try await api.get("/futures/market/klines", query: ["symbol": symbol, "interval": interval, "limit": "\(limit)"])
         return r.klines ?? []
