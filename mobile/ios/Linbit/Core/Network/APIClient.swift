@@ -110,7 +110,7 @@ actor APIClient {
 
     /// multipart/form-data 上传（单文件），带 401 刷新重试
     func uploadMultipart<T: Decodable>(_ path: String, field: String, filename: String, mime: String, data file: Data, retried: Bool = false) async throws -> T {
-        var req = try makeRequest(path, "POST", [:], Optional<EmptyResponse>.none, true)
+        var req = try makeRequest(path, "POST", [:], Optional<String>.none, true)
         req.timeoutInterval = 60
         let boundary = "lb-\(UUID().uuidString)"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
