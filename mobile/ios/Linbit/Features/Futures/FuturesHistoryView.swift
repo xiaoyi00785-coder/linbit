@@ -361,7 +361,7 @@ struct FuturesBillRow: View {
                     .font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
             }
             Spacer()
-            Text((amt > 0 ? "+" : "") + ((b.kind ?? "").hasSuffix("fee") ? (b.amount ?? "0") : Fmt.amount(amt, 4)) + " USDT").font(.lbNum(FontSize.label, .medium))
+            Text((amt > 0 ? "+" : "") + (b.amount ?? "--") + " USDT").font(.lbNum(FontSize.label, .medium))
                 .foregroundColor(amt < 0 ? p.down : p.up)
         }.padding(.horizontal, Spacing.pageH).frame(height: 60)
     }
@@ -388,8 +388,8 @@ struct PositionHistoryRow: View {
                 Text(statusText).font(.lb(FontSize.small)).foregroundColor(h.status == .closed ? p.textSecondary : p.down)
             }
             HStack {
-                KVCell(k: "净盈亏(USDT)", v: Fmt.amount(net, 4), vColor: net < 0 ? p.down : p.up)
-                KVCell(k: "已实现盈亏", v: Fmt.amount(Dec.parse(h.realizedPnl), 4), align: .trailing)
+                KVCell(k: "净盈亏(USDT)", v: h.netPnl ?? "--", vColor: net < 0 ? p.down : p.up)
+                KVCell(k: "已实现盈亏", v: h.realizedPnl ?? "--", align: .trailing)
             }
             HStack {
                 KVCell(k: "开仓均价", v: Fmt.priceAuto(Dec.parse(h.entryPrice)))
@@ -399,7 +399,7 @@ struct PositionHistoryRow: View {
             HStack {
                 KVCell(k: "已平数量", v: h.closedQty ?? "--")
                 KVCell(k: "手续费", v: h.fee ?? "--", align: .center)
-                KVCell(k: "资金费用", v: Fmt.amount(Dec.parse(h.fundingFee), 4), align: .trailing)
+                KVCell(k: "资金费用", v: h.fundingFee ?? "--", align: .trailing)
             }
             HStack {
                 Text("开仓 \(h.openTime.map(Fmt.dateTime) ?? "--")")
