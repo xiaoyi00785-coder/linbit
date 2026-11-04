@@ -37,3 +37,44 @@ console.log("asset-display r8 ok");
 assert.equal(fmtFeeExact("-0.00911000"), "-0.00911000");
 assert.equal(fmtFeeExact("-0.03540000"), "-0.03540000");
 console.log("pnl-exact ok");
+// network picker display: labels / icons / fallback / min amount
+import { netLabel, netIcon, netInfosOf, positiveAmount, withdrawMin, DEP_NETS_FALLBACK } from "../lib/assetDisplay.ts";
+assert.equal(netLabel("TRC20"), "Tron（TRC20）");
+assert.equal(netLabel("BEP20"), "BNB智能链（BEP20）");
+assert.equal(netLabel("ERC20"), "以太坊（ERC20）");
+assert.equal(netLabel("ARBITRUM"), "Arbitrum One（ARB）");
+assert.equal(netLabel("Arbitrum One"), "Arbitrum One（ARB）");
+assert.equal(netLabel("ARB"), "Arbitrum One（ARB）");
+for (const [a, b] of [["SOL", "Solana"], ["ARBITRUM", "Arbitrum One"], ["BEP20", "BEP20(BSC)"], ["BEP20", "BSC"], ["TRC20", "TRX"], ["ERC20", "ETH"], ["AVAXC", "AVAX-C"], ["POLYGON", "matic"]]) {
+  assert.equal(netLabel(a), netLabel(b), `${a} vs ${b}`);
+  assert.equal(netIcon(a), netIcon(b), `icon ${a} vs ${b}`);
+}
+assert.equal(netLabel("UNKNOWNNET"), "UNKNOWNNET");
+assert.equal(netLabel(""), "");
+assert.equal(netIcon("UNKNOWNNET"), null);
+assert.deepEqual(DEP_NETS_FALLBACK.USDT, ["TRC20", "ERC20", "BEP20", "SOL"]);
+assert.deepEqual(netInfosOf("USDT", null).map((x) => x.network), ["TRC20", "ERC20", "BEP20", "SOL"]);
+assert.equal(netInfosOf("USDT", null).some((x) => x.min || x.eta), false);
+for (const v of ["0", "0.00000000", "00.0", "", "abc", "-1", "1e-7", undefined, null, 0]) assert.equal(positiveAmount(v), undefined, String(v));
+assert.equal(positiveAmount("1"), "1");
+assert.equal(positiveAmount("10.00000000"), "10");
+assert.equal(positiveAmount("0.00010000"), "0.0001");
+assert.equal(positiveAmount("0.00000001"), "0.00000001");
+assert.equal(positiveAmount("123456789012345678.12300000"), "123456789012345678.123");
+const apiNets = { ok: true, source: "api", data: { networks: [
+  { asset: "USDT", network: "TRC20", minDeposit: "0.00000000", minWithdraw: "0", estimatedArrivalMinutes: 0, recommended: true },
+  { asset: "USDT", network: "SOL", minDeposit: "1.00000000", minWithdraw: "10.00000000", estimatedArrivalMinutes: 1 },
+] } };
+const dep = netInfosOf("USDT", apiNets);
+assert.deepEqual(dep[0], { network: "TRC20", min: undefined, eta: undefined, recommended: true });
+assert.deepEqual(dep[1], { network: "SOL", min: "1", eta: 1, recommended: undefined });
+assert.equal(netInfosOf("USDT", apiNets, true)[0].min, undefined);
+assert.equal(netInfosOf("USDT", apiNets, true)[1].min, "10");
+// withdraw min: one value = max(api min, local floor)
+assert.equal(withdrawMin("10", 12), "12");
+assert.equal(withdrawMin("20", 12), "20");
+assert.equal(withdrawMin("12", 12), "12");
+assert.equal(withdrawMin(undefined, 12), "12");
+assert.equal(withdrawMin("0.0005", undefined), "0.0005");
+assert.equal(withdrawMin(undefined, undefined), undefined);
+console.log("net-display ok");

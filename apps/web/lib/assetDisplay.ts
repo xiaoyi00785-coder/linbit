@@ -1,32 +1,69 @@
 // Pure display helpers for the assets / deposit pages (acceptance r8).
 
-/** 接口不可用时按币种回退的充值网络（代码与 wallet 服务一致）；绝不把 USDT 的网络套到其他币种。 */
+/** 接口不可用（未登录 / 网关不可达）时按币种回退的充值网络；与主网 WALLET_NETWORKS_JSON 一致（USDT：TRC20、ERC20、BEP20、SOL，不含 ARBITRUM）；绝不把 USDT 的网络套到其他币种。 */
 export const DEP_NETS_FALLBACK: Record<string, string[]> = {
-  USDT: ["TRC20", "ERC20", "BEP20", "SOL", "ARBITRUM"],
+  USDT: ["TRC20", "ERC20", "BEP20", "SOL"],
+  USDC: ["ERC20", "SOL"],
   BTC: ["BTC"],
-  ETH: ["ERC20", "ARBITRUM"],
+  ETH: ["ERC20"],
   SOL: ["SOL"],
   BNB: ["BEP20"],
   TRX: ["TRC20"],
 };
 
-/** 充值网络代码 → 展示名（接口与下单仍用原始代码） */
+/** 网络代码归一化：大写并去掉括号、空格、连字符等非字母数字字符，使 SOL / Solana、ARBITRUM / "Arbitrum One"、BEP20 / "BEP20(BSC)" 落到同一个键。 */
+const netKey = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** 网络展示名（中文，写法：名称（代码））。接口与下单仍用原始代码。 */
 const NET_NAMES: Record<string, string> = {
-  BTC: "Bitcoin", ETH: "Ethereum", ERC20: "Ethereum (ERC20)", TRX: "TRON (TRC20)", TRC20: "TRON (TRC20)",
-  BSC: "BNB Smart Chain (BEP20)", BEP20: "BNB Smart Chain (BEP20)", SOL: "Solana", ARBITRUM: "Arbitrum One", ARB: "Arbitrum One",
-  POLYGON: "Polygon", MATIC: "Polygon", OP: "Optimism", OPTIMISM: "Optimism", AVAXC: "Avalanche C-Chain", TON: "TON", BASE: "Base",
+  TRC20: "Tron（TRC20）", TRX: "Tron（TRC20）", TRON: "Tron（TRC20）",
+  ERC20: "以太坊（ERC20）", ETH: "以太坊（ERC20）", ETHEREUM: "以太坊（ERC20）",
+  BEP20: "BNB智能链（BEP20）", BEP20BSC: "BNB智能链（BEP20）", BSC: "BNB智能链（BEP20）", BNB: "BNB智能链（BEP20）", BNBSMARTCHAIN: "BNB智能链（BEP20）",
+  ARBITRUM: "Arbitrum One（ARB）", ARBITRUMONE: "Arbitrum One（ARB）", ARB: "Arbitrum One（ARB）",
+  SOL: "Solana（SOL）", SOLANA: "Solana（SOL）",
+  BTC: "比特币（BTC）", BITCOIN: "比特币（BTC）",
+  POLYGON: "Polygon（MATIC）", MATIC: "Polygon（MATIC）", POL: "Polygon（MATIC）",
+  TON: "Toncoin（TON）", TONCOIN: "Toncoin（TON）",
+  OP: "Optimism（OP）", OPTIMISM: "Optimism（OP）",
+  AVAXC: "Avalanche C链（AVAX-C）", AVAXCCHAIN: "Avalanche C链（AVAX-C）", AVALANCHECCHAIN: "Avalanche C链（AVAX-C）", AVALANCHE: "Avalanche C链（AVAX-C）",
+  BASE: "Base",
 };
-export const netLabel = (code?: string | null) => (code ? NET_NAMES[code.toUpperCase()] ?? code : "");
+export const netLabel = (code?: string | null) => (code ? NET_NAMES[netKey(code)] ?? code : "");
+
+/**
+ * 提现最小额的唯一取值：接口值（已过 positiveAmount）与本地兜底下限（DEFAULT_MIN_WITHDRAW）取较大者，返回展示用字符串。
+ * 占位符、下拉、「单笔最小提现」行与超限校验都用它，避免各处不一致；两者都没有则为 undefined。
+ */
+export function withdrawMin(apiMin: string | undefined, floor?: number): string | undefined {
+  if (!floor || floor <= 0) return apiMin;
+  return apiMin !== undefined && Number(apiMin) >= floor ? apiMin : String(floor);
+}
+
+/**
+ * 接口金额字符串 → 展示用字符串：仅当它是 > 0 的十进制数时返回（去掉尾零，不经过浮点）；
+ * 缺省字段在后端会序列化为 "0" / "0.00000000"，这些以及空值、非数字都返回 undefined（不展示）。
+ */
+export function positiveAmount(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  if (!/^\d+(\.\d+)?$/.test(s) || !/[1-9]/.test(s)) return undefined;
+  const [i, f = ""] = s.split(".");
+  const int = i.replace(/^0+(?=\d)/, "");
+  const frac = f.replace(/0+$/, "");
+  return frac ? `${int}.${frac}` : int;
+}
 
 type NetRow = { asset?: string; network: string; depositEnabled?: boolean; withdrawEnabled?: boolean; minDeposit?: string; minWithdraw?: string; estimatedArrivalMinutes?: number; recommended?: boolean };
 type NetRes = { ok?: boolean; source?: string; data?: { networks?: NetRow[] } } | null | undefined;
 
 /** 网络代码 → 本地图标（public/coins/*.svg）；未收录的网络回退为首字母圆标。 */
 const NET_ICON: Record<string, string> = {
-  BTC: "btc", ETH: "eth", ERC20: "eth", TRX: "trx", TRC20: "trx", BSC: "bnb", BEP20: "bnb", SOL: "sol", ARBITRUM: "arb", ARB: "arb",
-  POLYGON: "matic", MATIC: "matic", OP: "op", OPTIMISM: "op", AVAXC: "avax", TON: "ton",
+  BTC: "btc", BITCOIN: "btc", ETH: "eth", ERC20: "eth", ETHEREUM: "eth", TRX: "trx", TRC20: "trx", TRON: "trx",
+  BSC: "bnb", BEP20: "bnb", BEP20BSC: "bnb", BNB: "bnb", BNBSMARTCHAIN: "bnb", SOL: "sol", SOLANA: "sol",
+  ARBITRUM: "arb", ARBITRUMONE: "arb", ARB: "arb", POLYGON: "matic", MATIC: "matic", POL: "matic",
+  OP: "op", OPTIMISM: "op", AVAXC: "avax", AVAXCCHAIN: "avax", AVALANCHECCHAIN: "avax", AVALANCHE: "avax", TON: "ton", TONCOIN: "ton",
 };
-export const netIcon = (code: string): string | null => NET_ICON[code.toUpperCase()] ?? null;
+export const netIcon = (code: string): string | null => NET_ICON[netKey(code)] ?? null;
 
 /** 网络下拉的一行：附加信息只取后端字段（minDeposit / minWithdraw / estimatedArrivalMinutes / recommended），缺失则不展示，绝不编造。 */
 export type NetInfo = { network: string; min?: string; eta?: number; recommended?: boolean };
@@ -36,7 +73,7 @@ export function netInfosOf(asset: string, r: NetRes, out = false): NetInfo[] {
       .filter((x) => (out ? x.withdrawEnabled !== false : x.depositEnabled !== false) && (!x.asset || x.asset === asset))
       .map((x) => ({
         network: x.network,
-        min: (out ? x.minWithdraw : x.minDeposit) || undefined,
+        min: positiveAmount(out ? x.minWithdraw : x.minDeposit),
         eta: !out && typeof x.estimatedArrivalMinutes === "number" && x.estimatedArrivalMinutes > 0 ? x.estimatedArrivalMinutes : undefined,
         recommended: x.recommended === true || undefined,
       }));

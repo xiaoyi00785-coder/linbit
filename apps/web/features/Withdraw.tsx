@@ -11,6 +11,7 @@ import { maskEmail } from "@/lib/account";
 import { addressError, amountError, cleanNum, DEFAULT_MIN_WITHDRAW } from "@/lib/validate";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import { NetPicker } from "@/legacy/Pages";
+import { positiveAmount, withdrawMin } from "@/lib/assetDisplay";
 import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
 import { Ico } from "@/legacy/App";
@@ -122,13 +123,15 @@ export function Withdraw() {
   const ovFree = ov.data?.accounts?.find((a) => a.account === wAcct)?.balances?.find((b) => b.asset === asset)?.free;
   const free = ovFree ?? items?.find((b) => b.asset === asset)?.free ?? "0";
   const n = Number(amt);
-  const minS = ni?.minWithdraw ?? cfg?.minAmount;
+  // 最小提现额只有一个派生值：接口值（含 cfg.minAmount 回退）与 DEFAULT_MIN_WITHDRAW 取较大者；占位符、下拉、单笔最小提现行与校验都用它
+  const minFloor = DEFAULT_MIN_WITHDRAW[asset];
+  const minS = withdrawMin(positiveAmount(ni?.minWithdraw) ?? positiveAmount(cfg?.minAmount), minFloor);
   const maxS = ni ? ni.maxWithdraw ?? undefined : cfg?.maxAmount;
   // 手续费只认接口值（wallet_network_settings.withdraw_fee 生效值），接口不可用时不展示估算值
   const feeS = ni?.withdrawFee ?? (cfgSrc === "api" ? cfg?.gasFeeEstimate : undefined);
   const eta = ni?.estimatedArrivalMinutes ? `约 ${ni.estimatedArrivalMinutes} 分钟` : "约 5 分钟";
   const memoReq = ni?.memoRequired ?? cfg?.memoRequired;
-  const min = Math.max(Number(minS ?? 0) || 0, DEFAULT_MIN_WITHDRAW[asset] ?? 0);
+  const min = Number(minS ?? 0) || 0;
   const max = Number(maxS ?? Infinity);
   const fee = Number(feeS ?? 0);
   const toKey = /^\S+@\S+\.\S+$/.test(to) ? "email" : /^\d{5,20}$/.test(to) ? "uid" : "";
@@ -195,7 +198,7 @@ export function Withdraw() {
                 <div className="fx-field">
                   提现网络
                   <NetPicker out coin={asset} net={net} setNet={setNet}
-                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: i?.minWithdraw || undefined, recommended: i?.recommended === true || undefined }; })} />
+                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: withdrawMin(positiveAmount(i?.minWithdraw), minFloor), recommended: i?.recommended === true || undefined }; })} />
                 </div>
                 <div className="fx-field">
                   <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>
@@ -217,7 +220,7 @@ export function Withdraw() {
             </St>
             <St n="3" t={tab === "inner" ? "转账数量" : "提现数量"}>
               <div className="fx-field">
-                <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : minS ? `最小提现数量：${minS}` : "加载中…"} value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
+                <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : minS ? `最小提现数量：${minS}` : ni || cfg ? "请输入提现数量" : "加载中…"} value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
                 {amtE && <div className="fx-err fe-inline">{amtE}</div>}
               </div>
               <div className="wkv">

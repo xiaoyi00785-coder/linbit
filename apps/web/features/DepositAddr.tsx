@@ -1,5 +1,5 @@
 "use client";
-import { netLabel } from "@/lib/assetDisplay";
+import { netLabel, positiveAmount } from "@/lib/assetDisplay";
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { api } from "@/lib/api";
@@ -30,10 +30,10 @@ export function DepositAddr({ asset, network }: { asset: string; network: string
     <div className="addr">
       <div className="qr"><QRCodeSVG bgColor="transparent" fgColor="currentColor" value={a.address} size={96} marginSize={1} /></div>
       <div>
-        <span className="lg">充值地址（{netLabel(a.network)}）</span>
+        <span className="lg">充值地址 · {netLabel(a.network)}</span>
         <b style={{ wordBreak: "break-all" }}>{a.address} <a role="button" aria-label="复制充值地址" onClick={() => copyTxt(a.address, "充值地址已复制")}><G n="copy" s={13} /></a></b>
         {a.memo && <span className="lg">Memo / Tag：<b>{a.memo}</b></span>}
-        <span className="lg">{a.minDeposit ? `最小充值 ${a.minDeposit} ${asset}` : ""}{a.confirmations ? ` · ${a.confirmations} 个区块确认后到账` : ""}</span>
+        <span className="lg">{positiveAmount(a.minDeposit) ? `最小充值 ${positiveAmount(a.minDeposit)} ${asset}` : ""}{a.confirmations ? ` · ${a.confirmations} 个区块确认后到账` : ""}</span>
       </div>
     </div>
   );
