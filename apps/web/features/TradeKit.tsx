@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { normSymbol } from "./symbol";
 import { useNavigate } from "@/lib/router";
 import { useAuthStore } from "@/lib/store";
-import { rest, BALANCES_EVT } from "@/lib/rest";
+import { rest, errText, BALANCES_EVT } from "@/lib/rest";
 import { toast } from "@/lib/ui";
 import { useDismiss } from "@/lib/dismiss";
 import { btnProps, onActivate, tabProps } from "@/lib/a11y";
@@ -385,14 +385,17 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       tpTriggerPriceType: act === 0 && tpsl && tp ? tpTT : undefined,
       slTriggerPriceType: act === 0 && tpsl && sl ? slTT : undefined,
     };
+    if (busy) return;
     setBusy(true);
-    const r = await rest<any>("POST", "/futures/orders", body);
-    setBusy(false);
+    let r: Awaited<ReturnType<typeof rest<any>>>;
+    try { r = await rest<any>("POST", "/futures/orders", body); }
+    catch { r = { ok: false, source: "demo" }; }
+    finally { setBusy(false); }
     if (!r.ok) {
       const e = r.error ?? "";
       const M: Record<string, string> = { POST_ONLY_REJECTED: "只做 Maker 订单会立即成交，已被拒绝", POST_ONLY_DISABLED: "只做 Maker 暂未开放", TRIGGER_DEVIATION: "触发价偏离当前价格过大", ALGO_LIMIT: "条件单数量已达上限", INVALID_TPSL: "止盈止损价格不合理", POSITION_SIDE_REQUIRED: "双向持仓需指定仓位方向", POSITION_SIDE_MISMATCH: "仓位方向与持仓模式不一致", REDUCE_ONLY_REJECTED: "无可平仓位" };
       const k = Object.keys(M).find((x) => e.includes(x));
-      return toast(k ? M[k] : e || "下单失败", "err");
+      return toast(k ? M[k] : errText(r, "下单失败，请稍后重试"), "err");
     }
     if (ty === "plan") toast("计划委托已提交"); else { const o = futOrderOf(r.data); const m = orderToast(o.status, o.filledQty); toast(m.t, m.ok ? undefined : "err"); } setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
   };

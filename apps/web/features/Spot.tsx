@@ -18,6 +18,8 @@ import { Src } from "./common";
 import { useFillPrice, type PairMeta } from "./TradeKit";
 import { useTicker } from "@/lib/market";
 import { useBalances } from "@/lib/queries";
+import { errText } from "@/lib/rest";
+import { toast } from "@/lib/ui";
 
 const EVT = "lb-spot-orders";
 const bump = () => window.dispatchEvent(new Event(EVT));
@@ -104,9 +106,8 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       timeInForce: type === "limit" ? "GTC" : "IOC",
       clientOrderId: `web-${Date.now()}`,
     } as PlaceOrderRequest & { quoteOrderQty?: string };
-    const r = await placeSpotOrder(body);
-    setBusy(false);
-    setMsg(r.ok ? (() => { const d: any = r.data; const m = orderToast(d?.status, d?.filledQuantity); return { ok: m.ok, t: `${m.t} #${d?.orderId}` }; })() : { ok: false, t: r.error ?? "下单失败" });
+    const r = await placeSpotOrder(body).catch(() => ({ ok: false as const, error: "", source: "api" as const, data: undefined })).finally(() => setBusy(false));
+    setMsg(r.ok ? (() => { const d: any = r.data; const m = orderToast(d?.status, d?.filledQuantity); return { ok: m.ok, t: `${m.t} #${d?.orderId}` }; })() : { ok: false, t: errText(r, "下单失败，请稍后重试") });
     if (r.ok) { setQty(""); setAmt(""); setPc(0); bump(); window.setTimeout(bump, 800); window.setTimeout(bump, 2500); }
   };
 
@@ -152,8 +153,8 @@ export function SpotOrders({ symbol: SYMBOL }: { symbol: string }) {
   useEffect(() => { load(); window.addEventListener(EVT, load); return () => window.removeEventListener(EVT, load); }, [load]);
 
   const cancel = async (o: Order) => {
-    const r = await cancelSpotOrder(o.orderId, o.symbol);
-    if (!r.ok) setErr(r.error ?? "撤单失败");
+    const r = await cancelSpotOrder(o.orderId, o.symbol).catch(() => ({ ok: false as const, error: "", source: "api" as const }));
+    if (!r.ok) { const t = errText(r, "撤单失败，请稍后重试"); setErr(t); toast(t, "err"); }
     bump();
   };
 

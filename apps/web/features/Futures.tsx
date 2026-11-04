@@ -5,7 +5,7 @@
 import { stLabel, isOpenStatus, futOrderOf, closeToast } from "@/lib/orderStatus";
 import { useEffect, useRef, useState } from "react";
 import type { components } from "@linbit/api-client";
-import { useRest, rest } from "@/lib/rest";
+import { useRest, rest, errText } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 import { toast } from "@/lib/ui";
 import { fmtLocal } from "@/lib/time";
@@ -73,14 +73,17 @@ export function FutOrders({ symbol }: { symbol?: string }) {
     const id = window.setInterval(() => { if (document.visibilityState === "visible") posRef.current.refresh(); }, 3000);
     return () => window.clearInterval(id);
   }, [authed]);
+  const [acting, setActing] = useState<string | null>(null);
   const del = async (path: string, ok: string) => {
-    const r = await rest("DELETE", path);
-    if (!r.ok) return toast(r.error || "撤单失败", "err");
+    if (acting) return; setActing(path);
+    const r = await rest("DELETE", path).catch(() => ({ ok: false, source: "demo" } as const)); setActing(null);
+    if (!r.ok) return toast(errText(r, "撤单失败，请稍后重试"), "err");
     toast(ok); reloadAll();
   };
   const close = async (p: Pos) => {
-    const r = await rest<any>("POST", `/futures/positions/${p.symbol}/close`, p.positionSide && p.positionSide !== "BOTH" ? { positionSide: p.positionSide } : {});
-    if (!r.ok) return toast(r.error || "平仓失败", "err");
+    const key = "close:" + p.symbol + (p.positionSide || ""); if (acting) return; setActing(key);
+    const r = await rest<any>("POST", `/futures/positions/${p.symbol}/close`, p.positionSide && p.positionSide !== "BOTH" ? { positionSide: p.positionSide } : {}).catch(() => ({ ok: false, source: "demo" } as const)); setActing(null);
+    if (!r.ok) return toast(errText(r, "平仓失败，请稍后重试"), "err");
     const o = futOrderOf(r.data); const m = closeToast(o.status, o.filledQty); toast(m.t, m.ok ? undefined : "err"); reloadAll();
   };
   const rlRef = useRef(reloadAll); rlRef.current = reloadAll;
@@ -97,7 +100,7 @@ export function FutOrders({ symbol }: { symbol?: string }) {
         : cur.loading && !cur.data ? <div style={{ padding: 12 }}><div className="lb-skel" style={{ height: 80 }} /></div>
         : tab === 0 ? (P.length ? <table className="sotbl"><thead><tr><th>合约</th><th>数量</th><th>开仓价</th><th>标记价</th><th>强平价</th><th>保证金</th><th>未实现盈亏(ROE)</th><th>止盈/止损</th><th /></tr></thead><tbody>
             {P.map((p) => { const ps = TS.filter((o) => o.symbol === p.symbol && (!p.positionSide || o.positionSide === p.positionSide)); const tpo = ps.find((o) => o.algoType === "tp"), slo = ps.find((o) => o.algoType === "sl"); const tpv = tpo?.triggerPrice, slv = slo?.triggerPrice;
-              return <tr key={p.symbol + p.side + (p.positionSide ?? "")}><td>{p.symbol} <span className={sideTxt(p.side) === "多" ? "up" : "down"}>{sideTxt(p.side)} {p.leverage}x</span></td><td>{p.qty}</td><td>{p.entryPrice}</td><td data-testid="pos-mark"><MarkCell sym={p.symbol} fb={p.markPrice} /></td><td title={liqText(p.liquidationPrice, p.markPrice, p.side) ? undefined : (p.marginMode === "cross" ? "全仓保证金充足，暂无强平价" : "保证金充足，暂无强平价")}>{liqText(p.liquidationPrice, p.markPrice, p.side) ?? "--"}</td><td>{p.margin}</td><PnlCell p={p} /><td>{tpv || "--"} / {slv || "--"} <a className="lime2" onClick={() => setTp({ p, tp: tpo, sl: slo })}>{tpo || slo ? "修改" : "设置"}</a></td><td><a className="lime2" onClick={() => close(p)}>市价平仓</a></td></tr>; })}
+              return <tr key={p.symbol + p.side + (p.positionSide ?? "")}><td>{p.symbol} <span className={sideTxt(p.side) === "多" ? "up" : "down"}>{sideTxt(p.side)} {p.leverage}x</span></td><td>{p.qty}</td><td>{p.entryPrice}</td><td data-testid="pos-mark"><MarkCell sym={p.symbol} fb={p.markPrice} /></td><td title={liqText(p.liquidationPrice, p.markPrice, p.side) ? undefined : (p.marginMode === "cross" ? "全仓保证金充足，暂无强平价" : "保证金充足，暂无强平价")}>{liqText(p.liquidationPrice, p.markPrice, p.side) ?? "--"}</td><td>{p.margin}</td><PnlCell p={p} /><td>{tpv || "--"} / {slv || "--"} <a className="lime2" onClick={() => setTp({ p, tp: tpo, sl: slo })}>{tpo || slo ? "修改" : "设置"}</a></td><td><a className="lime2" aria-disabled={!!acting} onClick={() => close(p)}>{acting === "close:" + p.symbol + (p.positionSide || "") ? "平仓中…" : "市价平仓"}</a></td></tr>; })}
           </tbody></table> : <p className="empty">暂无仓位</p>)
         : tab === 2 ? algoTable(PL, "plan")
         : tab === 3 ? algoTable(TS, "tpsl")

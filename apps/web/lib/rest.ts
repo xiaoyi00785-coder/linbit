@@ -42,16 +42,22 @@ export async function rest<T>(method: string, path: string, body?: unknown, demo
       if (await refreshAccess()) return rest<T>(method, path, body, demo, true);
     }
     const txt = await r.text();
-    const j = txt ? JSON.parse(txt) : {};
+    let j: any = {}; try { j = txt ? JSON.parse(txt) : {}; } catch { j = {}; }
     if (r.ok) return { ok: true, data: j as T, status: r.status, source: "api" };
     // 4xx 或带业务 code 的 5xx（如 503 PRICE_UNAVAILABLE）原样返回，不回退演示数据
-    if (r.status < 500 || j?.code) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
+    // 写操作（下单/撤单/平仓）的 5xx 不回退演示数据：带后端 message 时原样返回，供界面提示
+    if (r.status < 500 || j?.code || (method !== "GET" && (j?.message || j?.error))) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
   } catch { /* 网络错误 → demo */ }
   return demo && MOCK_ENABLED ? { ok: true, data: demo(), source: "demo" } : { ok: false, error: "服务暂不可用", source: "demo" };
 }
 // GET 是幂等的：网关瞬时不可达（网络错误 / 无业务码 5xx / UPSTREAM_UNAVAILABLE）时稍等重试，最多 2 次，
 // 避免下单后立即刷新仓位等场景因上游短暂抖动显示"接口不可达"。
 const transient = <T,>(r: RestResult<T>) => r.source === "demo" || r.code === "UPSTREAM_UNAVAILABLE";
+/** 操作失败提示：优先后端 message，网络错误 / 无文案的 5xx（"HTTP 500"、"服务暂不可用"）用 fallback。 */
+export function errText(r: { error?: string; code?: string; source?: string }, fallback: string): string {
+  const e = (r.error || "").trim();
+  return !e || r.code === "NETWORK" || /^HTTP \d+$/.test(e) || e === "服务暂不可用" || e === "网络异常，请稍后再试" ? fallback : e;
+}
 export async function rget<T>(p: string, demo?: () => T): Promise<RestResult<T>> {
   let r = await rest<T>("GET", p, undefined, demo);
   for (let i = 0; i < 2 && transient(r); i++) {

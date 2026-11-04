@@ -58,3 +58,8 @@ export const soonPath = (label: string) => { const k = soonOf(label); return k ?
 export const bySlug = (slug: string) => (Object.keys(SOON) as FeatureKey[]).find((k) => SOON[k].slug === slug);
 /** 功能开启后对应的真实页面（coming-soon 页据此跳转；入口文案无需改动） */
 export const LIVE: Partial<Record<FeatureKey, string>> = { tokenizedStocks: "/tradfi/assets?kind=stock", metals: "/tradfi/assets?kind=metal", tradfi: "/tradfi/assets", eventContracts: "/events", chatRoom: "/chat", subAccounts: "/sub-accounts", convert: "/convert", supportTickets: "/support/tickets" };
+
+/** 入口文案 → 功能 key（不论开关状态） */
+export const featureKeyOf = (label: string): FeatureKey | null => LABELS.find(([r]) => r.test(label))?.[1] ?? null;
+/** 功能入口的唯一目标：开启 ⇒ LIVE 真实页面路由；关闭 ⇒ /coming-soon/[slug]。 */
+export const featureHref = (k: FeatureKey, live: boolean): string => (live && LIVE[k]) || "/coming-soon/" + SOON[k].slug;
