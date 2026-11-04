@@ -345,7 +345,12 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 .shield img{max-width:100%;object-fit:cover}
 .simw{overflow-x:clip}
 @media (max-width:1200px){.promos>.arr:first-child{left:4px}.promos>.arr:last-child{right:4px}}
-.hdr nav a,.hdr nav .ni,.hdr .lb,.hdr .pill,.hdr button{white-space:nowrap}
+.hdr nav .ni>a,.hdr .lb,.hdr .pill,.hdr button{white-space:nowrap}
+/* 回归修复：175dd39 把 nowrap 加到 .hdr nav .ni / .hdr nav a，被下拉面板继承，叠加 .hdr nav a{display:inline-flex}
+   使 .dit 横排成一行、面板被撑成整宽条并向左溢出。下拉内恢复为纵向卡片。 */
+.hdr nav .dd{white-space:normal;background:#1c1c1c}
+.hdr nav .dd a.dit{display:flex}
+.hdr nav .dd .ddcoins a{display:flex}
 @media (max-width:1200px){.hdr{padding:0 16px}.hdr nav{gap:10px}.hdr nav a{font-size:14px}.hdr nav a em.caret{margin-left:2px}}
 @media (max-width:1200px){.hdr .hib{margin-left:4px}.hdr nav{gap:8px}}
 .fx-modal>div{position:relative}.fx-x{position:absolute;top:12px;right:14px;width:28px;height:28px;display:grid;place-items:center;border-radius:6px;cursor:pointer;color:#888;font-size:14px}.fx-x:hover{background:rgba(127,127,127,.15);color:inherit}
