@@ -532,7 +532,9 @@ func (s *Server) hTradFiTokenPut(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := s.store.db.ExecContext(r.Context(), `INSERT INTO tradfi_tokens (asset, issuer, network, contract_address, decimals, deposit_enabled, withdraw_enabled, min_withdraw, withdraw_fee, updated_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-		ON CONFLICT (asset, issuer, network) DO UPDATE SET contract_address=$4, decimals=$5, deposit_enabled=$6, withdraw_enabled=$7,
+		ON CONFLICT (asset, issuer, network) DO UPDATE SET
+		  contract_verified = (tradfi_tokens.contract_verified AND tradfi_tokens.contract_address = $4),
+		  contract_address=$4, decimals=$5, deposit_enabled=$6, withdraw_enabled=$7,
 		  min_withdraw=$8, withdraw_fee=$9, updated_by=$10, updated_at=now()`,
 		cur.Asset, cur.Issuer, cur.Network, cur.ContractAddress, cur.Decimals, cur.DepositEnabled, cur.WithdrawEnabled, cur.MinWithdraw, cur.WithdrawFee, in.UpdatedBy)
 	if err != nil {

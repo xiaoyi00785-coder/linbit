@@ -588,6 +588,8 @@ services:
 
 secrets:
   signer_passphrase:
+    # HOST path (mode 0400); mounted in wallet-signer as /run/secrets/signer_passphrase.
+    # Never set WALLET_SIGNER_PASSPHRASE_FILE to the in-container path.
     file: ${WALLET_SIGNER_PASSPHRASE_FILE:-./secrets/signer_passphrase}
 
 volumes:

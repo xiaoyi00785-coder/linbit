@@ -13,7 +13,10 @@
 ## 1. 域名与 TLS
 - [ ] `www.cowa.click` DNS 指向 Cloudflare/LB，证书有效（自动续期）。
 - [ ] `GROWTH_INVITE_BASE_URL=https://www.cowa.click`，`WEBAUTHN_RP_ID/ORIGINS`、`CORS_ALLOWED_ORIGINS` 一致。
-- [ ] `TRUSTED_PROXY_CIDRS` 仅包含 CF/LB 出口网段（否则 `CF-IPCountry` 可伪造，地域限制失效）。
+- [ ] `TRUSTED_PROXY_CIDRS` 只包含网关**实际 TCP 对端**。当前拓扑是 CF → 宿主 nginx → docker-proxy → gateway，对端为 docker 网桥网关，所以设 `TRUSTED_PROXY_CIDRS=172.18.0.1/32`（`docker network inspect linbit_default` 确认）。只填 CF 网段会让 geo-block 失效。CF-IPCountry 的可信性依赖 ufw 只放行 CF 网段进入 80/443。
+- [ ] API Key IP 白名单：nginx 需 `proxy_set_header X-Real-IP $http_cf_connecting_ip;`，否则网关看到的客户端 IP 是 CF 边缘 IP。
+- [ ] `WALLET_SIGNER_PASSPHRASE_FILE=./secrets/signer_passphrase`（宿主路径，chmod 0400，以 docker secret 挂载为 /run/secrets/signer_passphrase）。
+- [ ] 运行 `ENV_FILE=.env deploy/mainnet/preflight.sh`，必须 0 FAIL。
 
 ## 2. 密钥轮换（不得沿用测试网）
 - [ ] `JWT_SECRET`、`INTERNAL_TOKEN` 重新生成（`openssl rand -hex 32`）。
@@ -48,7 +51,7 @@
 | USDC ARBITRUM（可选） | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | 6 | Circle 官方（同上） |
 
 - [ ] **不要开启** USDC/TRC20（Circle 已停止 TRON USDC，官方列表无 TRON）与 USDC/BEP20（无 Circle 官方合约；Binance-Peg USDC 精度 18，如需须单独决定）。
-- [ ] `tradfi_tokens`（清空时保留）：逐条核对主网合约地址与精度，测试网地址必须改为主网或停用。
+- [ ] `tradfi_tokens`（清空时保留）：逐条核对主网合约地址与精度，测试网地址必须改为主网或停用。主网 wallet 只加载 `contract_verified=true` 的行，SQL 见 docs/deploy/tradfi-tokens-runbook.md。
 
 ## 闪兑对冲
 - [ ] 清空后新建真实对冲账户：`psql "$DATABASE_URL" -c "INSERT INTO asset_accounts(user_id) VALUES ('system:hedge-main') ON CONFLICT DO NOTHING"`，

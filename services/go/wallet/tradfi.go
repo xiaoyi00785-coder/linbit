@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
 
@@ -30,8 +31,11 @@ var tradfiNetDefaults = map[string]struct {
 }
 
 func mergeTradFiNetworks(ctx context.Context, db *sql.DB, reg NetworkRegistry) NetworkRegistry {
+	// Mainnet: only contracts ops verified (contract_verified, migration
+	// market-data 00009) are loaded; testnet leftovers stay inert.
 	rows, err := db.QueryContext(ctx, `SELECT asset, network, contract_address, decimals, min_withdraw::text, withdraw_fee::text
-		FROM tradfi_tokens WHERE contract_address <> '' AND (deposit_enabled OR withdraw_enabled) ORDER BY asset, issuer, network`)
+		FROM tradfi_tokens WHERE contract_address <> '' AND (deposit_enabled OR withdraw_enabled)`+tradfiVerifiedClause(common.IsMainnet())+`
+		ORDER BY asset, issuer, network`)
 	if err != nil {
 		log.Printf("wallet: tradfi tokens not loaded (%v)", err) // table absent before market-data migrates
 		return reg
@@ -91,3 +95,10 @@ func (s *Server) tradfiAllowed(ctx context.Context, asset, network string, withd
 }
 
 var errTradFiDisabled = errf(http.StatusForbidden, "NETWORK_DISABLED", "该网络当前暂停")
+
+func tradfiVerifiedClause(mainnet bool) string {
+	if mainnet {
+		return " AND contract_verified"
+	}
+	return ""
+}
