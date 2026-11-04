@@ -68,3 +68,11 @@ export function fmtFeeStr(s: string | number | null | undefined): string {
   }
   return fmtAmt(str, 18);
 }
+
+/** 手续费 / 资金费等账单金额：原样显示后端给出的精确字符串（后端已统一补齐到 8 位小数），
+ *  不去尾零、不经 Number 转换，避免同一列出现 -0.0038384 与 -0.00383384 这种位数不一致。 */
+export function fmtFeeExact(s: string | number | null | undefined): string {
+  if (s == null || s === "") return "--";
+  const str = String(s).trim();
+  return /^-?\d+(\.\d+)?$/.test(str) ? str : fmtFeeStr(str);
+}

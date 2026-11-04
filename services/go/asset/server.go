@@ -93,6 +93,10 @@ type balanceDTO struct {
 	Locked       string  `json:"locked"`
 	Total        string  `json:"total"`
 	ValuationUsd *string `json:"valuationUsd"`
+	// PriceUsd is the live market-data index price (USDT) used for the valuation;
+	// clients must show it as the unit price rather than valuationUsd/quantity,
+	// which is distorted for dust balances by the 2-decimal valuation rounding.
+	PriceUsd *string `json:"priceUsd,omitempty"`
 }
 
 type paginatedBalances struct {

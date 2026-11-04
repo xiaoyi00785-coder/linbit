@@ -403,7 +403,7 @@ func (s *Server) hBills(w http.ResponseWriter, r *http.Request, uid string) {
 		var amt decimal.Decimal
 		var at time.Time
 		if rows.Scan(&id, &sym, &kind, &amt, &ref, &at) == nil {
-			out = append(out, map[string]any{"id": id, "symbol": sym, "kind": kind, "amount": amt, "ref": ref, "time": at})
+			out = append(out, map[string]any{"id": id, "symbol": sym, "kind": kind, "amount": feeStr(amt), "ref": ref, "time": at})
 		}
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"bills": out})
@@ -461,7 +461,7 @@ func (s *Server) hMyTrades(w http.ResponseWriter, r *http.Request, uid string) {
 			role, fee = "maker", mf
 			side = map[string]string{"buy": "sell", "sell": "buy"}[ts]
 		}
-		out = append(out, map[string]any{"tradeId": id, "symbol": sym, "side": side, "price": px, "qty": qty, "fee": fee, "role": role, "time": at})
+		out = append(out, map[string]any{"tradeId": id, "symbol": sym, "side": side, "price": px, "qty": qty, "fee": feeStr(fee), "role": role, "time": at})
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"trades": out})
 }
@@ -582,4 +582,14 @@ func sideParam(r *http.Request, body string) string {
 		return body
 	}
 	return r.URL.Query().Get("positionSide")
+}
+
+// feeStr renders a fee/bill amount as an exact decimal string with a fixed 8
+// decimal places (the column scale), so -0.0038384 and -0.00383384 render as
+// -0.00383840 and -0.00383384. Values with more than 8 places stay exact.
+func feeStr(d decimal.Decimal) string {
+	if !d.Equal(d.Round(8)) {
+		return d.String()
+	}
+	return d.StringFixed(8)
 }

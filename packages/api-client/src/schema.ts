@@ -5450,6 +5450,11 @@ export interface components {
             total: string;
             /** @example 10770.33 */
             valuationUsd?: string | null;
+            /**
+             * @description 实时指数价（USDT 计价）；客户端单价必须用此字段，不要用 valuationUsd/数量 反推。无价格时省略
+             * @example 78512.34
+             */
+            priceUsd?: string;
         };
         PaginatedBalances: components["schemas"]["Pagination"] & {
             items: components["schemas"]["Balance"][];
@@ -7129,6 +7134,8 @@ export interface components {
                 locked?: string;
                 total?: string;
                 valuationUsd?: string | null;
+                /** @description 实时指数价（USDT 计价），用作单价；无价格时省略 */
+                priceUsd?: string;
             }[];
         };
         AssetsOverview: {

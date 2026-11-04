@@ -7539,6 +7539,7 @@ components:
         locked: { type: string, example: "250.00000000" }
         total: { type: string, example: "10770.33000000" }
         valuationUsd: { type: string, nullable: true, example: "10770.33" }
+        priceUsd: { type: string, description: 实时指数价（USDT 计价）；客户端单价必须用此字段，不要用 valuationUsd/数量 反推。无价格时省略, example: "78512.34" }
 
     PaginatedBalances:
       allOf:
@@ -9427,6 +9428,7 @@ components:
               locked: { type: string }
               total: { type: string }
               valuationUsd: { type: string, nullable: true }
+              priceUsd: { type: string, description: 实时指数价（USDT 计价），用作单价；无价格时省略 }
     AssetsOverview:
       type: object
       properties:

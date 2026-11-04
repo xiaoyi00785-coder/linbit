@@ -2,7 +2,7 @@ import { rest, useRest, type RestResult } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 /** 资产/钱包新接口（feat/spot-asset-gaps @2039887，docs/api/openapi.yaml）。类型本地镜像，主干合并后可换成 api-client schema。 */
 export type AcctKey = "funding" | "spot" | "futures";
-export interface OverviewAccount { account: AcctKey; available: boolean; totalValueUsdt: string; balances: { asset: string; free: string; locked?: string; valuationUsd?: string | null }[] }
+export interface OverviewAccount { account: AcctKey; available: boolean; totalValueUsdt: string; balances: { asset: string; free: string; locked?: string; valuationUsd?: string | null; priceUsd?: string | null }[] }
 export interface AssetsOverview { totalValueUsdt: string; accounts: OverviewAccount[]; depositAccount?: "funding" | "spot"; withdrawAccount?: "funding" | "spot"; transferable?: Record<string, string[]> }
 export interface WalletNetwork { asset: string; network: string; minDeposit?: string; confirmations?: number; memoRequired?: boolean; withdrawFee?: string; withdrawFeeAsset?: string; minWithdraw?: string; maxWithdraw?: string | null; depositEnabled?: boolean; withdrawEnabled?: boolean; estimatedArrivalMinutes?: number }
 export interface InternalTransferReq { clientId: string; asset: string; amount: string; toUid?: string; toEmail?: string; totpCode: string; fundPassword?: string }
