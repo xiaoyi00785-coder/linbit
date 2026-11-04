@@ -178,7 +178,7 @@ i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border
 
 .tk-only{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--lb-text-2);cursor:pointer;margin-left:12px;white-space:nowrap}.tk-only input{accent-color:#abe127;margin:0}
 .por-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}.por-t th,.por-t td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--lb-card-2)}.por-t th:first-child,.por-t td:first-child{text-align:left}.por-t th{color:var(--lb-text-3);font-weight:400}
-/* 客服工单（深色主题 #070808 + 主色 #abe127） */
+/* 客服工单（沿用账户页浅色令牌 + 主色 #abe127） */
 .tk .ff-btn{white-space:nowrap;flex-shrink:0}
 .tk .ff-btn.pri{background:#abe127;color:#070808;border-color:#abe127;font-weight:600}
 .tk .ff-btn.pri:hover:not(:disabled){background:#bdf03a;border-color:#bdf03a}
@@ -186,7 +186,7 @@ i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border
 .tk .tk-card{width:auto;max-width:760px}
 .tk .tk-in{width:100%;box-sizing:border-box;border:1px solid var(--lb-light-border);border-radius:8px;background:var(--lb-light-fill);color:var(--lb-card);font:inherit;font-size:14px;padding:10px 12px;outline:0}
 .tk select.tk-in{height:40px;padding:0 32px 0 12px;appearance:none;white-space:nowrap;text-overflow:ellipsis;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c4c6c9' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
-.tk select.tk-in option{background:#101112;color:#eaecef}
+.tk select.tk-in option{background:var(--lb-white);color:var(--lb-card)}
 .tk textarea.tk-in{resize:vertical;min-height:96px;line-height:1.6}
 .tk .tk-in:focus{border-color:#abe127}
 .tk .ff-f>span{display:flex;justify-content:space-between}.tk .tk-cnt{font-style:normal;opacity:.6}

@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 import { loadFeatures } from "@/lib/features";
 import { installUiDelegates } from "@/lib/ui";
-import { pageTitle, isDarkScope } from "@/lib/pageMeta";
+import { pageTitle } from "@/lib/pageMeta";
 
 const RV = "main section, .wrap > section, section.center, .trader, .pcard, .two > *, .three > *, details.faq, .dl, .promo";
 /** 滚动入场：元素进入视口时淡入上移（仅首屏外元素）。 */
@@ -47,7 +47,6 @@ export default function LegacyChrome({ children }: { children: React.ReactNode }
     const t0 = () => (document.querySelector("[data-nf]") ? "页面不存在 | linbit" : pageTitle(p));
     document.title = t0();
     const id = setTimeout(() => { document.title = t0(); }, 300); // 防止 Next 元数据回写覆盖
-    document.body.classList.toggle("lb-dk", isDarkScope(p));
     return () => clearTimeout(id);
   }, [p]);
   useEffect(() => installUiDelegates(), []);

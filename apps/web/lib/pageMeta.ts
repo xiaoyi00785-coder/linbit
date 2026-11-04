@@ -15,7 +15,6 @@ const T: [string, string][] = [
   ["/sub-accounts", "子账户"], ["/tradfi", "传统金融"], ["/sim", "模拟交易"], ["/api/docs", "API 文档"],
   ["/account", "账户"], ["/chat", "聊天室"], ["/coming-soon", "即将上线"],
 ];
-const DK = ["/convert", "/buy", "/deposit", "/withdraw", "/orders", "/assets", "/setting", "/notifications", "/account", "/sub-accounts", "/coupons", "/rewards", "/points"];
 const hit = (p: string, pre: string) => p === pre || p.startsWith(pre + "/");
 export function pageTitle(p: string): string {
   if (p === "/") return "linbit - 数字资产交易平台";
@@ -25,4 +24,3 @@ export function pageTitle(p: string): string {
   const sym = /^\/(spot|futures)\/([A-Z0-9_-]+)/i.exec(p)?.[2];
   return m ? `${sym ? sym.toUpperCase() + " " : ""}${m[1]} | linbit` : "linbit - 数字资产交易平台";
 }
-export const isDarkScope = (p: string) => DK.some((k) => hit(p, k));
