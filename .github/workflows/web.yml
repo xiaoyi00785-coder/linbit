@@ -52,3 +52,11 @@ jobs:
             echo "::error file=${WEB_DIR}/lib/asset-manifest.json::资源指纹清单与 public/ 不一致；请在 apps/web 运行 node scripts/gen-asset-manifest.mjs 并提交 lib/asset-manifest.json"
             exit 1
           fi
+
+      - name: Header dropdown visual check (check:nav)
+        working-directory: ${{ env.WEB_DIR }}
+        run: |
+          npx playwright install --with-deps chromium
+          (npx next start -p 3000 > /tmp/next.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/ >/dev/null && break; sleep 1; done
+          BASE=http://localhost:3000 npm run check:nav

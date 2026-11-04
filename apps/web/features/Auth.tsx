@@ -55,7 +55,8 @@ function GiftAmt() {
 function useGuestOnly() {
   const nav = useNavigate();
   const tok = useAuthStore((s) => s.accessToken);
-  useEffect(() => { if (tok) nav("/assets", { replace: true } as any); }, [tok, nav]);
+  // 已登录：/login、/register → 资产页；经邀请短链 /r/{code}（带 inviteCode）进入 → 首页（邀请码仅对新用户有效，不再进入注册）
+  useEffect(() => { if (tok) nav(new URLSearchParams(window.location.search).has("inviteCode") ? "/" : "/assets", { replace: true } as any); }, [tok, nav]);
   return !!tok;
 }
 

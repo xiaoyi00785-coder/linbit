@@ -79,3 +79,6 @@ body,:lang(sk),:lang(cs),:lang(el){font-family:-apple-system,BlinkMacSystemFont,
 .tk-sel .tk-chip{white-space:nowrap}@media (max-width:600px){.tk-sel{flex-wrap:wrap}}
 /* r3 follow-up：行情页三榜（涨幅/跌幅/成交额，服务端排行） */
 .mlists{grid-template-columns:repeat(3,minmax(0,1fr))}.mlists .mlg{grid-template-columns:1fr}
+
+/* /buy：未勾选免责声明时“下一步”呈禁用态（仍可点击以提示原因） */
+.lb.lime.dis,.lb.lime[aria-disabled="true"]{background:var(--lb-light-border)!important;color:var(--lb-text-2)!important;cursor:not-allowed;box-shadow:none}

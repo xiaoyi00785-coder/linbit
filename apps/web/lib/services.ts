@@ -387,6 +387,14 @@ export interface Announcement {
 /** 已对接：GET /announcements（公开，已发布，最多 100 条）。网关不可达且未开启 mock 时返回错误。 */
 type ApiAnnouncement = { id: number | string; category?: string; title: string; body?: string; publishAt?: string; pinned?: boolean };
 const ANN_CAT: Record<string, string> = { general: "最新公告", listing: "新币上线", activity: "活动", maintenance: "系统维护", product: "产品更新" };
+/** GET /announcements/{id}（r4）：未发布或不存在 → 404，调用方显示“公告不存在或已下线” */
+export async function getAnnouncement(id: string): Promise<{ state: "ok"; title: string; body: string; date: string } | { state: "notfound" } | { state: "error"; error: string }> {
+  if (!/^\d+$/.test(id)) return { state: "notfound" };
+  const r = await rest<ApiAnnouncement & { date?: string }>("GET", `/announcements/${id}`);
+  if (r.ok && r.data) return { state: "ok", title: r.data.title, body: r.data.body ?? "", date: r.data.date ?? (r.data.publishAt ? new Date(r.data.publishAt).toLocaleDateString("sv-SE") : "-") };
+  if (r.status === 404) return { state: "notfound" };
+  return { state: "error", error: r.error ?? NET_ERR };
+}
 export async function listAnnouncements(): Promise<Result<Announcement[]>> {
   const r = await rest<{ items: ApiAnnouncement[] }>("GET", "/announcements");
   if (r.source === "api") return r.ok && r.data ? { ok: true, source: "api", data: (r.data.items ?? []).map((a) => ({
@@ -400,7 +408,7 @@ export async function listAnnouncements(): Promise<Result<Announcement[]>> {
     data: [
       { id: "a1", category: "最新公告", title: "linbit 现货、合约交易手续费说明：现货 0.1%、合约 0.05%，提现仅收链上 Gas", date: "2026-11-01", pinned: true },
       { id: "a2", category: "新币上线", title: "示例代币 DEMO/USDT 现货交易即将上线", date: "2026-10-30" },
-      { id: "a3", category: "活动", title: "新人任务上线：最高领取 215 USDT 奖励", date: "2026-10-28" },
+      { id: "a3", category: "活动", title: "新人任务上线：完成任务领取奖励", date: "2026-10-28" },
       { id: "a4", category: "系统维护", title: "11 月 5 日系统升级维护公告", date: "2026-10-27" },
       { id: "a5", category: "最新公告", title: "关于加强提现安全验证（2FA）的公告", date: "2026-10-20" },
     ],

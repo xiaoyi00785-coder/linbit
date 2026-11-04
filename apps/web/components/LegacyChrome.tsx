@@ -45,8 +45,9 @@ export default function LegacyChrome({ children }: { children: React.ReactNode }
   useReveal(p);
   // 每页独立标题 + 原白底页面统一深色作用域
   useEffect(() => {
-    const t = pageTitle(p); document.title = t;
-    const id = setTimeout(() => { document.title = t; }, 300); // 防止 Next 元数据回写覆盖
+    const t0 = () => (document.querySelector("[data-nf]") ? "页面不存在 | linbit" : pageTitle(p));
+    document.title = t0();
+    const id = setTimeout(() => { document.title = t0(); }, 300); // 防止 Next 元数据回写覆盖
     document.body.classList.toggle("lb-dk", isDarkScope(p));
     return () => clearTimeout(id);
   }, [p]);

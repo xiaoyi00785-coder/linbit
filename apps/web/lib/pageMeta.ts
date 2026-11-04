@@ -7,7 +7,7 @@ const T: [string, string][] = [
   ["/assets/overview", "资产总览"], ["/assets/funding-account", "资金账户"], ["/assets/trading-account", "合约账户"],
   ["/assets/spot-account", "现货账户"], ["/assets/earn-account", "理财账户"], ["/assets/tradfi-account", "传统金融账户"],
   ["/assets/bots-account", "策略账户"], ["/assets", "资产"],
-  ["/setting/dashboard", "个人中心"], ["/setting/security", "安全设置"], ["/setting", "账户设置"],
+  ["/setting/api", "API 管理"], ["/setting/kyc", "身份认证"], ["/setting/address", "提现地址管理"], ["/setting/devices", "设备管理"], ["/setting/dashboard", "个人中心"], ["/setting/security", "安全设置"], ["/setting", "账户设置"],
   ["/earn/vip", "VIP 专享"], ["/earn/loan", "质押借币"], ["/earn", "理财"],
   ["/notifications", "消息通知"], ["/announcements", "公告中心"], ["/login", "登录"], ["/register", "注册"],
   ["/forgot-password", "找回密码"], ["/invite", "邀请返佣"], ["/rewards", "奖励中心"], ["/coupons", "卡券中心"],
@@ -19,6 +19,8 @@ const DK = ["/convert", "/buy", "/deposit", "/withdraw", "/orders", "/assets", "
 const hit = (p: string, pre: string) => p === pre || p.startsWith(pre + "/");
 export function pageTitle(p: string): string {
   if (p === "/") return "linbit - 数字资产交易平台";
+  const pg = /^\/p\/([^/]+)/.exec(p)?.[1];
+  if (pg) { let t = pg; try { t = decodeURIComponent(pg); } catch {} return `${t} | linbit`; }
   const m = [...T].sort((a, b) => b[0].length - a[0].length).find(([k]) => hit(p, k));
   const sym = /^\/(spot|futures)\/([A-Z0-9_-]+)/i.exec(p)?.[2];
   return m ? `${sym ? sym.toUpperCase() + " " : ""}${m[1]} | linbit` : "linbit - 数字资产交易平台";
