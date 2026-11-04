@@ -53,6 +53,9 @@ async function tryApi<T>(
       (error as { message?: string } | undefined)?.message ?? `HTTP ${response.status}`;
     // 4xx 视为业务错误，直接返回；5xx 回退 mock
     if (response.status >= 400 && response.status < 500) return { ok: false, error: msg, code: (error as { code?: string } | undefined)?.code, source: "api" };
+    // 带后端文案 / 业务码的 5xx：原样返回，不回退 mock（避免下单 500 时显示假成功或无提示）
+    const em = (error as { message?: string; code?: string } | undefined);
+    if (response.status >= 500 && (em?.message || em?.code)) return { ok: false, error: em?.message || NET_ERR, code: em?.code, source: "api" };
   } catch {
     /* 网络错误 → mock */
   }

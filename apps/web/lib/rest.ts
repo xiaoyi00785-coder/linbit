@@ -42,10 +42,11 @@ export async function rest<T>(method: string, path: string, body?: unknown, demo
       if (await refreshAccess()) return rest<T>(method, path, body, demo, true);
     }
     const txt = await r.text();
-    const j = txt ? JSON.parse(txt) : {};
+    let j: any = {}; try { j = txt ? JSON.parse(txt) : {}; } catch { j = {}; }
     if (r.ok) return { ok: true, data: j as T, status: r.status, source: "api" };
     // 4xx 或带业务 code 的 5xx（如 503 PRICE_UNAVAILABLE）原样返回，不回退演示数据
-    if (r.status < 500 || j?.code) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
+    // 写操作（下单/撤单/平仓）的 5xx 不回退演示数据：带后端 message 时原样返回，供界面提示
+    if (r.status < 500 || j?.code || (method !== "GET" && (j?.message || j?.error))) return { ok: false, error: j?.message || j?.error || `HTTP ${r.status}`, code: j?.code, status: r.status, source: "api" };
   } catch { /* 网络错误 → demo */ }
   return demo && MOCK_ENABLED ? { ok: true, data: demo(), source: "demo" } : { ok: false, error: "服务暂不可用", source: "demo" };
 }

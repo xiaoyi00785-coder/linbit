@@ -30,7 +30,7 @@ export function SupportPanel() {
     </button>
     {o && <div className="xmask svc-mask" onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="svcp2" role="dialog" aria-modal="true" aria-labelledby="svc-t" data-testid="svc-panel">
-        <div className="svc-hd"><b id="svc-t">客服与帮助</b><button className="fx-x" aria-label="关闭" onClick={close}>×</button></div>
+        <div className="svc-hd"><b id="svc-t">在线客服</b><button className="fx-x" aria-label="关闭" onClick={close}>×</button></div>
         <div className="svc-bd">
           <section>
             <h4>联系客服</h4>
