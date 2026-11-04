@@ -243,3 +243,13 @@ body:has(.cookie) .svc{bottom:330px}
   .cookie{left:12px;right:12px;width:auto;bottom:12px}body:has(.cookie) .svc{bottom:auto;top:calc(100vh - 360px)}}
 @media (min-width:801px){body:has(.of) .svc{bottom:12px;right:12px;width:40px;height:40px}}
 .vform select.vin.sel{appearance:auto;cursor:pointer}.vct-err{color:var(--lb-red,#f6465d);font-size:12px;margin:4px 0 0}.vform .vin.btn:disabled{opacity:.5;cursor:not-allowed}.vct-hint{font-size:12px;margin-top:6px}
+/* 价格跳动闪烁（Flash 组件） */
+.lb-flash{border-radius:2px;padding:0 2px;margin:0 -2px;transition:color .2s}
+.lb-flash-up,.lb-flash-up2{color:var(--lb-up)}.lb-flash-down,.lb-flash-down2{color:var(--lb-down)}
+.lb-flash-up{animation:lbFlashUp .8s ease-out}.lb-flash-up2{animation:lbFlashUp2 .8s ease-out}
+.lb-flash-down{animation:lbFlashDn .8s ease-out}.lb-flash-down2{animation:lbFlashDn2 .8s ease-out}
+@keyframes lbFlashUp{from{background:color-mix(in srgb,var(--lb-up) 22%,transparent)}to{background:transparent}}
+@keyframes lbFlashUp2{from{background:color-mix(in srgb,var(--lb-up) 22%,transparent)}to{background:transparent}}
+@keyframes lbFlashDn{from{background:color-mix(in srgb,var(--lb-down) 22%,transparent)}to{background:transparent}}
+@keyframes lbFlashDn2{from{background:color-mix(in srgb,var(--lb-down) 22%,transparent)}to{background:transparent}}
+@media (prefers-reduced-motion:reduce){.lb-flash-up,.lb-flash-up2,.lb-flash-down,.lb-flash-down2{animation:none}}

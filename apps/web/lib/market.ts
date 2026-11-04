@@ -235,7 +235,8 @@ const tickerStore = {
     this.inflight = true;
     rest<Ticker[]>("/market/ticker")
       .then((l) => {
-        this.map = { ...Object.fromEntries(l.map((x) => [x.symbol, x])), ...this.map };
+        // REST 结果覆盖旧值（WS 断线时的兜底轮询必须能刷新价格）
+        this.map = { ...this.map, ...Object.fromEntries(l.map((x) => [x.symbol, x])) };
         this.src = "api";
         l.forEach((x) => {
           const ch = `ticker:${x.symbol}`;

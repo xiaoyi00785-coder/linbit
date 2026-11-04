@@ -12,6 +12,7 @@ import { useDismiss } from "@/lib/dismiss";
 import { btnProps, onActivate, tabProps } from "@/lib/a11y";
 import { CoinIcon } from "@/components/CoinIcon";
 import type { components } from "@linbit/api-client";
+import { mergeTick } from "@/lib/tick";
 import { fmtFixed, marketWS, restBase, useOrderBook, useRecentTrades, useSymbols, DEFAULT_META, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
@@ -109,20 +110,23 @@ function useFutDepth(sym: string, on: boolean) {
  * 顶部行情栏、仓位行、止盈止损弹窗读同一份数据，避免各自轮询造成的价格不一致。
  */
 const FUT_POLL_MS = 2000;
-const futStore = new Map<string, { t: any; subs: Set<(t: any) => void>; timer?: ReturnType<typeof setInterval>; onVis?: () => void; unWs?: () => void }>();
+const futStore = new Map<string, { t: any; subs: Set<(t: any) => void>; timer?: ReturnType<typeof setInterval>; onVis?: () => void; unWs?: () => void; wsAt?: number }>();
 function futSub(sym: string, f: (t: any) => void) {
   let e = futStore.get(sym);
   if (!e) { e = { t: null, subs: new Set() }; futStore.set(sym, e); }
   const ent = e;
   ent.subs.add(f);
   if (!ent.timer) {
-    const get = () => { if (document.hidden) return; fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => { const x = j && (j.tickers ?? [j]).find((y: any) => y.symbol === sym); if (x) { ent.t = normFutT(x); ent.subs.forEach((g) => g(ent.t)); } }).catch(() => {}); };
+    const get = () => { if (document.hidden) return; fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => { const x = j && (j.tickers ?? [j]).find((y: any) => y.symbol === sym); if (x) { const n = normFutT(x); const fresh = ent.wsAt && Date.now() - ent.wsAt < 5000 && ent.t; ent.t = fresh ? { ...n, markPrice: ent.t.markPrice, indexPrice: ent.t.indexPrice, ...(n.priceSource === "index" ? { lastPrice: ent.t.lastPrice ?? n.lastPrice } : {}) } : n; ent.subs.forEach((g) => g(ent.t)); } }).catch(() => {}); };
     get(); ent.timer = setInterval(get, FUT_POLL_MS);
     ent.onVis = get; document.addEventListener("visibilitychange", get);
     // 标记价实时推送（WS mark:{symbol}，约 1s）；轮询仍提供 24h 行情等其余字段
     ent.unWs = marketWS.subscribe(`mark:${sym}`, (d: any) => {
       if (!d || !Number(d.markPrice)) return;
-      ent.t = { ...(ent.t ?? {}), markPrice: d.markPrice, indexPrice: d.indexPrice ?? ent.t?.indexPrice, fundingRate: d.fundingRate ?? ent.t?.fundingRate, nextFundingTime: d.nextFundingTime ?? ent.t?.nextFundingTime };
+      ent.wsAt = Date.now();
+      // 无成交时最新价=指数价（priceSource=index），随 WS 指数价实时跳动
+      const idxLast = ent.t?.priceSource === "index" && Number(d.indexPrice) ? { lastPrice: d.indexPrice } : {};
+      ent.t = { ...(ent.t ?? {}), ...idxLast, markPrice: d.markPrice, indexPrice: d.indexPrice ?? ent.t?.indexPrice, fundingRate: d.fundingRate ?? ent.t?.fundingRate, nextFundingTime: d.nextFundingTime ?? ent.t?.nextFundingTime };
       ent.subs.forEach((g) => g(ent.t));
     });
   }
@@ -536,8 +540,17 @@ function mkFutFeed(symbol: string) {
   return {
     load,
     subscribe(interval: string, cb: (b: { time: number; open: number; high: number; low: number; close: number; v: number; src?: string }) => void) {
-      const id = setInterval(async () => { if (document.hidden) return; const l = await load(interval); if (l?.length) cb(l[l.length - 1]); }, 5000);
-      return () => clearInterval(id);
+      // 5s 轮询拿权威 K 线；两次轮询之间用 WS mark:{symbol} 的指数价并入最后一根（仅无成交的指数价 K 线），约 1s 跳动
+      let last: { time: number; open: number; high: number; low: number; close: number; v: number; src?: string } | null = null;
+      const emit = (b: NonNullable<typeof last>) => { last = b; cb(b); };
+      const id = setInterval(async () => { if (document.hidden) return; const l = await load(interval); if (l?.length) emit(l[l.length - 1]); }, 5000);
+      void load(interval).then((l) => { if (l?.length && !last) last = l[l.length - 1]; });
+      const un = marketWS.subscribe(`mark:${symbol}`, (d: any) => {
+        const px = Number(d?.indexPrice);
+        if (!last || last.src !== "index" || !Number.isFinite(px) || px <= 0) return;
+        emit(mergeTick(last, px));
+      });
+      return () => { clearInterval(id); un(); };
     },
   };
 }
