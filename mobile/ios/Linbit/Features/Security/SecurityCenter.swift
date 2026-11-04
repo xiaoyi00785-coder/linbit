@@ -268,13 +268,7 @@ struct ProfileEditView: View {
         SecForm(title: "个人资料", onBack: onBack, error: error, button: "保存",
                 enabled: !nick.trimmingCharacters(in: .whitespaces).isEmpty && hint == nil && nick != session.account?.nickname,
                 loading: loading, action: { Task { await save() } }) {
-            HStack(spacing: 14) {
-                Circle().fill(p.fill).frame(width: 56, height: 56).overlay(Circle().fill(p.brand).frame(width: 20).offset(y: -6))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(session.account?.nickname ?? (SecShot.on ? "lb_Trader" : "—")).font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                    Text("UID \(session.account?.uid ?? (SecShot.on ? "80000001" : "—"))").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
-                }
-            }.padding(.vertical, 8)
+            AvatarEditor()
             LBTextField(label: "昵称", placeholder: "1-32 个字符", text: $nick, error: hint)
             Text("昵称将展示在跟单、聊天室等公开场景。").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
         }

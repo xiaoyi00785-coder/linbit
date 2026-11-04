@@ -6,6 +6,7 @@ struct HomeView: View {
     @StateObject private var vm = HomeViewModel()
     @StateObject private var store = MarketStore.shared
     @StateObject private var watch = Watchlist.shared
+    @ObservedObject private var session = Session.shared
     @State private var hideAssets = false
     @State private var rankTab = 1
     @State private var rankKind = 0
@@ -45,7 +46,12 @@ struct HomeView: View {
     // MARK: 顶栏：头像 / 搜索 / 扫码 / 客服 / 通知
     private var topBar: some View {
         HStack(spacing: 14) {
-            Button { Session.shared.requireLogin { Router.shared.showUserCenter = true } } label: { IconView(icon: .avatar, size: 28) }
+            Button { Session.shared.requireLogin { Router.shared.showUserCenter = true } } label: {
+                if session.account != nil || SecShot.raw == "sec:home" {
+                    AvatarView(url: session.account?.avatarUrl, name: session.account?.nickname ?? "lb_Trader", size: 28,
+                               local: SecShot.raw == "sec:home" ? AvatarDemo.image(120) : nil)
+                } else { IconView(icon: .avatar, size: 28) }
+            }
                 .buttonStyle(PressableStyle())
             HStack(spacing: 6) {
                 IconView(icon: .search, size: 15, tint: p.textTertiary)

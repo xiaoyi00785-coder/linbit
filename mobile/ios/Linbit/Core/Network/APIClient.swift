@@ -108,6 +108,28 @@ actor APIClient {
         do { return try CodableHelper.jsonDecoder.decode(T.self, from: data) } catch { throw APIFailure.decoding(error) }
     }
 
+    /// multipart/form-data 上传（单文件），带 401 刷新重试
+    func uploadMultipart<T: Decodable>(_ path: String, field: String, filename: String, mime: String, data file: Data, retried: Bool = false) async throws -> T {
+        var req = try makeRequest(path, "POST", [:], Optional<EmptyResponse>.none, true)
+        req.timeoutInterval = 60
+        let boundary = "lb-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        var body = Data()
+        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field)\"; filename=\"\(filename)\"\r\nContent-Type: \(mime)\r\n\r\n".data(using: .utf8)!)
+        body.append(file)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await session.upload(for: req, from: body) } catch { throw APIFailure.transport(error) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401, !retried, await refresh() {
+            return try await uploadMultipart(path, field: field, filename: filename, mime: mime, data: file, retried: true)
+        }
+        guard (200..<300).contains(status) else {
+            throw APIFailure.server(status: status, error: try? CodableHelper.jsonDecoder.decode(APIError.self, from: data))
+        }
+        do { return try CodableHelper.jsonDecoder.decode(T.self, from: data) } catch { throw APIFailure.decoding(error) }
+    }
+
     /// 并发 401 只触发一次刷新。
     private func refresh() async -> Bool {
         if let t = refreshTask { return await t.value }
