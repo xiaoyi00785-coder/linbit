@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client";
+import { stLabel, isOpenStatus } from "@/lib/orderStatus";
 import {useHideSmall,filterSmall} from '@/lib/hideSmall'
 import { openTransfer } from "@/components/Transfer";
 import { goto, copyTxt } from "@/lib/ui";
@@ -79,7 +80,7 @@ function Rec({t,tabs,fil,cols,extra,live,sub,rows}){const[i,setI]=useState(0);co
 // —— 记录 / 订单页的真实数据行：path 为空表示该分类暂无接口 ——
 const tm=v=>{if(v==null||v==='')return '--';const d=new Date(typeof v==='number'||/^\d+$/.test(String(v))?Number(v):v);return isNaN(+d)?'--':d.toLocaleString('zh-CN',{hour12:false})}
 const ST_={completed:'已完成',pending:'处理中',processing:'处理中',failed:'失败',rejected:'已拒绝',canceled:'已撤销',success:'成功',filled:'已成交',FILLED:'已成交',NEW:'未成交',PARTIALLY_FILLED:'部分成交',CANCELED:'已撤销',REJECTED:'已拒绝',EXPIRED:'已过期',closed:'已平仓',liquidated:'强平',adl:'自动减仓',new:'未成交',open:'未成交',partially_filled:'部分成交',partial:'部分成交',done:'已完成',cancelled:'已撤销',expired:'已过期',triggered:'已触发'}
-const st_=v=>ST_[v]||v||'--'
+const st_=v=>stLabel(v)
 const ACCT_={funding:'资金账户',spot:'现货账户',futures:'合约账户',earn:'理财账户'}
 const FEE_KINDS=new Set(['fee','funding','liquidation_fee'])
 const BILL_={realized_pnl:'已实现盈亏',fee:'手续费',funding:'资金费',transfer_in:'转入',transfer_out:'转出',liquidation:'强平',liquidation_fee:'强平手续费',insurance_cover:'保险基金补偿',bonus:'体验金'}
@@ -101,7 +102,7 @@ const sd=v=>/buy|long/i.test(v)?'买入':'卖出'
 const FUT_ORD=i=>i===1?<Live path="/futures/positions/history?limit=200" pick={d=>d.positions} row={x=>[x.symbol,x.side==='long'?'多':'空',x.entryPrice,x.closePrice,x.maxQty,fmtV(x.realizedPnl),tm(x.openTime),tm(x.closeTime)]}/>
  :i===2?<Live path="/futures/trades?limit=200" pick={d=>d.trades} row={x=>[x.symbol,sd(x.side),x.price,x.qty,fmtFeeExact(x.fee),x.role==='maker'?'Maker':'Taker',tm(x.time)]}/>
  :i===3?<Live path="/futures/bills?limit=200" pick={d=>(d.bills||[]).filter(b=>/pnl/i.test(b.kind))} row={x=>[x.symbol||'--',BILL_[x.kind]||x.kind,fmtV(x.amount),tm(x.time)]}/>
- :<Live path="/futures/orders?limit=200" pick={d=>(d.orders||[]).filter(o=>o.status!=='NEW'&&o.status!=='PARTIALLY_FILLED')} row={x=>[x.symbol,`${x.filledQty} | ${x.qty}`,sd(x.side),x.avgPrice||'--',x.price&&+x.price?x.price:'市价',x.type==='limit'?'限价':'市价',st_(x.status),x.orderId,tm(x.createdAt),tm(x.updatedAt)]}/>
+ :<Live path="/futures/orders?limit=200" pick={d=>(d.orders||[]).filter(o=>!isOpenStatus(o.status))} row={x=>[x.symbol,`${x.filledQty} | ${x.qty}`,sd(x.side),x.avgPrice||'--',x.price&&+x.price?x.price:'市价',x.type==='limit'?'限价':'市价',st_(x.status),x.orderId,tm(x.createdAt),tm(x.updatedAt)]}/>
 const SPOT_ORD=i=>i===2?<Live path="/spot/trades?page=1&pageSize=50" pick={items_} row={x=>[x.symbol,x.side==='buy'?'买入':'卖出',x.price,x.quantity,fmtV(+x.price*+x.quantity),x.fee!=null?fmtFeeStr(x.fee)+' '+(x.feeAsset||''):'--',x.role==='maker'?'Maker':'Taker',tm(x.createdAt)]}/>
  :<Live path={i?'/spot/orders/history?page=1&pageSize=50':'/spot/orders/open?page=1&pageSize=50'} pick={items_} row={x=>[x.symbol,tm(x.createdAt),x.side==='buy'?'买入':'卖出',x.price||'市价',x.filledQuantity,orderQtyText(x),orderAmountText(x,fmtV),'--',x.type==='limit'?'限价':'市价',st_(x.status)]}/>
 const CONV_ROWS=()=><Live path="/convert/orders?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),`${fmtV(x.fromAmount)} ${x.from}`,`${fmtV(x.toAmount)} ${x.to}`,x.rate,st_(x.status)]}/>

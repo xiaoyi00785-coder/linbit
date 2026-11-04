@@ -1,11 +1,12 @@
 "use client";
 /** 交易页组件：交易对切换、订单簿（视图/精度/累计深度/点价填单）、合约下单面板（模式/杠杆/计算器）。
  *  精度一律来自 /market/symbols 或 /futures/market/contracts，不写死。 */
+import { orderToast } from "@/lib/orderStatus";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { normSymbol } from "./symbol";
 import { useNavigate } from "@/lib/router";
 import { useAuthStore } from "@/lib/store";
-import { rest } from "@/lib/rest";
+import { rest, BALANCES_EVT } from "@/lib/rest";
 import { toast } from "@/lib/ui";
 import { useDismiss } from "@/lib/dismiss";
 import { btnProps, onActivate, tabProps } from "@/lib/a11y";
@@ -26,7 +27,7 @@ export function useContracts() {
   useEffect(() => void loadContracts().then(setC), []);
   return c;
 }
-export type PairMeta = { symbol: string; base: string; quote: string; pp: number; qp: number; contract?: Contract };
+export type PairMeta = { symbol: string; base: string; quote: string; pp: number; qp: number; minQty?: number; contract?: Contract };
 /** 当前交易对：URL ?symbol=，缺省取列表第一个；精度来自接口。 */
 /** 路径段 /spot/:symbol、/futures/:symbol、/trade/:symbol 的交易对：大小写与 _ - / 分隔符均可（btc_usdt → BTCUSDT）。 */
 const PATH_RE = /^\/(spot|futures|trade)\/[^/]+\/?$/;
@@ -36,8 +37,8 @@ export function useTradePair(fut: boolean, initial?: string): [PairMeta, PairMet
   const cts = useContracts();
   const [sym, setSym] = useState(() => normSymbol(initial) || (typeof window === "undefined" ? "" : normSymbol(new URLSearchParams(location.search).get("symbol"))));
   const list: PairMeta[] = fut
-    ? cts.map((c) => ({ symbol: c.symbol, base: c.baseAsset, quote: c.quoteAsset, pp: decOf(c.tickSize), qp: decOf(c.minQty), contract: c }))
-    : Object.values(meta).map((m: SymbolMeta) => ({ symbol: m.symbol, base: m.base, quote: m.quote, pp: m.pricePrecision, qp: m.quantityPrecision }));
+    ? cts.map((c) => ({ symbol: c.symbol, base: c.baseAsset, quote: c.quoteAsset, pp: decOf(c.tickSize), qp: decOf(c.minQty), minQty: Number(c.minQty) || 0, contract: c }))
+    : Object.values(meta).map((m: SymbolMeta) => ({ symbol: m.symbol, base: m.base, quote: m.quote, pp: m.pricePrecision, qp: m.quantityPrecision, minQty: Number(m.minQuantity) || 0 }));
   const cur = list.find((x) => x.symbol === sym) ?? list.find((x) => x.symbol === "BTCUSDT") ?? list[0] ?? { symbol: sym || "BTCUSDT", base: (sym || "BTCUSDT").replace(/USDT$/, ""), quote: "USDT", pp: 2, qp: 4 };
   const pick = (s: string) => {
     setSym(s);
@@ -321,7 +322,10 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     rest<components["schemas"]["FuturesPositionMode"]>("GET", "/futures/position-mode").then((r) => {
       if (r.ok && r.data?.positionMode) { const cur = readLocal(pair.symbol); save({ ...cur, mode: { ...cur.mode, pos: String(r.data.positionMode).toUpperCase() === "HEDGE" ? "split" : "merged" } }); }
     });
-    rest<any>("GET", "/futures/account").then((r) => r.ok && setAvail(String(r.data?.availableBalance ?? r.data?.available ?? r.data?.availableMargin ?? "0")));
+    const ld = () => rest<any>("GET", "/futures/account").then((r) => r.ok && setAvail(String(r.data?.availableBalance ?? r.data?.available ?? r.data?.availableMargin ?? "0")));
+    ld();
+    window.addEventListener(BALANCES_EVT, ld); window.addEventListener("lb-fut-orders", ld);
+    return () => { window.removeEventListener(BALANCES_EVT, ld); window.removeEventListener("lb-fut-orders", ld); };
   }, [authed, pair.symbol]); // eslint-disable-line
   const pushLev = async (lev: number, margin: Mode["margin"]) => {
     if (!authed) return true;
@@ -386,7 +390,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       const k = Object.keys(M).find((x) => e.includes(x));
       return toast(k ? M[k] : e || "下单失败", "err");
     }
-    toast(ty === "plan" ? "计划委托已提交" : "下单成功"); setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
+    if (ty === "plan") toast("计划委托已提交"); else { const m = orderToast(r.data?.status, r.data?.filledQty); toast(m.t, m.ok ? undefined : "err"); } setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
   };
   const setByPct = (p: number) => {
     const a = Number(avail) || 0;

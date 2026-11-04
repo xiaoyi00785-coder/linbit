@@ -2,6 +2,7 @@
 // 合约下单区底部：仓位 / 当前委托 / 计划委托 / 止盈止损 / 历史委托 / 历史仓位 / 成交明细（可只看当前合约）
 // 对接 GET /futures/positions、/futures/orders、/futures/plan-orders、/futures/tpsl-orders、/futures/positions/history、/futures/trades；
 // 改单 PUT /futures/orders/{id}，持仓止盈止损 POST /futures/tpsl-orders。
+import { stLabel, isOpenStatus } from "@/lib/orderStatus";
 import { useEffect, useRef, useState } from "react";
 import type { components } from "@linbit/api-client";
 import { useRest, rest } from "@/lib/rest";
@@ -36,7 +37,6 @@ type Fill = { tradeId: number; symbol: string; side: "buy" | "sell"; price: stri
 const sideTxt = (s: string) => (/buy|long/i.test(s) ? "多" : "空");
 const num = (v: string) => v.replace(/[^\d.]/g, "");
 const TT: Record<string, string> = { LAST: "最新价", MARK: "标记价" };
-const ST: Record<string, string> = { NEW: "未成交", PARTIALLY_FILLED: "部分成交", FILLED: "已成交", CANCELED: "已撤销", REJECTED: "已拒绝", EXPIRED: "已过期", active: "待触发", triggered: "已触发", canceled: "已撤销", failed: "失败", closed: "已平仓", liquidated: "强平", adl: "自动减仓" };
 const TIF: Record<string, string> = { GTC: "GTC", IOC: "IOC", POST_ONLY: "只做 Maker", GTX: "只做 Maker" };
 const dir = (o: { side?: string; positionSide?: string; reduceOnly?: boolean }) => {
   const buy = /buy/i.test(o.side ?? "");
@@ -62,10 +62,10 @@ export function FutOrders({ symbol }: { symbol?: string }) {
   const fills = useRest<{ trades: Fill[] }>(authed && tab === 6 ? "/futures/trades?limit=100" : null);
   const mine = <X extends { symbol?: string }>(L: X[] | undefined) => (L ?? []).filter((x) => !only || !symbol || x.symbol === symbol);
   const P = mine(pos.data?.positions), O = mine(open.data?.orders), PL = mine(plan.data?.orders), TS = mine(tpsl.data?.orders);
-  const H = mine(hist.data?.orders).filter((o) => o.status !== "NEW" && o.status !== "PARTIALLY_FILLED"), PH = mine(ph.data?.positions), FL = mine(fills.data?.trades);
+  const H = mine(hist.data?.orders).filter((o) => !isOpenStatus(o.status)), PH = mine(ph.data?.positions), FL = mine(fills.data?.trades);
   const cur = [pos, open, plan, tpsl, hist, ph, fills][tab];
   // 下单/撤单/改单后静默刷新（不闪骨架屏）；撮合与条件单落库有延迟，再补两次
-  const refreshAll = () => { pos.refresh(); open.refresh(); plan.refresh(); tpsl.refresh(); };
+  const refreshAll = () => { pos.refresh(); open.refresh(); plan.refresh(); tpsl.refresh(); hist.refresh(); ph.refresh(); fills.refresh(); };
   const reloadAll = () => { refreshAll(); window.setTimeout(refreshAll, 800); window.setTimeout(refreshAll, 2500); };
   // 仓位标记价 / 未实现盈亏：每 3s 静默轮询（页面隐藏时暂停）
   useEffect(() => {
@@ -83,11 +83,12 @@ export function FutOrders({ symbol }: { symbol?: string }) {
     if (!r.ok) return toast(r.error || "平仓失败", "err");
     toast("已提交市价平仓"); reloadAll();
   };
-  useEffect(() => { window.addEventListener("lb-fut-orders", reloadAll); return () => window.removeEventListener("lb-fut-orders", reloadAll); }); // eslint-disable-line
+  const rlRef = useRef(reloadAll); rlRef.current = reloadAll;
+  useEffect(() => { const f = () => rlRef.current(); window.addEventListener("lb-fut-orders", f); return () => window.removeEventListener("lb-fut-orders", f); }, []);
   const labels = [`仓位(${P.length})`, `当前委托(${O.length})`, `计划委托(${PL.length})`, `止盈止损(${TS.length})`, "历史委托", "历史仓位", "成交明细"];
   const empty = <p className="empty">暂无数据</p>;
   const algoTable = (L: Algo[], kind: "plan" | "tpsl") => L.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>{kind === "plan" ? "方向" : "类型"}</th><th>触发条件</th><th>委托价</th><th>数量</th><th>状态</th><th /></tr></thead><tbody>
-    {L.map((o) => { const [d, b] = dir(o); return <tr key={o.algoId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td className={kind === "plan" ? (b ? "up" : "down") : o.algoType === "tp" ? "up" : "down"}>{kind === "plan" ? d : o.algoType === "tp" ? "止盈" : "止损"}</td><td>{TT[o.triggerPriceType ?? "LAST"]} {o.triggerDirection === "down" ? "≤" : "≥"} {o.triggerPrice}</td><td>{o.price || "市价"}</td><td>{o.qty || "全部仓位"}</td><td>{ST[o.status ?? ""] ?? o.status}</td><td>{kind === "plan" && <a className="lime2" onClick={() => setPe(o)}>修改</a>} <a className="lime2" onClick={() => del(`/futures/${kind === "plan" ? "plan" : "tpsl"}-orders/${o.algoId}`, "已撤销")}>撤销</a></td></tr>; })}
+    {L.map((o) => { const [d, b] = dir(o); return <tr key={o.algoId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td className={kind === "plan" ? (b ? "up" : "down") : o.algoType === "tp" ? "up" : "down"}>{kind === "plan" ? d : o.algoType === "tp" ? "止盈" : "止损"}</td><td>{TT[o.triggerPriceType ?? "LAST"]} {o.triggerDirection === "down" ? "≤" : "≥"} {o.triggerPrice}</td><td>{o.price || "市价"}</td><td>{o.qty || "全部仓位"}</td><td>{stLabel(o.status)}</td><td>{kind === "plan" && <a className="lime2" onClick={() => setPe(o)}>修改</a>} <a className="lime2" onClick={() => del(`/futures/${kind === "plan" ? "plan" : "tpsl"}-orders/${o.algoId}`, "已撤销")}>撤销</a></td></tr>; })}
   </tbody></table> : empty;
   return (
     <div className="orders" data-guide="orders">
@@ -104,10 +105,10 @@ export function FutOrders({ symbol }: { symbol?: string }) {
             {FL.map((t) => <tr key={t.tradeId}><td>{fmtLocal(t.time)}</td><td>{t.symbol}</td><td className={t.side === "buy" ? "up" : "down"}>{t.side === "buy" ? "买入" : "卖出"}</td><td>{t.price}</td><td>{t.qty}</td><td>{fmtFeeExact(t.fee)}</td><td>{t.role === "maker" ? "Maker" : "Taker"}</td></tr>)}
           </tbody></table> : empty)
         : tab === 5 ? (PH.length ? <table className="sotbl"><thead><tr><th>平仓时间</th><th>合约</th><th>方向</th><th>开仓均价</th><th>平仓均价</th><th>最大持仓</th><th>已实现盈亏</th><th>手续费 / 资金费</th><th>状态</th></tr></thead><tbody>
-            {PH.map((p) => <tr key={p.id}><td>{fmtLocal(p.closeTime)}</td><td>{p.symbol}</td><td className={p.side === "long" ? "up" : "down"}>{p.side === "long" ? "多" : "空"} {p.leverage}x</td><td>{p.entryPrice}</td><td>{p.closePrice}</td><td>{p.maxQty}</td><td className={+(p.netPnl ?? p.realizedPnl ?? 0) >= 0 ? "up" : "down"}>{p.netPnl ?? p.realizedPnl}</td><td>{p.fee} / {p.fundingFee}</td><td>{ST[p.status ?? ""] ?? p.status}</td></tr>)}
+            {PH.map((p) => <tr key={p.id}><td>{fmtLocal(p.closeTime)}</td><td>{p.symbol}</td><td className={p.side === "long" ? "up" : "down"}>{p.side === "long" ? "多" : "空"} {p.leverage}x</td><td>{p.entryPrice}</td><td>{p.closePrice}</td><td>{p.maxQty}</td><td className={+(p.netPnl ?? p.realizedPnl ?? 0) >= 0 ? "up" : "down"}>{p.netPnl ?? p.realizedPnl}</td><td>{p.fee} / {p.fundingFee}</td><td>{stLabel(p.status)}</td></tr>)}
           </tbody></table> : empty)
         : (() => { const L = tab === 1 ? O : H; return L.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>类型</th><th>方向</th><th>价格</th><th>数量</th><th>已成交</th><th>状态</th>{tab === 1 && <th />}</tr></thead><tbody>
-            {L.map((o) => { const [d, b] = dir(o); return <tr key={o.orderId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : o.type === "market" ? "市价" : o.type}{o.timeInForce && o.type === "limit" ? ` · ${TIF[o.timeInForce] ?? o.timeInForce}` : ""}</td><td className={b ? "up" : "down"}>{d}</td><td>{o.price}</td><td>{o.qty}</td><td>{o.filledQty}</td><td>{ST[o.status] ?? o.status}</td>{tab === 1 && <td>{o.type === "limit" && <a className="lime2" onClick={() => setEdit(o)}>改单</a>} <a className="lime2" onClick={() => del(`/futures/orders/${o.orderId}`, "已撤单")}>撤单</a></td>}</tr>; })}
+            {L.map((o) => { const [d, b] = dir(o); return <tr key={o.orderId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : o.type === "market" ? "市价" : o.type}{o.timeInForce && o.type === "limit" ? ` · ${TIF[o.timeInForce] ?? o.timeInForce}` : ""}</td><td className={b ? "up" : "down"}>{d}</td><td>{o.price}</td><td>{o.qty}</td><td>{o.filledQty}</td><td>{stLabel(o.status)}</td>{tab === 1 && <td>{o.type === "limit" && <a className="lime2" onClick={() => setEdit(o)}>改单</a>} <a className="lime2" onClick={() => del(`/futures/orders/${o.orderId}`, "已撤单")}>撤单</a></td>}</tr>; })}
           </tbody></table> : empty; })()}
       {edit && <EditModal o={edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); reloadAll(); }} />}
       {tp && <TpslModal p={tp.p} cur={tp} onClose={() => setTp(null)} onDone={() => { setTp(null); reloadAll(); }} />}
