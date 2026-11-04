@@ -36,8 +36,8 @@ func (s *Server) AmendAlgo(ctx context.Context, uid string, id int64, kinds []st
 		return AlgoOrder{}, bad("VALIDATION_ERROR", "市价单不能填写 price")
 	}
 	// Same lock as the trigger watcher, so an order can't fire with stale values mid-amend.
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// withTx takes s.mu itself; s.mu is not reentrant, so do not lock it here as well
+	// (double-locking deadlocked plan and TP/SL amend and froze the engine).
 	var out AlgoOrder
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		a, err := scanAlgo(tx.QueryRowContext(ctx, `SELECT `+algoCols+` FROM fut_algo_orders WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, uid))

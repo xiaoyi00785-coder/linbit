@@ -216,6 +216,8 @@ services:
       RESEND_FROM: ${RESEND_FROM:-}
       ORDER_INTERNAL_URL: http://order:8084
       ACCOUNT_INTERNAL_URL: http://account:8081
+      # Required: account calls growth for invite binding / referral data.
+      GROWTH_INTERNAL_URL: http://growth:8091
       SMS_ENABLED: ${SMS_ENABLED:-false}
       # Passkeys: unset WEBAUTHN_RP_ID = passkeys disabled. Origins: comma list
       # (WEBAUTHN_ORIGINS accepted as an alias of WEBAUTHN_RP_ORIGINS).
