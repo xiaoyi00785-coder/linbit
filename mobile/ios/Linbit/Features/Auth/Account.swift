@@ -198,39 +198,16 @@ struct AccountSwitchView: View {
     }
 }
 
-// MARK: 账户安全（入口：身份验证器 / 修改密码）
+// MARK: 账户安全（入口 → 安全中心）
 struct SecurityView: View {
-    @Environment(\.palette) private var p
-    @EnvironmentObject private var session: Session
-    var body: some View {
-        VStack(spacing: 0) {
-            NavBar(title: "账户安全")
-            NavigationLink { TotpSetupView() } label: {
-                HStack {
-                    Text("身份验证器").font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
-                    Spacer()
-                    Text(session.account?.twoFactorEnabled == true ? "已绑定" : "未绑定").font(.lb(FontSize.label))
-                        .foregroundColor(session.account?.twoFactorEnabled == true ? p.up : p.textSecondary)
-                    Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(p.textSecondary)
-                }.padding(.horizontal, Spacing.pageH).frame(height: 50)
-            }.buttonStyle(RowPressStyle()).disabled(session.account?.twoFactorEnabled == true)
-            NavigationLink { ChangePasswordView() } label: {
-                HStack {
-                    Text("修改登录密码").font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(p.textSecondary)
-                }.padding(.horizontal, Spacing.pageH).frame(height: 50)
-            }.buttonStyle(RowPressStyle())
-            Spacer()
-        }
-        .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
-    }
+    var body: some View { SecurityCenterView() }
 }
 
 // MARK: 设置身份验证器（ref2 #15）
 struct TotpSetupView: View {
     @Environment(\.palette) private var p
     @Environment(\.dismiss) private var dismiss
+    var onDone: (() -> Void)? = nil
     @State private var binding: Loadable<APITotpBinding> = .loading
     @State private var code = ""
     @State private var loading = false
@@ -238,7 +215,7 @@ struct TotpSetupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavBar(title: "设置身份验证器")
+            NavBar(title: "设置身份验证器", onBack: onDone)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     WarnBanner(text: "绑定身份验证器后6小时内将无法提现").padding(.bottom, 20)
@@ -292,7 +269,7 @@ struct TotpSetupView: View {
         do {
             try await AuthAPI.verifyTotp(code)
             await Session.shared.reloadAccount()
-            ToastCenter.shared.show("身份验证器已绑定", .success); dismiss()
+            ToastCenter.shared.show("身份验证器已绑定", .success); if let onDone { onDone() } else { dismiss() }
         } catch { self.error = "验证码错误，请重新输入"; Haptics.error() }
     }
 }
@@ -412,7 +389,7 @@ struct ChangePasswordView: View {
             switch e.code {
             case "INVALID_TOTP": error = "身份验证器验证码错误"
             case "TWOFA_REQUIRED": error = "请输入身份验证器验证码"
-            case "OLD_PASSWORD_INVALID", "PASSWORD_UNCHANGED", "AUTH_CODE_INVALID": error = ErrorText.map[e.code ?? ""]
+            case "OLD_PASSWORD_INVALID", "PASSWORD_UNCHANGED", "CODE_INVALID": error = ErrorText.map[e.code ?? ""]
             default: error = e.lbMessage
             }
         } catch { self.error = error.lbMessage }

@@ -245,9 +245,19 @@ enum ErrorText {
         "HAS_POSITION": "存在持仓，请先全部平仓后再切换",
         "HAS_OPEN_ORDERS": "存在挂单或条件委托，请先全部撤销后再切换",
         "COPY_TRADER_ONE_WAY": "带单交易员仅支持合仓模式",
+        "CONTACT_UNCHANGED": "新旧联系方式相同",
+        "EMAIL_EXISTS": "该邮箱已被其他账户使用",
+        "PHONE_EXISTS": "该手机号已被其他账户使用",
+        "FUND_PASSWORD_EXISTS": "资金密码已设置，请使用修改或重置",
+        "PASSKEY_EXISTS": "该通行密钥已绑定",
+        "PASSKEY_INVALID": "通行密钥校验失败",
+        "PASSKEY_LIMIT": "最多可绑定 10 个通行密钥",
+        "PASSKEY_SESSION_INVALID": "通行密钥会话已过期，请重试",
+        "PASSKEY_UNAVAILABLE": "通行密钥功能暂未开放",
+        "TOTP_NOT_BOUND": "请先绑定身份验证器",
+        "TOTP_NOT_ENABLED": "身份验证器未开启",
         "OLD_PASSWORD_INVALID": "原密码错误",
         "PASSWORD_UNCHANGED": "新密码不能与原密码相同",
-        "AUTH_CODE_INVALID": "验证码错误或已过期",
     ]
 }
 
