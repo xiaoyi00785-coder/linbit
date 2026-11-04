@@ -1,0 +1,74 @@
+# Linbit Android CI：assembleDebug + 单元测试 + Lint，并上传 debug APK / 报告
+# 工程在 mobile/android；仓库规则不提交二进制文件，所以不提交 gradle-wrapper.jar，CI 用 setup-gradle 安装 Gradle 8.9 直接运行。
+name: Android
+
+on:
+  push:
+    branches: [main, "feat/android-*"]
+    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANDROID_DIR: mobile/android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Generated resources are up to date (vector drawables / tokens)
+        run: |
+          set -euo pipefail
+          python3 mobile/tools/gen_android_vectors.py
+          python3 mobile/tools/gen_android_tokens.py
+          if [ -n "$(git status --porcelain -- mobile/android)" ]; then
+            echo "::error::mobile/android 下的生成物（drawable / Tokens.kt）与源文件不一致，请运行 mobile/tools/gen_android_vectors.py 与 gen_android_tokens.py 后提交"
+            git status --short -- mobile/android
+            exit 1
+          fi
+
+      - name: Assemble debug, unit tests, lint
+        working-directory: ${{ env.ANDROID_DIR }}
+        run: gradle --no-daemon --stacktrace assembleDebug testDebugUnitTest lint
+
+      - name: Upload debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linbit-debug-apk
+          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-reports
+          path: |
+            ${{ env.ANDROID_DIR }}/app/build/reports/lint-results-debug.html
+            ${{ env.ANDROID_DIR }}/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
