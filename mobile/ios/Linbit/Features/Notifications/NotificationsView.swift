@@ -185,9 +185,25 @@ struct NotificationsView: View {
         })
     }
 
+    /// 标记已读失败时回滚：把这条消息改回未读，并还原分类未读数和首页角标
+    private func revertRead(_ id: String) {
+        guard let cur = data.value, let i = cur.firstIndex(where: { $0.id == id }), cur[i].read == true else { return }
+        var items = cur
+        let n = cur[i]
+        items[i] = .init(id: n.id, kind: n.kind, title: n.title, body: n.body, time: n.time, read: false, emailStatus: n.emailStatus)
+        if let k = n.kind?.rawValue { byKind[k, default: 0] += 1 }
+        NotifCenter.shared.unread += 1
+        data = .loaded(items)
+    }
+
     private func markRead(_ id: String) async {
         setRead { $0.id == id }
-        if NotifShot.state == nil { _ = try? await NotifAPI.read(ids: [id]) }
+        guard NotifShot.state == nil else { return }
+        do { _ = try await NotifAPI.read(ids: [id]) }
+        catch {
+            revertRead(id)
+            ToastCenter.shared.show(securityMessage(error), .error)
+        }
     }
 
     private func readAll() async {
