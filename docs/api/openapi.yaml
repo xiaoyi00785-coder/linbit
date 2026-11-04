@@ -9341,6 +9341,13 @@ components:
           additionalProperties: { type: boolean }
           example: { tokenizedStocks: false, metals: false, eventContracts: false, chat: false, subAccounts: false, convert: true, copyTrading: false, p2p: false, fiatOnRamp: false, options: false }
         updatedAt: { type: string, format: date-time, nullable: true }
+        comingSoon:
+          type: array
+          description: 当前关闭的功能 key（前端显示“即将上线”）
+          items: { type: string }
+        network:
+          type: string
+          description: 部署网络（NETWORK/APP_ENV），如 mainnet / testnet；未设置为空串
     Favorites:
       type: object
       properties:

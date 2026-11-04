@@ -93,6 +93,9 @@ func (m *Maker) Pairs(ctx context.Context) ([]Pair, error) {
 
 func (m *Maker) isRunning(ctx context.Context) (bool, error) {
 	var r bool
+	if !m.cfg.Enabled {
+		return false, nil // MM_ENABLED=false: never quote, start is refused
+	}
 	err := m.db.QueryRowContext(ctx, `SELECT running FROM mm_state WHERE id=1`).Scan(&r)
 	return r, err
 }

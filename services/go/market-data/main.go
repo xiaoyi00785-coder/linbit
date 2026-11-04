@@ -42,6 +42,7 @@ func main() {
 		defer client.Close()
 	}
 
+	seedRestrictedCountries(db)
 	store := NewStore(db)
 
 	ctx := context.Background()

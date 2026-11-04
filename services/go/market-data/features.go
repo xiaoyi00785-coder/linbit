@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +33,52 @@ var featureDefaults = map[string]bool{
 	"p2p":             false,
 	"fiatOnRamp":      false,
 	"options":         false,
+}
+
+// mainnetDefaults: owner decision for the mainnet launch — every shipped
+// product opens (TradFi stocks, PAXG/XAUT, XAG/WTI perps and event contracts
+// included; the gateway still geo-blocks restricted countries). p2p,
+// fiatOnRamp and options have no backend yet and stay off.
+var mainnetDefaults = map[string]bool{
+	"tokenizedStocks": true, "metals": true, "eventContracts": true,
+	"chat": true, "subAccounts": true, "copyTrading": true,
+}
+
+func init() { applyFeatureDefaults(common.IsMainnet(), os.Getenv("FEATURE_DEFAULTS")) }
+
+// applyFeatureDefaults layers the mainnet defaults and then FEATURE_DEFAULTS
+// ("key=true,key2=false"; unknown keys are fatal) over the built-in defaults.
+// DB overrides set in admin still win at runtime.
+func applyFeatureDefaults(mainnet bool, spec string) {
+	if mainnet {
+		for k, v := range mainnetDefaults {
+			featureDefaults[k] = v
+		}
+	}
+	for _, kv := range strings.Split(spec, ",") {
+		kv = strings.TrimSpace(kv)
+		if kv == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(kv, "=")
+		k = strings.TrimSpace(k)
+		if _, known := featureDefaults[k]; !ok || !known {
+			log.Fatalf("FEATURE_DEFAULTS: bad entry %q", kv)
+		}
+		featureDefaults[k] = strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+}
+
+// comingSoon lists the keys currently off, so clients can render 即将上线.
+func comingSoon(f map[string]bool) []string {
+	out := []string{}
+	for k, v := range f {
+		if !v {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 var featCache struct {
@@ -84,7 +133,8 @@ func (s *Server) features(ctx context.Context) (map[string]any, error) {
 	if !last.IsZero() {
 		updated = last.UTC()
 	}
-	return map[string]any{"features": mergeFeatures(over), "updatedAt": updated}, nil
+	f := mergeFeatures(over)
+	return map[string]any{"features": f, "comingSoon": comingSoon(f), "network": common.Network(), "updatedAt": updated}, nil
 }
 
 func (s *Server) handleAppFeatures(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +145,8 @@ func (s *Server) handleAppFeatures(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if featCache.val == nil {
 				// DB down and nothing cached: serve defaults rather than break app start-up.
-				v = map[string]any{"features": mergeFeatures(nil), "updatedAt": nil}
+				f := mergeFeatures(nil)
+				v = map[string]any{"features": f, "comingSoon": comingSoon(f), "network": common.Network(), "updatedAt": nil}
 			} else {
 				v = featCache.val
 			}

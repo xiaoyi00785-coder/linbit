@@ -138,7 +138,14 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		WhitelistOn: wl.Enabled,
 		Count24h:    count24h,
 	})
-	decision := decide(s.cfg.Risk, in.Amount, score)
+	// Thresholds are USDT-equivalent; an unknown price fails closed to review.
+	riskValue := in.Amount
+	if p, ok := s.usdtPrice(ctx, in.Asset); ok {
+		riskValue = in.Amount.Mul(p)
+	} else {
+		riskValue = decimal.Max(in.Amount, s.cfg.Risk.ReviewMinAmount)
+	}
+	decision := decide(s.cfg.Risk, riskValue, score)
 
 	// Persist as pending_review, then freeze, then (if auto) release to approved.
 	w := Withdrawal{

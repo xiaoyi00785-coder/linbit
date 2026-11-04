@@ -29,7 +29,7 @@ export function useApi<T>(path: string | null, demo?: () => T) {
     if (!path) return;
     set((x) => ({ ...x, loading: true }));
     const r = await call<T>("GET", path);
-    set({ loading: false, r: r.source === "demo" && demo ? { ...r, ok: true, data: demo() } : r });
+    set({ loading: false, r: r.source === "demo" && demo && process.env.NEXT_PUBLIC_ENABLE_MOCK === "1" ? { ...r, ok: true, data: demo() } : r });
   }, [path]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   return { loading: s.loading, data: s.r?.ok ? s.r.data : undefined, err: s.r && !s.r.ok ? s.r : undefined, demo: s.r?.source === "demo", reload: load };

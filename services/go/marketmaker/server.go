@@ -69,7 +69,7 @@ func (m *Maker) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteJSON(w, 200, map[string]any{
 		"baselines": bl, "positionMode": "net (max_position applies to base - baseline)",
-		"running": running, "account": m.cfg.UserID, "pairs": pairs, "feedDownPairs": down,
+		"enabled": m.cfg.Enabled, "network": common.Network(), "running": running, "account": m.cfg.UserID, "pairs": pairs, "feedDownPairs": down,
 		"lastCycle": last, "testnetSeedAllowed": seed, "testnetSeedReason": why, "seedAmount": m.cfg.SeedAmount,
 		"stopLoss": false, "priceFeed": "market-data /market/index (REST polling: Binance primary, OKX backup)",
 	})
@@ -184,6 +184,10 @@ func (m *Maker) handleRun(run bool) http.HandlerFunc {
 		_ = common.DecodeJSON(r, &body)
 		if body.By == "" {
 			body.By = "admin"
+		}
+		if run && !m.cfg.Enabled {
+			common.WriteError(w, http.StatusConflict, "MM_DISABLED", "做市已通过 MM_ENABLED=false 关闭（主网默认关闭）")
+			return
 		}
 		if _, err := m.db.ExecContext(r.Context(), `UPDATE mm_state SET running=$1, updated_by=$2, updated_at=now() WHERE id=1`, run, body.By); err != nil {
 			common.WriteError(w, 500, "INTERNAL", "服务器内部错误")

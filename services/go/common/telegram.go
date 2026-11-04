@@ -71,6 +71,9 @@ func AlertTelegram(text string) {
 // testnet server runs hardened); WALLET_CHAIN=mock only outside production;
 // anything else (mainnet or unknown) is always refused. The reason explains.
 func TestnetSeedAllowed() (bool, string) {
+	if IsMainnet() {
+		return false, "NETWORK=mainnet: virtual seed is forbidden"
+	}
 	switch c := strings.ToLower(strings.TrimSpace(Env("WALLET_CHAIN", "mock"))); c {
 	case "testnet":
 		return true, "WALLET_CHAIN=testnet (virtual, unbacked)"

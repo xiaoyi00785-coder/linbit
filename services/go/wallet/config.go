@@ -123,7 +123,7 @@ func LoadConfig() Config {
 		Risk: RiskThresholds{
 			AutoMaxAmount:   decimalEnv("WALLET_RISK_AUTO_MAX_AMOUNT", "1000"),
 			AutoMaxScore:    common.EnvInt("WALLET_RISK_AUTO_MAX_SCORE", 20),
-			ReviewMinAmount: decimalEnv("WALLET_RISK_REVIEW_MIN_AMOUNT", "5000"),
+			ReviewMinAmount: decimalEnv("WALLET_RISK_REVIEW_MIN_AMOUNT", map[bool]string{true: "1000", false: "5000"}[common.IsMainnet()]), /* mainnet: >1000 USDT-equivalent always manual review */
 			ReviewMaxScore:  common.EnvInt("WALLET_RISK_REVIEW_MAX_SCORE", 40),
 			MiddleAction:    middleAction(common.Env("WALLET_RISK_MIDDLE_ACTION", "review")),
 		},

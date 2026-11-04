@@ -54,3 +54,10 @@ export function useProofOfReserves() {
   }, []);
   return v;
 }
+
+const loadEarnProducts = cached(async () => {
+  const { data } = await api.GET("/earn/products", {});
+  return (data?.items ?? []).filter((p) => !p.status || p.status === "online" || p.status === "active");
+});
+/** GET /earn/products（理财总览：推荐与全部产品均以此为准，勿写死 APR） */
+export const useEarnProducts = () => useLoad(loadEarnProducts);

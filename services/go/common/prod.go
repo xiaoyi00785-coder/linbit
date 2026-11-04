@@ -9,6 +9,9 @@ import (
 
 // IsProduction reports whether LINBIT_ENV=production.
 func IsProduction() bool {
+	if IsMainnet() {
+		return true
+	}
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("LINBIT_ENV")), "production")
 }
 
@@ -61,6 +64,7 @@ func RequireProduction(service string, extra []string, vars ...string) {
 		return
 	}
 	probs := append(ProductionProblems(os.Getenv, vars...), extra...)
+	probs = dedupe(requireMainnet(service, probs))
 	if len(probs) > 0 {
 		log.Fatalf("%s: refusing to start in production: %s", service, strings.Join(probs, "; "))
 	}
@@ -73,4 +77,16 @@ func ProblemIf(cond bool, format string, a ...any) []string {
 		return []string{fmt.Sprintf(format, a...)}
 	}
 	return nil
+}
+
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	out := in[:0]
+	for _, p := range in {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
 }

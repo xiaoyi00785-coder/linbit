@@ -15,6 +15,8 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -23,7 +25,13 @@ import (
 
 func main() {
 	cfg := LoadConfig()
-	common.RequireProduction("kyc", nil, "DATABASE_URL", "INTERNAL_TOKEN", "REDIS_URL")
+	// Mainnet: local disk (persistent volume + backup) is the owner's choice;
+	// S3 stays supported and then needs its credentials.
+	kycStore := common.MainnetVars("KYC_DOC_STORAGE_DIR")
+	if strings.EqualFold(os.Getenv("STORAGE_BACKEND"), "s3") {
+		kycStore = common.MainnetVars("S3_BUCKET", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")
+	}
+	common.RequireProduction("kyc", kycStore, "DATABASE_URL", "INTERNAL_TOKEN", "REDIS_URL")
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {

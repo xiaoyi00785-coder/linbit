@@ -1,0 +1,82 @@
+# 主网覆盖：docker compose -f docker-compose.yml -f deploy/mainnet/docker-compose.mainnet.yml --env-file deploy/mainnet/.env.mainnet up -d
+# 不含任何密钥；密钥只经环境变量 / Secret Manager 注入。
+x-mainnet: &mainnet
+  NETWORK: mainnet
+  APP_ENV: mainnet
+  LINBIT_ENV: production
+  WALLET_CHAIN: mainnet
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID}
+
+services:
+  asset:
+    environment:
+      <<: *mainnet
+      MM_SEED_MAX: "0"
+  wallet:
+    environment:
+      <<: *mainnet
+      DEV_MODE: "false"
+      WALLET_NETWORKS_JSON: ${WALLET_NETWORKS_JSON:?set WALLET_NETWORKS_JSON}
+      WALLET_RISK_AUTO_MAX_AMOUNT: ${WALLET_RISK_AUTO_MAX_AMOUNT:-1000}
+      WALLET_RISK_REVIEW_MIN_AMOUNT: ${WALLET_RISK_REVIEW_MIN_AMOUNT:-1000}
+      WALLET_RISK_MIDDLE_ACTION: review
+      WALLET_RPC_TRC20: ${WALLET_RPC_TRC20:?set WALLET_RPC_TRC20}
+      WALLET_RPC_ERC20: ${WALLET_RPC_ERC20:?set WALLET_RPC_ERC20}
+      WALLET_RPC_BEP20: ${WALLET_RPC_BEP20:?set WALLET_RPC_BEP20}
+      WALLET_RPC_BTC: ${WALLET_RPC_BTC:?set WALLET_RPC_BTC}
+      WALLET_RPC_SOL: ${WALLET_RPC_SOL:?set WALLET_RPC_SOL}
+  wallet-signer:
+    environment:
+      <<: *mainnet
+  account:
+    environment:
+      <<: *mainnet
+      SMS_ENABLED: "false"
+      GROWTH_INVITE_BASE_URL: ${GROWTH_INVITE_BASE_URL:-https://www.cowa.click}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-www.cowa.click}
+      WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-https://www.cowa.click}
+  matching-engine:
+    environment:
+      <<: *mainnet
+  order:
+    environment:
+      <<: *mainnet
+  market-data:
+    environment:
+      <<: *mainnet
+      TRADFI_RESTRICTED_COUNTRIES: ${TRADFI_RESTRICTED_COUNTRIES:-US}
+      FEATURE_DEFAULTS: ${FEATURE_DEFAULTS:-}
+  kyc:
+    environment:
+      <<: *mainnet
+      STORAGE_BACKEND: local
+      KYC_DOC_STORAGE_DIR: /data/kyc-docs   # 持久卷 kycdocs，必须纳入备份
+  admin:
+    environment:
+      <<: *mainnet
+      ADMIN_MM_SEED_MAX: "0"
+      SOLVENCY_HOUR_UTC: ${SOLVENCY_HOUR_UTC:-1}
+  futures:
+    environment:
+      <<: *mainnet
+  strategy:
+    environment:
+      <<: *mainnet
+  growth:
+    environment:
+      <<: *mainnet
+  earn:
+    environment:
+      <<: *mainnet
+  marketmaker:
+    environment:
+      <<: *mainnet
+      MM_ENABLED: "false"
+      MM_SEED_AMOUNT: "0"
+      MM_SEED_BASE_USDT: ""
+      MM_SEED_BASE_ASSETS: ""
+  gateway:
+    environment:
+      <<: *mainnet
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:?set TRUSTED_PROXY_CIDRS}

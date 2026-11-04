@@ -18,7 +18,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
-	common.RequireProduction("wallet", append(common.ProblemIf(chainMode() == "mock", "WALLET_CHAIN=mock (MockChain) is not allowed"), common.ProblemIf(os.Getenv("WALLET_HOT_SECRET") == "hot-mpc-mock-secret", "WALLET_HOT_SECRET uses the hot-mpc-mock-secret default")...), "DATABASE_URL", "INTERNAL_TOKEN", "REDIS_URL")
+	common.RequireProduction("wallet", append(append(common.MainnetVars("WALLET_NETWORKS_JSON"), common.ProblemIf(chainMode() == "mock", "WALLET_CHAIN=mock (MockChain) is not allowed")...), common.ProblemIf(os.Getenv("WALLET_HOT_SECRET") == "hot-mpc-mock-secret", "WALLET_HOT_SECRET uses the hot-mpc-mock-secret default")...), "DATABASE_URL", "INTERNAL_TOKEN", "REDIS_URL")
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {

@@ -18,7 +18,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
-	common.RequireProduction("admin", nil, "DATABASE_URL", "INTERNAL_TOKEN")
+	common.RequireProduction("admin", common.MainnetIf(cfg.SolvencyHourUTC < 0 || cfg.SolvencyHourUTC > 23, "SOLVENCY_HOUR_UTC must be 0-23 on mainnet (daily solvency check)"), "DATABASE_URL", "INTERNAL_TOKEN")
 	if common.IsProduction() && len(cfg.IPAllowlist) == 0 {
 		log.Printf("WARN admin: ADMIN_IP_ALLOWLIST is empty in production; every source IP can reach the back office (rely on nginx/firewall)")
 	}

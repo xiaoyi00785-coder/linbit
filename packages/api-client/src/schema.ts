@@ -7065,6 +7065,10 @@ export interface components {
             };
             /** Format: date-time */
             updatedAt?: string | null;
+            /** @description 当前关闭的功能 key（前端显示“即将上线”） */
+            comingSoon?: string[];
+            /** @description 部署网络（NETWORK/APP_ENV），如 mainnet / testnet；未设置为空串 */
+            network?: string;
         };
         Favorites: {
             /** @enum {string} */

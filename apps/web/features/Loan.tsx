@@ -179,7 +179,7 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
       <div className="light"><div className="ewrap">
         <div className="lsteps">{["01 提交申请", "02 收到借款", "03 还款付息", "04 回收质押物"].map((x, i) => <span key={x}><i>{i + 1}</i>{x}</span>)}</div>
         <div className="lrow"><h2 className="lh2">借贷市场</h2>{source === "demo" && <span className="fx-src">演示数据（服务不可达）</span>}<span className="lg"><G n="info" s={13}/> 初始质押率 {pc(market?.initialLtv ?? 0.8, 0)} · 质押物 {market?.collaterals.map((c) => c.asset).join(" / ") ?? "--"}</span></div>
-        <div className="lth"><span>可借币种</span>{(market?.terms ?? DEMO.terms).map((t) => <span key={t.term}>{tn(t.term)}</span>)}<span className="r">操作</span></div>
+        <div className="lth"><span>可借币种</span>{(market?.terms ?? []).map((t) => <span key={t.term}>{tn(t.term)}</span>)}<span className="r">操作</span></div>
         {loading && !market ? <div className="fx-skel" style={{ height: 48 }} /> : market ? (
           <div className="ltr e5">
             <span><CoinIcon s={market.asset} size={22} /> {market.asset}</span>
