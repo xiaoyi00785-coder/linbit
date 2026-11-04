@@ -145,6 +145,7 @@ struct RootTabView: View {
         case "kyc-approved": SecShot.raw = "kyc:approved"; router.feature = .kyc
         case "kyc-form": SecShot.raw = "kyc:form"; router.feature = .kyc
         case "kyc-form2": SecShot.raw = "kyc:form2"; router.feature = .kyc
+        case "kyc-form2-full": SecShot.raw = "kyc:form2full"; router.feature = .kyc
         case "kyc-error": SecShot.raw = "kyc:error"; router.feature = .kyc
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security

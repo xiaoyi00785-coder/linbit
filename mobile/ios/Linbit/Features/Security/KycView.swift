@@ -44,7 +44,7 @@ enum KycShot {
         switch state {
         case "pending": return .init(level: 1, status: .pending, submittedAt: SecShot.now.addingTimeInterval(-3600))
         case "rejected": return .init(level: 1, status: .rejected, submittedAt: SecShot.now.addingTimeInterval(-86400), reason: "证件照片模糊，请重新拍摄并确保四角完整")
-        case "approved", "form2": return .init(level: 1, status: .approved, submittedAt: SecShot.now.addingTimeInterval(-86400 * 3))
+        case "approved", "form2", "form2full": return .init(level: 1, status: .approved, submittedAt: SecShot.now.addingTimeInterval(-86400 * 3))
         case nil, "error", "loading": return nil
         default: return .init(level: 0, status: ._none)
         }
@@ -55,7 +55,7 @@ struct KycView: View {
     @Environment(\.palette) private var p
     var onBack: (() -> Void)? = nil
     @State private var data: Loadable<APIKycStatus> = .loading
-    @State private var form: Int? = ["form": 1, "form2": 2][KycShot.state ?? ""]
+    @State private var form: Int? = ["form": 1, "form2": 2, "form2full": 2][KycShot.state ?? ""]
 
     var body: some View {
         if let lv = form, let st = data.value {
@@ -169,11 +169,13 @@ struct KycFormView: View {
     @State private var first = KycShot.state?.hasPrefix("form") == true ? "San" : ""
     @State private var last = KycShot.state?.hasPrefix("form") == true ? "Zhang" : ""
     @State private var country = "SG"
-    @State private var idType = 0
+    @State private var idType = KycShot.state == "form2full" ? 1 : 0
     @State private var idNumber = KycShot.state?.hasPrefix("form") == true ? "E12345678" : ""
     @State private var dob = Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date()
-    @State private var docs: [APIKycDocument.APISide: String] = [:]
-    @State private var previews: [APIKycDocument.APISide: UIImage] = KycShot.state == "form" ? [.front: AvatarDemo.image(300)] : [:]
+    @State private var docs: [APIKycDocument.APISide: String] = KycShot.state == "form2full"
+        ? [.front: "demo-front", .back: "demo-back", .selfie: "demo-selfie", .proofOfAddress: "demo-poa"] : [:]
+    @State private var previews: [APIKycDocument.APISide: UIImage] = KycShot.state == "form" ? [.front: AvatarDemo.image(300)]
+        : KycShot.state == "form2full" ? [.front: AvatarDemo.image(300), .back: AvatarDemo.image(300), .selfie: AvatarDemo.image(300), .proofOfAddress: AvatarDemo.image(300)] : [:]
     @State private var uploading: APIKycDocument.APISide? = KycShot.state == "form" ? .selfie : nil
     @State private var loading = false
     @State private var error: String? = KycShot.state == "form2" ? ErrorText.map["DOCUMENT_REQUIRED"] : nil
@@ -181,15 +183,17 @@ struct KycFormView: View {
 
     private var type: APIKycSubmission.APIIdType { Self.idTypes[idType] }
     private var sides: [(APIKycDocument.APISide, String, Bool)] {
-        if level == 2 { return [(.proofOfAddress, "地址证明（近 3 个月水电 / 银行账单）", true)] }
-        if type == .passport { return [(.front, "护照信息页", true), (.selfie, "手持证件自拍", true)] }
-        return [(.front, "证件正面", true), (.back, "证件背面", true), (.selfie, "手持证件自拍", true)]
+        var base: [(APIKycDocument.APISide, String, Bool)] = type == .passport
+            ? [(.front, "护照信息页", true), (.selfie, "手持证件自拍", true)]
+            : [(.front, "证件正面", true), (.back, "证件背面", true), (.selfie, "手持证件自拍", true)]
+        // 高级认证：后端要求同时重新提交 Lv.1 全部资料与证件，另加地址证明
+        if level == 2 { base.append((.proofOfAddress, "地址证明（近 3 个月水电 / 银行账单）", true)) }
+        return base
     }
     private var age: Int { Calendar.current.dateComponents([.year], from: dob, to: Date()).year ?? 0 }
     private var idHint: String? { idNumber.isEmpty || idNumber.count >= 5 ? nil : "证件号码格式不正确" }
     private var valid: Bool {
         let docsOK = sides.allSatisfy { !$0.2 || docs[$0.0] != nil }
-        if level == 2 { return docsOK }
         return !first.trimmingCharacters(in: .whitespaces).isEmpty && !last.trimmingCharacters(in: .whitespaces).isEmpty
             && idNumber.count >= 5 && age >= 18 && docsOK
     }
@@ -197,7 +201,10 @@ struct KycFormView: View {
     var body: some View {
         SecForm(title: level == 2 ? "高级认证" : "基础认证", onBack: onBack, error: error, button: "提交审核",
                 enabled: valid && uploading == nil, loading: loading, action: { Task { await submit() } }) {
-            if level == 1 {
+            if level == 2 {
+                InfoNote(text: "高级认证需重新填写基础资料并上传证件，另需提供近 3 个月的地址证明。")
+            }
+            Group {
                 HStack(spacing: 12) {
                     LBTextField(label: "名", placeholder: "与证件一致", text: $first)
                     LBTextField(label: "姓", placeholder: "与证件一致", text: $last)
