@@ -11,6 +11,7 @@
     "pretypecheck": "node scripts/gen-asset-manifest.mjs",
     "typecheck": "tsc --noEmit",
     "check:order-display": "node --experimental-strip-types scripts/check-order-display.mjs",
+    "check:redirect": "node --experimental-strip-types scripts/check-safe-redirect.mjs",
     "check:nav": "node scripts/check-nav-dropdowns.mjs"
   },
   "dependencies": {
