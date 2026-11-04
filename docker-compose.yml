@@ -219,6 +219,9 @@ services:
       ACCOUNT_INTERNAL_URL: http://account:8081
       # Required: account calls growth for invite binding / referral data.
       GROWTH_INTERNAL_URL: http://growth:8091
+      # VIP application eligibility (server-side): assets >= X USDT OR 30-day volume >= Y USDT.
+      VIP_MIN_TOTAL_ASSETS_USDT: ${VIP_MIN_TOTAL_ASSETS_USDT:-500000}
+      VIP_MIN_VOLUME_30D_USDT: ${VIP_MIN_VOLUME_30D_USDT:-50000000}
       SMS_ENABLED: ${SMS_ENABLED:-false}
       # Passkeys: unset WEBAUTHN_RP_ID = passkeys disabled. Origins: comma list
       # (WEBAUTHN_ORIGINS accepted as an alias of WEBAUTHN_RP_ORIGINS).
