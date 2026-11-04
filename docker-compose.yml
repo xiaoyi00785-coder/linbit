@@ -56,6 +56,11 @@ services:
       WALLET_CHAIN: ${WALLET_CHAIN:-mock}
       MM_USER_ID: ${MM_USER_ID:-mm:main}
       MM_SEED_MAX: ${MM_SEED_MAX:-10000000}
+      # Testnet-only admin credit to a user's funding account (POST /admin/v1/users/{uid}/credit).
+      # Refused unless WALLET_CHAIN=testnet AND this is true; refused on mainnet regardless.
+      ADMIN_USER_CREDIT_ENABLED: ${ADMIN_USER_CREDIT_ENABLED:-false}
+      ADMIN_USER_CREDIT_MAX: ${ADMIN_USER_CREDIT_MAX:-100000}
+      ADMIN_USER_CREDIT_DAILY_MAX: ${ADMIN_USER_CREDIT_DAILY_MAX:-1000000}
       ORDER_URL: ${ORDER_URL:-http://order:8084}
       # Convert hedging (empty = code defaults; hedge account must be system:*).
       CONVERT_HEDGE_ENABLED: ${CONVERT_HEDGE_ENABLED:-}
@@ -335,6 +340,9 @@ services:
       LINBIT_ENV: ${LINBIT_ENV:-development}
       PORT: "8088"
       ADMIN_MM_SEED_MAX: ${ADMIN_MM_SEED_MAX:-10000000}
+      # Testnet-only admin credit to a user's funding account (POST /admin/v1/users/{uid}/credit).
+      # Refused unless WALLET_CHAIN=testnet AND this is true; refused on mainnet regardless.
+      ADMIN_USER_CREDIT_ENABLED: ${ADMIN_USER_CREDIT_ENABLED:-false}
       DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       ACCOUNT_INTERNAL_URL: http://account:8081
