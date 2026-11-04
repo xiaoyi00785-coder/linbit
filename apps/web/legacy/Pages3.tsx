@@ -100,7 +100,7 @@ const SPOT_REC=()=><SpotRec/>
 const sd=v=>/buy|long/i.test(v)?'买入':'卖出'
 const FUT_ORD=i=>i===1?<Live path="/futures/positions/history?limit=200" pick={d=>d.positions} row={x=>[x.symbol,x.side==='long'?'多':'空',x.entryPrice,x.closePrice,x.maxQty,fmtFeeExact(x.realizedPnl),tm(x.openTime),tm(x.closeTime)]}/>
  :i===2?<Live path="/futures/trades?limit=200" pick={d=>d.trades} row={x=>[x.symbol,sd(x.side),x.price,x.qty,fmtFeeExact(x.fee),x.role==='maker'?'Maker':'Taker',tm(x.time)]}/>
- :i===3?<Live path="/futures/bills?limit=200" pick={d=>(d.bills||[]).filter(b=>/pnl/i.test(b.kind))} row={x=>[x.symbol||'--',BILL_[x.kind]||x.kind,fmtV(x.amount),tm(x.time)]}/>
+ :i===3?<Live path="/futures/bills?limit=200" pick={d=>(d.bills||[]).filter(b=>/pnl/i.test(b.kind))} row={x=>[x.symbol||'--',BILL_[x.kind]||x.kind,fmtFeeExact(x.amount),tm(x.time)]}/>
  :<Live path="/futures/orders?limit=200" pick={d=>(d.orders||[]).filter(o=>!isOpenStatus(o.status))} row={x=>[x.symbol,`${x.filledQty} | ${x.qty}`,sd(x.side),x.avgPrice||'--',x.price&&+x.price?x.price:'市价',x.type==='limit'?'限价':'市价',st_(x.status),x.orderId,tm(x.createdAt),tm(x.updatedAt)]}/>
 const SPOT_ORD=i=>i===2?<Live path="/spot/trades?page=1&pageSize=50" pick={items_} row={x=>[x.symbol,x.side==='buy'?'买入':'卖出',x.price,x.quantity,fmtV(+x.price*+x.quantity),x.fee!=null?fmtFeeStr(x.fee)+' '+(x.feeAsset||''):'--',x.role==='maker'?'Maker':'Taker',tm(x.createdAt)]}/>
  :<Live path={i?'/spot/orders/history?page=1&pageSize=50':'/spot/orders/open?page=1&pageSize=50'} pick={items_} row={x=>[x.symbol,tm(x.createdAt),x.side==='buy'?'买入':'卖出',x.price||'市价',x.filledQuantity,orderQtyText(x),orderAmountText(x,fmtV),'--',x.type==='limit'?'限价':'市价',st_(x.status)]}/>
