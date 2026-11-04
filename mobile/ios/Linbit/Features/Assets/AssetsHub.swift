@@ -49,7 +49,7 @@ struct AssetsLoginGate<Content: View>: View {
             VStack(spacing: 16) {
                 EmptyStateView(text: "登录后查看")
                 LBButton(title: "登录 / 注册", height: 40) { session.present(.login) }.frame(width: 160)
-            }.frame(maxWidth: .infinity).padding(.top, 60)
+            }.padding(.top, 60).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
     }
 }
