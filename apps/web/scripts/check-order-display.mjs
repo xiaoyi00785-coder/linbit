@@ -82,6 +82,7 @@ console.log("net-display ok");
 import { fmtVolume, fmtFeeEst } from "../lib/format.ts";
 import { stLabel, KNOWN_STATUSES } from "../lib/orderStatus.ts";
 import { etaMinutes, withdrawTip } from "../lib/assetDisplay.ts";
+import { sparkPoints, sparkPath } from "../lib/sparkLine.ts";
 // 1. 零 / 缺失成交额统一 "--"
 for (const v of [0, "0", "0.00", "0.00000000", "", undefined, null, "abc", NaN, -5]) assert.equal(fmtVolume(v), "--", String(v));
 assert.equal(fmtVolume("1234567.891"), "1,234,567.89");
@@ -152,3 +153,36 @@ assert.equal(withdrawTip("BTC", "BTC", "0.001", 30), "当前选择 BTC · 比特
 assert.equal(withdrawTip("ETH", "ERC20", undefined, undefined), undefined);
 assert.doesNotMatch(withdrawTip("BTC", "BTC", "0.001", undefined), /USDT|12/);
 console.log("qa-batch1 ok");
+
+// 行情卡片走势：只来自真实 K 线收盘价（近 24 根），无数据不画线
+{
+  const k = (t, c) => ({ time: t, close: String(c) });
+  assert.deepEqual(sparkPoints([k(3, "30"), k(1, "10"), k(2, "20")]), [10, 20, 30]); // 按时间升序
+  assert.equal(sparkPoints([k(1, "10")]), null); // 不足 2 根
+  assert.equal(sparkPoints([]), null);
+  assert.equal(sparkPoints(undefined), null);
+  assert.equal(sparkPoints(null), null);
+  assert.equal(sparkPoints([k(1, "x"), k(2, "0"), k(3, "-1"), k(4, "5")]), null); // 非法 / 非正价格被丢弃，剩 1 根
+  assert.deepEqual(sparkPoints([{ openTime: 1000, close: 5 }, { openTime: 2000, close: 6 }]), [5, 6]);
+  assert.equal(sparkPoints(Array.from({ length: 40 }, (_, i) => k(i, i + 1))).length, 24); // 只取最近 24 根
+  assert.deepEqual(sparkPoints(Array.from({ length: 40 }, (_, i) => k(i, i + 1))).slice(0, 2), [17, 18]);
+  const path = sparkPath([10, 20, 30]).split(" ");
+  assert.equal(path.length, 3);
+  assert.equal(path[0], "0.0,40.0"); // 最低价在下
+  assert.equal(path[2], "90.0,4.0"); // 最高价在上
+  assert.equal(sparkPath([5, 5, 5]), "0.0,22.0 45.0,22.0 90.0,22.0"); // 全相同：水平线，不除零
+  assert.doesNotMatch(sparkPath([1, 2, 3]), /NaN|Infinity/);
+  const { readFileSync } = await import("node:fs");
+  const app = readFileSync(new URL("../legacy/App.tsx", import.meta.url), "utf8");
+  const spark = app.slice(app.indexOf("function Spark({c})"), app.indexOf("function Home()"));
+  assert.doesNotMatch(spark, /Math\.random|Math\.sin/); // 不再伪造走势
+  assert.match(spark, /useSpark\(c\.symbol\)/);
+  assert.match(spark, /changeClass\(c\.c\)/); // 颜色按 24h 涨跌符号
+  assert.doesNotMatch(spark, /c\.c>0\?'var\(--lb-up\)'/);
+  // 提现页不再写死「24 小时额度 50,000」：后端没有用户侧接口返回该额度，不显示、不编造
+  const wd = readFileSync(new URL("../features/Withdraw.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(wd, /50,000|24 小时额度/);
+  const wl = readFileSync(new URL("../lib/wallet.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(wl, /50,000/);
+}
+console.log("spark-and-limit ok");

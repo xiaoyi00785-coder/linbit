@@ -227,7 +227,7 @@ export function Withdraw() {
                   <input placeholder="Memo / Tag" value={memo} onChange={(e) => setMemo(e.target.value.trim())} />
                 </div>
               </>) : (<>
-                <div className="wwarn"><b>!</b>转给 linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器；不支持转入子账户；24 小时额度 50,000 USDT。</div>
+                <div className="wwarn"><b>!</b>转给 linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器；不支持转入子账户。</div>
                 <div className="fx-field">
                   收款方
                   <input placeholder="输入对方 UID 或邮箱" value={to} onChange={(e) => setTo(e.target.value.trim())} />
@@ -242,7 +242,7 @@ export function Withdraw() {
               </div>
               <div className="wkv">
                 <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{fmtAmt(free)} {asset}</b>
-                {tab === "inner" ? <><span>24 小时额度</span><b>50,000 USDT</b></> : <>
+                {tab !== "inner" && <>
                 <span>单笔最小提现</span><b>{minS ?? "--"} {asset}</b>
                 <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
               </div>
