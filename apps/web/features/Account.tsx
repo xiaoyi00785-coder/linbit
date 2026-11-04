@@ -110,7 +110,9 @@ export function Announcements() {
       <h2 className="lh2">公告中心 <Src s={src} /></h2>
       <Tabs items={cats} cur={cat} set={setCat} />
       <div className="fx-list">
-        {list.filter((a) => cat === "全部" || a.category === cat).map((a) => (
+        {!src ? <Skel n={4} h={52} /> : list.filter((a) => cat === "全部" || a.category === cat).length === 0 ? (
+          <div className="fx-empty" role="status"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" /><path d="M8 9h8M8 12h5" /></svg><p>暂无公告</p><small>平台最新公告发布后将显示在这里</small></div>
+        ) : list.filter((a) => cat === "全部" || a.category === cat).map((a) => (
           <div key={a.id} className="fx-item"><div className="sp">{a.pinned && <span className="fx-pin">置顶</span>}<b>{a.title}</b><small>{a.category}</small></div><span className="lg">{a.date}</span></div>
         ))}
       </div>

@@ -47,6 +47,8 @@ function usePager(dep: string) {
   return { end, page: stack.length, next: (e?: number) => e && setStack((s) => [...s, e]), prev: () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)) };
 }
 function Pager({ pg, next }: { pg: ReturnType<typeof usePager>; next?: number }) {
+  // 仅一页（无上一页也无下一页）时不展示分页
+  if (pg.page <= 1 && !next) return null;
   return <div className="fi-pager"><button className="fi-btn" disabled={pg.page <= 1} onClick={pg.prev}>上一页</button><span>第 {pg.page} 页</span><button className="fi-btn" disabled={!next} onClick={() => pg.next(next)}>下一页</button></div>;
 }
 
