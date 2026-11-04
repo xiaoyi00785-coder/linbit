@@ -74,4 +74,11 @@ object Fmt {
         val v = usdt.multiply(rate)
         return "¥" + if (precision != null) price(v, precision) else priceAuto(v)
     }
+
+    /** 盘口数量：≥1000 用 K / M 缩写（对照图 ref/28：41.35K、2.73M、413.4955、445.91943）。 */
+    fun compact(d: BigDecimal): String = when {
+        d >= BigDecimal(1_000_000) -> amount(d.divide(BigDecimal(1_000_000)), 2) + "M"
+        d >= BIG_1000 -> amount(d.divide(BIG_1000), 2) + "K"
+        else -> amount(d, if (d >= BigDecimal(100)) 4 else 5)
+    }
 }

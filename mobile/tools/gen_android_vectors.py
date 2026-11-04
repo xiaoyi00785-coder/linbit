@@ -111,6 +111,10 @@ def main():
             # 灰色实心 + 镂空（清除按钮）：不随 tint 变色，日夜各一版
             write(os.path.join(drawable, f"ic_{name}_light.xml"), vector(vb, els, 24, "#A3A3A3", "#FFFFFF"))
             write(os.path.join(drawable, f"ic_{name}_dark.xml"), vector(vb, els, 24, "#5E5E62", "#161618"))
+        elif f.startswith("mc-"):
+            # 多色（深色块 + 白色镂空字形）：日夜各一版，不随 tint 变色
+            write(os.path.join(drawable, f"ic_{name}_light.xml"), vector(vb, els, 24, "#111111", "#FFFFFF"))
+            write(os.path.join(drawable, f"ic_{name}_dark.xml"), vector(vb, els, 24, "#F5F5F5", "#161618"))
         elif f.startswith("tab-"):
             write(os.path.join(drawable, f"ic_{name}_light.xml"), vector(vb, els, 24, "#111111", "#FFFFFF"))
             write(os.path.join(drawable, f"ic_{name}_dark.xml"), vector(vb, els, 24, "#F5F5F5", "#1C1C1E"))
