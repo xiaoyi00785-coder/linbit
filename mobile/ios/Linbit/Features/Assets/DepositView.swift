@@ -80,6 +80,8 @@ struct DepositView: View {
     @State private var net: APIWithdrawNetwork?
     @State private var addr: Loadable<APIDepositAddress> = .idle
     @State private var showNets = false
+    /// 后端标记为 recommended 的网络（GET /wallet/networks）
+    @State private var recommended: Set<String> = []
     @State private var showAccount = false
     @State private var account = "资金账户"
 
@@ -114,7 +116,7 @@ struct DepositView: View {
         }
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
         .task { await loadNets() }
-        .lbSheet($showNets) { NetworkSheet(asset: asset, nets: nets.value ?? [], selected: net?.network) { n in showNets = false; net = n; Task { await loadAddr() } } onClose: { showNets = false } }
+        .lbSheet($showNets) { NetworkSheet(asset: asset, nets: nets.value ?? [], selected: net?.network, recommended: recommended) { n in showNets = false; net = n; Task { await loadAddr() } } onClose: { showNets = false } }
         .lbSheet($showAccount) {
             LBSheet(title: "充值后自动划转至", onClose: { showAccount = false }) {
                 VStack(spacing: 0) {
@@ -177,12 +179,16 @@ struct DepositView: View {
         nets = .loading
         do {
             // 充值网络按币种取 GET /wallet/networks?asset=（含 minDeposit / 充值开关）
-            let l = try await AssetsAPI.walletNetworks(asset: asset).compactMap { n -> APIWithdrawNetwork? in
+            // 保持后端返回顺序（资产 → sortOrder → 网络代码），不在客户端重排
+            let raw = try await AssetsAPI.walletNetworks(asset: asset)
+            recommended = Set(raw.filter { $0.recommended == true && $0.depositEnabled != false }.compactMap(\.network))
+            let l = raw.compactMap { n -> APIWithdrawNetwork? in
                 guard let name = n.network, n.depositEnabled != false, n.asset == nil || n.asset == asset else { return nil }
                 return APIWithdrawNetwork(network: name, minWithdraw: n.minDeposit, confirmations: n.confirmations, estimatedArrivalMinutes: n.estimatedArrivalMinutes)
             }
             nets = .loaded(l)
-            if l.count == 1 { net = l[0]; await loadAddr() } else if !l.isEmpty { showNets = true }
+            if net == nil, let rec = l.first(where: { recommended.contains($0.network) }) { net = rec; await loadAddr() }
+            else if l.count == 1 { net = l[0]; await loadAddr() } else if !l.isEmpty { showNets = true }
             else { addr = .failed("该币种暂不支持充值") }
         } catch { nets = .failed(error.lbMessage); addr = .failed(error.lbMessage) }
     }
@@ -219,6 +225,7 @@ struct NetworkSheet: View {
     let asset: String
     let nets: [APIWithdrawNetwork]
     let selected: String?
+    var recommended: Set<String> = []
     let onPick: (APIWithdrawNetwork) -> Void
     let onClose: () -> Void
 
@@ -227,7 +234,6 @@ struct NetworkSheet: View {
          "BEP20": "BNB Smart Chain (BEP20)", "ARBITRUM": "Arbitrum One", "SOL": "Solana", "BTC": "Bitcoin"][n.uppercased()] ?? n
     }
     private var cheapest: String? { nets.min { Dec.parse($0.gasFeeEstimate) < Dec.parse($1.gasFeeEstimate) }?.network }
-    private var fastest: String? { nets.min { ($0.estimatedArrivalMinutes ?? 999) < ($1.estimatedArrivalMinutes ?? 999) }?.network }
 
     var body: some View {
         LBSheet(title: "选择网络", showClose: true, onClose: onClose) {
@@ -243,7 +249,7 @@ struct NetworkSheet: View {
                             HStack(spacing: 6) {
                                 Text(Self.display(n.network)).font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
                                 if n.network == cheapest && nets.count > 1 { badge("最低") }
-                                if n.network == fastest && nets.count > 1 { badge("推荐") }
+                                if recommended.contains(n.network) { RecommendedChip() }
                                 Spacer()
                             }
                             Text("手续费 \(n.gasFeeEstimate ?? "0") \(n.gasFeeAsset ?? asset)").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
