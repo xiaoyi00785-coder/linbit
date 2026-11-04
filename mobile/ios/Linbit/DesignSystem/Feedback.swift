@@ -160,7 +160,6 @@ enum ErrorText {
         "RECIPIENT_SUB_ACCOUNT": "不支持向子账户内部转账",
         "RECIPIENT_UNAVAILABLE": "收款人账户状态异常，暂无法收款",
         "INTERNAL_TRANSFER_LIMIT_EXCEEDED": "已超过 24 小时内部转账额度",
-        "IDEMPOTENCY_CONFLICT": "重复提交，请勿重复操作",
         "TWOFA_REQUIRED": "请先绑定并完成二次验证",
         "INVALID_TOTP": "验证码错误",
         "WITHDRAW_LOCKED": "安全设置变更后 24 小时内暂不可提现/转账",
