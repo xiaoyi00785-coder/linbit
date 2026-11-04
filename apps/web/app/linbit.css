@@ -242,3 +242,4 @@ body:has(.cookie) .svc{bottom:330px}
 @media (max-width:800px){.svcp2{left:0;right:0;bottom:0;width:auto;max-height:85vh;border-radius:12px 12px 0 0}
   .cookie{left:12px;right:12px;width:auto;bottom:12px}body:has(.cookie) .svc{bottom:auto;top:calc(100vh - 360px)}}
 @media (min-width:801px){body:has(.of) .svc{bottom:12px;right:12px;width:40px;height:40px}}
+.vform select.vin.sel{appearance:auto;cursor:pointer}.vct-err{color:var(--lb-red,#f6465d);font-size:12px;margin:4px 0 0}.vform .vin.btn:disabled{opacity:.5;cursor:not-allowed}.vct-hint{font-size:12px;margin-top:6px}
