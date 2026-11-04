@@ -146,17 +146,72 @@ func statusOf(u upstream) interface{} {
 	return m
 }
 
+// GET /admin/v1/users/{uid}/balances[?account=spot|funding]
+// Without ?account both wallets are returned, each row labelled by account.
 func (s *Server) handleUserBalances(w http.ResponseWriter, r *http.Request) {
-	u, err := s.call(r.Context(), http.MethodGet, s.cfg.AssetURL, "/internal/balances?userId="+url.QueryEscape(r.PathValue("uid")), nil)
-	if err != nil {
-		upstreamErr(w, "balances", err)
+	uid := r.PathValue("uid")
+	accts, ok := adminBalanceAccounts(r.URL.Query().Get("account"))
+	if !ok {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 只能是 spot 或 funding")
 		return
 	}
-	relay(w, u)
+	type row struct {
+		Account string `json:"account"`
+		Asset   string `json:"asset"`
+		Free    string `json:"free"`
+		Locked  string `json:"locked"`
+		Total   string `json:"total"`
+	}
+	out := map[string]interface{}{"userId": uid}
+	items := []row{}
+	for _, acct := range accts {
+		path := "/internal/balances?userId=" + url.QueryEscape(uid)
+		if acct == "funding" {
+			path += "&account=funding"
+		}
+		u, err := s.call(r.Context(), http.MethodGet, s.cfg.AssetURL, path, nil)
+		if err != nil {
+			upstreamErr(w, "balances", err)
+			return
+		}
+		if !u.ok() {
+			relay(w, u)
+			return
+		}
+		var p struct {
+			Items []row `json:"items"`
+		}
+		if err := u.decode(&p); err != nil {
+			upstreamErr(w, "balances", err)
+			return
+		}
+		for i := range p.Items {
+			p.Items[i].Account = acct
+		}
+		if p.Items == nil {
+			p.Items = []row{}
+		}
+		out[acct] = p.Items
+		items = append(items, p.Items...)
+	}
+	out["items"], out["total"] = items, len(items)
+	common.WriteJSON(w, http.StatusOK, out)
+}
+
+func adminBalanceAccounts(q string) ([]string, bool) {
+	switch strings.ToLower(strings.TrimSpace(q)) {
+	case "", "all":
+		return []string{"spot", "funding"}, true
+	case "spot":
+		return []string{"spot"}, true
+	case "funding":
+		return []string{"funding"}, true
+	}
+	return nil, false
 }
 
 func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) {
-	u, err := s.call(r.Context(), http.MethodGet, s.cfg.AssetURL, "/internal/admin/ledger"+passQuery(r, "userId", "asset", "txType", "ref", "page", "size"), nil)
+	u, err := s.call(r.Context(), http.MethodGet, s.cfg.AssetURL, "/internal/admin/ledger"+passQuery(r, "userId", "asset", "txType", "ref", "page", "pageSize", "size"), nil)
 	if err != nil {
 		upstreamErr(w, "ledger", err)
 		return

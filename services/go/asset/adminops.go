@@ -83,7 +83,9 @@ func (s *Store) Ledger(ctx context.Context, f LedgerFilter) ([]ledgerTxDTO, int,
 		add("t.tx_type = ?", f.TxType)
 	}
 	if f.Ref != "" {
-		add("t.ref = ?", f.Ref)
+		// Admin testnet credits are journalled as "admin_credit:<ref>" (wallet_ops
+		// key); match both the bare ref the operator typed and the prefixed key.
+		add("t.ref IN (?::text, 'admin_credit:' || ?::text)", f.Ref)
 	}
 	if f.Asset != "" {
 		add("EXISTS (SELECT 1 FROM ledger_entries e WHERE e.tx_id = t.id AND e.asset = ?)", strings.ToUpper(f.Asset))
@@ -148,6 +150,9 @@ func (s *Store) Ledger(ctx context.Context, f LedgerFilter) ([]ledgerTxDTO, int,
 // GET /internal/admin/ledger?userId=&asset=&txType=&ref=&page=&pageSize=
 func (s *Server) handleAdminLedger(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	if q.Get("pageSize") == "" && q.Get("size") != "" {
+		q.Set("pageSize", q.Get("size"))
+	}
 	f := LedgerFilter{UserID: q.Get("userId"), Asset: q.Get("asset"), TxType: q.Get("txType"), Ref: q.Get("ref"),
 		Page: atoiDefault(q.Get("page"), 1, 1, 1_000_000), Size: atoiDefault(q.Get("pageSize"), 20, 1, 200)}
 	items, total, err := s.store.Ledger(r.Context(), f)
