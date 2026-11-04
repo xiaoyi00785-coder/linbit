@@ -42,19 +42,45 @@ export function fmtVolume(value: string | number | null | undefined, digits = 2)
   return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+/** 把数字 / 数字字符串转成不带指数的十进制字符串（只做字符串展开，不经过浮点运算）；非法返回 null。 */
+function plainDecimal(value: string | number): string | null {
+  const raw = typeof value === "number" ? (Number.isFinite(value) ? String(value) : "") : value.trim();
+  const m = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(raw);
+  if (!m || (!m[2] && !m[3])) return null;
+  const [, sign, ip = "", fp = "", ex = "0"] = m;
+  let digits = ip + fp;
+  let point = ip.length + Number(ex); // 小数点在 digits 中的位置
+  if (point < 0) { digits = "0".repeat(-point) + digits; point = 0; }
+  else if (point > digits.length) digits = digits.padEnd(point, "0");
+  const int = digits.slice(0, point).replace(/^0+(?=\d)/, "") || "0";
+  const frac = digits.slice(point);
+  return sign + int + (frac ? "." + frac : "");
+}
+
 /**
- * 预估手续费展示（全站共用）：最多 maxDp 位小数、去尾零；0 / 非数值为 "--"；
- * 小于最小可显示单位（10^-maxDp）的非零费用显示为 "< 0.0…1"，不输出 0.00000006383 这类过长小数或科学计数法。
+ * 预估手续费展示（全站共用）：最多 maxDp 位小数，**向上取整**（展示值不会低于实际费用）、去尾零；
+ * 全程字符串 / 十进制进位，不经过浮点（0.00012345 USDT @4 位 ⇒ 0.0002，而不是 0.0001）。
+ * 数字先转成不带指数的字符串（1e-7 ⇒ 0.0000001）；0、负数、空值、非数值为 "--"；
+ * 非零但小于最小单位（10^-maxDp）的费用向上取整为最小单位（如 0.00000001），不输出 0 或科学计数法。
  * 基础币（BTC 等）用 8 位，USDT 用 4 位（与合约下单面板的预估手续费一致）。
  */
 export function fmtFeeEst(value: string | number | null | undefined, maxDp = 8): string {
   if (value === null || value === undefined || value === "") return "--";
-  const n = typeof value === "string" ? Number(value) : value;
-  if (!Number.isFinite(n) || n <= 0) return "--";
-  const min = 10 ** -maxDp;
-  if (n < min) return `< ${min.toFixed(maxDp)}`;
-  const s = n.toFixed(maxDp);
-  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+  const d = plainDecimal(value);
+  if (d === null || d.startsWith("-") || !/[1-9]/.test(d)) return "--";
+  const [ip, fp = ""] = d.replace(/^\+/, "").split(".");
+  const keep = fp.slice(0, maxDp).padEnd(maxDp, "0");
+  let digits = (ip + keep).split("");
+  if (/[1-9]/.test(fp.slice(maxDp))) { // 被截掉的部分有非零数字 ⇒ 进一
+    let k = digits.length - 1;
+    while (k >= 0 && digits[k] === "9") digits[k--] = "0";
+    if (k < 0) digits.unshift("1"); else digits[k] = String(Number(digits[k]) + 1);
+  }
+  const all = digits.join("");
+  const cut = all.length - maxDp;
+  const int = all.slice(0, cut).replace(/^0+(?=\d)/, "") || "0";
+  const frac = all.slice(cut).replace(/0+$/, "");
+  return frac ? `${int}.${frac}` : int;
 }
 
 /** 自适应精度：保留 sig 位有效数字（至少 minDp 位小数，最多 maxDp），去尾零，绝不输出科学计数法 */

@@ -86,17 +86,45 @@ import { etaMinutes, withdrawTip } from "../lib/assetDisplay.ts";
 for (const v of [0, "0", "0.00", "0.00000000", "", undefined, null, "abc", NaN, -5]) assert.equal(fmtVolume(v), "--", String(v));
 assert.equal(fmtVolume("1234567.891"), "1,234,567.89");
 assert.equal(fmtVolume(0.5, 4), "0.5000");
-// 7. 预估手续费：最多 8 位（基础币）/ 4 位（USDT），不输出 0.00000006383
-assert.equal(fmtFeeEst(0.00000006383, 8), "0.00000006");
+// 7. 预估手续费：向上取整到展示位数（展示值不低于实际），字符串十进制进位，不输出 0.00000006383 / 科学计数法
+assert.equal(fmtFeeEst(0.00012345, 4), "0.0002"); // review: 旧实现 toFixed 显示 0.0001
+assert.equal(fmtFeeEst("0.00012345", 4), "0.0002");
+assert.equal(fmtFeeEst(0.00000006383, 8), "0.00000007");
 assert.equal(fmtFeeEst(0.0000638, 8), "0.0000638");
-assert.equal(fmtFeeEst(0.123456789, 8), "0.12345679");
+assert.equal(fmtFeeEst(0.123456781, 8), "0.12345679");
+assert.equal(fmtFeeEst("0.123456780", 8), "0.12345678"); // 截掉的全是 0 ⇒ 不进位
+assert.equal(fmtFeeEst("0.100000001", 8), "0.10000001");
 assert.equal(fmtFeeEst(0.5, 8), "0.5");
-assert.equal(fmtFeeEst(0.00000000383, 8), "< 0.00000001");
-assert.equal(fmtFeeEst(0.00123456, 4), "0.0012");
-assert.equal(fmtFeeEst(0.00001, 4), "< 0.0001");
-assert.equal(fmtFeeEst(0, 8), "--");
-assert.equal(fmtFeeEst(undefined, 8), "--");
-assert.doesNotMatch(fmtFeeEst(1e-7, 8), /e/i);
+assert.equal(fmtFeeEst(5, 4), "5");
+assert.equal(fmtFeeEst("12.00001", 4), "12.0001");
+assert.equal(fmtFeeEst("0.99991", 4), "1"); // 进位到整数
+assert.equal(fmtFeeEst("9.99991", 4), "10");
+assert.equal(fmtFeeEst("99999.99999", 4), "100000");
+assert.equal(fmtFeeEst(0.00123456, 4), "0.0013");
+assert.equal(fmtFeeEst(0.0012, 4), "0.0012");
+// 浮点陷阱：0.1+0.2 / 1.005 之类不能因浮点误差多进或少进
+assert.equal(fmtFeeEst(0.1 + 0.2, 4), "0.3001"); // 0.30000000000000004 的确大于 0.3，向上取整为 0.3001
+assert.equal(fmtFeeEst("0.3", 4), "0.3");
+assert.equal(fmtFeeEst(1.005, 2), "1.01");
+// 指数写法的数字 / 字符串：先展开为非指数十进制字符串
+assert.equal(fmtFeeEst(1e-7, 8), "0.0000001");
+assert.equal(fmtFeeEst(1.5e-9, 8), "0.00000001");
+assert.equal(fmtFeeEst("6.383e-8", 8), "0.00000007");
+assert.equal(fmtFeeEst("1e-8", 8), "0.00000001");
+assert.equal(fmtFeeEst(1e21, 4), "1000000000000000000000");
+assert.equal(fmtFeeEst("1.2345E+2", 2), "123.45");
+// 极小的非零值：向上取整为最小单位
+assert.equal(fmtFeeEst(0.00000000383, 8), "0.00000001");
+assert.equal(fmtFeeEst("0.000000000000000001", 8), "0.00000001");
+assert.equal(fmtFeeEst(0.00001, 4), "0.0001");
+assert.equal(fmtFeeEst("0.0000100000", 4), "0.0001");
+// 零 / 负数 / 非法 ⇒ --
+for (const v of [0, "0", "0.0000", "0.00000000", -0, -1, "-0.5", "-0.00000001", "", "  ", "abc", "1,5", "1e", ".", "--", NaN, Infinity, -Infinity, undefined, null]) assert.equal(fmtFeeEst(v, 8), "--", String(v));
+assert.equal(fmtFeeEst(".5", 4), "0.5");
+assert.equal(fmtFeeEst(" 0.25 ", 4), "0.25");
+assert.equal(fmtFeeEst("+0.25", 4), "0.25");
+assert.equal(fmtFeeEst("0.25", 0), "1");
+for (const v of [1e-7, 1.5e-9, 6.383e-8, 1e-20, 1e21, 123456789.123456789]) assert.doesNotMatch(fmtFeeEst(v, 8), /e/i, String(v));
 // 6. 状态：已知枚举都有中文，done = 已完成；上下文覆盖
 assert.equal(stLabel("done"), "已完成");
 assert.equal(stLabel("DONE"), "已完成");

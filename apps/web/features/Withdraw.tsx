@@ -89,7 +89,8 @@ export function Withdraw() {
     // 回退 /wallet/withdraw/networks：同样带 minWithdraw / estimatedArrivalMinutes 等字段，一并写入 netInfo，
     // 否则回退路径下拉里没有最小额和预计到账时间（只剩网络名）
     const fallbackNets = () => listWithdrawNetworks(asset).then((r) => {
-      const rows = r.data?.networks ?? [];
+      // 与主路径一致：只列后端 withdrawEnabled !== false 的网络
+      const rows = (r.data?.networks ?? []).filter((x) => x.withdrawEnabled !== false);
       const l = rows.map((x) => x.network);
       if (r.source === "api" && l.length) {
         setNetInfo((m) => ({
@@ -97,7 +98,7 @@ export function Withdraw() {
           ...Object.fromEntries(rows.map((x) => [`${asset}:${x.network}`, {
             asset, network: x.network, minWithdraw: x.minWithdraw ?? undefined, maxWithdraw: x.maxWithdraw ?? undefined,
             withdrawFee: x.gasFeeEstimate ?? undefined, estimatedArrivalMinutes: x.estimatedArrivalMinutes ?? undefined,
-            withdrawEnabled: true,
+            memoRequired: x.memoRequired, withdrawEnabled: x.withdrawEnabled !== false,
           } as WalletNetwork])),
         }));
         setApiNets((m) => ({ ...m, [asset]: l }));
