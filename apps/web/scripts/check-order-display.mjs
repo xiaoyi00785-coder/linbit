@@ -152,3 +152,14 @@ assert.equal(withdrawTip("BTC", "BTC", "0.001", 30), "当前选择 BTC · 比特
 assert.equal(withdrawTip("ETH", "ERC20", undefined, undefined), undefined);
 assert.doesNotMatch(withdrawTip("BTC", "BTC", "0.001", undefined), /USDT|12/);
 console.log("qa-batch1 ok");
+
+// 网络下拉的最小额文案：「最小提现 12 USDT / 最小充值 1 USDT」，最小额是「不低于」，不带 ">"；
+// 已删除 legacy 充值页里写死的「最小提现 10 USDT / 网络费 ≈1 USDT」（不可达死代码）
+{
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../legacy/Pages.tsx", import.meta.url), "utf8");
+  assert.match(src, /\{out\?'最小提现':'最小充值'\} \{x\.min\} \{coin\}/);
+  assert.doesNotMatch(src, /最小(提现|充值)['"]?\}? ?(&gt;|>)/);
+  assert.doesNotMatch(src, /最小提现 10 USDT|网络费（链上 Gas）≈1 USDT|export const NETS/);
+}
+console.log("netpicker-min ok");
