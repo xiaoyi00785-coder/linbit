@@ -5782,10 +5782,15 @@ export interface components {
              */
             price?: string | null;
             /**
-             * @description 下单数量，按 quantityPrecision 格式化的十进制字符串。
+             * @description 下单数量，按 quantityPrecision 格式化的十进制字符串。按金额下的市价买单（quoteOrderQty）为 0。
              * @example 0.010000
              */
             quantity: string;
+            /**
+             * @description 仅按金额下的市价买单返回：计价币金额（按 pricePrecision 格式化）；其他订单不返回该字段。实际成交数量见 filledQuantity。
+             * @example 10.00
+             */
+            quoteOrderQty?: string;
             /**
              * @description 已成交数量，按 quantityPrecision 格式化的十进制字符串。
              * @example 0.000000

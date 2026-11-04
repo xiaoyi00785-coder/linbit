@@ -1,5 +1,6 @@
 "use client";
 /** 现货下单面板与委托列表：对接 /spot/*（@linbit/api-client），API 不可达时回退本地 mock */
+import { orderQtyText } from "@/lib/orderDisplay";
 import { useCallback, useEffect, useState } from "react";
 import { btnProps, tabProps } from "@/lib/a11y";
 import { useNavigate } from "@/lib/router";
@@ -164,7 +165,7 @@ export function SpotOrders({ symbol: SYMBOL }: { symbol: string }) {
                 <tr key={r.tradeId}><td>{t(r.createdAt)}</td><td>{r.symbol}</td><td className={r.side === "buy" ? "up" : "down"}>{r.side === "buy" ? "买入" : "卖出"}</td><td>{r.price}</td><td>{r.quantity}</td><td>{fmtFeeStr(r.fee)} {r.feeAsset ?? ""}</td><td>{r.role === "maker" ? "Maker" : "Taker"}</td></tr>
               ))
               : (rows as Order[]).map((o) => (
-                <tr key={o.orderId}><td>{t(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : "市价"}</td><td className={o.side === "buy" ? "up" : "down"}>{o.side === "buy" ? "买入" : "卖出"}</td><td>{o.price ?? "市价"}</td><td>{o.quantity}</td><td>{o.filledQuantity}</td><td>{ST[o.status] ?? o.status}</td><td>{tab === 0 && <a className="lime2" style={{ cursor: "pointer" }} onClick={() => cancel(o)}>撤单</a>}</td></tr>
+                <tr key={o.orderId}><td>{t(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : "市价"}</td><td className={o.side === "buy" ? "up" : "down"}>{o.side === "buy" ? "买入" : "卖出"}</td><td>{o.price ?? "市价"}</td><td>{orderQtyText(o)}</td><td>{o.filledQuantity}</td><td>{ST[o.status] ?? o.status}</td><td>{tab === 0 && <a className="lime2" style={{ cursor: "pointer" }} onClick={() => cancel(o)}>撤单</a>}</td></tr>
               ))}
           </tbody>
         </table>

@@ -20,6 +20,7 @@ import { asset } from '@/lib/asset';
 import { useRest } from '@/lib/rest';
 import { useAuthStore } from '@/lib/store';
 import { fmtAmt, fmtFeeStr } from '@/lib/format'
+import { orderQtyText, orderAmountText } from '@/lib/orderDisplay'
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div>
 const Eye=()=><span className="eye"><G n="eye" s={14}/></span>
@@ -97,7 +98,7 @@ const FUT_ORD=i=>i===1?<Live path="/futures/positions/history?limit=200" pick={d
  :i===3?<Live path="/futures/bills?limit=200" pick={d=>(d.bills||[]).filter(b=>/pnl/i.test(b.kind))} row={x=>[x.symbol||'--',BILL_[x.kind]||x.kind,fmtV(x.amount),tm(x.time)]}/>
  :<Live path="/futures/orders?limit=200" pick={d=>(d.orders||[]).filter(o=>o.status!=='NEW'&&o.status!=='PARTIALLY_FILLED')} row={x=>[x.symbol,`${x.filledQty} | ${x.qty}`,sd(x.side),x.avgPrice||'--',x.price&&+x.price?x.price:'市价',x.type==='limit'?'限价':'市价',st_(x.status),x.orderId,tm(x.createdAt),tm(x.updatedAt)]}/>
 const SPOT_ORD=i=>i===2?<Live path="/spot/trades?page=1&pageSize=50" pick={items_} row={x=>[x.symbol,x.side==='buy'?'买入':'卖出',x.price,x.quantity,fmtV(+x.price*+x.quantity),x.fee!=null?fmtFeeStr(x.fee)+' '+(x.feeAsset||''):'--',x.role==='maker'?'Maker':'Taker',tm(x.createdAt)]}/>
- :<Live path={i?'/spot/orders/history?page=1&pageSize=50':'/spot/orders/open?page=1&pageSize=50'} pick={items_} row={x=>[x.symbol,tm(x.createdAt),x.side==='buy'?'买入':'卖出',x.price||'市价',x.filledQuantity,x.quantity,x.price?fmtV(+x.price*+x.quantity):'--','--',x.type==='limit'?'限价':'市价',st_(x.status)]}/>
+ :<Live path={i?'/spot/orders/history?page=1&pageSize=50':'/spot/orders/open?page=1&pageSize=50'} pick={items_} row={x=>[x.symbol,tm(x.createdAt),x.side==='buy'?'买入':'卖出',x.price||'市价',x.filledQuantity,orderQtyText(x),orderAmountText(x,fmtV),'--',x.type==='limit'?'限价':'市价',st_(x.status)]}/>
 const CONV_ROWS=()=><Live path="/convert/orders?page=1&pageSize=50" pick={items_} row={x=>[tm(x.createdAt),`${fmtV(x.fromAmount)} ${x.from}`,`${fmtV(x.toAmount)} ${x.to}`,x.rate,st_(x.status)]}/>
 const R={funding:{rows:FUND_ROWS,t:'资金记录',tabs:['全部','充值','提现','划转','分发'],fil:i=>[<Sel key={1} k="币种" v="全部"/>,(i===1||i===2)&&<Sel key={2} k="类型" v={i===2?'链上提现':'链上充值'}/>,i===3&&<Sel key={4} k="账户" v="全部"/>,<Sel key={3} k="状态" v="全部"/>,<Dt key={5}/>],cols:i=>i===0?['时间','类型','币种','数量','状态']:i===3?['时间','币种','数量','从','到','状态']:i===4?['时间','币种','数量','类型','备注']:['时间','类型','币种','网络','数量','状态','链上交易']},
 futures:{rows:FUT_BILLS,t:'合约记录',fil:[<Sel key={1} k="币种" v="全部"/>,<Sel key={2} k="类型" v="全部" w={200}/>,<Dt key={3}/>],cols:['时间','资产','类型','数量','合约']},
