@@ -1251,6 +1251,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/support/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传工单图片附件（JPEG/PNG/WEBP，默认 ≤ 5 MiB，每小时 20 张）
+         * @description multipart/form-data，字段名 `file`。返回附件 id，随后在创建工单或回复时放入 attachments（每条最多 3 张，
+         *     仅能使用自己上传且未被使用的附件）。附件为私有资源，只能通过带 Bearer 令牌的 GET /support/attachments/{id} 读取。
+         */
+        post: operations["supportUploadAttachment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/attachments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取自己的工单附件（图片字节） */
+        get: operations["supportGetAttachment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 我的工单（新→旧） */
+        get: operations["supportListTickets"];
+        put?: never;
+        /**
+         * 提交工单（每 24 小时 5 个、未关闭最多 5 个、每小时 30 条消息）
+         * @description 标题 1–120 字，内容 1–5000 字。服务端会移除控制字符并将链接“去活”（`https://x` → `https[:]//x`，`www.` → `www[.]`）。
+         *     客户端必须以纯文本渲染工单内容（不要自动识别链接/电话；iOS 关闭 data detectors，Android 关闭 autoLink）。
+         */
+        post: operations["supportCreateTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/tickets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 工单详情与对话（同时将客服回复标记为已读） */
+        get: operations["supportGetTicket"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/tickets/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 用户回复工单（工单回到 open；已关闭返回 409 TICKET_CLOSED） */
+        post: operations["supportReplyTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/tickets/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 用户关闭工单（幂等） */
+        post: operations["supportCloseTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -4200,6 +4311,95 @@ export interface paths {
          *     ref 为幂等键：相同 ref 且参数相同返回原结果（replayed=true，不重复入账）；参数不同返回 409 REF_CONFLICT。
          */
         post: operations["adminUserTestnetCredit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/support/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 客服工单列表（support:view；open 按等待时长优先） */
+        get: operations["adminSupportTicketList"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/support/tickets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 客服工单详情（support:view；含 uid、处理人与客服姓名） */
+        get: operations["adminSupportTicketGet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * 修改工单状态 / 分配处理人（support:reply，审计）
+         * @description assigneeId 为 0 表示取消分配；处理人必须是启用中且有 support:reply 权限的管理员。
+         */
+        patch: operations["adminSupportTicketUpdate"];
+        trace?: never;
+    };
+    "/admin/v1/support/tickets/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 客服回复工单（support:reply，审计；默认状态改为 replied，并给用户发站内信） */
+        post: operations["adminSupportTicketReply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/support/attachments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取工单附件（support:view；需 Bearer，前端用 fetch → blob 显示） */
+        get: operations["adminSupportAttachment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/support/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 可分配的处理人（启用中、有 support:reply 的管理员） */
+        get: operations["adminSupportAssignees"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7480,6 +7680,78 @@ export interface components {
             updatedAt?: string | null;
             stale?: boolean;
         };
+        /**
+         * @description 账户 / 充提 / 交易 / 身份认证 / 安全 / 其他
+         * @enum {string}
+         */
+        SupportTicketCategory: "account" | "deposit_withdraw" | "trade" | "kyc" | "security" | "other";
+        /**
+         * @description open 待客服处理；replied 客服已回复；closed 已关闭
+         * @enum {string}
+         */
+        SupportTicketStatus: "open" | "replied" | "closed";
+        SupportAttachment: {
+            /** @example 3f9a1c0d2b.png */
+            id: string;
+            /** @enum {string} */
+            mime: "image/jpeg" | "image/png" | "image/webp";
+            size: number;
+            /**
+             * @description 用户端读取路径（需 Bearer）
+             * @example /support/attachments/3f9a1c0d2b.png
+             */
+            url?: string;
+        };
+        SupportTicketMessage: {
+            id: string;
+            /** @enum {string} */
+            author: "user" | "support";
+            /** @description 用户端客服消息固定为“客服”；后台为管理员用户名 */
+            authorName?: string;
+            /** @description 纯文本（用户内容中的链接已去活），请勿自动识别链接 */
+            body: string;
+            attachments: components["schemas"]["SupportAttachment"][];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SupportTicket: {
+            id: string;
+            /** @description 仅后台返回 */
+            uid?: string;
+            category: components["schemas"]["SupportTicketCategory"];
+            subject: string;
+            status: components["schemas"]["SupportTicketStatus"];
+            /**
+             * Format: int64
+             * @description 仅后台返回
+             */
+            assigneeId?: number;
+            /** @description 仅后台返回 */
+            assigneeName?: string;
+            /** @enum {string} */
+            lastReplyBy: "user" | "support";
+            /** Format: date-time */
+            lastReplyAt: string;
+            /** @description 有用户未读的客服回复 */
+            unread: boolean;
+            messageCount: number;
+            /** Format: date-time */
+            closedAt?: string;
+            closedBy?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description 仅详情返回 */
+            messages?: components["schemas"]["SupportTicketMessage"][];
+        };
+        SupportTicketList: {
+            items: components["schemas"]["SupportTicket"][];
+            total: number;
+            page: number;
+            pageSize: number;
+            categories?: components["schemas"]["SupportTicketCategory"][];
+        };
         AppFeatures: {
             /**
              * @example {
@@ -7492,7 +7764,8 @@ export interface components {
              *       "copyTrading": false,
              *       "p2p": false,
              *       "fiatOnRamp": false,
-             *       "options": false
+             *       "options": false,
+             *       "supportTickets": true
              *     }
              */
             features?: {
@@ -10846,6 +11119,255 @@ export interface operations {
                     "application/json": components["schemas"]["Kline"][];
                 };
             };
+        };
+    };
+    supportUploadAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportAttachment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 文件过大（FILE_TOO_LARGE） */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 非 JPEG/PNG/WEBP（UNSUPPORTED_MEDIA_TYPE） */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 上传过于频繁（RATE_LIMITED） */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    supportGetAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 图片 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    supportListTickets: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["SupportTicketStatus"];
+                /** @description 页码，从 1 开始 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数 */
+                pageSize?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicketList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    supportCreateTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    category: components["schemas"]["SupportTicketCategory"];
+                    subject: string;
+                    content: string;
+                    /** @description POST /support/attachments 返回的 id */
+                    attachments?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 提交过于频繁（RATE_LIMITED，带 Retry-After） */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    supportGetTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    supportReplyTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    attachments?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description 工单已关闭（TICKET_CLOSED） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 回复过于频繁（RATE_LIMITED） */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    supportCloseTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     getConvertPairs: {
@@ -15460,6 +15982,177 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    adminSupportTicketList: {
+        parameters: {
+            query?: {
+                status?: "open" | "replied" | "closed" | "all";
+                category?: components["schemas"]["SupportTicketCategory"];
+                uid?: string;
+                /** @description 处理人 id，`me` 为自己，`none` 为未分配 */
+                assigneeId?: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicketList"];
+                };
+            };
+        };
+    };
+    adminSupportTicketGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportTicket"];
+                };
+            };
+        };
+    };
+    adminSupportTicketUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    status?: components["schemas"]["SupportTicketStatus"];
+                    /** Format: int64 */
+                    assigneeId?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ticket?: components["schemas"]["SupportTicket"];
+                        before?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    adminSupportTicketReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    /**
+                     * @default replied
+                     * @enum {string}
+                     */
+                    status?: "replied" | "closed";
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ticket?: components["schemas"]["SupportTicket"];
+                        before?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    adminSupportAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 图片 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
+            };
+        };
+    };
+    adminSupportAssignees: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            /** Format: int64 */
+                            id?: number;
+                            username?: string;
+                        }[];
+                    };
+                };
             };
         };
     };

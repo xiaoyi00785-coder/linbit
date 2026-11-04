@@ -33,6 +33,7 @@ var featureDefaults = map[string]bool{
 	"p2p":             false,
 	"fiatOnRamp":      false,
 	"options":         false,
+	"supportTickets":  true,
 }
 
 // mainnetDefaults: owner decision for the mainnet launch — every shipped

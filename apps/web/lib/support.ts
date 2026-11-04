@@ -2,7 +2,7 @@
  *  NEXT_PUBLIC_SUPPORT_URL      在线客服/工单系统链接（https://）
  *  NEXT_PUBLIC_SUPPORT_TELEGRAM 官方客服 Telegram（https://t.me/...）
  *  NEXT_PUBLIC_SUPPORT_EMAIL    客服邮箱
- *  后端目前没有 1 对 1 客服 / 工单接口；/chat 是公开的交易者聊天室，不是客服。 */
+ *  站内工单见 lib/supportTickets.ts（/support/tickets）；/chat 是公开的交易者聊天室，不是客服。 */
 export type SupportChannel = { key: string; label: string; href: string; hint: string };
 const url = (u?: string) => (u && /^https:\/\//.test(u) ? u : null);
 export function supportChannels(): SupportChannel[] {

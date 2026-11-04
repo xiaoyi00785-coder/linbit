@@ -12,8 +12,9 @@ import * as O from './pages/Ops.jsx'
 import * as S from './pages/System.jsx'
 import * as X from './pages/Extra.jsx'
 import { Adjust } from './pages/Adjust.jsx'
+import { Support } from './pages/Support.jsx'
 
-const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users': U.RiskList, withdraw: F.Withdraw, deposit: F.Deposit, ledger: F.Ledger, adjust: Adjust,
+const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users': U.RiskList, withdraw: F.Withdraw, deposit: F.Deposit, ledger: F.Ledger, adjust: Adjust, support: Support,
   'spot-orders': T.SpotOrders, positions: T.Positions, grid: T.Grid, coins: P.Coins, pairs: P.Pairs, futures: P.Futures, fees: P.Fees,
   campaigns: O.Campaigns, rewards: O.Rewards, points: O.Points, copy: O.Copy, rebate: O.Rebate, content: O.Content, admins: S.Admins, audit: S.Audit, settings: S.Settings,
   wallets: X.Wallets, liquidation: X.Liquidation, partners: X.Partners, coupons: X.Coupons, notify: X.Notify }

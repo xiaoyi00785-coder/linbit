@@ -45,6 +45,7 @@ func newTestServer(t *testing.T) *Server {
 		AvatarDir:        t.TempDir(),
 		AvatarPublicBase: "/account/avatars",
 		AvatarMaxBytes:   2 * 1024 * 1024,
+		TicketDir:        t.TempDir(),
 	}
 	return NewServer(cfg, NewStore(db), nil)
 }

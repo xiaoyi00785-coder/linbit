@@ -21,6 +21,10 @@ func TestRBACMatrix(t *testing.T) {
 		{[]string{roleKYCReviewer, roleMarketing}, permRewardEdit, true},
 		{nil, permUserView, false},
 		{[]string{"nope"}, permUserView, false},
+		{[]string{roleSupport}, permSupportReply, true},
+		{[]string{roleAuditor}, permSupportView, true},
+		{[]string{roleAuditor}, permSupportReply, false},
+		{[]string{roleMarketing}, permSupportView, false},
 	}
 	for _, c := range cases {
 		if got := can(c.roles, c.perm); got != c.want {

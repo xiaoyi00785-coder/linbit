@@ -146,6 +146,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/account", proxy: accountProxy},
 			{prefix: "/notifications", proxy: accountProxy},
 			{prefix: "/vip", proxy: accountProxy},
+			{prefix: "/support", proxy: accountProxy},
 			// General transfer lives in the futures service (spot<->futures saga);
 			// must precede the /assets prefix.
 			{prefix: "/assets/transfer", proxy: futuresProxy},

@@ -4,7 +4,7 @@ import "testing"
 
 func TestMergeFeatures(t *testing.T) {
 	f := mergeFeatures(nil)
-	if !f["convert"] || f["tokenizedStocks"] || f["chat"] || f["subAccounts"] || f["metals"] || f["eventContracts"] {
+	if !f["convert"] || !f["supportTickets"] || f["tokenizedStocks"] || f["chat"] || f["subAccounts"] || f["metals"] || f["eventContracts"] {
 		t.Fatalf("defaults: %v", f)
 	}
 	f = mergeFeatures(map[string]bool{"chat": true, "convert": false, "stale": true})

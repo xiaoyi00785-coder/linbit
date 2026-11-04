@@ -229,8 +229,16 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       # Avatars persist on a named volume (survive container rebuilds).
       AVATAR_STORAGE_DIR: /data/avatars
+      # Support-ticket image attachments (private; served via authed routes).
+      TICKET_STORAGE_DIR: /data/ticket-attachments
+      TICKET_ATTACH_MAX_BYTES: ${TICKET_ATTACH_MAX_BYTES:-5242880}
+      TICKETS_PER_DAY: ${TICKETS_PER_DAY:-5}
+      TICKETS_OPEN_MAX: ${TICKETS_OPEN_MAX:-5}
+      TICKET_MESSAGES_PER_HOUR: ${TICKET_MESSAGES_PER_HOUR:-30}
+      TICKET_UPLOADS_PER_HOUR: ${TICKET_UPLOADS_PER_HOUR:-20}
     volumes:
       - avatars:/data/avatars
+      - ticketattachments:/data/ticket-attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -595,6 +603,7 @@ secrets:
 
 volumes:
   avatars:
+  ticketattachments:
   solexport:
   signerdata:
   pgdata:

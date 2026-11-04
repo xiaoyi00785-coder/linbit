@@ -26,6 +26,7 @@ tags:
   - { name: Home, description: 首页聚合 }
   - { name: App, description: 客户端功能开关 }
   - { name: SubAccount, description: 子账户 }
+  - { name: Support, description: 站内客服工单 }
   - { name: Chat, description: 聊天室 }
   - { name: Event, description: 事件合约 }
   - { name: TradFi, description: 传统金融资产 }
@@ -2017,6 +2018,160 @@ paths:
                   close: "76771.90"
                   volume: "98.76"
 
+  /support/attachments:
+    post:
+      tags: [Support]
+      summary: 上传工单图片附件（JPEG/PNG/WEBP，默认 ≤ 5 MiB，每小时 20 张）
+      description: |
+        multipart/form-data，字段名 `file`。返回附件 id，随后在创建工单或回复时放入 attachments（每条最多 3 张，
+        仅能使用自己上传且未被使用的附件）。附件为私有资源，只能通过带 Bearer 令牌的 GET /support/attachments/{id} 读取。
+      operationId: supportUploadAttachment
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportAttachment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { description: 文件过大（FILE_TOO_LARGE）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "415": { description: 非 JPEG/PNG/WEBP（UNSUPPORTED_MEDIA_TYPE）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: 上传过于频繁（RATE_LIMITED）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /support/attachments/{id}:
+    get:
+      tags: [Support]
+      summary: 读取自己的工单附件（图片字节）
+      operationId: supportGetAttachment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 图片
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /support/tickets:
+    get:
+      tags: [Support]
+      summary: 我的工单（新→旧）
+      operationId: supportListTickets
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { $ref: "#/components/schemas/SupportTicketStatus" } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicketList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Support]
+      summary: 提交工单（每 24 小时 5 个、未关闭最多 5 个、每小时 30 条消息）
+      description: |
+        标题 1–120 字，内容 1–5000 字。服务端会移除控制字符并将链接“去活”（`https://x` → `https[:]//x`，`www.` → `www[.]`）。
+        客户端必须以纯文本渲染工单内容（不要自动识别链接/电话；iOS 关闭 data detectors，Android 关闭 autoLink）。
+      operationId: supportCreateTicket
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, subject, content]
+              properties:
+                category: { $ref: "#/components/schemas/SupportTicketCategory" }
+                subject: { type: string, minLength: 1, maxLength: 120 }
+                content: { type: string, minLength: 1, maxLength: 5000 }
+                attachments: { type: array, maxItems: 3, items: { type: string }, description: POST /support/attachments 返回的 id }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicket" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: 提交过于频繁（RATE_LIMITED，带 Retry-After）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /support/tickets/{id}:
+    get:
+      tags: [Support]
+      summary: 工单详情与对话（同时将客服回复标记为已读）
+      operationId: supportGetTicket
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicket" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /support/tickets/{id}/messages:
+    post:
+      tags: [Support]
+      summary: 用户回复工单（工单回到 open；已关闭返回 409 TICKET_CLOSED）
+      operationId: supportReplyTicket
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, maxLength: 5000 }
+                attachments: { type: array, maxItems: 3, items: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicket" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 工单已关闭（TICKET_CLOSED）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: 回复过于频繁（RATE_LIMITED）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /support/tickets/{id}/close:
+    post:
+      tags: [Support]
+      summary: 用户关闭工单（幂等）
+      operationId: supportCloseTicket
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicket" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /notifications:
     get:
       tags: [Notifications]
@@ -6434,6 +6589,118 @@ paths:
         "403": { description: "TWO_FACTOR_REQUIRED / ACCOUNT_NOT_ALLOWED（系统或做市账户）/ 无权限" }
         "404": { description: "非测试网或未开启（接口隐藏）/ 用户不存在" }
         "409": { description: "REF_CONFLICT：ref 已用于不同参数" }
+  /admin/v1/support/tickets:
+    get:
+      tags: [Admin]
+      summary: 客服工单列表（support:view；open 按等待时长优先）
+      operationId: adminSupportTicketList
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, replied, closed, all] } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/SupportTicketCategory" } }
+        - { name: uid, in: query, schema: { type: string } }
+        - { name: assigneeId, in: query, schema: { type: string }, description: 处理人 id，`me` 为自己，`none` 为未分配 }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicketList" }
+  /admin/v1/support/tickets/{id}:
+    get:
+      tags: [Admin]
+      summary: 客服工单详情（support:view；含 uid、处理人与客服姓名）
+      operationId: adminSupportTicketGet
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicket" }
+    patch:
+      tags: [Admin]
+      summary: 修改工单状态 / 分配处理人（support:reply，审计）
+      description: assigneeId 为 0 表示取消分配；处理人必须是启用中且有 support:reply 权限的管理员。
+      operationId: adminSupportTicketUpdate
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: "#/components/schemas/SupportTicketStatus" }
+                assigneeId: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket: { $ref: "#/components/schemas/SupportTicket" }
+                  before: { type: object, additionalProperties: true }
+  /admin/v1/support/tickets/{id}/messages:
+    post:
+      tags: [Admin]
+      summary: 客服回复工单（support:reply，审计；默认状态改为 replied，并给用户发站内信）
+      operationId: adminSupportTicketReply
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, maxLength: 5000 }
+                status: { type: string, enum: [replied, closed], default: replied }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket: { $ref: "#/components/schemas/SupportTicket" }
+                  before: { type: object, additionalProperties: true }
+  /admin/v1/support/attachments/{id}:
+    get:
+      tags: [Admin]
+      summary: 读取工单附件（support:view；需 Bearer，前端用 fetch → blob 显示）
+      operationId: adminSupportAttachment
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 图片
+          content:
+            image/png: { schema: { type: string, format: binary } }
+  /admin/v1/support/assignees:
+    get:
+      tags: [Admin]
+      summary: 可分配的处理人（启用中、有 support:reply 的管理员）
+      operationId: adminSupportAssignees
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { type: object, properties: { id: { type: integer, format: int64 }, username: { type: string } } }
   /admin/v1/adjustments:
     get:
       tags: [Admin]
@@ -9868,13 +10135,68 @@ components:
         source: { type: string, example: open.er-api.com, description: 主机名或 static }
         updatedAt: { type: string, format: date-time, nullable: true }
         stale: { type: boolean }
+    SupportTicketCategory:
+      type: string
+      enum: [account, deposit_withdraw, trade, kyc, security, other]
+      description: 账户 / 充提 / 交易 / 身份认证 / 安全 / 其他
+    SupportTicketStatus:
+      type: string
+      enum: [open, replied, closed]
+      description: open 待客服处理；replied 客服已回复；closed 已关闭
+    SupportAttachment:
+      type: object
+      required: [id, mime, size]
+      properties:
+        id: { type: string, example: "3f9a1c0d2b.png" }
+        mime: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        size: { type: integer }
+        url: { type: string, description: 用户端读取路径（需 Bearer）, example: /support/attachments/3f9a1c0d2b.png }
+    SupportTicketMessage:
+      type: object
+      required: [id, author, body, attachments, createdAt]
+      properties:
+        id: { type: string }
+        author: { type: string, enum: [user, support] }
+        authorName: { type: string, description: 用户端客服消息固定为“客服”；后台为管理员用户名 }
+        body: { type: string, description: 纯文本（用户内容中的链接已去活），请勿自动识别链接 }
+        attachments: { type: array, items: { $ref: "#/components/schemas/SupportAttachment" } }
+        createdAt: { type: string, format: date-time }
+    SupportTicket:
+      type: object
+      required: [id, category, subject, status, lastReplyBy, lastReplyAt, unread, messageCount, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        uid: { type: string, description: 仅后台返回 }
+        category: { $ref: "#/components/schemas/SupportTicketCategory" }
+        subject: { type: string }
+        status: { $ref: "#/components/schemas/SupportTicketStatus" }
+        assigneeId: { type: integer, format: int64, description: 仅后台返回 }
+        assigneeName: { type: string, description: 仅后台返回 }
+        lastReplyBy: { type: string, enum: [user, support] }
+        lastReplyAt: { type: string, format: date-time }
+        unread: { type: boolean, description: 有用户未读的客服回复 }
+        messageCount: { type: integer }
+        closedAt: { type: string, format: date-time }
+        closedBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        messages: { type: array, items: { $ref: "#/components/schemas/SupportTicketMessage" }, description: 仅详情返回 }
+    SupportTicketList:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/SupportTicket" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+        categories: { type: array, items: { $ref: "#/components/schemas/SupportTicketCategory" } }
     AppFeatures:
       type: object
       properties:
         features:
           type: object
           additionalProperties: { type: boolean }
-          example: { tokenizedStocks: false, metals: false, eventContracts: false, chat: false, subAccounts: false, convert: true, copyTrading: false, p2p: false, fiatOnRamp: false, options: false }
+          example: { tokenizedStocks: false, metals: false, eventContracts: false, chat: false, subAccounts: false, convert: true, copyTrading: false, p2p: false, fiatOnRamp: false, options: false, supportTickets: true }
         updatedAt: { type: string, format: date-time, nullable: true }
         comingSoon:
           type: array

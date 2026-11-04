@@ -9,16 +9,19 @@ export const FEATURES = {
   chatRoom: on(process.env.NEXT_PUBLIC_FEATURE_CHAT),
   subAccounts: on(process.env.NEXT_PUBLIC_FEATURE_SUBACCOUNTS),
   convert: on(process.env.NEXT_PUBLIC_FEATURE_CONVERT),
+  /** 站内客服工单：默认开启（见 isOn），仅本地强制开启时使用 */
+  supportTickets: on(process.env.NEXT_PUBLIC_FEATURE_SUPPORT_TICKETS),
 };
 export type FeatureKey = keyof typeof FEATURES;
 /** 服务端开关 GET /app/features（公开，缓存 30s）。请求失败 ⇒ 全部视为关闭；false ⇒ /coming-soon；true ⇒ 正常渲染。
  *  后端 key 与前端 key 的映射（chat ⇒ chatRoom）。环境变量仅作本地覆盖。 */
-const API_KEY: Record<string, FeatureKey> = { tokenizedStocks: "tokenizedStocks", metals: "metals", tradfi: "tradfi", eventContracts: "eventContracts", chat: "chatRoom", chatRoom: "chatRoom", subAccounts: "subAccounts", convert: "convert" };
+const API_KEY: Record<string, FeatureKey> = { tokenizedStocks: "tokenizedStocks", metals: "metals", tradfi: "tradfi", eventContracts: "eventContracts", chat: "chatRoom", chatRoom: "chatRoom", subAccounts: "subAccounts", convert: "convert", supportTickets: "supportTickets" };
 export const RUNTIME: Record<string, boolean> = {};
 const CK = "lb_features";
 try { if (typeof localStorage !== "undefined") Object.assign(RUNTIME, JSON.parse(localStorage.getItem(CK) || "{}").features || {}); } catch {}
 /** 后端 /app/features 没有单独的 tradfi 开关：传统金融入口随 tokenizedStocks / metals 任一开启而开启。 */
-export const isOn = (k: FeatureKey | string): boolean => FEATURES[k as FeatureKey] || RUNTIME[k] === true || (k === "tradfi" && RUNTIME.tradfi !== false && (isOn("tokenizedStocks") || isOn("metals")));
+/** supportTickets 默认开启：只有服务端明确返回 false（或 NEXT_PUBLIC_FEATURE_SUPPORT_TICKETS=0）才关闭，开关接口失败不影响客服入口。 */
+export const isOn = (k: FeatureKey | string): boolean => (k === "supportTickets" ? process.env.NEXT_PUBLIC_FEATURE_SUPPORT_TICKETS !== "0" && RUNTIME.supportTickets !== false : false) || FEATURES[k as FeatureKey] || RUNTIME[k] === true || (k === "tradfi" && RUNTIME.tradfi !== false && (isOn("tokenizedStocks") || isOn("metals")));
 const TTL = 30_000;
 let loading: Promise<void> | null = null; let loadedAt = 0;
 /** 30s TTL：过期后重新请求；失败 ⇒ 全部关闭（失败结果同样缓存 30s，避免重试风暴）。 */
@@ -43,6 +46,7 @@ export const SOON: Record<FeatureKey, { slug: string; name: string; intro: strin
   chatRoom: { slug: "chat", name: "聊天室", intro: "与全球交易者实时交流行情观点，即将上线。", icon: "mail" },
   convert: { slug: "convert", name: "闪兑", intro: "一键兑换数字资产，零手续费，即将上线。", icon: "link" },
   subAccounts: { slug: "sub-accounts", name: "子账户", intro: "为不同策略或团队成员创建独立子账户，统一管理资产，即将上线。", icon: "gear" },
+  supportTickets: { slug: "support-tickets", name: "客服工单", intro: "在线提交问题工单，客服回复后站内通知，暂未开放。", icon: "mail" },
 };
 const LABELS: [RegExp, FeatureKey][] = [[/股票|美股|代币化股票/, "tokenizedStocks"], [/贵金属|黄金|白银/, "metals"], [/传统金融|TradFi/i, "tradfi"], [/事件合约/, "eventContracts"], [/聊天室/, "chatRoom"], [/子账户/, "subAccounts"], [/^闪兑$/, "convert"]];
 /** 入口文案 → 未上线功能 key（已开启的功能返回 null） */
@@ -53,4 +57,4 @@ export function soonOf(label: string): FeatureKey | null {
 export const soonPath = (label: string) => { const k = soonOf(label); return k ? "/coming-soon/" + SOON[k].slug : null; };
 export const bySlug = (slug: string) => (Object.keys(SOON) as FeatureKey[]).find((k) => SOON[k].slug === slug);
 /** 功能开启后对应的真实页面（coming-soon 页据此跳转；入口文案无需改动） */
-export const LIVE: Partial<Record<FeatureKey, string>> = { tokenizedStocks: "/tradfi/assets?kind=stock", metals: "/tradfi/assets?kind=metal", tradfi: "/tradfi/assets", eventContracts: "/events", chatRoom: "/chat", subAccounts: "/sub-accounts", convert: "/convert" };
+export const LIVE: Partial<Record<FeatureKey, string>> = { tokenizedStocks: "/tradfi/assets?kind=stock", metals: "/tradfi/assets?kind=metal", tradfi: "/tradfi/assets", eventContracts: "/events", chatRoom: "/chat", subAccounts: "/sub-accounts", convert: "/convert", supportTickets: "/support/tickets" };

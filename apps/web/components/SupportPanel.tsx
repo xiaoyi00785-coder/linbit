@@ -37,6 +37,13 @@ export function SupportPanel() {
             {ch.length ? <div className="svc-ch">{ch.map((c) => <a key={c.key} href={c.href} target={c.key === "email" ? undefined : "_blank"} rel="noopener noreferrer" data-testid={"svc-ch-" + c.key}><span>{c.label}</span><em>{c.hint}</em></a>)}</div>
               : <p className="svc-note" data-testid="svc-none">在线客服暂未开通。请先查看下方帮助中心和常见问题，联系方式开通后会在这里显示。</p>}
           </section>
+          {isOn("supportTickets") && <section>
+            <h4>工单</h4>
+            <div className="svc-ch">
+              <a href="/support/tickets?new=1" data-testid="svc-ticket-new"><span>提交工单</span><em>在线提交问题，客服回复后站内通知</em></a>
+              <a href="/support/tickets" data-testid="svc-ticket-list"><span>我的工单</span><em>查看进度与客服回复</em></a>
+            </div>
+          </section>}
           <section>
             <h4>常见问题</h4>
             <ul className="svc-faq">{FAQ.map(([h, p]) => <li key={h}><a href={HELP}><span>{h}</span><em>{p}</em></a></li>)}</ul>

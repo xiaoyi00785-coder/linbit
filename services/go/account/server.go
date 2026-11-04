@@ -30,6 +30,7 @@ type Server struct {
 	recorder *CodeRecorder // non-nil only in dev mode (backs the dev last-code endpoint)
 	http     *http.Client
 	avatars  storage.ObjectStorage // pluggable blob store for avatar uploads
+	tickets  storage.ObjectStorage // private store for support-ticket attachments (local only)
 	now      func() time.Time
 	rdb      *redis.Client // nil = no access-token revocation on logout
 }
@@ -65,6 +66,7 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		recorder: rec,
 		http:     &http.Client{Timeout: 5 * time.Second},
 		avatars:  newAvatarStorage(cfg),
+		tickets:  newTicketStorage(cfg),
 		now:      now,
 		rdb:      rdb,
 	}
@@ -86,6 +88,21 @@ func newAvatarStorage(cfg Config) storage.ObjectStorage {
 	ls, err := storage.NewLocalStorage(cfg.AvatarDir, cfg.AvatarPublicBase)
 	if err != nil {
 		log.Printf("avatar storage: init local backend: %v (avatar upload disabled)", err)
+		return nil
+	}
+	return ls
+}
+
+// newTicketStorage is always the local backend: attachments are private and
+// are streamed only through authenticated routes (never a public URL).
+func newTicketStorage(cfg Config) storage.ObjectStorage {
+	dir := cfg.TicketDir
+	if dir == "" {
+		dir = "data/ticket-attachments"
+	}
+	ls, err := storage.NewLocalStorage(dir, "")
+	if err != nil {
+		log.Printf("ticket storage: init local backend: %v (ticket attachments disabled)", err)
 		return nil
 	}
 	return ls
@@ -166,6 +183,20 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /vip/applications", s.auth(http.HandlerFunc(s.handleApplyVIP)))
 	mux.HandleFunc("GET /internal/vip/applications", s.handleInternalListVIP)
 	mux.HandleFunc("POST /internal/vip/applications/{id}/review", s.handleInternalReviewVIP)
+
+	// Support tickets (站内客服工单).
+	mux.Handle("POST /support/attachments", s.auth(http.HandlerFunc(s.handleTicketUpload)))
+	mux.Handle("GET /support/attachments/{id}", s.auth(http.HandlerFunc(s.handleTicketAttachment)))
+	mux.Handle("GET /support/tickets", s.auth(http.HandlerFunc(s.handleListTickets)))
+	mux.Handle("POST /support/tickets", s.auth(http.HandlerFunc(s.handleCreateTicket)))
+	mux.Handle("GET /support/tickets/{id}", s.auth(http.HandlerFunc(s.handleGetTicket)))
+	mux.Handle("POST /support/tickets/{id}/messages", s.auth(http.HandlerFunc(s.handleTicketReply)))
+	mux.Handle("POST /support/tickets/{id}/close", s.auth(http.HandlerFunc(s.handleCloseTicket)))
+	mux.HandleFunc("GET /internal/admin/support/tickets", s.handleInternalListTickets)
+	mux.HandleFunc("GET /internal/admin/support/tickets/{id}", s.handleInternalGetTicket)
+	mux.HandleFunc("POST /internal/admin/support/tickets/{id}/messages", s.handleInternalTicketReply)
+	mux.HandleFunc("PATCH /internal/admin/support/tickets/{id}", s.handleInternalPatchTicket)
+	mux.HandleFunc("GET /internal/admin/support/attachments/{id}", s.handleInternalTicketAttachment)
 
 	// Security settings.
 	a := func(h http.HandlerFunc) http.Handler { return s.auth(h) }

@@ -1,7 +1,7 @@
 // 菜单树：key 即路由（#/key），perm 为所需权限码
 export const MENU = [
   { g: '总览', items: [['dashboard', '数据看板', '◧', 'dash:view']] },
-  { g: '用户与合规', items: [['users', '用户列表', '◉', 'user:view'], ['kyc', 'KYC 审核', '◎', 'kyc:review'], ['risk-users', '风险名单', '⚑', 'risk:view']] },
+  { g: '用户与合规', items: [['users', '用户列表', '◉', 'user:view'], ['kyc', 'KYC 审核', '◎', 'kyc:review'], ['risk-users', '风险名单', '⚑', 'risk:view'], ['support', '客服工单', '✆', 'support:view']] },
   { g: '资金', items: [['withdraw', '提现审核', '⇡', 'wd:review'], ['deposit', '充值记录', '⇣', 'fund:view'], ['ledger', '资产流水', '≡', 'fund:view'], ['adjust', '人工调账', '±', 'fund:adjust'], ['wallets', '钱包管理', '▣', 'wallet:view']] },
   { g: '交易', items: [['spot-orders', '现货订单', '◇', 'trade:view'], ['positions', '合约持仓', '◆', 'trade:view'], ['grid', '网格策略', '▦', 'trade:view'], ['liquidation', '强平与风险', '⚠', 'risk:view']] },
   { g: '产品配置', items: [['coins', '币种与网络', '◈', 'coin:edit'], ['pairs', '现货交易对', '⇄', 'pair:edit'], ['futures', '合约参数', '⚙', 'fut:edit'], ['fees', '手续费配置', '%', 'fee:edit']] },

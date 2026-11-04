@@ -52,6 +52,14 @@ type Config struct {
 	AvatarPublicBase string
 	// AvatarMaxBytes caps an uploaded avatar's size (default 2 MiB).
 	AvatarMaxBytes int64
+	// Support tickets (站内客服工单): attachment store (local dir, like avatars)
+	// and per-user rate limits.
+	TicketDir             string
+	TicketAttachMaxBytes  int64
+	TicketsPerDay         int
+	TicketsOpenMax        int
+	TicketMessagesPerHour int
+	TicketUploadsPerHour  int
 	// S3 settings (only used when StorageBackend == "s3").
 	S3Bucket     string
 	S3Region     string
@@ -92,10 +100,17 @@ func LoadConfig() Config {
 		AvatarDir:        common.Env("AVATAR_STORAGE_DIR", "data/avatars"),
 		AvatarPublicBase: common.Env("AVATAR_PUBLIC_BASE", "/account/avatars"),
 		AvatarMaxBytes:   int64(common.EnvInt("AVATAR_MAX_BYTES", 2*1024*1024)),
-		S3Bucket:         common.Env("S3_BUCKET", ""),
-		S3Region:         common.Env("S3_REGION", ""),
-		S3Endpoint:       common.Env("S3_ENDPOINT", ""),
-		S3PublicBase:     common.Env("S3_PUBLIC_BASE", ""),
+
+		TicketDir:             common.Env("TICKET_STORAGE_DIR", "data/ticket-attachments"),
+		TicketAttachMaxBytes:  int64(common.EnvInt("TICKET_ATTACH_MAX_BYTES", 5*1024*1024)),
+		TicketsPerDay:         common.EnvInt("TICKETS_PER_DAY", 5),
+		TicketsOpenMax:        common.EnvInt("TICKETS_OPEN_MAX", 5),
+		TicketMessagesPerHour: common.EnvInt("TICKET_MESSAGES_PER_HOUR", 30),
+		TicketUploadsPerHour:  common.EnvInt("TICKET_UPLOADS_PER_HOUR", 20),
+		S3Bucket:              common.Env("S3_BUCKET", ""),
+		S3Region:              common.Env("S3_REGION", ""),
+		S3Endpoint:            common.Env("S3_ENDPOINT", ""),
+		S3PublicBase:          common.Env("S3_PUBLIC_BASE", ""),
 	}
 }
 

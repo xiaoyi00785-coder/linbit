@@ -44,6 +44,8 @@ const (
 	permEarnEdit       = "earn:edit"
 	permVIPView        = "vip:view"
 	permVIPReview      = "vip:review"
+	permSupportView    = "support:view"
+	permSupportReply   = "support:reply"
 	permMMView         = "mm:view"
 	permMMEdit         = "mm:edit"
 	permDashView       = "dash:view"
@@ -55,19 +57,19 @@ const (
 var allPerms = []string{permUserView, permUserEdit, permUserPII, permKYCView, permKYCApprove,
 	permWithdrawView, permWithdrawFirst, permWithdrawSecond, permLedgerView, permSymbolView,
 	permSymbolEdit, permFeeView, permFeeEdit, permFeeApprove, permRewardView, permRewardEdit,
-	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView, permFundAdjust, permFundAdjustApprove}
+	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView, permFundAdjust, permFundAdjustApprove, permSupportView, permSupportReply}
 
 // rolePerms is the RBAC matrix from prototypes/admin/DESIGN.md §3.
 var rolePerms = map[string][]string{
 	roleSuper:         allPerms,
-	roleOperations:    {permDashView, permVIPView, permVIPReview, permEarnView, permEarnEdit, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permUserView, permUserEdit, permKYCView, permSymbolView, permRewardView, permRewardEdit, permContentEdit},
+	roleOperations:    {permDashView, permSupportView, permSupportReply, permVIPView, permVIPReview, permEarnView, permEarnEdit, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permUserView, permUserEdit, permKYCView, permSymbolView, permRewardView, permRewardEdit, permContentEdit},
 	roleKYCReviewer:   {permUserView, permKYCView, permKYCApprove},
 	roleFinanceFirst:  {permFundAdjust, permDashView, permEarnView, permUserView, permWithdrawView, permWithdrawFirst, permLedgerView, permCouponApprove, permRewardView},
 	roleFinanceSecond: {permFundAdjust, permFundAdjustApprove, permDashView, permMMView, permEarnView, permUserView, permFeeView, permWithdrawView, permWithdrawSecond, permLedgerView, permFeeApprove, permCouponApprove, permRewardView, permRewardApprove},
 	roleRisk:          {permDashView, permMMView, permEarnView, permCopyView, permPartnerView, permUserView, permUserEdit, permKYCView, permWithdrawView, permLedgerView},
-	roleSupport:       {permVIPView, permUserView, permKYCView, permLedgerView},
+	roleSupport:       {permSupportView, permSupportReply, permVIPView, permUserView, permKYCView, permLedgerView},
 	roleMarketing:     {permEarnView, permPartnerView, permPartnerReview, permRewardView, permRewardEdit, permContentEdit},
-	roleAuditor:       {permDashView, permMMView, permVIPView, permEarnView, permCopyView, permPartnerView, permUserView, permKYCView, permWithdrawView, permLedgerView, permSymbolView, permFeeView, permRewardView, permAuditView},
+	roleAuditor:       {permDashView, permSupportView, permMMView, permVIPView, permEarnView, permCopyView, permPartnerView, permUserView, permKYCView, permWithdrawView, permLedgerView, permSymbolView, permFeeView, permRewardView, permAuditView},
 }
 
 func validRole(r string) bool { _, ok := rolePerms[r]; return ok }
