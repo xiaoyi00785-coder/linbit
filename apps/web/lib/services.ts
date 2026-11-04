@@ -92,7 +92,11 @@ export interface WithdrawConfig {
   memoRequired: boolean;
 }
 export type WithdrawNetwork = S["WithdrawNetwork"];
-export async function listWithdrawNetworks(asset: string): Promise<Result<S["WithdrawNetworkOptions"]>> {
+/** /wallet/withdraw/networks 的返回：后端 withdrawNetworkDTO 还带 withdrawEnabled / memoRequired（services/go/wallet/server.go），openapi schema 尚未收录，这里补上类型。 */
+export type WithdrawNetworkOptions = Omit<S["WithdrawNetworkOptions"], "networks"> & {
+  networks: Array<NonNullable<S["WithdrawNetworkOptions"]["networks"]>[number] & { withdrawEnabled?: boolean; memoRequired?: boolean }>;
+};
+export async function listWithdrawNetworks(asset: string): Promise<Result<WithdrawNetworkOptions>> {
   try {
     const { data, response } = await api.GET("/wallet/withdraw/networks", { params: { query: { asset } } });
     if (response.ok && data && data.networks?.length) return { ok: true, data, source: "api" };
@@ -117,7 +121,7 @@ export async function getWithdrawConfig(asset: string, network: string): Promise
       gasFeeEstimate: n.gasFeeEstimate,
       gasFeeAsset: n.gasFeeAsset ?? asset,
       estimatedArrivalMinutes: n.estimatedArrivalMinutes ?? null,
-      memoRequired: false,
+      memoRequired: n.memoRequired === true,
     },
   };
 }
