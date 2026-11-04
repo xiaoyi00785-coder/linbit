@@ -266,3 +266,13 @@ body:has(.cookie) .svc{bottom:330px}
 :where(a,button,summary,[role=button],[role=menuitem],[role=tab],[tabindex]):focus-visible{outline:2px solid #abe127;outline-offset:2px}
 button::-moz-focus-inner{border:0}
 :where(a,button,summary,[role=button]){-webkit-tap-highlight-color:transparent}
+/* 价格跳动闪烁（Flash 组件） */
+.lb-flash{border-radius:2px;padding:0 2px;margin:0 -2px;transition:color .2s}
+.lb-flash-up,.lb-flash-up2{color:var(--lb-up)}.lb-flash-down,.lb-flash-down2{color:var(--lb-down)}
+.lb-flash-up{animation:lbFlashUp .8s ease-out}.lb-flash-up2{animation:lbFlashUp2 .8s ease-out}
+.lb-flash-down{animation:lbFlashDn .8s ease-out}.lb-flash-down2{animation:lbFlashDn2 .8s ease-out}
+@keyframes lbFlashUp{from{background:color-mix(in srgb,var(--lb-up) 22%,transparent)}to{background:transparent}}
+@keyframes lbFlashUp2{from{background:color-mix(in srgb,var(--lb-up) 22%,transparent)}to{background:transparent}}
+@keyframes lbFlashDn{from{background:color-mix(in srgb,var(--lb-down) 22%,transparent)}to{background:transparent}}
+@keyframes lbFlashDn2{from{background:color-mix(in srgb,var(--lb-down) 22%,transparent)}to{background:transparent}}
+@media (prefers-reduced-motion:reduce){.lb-flash-up,.lb-flash-up2,.lb-flash-down,.lb-flash-down2{animation:none}}
