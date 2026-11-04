@@ -16,6 +16,9 @@ import (
 
 // Server wires configuration, storage and HTTP handlers for the asset service.
 type Server struct {
+	// hedgeBlocked != "" disables convert hedging (mainnet: no valid hedge
+	// account). Convert itself keeps working.
+	hedgeBlocked string
 	cfg    Config
 	store  *Store
 	prices PriceSource

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -184,6 +185,17 @@ func (s *Server) handleConvertEvents(w http.ResponseWriter, r *http.Request) {
 // and the hedge worker.
 func (s *Server) startConvertRisk(ctx context.Context) error {
 	hu := s.cfg.Convert.HedgeUserID
+	if common.IsMainnet() {
+		if why := s.mainnetHedgeProblem(ctx); why != "" {
+			s.hedgeBlocked = why
+			log.Printf("convert: hedging DISABLED on mainnet: %s (convert stays available)", why)
+			common.AlertTelegram("⚠️ Linbit 闪兑对冲已停用（主网）：" + why + "。闪兑继续运行，敞口未对冲；请创建真实对冲账户并设置 CONVERT_HEDGE_USER_ID 后重启 asset。")
+			if s.cfg.Convert.DepegCheck > 0 {
+				go s.runDepegMonitor(ctx, s.cfg.Convert.DepegCheck)
+			}
+			return nil
+		}
+	}
 	if hu == "" || hu == ConvertAccount || hu == mmUserID() {
 		return fmt.Errorf("CONVERT_HEDGE_USER_ID=%q must be set and differ from %s and the market maker (MM_USER_ID)", hu, ConvertAccount)
 	}
@@ -200,4 +212,25 @@ func (s *Server) startConvertRisk(ctx context.Context) error {
 		go s.runHedger(ctx)
 	}
 	return nil
+}
+
+// mainnetHedgeProblem: on mainnet the hedge account must be set explicitly
+// (no system:hedge default) and must already exist — it is never auto-created,
+// so a wiped DB cannot silently hedge from an empty/unknown account.
+func (s *Server) mainnetHedgeProblem(ctx context.Context) string {
+	hu := strings.TrimSpace(os.Getenv("CONVERT_HEDGE_USER_ID"))
+	if hu == "" {
+		return "CONVERT_HEDGE_USER_ID 未设置"
+	}
+	if hu == ConvertAccount || hu == mmUserID() {
+		return "CONVERT_HEDGE_USER_ID 不能是闪兑或做市账户"
+	}
+	var ok bool
+	if err := s.store.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM asset_accounts WHERE user_id=$1)`, hu).Scan(&ok); err != nil {
+		return "无法校验对冲账户: " + err.Error()
+	}
+	if !ok {
+		return "对冲账户 " + hu + " 不存在"
+	}
+	return ""
 }

@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"os"
+	"sort"
 	"strings"
 
 	"github.com/linbit/platform/services/go/common"
@@ -93,6 +95,9 @@ func loadNetworks() NetworkRegistry {
 	if raw := common.Env("WALLET_NETWORKS_JSON", ""); raw != "" {
 		var items []networkJSON
 		if err := json.Unmarshal([]byte(raw), &items); err != nil {
+			if common.IsMainnet() {
+				log.Fatalf("config: invalid WALLET_NETWORKS_JSON on mainnet (%v); refusing to start", err)
+			}
 			log.Printf("config: invalid WALLET_NETWORKS_JSON (%v); using defaults", err)
 		} else {
 			nets := make([]Network, 0, len(items))
@@ -190,4 +195,33 @@ func defaultNetworks() []Network {
 			MinWithdraw: d("0.02"), MaxWithdraw: decimal.Zero, GasFeeEstimate: d("0.000005"),
 			GasFeeAsset: "SOL", EstimatedArrivalMinutes: 1, AddressPrefix: "So"},
 	}
+}
+
+// mainnetChainProblems: on mainnet every chain enabled in WALLET_NETWORKS_JSON
+// needs its own RPC and an explicit cold address (names only, never values).
+// Chains not listed (e.g. ARBITRUM) need nothing.
+func mainnetChainProblems() []string {
+	if !common.IsMainnet() {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range loadNetworks().byPair {
+		name := n.Network
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		if _, known := realNetDefaults[name]; !known {
+			out = append(out, "WALLET_NETWORKS_JSON: unknown network "+name)
+			continue
+		}
+		for _, k := range []string{envKey("WALLET_RPC", name), envKey("WALLET_COLD_ADDRESS", name)} {
+			if strings.TrimSpace(os.Getenv(k)) == "" {
+				out = append(out, k+" is required on mainnet ("+name+" is enabled)")
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }

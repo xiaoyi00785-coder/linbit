@@ -853,7 +853,7 @@ func (s *Server) handleConvertPosition(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, _ := s.store.convertConfig(r.Context(), s.cfg.Convert)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"account": ConvertAccount, "hedgeAccount": s.cfg.Convert.HedgeUserID,
-		"hedgeEnabled": cfg.Hedge.Enabled, "depeg": s.checkDepeg(r.Context()), "items": items})
+		"hedgeEnabled": cfg.Hedge.Enabled && s.hedgeBlocked == "", "hedgeBlocked": s.hedgeBlocked, "depeg": s.checkDepeg(r.Context()), "items": items})
 }
 
 // GET /internal/convert/quotes/{id} -> {from,to}. Used by the gateway TradFi

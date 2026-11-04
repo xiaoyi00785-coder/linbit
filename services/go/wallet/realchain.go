@@ -119,7 +119,9 @@ func parseToken(asset, spec string) (*chainkit.Token, error) {
 // asset has no token contract (e.g. Sepolia USDT) is left disabled: addresses
 // cannot be allocated and withdrawals fail with unknown network.
 func NewRealChain(ctx context.Context, mode string, store *Store, reg NetworkRegistry, signer chainkit.HotSigner) (*RealChain, error) {
-	testnet := mode == "testnet"
+	// On mainnet testnet defaults (RPCs, chain IDs, token contracts) are never
+	// used, whatever WALLET_CHAIN says.
+	testnet := mode == "testnet" && !common.IsMainnet()
 	rc := &RealChain{mode: mode, store: store, signer: signer, nets: map[string]*chainNet{}}
 	xpubs := map[chainkit.Chain]*chainkit.ExtKey{}
 	var solList []string
@@ -188,6 +190,9 @@ func NewRealChain(ctx context.Context, mode string, store *Store, reg NetworkReg
 				return nil, fmt.Errorf("%s/%s contract: %w", a, name, err)
 			}
 			cn.tokens[a] = t
+		}
+		if cn.cold == "" && common.IsMainnet() {
+			return nil, fmt.Errorf("%s: WALLET_COLD_ADDRESS_%s is required on mainnet (no HD-derived cold fallback)", name, name)
 		}
 		if cn.cold != "" {
 			if err := chainkit.ValidateAddress(d.chain, cn.cold, cn.hrp); err != nil {
@@ -282,7 +287,7 @@ func (rc *RealChain) bindSigner(ctx context.Context) error {
 		// set, excess above the hot cap goes to a reserve address derived from
 		// the same HD seed (branch 2, index 0). WALLET_COLD_FROM_HD=false
 		// disables it (everything stays in the hot wallet).
-		if cn.cold == "" && !strings.EqualFold(common.Env("WALLET_COLD_FROM_HD", "true"), "false") {
+		if cn.cold == "" && !common.IsMainnet() && !strings.EqualFold(common.Env("WALLET_COLD_FROM_HD", "true"), "false") {
 			rp, err := rc.signer.PublicKey(ctx, cn.chain, chainkit.BranchReserve, 0)
 			if err != nil {
 				return fmt.Errorf("signer reserve key: %w", err)

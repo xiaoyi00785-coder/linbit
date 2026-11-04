@@ -416,6 +416,9 @@ func (s *Server) sweepResting(ctx context.Context, h *Hedger, cfg ConvertConfig)
 }
 
 func (s *Server) runHedgeCycle(ctx context.Context, force bool) ([]HedgeRecord, error) {
+	if s.hedgeBlocked != "" {
+		return nil, fmt.Errorf("hedging disabled: %s", s.hedgeBlocked)
+	}
 	h := s.hedger()
 	h.run.Lock()
 	defer h.run.Unlock()

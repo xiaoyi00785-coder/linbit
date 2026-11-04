@@ -9,6 +9,12 @@
 4. 确认后：`BACKUP_FILE=<备份文件> CONFIRM_WIPE=WIPE-TESTNET-<数据库名> deploy/mainnet/wipe-testnet.sh --execute`。
 5. 清空撮合引擎数据卷 `enginedata`（引擎内仍有测试网挂单）、`FLUSHALL` Redis、删除 `kycdocs` 卷内测试网证件文件。
 6. 核对：所有余额表为空，`mm_state.running=false`，再以 `NETWORK=mainnet` 启动。
+7. 创建真实闪兑对冲账户（见检查清单「闪兑对冲」），设置 `CONVERT_HEDGE_USER_ID` 后重启 asset。
+
+**序列不重置**：脚本不使用 `RESTART IDENTITY`，所有自增 id 继续增长；`uid_seq` 在清空前被抬到 ≥ 现有最大 uid，
+新用户 uid 永远不会与保留的 `audit_logs` 中的历史 uid 重复。
+
+统计：清空 104 张（含 announcements），保留 30 张（另保留各服务 goose 迁移版本表），重置 1 张（mm_state）。
 
 说明：迁移表 `goose_db_version*` 保留。默认清空全部测试网用户；如需保留测试网注册用户，须将 account 段改为 keep 并仍清空所有余额/流水（需 Yaeko 决定）。
 
@@ -34,7 +40,7 @@
 | account | linbit.withdraw_addresses | 提现地址簿（测试链地址） | 清空 wipe |
 | admin | linbit.admin_users | 后台管理员 | 保留 keep |
 | admin | linbit.admin_sessions | 后台会话 | 清空 wipe |
-| admin | linbit.announcements | 公告 | 保留 keep |
+| admin | linbit.announcements | 公告（测试网内容） | 清空 wipe |
 | admin | linbit.audit_logs | 审计日志（合规留存） | 保留 keep |
 | admin | linbit.change_approvals | 变更审批记录 | 保留 keep |
 | admin | linbit.change_requests | 变更申请 | 保留 keep |
@@ -120,14 +126,14 @@
 | market-data | linbit.home_placements | 首页运营位 | 保留 keep |
 | market-data | linbit.market_categories | 行情分类 | 保留 keep |
 | market-data | linbit.tradfi_assets | TradFi 标的 | 保留 keep |
-| market-data | linbit.tradfi_tokens | 代币化资产 | 保留 keep |
+| market-data | linbit.tradfi_tokens | 代币化资产（保留；上线前必须核对每条主网合约地址，见检查清单） | 保留 keep |
 | market-data | linbit.tradfi_settings | TradFi/地域设置（保留受限国家列表） | 保留 keep |
 | market-data | linbit.chat_messages | 聊天消息 | 清空 wipe |
 | market-data | linbit.chat_reports | 聊天举报 | 清空 wipe |
 | market-data | linbit.chat_sanctions | 聊天处罚 | 清空 wipe |
 | market-data | linbit.klines | K 线（测试网成交生成） | 清空 wipe |
 | market-data | linbit.por_snapshots | 储备金快照（测试网） | 清空 wipe |
-| marketmaker | linbit.mm_pairs | 做市交易对配置 | 保留 keep |
+| marketmaker | linbit.mm_pairs | 做市交易对配置（仅配置，做市保持关闭） | 保留 keep |
 | marketmaker | linbit.mm_inventory_baseline | 做市虚拟注资基线 | 清空 wipe |
 | marketmaker | linbit.mm_state | 做市运行状态 → running=false | 重置 reset |
 | order | linbit.fee_rates | 费率（现货 0.1% / 合约 0.05%） | 保留 keep |

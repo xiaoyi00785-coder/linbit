@@ -17,18 +17,44 @@
 
 ## 2. 密钥轮换（不得沿用测试网）
 - [ ] `JWT_SECRET`、`INTERNAL_TOKEN` 重新生成（`openssl rand -hex 32`）。
-- [ ] 数据库、Redis 新密码；DB 开 TLS；仅内网可达。
+- [ ] 数据库、Redis 新密码；DB 仅内网可达。
+- [ ] `DATABASE_URL` TLS：公网/域名主机必须 `sslmode=require`（或 `verify-full`），否则启动预检拒绝；
+      仅当 DB 主机为内网/容器地址（compose 服务名、localhost、10/8、172.16/12、192.168/16、`*.internal`、`*.local`）时允许 `sslmode=disable`。
 - [ ] 所有密钥经 Secret Manager 注入，仓库内只有占位符。
 
 ## 3. 冷热钱包（由 Yaeko 操作）
 - [ ] Yaeko 线下生成助记词/私钥，离线备份；**仓库、日志、聊天中不得出现任何密钥**。
 - [ ] 热钱包签名机（wallet-signer）口令文件以 secret 挂载；`WALLET_HOT_SECRET` 非 mock 值。
-- [ ] 冷钱包只配置地址 `WALLET_COLD_ADDRESS_*`；小额转账验证每条链。
+- [ ] 冷钱包只配置地址：`WALLET_COLD_ADDRESS_TRC20/ERC20/BEP20/BTC/SOL`（开启 ARBITRUM 时加 `_ARBITRUM`）。
+      主网缺任一已开启链的冷地址 → 拒绝启动；主网不再从 HD 种子派生冷地址（`WALLET_COLD_FROM_HD` 在主网无效）。
+- [ ] 小额转账验证每条链（充值→热钱包→超额归集到冷地址）。
 
-## 4. 链节点 / RPC
-- [ ] 需要主网 RPC 的链：BTC、ETH/ERC20、TRON、BSC、Solana（`WALLET_RPC_BTC/ERC20/TRC20/BEP20/SOL`），至少两家备份。
+## 4. 链节点 / RPC / 代币合约
+- [ ] 主网绝不使用测试网默认 RPC / chainId / 测试代币（代码在 `NETWORK=mainnet` 下强制关闭）。
+- [ ] `WALLET_NETWORKS_JSON` 只列出要开启的链；列出的每条链必须有 `WALLET_RPC_<NET>`（BTC、ERC20、TRC20、BEP20、SOL），否则拒绝启动。JSON 无效同样拒绝启动。
+- [ ] ARBITRUM：仅在 `WALLET_NETWORKS_JSON` 列出时才需要 `WALLET_RPC_ARBITRUM` / 冷地址 / 合约。
+- [ ] 建议每条链准备第二家 RPC 供应商作为人工切换备用（推荐，非必需）。
 - [ ] RPC Key 等密钥仅写入服务器运维 .env，绝不通过聊天传递。
-- [ ] `WALLET_CHAIN=mainnet`，`WALLET_NETWORKS_JSON` 主网合约地址、确认数核对。
+- [ ] 官方主网合约（`WALLET_TOKEN_<资产>_<网络>=合约:精度`，已写入模板，上线前在浏览器再核对一次）：
+
+| 资产/网络 | 合约 | 精度 | 来源 |
+|---|---|---|---|
+| USDT TRC20 | `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` | 6 | Tether 官方 https://tether.to/supported-protocols/ |
+| USDT ERC20 | `0xdAC17F958D2ee523a2206206994597C13D831ec7` | 6 | Tether 官方（同上） |
+| USDT SOL (SPL) | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | 6 | Tether 官方（同上） |
+| USDT BEP20 | `0x55d398326f99059fF775485246999027B3197955` | **18** | **非 Tether 官方**：Tether 官网不列 BSC 地址，此为 Binance-Peg USDT（Binance 发行/托管），各大交易所通用；风险自担，核对 https://bscscan.com/token/0x55d398326f99059fF775485246999027B3197955 |
+| USDC ERC20 | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | 6 | Circle 官方 https://developers.circle.com/stablecoins/usdc-contract-addresses |
+| USDC SOL (SPL) | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | 6 | Circle 官方（同上） |
+| USDC ARBITRUM（可选） | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` | 6 | Circle 官方（同上） |
+
+- [ ] **不要开启** USDC/TRC20（Circle 已停止 TRON USDC，官方列表无 TRON）与 USDC/BEP20（无 Circle 官方合约；Binance-Peg USDC 精度 18，如需须单独决定）。
+- [ ] `tradfi_tokens`（清空时保留）：逐条核对主网合约地址与精度，测试网地址必须改为主网或停用。
+
+## 闪兑对冲
+- [ ] 清空后新建真实对冲账户：`psql "$DATABASE_URL" -c "INSERT INTO asset_accounts(user_id) VALUES ('system:hedge-main') ON CONFLICT DO NOTHING"`，
+      在 .env 设 `CONVERT_HEDGE_USER_ID=system:hedge-main`，重启 asset（启动时自动补齐余额行）；按需从冷/热钱包为其充值对冲资金。
+- [ ] 主网若未设置或账户不存在：对冲停用、闪兑照常、Telegram 告警（`/convert` 风控接口返回 `hedgeBlocked` 原因），不会自动建账户。
+- [ ] 后台对冲开关在主网默认关闭，确认资金到位后再开启。
 
 ## 5. 充提限额与人工审核（已定）
 - [ ] 充值：不设上限。

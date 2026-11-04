@@ -2,6 +2,8 @@ package common
 
 import (
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -87,10 +89,45 @@ func requireMainnet(service string, probs []string) []string {
 		return probs
 	}
 	probs = append(probs, MainnetProblems(os.Getenv)...)
+	probs = append(probs, DBSSLProblems(os.Getenv("DATABASE_URL"))...)
 	probs = append(probs, ProductionProblems(os.Getenv, MainnetRequired...)...)
 	if !TelegramConfigured() {
 		probs = append(probs, "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set on mainnet (alerts)")
 	}
 	log.Printf("%s: NETWORK=mainnet — virtual seed, faucets, mock chains and demo data are disabled", service)
 	return probs
+}
+
+// DBSSLProblems: on mainnet the DB connection must use TLS unless the host is
+// private (loopback, RFC1918/ULA, link-local, or a docker/compose service name
+// / *.internal / *.local). Unset sslmode (libpq "prefer") counts as disable.
+func DBSSLProblems(dsn string) []string {
+	if strings.TrimSpace(dsn) == "" {
+		return nil
+	}
+	u, err := url.Parse(dsn)
+	if err != nil || u.Host == "" {
+		return []string{"DATABASE_URL must be a postgres:// URL on mainnet"}
+	}
+	switch strings.ToLower(u.Query().Get("sslmode")) {
+	case "require", "verify-ca", "verify-full":
+		return nil
+	}
+	if PrivateDBHost(u.Hostname()) {
+		return nil
+	}
+	return []string{"DATABASE_URL: sslmode=require (or verify-full) is required for a non-private DB host on mainnet"}
+}
+
+// PrivateDBHost reports whether host is a loopback/private IP or an internal
+// (dot-less docker service, *.internal, *.local) name.
+func PrivateDBHost(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(host, "."))
+	if h == "" {
+		return false
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	}
+	return h == "localhost" || !strings.Contains(h, ".") || strings.HasSuffix(h, ".internal") || strings.HasSuffix(h, ".local")
 }
