@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -11,6 +12,11 @@ import (
 // usdtPrice resolves an asset's USDT price: pinned prices (stablecoins) first,
 // then market-data's real-time last price. ok=false means no price is available.
 func (s *Server) usdtPrice(ctx context.Context, asset string) (decimal.Decimal, bool) {
+	// USDT is the quote unit itself: there is no USDTUSDT index, so without this
+	// every USDT withdrawal would fail closed to manual review.
+	if strings.EqualFold(asset, "USDT") {
+		return decimal.NewFromInt(1), true
+	}
 	if p, ok := s.cfg.KYC.price(asset); ok {
 		return p, true
 	}

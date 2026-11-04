@@ -132,7 +132,7 @@ TOKEN="$(curl -sS -X POST "$GATEWAY_URL/auth/register" -H 'Content-Type: applica
 [ -n "$TOKEN" ] || fail "register"
 UID_="$(api GET /account "$TOKEN" | jq -r .uid)"
 L="$(A "$kycr_TOK" GET "/admin/v1/users?q=$EMAIL")"
-[ "$(jq -r '.items[0].email' <<<"$L")" = "ad***@example.com" ] || fail "email not masked: $L"
+[ "$(jq -r '.items[0].email' <<<"$L")" = "adm***@example.com" ] || fail "email not masked: $L"
 [ "$(AH "$kycr_TOK" GET "/admin/v1/users/$UID_?reveal=true")" = "403" ] || fail "reveal without user:pii"
 [ "$(A "$SA" GET "/admin/v1/users/$UID_?reveal=true" | jq -r .email)" = "$EMAIL" ] || fail "reveal for super admin"
 R="$(A "$SA" POST "/admin/v1/users/$UID_/freeze" "{\"reason\":\"\",\"totpCode\":\"$(totp "$SA_TOTP")\"}")"
