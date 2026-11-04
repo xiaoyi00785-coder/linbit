@@ -1,0 +1,21 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+# 签名材料永不入库
+*.jks
+*.keystore
+keystore.properties
+# 仓库规则：不提交二进制文件 → 不提交 gradle-wrapper.jar；本地用 `gradle wrapper --gradle-version 8.9` 生成（见 README）
+gradle/wrapper/gradle-wrapper.jar
+gradlew
+gradlew.bat
+
+# 仓库根 .gitignore 有 `data/`（忽略数据目录），这里的 data 是 Kotlin 包（行情仓库），需要显式放行
+!app/src/main/kotlin/click/cowa/linbit/data/
