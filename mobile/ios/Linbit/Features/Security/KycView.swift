@@ -182,9 +182,8 @@ struct KycFormView: View {
     private var type: APIKycSubmission.APIIdType { Self.idTypes[idType] }
     private var sides: [(APIKycDocument.APISide, String, Bool)] {
         if level == 2 { return [(.proofOfAddress, "地址证明（近 3 个月水电 / 银行账单）", true)] }
-        return [(.front, type == .passport ? "护照信息页" : "证件正面", true),
-                (.back, "证件背面", type != .passport),
-                (.selfie, "手持证件自拍", true)]
+        if type == .passport { return [(.front, "护照信息页", true), (.selfie, "手持证件自拍", true)] }
+        return [(.front, "证件正面", true), (.back, "证件背面", true), (.selfie, "手持证件自拍", true)]
     }
     private var age: Int { Calendar.current.dateComponents([.year], from: dob, to: Date()).year ?? 0 }
     private var idHint: String? { idNumber.isEmpty || idNumber.count >= 5 ? nil : "证件号码格式不正确" }
