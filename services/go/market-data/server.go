@@ -53,6 +53,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /ws", s.hub.ServeHTTP)
 	mux.HandleFunc("POST /internal/ws/push", s.internal(s.hWSPush))
+	mux.HandleFunc("POST /internal/ws/broadcast", s.internal(s.hWSBroadcast))
 	mux.HandleFunc("POST /internal/events", s.ingest.Handler())
 	if s.cfg.DevMode {
 		mux.HandleFunc("POST /internal/dev/index", s.handleDevIndex)

@@ -148,7 +148,7 @@ export function Register() {
   const [busy, setBusy] = useState(false);
   const finish = useFinish();
   const authed = useGuestOnly();
-  const validPwd = pwd.length >= 8 && /[A-Za-z]/.test(pwd) && /\d/.test(pwd);
+  const validPwd = pwd.length >= 8 && pwd.length <= PWD_MAX && /[A-Za-z]/.test(pwd) && /\d/.test(pwd);
   const send = async () => {
     const r = await sendAuthCode("register", a.target());
     return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error };
@@ -177,7 +177,7 @@ export function Register() {
             onClick={async () => {
               if (!a.valid) { a.touch(); return setErr(a.msg); }
               if (!pwd) return setErr("请输入密码");
-              if (!validPwd) return setErr("密码需 8 位以上且包含字母和数字");
+              if (!validPwd) return setErr(`密码需为 8–${PWD_MAX} 位，且同时包含字母和数字`);
               if (!agree) return setErr("请先同意服务条款");
               setBusy(true);
               const r = await send();
@@ -413,13 +413,13 @@ export function ForgotPassword() {
       )}
       {step === 2 && (
         <>
-          <input className="ai" type="password" placeholder="新密码（8 位以上，含字母和数字）" value={pwd} onChange={(e) => setPwd(e.target.value)} />
+          <input className="ai" type="password" placeholder={`新密码（8–${PWD_MAX} 位，含字母和数字）`} maxLength={PWD_MAX} value={pwd} onChange={(e) => setPwd(e.target.value)} />
           <input className="ai" type="password" placeholder="确认新密码" value={pwd2} onChange={(e) => setPwd2(e.target.value)} />
           {err && <div className="fx-err">{err}</div>}
           <button
             className={"abtn" + (busy ? " dis" : "")}
             onClick={async () => {
-              if (pwd.length < 8 || !/[A-Za-z]/.test(pwd) || !/\d/.test(pwd)) return setErr("密码需 8 位以上且包含字母和数字");
+              if (pwd.length < 8 || pwd.length > PWD_MAX || !/[A-Za-z]/.test(pwd) || !/\d/.test(pwd)) return setErr(`密码需为 8–${PWD_MAX} 位，且同时包含字母和数字`);
               if (pwd !== pwd2) return setErr("两次输入的密码不一致");
               if (!tok || Date.now() > tok.exp) {
                 setTok(null);

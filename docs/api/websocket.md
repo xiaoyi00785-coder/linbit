@@ -145,6 +145,14 @@ WebSocket 经 gateway 的 `/ws` 路由转发到 market-data 服务，与 REST �
 }
 ```
 
+### `mark:<symbol>` — 合约标记价格（USDT 本位永续）
+
+由合约服务每个风控 tick（约 1s）推送，订阅时先回放最近一帧。`<symbol>` 为合约代码（如 `BTCUSDT`，见 `GET /futures/market/contracts`）。标记价格不可用（指数断流）时停止推送。
+
+```json
+{"channel":"mark:BTCUSDT","ts":1767225600000,"data":{"symbol":"BTCUSDT","markPrice":"67000.1","indexPrice":"67001.5","fundingRate":"0.0001","nextFundingTime":1767254400000}}
+```
+
 ## 用户频道（需鉴权）
 
 ### `orders` — 订单更新

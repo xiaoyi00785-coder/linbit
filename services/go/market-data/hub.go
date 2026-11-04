@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,25 @@ type Hub struct {
 
 	mu       sync.RWMutex
 	channels map[string]map[*wsClient]struct{}
+
+	// last frame per relayed channel (futures "mark:{SYMBOL}"), replayed on subscribe.
+	lmu  sync.RWMutex
+	last map[string]json.RawMessage
+}
+
+// markChannelRe matches the futures mark-price channel pushed by the futures service.
+var markChannelRe = regexp.MustCompile(`^mark:[A-Z0-9]{2,30}$`)
+
+// Relay broadcasts a frame produced by another service and remembers it as the
+// channel snapshot for new subscribers.
+func (h *Hub) Relay(channel string, data json.RawMessage) {
+	h.lmu.Lock()
+	if h.last == nil {
+		h.last = map[string]json.RawMessage{}
+	}
+	h.last[channel] = data
+	h.lmu.Unlock()
+	h.Broadcast(channel, data)
 }
 
 // NewHub builds a hub over the given snapshot source.
@@ -325,6 +345,10 @@ func (c *wsClient) validateChannel(channel string) (code, msg string) {
 		if len(parts) != 3 || !c.hub.snap.HasSymbol(parts[1]) || !c.hub.snap.ValidInterval(parts[2]) {
 			return "SUB_INVALID", "无效的 K 线频道: " + channel
 		}
+	case "mark":
+		if !markChannelRe.MatchString(channel) {
+			return "SUB_INVALID", "无效的标记价格频道: " + channel
+		}
 	case "chat":
 		if len(parts) != 2 || c.hub.chatValidate == nil {
 			return "SUB_INVALID", "无效的聊天室频道: " + channel
@@ -359,6 +383,13 @@ func (c *wsClient) sendInitial(channel string) {
 		}
 	case "kline":
 		if d, ok := c.hub.snap.KlineFrame(parts[1], parts[2]); ok {
+			c.sendData(channel, d)
+		}
+	case "mark":
+		c.hub.lmu.RLock()
+		d, ok := c.hub.last[channel]
+		c.hub.lmu.RUnlock()
+		if ok {
 			c.sendData(channel, d)
 		}
 	}

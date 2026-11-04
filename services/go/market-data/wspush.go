@@ -23,3 +23,26 @@ func (s *Server) hWSPush(w http.ResponseWriter, r *http.Request) {
 	n := s.hub.PushUser(in.UserID, in.Channel, in.Data)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"delivered": n})
 }
+
+// POST /internal/ws/broadcast {frames:[{channel, data}]}: public frames relayed
+// from the futures service (only "mark:{SYMBOL}" channels are accepted).
+func (s *Server) hWSBroadcast(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Frames []struct {
+			Channel string          `json:"channel"`
+			Data    json.RawMessage `json:"data"`
+		} `json:"frames"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	n := 0
+	for _, f := range in.Frames {
+		if markChannelRe.MatchString(f.Channel) && len(f.Data) > 0 {
+			s.hub.Relay(f.Channel, f.Data)
+			n++
+		}
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"relayed": n})
+}

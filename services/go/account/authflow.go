@@ -207,8 +207,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeIdentityError(w, err)
 		return
 	}
-	if len(req.Password) < 8 {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "密码至少 8 位")
+	if !validLoginPassword(req.Password) {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", passwordRuleMsg)
 		return
 	}
 	if req.Code == "" {
@@ -607,8 +607,8 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "缺少 resetToken")
 		return
 	}
-	if len(req.NewPassword) < 8 {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "密码至少 8 位")
+	if !validLoginPassword(req.NewPassword) {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", passwordRuleMsg)
 		return
 	}
 	userID, err := s.store.ConsumePasswordResetToken(r.Context(), req.ResetToken)

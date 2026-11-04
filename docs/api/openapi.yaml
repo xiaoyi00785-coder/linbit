@@ -4399,6 +4399,46 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /futures/pnl/today:
+    get:
+      tags:
+      - Futures
+      summary: 合约今日已实现盈亏
+      description: |-
+        当日（UTC 00:00 起）合约账户已实现盈亏汇总 = realizedPnl + funding + fee + liquidationFee + insuranceCover（均为带符号的账单金额，fee 为负数）。
+        不含未实现盈亏（见 GET /futures/account）。标记价格实时推送见 WebSocket 频道 `mark:{symbol}`（docs/api/websocket.md）。
+      operationId: futuresTodayPnl
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset, since, pnl, realizedPnl, funding, fee, liquidationFee, insuranceCover]
+                properties:
+                  asset:
+                    type: string
+                    example: USDT
+                  since:
+                    type: integer
+                    format: int64
+                    description: 统计起点（UTC 当日 00:00，毫秒时间戳）
+                  pnl:
+                    type: string
+                    description: 合计
+                  realizedPnl:
+                    type: string
+                  funding:
+                    type: string
+                  fee:
+                    type: string
+                  liquidationFee:
+                    type: string
+                  insuranceCover:
+                    type: string
+        '401':
+          description: 未登录
   /futures/bills:
     get:
       tags:

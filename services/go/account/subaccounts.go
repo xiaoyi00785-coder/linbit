@@ -401,8 +401,8 @@ func (s *Server) handlePatchSub(w http.ResponseWriter, r *http.Request) {
 			common.WriteError(w, http.StatusForbidden, "SUB_LOGIN_NOT_ALLOWED", "平台暂未开放子账户登录")
 			return
 		}
-		if len(req.Password) < 8 {
-			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "开启登录需设置至少 8 位密码")
+		if !validLoginPassword(req.Password) {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "开启登录需设置密码："+passwordRuleMsg)
 			return
 		}
 		secret, uri, err := generateTOTP(sub.LoginEmail)
@@ -421,8 +421,8 @@ func (s *Server) handlePatchSub(w http.ResponseWriter, r *http.Request) {
 		loginTOTP = map[string]string{"secret": secret, "otpauthUri": uri}
 	}
 	if req.Password != "" {
-		if len(req.Password) < 8 {
-			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "密码至少 8 位")
+		if !validLoginPassword(req.Password) {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", passwordRuleMsg)
 			return
 		}
 		hash, err := hashPassword(req.Password)

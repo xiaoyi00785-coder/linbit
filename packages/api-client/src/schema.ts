@@ -3045,6 +3045,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/futures/pnl/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 合约今日已实现盈亏
+         * @description 当日（UTC 00:00 起）合约账户已实现盈亏汇总 = realizedPnl + funding + fee + liquidationFee + insuranceCover（均为带符号的账单金额，fee 为负数）。
+         *     不含未实现盈亏（见 GET /futures/account）。标记价格实时推送见 WebSocket 频道 `mark:{symbol}`（docs/api/websocket.md）。
+         */
+        get: operations["futuresTodayPnl"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/futures/bills": {
         parameters: {
             query?: never;
@@ -12370,6 +12391,48 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
+            };
+        };
+    };
+    futuresTodayPnl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example USDT */
+                        asset: string;
+                        /**
+                         * Format: int64
+                         * @description 统计起点（UTC 当日 00:00，毫秒时间戳）
+                         */
+                        since: number;
+                        /** @description 合计 */
+                        pnl: string;
+                        realizedPnl: string;
+                        funding: string;
+                        fee: string;
+                        liquidationFee: string;
+                        insuranceCover: string;
+                    };
+                };
+            };
+            /** @description 未登录 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

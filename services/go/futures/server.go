@@ -67,6 +67,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /futures/positions/{symbol}/margin", s.user(s.hMargin))
 	mux.HandleFunc("POST /futures/positions/{symbol}/close", s.user(s.hClose))
 	mux.HandleFunc("GET /futures/bills", s.user(s.hBills))
+	mux.HandleFunc("GET /futures/pnl/today", s.user(s.hTodayPnl))
 	mux.HandleFunc("GET /futures/trades", s.user(s.hMyTrades))
 	// dev
 	s.copyRoutes(mux)
@@ -406,6 +407,36 @@ func (s *Server) hBills(w http.ResponseWriter, r *http.Request, uid string) {
 		}
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"bills": out})
+}
+
+// hTodayPnl sums today's (since 00:00 UTC) signed futures bills that make up
+// realised PnL: realized_pnl + funding + fee + liquidation_fee + insurance_cover.
+// Unrealised PnL is not included (see GET /futures/account).
+func (s *Server) hTodayPnl(w http.ResponseWriter, r *http.Request, uid string) {
+	now := s.now().UTC()
+	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	rows, err := s.db.QueryContext(r.Context(), `SELECT kind, COALESCE(sum(amount),0) FROM fut_bills
+		WHERE user_id=$1 AND created_at >= $2 AND kind IN ('realized_pnl','funding','fee','liquidation_fee','insurance_cover') GROUP BY kind`, uid, since)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	defer rows.Close()
+	by := map[string]decimal.Decimal{}
+	total := dZero
+	for rows.Next() {
+		var k string
+		var a decimal.Decimal
+		if rows.Scan(&k, &a) == nil {
+			by[k] = a
+			total = total.Add(a)
+		}
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{
+		"asset": "USDT", "since": since.UnixMilli(), "pnl": total,
+		"realizedPnl": by["realized_pnl"], "funding": by["funding"], "fee": by["fee"],
+		"liquidationFee": by["liquidation_fee"], "insuranceCover": by["insurance_cover"],
+	})
 }
 
 func (s *Server) hMyTrades(w http.ResponseWriter, r *http.Request, uid string) {

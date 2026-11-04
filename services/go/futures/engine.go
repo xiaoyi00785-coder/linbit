@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -15,11 +16,12 @@ import (
 // Server owns the futures engine. mu serializes every state mutation (orders,
 // fills, funding, liquidation, transfers); pmu guards the in-memory price state.
 type Server struct {
-	cfg    Config
-	db     *sql.DB
-	asset  *AssetClient
-	market *MarketClient
-	now    func() time.Time
+	cfg         Config
+	markPushing atomic.Bool
+	db          *sql.DB
+	asset       *AssetClient
+	market      *MarketClient
+	now         func() time.Time
 
 	tradfi *copyTradFi
 

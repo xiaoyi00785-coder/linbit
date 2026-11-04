@@ -448,8 +448,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
 		return
 	}
-	if len(req.NewPassword) < 8 || len(req.NewPassword) > 128 {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "密码长度需为 8-128 位")
+	if !validLoginPassword(req.NewPassword) {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", passwordRuleMsg)
 		return
 	}
 	if !checkPassword(u.PasswordHash, req.OldPassword) {

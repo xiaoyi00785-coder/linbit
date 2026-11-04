@@ -640,6 +640,39 @@ func (s *Server) pushWS(ctx context.Context, uid, channel string, data any) {
 	resp.Body.Close()
 }
 
+// pushMarks relays the current mark/index/funding of every contract to the
+// public WS channel "mark:{SYMBOL}" (market-data /internal/ws/broadcast). Async,
+// best effort, at most one in flight.
+func (s *Server) pushMarks(ctx context.Context) {
+	if s.cfg.MarketURL == "" || s.cfg.InternalToken == "" || !s.markPushing.CompareAndSwap(false, true) {
+		return
+	}
+	nf := s.nextFunding(s.now()).UnixMilli()
+	frames := make([]map[string]any, 0, len(s.symbols))
+	for _, sym := range s.symbols {
+		ps := s.snapshot(sym)
+		if ps.Mark.Sign() <= 0 {
+			continue
+		}
+		frames = append(frames, map[string]any{"channel": "mark:" + sym, "data": map[string]any{
+			"symbol": sym, "markPrice": ps.Mark, "indexPrice": ps.Index,
+			"fundingRate": s.predictedRate(ps), "nextFundingTime": nf}})
+	}
+	body, _ := json.Marshal(map[string]any{"frames": frames})
+	go func() {
+		defer s.markPushing.Store(false)
+		req, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodPost, strings.TrimRight(s.cfg.MarketURL, "/")+"/internal/ws/broadcast", bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Internal-Token", s.cfg.InternalToken)
+		if resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}()
+}
+
 // ---- HTTP ----
 
 func (s *Server) eventRoutes(mux *http.ServeMux) {
