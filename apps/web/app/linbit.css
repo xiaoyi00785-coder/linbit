@@ -243,3 +243,20 @@ body:has(.cookie) .svc{bottom:330px}
   .cookie{left:12px;right:12px;width:auto;bottom:12px}body:has(.cookie) .svc{bottom:auto;top:calc(100vh - 360px)}}
 @media (min-width:801px){body:has(.of) .svc{bottom:12px;right:12px;width:40px;height:40px}}
 .vform select.vin.sel{appearance:auto;cursor:pointer}.vct-err{color:var(--lb-red,#f6465d);font-size:12px;margin:4px 0 0}.vform .vin.btn:disabled{opacity:.5;cursor:not-allowed}.vct-hint{font-size:12px;margin-top:6px}
+/* 帮助中心 FAQ 折叠项 */
+.hfq details{border-top:1px solid rgba(128,128,128,.18);padding:12px 0}
+.hfq details:first-child{border-top:0}
+.hfq summary{cursor:pointer;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
+.hfq summary::-webkit-details-marker{display:none}
+.hfq summary::after{content:"+";opacity:.6}
+.hfq details[open] summary::after{content:"−"}
+.hfq p{margin:8px 0 6px;opacity:.75;line-height:1.6}
+.hfq .hfq-a{font-size:13px;color:#2f6bff}
+/* 页脚社区图标：两行圆形 */
+.fsoc{position:relative;display:grid;grid-template-columns:repeat(3,36px);gap:10px;margin-top:10px}
+.fsoc-i{width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(128,128,128,.16);color:inherit;border:0;cursor:pointer;transition:background .15s}
+.fsoc-i:hover,.fsoc-i:focus-visible{background:rgba(128,128,128,.32)}
+.fsoc-i:focus-visible,.fsoc-row:focus-visible{outline:2px solid #2f6bff;outline-offset:2px}
+.fsoc-pop{position:absolute;left:0;bottom:calc(100% + 8px);min-width:160px;background:#1b1d22;color:#fff;border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:20}
+.fsoc-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:6px;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer;text-decoration:none}
+.fsoc-row:hover{background:rgba(255,255,255,.08)}

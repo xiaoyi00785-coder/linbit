@@ -24,7 +24,7 @@ import { setAuthed } from './auth'
 import { inviteCodeOf } from '@/lib/site'
 import { DepositAddr } from '@/features/DepositAddr'
 import { getNetworks } from '@/lib/wallet'
-import { depositNetsOf } from '@/lib/assetDisplay'
+import { depositNetsOf, netLabel } from '@/lib/assetDisplay'
 import { useMe, displayAccount, updateProfile, setMe, uploadAvatar, avatarSrc } from '@/lib/account'
 import { asset } from '@/lib/asset';
 export const Empty=()=><div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div>
@@ -52,7 +52,7 @@ function Step({n,t,children}){return <div className="step"><div className="stn">
 function Tips({buy}){const n=useNavigate();return <div className="dtips"><div className="lcard sm"><b>温馨提示</b><p className="lg">请确认设备安全，谨防信息被篡改或泄露。</p></div><div className="lcard sm"><b>常见问题</b><p className="lg">1. 如何把数字资产充值到 linbit 账户？<br/>2. 充值未到账怎么办？<br/>3. 地址填错如何处理？</p></div>{buy&&<button className="lb dark" onClick={()=>n('/buy')}>去买币 →</button>}</div>}
 export function Deposit({out}){const[sec,setSec]=useState(false);const[c,setC]=useState('USDT');const[net,setNet]=useState('');const[open,setOpen]=useState(false);const nets=useDepositNets(c);return <main className="light"><div className="dwrap"><div className="crumb lg">资产 / {out?'提现':'充值'}</div><h1 className="dh">{out?'提现':'充值'}</h1><div className="dgrid"><div>
 <Step n="1" t="选择币种"><Dropdown cls="lsel big2" icons v={c} opts={['USDT','BTC','ETH']} onChange={x=>{setC(x);setNet('')}}/><div className="chips cchips">{['BTC','ETH','USDT'].map(x=><span key={x} className={c===x?'on':''} onClick={()=>{setC(x);setNet('')}}><Ico c={{s:x}} s={14}/>{x}</span>)}</div></Step>
-<Step n="2" t="选择网络"><div className="lsel big2" onClick={()=>setOpen(!open)}>{net||<span className="lg">请选择网络</span>}<em>▾</em></div>{open&&<div className="lmenu">{nets==null?<span className="lg">加载中…</span>:nets.length?nets.map(x=><a key={x} onClick={()=>{setNet(x);setOpen(false)}}>{x}</a>):<span className="lg">该币种暂不支持充值</span>}</div>}</Step>
+<Step n="2" t="选择网络"><div className="lsel big2" onClick={()=>setOpen(!open)}>{net?netLabel(net):<span className="lg">请选择网络</span>}<em>▾</em></div>{open&&<div className="lmenu">{nets==null?<span className="lg">加载中…</span>:nets.length?nets.map(x=><a key={x} onClick={()=>{setNet(x);setOpen(false)}}>{netLabel(x)}</a>):<span className="lg">该币种暂不支持充值</span>}</div>}</Step>
 {out?<Step n="3" t="提现地址与数量"><div className="lsel big2"><span className="lg">输入或粘贴地址</span></div><div className="lsel big2"><span className="lg">最小提现 10 USDT</span><em className="lime2">全部</em></div><div className="lrow lg"><span>资金账户可用 0 USDT</span><span>网络费（链上 Gas）≈1 USDT</span></div><button className="lb dark wide" onClick={()=>setSec(true)}>提现</button>{sec&&<SecModal onClose={()=>setSec(false)}/>}</Step>
 :net&&<Step n="3" t="充值地址"><div className="lg dacct">到账账户：<b>资金账户</b>（可划转至现货 / 合约）</div><DepositAddr asset={c} network={net}/></Step>}
 </div><Tips buy={!out}/></div><div className="lcard"><div className="lrow"><h3>{out?'提现记录':'充值记录'}</h3><a className="lmore" onClick={()=>goto(location.pathname.includes('withdraw')?'/assets/history/funding':'/assets/history/funding')}>全部记录 ›</a></div><TH c={['时间','资产','数量','类型','状态']}/><Empty/></div></div></main>}
