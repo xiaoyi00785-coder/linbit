@@ -219,6 +219,13 @@ enum ErrorText {
         "CHAT_WORD_BLOCKED": "消息包含敏感词",
         "CHAT_UNAVAILABLE": "聊天室暂不可用",
         "KYC_REQUIRED": "请先完成身份认证",
+        "UNDERAGE": "未满 18 周岁，无法完成身份认证",
+        "KYC_LEVEL_REQUIRED": "请先完成基础认证",
+        "KYC_PENDING": "认证资料审核中，请勿重复提交",
+        "ID_NUMBER_TAKEN": "该证件已被其他账户使用",
+        "DOCUMENT_NOT_FOUND": "证件照片已失效，请重新上传",
+        "DOCUMENT_SIDE_MISMATCH": "证件照片类型不匹配，请重新上传",
+        "DOCUMENT_REQUIRED": "请上传所需的全部证件照片",
         // 合约下单 / 改单 / 条件委托 / 持仓模式
         "VALIDATION_ERROR": "参数有误，请检查后重试",
         "UNKNOWN_SYMBOL": "合约不存在",

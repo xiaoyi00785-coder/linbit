@@ -67,7 +67,10 @@ struct UserCenterView: View {
                         }
                     } action: { UIPasteboard.general.string = session.account?.uid; ToastCenter.shared.show("已复制", .success) }
                     row("昵称", value: session.account?.nickname ?? "") {}
-                    row("身份认证", value: (session.account?.kycLevel ?? 0) > 0 ? "已认证" : "去认证") {}
+                    row("身份认证", value: (session.account?.kycLevel ?? 0) > 0 ? "已认证" : "去认证") {
+                        Router.shared.showUserCenter = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.kyc) }
+                    }
                     NavigationLink { SecurityView() } label: { rowLabel("账户安全", value: nil) }.buttonStyle(RowPressStyle())
                     row("子账户", value: nil) {
                         Router.shared.showUserCenter = false
