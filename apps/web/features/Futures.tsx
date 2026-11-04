@@ -2,7 +2,7 @@
 // 合约下单区底部：仓位 / 当前委托 / 计划委托 / 止盈止损 / 历史委托 / 历史仓位 / 成交明细（可只看当前合约）
 // 对接 GET /futures/positions、/futures/orders、/futures/plan-orders、/futures/tpsl-orders、/futures/positions/history、/futures/trades；
 // 改单 PUT /futures/orders/{id}，持仓止盈止损 POST /futures/tpsl-orders。
-import { stLabel, isOpenStatus, futOrderOf, closeToast } from "@/lib/orderStatus";
+import { stLabel, isOpenStatus } from "@/lib/orderStatus";
 import { useEffect, useRef, useState } from "react";
 import type { components } from "@linbit/api-client";
 import { useRest, rest } from "@/lib/rest";
@@ -79,9 +79,9 @@ export function FutOrders({ symbol }: { symbol?: string }) {
     toast(ok); reloadAll();
   };
   const close = async (p: Pos) => {
-    const r = await rest<any>("POST", `/futures/positions/${p.symbol}/close`, p.positionSide && p.positionSide !== "BOTH" ? { positionSide: p.positionSide } : {});
+    const r = await rest("POST", `/futures/positions/${p.symbol}/close`, p.positionSide && p.positionSide !== "BOTH" ? { positionSide: p.positionSide } : {});
     if (!r.ok) return toast(r.error || "平仓失败", "err");
-    const o = futOrderOf(r.data); const m = closeToast(o.status, o.filledQty); toast(m.t, m.ok ? undefined : "err"); reloadAll();
+    toast("已提交市价平仓"); reloadAll();
   };
   const rlRef = useRef(reloadAll); rlRef.current = reloadAll;
   useEffect(() => { const f = () => rlRef.current(); window.addEventListener("lb-fut-orders", f); return () => window.removeEventListener("lb-fut-orders", f); }, []);

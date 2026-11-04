@@ -1,7 +1,7 @@
 "use client";
 /** 交易页组件：交易对切换、订单簿（视图/精度/累计深度/点价填单）、合约下单面板（模式/杠杆/计算器）。
  *  精度一律来自 /market/symbols 或 /futures/market/contracts，不写死。 */
-import { orderToast, futOrderOf } from "@/lib/orderStatus";
+import { orderToast } from "@/lib/orderStatus";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { normSymbol } from "./symbol";
 import { useNavigate } from "@/lib/router";
@@ -390,7 +390,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       const k = Object.keys(M).find((x) => e.includes(x));
       return toast(k ? M[k] : e || "下单失败", "err");
     }
-    if (ty === "plan") toast("计划委托已提交"); else { const o = futOrderOf(r.data); const m = orderToast(o.status, o.filledQty); toast(m.t, m.ok ? undefined : "err"); } setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
+    if (ty === "plan") toast("计划委托已提交"); else { const m = orderToast(r.data?.status, r.data?.filledQty); toast(m.t, m.ok ? undefined : "err"); } setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
   };
   const setByPct = (p: number) => {
     const a = Number(avail) || 0;

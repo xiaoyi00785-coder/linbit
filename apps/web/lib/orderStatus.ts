@@ -7,19 +7,6 @@ const M: Record<string, string> = {
 };
 export const stLabel = (s?: string | null) => (s ? M[s.toLowerCase()] ?? s : "--");
 export const isOpenStatus = (s?: string) => { const v = (s || "").toLowerCase(); return v === "new" || v === "partially_filled"; };
-/** 合约下单/平仓接口返回 { order, trades }：取 order 的实际状态 */
-export const futOrderOf = (d: any): { status?: string; filledQty?: string } => (d && typeof d === "object" && d.order ? d.order : d) ?? {};
-/** 市价平仓按实际状态提示 */
-export function closeToast(status?: string, filled?: string | number): { ok: boolean; t: string } {
-  const v = (status || "").toLowerCase(); const f = Number(filled) || 0;
-  if (v === "filled") return { ok: true, t: "已市价平仓" };
-  if (v === "partially_filled") return { ok: true, t: "部分平仓成交" };
-  if (v === "new" || v === "pending" || v === "pending_new" || !v) return { ok: true, t: "已提交市价平仓" };
-  if (v === "canceled" || v === "cancelled" || v === "expired" || v === "partially_canceled")
-    return f > 0 ? { ok: true, t: "部分平仓成交，剩余已撤销" } : { ok: false, t: "平仓未成交，已自动撤销（市场深度不足）" };
-  if (v === "rejected") return { ok: false, t: "平仓被拒绝" };
-  return { ok: false, t: `平仓状态：${stLabel(v)}` };
-}
 /** 按下单接口返回的实际状态给出提示 */
 export function orderToast(status?: string, filled?: string | number): { ok: boolean; t: string } {
   const v = (status || "").toLowerCase(); const f = Number(filled) || 0;
