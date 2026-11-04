@@ -7851,6 +7851,10 @@ export interface components {
             depositEnabled?: boolean;
             withdrawEnabled?: boolean;
             estimatedArrivalMinutes?: number;
+            /** @description 网络选择器“推荐”角标（后台可配；默认 USDT/TRC20 为 true） */
+            recommended?: boolean;
+            /** @description 同币种内的展示顺序，升序；列表已按 asset、sortOrder、network 排好 */
+            sortOrder?: number;
         };
         InternalTransferRequest: {
             clientId: string;
@@ -14644,6 +14648,7 @@ export interface operations {
                     "application/json": {
                         /** @example USDT */
                         asset?: string;
+                        /** @description 按 asset、sortOrder（升序）、network 排序 */
                         networks: components["schemas"]["WalletNetwork"][];
                     };
                 };

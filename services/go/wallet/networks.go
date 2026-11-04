@@ -30,6 +30,9 @@ type Network struct {
 	MemoRequired     bool
 	DepositDisabled  bool
 	WithdrawDisabled bool
+	// Display hints for the network picker (admin-overridable).
+	Recommended bool
+	SortOrder   int // ascending within an asset; ties broken by network code
 }
 
 // NetworkRegistry indexes networks by asset and by (asset, network).
@@ -101,9 +104,18 @@ func loadNetworks() NetworkRegistry {
 			log.Printf("config: invalid WALLET_NETWORKS_JSON (%v); using defaults", err)
 		} else {
 			nets := make([]Network, 0, len(items))
-			for _, it := range items {
-				nets = append(nets, it.toNetwork())
+			rec, srt := make([]bool, len(items)), make([]bool, len(items))
+			for i, it := range items {
+				n := it.toNetwork()
+				if it.Recommended != nil {
+					n.Recommended, rec[i] = *it.Recommended, true
+				}
+				if it.SortOrder != nil {
+					n.SortOrder, srt[i] = *it.SortOrder, true
+				}
+				nets = append(nets, n)
 			}
+			applyDisplayDefaults(nets, rec, srt)
 			return newRegistry(nets)
 		}
 	}
@@ -125,6 +137,8 @@ type networkJSON struct {
 	MemoRequired            bool   `json:"memoRequired"`
 	DepositDisabled         bool   `json:"depositDisabled"`
 	WithdrawDisabled        bool   `json:"withdrawDisabled"`
+	Recommended             *bool  `json:"recommended"` // nil = default (USDT/TRC20)
+	SortOrder               *int   `json:"sortOrder"`   // nil = declaration order within the asset
 }
 
 func (j networkJSON) toNetwork() Network {
@@ -151,6 +165,27 @@ func (j networkJSON) toNetwork() Network {
 	}
 }
 
+// defaultRecommended: the built-in picker recommendation when nothing is configured.
+func defaultRecommended(asset, network string) bool {
+	return strings.EqualFold(asset, "USDT") && strings.EqualFold(network, "TRC20")
+}
+
+// applyDisplayDefaults fills Recommended / SortOrder for entries without an
+// explicit value: sortOrder = 10, 20, ... in declaration order per asset.
+func applyDisplayDefaults(nets []Network, explicitRec, explicitSort []bool) {
+	seen := map[string]int{}
+	for i := range nets {
+		a := strings.ToUpper(nets[i].Asset)
+		seen[a]++
+		if !explicitSort[i] {
+			nets[i].SortOrder = seen[a] * 10
+		}
+		if !explicitRec[i] {
+			nets[i].Recommended = defaultRecommended(nets[i].Asset, nets[i].Network)
+		}
+	}
+}
+
 // defaultNetworks is the built-in registry. Gas estimates follow the business
 // rules (TRON ~2, Ethereum ~10, BNB ~1, Arbitrum ~1 USDT); confirmations and
 // per-asset min/max for non-USDT assets are not in the rules file and are
@@ -174,7 +209,7 @@ func defaultNetworks() []Network {
 			EstimatedArrivalMinutes: mins, AddressPrefix: prefix,
 		}
 	}
-	return []Network{
+	nets := []Network{
 		// USDT — all networks: min 12, max 20000 (business rules).
 		usdt("TRC20", "2", 19, 4, "T"),
 		usdt("ERC20", "10", 12, 4, "0x"),
@@ -195,6 +230,9 @@ func defaultNetworks() []Network {
 			MinWithdraw: d("0.02"), MaxWithdraw: decimal.Zero, GasFeeEstimate: d("0.000005"),
 			GasFeeAsset: "SOL", EstimatedArrivalMinutes: 1, AddressPrefix: "So"},
 	}
+	none := make([]bool, len(nets))
+	applyDisplayDefaults(nets, none, none)
+	return nets
 }
 
 // mainnetChainProblems: on mainnet every chain enabled in WALLET_NETWORKS_JSON

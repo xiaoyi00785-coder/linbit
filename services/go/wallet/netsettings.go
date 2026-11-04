@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 
@@ -23,6 +24,8 @@ type netOverride struct {
 	MemoRequired    *bool
 	DepositEnabled  *bool
 	WithdrawEnabled *bool
+	Recommended     *bool
+	SortOrder       *int
 }
 
 var (
@@ -68,6 +71,12 @@ func applyOverlay(n Network) Network {
 	if o.WithdrawEnabled != nil {
 		n.WithdrawDisabled = !*o.WithdrawEnabled
 	}
+	if o.Recommended != nil {
+		n.Recommended = *o.Recommended
+	}
+	if o.SortOrder != nil {
+		n.SortOrder = *o.SortOrder
+	}
 	return n
 }
 
@@ -77,7 +86,7 @@ func (s *Store) LoadNetworkOverrides(ctx context.Context) error {
 		return nil
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT asset, network, confirmations, min_deposit, min_withdraw,
-		max_withdraw, withdraw_fee, memo_required, deposit_enabled, withdraw_enabled FROM wallet_network_settings`)
+		max_withdraw, withdraw_fee, memo_required, deposit_enabled, withdraw_enabled, recommended, sort_order FROM wallet_network_settings`)
 	if err != nil {
 		return err
 	}
@@ -89,8 +98,10 @@ func (s *Store) LoadNetworkOverrides(ctx context.Context) error {
 			conf                  sql.NullInt64
 			minD, minW, maxW, fee decimal.NullDecimal
 			memo, depOn, wdOn     sql.NullBool
+			rec                   sql.NullBool
+			sortOrd               sql.NullInt64
 		)
-		if err := rows.Scan(&asset, &network, &conf, &minD, &minW, &maxW, &fee, &memo, &depOn, &wdOn); err != nil {
+		if err := rows.Scan(&asset, &network, &conf, &minD, &minW, &maxW, &fee, &memo, &depOn, &wdOn, &rec, &sortOrd); err != nil {
 			return err
 		}
 		var o netOverride
@@ -114,6 +125,11 @@ func (s *Store) LoadNetworkOverrides(ctx context.Context) error {
 		}
 		o.MinDeposit, o.MinWithdraw, o.MaxWithdraw, o.WithdrawFee = nd(minD), nd(minW), nd(maxW), nd(fee)
 		o.MemoRequired, o.DepositEnabled, o.WithdrawEnabled = nb(memo), nb(depOn), nb(wdOn)
+		o.Recommended = nb(rec)
+		if sortOrd.Valid {
+			v := int(sortOrd.Int64)
+			o.SortOrder = &v
+		}
 		m[pairKey(asset, network)] = o
 	}
 	if err := rows.Err(); err != nil {
@@ -137,6 +153,8 @@ type networkDTO struct {
 	DepositEnabled          bool   `json:"depositEnabled"`
 	WithdrawEnabled         bool   `json:"withdrawEnabled"`
 	EstimatedArrivalMinutes int    `json:"estimatedArrivalMinutes"`
+	Recommended             bool   `json:"recommended"`
+	SortOrder               int    `json:"sortOrder"`
 }
 
 func toNetworkDTO(n Network) networkDTO {
@@ -145,6 +163,7 @@ func toNetworkDTO(n Network) networkDTO {
 		MemoRequired: n.MemoRequired, WithdrawFee: fmt8(n.GasFeeEstimate), WithdrawFeeAsset: n.GasFeeAsset,
 		MinWithdraw: fmt8(n.MinWithdraw), DepositEnabled: !n.DepositDisabled, WithdrawEnabled: !n.WithdrawDisabled,
 		EstimatedArrivalMinutes: n.EstimatedArrivalMinutes,
+		Recommended:             n.Recommended, SortOrder: n.SortOrder,
 	}
 	if n.MaxWithdraw.Sign() > 0 {
 		d.MaxWithdraw = fmt8(n.MaxWithdraw)
@@ -152,12 +171,18 @@ func toNetworkDTO(n Network) networkDTO {
 	return d
 }
 
+// sortNetworks orders by asset, then sortOrder ascending, then network code.
 func sortNetworks(list []networkDTO) {
-	for i := 1; i < len(list); i++ {
-		for j := i; j > 0 && (list[j].Asset+"|"+list[j].Network) < (list[j-1].Asset+"|"+list[j-1].Network); j-- {
-			list[j], list[j-1] = list[j-1], list[j]
+	sort.SliceStable(list, func(i, j int) bool {
+		a, b := list[i], list[j]
+		if a.Asset != b.Asset {
+			return a.Asset < b.Asset
 		}
-	}
+		if a.SortOrder != b.SortOrder {
+			return a.SortOrder < b.SortOrder
+		}
+		return a.Network < b.Network
+	})
 }
 
 // handleNetworks: GET /wallet/networks?asset= (asset optional = all assets).
@@ -203,6 +228,8 @@ type networkOverrideReq struct {
 	MemoRequired    *bool   `json:"memoRequired"`
 	DepositEnabled  *bool   `json:"depositEnabled"`
 	WithdrawEnabled *bool   `json:"withdrawEnabled"`
+	Recommended     *bool   `json:"recommended"`
+	SortOrder       *int    `json:"sortOrder"`
 	UpdatedBy       string  `json:"updatedBy"`
 	Reset           bool    `json:"reset"` // true = delete the override row
 }
@@ -243,13 +270,17 @@ func (s *Server) handleAdminPutNetwork(w http.ResponseWriter, r *http.Request) {
 		minW, ok2 := dec(req.MinWithdraw)
 		maxW, ok3 := dec(req.MaxWithdraw)
 		fee, ok4 := dec(req.WithdrawFee)
-		if !ok1 || !ok2 || !ok3 || !ok4 || (req.Confirmations != nil && (*req.Confirmations < 0 || *req.Confirmations > 10000)) {
+		if !ok1 || !ok2 || !ok3 || !ok4 || (req.Confirmations != nil && (*req.Confirmations < 0 || *req.Confirmations > 10000)) ||
+			(req.SortOrder != nil && (*req.SortOrder < -100000 || *req.SortOrder > 100000)) {
 			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "参数不合法")
 			return
 		}
-		var conf any
+		var conf, sortOrd any
 		if req.Confirmations != nil {
 			conf = *req.Confirmations
+		}
+		if req.SortOrder != nil {
+			sortOrd = *req.SortOrder
 		}
 		nb := func(b *bool) any {
 			if b == nil {
@@ -259,8 +290,8 @@ func (s *Server) handleAdminPutNetwork(w http.ResponseWriter, r *http.Request) {
 		}
 		_, err := s.store.db.ExecContext(ctx, `INSERT INTO wallet_network_settings
 			(asset, network, confirmations, min_deposit, min_withdraw, max_withdraw, withdraw_fee,
-			 memo_required, deposit_enabled, withdraw_enabled, updated_by, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
+			 memo_required, deposit_enabled, withdraw_enabled, recommended, sort_order, updated_by, updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$12,$13,$11,now())
 			ON CONFLICT (asset, network) DO UPDATE SET
 			 confirmations    = COALESCE(EXCLUDED.confirmations, wallet_network_settings.confirmations),
 			 min_deposit      = COALESCE(EXCLUDED.min_deposit, wallet_network_settings.min_deposit),
@@ -270,9 +301,11 @@ func (s *Server) handleAdminPutNetwork(w http.ResponseWriter, r *http.Request) {
 			 memo_required    = COALESCE(EXCLUDED.memo_required, wallet_network_settings.memo_required),
 			 deposit_enabled  = COALESCE(EXCLUDED.deposit_enabled, wallet_network_settings.deposit_enabled),
 			 withdraw_enabled = COALESCE(EXCLUDED.withdraw_enabled, wallet_network_settings.withdraw_enabled),
+			 recommended      = COALESCE(EXCLUDED.recommended, wallet_network_settings.recommended),
+			 sort_order       = COALESCE(EXCLUDED.sort_order, wallet_network_settings.sort_order),
 			 updated_by = EXCLUDED.updated_by, updated_at = now()`,
 			asset, network, conf, minD, minW, maxW, fee, nb(req.MemoRequired), nb(req.DepositEnabled),
-			nb(req.WithdrawEnabled), req.UpdatedBy)
+			nb(req.WithdrawEnabled), req.UpdatedBy, nb(req.Recommended), sortOrd)
 		if err != nil {
 			log.Printf("network override: %v", err)
 			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")

@@ -5869,7 +5869,7 @@ paths:
                 required: [networks]
                 properties:
                   asset: { type: string, example: USDT }
-                  networks: { type: array, items: { $ref: "#/components/schemas/WalletNetwork" } }
+                  networks: { type: array, description: 按 asset、sortOrder（升序）、network 排序, items: { $ref: "#/components/schemas/WalletNetwork" } }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /wallet/internal-transfer:
     post:
@@ -10262,6 +10262,8 @@ components:
         depositEnabled: { type: boolean }
         withdrawEnabled: { type: boolean }
         estimatedArrivalMinutes: { type: integer }
+        recommended: { type: boolean, description: 网络选择器“推荐”角标（后台可配；默认 USDT/TRC20 为 true） }
+        sortOrder: { type: integer, description: 同币种内的展示顺序，升序；列表已按 asset、sortOrder、network 排好 }
     InternalTransferRequest:
       type: object
       required: [clientId, asset, amount, totpCode]
