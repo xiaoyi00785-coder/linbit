@@ -179,6 +179,15 @@ struct RootTabView: View {
         case "copy-follows-empty": SecShot.raw = "copy:follows-empty"; router.feature = .copyTrading
         case "copy-become": SecShot.raw = "copy:become"; router.feature = .copyTrading
         case "copy-become-error": SecShot.raw = "copy:become-error"; router.feature = .copyTrading
+        case "loan-market": SecShot.raw = "loan:market"; router.feature = .loans
+        case "loan-quote": SecShot.raw = "loan:quote"; router.feature = .loans
+        case "loan-borrow-error": SecShot.raw = "loan:borrow-error"; router.feature = .loans
+        case "loan-loans": SecShot.raw = "loan:loans"; router.feature = .loans
+        case "loan-loans-empty": SecShot.raw = "loan:loans-empty"; router.feature = .loans
+        case "loan-closed": SecShot.raw = "loan:closed"; router.feature = .loans
+        case "loan-repay": SecShot.raw = "loan:repay"; router.feature = .loans
+        case "loan-collateral": SecShot.raw = "loan:collateral"; router.feature = .loans
+        case "loan-error": SecShot.raw = "loan:error"; router.feature = .loans
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
         case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security
