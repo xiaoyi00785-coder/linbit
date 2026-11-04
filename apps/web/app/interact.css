@@ -355,3 +355,6 @@ header .dd,.hd .dd{background:#121313;border:1px solid rgba(255,255,255,.08);bor
 @media (max-width:1200px){.hdr .hib{margin-left:4px}.hdr nav{gap:8px}}
 .fx-modal>div{position:relative}.fx-x{position:absolute;top:12px;right:14px;width:28px;height:28px;display:grid;place-items:center;border-radius:6px;cursor:pointer;color:#888;font-size:14px}.fx-x:hover{background:rgba(127,127,127,.15);color:inherit}
 @keyframes ovNudge{0%,100%{transform:none}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}.ov-nudge{animation:ovNudge .25s}
+/* 导航下拉：宽面板（活动中心等）左对齐锚定在触发项下，溢出视口时由 Header 内联 left 修正；::before 作为悬停桥，触发项与面板之间无空隙 */
+.hdr nav .ni .dd.wide{position:absolute;top:58px;left:0;transform:none}
+.hdr .ni .dd::before{content:"";position:absolute;left:0;right:0;top:-16px;height:16px}

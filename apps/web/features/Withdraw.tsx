@@ -10,6 +10,7 @@ import { goto } from "@/lib/ui";
 import { maskEmail } from "@/lib/account";
 import { addressError, amountError, cleanNum, DEFAULT_MIN_WITHDRAW } from "@/lib/validate";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
+import { NetPicker } from "@/legacy/Pages";
 import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
 import { Ico } from "@/legacy/App";
@@ -193,9 +194,8 @@ export function Withdraw() {
                 <div className="wwarn"><b>!</b>请确认收款平台支持所选币种与网络，选错币种或网络可能导致资产丢失。</div>
                 <div className="fx-field">
                   提现网络
-                  <select className="fsel" value={net} onChange={(e) => setNet(e.target.value)}>
-                    {netsOf(asset).map((a) => <option key={a}>{a}</option>)}
-                  </select>
+                  <NetPicker out coin={asset} net={net} setNet={setNet}
+                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: i?.minWithdraw || undefined, recommended: (i as { recommended?: boolean } | undefined)?.recommended === true || undefined }; })} />
                 </div>
                 <div className="fx-field">
                   <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>

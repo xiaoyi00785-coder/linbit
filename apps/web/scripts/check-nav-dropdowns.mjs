@@ -31,9 +31,28 @@ for (const w of [1280, 1440]) {
     if (/定投|100%\s*APR/.test(m.txt)) fails.push(`${tag}: 出现 定投 / 硬编码 100%APR`);
     if (l === "合约" && (!m.split || m.coins < 5 || !m.txt.includes("搜索币对"))) fails.push(`${tag}: 合约应为两栏 + 搜索币对 + USDT 列表`);
     if (SHOTS) await p.screenshot({ path: `${SHOTS}/nav-${w}-${l}.png`, clip: { x: 0, y: 0, width: w, height: 560 } });
-    await p.mouse.move(5, 880); await p.waitForTimeout(200);
+    await p.mouse.move(5, 880); await p.waitForTimeout(400);
+  }
+  // 活动中心：宽面板左边缘须落在触发项范围内；鼠标从触发项缓慢移入面板过程中下拉保持打开
+  {
+    const l = "活动中心"; const tag = `${w} ${l}`;
+    const ni = p.locator(".hdr nav .ni", { has: p.locator(`a:text-is("${l}")`) }).first();
+    await ni.hover(); await p.waitForTimeout(400);
+    const m = await ni.evaluate((n) => { const d = n.querySelector(".dd"); if (!d) return null; const r = d.getBoundingClientRect(), a = n.getBoundingClientRect(); return { x: r.x, r: r.right, top: r.top, ax: a.x, ar: a.right, ay: a.y + a.height / 2, acx: a.x + a.width / 2 }; });
+    if (!m) fails.push(`${tag}: 下拉未出现`);
+    else {
+      if (m.x < 0 || m.r > w) fails.push(`${tag}: 溢出视口 x=${m.x} right=${m.r}`);
+      else if (m.r <= w - 16 && (m.x < m.ax - 1 || m.x > m.ar)) fails.push(`${tag}: 面板左边缘 ${m.x} 不在触发项 [${m.ax}, ${m.ar}] 内`);
+      await p.mouse.move(m.acx, m.ay);
+      const tx = m.x + 40, ty = m.top + 40; let lost = false;
+      for (let i = 1; i <= 12; i++) { await p.mouse.move(m.acx + (tx - m.acx) * i / 12, m.ay + (ty - m.ay) * i / 12); await p.waitForTimeout(30); if (!(await ni.evaluate((n) => !!n.querySelector(".dd")))) { lost = true; break; } }
+      await p.waitForTimeout(300);
+      if (lost || !(await ni.evaluate((n) => !!n.querySelector(".dd")))) fails.push(`${tag}: 鼠标移入面板时悬停丢失`);
+      if (SHOTS) await p.screenshot({ path: `${SHOTS}/nav-${w}-${l}.png`, clip: { x: 0, y: 0, width: w, height: 560 } });
+    }
+    await p.mouse.move(5, 880); await p.waitForTimeout(400);
   }
 }
 await b.close();
 if (fails.length) { console.error("✗ 导航下拉检查失败：\n" + fails.join("\n")); process.exit(1); }
-console.log("✓ 导航下拉检查通过（1280/1440 × 买币/交易/合约/理财）");
+console.log("✓ 导航下拉检查通过（1280/1440 × 买币/交易/合约/理财/活动中心）");
