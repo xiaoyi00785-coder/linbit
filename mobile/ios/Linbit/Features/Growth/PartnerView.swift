@@ -4,7 +4,8 @@ import SwiftUI
 enum PartnerAPI {
     struct Apply: Encodable { let contact: String; let channel: String?; let scale: String? }
     static func me() async throws -> J { try await APIClient.shared.get("/partner/me", auth: true) }
-    static func rules() async throws -> J { try await APIClient.shared.get("/partner/rules", auth: true) }
+    /// 公开接口（openapi: security: []），不带登录态
+    static func rules() async throws -> J { try await APIClient.shared.get("/partner/rules") }
     static func summary() async throws -> J { try await APIClient.shared.get("/partner/summary", auth: true) }
     static func links() async throws -> J { try await APIClient.shared.get("/partner/links", auth: true) }
     static func commissions(_ kind: String?, page: Int = 1) async throws -> J {
@@ -190,6 +191,8 @@ struct PartnerDashboard: View {
     @State private var summary: J = .null
     @State private var links: J = .null
     @State private var list: Loadable<[J]> = .loading
+    /// 列表请求序号：切换 Tab / 筛选后，丢弃较早发出的请求结果
+    @State private var listReq = 0
 
     var body: some View {
         ScrollView {
@@ -215,8 +218,8 @@ struct PartnerDashboard: View {
         }
         .refreshable { await loadAll() }
         .task { await loadAll() }
-        .onChange(of: tab) { _ in Task { await loadList() } }
-        .onChange(of: kind) { _ in Task { await loadList() } }
+        .onChange(of: tab) { _ in list = .loading; Task { await loadList() } }
+        .onChange(of: kind) { _ in list = .loading; Task { await loadList() } }
     }
 
     private var asset: String { summary["payoutAsset"].s ?? "USDT" }
@@ -329,9 +332,15 @@ struct PartnerDashboard: View {
             list = .loaded((tab == 0 ? PartnerDemo.commissions(st == "empty") : PartnerDemo.team(st == "empty")).items); return
         }
         if list.value == nil { list = .loading }
+        listReq += 1
+        let req = listReq
         do {
             let r = tab == 0 ? try await PartnerAPI.commissions(Self.kinds[kind].0) : try await PartnerAPI.team("all")
+            guard req == listReq else { return }
             list = .loaded(r.items)
-        } catch { list = .failed(securityMessage(error)) }
+        } catch {
+            guard req == listReq else { return }
+            list = .failed(securityMessage(error))
+        }
     }
 }

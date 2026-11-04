@@ -301,19 +301,40 @@ extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
-/// 运营位链接：linbit://feature/earn、/earn、/strategy、/swap、/chat、/rewards… → 功能页；http(s) → 浏览器
+/// 运营位链接：linbit://feature/earn、/earn、/strategy、/swap、/chat、/rewards/newcomer… → 功能页；其他 http(s) → 浏览器
+/// 只按路由第一段**精确**匹配（不再用 contains，避免 /partner-news、/copyright 之类误跳）。
 @MainActor
 enum HomeLink {
+    private static let routes: [String: FeaturePage] = [
+        "earn": .earn, "grid": .strategy, "strategy": .strategy, "swap": .swap, "convert": .swap,
+        "chat": .chat, "reward": .welfare, "rewards": .welfare, "newcomer": .welfare, "welfare": .welfare,
+        "sub-account": .subAccounts, "partner": .partner, "affiliate": .partner, "copy": .copyTrading, "tradfi": .tradfi,
+    ]
+    private static let webHosts: Set<String> = ["cowa.click", "www.cowa.click"]
+
+    /// 链接里的路由段：linbit://feature/earn → ["earn"]；/rewards/newcomer → ["rewards", "newcomer"]；其他域名的 http(s) → nil
+    private static func segments(_ link: String) -> [String]? {
+        var s = link.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s.hasPrefix("http://") || s.hasPrefix("https://") {
+            guard let c = URLComponents(string: s), let host = c.host, webHosts.contains(host) else { return nil }
+            s = c.path
+        } else {
+            if let i = s.firstIndex(where: { $0 == "?" || $0 == "#" }) { s = String(s[..<i]) }
+            for scheme in ["linbit://", "cowa://", "linbit:", "cowa:"] where s.hasPrefix(scheme) { s.removeFirst(scheme.count); break }
+        }
+        var segs = s.split(separator: "/").map(String.init)
+        if segs.first == "feature" { segs.removeFirst() }
+        return segs
+    }
+
     static func open(_ link: String?, fallback: FeaturePage?) {
         guard let link, !link.isEmpty else { if let f = fallback { Router.shared.openFeature(f) }; return }
-        let l = link.lowercased()
-        let map: [(String, FeaturePage)] = [("earn", .earn), ("grid", .strategy), ("strategy", .strategy), ("swap", .swap), ("convert", .swap),
-                                            ("chat", .chat), ("reward", .welfare), ("newcomer", .welfare), ("welfare", .welfare),
-                                            ("sub-account", .subAccounts), ("partner", .partner), ("affiliate", .partner), ("copy", .copyTrading), ("tradfi", .tradfi)]
-        if let hit = map.first(where: { l.contains($0.0) }) { Router.shared.openFeature(hit.1); return }
-        if l.contains("futures") { Router.shared.tab = .futures; return }
-        if l.contains("event") { Router.shared.futuresTop = 1; Router.shared.tab = .futures; return }
-        if l.hasPrefix("http"), let u = URL(string: link) { UIApplication.shared.open(u); return }
+        if let first = segments(link)?.first {
+            if let f = routes[first] { Router.shared.openFeature(f); return }
+            if first == "futures" { Router.shared.tab = .futures; return }
+            if first == "event" { Router.shared.futuresTop = 1; Router.shared.tab = .futures; return }
+        }
+        if link.lowercased().hasPrefix("http"), let u = URL(string: link) { UIApplication.shared.open(u); return }
         if let f = fallback { Router.shared.openFeature(f) }
     }
 }
