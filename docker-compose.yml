@@ -300,12 +300,19 @@ services:
       EARN_URL: http://earn:8092
       FUTURES_URL: http://futures:8089
       # External index price (futures mark/index, KYC/admin USD conversion,
-      # market maker): Binance public REST first, OKX backup; stale => 503.
-      INDEX_FEED: ${INDEX_FEED:-binance,okx}
+      # market maker): Binance public REST first, then OKX, Bybit, Gate.io as
+      # failover (order = priority). Halted/delisted pairs (venue status !=
+      # trading) and prices frozen for INDEX_UNCHANGED_STALE_SECONDS are not
+      # quoted; no usable source => 503 (fail closed).
+      INDEX_FEED: ${INDEX_FEED:-binance,okx,bybit,gateio}
       INDEX_POLL_MS: ${INDEX_POLL_MS:-2000}
       INDEX_STALE_SECONDS: ${INDEX_STALE_SECONDS:-10}
       BINANCE_API_URL: ${BINANCE_API_URL:-https://data-api.binance.vision}
       OKX_API_URL: ${OKX_API_URL:-https://www.okx.com}
+      BYBIT_API_URL: ${BYBIT_API_URL:-https://api.bybit.com}
+      GATE_API_URL: ${GATE_API_URL:-https://api.gateio.ws}
+      INDEX_UNCHANGED_STALE_SECONDS: ${INDEX_UNCHANGED_STALE_SECONDS:-1800}
+      INDEX_STATUS_REFRESH_SECONDS: ${INDEX_STATUS_REFRESH_SECONDS:-900}
       # TradFi reference (tokenized stocks / metals): Binance USDⓈ-M perps, OKX SWAP backup.
       BINANCE_FAPI_URL: ${BINANCE_FAPI_URL:-https://fapi.binance.com}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

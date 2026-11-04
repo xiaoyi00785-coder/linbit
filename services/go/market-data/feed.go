@@ -17,17 +17,26 @@ import (
 
 // feed.go: external index prices. The index for a symbol (e.g. BTCUSDT) is the
 // latest spot price from an external public market-data source: Binance first,
-// OKX as backup. Both are polled over REST (public endpoints, no API key).
-// A source quote older than IndexStale is ignored; when every source is stale
-// the index is unavailable and callers (futures mark price, KYC/admin USD
-// conversion, market maker) fail closed.
+// then OKX, Bybit and Gate.io as backups (INDEX_FEED order = failover order; the
+// active source has weight 1). All are polled over REST (public endpoints, no
+// API key). A quote is only usable when:
+//   - the venue lists the symbol as trading (Binance status TRADING, OKX state
+//     live, Bybit status Trading, Gate trade_status tradable): last-price
+//     tickers keep answering for halted pairs, e.g. Binance TONUSDT (BREAK);
+//   - it was fetched within IndexStale; and
+//   - its price changed within IndexUnchangedStale (a venue that keeps serving
+//     the same frozen price is treated as stale; INDEX_UNCHANGED_EXEMPT lists
+//     pegged pairs that legitimately stay flat).
+// When every source is unusable the index is unavailable and callers (futures
+// mark price, KYC/admin USD conversion, market maker) fail closed.
 //
 // INDEX_FEED=off disables the external feed and serves the local spot last
 // price instead (dev/tests only; refused in production).
 
 type indexQuote struct {
-	price decimal.Decimal
-	at    time.Time
+	price     decimal.Decimal
+	at        time.Time // last successful fetch containing the symbol
+	changedAt time.Time // last time the price differed from the previous fetch
 }
 
 type indexSource struct {
@@ -48,8 +57,12 @@ type IndexFeed struct {
 	tradfi        map[string]tradfiRef // spot/futures symbol -> venue ids
 	stale         time.Duration
 	poll          time.Duration
-	local         func(symbol string) (decimal.Decimal, bool) // INDEX_FEED=off fallback
-	devMode       bool
+	// unchangedStale: a quote whose price has not changed for this long is not
+	// fresh (0 = guard off). unchangedExempt symbols (pegged pairs) skip it.
+	unchangedStale  time.Duration
+	unchangedExempt map[string]bool
+	local           func(symbol string) (decimal.Decimal, bool) // INDEX_FEED=off fallback
+	devMode         bool
 
 	mu       sync.Mutex
 	override map[string]decimal.Decimal // dev: fixed index per symbol
@@ -61,7 +74,11 @@ var feedHTTP = &http.Client{Timeout: 4 * time.Second}
 // NewIndexFeed builds the feed from config. names is the ordered source list.
 func NewIndexFeed(cfg Config, local func(string) (decimal.Decimal, bool)) *IndexFeed {
 	f := &IndexFeed{stale: cfg.IndexStale, poll: cfg.IndexPoll, local: local, devMode: cfg.DevMode,
+		unchangedStale: cfg.IndexUnchangedStale, unchangedExempt: map[string]bool{},
 		override: map[string]decimal.Decimal{}, tradfi: map[string]tradfiRef{}}
+	for _, sym := range cfg.IndexUnchangedExempt {
+		f.unchangedExempt[strings.ToUpper(sym)] = true
+	}
 	for _, n := range cfg.IndexFeed {
 		switch n {
 		case "binance":
@@ -74,8 +91,9 @@ func NewIndexFeed(cfg Config, local func(string) (decimal.Decimal, bool)) *Index
 					return fetchBinanceFAPI(ctx, fbase)
 				}})
 			base := cfg.BinanceURL
+			st := newStatusCache(cfg.IndexStatusRefresh, binanceTrading(base))
 			f.sources = append(f.sources, &indexSource{name: "binance", quotes: map[string]indexQuote{},
-				fetch: func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchBinance(ctx, base) }})
+				fetch: withStatus(func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchBinance(ctx, base) }, st)})
 		case "okx":
 			obase := cfg.OKXURL
 			f.tradfiSources = append(f.tradfiSources, &indexSource{name: "okx-swap", quotes: map[string]indexQuote{},
@@ -86,8 +104,19 @@ func NewIndexFeed(cfg Config, local func(string) (decimal.Decimal, bool)) *Index
 					return fetchOKXSwap(ctx, obase)
 				}})
 			base := cfg.OKXURL
+			st := newStatusCache(cfg.IndexStatusRefresh, okxTrading(base))
 			f.sources = append(f.sources, &indexSource{name: "okx", quotes: map[string]indexQuote{},
-				fetch: func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchOKX(ctx, base) }})
+				fetch: withStatus(func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchOKX(ctx, base) }, st)})
+		case "bybit":
+			base := cfg.BybitURL
+			st := newStatusCache(cfg.IndexStatusRefresh, bybitTrading(base))
+			f.sources = append(f.sources, &indexSource{name: "bybit", quotes: map[string]indexQuote{},
+				fetch: withStatus(func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchBybit(ctx, base) }, st)})
+		case "gateio":
+			base := cfg.GateURL
+			st := newStatusCache(cfg.IndexStatusRefresh, gateTrading(base))
+			f.sources = append(f.sources, &indexSource{name: "gateio", quotes: map[string]indexQuote{},
+				fetch: withStatus(func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchGate(ctx, base) }, st)})
 		}
 	}
 	return f
@@ -130,8 +159,20 @@ func (f *IndexFeed) run(ctx context.Context, src *indexSource) {
 			src.lastErr = ""
 			src.lastOK = now
 			for sym, p := range prices {
-				if p.IsPositive() {
-					src.quotes[sym] = indexQuote{price: p, at: now}
+				if !p.IsPositive() {
+					continue
+				}
+				q := indexQuote{price: p, at: now, changedAt: now}
+				if old, ok := src.quotes[sym]; ok && old.price.Equal(p) {
+					q.changedAt = old.changedAt
+				}
+				src.quotes[sym] = q
+			}
+			// a symbol the venue stopped quoting (halted / delisted) must not
+			// linger as a quote
+			for sym := range src.quotes {
+				if _, ok := prices[sym]; !ok {
+					delete(src.quotes, sym)
 				}
 			}
 		}
@@ -164,6 +205,19 @@ type IndexComponent struct {
 	UpdatedAt int64  `json:"updatedAt,omitempty"`
 }
 
+// quoteFresh reports whether q is usable for id (the venue's key; the spot
+// symbol for non-tradfi): fetched within stale and, unless the guard is off or
+// id is exempt, with a price that changed within unchangedStale.
+func (f *IndexFeed) quoteFresh(id string, q indexQuote, now time.Time) bool {
+	if now.Sub(q.at) > f.stale {
+		return false
+	}
+	if f.unchangedStale > 0 && !f.unchangedExempt[strings.ToUpper(id)] && !q.changedAt.IsZero() && now.Sub(q.changedAt) > f.unchangedStale {
+		return false
+	}
+	return true
+}
+
 // Components lists every source quoting symbol, marking active as weight 1.
 func (f *IndexFeed) Components(symbol, active string) []IndexComponent {
 	symbol = strings.ToUpper(symbol)
@@ -192,7 +246,7 @@ func (f *IndexFeed) Components(symbol, active string) []IndexComponent {
 		q, ok := src.quotes[id]
 		src.mu.Unlock()
 		if ok && id != "" {
-			c.Price, c.Fresh, c.UpdatedAt = q.price.String(), now.Sub(q.at) <= f.stale, q.at.UnixMilli()
+			c.Price, c.Fresh, c.UpdatedAt = q.price.String(), f.quoteFresh(id, q, now), q.at.UnixMilli()
 		}
 		out = append(out, c)
 	}
@@ -249,7 +303,7 @@ func (f *IndexFeed) index(symbol string, allowLocal bool) (IndexResult, bool) {
 			src.mu.Lock()
 			q, ok := src.quotes[id]
 			src.mu.Unlock()
-			if ok && now.Sub(q.at) <= f.stale {
+			if ok && f.quoteFresh(id, q, now) {
 				return IndexResult{Symbol: symbol, Price: q.price.String(), Source: src.name, UpdatedAt: q.at.UTC()}, true
 			}
 		}
@@ -259,7 +313,7 @@ func (f *IndexFeed) index(symbol string, allowLocal bool) (IndexResult, bool) {
 		src.mu.Lock()
 		q, ok := src.quotes[symbol]
 		src.mu.Unlock()
-		if ok && now.Sub(q.at) <= f.stale {
+		if ok && f.quoteFresh(symbol, q, now) {
 			return IndexResult{Symbol: symbol, Price: q.price.String(), Source: src.name, UpdatedAt: q.at.UTC()}, true
 		}
 	}
@@ -288,7 +342,7 @@ func (f *IndexFeed) Status() map[string]any {
 	if !f.External() {
 		mode = "local"
 	}
-	return map[string]any{"mode": mode, "staleSeconds": int(f.stale / time.Second), "simulatedOutage": outage, "sources": srcs}
+	return map[string]any{"mode": mode, "staleSeconds": int(f.stale / time.Second), "unchangedStaleSeconds": int(f.unchangedStale / time.Second), "simulatedOutage": outage, "sources": srcs}
 }
 
 // SetOverride (dev) pins an index; a zero price clears it.
@@ -442,7 +496,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	res, ok := s.feed.Index(sym)
 	if !ok {
-		common.WriteError(w, http.StatusServiceUnavailable, "INDEX_UNAVAILABLE", "外部指数价格不可用")
+		// Same APIError envelope plus the per-source view (every component is
+		// fresh:false or absent), so callers can see why the index is down.
+		common.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "INDEX_UNAVAILABLE", "message": "外部指数价格不可用",
+			"requestId": common.RequestID(), "fresh": false, "components": s.feed.Components(sym, "")})
 		return
 	}
 	res.Components = s.feed.Components(sym, res.Source)
