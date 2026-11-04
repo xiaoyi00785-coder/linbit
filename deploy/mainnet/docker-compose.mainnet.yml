@@ -80,3 +80,15 @@ services:
       <<: *mainnet
       GEO_BLOCK_ENABLED: "true"
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:?set TRUSTED_PROXY_CIDRS}
+      # Shared secret with web/partner's server-side /gw proxy (>=32 chars, from
+      # .env / secret box). Lets the gateway trust X-Real-IP + CF-IPCountry that
+      # the Next servers forward over the docker network, so geo-block, rate
+      # limits and audit see the real client. Never expose it to browsers.
+      GATEWAY_EDGE_SECRET: ${GATEWAY_EDGE_SECRET:?set GATEWAY_EDGE_SECRET (>=32 chars)}
+# web/partner are defined in the server's docker-compose.override.yml. Their
+# runtime environment must include (no rebuild needed for these to change):
+#   GATEWAY_INTERNAL_URL: http://gateway:8080
+#   GATEWAY_EDGE_SECRET: ${GATEWAY_EDGE_SECRET}
+#   NODE_OPTIONS: --dns-result-order=ipv4first
+#   (optional) GATEWAY_PROXY_TIMEOUT_MS: "15000"
+# and they must be on the same compose network as `gateway`.

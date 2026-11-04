@@ -566,6 +566,7 @@ services:
       # empty = Cloudflare edge ranges. Untrusted/missing country = TradFi denied.
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       GATEWAY_CLIENT_IP_HEADER: ${GATEWAY_CLIENT_IP_HEADER:-}
+      GATEWAY_EDGE_SECRET: ${GATEWAY_EDGE_SECRET:-}
       GATEWAY_ACCESS_LOG: ${GATEWAY_ACCESS_LOG:-}
       ACCOUNT_INTERNAL_URL: http://account:8081
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

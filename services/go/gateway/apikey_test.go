@@ -41,7 +41,7 @@ func fakeAccount(t *testing.T, perms []string) (*httptest.Server, *int32, *strin
 }
 
 func keyGateway(t *testing.T, up string) http.Handler {
-	return newTestGatewayCfg(t, Config{AccountURL: up, AssetURL: up, WalletURL: up, OrderURL: up, FuturesURL: up, EarnURL: up, InternalToken: "itok", ClientIPHeader: "X-Real-IP"})
+	return newTestGatewayCfg(t, Config{AccountURL: up, AssetURL: up, WalletURL: up, OrderURL: up, FuturesURL: up, EarnURL: up, InternalToken: "itok", ClientIPHeader: "X-Real-IP", TrustedProxyCIDRs: "192.0.2.1/32"}) // httptest peer = nginx
 }
 
 func doKey(h http.Handler, method, path, key, ip string) int {

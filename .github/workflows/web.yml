@@ -45,6 +45,10 @@ jobs:
         working-directory: ${{ env.WEB_DIR }}
         run: npm run check:redirect
 
+      - name: /gw proxy check (check:gw-proxy)
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm run check:gw-proxy
+
       - name: Typecheck + build
         working-directory: ${{ env.WEB_DIR }}
         run: npm run typecheck && npm run build

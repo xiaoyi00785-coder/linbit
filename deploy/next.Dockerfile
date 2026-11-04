@@ -4,7 +4,8 @@
 # Build from the repo root:
 #   docker build -f deploy/next.Dockerfile --build-arg APP=web \
 #     --build-arg NEXT_PUBLIC_NETWORK=mainnet \
-#     --build-arg API_PROXY_TARGET=http://gateway:8080 \
+#     --build-arg API_PROXY_TARGET=http://gateway:8080 \   (fallback; runtime
+#       GATEWAY_INTERNAL_URL + GATEWAY_EDGE_SECRET take precedence)
 #     --build-arg NEXT_PUBLIC_SITE_URL=https://www.cowa.click \
 #     --build-arg NEXT_PUBLIC_API_BASE=/api \
 #     -t linbit-web .
@@ -69,8 +70,11 @@ RUN pnpm --filter @linbit/${APP} build
 FROM base AS run
 ARG APP=web
 ARG API_PROXY_TARGET=
-# rewrites() reads API_PROXY_TARGET at build; keep it at runtime too.
-ENV NODE_ENV=production APP=${APP} API_PROXY_TARGET=$API_PROXY_TARGET
+# /gw is a runtime route handler (app/gw/[...path]/route.ts): it prefers
+# GATEWAY_INTERNAL_URL (+ GATEWAY_EDGE_SECRET) set on the container at runtime,
+# falling back to API_PROXY_TARGET. ipv4first avoids IPv6 ENETUNREACH hangs.
+ENV NODE_ENV=production APP=${APP} API_PROXY_TARGET=$API_PROXY_TARGET \
+    NODE_OPTIONS=--dns-result-order=ipv4first
 COPY --from=build /repo /repo
 WORKDIR /repo/apps/${APP}
 EXPOSE 3000 3100

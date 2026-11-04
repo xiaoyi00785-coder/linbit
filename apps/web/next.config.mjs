@@ -16,12 +16,8 @@ const nextConfig = {
   env: { NEXT_PUBLIC_NETWORK: network || "testnet" },
   // 直接消费 workspace 包的 TS 源码，无需预先构建
   transpilePackages: ["@linbit/ui", "@linbit/chart", "@linbit/api-client"],
-  // 本地联调：NEXT_PUBLIC_API_BASE=/gw 且 API_PROXY_TARGET=http://localhost:8080 时，
-  // 由 Next 同源代理到网关，避免浏览器 CORS（网关当前未返回 CORS 头）
-  async rewrites() {
-    const t = process.env.API_PROXY_TARGET;
-    return t ? [{ source: "/gw/:path*", destination: `${t}/:path*` }] : [];
-  },
+  // /gw/* 由 app/gw/[...path]/route.ts 在服务端转发（lib/gwProxy.ts）：运行时读取 GATEWAY_INTERNAL_URL
+  // （优先，容器内直连网关）或 API_PROXY_TARGET，失败返回 502/504 JSON。不再使用构建期固化的 rewrites。
   // 旧链接兼容：资产中心子页的实际路径带 -account 后缀；另：合约账户实际页面为 /assets/trading-account，/earn/wealth → 理财总览
   // （之前两个 redirects() 键重复，后者覆盖前者，导致 futures-account / earn/wealth 兜底失效）
   async redirects() {

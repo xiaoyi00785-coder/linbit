@@ -226,7 +226,13 @@ func NewGateway(cfg Config) (*Gateway, error) {
 // Handler returns the gateway HTTP handler: access log / request id wraps
 // CORS, which wraps auth + routing.
 func (g *Gateway) Handler() http.Handler {
-	return withAccessLog(g.accessLog, g.withCORS(http.HandlerFunc(g.serve)))
+	cidrs := g.cfg.TrustedProxyCIDRs
+	if strings.TrimSpace(cidrs) == "" {
+		cidrs = DefaultTrustedProxyCIDRs
+	}
+	trusted, _ := parseCIDRs(cidrs) // validated in NewGateway
+	return withClientIdentity(trusted, g.cfg.EdgeSecret, g.cfg.ClientIPHeader,
+		withAccessLog(g.accessLog, g.withCORS(http.HandlerFunc(g.serve))))
 }
 
 func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {

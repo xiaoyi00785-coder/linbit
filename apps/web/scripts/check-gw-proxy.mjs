@@ -1,0 +1,30 @@
+// /gw 代理检查：目标选择、客户端身份头不可伪造、edge secret 仅发往内网、失败返回 502/504 JSON、web/partner 两份实现一致。
+import { readFileSync } from "node:fs";
+import { proxyGw, upstreamHeaders, gwTarget } from "../lib/gwProxy.ts";
+const assert = (c, m) => { if (!c) { console.error("✗ " + m); process.exit(1); } console.log("✓ " + m); };
+const S = "s".repeat(40);
+assert(readFileSync(new URL("../lib/gwProxy.ts", import.meta.url), "utf8") === readFileSync(new URL("../../partner/lib/gwProxy.ts", import.meta.url), "utf8"), "web/partner gwProxy.ts identical");
+assert(gwTarget({ GATEWAY_INTERNAL_URL: "http://gateway:8080/", API_PROXY_TARGET: "https://api.x" })?.base === "http://gateway:8080", "internal URL preferred");
+assert(gwTarget({ API_PROXY_TARGET: "https://api.x" })?.internal === false, "falls back to API_PROXY_TARGET");
+const inc = new Headers({ "x-forwarded-for": "6.6.6.6", "x-real-ip": "6.6.6.6", "cf-connecting-ip": "203.0.113.5", "cf-ipcountry": "US", "x-linbit-edge-auth": "forged", authorization: "Bearer t", forwarded: "for=6.6.6.6" });
+let h = upstreamHeaders(inc, { GATEWAY_EDGE_SECRET: S }, true);
+assert(h.get("x-real-ip") === "203.0.113.5" && h.get("x-forwarded-for") === "203.0.113.5", "client IP from CF-Connecting-IP, client XFF dropped");
+assert(h.get("cf-ipcountry") === "US" && h.get("authorization") === "Bearer t" && !h.get("forwarded"), "country/auth kept, Forwarded dropped");
+assert(h.get("x-linbit-edge-auth") === S, "edge secret replaces forged header on internal hop");
+h = upstreamHeaders(inc, { GATEWAY_EDGE_SECRET: S }, false);
+assert(!h.get("x-linbit-edge-auth"), "edge secret never sent to public target");
+h = upstreamHeaders(new Headers({ "cf-connecting-ip": "evil<>", "x-real-ip": "1.2.3.4" }), {}, true);
+assert(h.get("x-real-ip") === "1.2.3.4", "invalid IP ignored");
+const req = (m = "GET") => new Request("http://www/gw/futures/market/ticker?symbol=BTCUSDT", { method: m, body: m === "POST" ? "{}" : undefined });
+let seen;
+let r = await proxyGw(req("POST"), ["futures", "orders"], { GATEWAY_INTERNAL_URL: "http://gw:8080", GATEWAY_EDGE_SECRET: S }, async (u, i) => { seen = { u, i }; return new Response('{"ok":1}', { status: 201, headers: { "content-type": "application/json", "content-encoding": "gzip" } }); });
+assert(r.status === 201 && seen.u === "http://gw:8080/futures/orders?symbol=BTCUSDT" && !r.headers.get("content-encoding"), "forwards path/query/status, drops content-encoding");
+r = await proxyGw(req(), ["x"], { GATEWAY_INTERNAL_URL: "http://gw:8080", GATEWAY_EDGE_SECRET: S }, async () => { throw Object.assign(new TypeError("fetch failed"), { cause: new Error("ETIMEDOUT") }); });
+let j = await r.json(); assert(r.status === 502 && j.code === "UPSTREAM_UNAVAILABLE", "connect error → 502 JSON");
+const keep = setInterval(() => {}, 100); // AbortSignal.timeout 不保持事件循环
+r = await proxyGw(req(), ["x"], { GATEWAY_INTERNAL_URL: "http://gw:8080", GATEWAY_EDGE_SECRET: S, GATEWAY_PROXY_TIMEOUT_MS: "1000" }, (u, i) => new Promise((_, rej) => i.signal.addEventListener("abort", () => rej(i.signal.reason))));
+clearInterval(keep);
+j = await r.json(); assert(r.status === 504 && j.code === "GATEWAY_TIMEOUT", "timeout → 504 JSON");
+r = await proxyGw(req(), ["x"], { GATEWAY_INTERNAL_URL: "http://gw:8080", NODE_ENV: "production" }, async () => new Response("{}"));
+assert(r.status === 502, "production refuses internal hop without edge secret");
+console.log("gw-proxy ok");

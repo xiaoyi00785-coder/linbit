@@ -15,7 +15,7 @@ import (
 
 func newLoggedGateway(t *testing.T, upstreamURL string) (http.Handler, *bytes.Buffer) {
 	t.Helper()
-	gw, err := NewGateway(Config{JWTSecret: "test-secret", AccountURL: upstreamURL, AssetURL: upstreamURL, MarketURL: upstreamURL})
+	gw, err := NewGateway(Config{JWTSecret: "test-secret", AccountURL: upstreamURL, AssetURL: upstreamURL, MarketURL: upstreamURL, TrustedProxyCIDRs: "192.0.2.1/32"}) // httptest peer = nginx (trusted)
 	if err != nil {
 		t.Fatal(err)
 	}

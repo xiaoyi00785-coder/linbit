@@ -28,6 +28,10 @@ type Config struct {
 	// TrustedProxyCIDRs: peers whose CF-IPCountry header is trusted (TradFi
 	// region gate). Default Cloudflare ranges; anything else = country unknown.
 	TrustedProxyCIDRs string
+	// EdgeSecret (GATEWAY_EDGE_SECRET, >=32 chars): the web/partner Next servers
+	// send it as X-Linbit-Edge-Auth when calling the gateway directly; such
+	// requests may assert X-Real-IP / CF-IPCountry like a trusted proxy peer.
+	EdgeSecret string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string
 }
@@ -52,6 +56,7 @@ func LoadConfig() Config {
 		InternalToken:     common.Env("INTERNAL_TOKEN", ""),
 		ClientIPHeader:    common.Env("GATEWAY_CLIENT_IP_HEADER", "X-Real-IP"),
 		TrustedProxyCIDRs: common.Env("TRUSTED_PROXY_CIDRS", DefaultTrustedProxyCIDRs),
+		EdgeSecret:        common.Env("GATEWAY_EDGE_SECRET", ""),
 		AllowedOrigins:    splitOrigins(common.Env("CORS_ALLOWED_ORIGINS", "")),
 	}
 }

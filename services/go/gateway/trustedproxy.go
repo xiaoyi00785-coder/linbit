@@ -49,16 +49,9 @@ func peerIP(r *http.Request) net.IP {
 // trustedCountry returns the CF-IPCountry value only when the direct peer is
 // a trusted proxy; "" means unknown (untrusted peer, missing, XX or T1/Tor).
 func trustedCountry(r *http.Request, trusted []*net.IPNet) string {
-	ip := peerIP(r)
-	if ip == nil {
-		return ""
-	}
-	ok := false
-	for _, n := range trusted {
-		if n.Contains(ip) {
-			ok = true
-			break
-		}
+	ok, set := requestTrusted(r) // set by withClientIdentity (peer CIDR or edge secret)
+	if !set {
+		ok = peerTrusted(r, trusted)
 	}
 	if !ok {
 		return ""

@@ -13,7 +13,8 @@
     "check:order-display": "node --experimental-strip-types scripts/check-order-display.mjs",
     "check:redirect": "node --experimental-strip-types scripts/check-safe-redirect.mjs",
     "check:nav": "node scripts/check-nav-dropdowns.mjs",
-    "check:live-ticks": "node --experimental-strip-types scripts/check-live-ticks.mjs"
+    "check:live-ticks": "node --experimental-strip-types scripts/check-live-ticks.mjs",
+    "check:gw-proxy": "node --experimental-strip-types scripts/check-gw-proxy.mjs"
   },
   "dependencies": {
     "@linbit/api-client": "workspace:*",
