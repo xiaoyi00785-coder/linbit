@@ -12,7 +12,7 @@ import { useDismiss } from "@/lib/dismiss";
 import { btnProps, onActivate, tabProps } from "@/lib/a11y";
 import { CoinIcon } from "@/components/CoinIcon";
 import type { components } from "@linbit/api-client";
-import { mergeTick } from "@/lib/tick";
+import { mergeWsBar, wsKline, type LiveBar } from "@/lib/tick";
 import { fmtFixed, marketWS, restBase, useOrderBook, useRecentTrades, useSymbols, DEFAULT_META, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
@@ -109,7 +109,7 @@ function useFutDepth(sym: string, on: boolean) {
  * 合约 ticker（含标记价）：模块级共享 store，同一交易对全页只有一个轮询，
  * 顶部行情栏、仓位行、止盈止损弹窗读同一份数据，避免各自轮询造成的价格不一致。
  */
-const FUT_POLL_MS = 2000;
+const FUT_POLL_MS = 5000;
 const futStore = new Map<string, { t: any; subs: Set<(t: any) => void>; timer?: ReturnType<typeof setInterval>; onVis?: () => void; unWs?: () => void; wsAt?: number }>();
 function futSub(sym: string, f: (t: any) => void) {
   let e = futStore.get(sym);
@@ -117,16 +117,14 @@ function futSub(sym: string, f: (t: any) => void) {
   const ent = e;
   ent.subs.add(f);
   if (!ent.timer) {
-    const get = () => { if (document.hidden) return; fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => { const x = j && (j.tickers ?? [j]).find((y: any) => y.symbol === sym); if (x) { const n = normFutT(x); const fresh = ent.wsAt && Date.now() - ent.wsAt < 5000 && ent.t; ent.t = fresh ? { ...n, markPrice: ent.t.markPrice, indexPrice: ent.t.indexPrice, ...(n.priceSource === "index" ? { lastPrice: ent.t.lastPrice ?? n.lastPrice } : {}) } : n; ent.subs.forEach((g) => g(ent.t)); } }).catch(() => {}); };
-    get(); ent.timer = setInterval(get, FUT_POLL_MS);
-    ent.onVis = get; document.addEventListener("visibilitychange", get);
-    // 标记价实时推送（WS mark:{symbol}，约 1s）；轮询仍提供 24h 行情等其余字段
-    ent.unWs = marketWS.subscribe(`mark:${sym}`, (d: any) => {
-      if (!d || !Number(d.markPrice)) return;
+    // REST：首次加载 + WS 断开时的慢速兜底轮询；WS futures-ticker:{symbol}（约 1s）为主
+    const get = (force?: boolean) => { if (document.hidden || (!force && marketWS.status === "open" && ent.wsAt && Date.now() - ent.wsAt < 10000)) return; fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => { const x = j && (j.tickers ?? [j]).find((y: any) => y.symbol === sym); if (x && !(ent.wsAt && Date.now() - ent.wsAt < 5000)) { ent.t = normFutT(x); ent.subs.forEach((g) => g(ent.t)); } }).catch(() => {}); };
+    get(true); ent.timer = setInterval(get, FUT_POLL_MS);
+    ent.onVis = () => get(); document.addEventListener("visibilitychange", ent.onVis);
+    ent.unWs = marketWS.subscribe(`futures-ticker:${sym}`, (d: any) => {
+      if (!d || d.symbol !== sym) return;
       ent.wsAt = Date.now();
-      // 无成交时最新价=指数价（priceSource=index），随 WS 指数价实时跳动
-      const idxLast = ent.t?.priceSource === "index" && Number(d.indexPrice) ? { lastPrice: d.indexPrice } : {};
-      ent.t = { ...(ent.t ?? {}), ...idxLast, markPrice: d.markPrice, indexPrice: d.indexPrice ?? ent.t?.indexPrice, fundingRate: d.fundingRate ?? ent.t?.fundingRate, nextFundingTime: d.nextFundingTime ?? ent.t?.nextFundingTime };
+      ent.t = normFutT(d);
       ent.subs.forEach((g) => g(ent.t));
     });
   }
@@ -516,7 +514,7 @@ function CalcModal({ pair, lev: l0, max, onClose }: { pair: PairMeta; lev: numbe
 
 /** 后端 r3 起 /futures/market/ticker 返回 high/low/quoteVolume/volume/priceChangePercent（已是百分数，"1.23" = 1.23%）；兼容旧字段名。 */
 export const normFutT = (x: any) => x ? { ...x, priceChangePercent24h: x.priceChangePercent ?? x.priceChangePercent24h, highPrice24h: x.high ?? x.highPrice24h, lowPrice24h: x.low ?? x.lowPrice24h, turnover24h: x.quoteVolume ?? x.turnover24h, volume24h: x.volume ?? x.volume24h } : null;
-/** 合约 K 线：GET /futures/market/klines（无 WS，订阅时 5s 轮询，页面隐藏暂停）。
+/** 合约 K 线：REST GET /futures/market/klines 初始加载（WS 断开或无推送时 5s 兜底），实时由 WS futures-kline:{symbol}:{interval} 驱动。
  *  兼容数组或 { source, items|klines }；顶层 source==='index' 时整段按“无成交”样式绘制。 */
 type FutK = { time?: number; openTime?: number; open: string; high: string; low: string; close: string; volume: string; source?: string };
 const futFeeds: Record<string, ReturnType<typeof mkFutFeed>> = {};
@@ -540,15 +538,18 @@ function mkFutFeed(symbol: string) {
   return {
     load,
     subscribe(interval: string, cb: (b: { time: number; open: number; high: number; low: number; close: number; v: number; src?: string }) => void) {
-      // 5s 轮询拿权威 K 线；两次轮询之间用 WS mark:{symbol} 的指数价并入最后一根（仅无成交的指数价 K 线），约 1s 跳动
-      let last: { time: number; open: number; high: number; low: number; close: number; v: number; src?: string } | null = null;
-      const emit = (b: NonNullable<typeof last>) => { last = b; cb(b); };
-      const id = setInterval(async () => { if (document.hidden) return; const l = await load(interval); if (l?.length) emit(l[l.length - 1]); }, 5000);
+      // REST 初始加载 + WS 断开或无推送时 5s 兜底；WS futures-kline:{symbol}:{interval} 更新当前根，新 time 即追加新根
+      let last: LiveBar | null = null;
+      let wsAt = 0;
+      const emit = (b: LiveBar) => { last = b; cb(b); };
+      const id = setInterval(async () => { if (document.hidden || (marketWS.status === "open" && Date.now() - wsAt < 15000)) return; const l = await load(interval); const n = l?.length ? mergeWsBar(last, l[l.length - 1]) : null; if (n) emit(n); }, 5000);
       void load(interval).then((l) => { if (l?.length && !last) last = l[l.length - 1]; });
-      const un = marketWS.subscribe(`mark:${symbol}`, (d: any) => {
-        const px = Number(d?.indexPrice);
-        if (!last || last.src !== "index" || !Number.isFinite(px) || px <= 0) return;
-        emit(mergeTick(last, px));
+      const un = marketWS.subscribe(`futures-kline:${symbol}:${interval}`, (d: any) => {
+        const b = wsKline(d);
+        if (!b || (d.interval && d.interval !== interval)) return;
+        wsAt = Date.now();
+        const n = mergeWsBar(last, b);
+        if (n) emit(n);
       });
       return () => { clearInterval(id); un(); };
     },
