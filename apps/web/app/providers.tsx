@@ -24,7 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   // 余额变化广播：react-query 中的余额缓存一并失效重取
   useEffect(() => {
-    const f = () => { client.invalidateQueries({ queryKey: ["balances"] }); client.invalidateQueries({ predicate: (q) => /balance|asset|account|wallet/i.test(JSON.stringify(q.queryKey)) }); };
+    const f = () => { client.invalidateQueries({ queryKey: ["balances"], exact: true }); };
     window.addEventListener(BALANCES_EVT, f);
     return () => window.removeEventListener(BALANCES_EVT, f);
   }, [client]);

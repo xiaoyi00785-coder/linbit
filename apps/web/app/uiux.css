@@ -62,3 +62,4 @@ main.trade{display:flex;flex-direction:column}main.trade>.tgrid{flex:1 0 auto;gr
 /* 未登录 CTA（<a class="lb">）与按钮一致：文字水平、垂直居中 */
 a.lb{display:inline-flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;box-sizing:border-box}
 a.lb.wide{display:flex;width:100%}
+.lbtn:disabled{opacity:.45;cursor:not-allowed;filter:none}

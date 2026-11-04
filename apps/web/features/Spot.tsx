@@ -53,6 +53,10 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const avail = side === "buy" ? freeOf("USDT") : freeOf(B);
   const [pc, setPc] = useState(0);
   useEffect(() => setPc(0), [side, SYMBOL, type]);
+  // 卖出可用低于最小下单量（后端 minQuantity，缺省为一个步长）：禁用卖出按钮
+  const minQ = pair.minQty || 10 ** -pair.qp;
+  const sellBelowMin = authed && side === "sell" && avail > 0 && avail < minQ;
+  const belowMinText = `可用 ${B} 低于最小下单量 ${fmtSig(minQ)} ${B}，无法卖出`;
   const setByPct = (p: number) => {
     if (!avail) {
       // 余额为 0：比例按钮与滑杆保持 0%，并给出提示
@@ -65,8 +69,8 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
     const qn = side === "buy" ? (px ? (avail * p) / 100 / px : 0) : (avail * p) / 100;
     // 按交易对真实数量精度（后端 quantityPrecision）向下取整；不足一个步长或低于最小下单量时不填 0，直接提示
     const fl = qn ? Math.floor(qn * 10 ** pair.qp + 1e-9) / 10 ** pair.qp : 0;
-    const mq = pair.minQty || 10 ** -pair.qp;
-    if (p > 0 && fl < mq) { setQty(""); setMsg({ ok: false, t: `可用数量低于最小下单量 ${fmtSig(mq)} ${B}` }); return; }
+    const mq = minQ;
+    if (p > 0 && fl < mq) { setQty(""); setMsg({ ok: false, t: side === "sell" && avail < mq ? belowMinText : `所选比例数量低于最小下单量 ${fmtSig(mq)} ${B}，请调高比例` }); return; }
     setMsg(undefined);
     setQty(fl ? fl.toFixed(pair.qp) : "");
   };
@@ -122,7 +126,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       {byAmt ? <div className="kv2 g"><span>预估数量</span><span>{q ? `${q.toFixed(pair.qp)} ${B}` : "--"}</span></div> : <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>}
       <div className="kv2 g"><span>预估手续费（{+(rate * 100).toFixed(4)}%）</span><span>{fee}</span></div>
       {msg && <div className={msg.ok ? "fx-ok" : "fx-err"} style={{ fontSize: 12, margin: "6px 0" }}>{msg.t}</div>}
-      <button className={"lbtn" + (authed && side === "sell" ? " sell" : "")} disabled={busy} aria-busy={busy || undefined} onClick={submit}>{authed ? (side === "buy" ? `买入 ${B}` : `卖出 ${B}`) : "登录/注册"}</button>
+      <button className={"lbtn" + (authed && side === "sell" ? " sell" : "")} disabled={busy || sellBelowMin} title={sellBelowMin ? belowMinText : undefined} aria-busy={busy || undefined} onClick={submit}>{!authed ? "登录/注册" : sellBelowMin ? "低于最小下单量" : side === "buy" ? `买入 ${B}` : `卖出 ${B}`}</button>
     </div>
   );
 }

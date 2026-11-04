@@ -63,7 +63,8 @@ export async function rget<T>(p: string, demo?: () => T): Promise<RestResult<T>>
 
 /** 余额变化全局事件（划转成功等） */
 export const BALANCES_EVT = "lb:balances";
-const BAL_RE = /(asset|balance|wallet|account|overview|funding|earn|margin)/i;
+/** 受余额变化影响的接口（精确路径，忽略 query） */
+const BAL_PATHS = new Set(["/assets/overview", "/assets/balances", "/assets/transfers", "/futures/account"]);
 export const emitBalances = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event(BALANCES_EVT)); };
 
 /** React hook：加载 + 刷新；loading 用于骨架屏 */
@@ -81,7 +82,7 @@ export function useRest<T>(path: string | null, demo?: () => T) {
   useEffect(() => { load(); }, [load]);
   // 划转/下单等改变余额后广播 BALANCES_EVT：所有余额类接口实例静默重取
   useEffect(() => {
-    if (!path || !BAL_RE.test(path)) return;
+    if (!path || !BAL_PATHS.has(path.split("?")[0])) return;
     const f = () => load(true);
     window.addEventListener(BALANCES_EVT, f);
     return () => window.removeEventListener(BALANCES_EVT, f);
