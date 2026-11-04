@@ -17,35 +17,35 @@ enum PartnerAPI {
 /// 截图演示：partner:<none|apply|apply-error|pending|rejected|active|commissions|team|empty|error>
 enum PartnerDemo {
     static var state: String? { DemoShot.state("partner") }
-    static let rules = J(["tiers": [["key": "t1", "name": "LV1 合伙人", "minVolume30d": "0", "futuresRate": "0.3", "spotRate": "0.3"],
+    static let rules: J = ["tiers": [["key": "t1", "name": "LV1 合伙人", "minVolume30d": "0", "futuresRate": "0.3", "spotRate": "0.3"],
                                     ["key": "t2", "name": "LV2 合伙人", "minVolume30d": "5000000", "futuresRate": "0.4", "spotRate": "0.35"],
                                     ["key": "t3", "name": "LV3 合伙人", "minVolume30d": "20000000", "futuresRate": "0.5", "spotRate": "0.4"]],
-                          "overrideRate": "0.1", "settlement": "daily", "payoutAsset": "USDT"])
+                          "overrideRate": "0.1", "settlement": "daily", "payoutAsset": "USDT"]
     static func me(_ st: String) -> J {
         switch st {
-        case "pending": return J(["uid": "10086", "status": "pending", "partner": ["status": "pending", "appliedAt": DemoShot.nowMs - 3_600_000]])
-        case "rejected": return J(["uid": "10086", "status": "rejected", "partner": ["status": "rejected", "reviewNote": "推广渠道信息不足，请补充社群规模与链接", "appliedAt": DemoShot.nowMs - 86_400_000]])
-        case "none", "apply", "apply-error": return J(["uid": "10086", "status": "none"])
-        default: return J(["uid": "10086", "status": "active", "tier": "t2", "tierName": "LV2 合伙人", "futuresRate": "0.4", "spotRate": "0.35"])
+        case "pending": return ["uid": "10086", "status": "pending", "partner": ["status": "pending", "appliedAt": J(DemoShot.nowMs - 3_600_000)]]
+        case "rejected": return ["uid": "10086", "status": "rejected", "partner": ["status": "rejected", "reviewNote": "推广渠道信息不足，请补充社群规模与链接", "appliedAt": J(DemoShot.nowMs - 86_400_000)]]
+        case "none", "apply", "apply-error": return ["uid": "10086", "status": "none"]
+        default: return ["uid": "10086", "status": "active", "tier": "t2", "tierName": "LV2 合伙人", "futuresRate": "0.4", "spotRate": "0.35"]
         }
     }
-    static let summary = J(["tier": "t2", "tierName": "LV2 合伙人", "futuresRate": "0.4", "spotRate": "0.35", "volume30d": "8253100.52",
+    static let summary: J = ["tier": "t2", "tierName": "LV2 合伙人", "futuresRate": "0.4", "spotRate": "0.35", "volume30d": "8253100.52",
                             "nextTier": ["tier": "t3", "name": "LV3 合伙人", "minVolume30d": "20000000", "gap": "11746899.48"],
                             "directs": 128, "directPartners": 6, "unsettledEstimate": "86.32", "yesterday": "152.40", "month": "3281.66",
-                            "total": "28640.18", "overrideTotal": "1820.50", "pendingPayout": "86.32", "payoutAsset": "USDT"])
-    static let links = J(["code": "LB8K2Q", "url": "https://linbit.com/r/LB8K2Q", "registerUrl": "https://linbit.com/register?ref=LB8K2Q"])
+                            "total": "28640.18", "overrideTotal": "1820.50", "pendingPayout": "86.32", "payoutAsset": "USDT"]
+    static let links: J = ["code": "LB8K2Q", "url": "https://linbit.com/r/LB8K2Q", "registerUrl": "https://linbit.com/register?ref=LB8K2Q"]
     static func commissions(_ empty: Bool) -> J {
-        if empty { return J(["items": [Any]()]) }
+        if empty { return ["items": []] }
         let kinds = ["futures", "spot", "override", "referral", "futures", "futures"]
-        return J(["items": kinds.enumerated().map { i, k in
-            ["settlementId": 100 + i, "sourceUid": "1\(2000 + i * 37)", "kind": k, "rate": k == "override" ? "0.1" : "0.4",
-             "base": "\(120 + i * 31).5", "amount": "\(48 + i * 9).12", "day": "2026-11-0\(3 - i % 3)", "asset": "USDT"] as [String: Any] }])
+        return ["items": J(kinds.enumerated().map { i, k -> J in
+            ["settlementId": J(100 + i), "sourceUid": "1\(2000 + i * 37)", "kind": k, "rate": k == "override" ? "0.1" : "0.4",
+             "base": "\(120 + i * 31).5", "amount": "\(48 + i * 9).12", "day": "2026-11-0\(3 - i % 3)", "asset": "USDT"] })]
     }
     static func team(_ empty: Bool) -> J {
-        if empty { return J(["items": [Any]()]) }
-        return J(["items": (0..<6).map { i in
-            ["uid": "1\(3000 + i * 71)", "joinedAt": DemoShot.nowMs - Int64(i + 1) * 86_400_000 * 3, "kycLevel": i % 3, "isPartner": i == 1,
-             "futuresVolume30d": "\(320_000 - i * 41_000)", "fee30d": "\(160 - i * 20).4", "commission": "\(64 - i * 8).16"] as [String: Any] }])
+        if empty { return ["items": []] }
+        return ["items": J((0..<6).map { i -> J in
+            ["uid": "1\(3000 + i * 71)", "joinedAt": J(DemoShot.nowMs - Int64(i + 1) * 86_400_000 * 3), "kycLevel": J(i % 3), "isPartner": .bool(i == 1),
+             "futuresVolume30d": "\(320_000 - i * 41_000)", "fee30d": "\(160 - i * 20).4", "commission": "\(64 - i * 8).16"] })]
     }
 }
 
@@ -135,7 +135,7 @@ struct PartnerView: View {
             rules = PartnerDemo.rules
             me = st == "error" ? .failed("网络连接失败，请检查网络") : .loaded(PartnerDemo.me(st)); return
         }
-        guard Session.shared.isLoggedIn else { rules = (try? await PartnerAPI.rules()) ?? .null; me = .loaded(J(["status": "none"])); return }
+        guard Session.shared.isLoggedIn else { rules = (try? await PartnerAPI.rules()) ?? .null; me = .loaded(["status": "none"]); return }
         if me.value == nil { me = .loading }
         async let r = try? PartnerAPI.rules()
         do { me = .loaded(try await PartnerAPI.me()) } catch { me = .failed(securityMessage(error)) }

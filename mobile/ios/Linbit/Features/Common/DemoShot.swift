@@ -15,7 +15,15 @@ enum DemoShot {
 }
 
 /// 宽松 JSON：字段缺失 / 数字或字符串混用都不报错（后端 decimal 多为字符串，时间可能带纳秒）
-enum J: Decodable, Equatable {
+enum J: Decodable, Equatable, ExpressibleByDictionaryLiteral, ExpressibleByArrayLiteral, ExpressibleByStringInterpolation,
+    ExpressibleByIntegerLiteral, ExpressibleByFloatLiteral, ExpressibleByBooleanLiteral {
+    init(dictionaryLiteral els: (String, J)...) { self = .obj(Dictionary(els, uniquingKeysWith: { $1 })) }
+    init(arrayLiteral els: J...) { self = .arr(els) }
+    init(stringLiteral v: String) { self = .str(v) }
+    init(integerLiteral v: Int) { self = .num(Double(v)) }
+    init(floatLiteral v: Double) { self = .num(v) }
+    init(booleanLiteral v: Bool) { self = .bool(v) }
+
     case null, bool(Bool), num(Double), str(String), arr([J]), obj([String: J])
 
     init(from decoder: Decoder) throws {
@@ -29,21 +37,10 @@ enum J: Decodable, Equatable {
         else { self = .null }
     }
 
-    /// 由字面量构造（截图演示数据）
-    init(_ any: Any?) {
-        switch any {
-        case nil: self = .null
-        case let v as J: self = v
-        case let v as Bool: self = .bool(v)
-        case let v as Int: self = .num(Double(v))
-        case let v as Int64: self = .num(Double(v))
-        case let v as Double: self = .num(v)
-        case let v as String: self = .str(v)
-        case let v as [Any]: self = .arr(v.map { J($0) })
-        case let v as [String: Any]: self = .obj(v.mapValues { J($0) })
-        default: self = .null
-        }
-    }
+    init(_ v: Int64) { self = .num(Double(v)) }
+    init(_ v: Int) { self = .num(Double(v)) }
+    init(_ v: Double) { self = .num(v) }
+    init(_ v: [J]) { self = .arr(v) }
 
     subscript(_ k: String) -> J { if case let .obj(o) = self { return o[k] ?? .null }; return .null }
     var s: String? {
