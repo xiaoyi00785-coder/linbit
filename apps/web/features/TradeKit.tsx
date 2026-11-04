@@ -404,7 +404,7 @@ function LevModal({ lev, max, onClose, onOk }: { lev: number; max: number; onClo
   const [raw, setRaw] = useState(String(lev));
   const clamp = (x: number) => Math.max(1, Math.min(max, Math.round(x) || 1));
   const n = Number(raw);
-  const err = raw.trim() === "" ? "请输入杠杆倍数" : !/^\d+$/.test(raw.trim()) ? "杠杆须为整数" : n < 1 || n > max ? `杠杆范围 1–${max}x` : "";
+  const err = raw.trim() === "" ? "请输入杠杆倍数" : /^-/.test(raw.trim()) ? `杠杆范围 1–${max}x` : !/^\d+$/.test(raw.trim()) ? "杠杆须为整数" : n < 1 || n > max ? `杠杆范围 1–${max}x` : "";
   const v = err ? clamp(Number.isFinite(n) ? n : 1) : n;
   const set = (x: number) => setRaw(String(clamp(x)));
   const presets = [1, 5, 10, 20, 50, 100, 125, 150, 200].filter((x) => x <= max);
