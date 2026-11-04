@@ -224,7 +224,7 @@ private fun TaskCard(n: click.cowa.linbit.core.generated.ApiHomeNewcomer?, modif
             Text(
                 buildAnnotatedString {
                     withStyle(SpanStyle(color = p.textPrimary)) { append(lead) }
-                    withStyle(SpanStyle(color = p.up, fontWeight = FontWeight.SemiBold)) { append("${n?.total ?: "215"}") }
+                    withStyle(SpanStyle(color = p.up, fontWeight = FontWeight.SemiBold)) { append(n?.total?.takeIf { it.isNotBlank() } ?: "--") }
                     withStyle(SpanStyle(color = p.textPrimary)) { append(" ${n?.asset ?: "USDT"}体验金") }
                 },
                 style = lb(FontSize.small),
