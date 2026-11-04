@@ -18,7 +18,31 @@ const NET_NAMES: Record<string, string> = {
 };
 export const netLabel = (code?: string | null) => (code ? NET_NAMES[code.toUpperCase()] ?? code : "");
 
-type NetRes = { ok?: boolean; source?: string; data?: { networks?: { asset?: string; network: string; depositEnabled?: boolean }[] } } | null | undefined;
+type NetRow = { asset?: string; network: string; depositEnabled?: boolean; withdrawEnabled?: boolean; minDeposit?: string; minWithdraw?: string; estimatedArrivalMinutes?: number; recommended?: boolean };
+type NetRes = { ok?: boolean; source?: string; data?: { networks?: NetRow[] } } | null | undefined;
+
+/** 网络代码 → 本地图标（public/coins/*.svg）；未收录的网络回退为首字母圆标。 */
+const NET_ICON: Record<string, string> = {
+  BTC: "btc", ETH: "eth", ERC20: "eth", TRX: "trx", TRC20: "trx", BSC: "bnb", BEP20: "bnb", SOL: "sol", ARBITRUM: "arb", ARB: "arb",
+  POLYGON: "matic", MATIC: "matic", OP: "op", OPTIMISM: "op", AVAXC: "avax", TON: "ton",
+};
+export const netIcon = (code: string): string | null => NET_ICON[code.toUpperCase()] ?? null;
+
+/** 网络下拉的一行：附加信息只取后端字段（minDeposit / minWithdraw / estimatedArrivalMinutes / recommended），缺失则不展示，绝不编造。 */
+export type NetInfo = { network: string; min?: string; eta?: number; recommended?: boolean };
+export function netInfosOf(asset: string, r: NetRes, out = false): NetInfo[] {
+  if (r && r.ok && r.source === "api") {
+    return (r.data?.networks ?? [])
+      .filter((x) => (out ? x.withdrawEnabled !== false : x.depositEnabled !== false) && (!x.asset || x.asset === asset))
+      .map((x) => ({
+        network: x.network,
+        min: (out ? x.minWithdraw : x.minDeposit) || undefined,
+        eta: !out && typeof x.estimatedArrivalMinutes === "number" && x.estimatedArrivalMinutes > 0 ? x.estimatedArrivalMinutes : undefined,
+        recommended: x.recommended === true || undefined,
+      }));
+  }
+  return (DEP_NETS_FALLBACK[asset] ?? []).map((network) => ({ network }));
+}
 
 /** 充值网络：GET /wallet/networks?asset= 的生效配置，只列 depositEnabled 且属于该币种的网络。 */
 export function depositNetsOf(asset: string, r: NetRes): string[] {
