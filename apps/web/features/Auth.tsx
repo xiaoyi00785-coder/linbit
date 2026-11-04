@@ -12,6 +12,7 @@ import { useAuthStore } from "@/lib/store";
 // @ts-ignore legacy 模块未加类型
 import { setAuthed } from "@/legacy/auth";
 import { CodeInput, Steps, isEmail, isPhone } from "./common";
+import { asset } from '@/lib/asset';
 
 function Shell({ title, sw, children }: { title: string; sw?: [string, string]; children: React.ReactNode }) {
   return (
@@ -23,7 +24,7 @@ function Shell({ title, sw, children }: { title: string; sw?: [string, string]; 
           <span className="lime">215 USDT</span> 新人奖励
         </h1>
         <div className="chest">
-          <img src="/img/auth.webp" alt="" />
+          <img src={asset("/img/auth.webp")} alt="" />
         </div>
       </div>
       <div className="aright">

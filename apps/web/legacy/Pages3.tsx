@@ -16,6 +16,7 @@ import { useState } from 'react'
 import { Footer } from './App'
 import { useProfile } from './Pages'
 import { signOut } from './auth'
+import { asset } from '@/lib/asset';
 // —— 资产中心（浅色），路径与线上一致 ——
 const Empty=()=><div className="lempty"><div className="lbox"><G n="inbox" s={28}/></div><span>暂无数据</span></div>
 const Eye=()=><span className="eye"><G n="eye" s={14}/></span>
@@ -72,7 +73,7 @@ export function OrdersX(){const{k}=useParams();const r=O[k]||O.futures;return <R
 const PTASK=[['+168','合约累计交易任务','当日合约交易量达到不同档位可获得对应积分，每日最多 168 分。',1],['+10','充值任务','每入金 100 USDT 得 1 分，每日最多 10 分。','去充值'],['+80','邀请任务','每邀请 1 位有效用户（累计手续费 ≥100 USDT）得 8 分，每日最多 80 分。','去邀请']]
 const TIERS=[['2千',1],['1万',1],['10万',3],['20万',3],['30万',5],['50万',8],['100万',12],['300万',35],['1000万',100]]
 const REDEEM=[['3 USDT','抵扣金',10],['6 USDT','抵扣金',20],['10 USDT','体验金',35],['10 USDT','抵扣金',50],['20 USDT','体验金',75],['30 USDT','体验金',100],['75 USDT','抵扣金',200],['100 USDT','体验金',300]]
-export function Points(){const n=useNavigate();return <main className="pts"><div className="wrap pth"><div><div className="lime">积分嘉年华 · 第五期（已结束）</div><h1>做任务赚积分，<br/>兑换体验金 / 抵扣金</h1><p className="g">2026-09-23 00:00 — 2026-10-22 23:59 (UTC+0)</p><div className="lrow l"><button className="pill dis" disabled aria-disabled="true">已结束</button><button className="pill sq" aria-label="分享" data-copy={typeof location!=='undefined'?location.href:''}><G n="share" s={14}/></button></div></div><img src="/img/rewards.webp" alt=""/></div>
+export function Points(){const n=useNavigate();return <main className="pts"><div className="wrap pth"><div><div className="lime">积分嘉年华 · 第五期（已结束）</div><h1>做任务赚积分，<br/>兑换体验金 / 抵扣金</h1><p className="g">2026-09-23 00:00 — 2026-10-22 23:59 (UTC+0)</p><div className="lrow l"><button className="pill dis" disabled aria-disabled="true">已结束</button><button className="pill sq" aria-label="分享" data-copy={typeof location!=='undefined'?location.href:''}><G n="share" s={14}/></button></div></div><img src={asset("/img/rewards.webp")} alt=""/></div>
 <div className="wrap">
 <h2 className="pth2">任务</h2>{PTASK.map(([p,t,d,b])=><div className="ptask" key={t}><div className="ptp"><b>{p}</b><small>积分</small></div><div className="ptb"><b>{t}</b><p className="g">{d}</p>{b===1?<><div className="tier">{TIERS.map(([v,s])=><div key={v}><em>+{s}</em><i/><small>{v}</small></div>)}</div><small className="g">今日合约交易量 0 / 2,000 USDT · 今日已得 0 分</small></>:<small className="g">今日进度 0 · 今日已得 0 分</small>}</div><button className="pill white" onClick={()=>n(b===1?'/futures':b==='去充值'?'/deposit':'/invite')}>{b===1?'去交易':b}</button></div>)}
 <div className="lrow" style={{marginTop:60}}><h2 className="pth2" style={{margin:0}}>积分兑换奖励</h2><button className="pill dark" onClick={()=>n('/coupons')}>我的兑换记录 ›</button></div><p className="g">我的积分：0</p><div className="rdm">{REDEEM.map(([v,k,p])=><div key={v+k}><span className="coin">₮</span><b>{v}</b><small className="g">{k}</small><em><b>{p}</b> 积分兑换</em><button disabled>已结束</button></div>)}</div>
