@@ -153,6 +153,13 @@ struct RootTabView: View {
         case "notif-settings": SecShot.raw = "notif:settings"; router.feature = .notifications
         case "notif-settings-error": SecShot.raw = "notif:settings-error"; router.feature = .notifications
         case "home-bell": SecShot.raw = "notif:list"; router.tab = .home
+        case "coupon-issued": SecShot.raw = "coupon:issued"; router.feature = .coupons
+        case "coupon-active": SecShot.raw = "coupon:active"; router.feature = .coupons
+        case "coupon-expired": SecShot.raw = "coupon:expired"; router.feature = .coupons
+        case "coupon-empty": SecShot.raw = "coupon:empty"; router.feature = .coupons
+        case "coupon-error": SecShot.raw = "coupon:error"; router.feature = .coupons
+        case "coupon-confirm": SecShot.raw = "coupon:confirm"; router.feature = .coupons
+        case "coupon-fail": SecShot.raw = "coupon:fail"; router.feature = .coupons
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
         case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security

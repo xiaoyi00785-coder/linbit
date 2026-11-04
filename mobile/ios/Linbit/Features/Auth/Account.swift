@@ -71,6 +71,10 @@ struct UserCenterView: View {
                         Router.shared.showUserCenter = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.kyc) }
                     }
+                    row("卡券中心", value: nil) {
+                        Router.shared.showUserCenter = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.coupons) }
+                    }
                     NavigationLink { SecurityView() } label: { rowLabel("账户安全", value: nil) }.buttonStyle(RowPressStyle())
                     row("子账户", value: nil) {
                         Router.shared.showUserCenter = false
