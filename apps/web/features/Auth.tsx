@@ -7,12 +7,13 @@ import { useHome } from "@/lib/home";
 import { AuthSkel } from "@/components/AuthSkel";
 import { Link, useNavigate } from "@/lib/router";
 /** 登录后回跳：仅接受站内路径（/xxx，拒绝 //host 与协议） */
-const safeRedirect = () => { if (typeof window === "undefined") return ""; const r = new URLSearchParams(window.location.search).get("redirect") || ""; return /^\/(?![\/\\])/.test(r) ? r : ""; };
+const safeRedirect = () => (typeof window === "undefined" ? "" : safeRedirectFrom(window.location.search, window.location.origin));
 import {
   COUNTRIES, displayAccount, isChallenge, login, loginErrMsg, loginResend, loginVerify, register, resetPassword, verifyResetCode,
   sendAuthCode, setMe, toE164, type AuthTokens, type LoginChallenge, type Target,
 } from "@/lib/account";
 import { useAuthStore } from "@/lib/store";
+import { safeRedirectFrom } from "@/lib/safeRedirect";
 // @ts-ignore legacy 模块未加类型
 import { setAuthed } from "@/legacy/auth";
 import { CodeInput, Steps, isEmail, isPhone } from "./common";

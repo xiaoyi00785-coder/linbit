@@ -41,6 +41,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Login redirect safety check (check:redirect)
+        working-directory: ${{ env.WEB_DIR }}
+        run: npm run check:redirect
+
       - name: Typecheck + build
         working-directory: ${{ env.WEB_DIR }}
         run: npm run typecheck && npm run build
