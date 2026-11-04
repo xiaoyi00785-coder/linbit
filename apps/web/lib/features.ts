@@ -17,7 +17,8 @@ const API_KEY: Record<string, FeatureKey> = { tokenizedStocks: "tokenizedStocks"
 export const RUNTIME: Record<string, boolean> = {};
 const CK = "lb_features";
 try { if (typeof localStorage !== "undefined") Object.assign(RUNTIME, JSON.parse(localStorage.getItem(CK) || "{}").features || {}); } catch {}
-export const isOn = (k: FeatureKey | string) => FEATURES[k as FeatureKey] || RUNTIME[k] === true;
+/** 后端 /app/features 没有单独的 tradfi 开关：传统金融入口随 tokenizedStocks / metals 任一开启而开启。 */
+export const isOn = (k: FeatureKey | string): boolean => FEATURES[k as FeatureKey] || RUNTIME[k] === true || (k === "tradfi" && RUNTIME.tradfi !== false && (isOn("tokenizedStocks") || isOn("metals")));
 const TTL = 30_000;
 let loading: Promise<void> | null = null; let loadedAt = 0;
 /** 30s TTL：过期后重新请求；失败 ⇒ 全部关闭（失败结果同样缓存 30s，避免重试风暴）。 */
@@ -52,4 +53,4 @@ export function soonOf(label: string): FeatureKey | null {
 export const soonPath = (label: string) => { const k = soonOf(label); return k ? "/coming-soon/" + SOON[k].slug : null; };
 export const bySlug = (slug: string) => (Object.keys(SOON) as FeatureKey[]).find((k) => SOON[k].slug === slug);
 /** 功能开启后对应的真实页面（coming-soon 页据此跳转；入口文案无需改动） */
-export const LIVE: Partial<Record<FeatureKey, string>> = { tokenizedStocks: "/tradfi/assets?kind=stock", eventContracts: "/events", chatRoom: "/chat", subAccounts: "/sub-accounts", convert: "/convert" };
+export const LIVE: Partial<Record<FeatureKey, string>> = { tokenizedStocks: "/tradfi/assets?kind=stock", metals: "/tradfi/assets?kind=metal", tradfi: "/tradfi/assets", eventContracts: "/events", chatRoom: "/chat", subAccounts: "/sub-accounts", convert: "/convert" };

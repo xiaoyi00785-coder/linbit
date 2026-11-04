@@ -59,11 +59,11 @@ function Empty({ t, children }: { t: string; children?: ReactNode }) { return <d
 function NeedLogin() { return <Empty t="登录后查看"><Link className="ff-btn pri" href="/login">登录</Link></Empty>; }
 
 /* ---------- TradFi ---------- */
-// TradFi 整体由 tokenizedStocks 开关控制
+// TradFi：股票 / 大宗商品由 tokenizedStocks 控制，贵金属由 metals 控制
 const KINDS = [["stock", "股票"], ["metal", "贵金属"], ["commodity", "大宗商品"]] as const;
 export function TradFi() {
   const sp = useSearchParams(); const r = useRouter();
-  const kinds = isOn("tokenizedStocks") ? KINDS : [];
+  const kinds = KINDS.filter(([k]) => k === "metal" ? isOn("metals") : isOn("tokenizedStocks"));
   const kind = (kinds.find(([k]) => k === sp.get("kind"))?.[0] || kinds[0]?.[0] || "stock") as string;
   const [res, setRes] = useState<RestResult<{ items: TFAsset[] }> | null>(null);
   const [q, setQ] = useState("");
