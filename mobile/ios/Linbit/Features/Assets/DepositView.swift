@@ -187,6 +187,7 @@ struct DepositView: View {
                 return APIWithdrawNetwork(network: name, minWithdraw: n.minDeposit, confirmations: n.confirmations, estimatedArrivalMinutes: n.estimatedArrivalMinutes)
             }
             nets = .loaded(l)
+            // 服务端已按 资产 → sortOrder → 网络名 排好序，且不保证每个资产只有一个推荐：取排序后的第一个推荐网络
             if net == nil, let rec = l.first(where: { recommended.contains($0.network) }) { net = rec; await loadAddr() }
             else if l.count == 1 { net = l[0]; await loadAddr() } else if !l.isEmpty { showNets = true }
             else { addr = .failed("该币种暂不支持充值") }
@@ -219,7 +220,8 @@ struct DepositShareCard: View {
     }
 }
 
-/// 选择网络（ref2 #18）：提示 + 网络卡片（最低 / 推荐 角标、手续费、预计到账时间）
+/// 选择网络（ref2 #18）：提示 + 网络卡片（推荐 角标、预计到账时间）。
+/// 充值网络来自 GET /wallet/networks，没有手续费字段，所以不显示手续费，也不标「最低」。
 struct NetworkSheet: View {
     @Environment(\.palette) private var p
     let asset: String
@@ -233,7 +235,6 @@ struct NetworkSheet: View {
         ["TRON": "Tron (TRC20)", "TRC20": "Tron (TRC20)", "ETH": "Ethereum (ERC20)", "ERC20": "Ethereum (ERC20)", "BSC": "BNB Smart Chain (BEP20)",
          "BEP20": "BNB Smart Chain (BEP20)", "ARBITRUM": "Arbitrum One", "SOL": "Solana", "BTC": "Bitcoin"][n.uppercased()] ?? n
     }
-    private var cheapest: String? { nets.min { Dec.parse($0.gasFeeEstimate) < Dec.parse($1.gasFeeEstimate) }?.network }
 
     var body: some View {
         LBSheet(title: "选择网络", showClose: true, onClose: onClose) {
@@ -248,11 +249,9 @@ struct NetworkSheet: View {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 6) {
                                 Text(Self.display(n.network)).font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                                if n.network == cheapest && nets.count > 1 { badge("最低") }
                                 if recommended.contains(n.network) { RecommendedChip() }
                                 Spacer()
                             }
-                            Text("手续费 \(n.gasFeeEstimate ?? "0") \(n.gasFeeAsset ?? asset)").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
                             Text("预计到账时间 ≈ \(n.estimatedArrivalMinutes ?? 1) 分钟").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                         }
                         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -262,8 +261,5 @@ struct NetworkSheet: View {
                 }
             }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
         }
-    }
-    private func badge(_ t: String) -> some View {
-        Text(t).font(.lb(10, .medium)).foregroundColor(p.brand).padding(.horizontal, 4).padding(.vertical, 1).background(RoundedRectangle(cornerRadius: 3).fill(p.brand.opacity(0.12)))
     }
 }
