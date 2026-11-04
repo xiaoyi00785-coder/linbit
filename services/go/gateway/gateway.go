@@ -233,6 +233,9 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 		return
 	}
+	if g.tradfi != nil && !g.tradfi.siteGeoCheck(w, r) {
+		return
+	}
 	// Internal service-to-service endpoints and the admin back office are never
 	// exposed through the public gateway: answer 404 so they are not discoverable.
 	if hiddenPath(r.URL.Path) {

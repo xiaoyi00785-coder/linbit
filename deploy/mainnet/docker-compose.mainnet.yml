@@ -45,7 +45,6 @@ services:
   market-data:
     environment:
       <<: *mainnet
-      TRADFI_RESTRICTED_COUNTRIES: ${TRADFI_RESTRICTED_COUNTRIES:-US}
       FEATURE_DEFAULTS: ${FEATURE_DEFAULTS:-}
   kyc:
     environment:
@@ -79,4 +78,5 @@ services:
   gateway:
     environment:
       <<: *mainnet
+      GEO_BLOCK_ENABLED: "true"
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:?set TRUSTED_PROXY_CIDRS}

@@ -61,6 +61,8 @@ type tradfiGuard struct {
 	gate   *tradfiGate
 	gateAt time.Time
 	kyc    map[string]kycEntry
+
+	siteGeo bool // site-wide geo block (geoblock.go)
 }
 
 func newTradFiGuard(cfg Config) *tradfiGuard {
@@ -71,7 +73,7 @@ func newTradFiGuard(cfg Config) *tradfiGuard {
 	trusted, _ := parseCIDRs(cidrs) // validated in NewGateway
 	return &tradfiGuard{trusted: trusted, marketURL: strings.TrimRight(cfg.MarketURL, "/"), kycURL: strings.TrimRight(cfg.KycURL, "/"),
 		strategyURL: strings.TrimRight(cfg.StrategyURL, "/"), assetURL: strings.TrimRight(cfg.AssetURL, "/"),
-		token: cfg.InternalToken, ttl: 30 * time.Second, client: &http.Client{Timeout: 3 * time.Second}, kyc: map[string]kycEntry{}}
+		token: cfg.InternalToken, ttl: 30 * time.Second, client: &http.Client{Timeout: 3 * time.Second}, kyc: map[string]kycEntry{}, siteGeo: geoBlockEnabled()}
 }
 
 func (t *tradfiGuard) getJSON(ctx context.Context, u string, v any) error {

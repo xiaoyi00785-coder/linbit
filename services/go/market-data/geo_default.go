@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"strings"
-
-	"github.com/linbit/platform/services/go/common"
 )
 
 // seedRestrictedCountries applies TRADFI_RESTRICTED_COUNTRIES (ISO alpha-2,
@@ -17,10 +15,7 @@ import (
 func seedRestrictedCountries(db *sql.DB) {
 	v, set := os.LookupEnv("TRADFI_RESTRICTED_COUNTRIES")
 	if !set {
-		if !common.IsMainnet() {
-			return
-		}
-		v = "US"
+		return // keep the migration default (US + territories + OFAC set)
 	}
 	var cc []string
 	for _, c := range strings.Split(v, ",") {

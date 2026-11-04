@@ -2,10 +2,12 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { installGeoBlockHandler } from "@/lib/geoblock";
 import { TransferHost } from "@/components/Transfer";
 import { OverlayManager } from "@/components/OverlayManager";
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  installGeoBlockHandler();
   const [client] = useState(
     () =>
       new QueryClient({

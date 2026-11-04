@@ -7,6 +7,7 @@
 ## 0. 切换方式（已定）：复用当前服务器与域名，测试网下线
 - [ ] 停服后先完整备份数据库（pg_dump）+ KYC 卷 + 引擎数据卷，校验可恢复。
 - [ ] 清理测试网数据：虚拟做市注资（mm:main 余额/流水）、测试余额与充提记录、测试网赠金/积分、测试网订单/成交/持仓、测试链充值地址。保留数据须逐表确认。
+- [ ] 逐表清单与脚本：`docs/deploy/mainnet-wipe-plan.md`、`deploy/mainnet/wipe-testnet.sh`（默认 dry-run，需 BACKUP_FILE + CONFIRM_WIPE + 手动输入库名，永不自动执行）。
 - [ ] 清理后余额与负债核对为 0（或仅剩真实数据），再设置 `NETWORK=mainnet` 启动。
 
 ## 1. 域名与 TLS
@@ -51,10 +52,12 @@
 ## 8. 首次储备金证明（PoR）
 - [ ] 上线前对冷热钱包链上余额与用户负债做首次快照并留档/公示。
 
-## 9. 地域限制
-- [ ] 仅限制美国：`TRADFI_RESTRICTED_COUNTRIES=US`（首次启动写入，之后在后台修改即生效）。
-- [ ] 注意：迁移默认还包含美属领地及 OFAC 制裁国（PR,GU,VI,AS,MP,UM,CU,IR,KP,SY），主网按决定仅保留 US——请法务确认制裁国是否需保留。
-- [ ] 应用内地域限制作用于代币化股票/金属交易；如需全站封禁美国，在 Cloudflare WAF 配置。
+## 9. 地域限制（已定：全站屏蔽）
+- [ ] 受限列表保持默认：US + 美属领地 + OFAC 制裁国（US,PR,GU,VI,AS,MP,UM,CU,IR,KP,SY），后台 TradFi 设置可改，网关 30s 内生效。
+- [ ] 网关全站屏蔽：`GEO_BLOCK_ENABLED=true`（主网默认），国家取自受信代理（`TRUSTED_PROXY_CIDRS`）的 `CF-IPCountry`，命中返回 451 `REGION_BLOCKED`（中英文提示）；`/healthz` 不受影响。前端收到 451 跳转 `/blocked`。
+- [ ] 代币化股票/金属下单仍额外校验（国家未知时拒绝 + KYC 国籍）。
+- [ ] Cloudflare WAF 规则（第一道防线）：`(ip.geoip.country in {"US" "PR" "GU" "VI" "AS" "MP" "UM" "CU" "IR" "KP" "SY"}) and not http.request.uri.path eq "/healthz"` → Block（自定义响应 451）。
+- [ ] 源站只允许 Cloudflare IP 访问（防绕过）。
 
 ## 10. 法务
 - [x] 代币化股票与事件合约已通过法务审核，主网默认开启。
