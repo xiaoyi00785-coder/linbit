@@ -65,7 +65,10 @@ type Liability struct {
 	Asset       string `json:"asset"`
 	Total       string `json:"total"`       // all balances (free+locked), every account
 	MarketMaker string `json:"marketMaker"` // part held by MM_USER_ID
-	VirtualSeed string `json:"virtualSeed"` // mm_testnet_seed + admin_testnet_credit credited (unbacked by design)
+	// VirtualSeed: mm_testnet_seed + admin_testnet_credit credited, plus the
+	// testnet_kept_unbacked markers written by deploy/mainnet/wipe-testnet.sh
+	// for balances kept across the mainnet cutover (unbacked by design).
+	VirtualSeed string `json:"virtualSeed"`
 	// ConvertPosition: net system:convert position (platform, not user funds).
 	// Negative = the platform paid this asset out via convert and must cover it.
 	ConvertPosition string `json:"convertPosition"`
@@ -83,7 +86,7 @@ func (s *Store) Liabilities(ctx context.Context, mmUser, hedgeUser string) ([]Li
 		SELECT b.asset,
 		       COALESCE(SUM(b.free + b.locked), 0)::text,
 		       COALESCE(SUM(CASE WHEN b.user_id = $1 THEN b.free + b.locked ELSE 0 END), 0)::text,
-		       COALESCE((SELECT SUM(o.amount) FROM wallet_ops o WHERE o.op IN ('mm_testnet_seed', 'admin_testnet_credit') AND o.asset = b.asset), 0)::text
+		       COALESCE((SELECT SUM(o.amount) FROM wallet_ops o WHERE o.op IN ('mm_testnet_seed', 'admin_testnet_credit', 'testnet_kept_unbacked') AND o.asset = b.asset), 0)::text
 		FROM (SELECT user_id, asset, free, locked FROM balances UNION ALL SELECT user_id, asset, free, locked FROM funding_balances) b WHERE b.user_id NOT LIKE 'system:%' GROUP BY b.asset ORDER BY b.asset`, mmUser)
 	if err != nil {
 		return nil, err
