@@ -412,7 +412,7 @@ struct ChangePasswordView: View {
             switch e.code {
             case "INVALID_TOTP": error = "身份验证器验证码错误"
             case "TWOFA_REQUIRED": error = "请输入身份验证器验证码"
-            case "OLD_PASSWORD_INVALID", "PASSWORD_UNCHANGED", "AUTH_CODE_INVALID": error = ErrorText.map[e.code ?? ""]
+            case "OLD_PASSWORD_INVALID", "PASSWORD_UNCHANGED", "CODE_INVALID": error = ErrorText.map[e.code ?? ""]
             default: error = e.lbMessage
             }
         } catch { self.error = error.lbMessage }
