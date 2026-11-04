@@ -8508,7 +8508,7 @@ components:
 
     WithdrawNetwork:
       type: object
-      required: [network]
+      required: [network, withdrawEnabled, memoRequired]
       properties:
         network: { type: string, example: TRC20 }
         minWithdraw: { type: string, nullable: true, example: "12.00000000" }
@@ -8537,6 +8537,14 @@ components:
           nullable: true
           description: 预计到账时间（分钟）。
           example: 5
+        withdrawEnabled:
+          type: boolean
+          description: 该网络当前是否开放提现（后端始终返回；false 的网络前端不应列出）。
+          example: true
+        memoRequired:
+          type: boolean
+          description: 该网络提现是否必须填写 Memo / Tag（后端始终返回）。
+          example: false
 
     WithdrawNetworkOptions:
       type: object

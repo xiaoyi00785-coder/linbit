@@ -6319,6 +6319,16 @@ export interface components {
              * @example 5
              */
             estimatedArrivalMinutes?: number | null;
+            /**
+             * @description 该网络当前是否开放提现（后端始终返回；false 的网络前端不应列出）。
+             * @example true
+             */
+            withdrawEnabled: boolean;
+            /**
+             * @description 该网络提现是否必须填写 Memo / Tag（后端始终返回）。
+             * @example false
+             */
+            memoRequired: boolean;
         };
         WithdrawNetworkOptions: {
             /** @example USDT */
