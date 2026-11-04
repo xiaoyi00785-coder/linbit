@@ -79,3 +79,21 @@ a.lb.wide{display:flex;width:100%}
 .npk-rec{font-style:normal;font-size:12px;font-weight:600;color:#5d8a00;background:var(--lb-light-primary-bg,#f2fbdc);border-radius:4px;padding:2px 8px}
 .npk-meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px;color:var(--lb-light-text-2,#8a8d90);white-space:nowrap}
 .npk-st{padding:12px}
+
+/* 桌面顶栏右侧图标簇（≥1024，汉堡菜单断点以上）：按参考比例放大图标与点击区、收紧间距，移动端不受影响。
+   点击区 40×40、间距 8px（节距 48px）、右内边距 16px；SVG 尺寸：资产 28、订单 30、头像 26、下载 24、语言 26。 */
+@media (min-width:1024px){
+  .hdr{padding-right:16px}
+  .hdr .hib{width:40px;height:40px;margin-left:0;border-radius:10px}
+  .hdr .hib svg{flex:none;width:24px;height:24px}
+  .hdr .hib.hx-w svg{width:28px;height:28px}
+  .hdr .hib.hx-o svg{width:30px;height:30px}
+  .hdr .hib.hx-a svg{width:26px;height:26px}
+  .hdr .hib.hx-g svg{width:26px;height:26px}
+  .hdr .sep{margin:0 14px 0 10px}
+}
+
+/* 滚动条 / 根背景按主题区分：深色页保持深色滚动条；浅色资产页（含 scrollbar-gutter:stable 预留的滚动条位置与过度滚动区域）
+   使用白色根背景和浅色滚动条，避免页面右侧出现一条深色底（原来根背景恒为深色品牌底）。:has(.light) 随路由切换实时生效。 */
+html{scrollbar-color:#3a3d3d #070808}
+html:has(.light){background:var(--lb-white);scrollbar-color:#c3c6c8 var(--lb-white)}
