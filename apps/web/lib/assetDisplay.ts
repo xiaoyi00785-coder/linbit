@@ -10,6 +10,14 @@ export const DEP_NETS_FALLBACK: Record<string, string[]> = {
   TRX: ["TRC20"],
 };
 
+/** 充值网络代码 → 展示名（接口与下单仍用原始代码） */
+const NET_NAMES: Record<string, string> = {
+  BTC: "Bitcoin", ETH: "Ethereum", ERC20: "Ethereum (ERC20)", TRX: "TRON (TRC20)", TRC20: "TRON (TRC20)",
+  BSC: "BNB Smart Chain (BEP20)", BEP20: "BNB Smart Chain (BEP20)", SOL: "Solana", ARBITRUM: "Arbitrum One", ARB: "Arbitrum One",
+  POLYGON: "Polygon", MATIC: "Polygon", OP: "Optimism", OPTIMISM: "Optimism", AVAXC: "Avalanche C-Chain", TON: "TON", BASE: "Base",
+};
+export const netLabel = (code?: string | null) => (code ? NET_NAMES[code.toUpperCase()] ?? code : "");
+
 type NetRes = { ok?: boolean; source?: string; data?: { networks?: { asset?: string; network: string; depositEnabled?: boolean }[] } } | null | undefined;
 
 /** 充值网络：GET /wallet/networks?asset= 的生效配置，只列 depositEnabled 且属于该币种的网络。 */
