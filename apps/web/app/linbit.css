@@ -227,3 +227,18 @@ img.pimg{background:none;object-fit:contain;opacity:1}img.pimg.big{border-radius
 .sec3-v img{width:160%;max-width:none;height:auto;will-change:transform;transform:translateZ(0);animation:lbFloat 6s ease-in-out infinite;backface-visibility:hidden}
 @media (max-width:900px){.sec3{grid-template-columns:1fr;grid-template-areas:"v" "a" "b" "c";row-gap:28px}.sec3-v{width:clamp(200px,60vw,320px);justify-self:center}}
 @media (prefers-reduced-motion:reduce){.sec3-v img{animation:none}}
+/* 客服面板（.xmask 由 OverlayManager 统一 Esc/焦点陷阱/滚动锁定） */
+.svc-mask{background:rgba(0,0,0,.35)!important;display:block!important;z-index:95}
+.svcp2{position:fixed;right:32px;bottom:124px;width:360px;max-height:min(640px,calc(100vh - 160px));display:flex;flex-direction:column;background:var(--lb-card-2);border:1px solid var(--lb-border);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);overflow:hidden;text-align:left}
+.svc-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--lb-border)}.svc-hd b{font-size:16px}
+.svc-hd .fx-x{background:none;border:0;color:var(--lb-text-2);font-size:22px;line-height:1;cursor:pointer;padding:2px 6px}
+.svc-bd{overflow:auto;padding:4px 16px 16px}.svc-bd section{padding-top:14px}.svc-bd h4{font-size:13px;color:var(--lb-text-2);font-weight:500;margin-bottom:8px}
+.svc-note{font-size:13px;color:var(--lb-text-2);line-height:1.6;margin:0 0 8px}
+.svc-ch{display:grid;gap:8px}.svc-ch a,.svc-faq a{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:8px;background:var(--lb-border);color:var(--lb-white);text-decoration:none}
+.svc-ch a:hover,.svc-faq a:hover,.svc-ch a:focus-visible,.svc-faq a:focus-visible{outline:1px solid var(--lb-primary)}
+.svc-ch em,.svc-faq em{font-style:normal;font-size:12px;color:var(--lb-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.svc-faq{list-style:none;padding:0;margin:0;display:grid;gap:8px}.svc-more{display:inline-block;margin-top:8px;font-size:13px;color:var(--lb-primary)}
+body:has(.cookie) .svc{bottom:330px}
+@media (max-width:800px){.svcp2{left:0;right:0;bottom:0;width:auto;max-height:85vh;border-radius:12px 12px 0 0}
+  .cookie{left:12px;right:12px;width:auto;bottom:12px}body:has(.cookie) .svc{bottom:auto;top:calc(100vh - 360px)}}
+@media (min-width:801px){body:has(.of) .svc{bottom:12px;right:12px;width:40px;height:40px}}

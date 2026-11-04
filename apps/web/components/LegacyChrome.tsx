@@ -35,7 +35,7 @@ const nav = (k: string) =>
   dynamic(() => import("@/legacy/Nav").then((m) => (m as any)[k] as ComponentType<any>), { ssr: false });
 const Header = nav("Header");
 const Cookie = nav("Cookie");
-const Service = nav("Service");
+const Service = dynamic(() => import("@/components/SupportPanel").then((m) => m.SupportPanel), { ssr: false });
 const DemoToggle = nav("DemoToggle");
 const ModalHost = dynamic(() => import("@/features/Kit").then((m) => m.ModalHost), { ssr: false });
 
