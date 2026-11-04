@@ -6434,6 +6434,165 @@ paths:
         "403": { description: "TWO_FACTOR_REQUIRED / ACCOUNT_NOT_ALLOWED（系统或做市账户）/ 无权限" }
         "404": { description: "非测试网或未开启（接口隐藏）/ 用户不存在" }
         "409": { description: "REF_CONFLICT：ref 已用于不同参数" }
+  /admin/v1/adjustments:
+    get:
+      tags: [Admin]
+      summary: 人工调账单列表（fund:adjust）
+      operationId: adminAdjustmentList
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending_approval, applying, applied, rejected, failed] } }
+        - { name: uid, in: query, schema: { type: string } }
+        - { name: asset, in: query, schema: { type: string } }
+        - { name: account, in: query, schema: { type: string, enum: [spot, funding] } }
+        - { name: direction, in: query, schema: { type: string, enum: [credit, debit] } }
+        - { name: createdBy, in: query, schema: { type: integer } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/AdminAdjustment" } }
+                  total: { type: integer }
+                  thresholdUsdt: { type: string, example: "1000", description: 当前复核阈值（USDT 等值） }
+    post:
+      tags: [Admin]
+      summary: 发起人工调账（fund:adjust + totpCode + reason，审计；≥ 阈值进入待复核）
+      description: |
+        金额为带符号十进制字符串（正数增加 / 负数扣减，最多 8 位小数，不可为 0）。账户仅支持 spot / funding（默认 spot），
+        合约账户余额在合约服务，需先划转。|amount| 折算 USDT ≥ 阈值（admin 设置 adjust_second_review_usdt，
+        默认 ADMIN_ADJUST_SECOND_REVIEW_USDT=1000）或无法估值时返回 201 pending_approval，须另一名拥有 fund:adjust:approve
+        的管理员复核；否则 2FA 后立即入账并返回 200 applied。
+        记账走 asset 服务：借贷双边分录，对手方 system:admin_adjust，txType admin_adjust；扣减不能使可用余额为负
+        （400 INSUFFICIENT_BALANCE，单据 failed）。ref 为幂等键：相同 ref 且参数相同返回原单（replayed=true），参数不同 409 REF_CONFLICT。
+        调账在偿付/储备证明报表中计入负债并以 adminAdjustNet / unbackedAdjust 标记为无链上来源的调账。
+        即使 ADMIN_REQUIRE_2FA=false，调账也要求操作人已绑定 Google 验证器。
+      operationId: adminAdjustmentCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uid, asset, amount, reason, totpCode]
+              properties:
+                uid: { type: string }
+                asset: { type: string, example: USDT }
+                account: { type: string, enum: [spot, funding], default: spot }
+                amount: { type: string, example: "-25.5", description: 带符号；负数为扣减 }
+                reason: { type: string, maxLength: 500 }
+                ref: { type: string, maxLength: 128, description: 幂等键（可选，缺省由服务端生成） }
+                totpCode: { type: string }
+      responses:
+        "200":
+          description: 已入账（或幂等重放）
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminAdjustmentResult" } } }
+        "201":
+          description: 已提交，待复核
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminAdjustmentResult" } } }
+        "400": { description: "VALIDATION_ERROR / INSUFFICIENT_BALANCE" }
+        "401": { description: "TOTP_INVALID / TWO_FACTOR_REQUIRED（未绑定验证器）" }
+        "403": { description: "无权限 / ACCOUNT_NOT_ALLOWED（系统/做市账户）" }
+        "404": { description: "NOT_FOUND（用户不存在）" }
+        "409": { description: REF_CONFLICT }
+  /admin/v1/adjustments/config:
+    get:
+      tags: [Admin]
+      summary: 调账复核阈值（fund:adjust）
+      operationId: adminAdjustmentConfigGet
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secondReviewUsdt: { type: string, example: "1000" }
+                  defaultSecondReviewUsdt: { type: string, description: 环境变量默认值 }
+    put:
+      tags: [Admin]
+      summary: 修改调账复核阈值（fund:adjust:approve + totpCode + reason，审计）
+      operationId: adminAdjustmentConfigPut
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secondReviewUsdt, reason, totpCode]
+              properties:
+                secondReviewUsdt: { type: string, example: "1000", description: "> 0" }
+                reason: { type: string }
+                totpCode: { type: string }
+      responses:
+        "200": { description: OK }
+        "400": { description: VALIDATION_ERROR }
+        "401": { description: TOTP_INVALID }
+  /admin/v1/adjustments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Admin]
+      summary: 调账单详情（fund:adjust）
+      operationId: adminAdjustmentGet
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminAdjustmentResult" } } }
+        "404": { description: NOT_FOUND }
+  /admin/v1/adjustments/{id}/approve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Admin]
+      summary: 复核通过并入账（fund:adjust:approve + totpCode；发起人不可复核，403 SELF_REVIEW）
+      operationId: adminAdjustmentApprove
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [totpCode]
+              properties:
+                totpCode: { type: string }
+                note: { type: string }
+      responses:
+        "200":
+          description: 已入账（或入账失败时 status=failed）
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminAdjustmentResult" } } }
+        "401": { description: TOTP_INVALID }
+        "403": { description: "SELF_REVIEW / 无权限" }
+        "409": { description: "INVALID_STATE（已被处理）" }
+  /admin/v1/adjustments/{id}/reject:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Admin]
+      summary: 驳回调账单（fund:adjust:approve + totpCode + note 必填；发起人不可驳回自己的单）
+      operationId: adminAdjustmentReject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [totpCode, note]
+              properties:
+                totpCode: { type: string }
+                note: { type: string }
+      responses:
+        "200":
+          description: 已驳回
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminAdjustmentResult" } } }
+        "400": { description: "REASON_REQUIRED" }
+        "403": { description: SELF_REVIEW }
+        "409": { description: INVALID_STATE }
   /admin/v1/mm/baselines:
     get:
       tags: [Admin]
@@ -7483,6 +7642,37 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/LoanRecord" } }
+    AdminAdjustmentResult:
+      type: object
+      properties:
+        adjustment: { $ref: "#/components/schemas/AdminAdjustment" }
+        replayed: { type: boolean }
+    AdminAdjustment:
+      type: object
+      properties:
+        id: { type: integer }
+        ref: { type: string }
+        uid: { type: string }
+        asset: { type: string }
+        account: { type: string, enum: [spot, funding] }
+        amount: { type: string, description: 带符号 }
+        direction: { type: string, enum: [credit, debit] }
+        usdtValue: { type: string, nullable: true, description: "|amount| 的 USDT 估值；无法估值为 null（按需复核处理）" }
+        needsSecond: { type: boolean }
+        status: { type: string, enum: [pending_approval, applying, applied, rejected, failed] }
+        reason: { type: string }
+        createdBy: { type: integer }
+        createdByName: { type: string }
+        createdIp: { type: string }
+        reviewedBy: { type: integer, nullable: true }
+        reviewedByName: { type: string, nullable: true }
+        reviewNote: { type: string, nullable: true }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        freeBefore: { type: string, nullable: true }
+        freeAfter: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        appliedAt: { type: string, format: date-time, nullable: true }
     Error:
       type: object
       required: [code, message]

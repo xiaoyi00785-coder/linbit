@@ -29,7 +29,7 @@ export function UserDrawer({ u, onClose, onChanged }) {
   const [tab, setTab] = useState('base'); const [fz, setFz] = useState(false)
   const pos = useApi(tab === 'pos' ? 'futures/positions' : null, { uid: u.uid, size: 200 }); const dev = useApi(tab === 'log' ? `users/${u.uid}/devices` : null)
   return <Drawer width={760} title={<>{u.nick} <span className="muted" style={{ fontWeight: 400 }}>UID {u.uid}</span></>} extra={<>{stTag(u.status)}<Tag k="gd">{u.identity}</Tag></>} onClose={onClose}
-    footer={<><button className="btn d" onClick={() => setFz(true)}>{u.raw && u.raw !== 'active' ? '解冻' : '冻结 / 限制'}</button></>}>
+    footer={<><button className="btn" onClick={() => { location.hash = '#/adjust?uid=' + encodeURIComponent(u.uid) }}>人工调账</button><button className="btn d" onClick={() => setFz(true)}>{u.raw && u.raw !== 'active' ? '解冻' : '冻结 / 限制'}</button></>}>
     <div className="grid g4" style={{ marginBottom: 12 }}>{[['总资产估值', '$' + num(items(bal.data).reduce((a, b) => a + (+b.valuationUsd || 0), 0))]].map(([l, v]) => <div key={l} className="card kpi"><div className="l">{l}</div><div className="v num" style={{ fontSize: 16 }}>{v}</div></div>)}</div>
     <div className="sec" style={{ marginTop: 0 }}>近 30 日资金画像</div><div style={{ marginBottom: 12 }}><Profile30d uid={u.uid} /></div>
     <div className="card"><Tabs value={tab} onChange={setTab} items={[['base', '基本信息'], ['asset', '资产'], ['pos', '持仓'], ['log', '登录/设备']]} />

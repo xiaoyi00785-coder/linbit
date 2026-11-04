@@ -4206,6 +4206,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 人工调账单列表（fund:adjust） */
+        get: operations["adminAdjustmentList"];
+        put?: never;
+        /**
+         * 发起人工调账（fund:adjust + totpCode + reason，审计；≥ 阈值进入待复核）
+         * @description 金额为带符号十进制字符串（正数增加 / 负数扣减，最多 8 位小数，不可为 0）。账户仅支持 spot / funding（默认 spot），
+         *     合约账户余额在合约服务，需先划转。|amount| 折算 USDT ≥ 阈值（admin 设置 adjust_second_review_usdt，
+         *     默认 ADMIN_ADJUST_SECOND_REVIEW_USDT=1000）或无法估值时返回 201 pending_approval，须另一名拥有 fund:adjust:approve
+         *     的管理员复核；否则 2FA 后立即入账并返回 200 applied。
+         *     记账走 asset 服务：借贷双边分录，对手方 system:admin_adjust，txType admin_adjust；扣减不能使可用余额为负
+         *     （400 INSUFFICIENT_BALANCE，单据 failed）。ref 为幂等键：相同 ref 且参数相同返回原单（replayed=true），参数不同 409 REF_CONFLICT。
+         *     调账在偿付/储备证明报表中计入负债并以 adminAdjustNet / unbackedAdjust 标记为无链上来源的调账。
+         *     即使 ADMIN_REQUIRE_2FA=false，调账也要求操作人已绑定 Google 验证器。
+         */
+        post: operations["adminAdjustmentCreate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/adjustments/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 调账复核阈值（fund:adjust） */
+        get: operations["adminAdjustmentConfigGet"];
+        /** 修改调账复核阈值（fund:adjust:approve + totpCode + reason，审计） */
+        put: operations["adminAdjustmentConfigPut"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/adjustments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        /** 调账单详情（fund:adjust） */
+        get: operations["adminAdjustmentGet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/adjustments/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 复核通过并入账（fund:adjust:approve + totpCode；发起人不可复核，403 SELF_REVIEW） */
+        post: operations["adminAdjustmentApprove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/adjustments/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 驳回调账单（fund:adjust:approve + totpCode + note 必填；发起人不可驳回自己的单） */
+        post: operations["adminAdjustmentReject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/mm/baselines": {
         parameters: {
             query?: never;
@@ -4702,6 +4805,261 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 数据看板汇总（用户/KYC/充提/现货与合约 24h/持仓/强平/保险基金/30 日趋势/待办）（dash:view） */
+        get: operations["adminDashboardSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/risk-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 风险名单：非 active 状态用户（user:view） */
+        get: operations["adminListRiskUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/deposits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 充值记录（ledger:view） */
+        get: operations["adminListDeposits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/spot/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 现货订单（ledger:view；status=open 表示 new+partially_filled） */
+        get: operations["adminListSpotOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/futures/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约持仓（含标记价、名义价值、未实现盈亏）（ledger:view） */
+        get: operations["adminListFuturesPositions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/futures/liquidations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 强平记录 + 保险基金余额 insurance[]（ledger:view） */
+        get: operations["adminListLiquidations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/futures/contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 合约参数与未平仓量（symbol:view） */
+        get: operations["adminListFuturesContracts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/grids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 现货网格策略（ledger:view） */
+        get: operations["adminListGrids"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/copy/traders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 带单交易员（跟随人数、跟单本金、累计分润）（copy:view） */
+        get: operations["adminListCopyTraders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/rebate/commissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 返佣明细 + summary30d（partner:view） */
+        get: operations["adminListCommissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/points/redemptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 积分兑换记录（reward:view） */
+        get: operations["adminListPointsRedemptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{uid}/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 用户登录设备（user:view） */
+        get: operations["adminListUserDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{uid}/profile30d": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 用户近 30 日充提与成交额（user:view） */
+        get: operations["adminUserProfile30d"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/wallet/hot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 热钱包余额（withdraw:view；未配置真实链时 404） */
+        get: operations["adminWalletHot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/wallet/sweeps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 归集记录（withdraw:view；未配置真实链时 404） */
+        get: operations["adminWalletSweeps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4959,6 +5317,43 @@ export interface components {
         };
         LoanRecordList: {
             items?: components["schemas"]["LoanRecord"][];
+        };
+        AdminAdjustmentResult: {
+            adjustment?: components["schemas"]["AdminAdjustment"];
+            replayed?: boolean;
+        };
+        AdminAdjustment: {
+            id?: number;
+            ref?: string;
+            uid?: string;
+            asset?: string;
+            /** @enum {string} */
+            account?: "spot" | "funding";
+            /** @description 带符号 */
+            amount?: string;
+            /** @enum {string} */
+            direction?: "credit" | "debit";
+            /** @description |amount| 的 USDT 估值；无法估值为 null（按需复核处理） */
+            usdtValue?: string | null;
+            needsSecond?: boolean;
+            /** @enum {string} */
+            status?: "pending_approval" | "applying" | "applied" | "rejected" | "failed";
+            reason?: string;
+            createdBy?: number;
+            createdByName?: string;
+            createdIp?: string;
+            reviewedBy?: number | null;
+            reviewedByName?: string | null;
+            reviewNote?: string | null;
+            /** Format: date-time */
+            reviewedAt?: string | null;
+            freeBefore?: string | null;
+            freeAfter?: string | null;
+            error?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            appliedAt?: string | null;
         };
         Error: {
             /**
@@ -15068,6 +15463,327 @@ export interface operations {
             };
         };
     };
+    adminAdjustmentList: {
+        parameters: {
+            query?: {
+                status?: "pending_approval" | "applying" | "applied" | "rejected" | "failed";
+                uid?: string;
+                asset?: string;
+                account?: "spot" | "funding";
+                direction?: "credit" | "debit";
+                createdBy?: number;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["AdminAdjustment"][];
+                        total?: number;
+                        /**
+                         * @description 当前复核阈值（USDT 等值）
+                         * @example 1000
+                         */
+                        thresholdUsdt?: string;
+                    };
+                };
+            };
+        };
+    };
+    adminAdjustmentCreate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    uid: string;
+                    /** @example USDT */
+                    asset: string;
+                    /**
+                     * @default spot
+                     * @enum {string}
+                     */
+                    account?: "spot" | "funding";
+                    /**
+                     * @description 带符号；负数为扣减
+                     * @example -25.5
+                     */
+                    amount: string;
+                    reason: string;
+                    /** @description 幂等键（可选，缺省由服务端生成） */
+                    ref?: string;
+                    totpCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已入账（或幂等重放） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAdjustmentResult"];
+                };
+            };
+            /** @description 已提交，待复核 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAdjustmentResult"];
+                };
+            };
+            /** @description VALIDATION_ERROR / INSUFFICIENT_BALANCE */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TOTP_INVALID / TWO_FACTOR_REQUIRED（未绑定验证器） */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 无权限 / ACCOUNT_NOT_ALLOWED（系统/做市账户） */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description NOT_FOUND（用户不存在） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description REF_CONFLICT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminAdjustmentConfigGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 1000 */
+                        secondReviewUsdt?: string;
+                        /** @description 环境变量默认值 */
+                        defaultSecondReviewUsdt?: string;
+                    };
+                };
+            };
+        };
+    };
+    adminAdjustmentConfigPut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description > 0
+                     * @example 1000
+                     */
+                    secondReviewUsdt: string;
+                    reason: string;
+                    totpCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description VALIDATION_ERROR */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TOTP_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminAdjustmentGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAdjustmentResult"];
+                };
+            };
+            /** @description NOT_FOUND */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminAdjustmentApprove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    totpCode: string;
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已入账（或入账失败时 status=failed） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAdjustmentResult"];
+                };
+            };
+            /** @description TOTP_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SELF_REVIEW / 无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description INVALID_STATE（已被处理） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminAdjustmentReject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    totpCode: string;
+                    note: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已驳回 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAdjustmentResult"];
+                };
+            };
+            /** @description REASON_REQUIRED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SELF_REVIEW */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description INVALID_STATE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     adminMMBaselines: {
         parameters: {
             query?: never;
@@ -16011,6 +16727,454 @@ export interface operations {
                 content: {
                     "application/json": {
                         items?: components["schemas"]["TradFiDeviation"][];
+                    };
+                };
+            };
+        };
+    };
+    adminDashboardSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListRiskUsers: {
+        parameters: {
+            query?: {
+                uid?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListDeposits: {
+        parameters: {
+            query?: {
+                uid?: string;
+                asset?: string;
+                network?: string;
+                status?: string;
+                txHash?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListSpotOrders: {
+        parameters: {
+            query?: {
+                uid?: string;
+                symbol?: string;
+                side?: string;
+                status?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListFuturesPositions: {
+        parameters: {
+            query?: {
+                uid?: string;
+                symbol?: string;
+                side?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListLiquidations: {
+        parameters: {
+            query?: {
+                uid?: string;
+                symbol?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListFuturesContracts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListGrids: {
+        parameters: {
+            query?: {
+                uid?: string;
+                symbol?: string;
+                status?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListCopyTraders: {
+        parameters: {
+            query?: {
+                status?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListCommissions: {
+        parameters: {
+            query?: {
+                uid?: string;
+                sourceUid?: string;
+                kind?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListPointsRedemptions: {
+        parameters: {
+            query?: {
+                uid?: string;
+                campaignId?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: {
+                            [key: string]: unknown;
+                        }[];
+                        total?: number;
+                        page?: number;
+                        pageSize?: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminListUserDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminUserProfile30d: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminWalletHot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    adminWalletSweeps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };

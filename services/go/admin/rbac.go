@@ -47,20 +47,23 @@ const (
 	permMMView         = "mm:view"
 	permMMEdit         = "mm:edit"
 	permDashView       = "dash:view"
+	// 人工调账: create/list, and the second-person approval (maker-checker).
+	permFundAdjust        = "fund:adjust"
+	permFundAdjustApprove = "fund:adjust:approve"
 )
 
 var allPerms = []string{permUserView, permUserEdit, permUserPII, permKYCView, permKYCApprove,
 	permWithdrawView, permWithdrawFirst, permWithdrawSecond, permLedgerView, permSymbolView,
 	permSymbolEdit, permFeeView, permFeeEdit, permFeeApprove, permRewardView, permRewardEdit,
-	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView}
+	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView, permFundAdjust, permFundAdjustApprove}
 
 // rolePerms is the RBAC matrix from prototypes/admin/DESIGN.md §3.
 var rolePerms = map[string][]string{
 	roleSuper:         allPerms,
 	roleOperations:    {permDashView, permVIPView, permVIPReview, permEarnView, permEarnEdit, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permUserView, permUserEdit, permKYCView, permSymbolView, permRewardView, permRewardEdit, permContentEdit},
 	roleKYCReviewer:   {permUserView, permKYCView, permKYCApprove},
-	roleFinanceFirst:  {permDashView, permEarnView, permUserView, permWithdrawView, permWithdrawFirst, permLedgerView, permCouponApprove, permRewardView},
-	roleFinanceSecond: {permDashView, permMMView, permEarnView, permUserView, permFeeView, permWithdrawView, permWithdrawSecond, permLedgerView, permFeeApprove, permCouponApprove, permRewardView, permRewardApprove},
+	roleFinanceFirst:  {permFundAdjust, permDashView, permEarnView, permUserView, permWithdrawView, permWithdrawFirst, permLedgerView, permCouponApprove, permRewardView},
+	roleFinanceSecond: {permFundAdjust, permFundAdjustApprove, permDashView, permMMView, permEarnView, permUserView, permFeeView, permWithdrawView, permWithdrawSecond, permLedgerView, permFeeApprove, permCouponApprove, permRewardView, permRewardApprove},
 	roleRisk:          {permDashView, permMMView, permEarnView, permCopyView, permPartnerView, permUserView, permUserEdit, permKYCView, permWithdrawView, permLedgerView},
 	roleSupport:       {permVIPView, permUserView, permKYCView, permLedgerView},
 	roleMarketing:     {permEarnView, permPartnerView, permPartnerReview, permRewardView, permRewardEdit, permContentEdit},

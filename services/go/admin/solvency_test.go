@@ -21,3 +21,15 @@ func TestComputeSolvency(t *testing.T) {
 		t.Fatal("source errors must fail the check")
 	}
 }
+
+func TestSolvencyFlagsAdminAdjust(t *testing.T) {
+	rep := ComputeSolvency(map[string]string{"USDT": "100"}, []liabItem{{Asset: "USDT", Total: "100", AdminAdjustNet: "40"}}, nil)
+	l := rep.Lines[0]
+	if !rep.OK || l.AdminAdjustNet != "40" || !l.UnbackedAdjust || l.Required != "100" {
+		t.Fatalf("adjust must stay in required and be flagged: %+v", l)
+	}
+	rep = ComputeSolvency(map[string]string{"USDT": "100"}, []liabItem{{Asset: "USDT", Total: "100", AdminAdjustNet: "-5"}}, nil)
+	if rep.Lines[0].UnbackedAdjust {
+		t.Fatal("net debit is not an unbacked credit")
+	}
+}

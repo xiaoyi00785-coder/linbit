@@ -36,9 +36,14 @@ type SolvencyLine struct {
 	// hedge; ≈0 when fully hedged. Both are platform-owned, not liabilities.
 	HedgeBalance string `json:"hedgeBalance"`
 	NetPosition  string `json:"netPosition"`
-	Required     string `json:"required"`
-	Surplus      string `json:"surplus"`
-	OK           bool   `json:"ok"`
+	// AdminAdjustNet: net manual balance adjustments (人工调账 credits −
+	// debits). Included in Required (users can withdraw it) but not backed by
+	// a deposit; UnbackedAdjust flags a positive net so it is reviewed.
+	AdminAdjustNet string `json:"adminAdjustNet"`
+	UnbackedAdjust bool   `json:"unbackedAdjust"`
+	Required       string `json:"required"`
+	Surplus        string `json:"surplus"`
+	OK             bool   `json:"ok"`
 }
 
 type SolvencyReport struct {
@@ -56,6 +61,7 @@ type liabItem struct {
 	VirtualSeed     string `json:"virtualSeed"`
 	ConvertPosition string `json:"convertPosition"`
 	HedgeBalance    string `json:"hedgeBalance"`
+	AdminAdjustNet  string `json:"adminAdjustNet"`
 }
 
 func dz(s string) decimal.Decimal { v, _ := decimal.NewFromString(s); return v }
@@ -73,7 +79,7 @@ func (s *Server) fetchJSON(ctx context.Context, base, path string, out any) erro
 
 // ComputeSolvency is the pure comparison (unit tested).
 func ComputeSolvency(holdings map[string]string, liabs []liabItem, errs []string) SolvencyReport {
-	type agg struct{ users, mm, seed, conv, hedge decimal.Decimal }
+	type agg struct{ users, mm, seed, conv, hedge, adj decimal.Decimal }
 	by := map[string]*agg{}
 	for _, l := range liabs {
 		a := strings.ToUpper(l.Asset)
@@ -85,6 +91,7 @@ func ComputeSolvency(holdings map[string]string, liabs []liabItem, errs []string
 		by[a].seed = by[a].seed.Add(dz(l.VirtualSeed))
 		by[a].conv = by[a].conv.Add(dz(l.ConvertPosition))
 		by[a].hedge = by[a].hedge.Add(dz(l.HedgeBalance))
+		by[a].adj = by[a].adj.Add(dz(l.AdminAdjustNet))
 	}
 	h := map[string]decimal.Decimal{}
 	for k, v := range holdings {
@@ -114,7 +121,7 @@ func ComputeSolvency(holdings map[string]string, liabs []liabItem, errs []string
 		req := decimal.Max(g.users.Sub(g.seed), decimal.Zero)
 		line := SolvencyLine{Asset: a, Holdings: h[a].String(), Users: g.users.String(), MarketMaker: g.mm.String(),
 			VirtualSeed: g.seed.String(), ConvertPosition: g.conv.String(),
-			HedgeBalance: g.hedge.String(), NetPosition: g.conv.Add(g.hedge).String(), Required: req.String(), Surplus: h[a].Sub(req).String(), OK: h[a].GreaterThanOrEqual(req)}
+			HedgeBalance: g.hedge.String(), NetPosition: g.conv.Add(g.hedge).String(), AdminAdjustNet: g.adj.String(), UnbackedAdjust: g.adj.IsPositive(), Required: req.String(), Surplus: h[a].Sub(req).String(), OK: h[a].GreaterThanOrEqual(req)}
 		if !line.OK {
 			rep.OK = false
 		}

@@ -77,6 +77,10 @@ type Liability struct {
 	// HedgeBalance is the platform's real convert exposure.
 	HedgeBalance string `json:"hedgeBalance"`
 	NetPosition  string `json:"netPosition"`
+	// AdminAdjustNet: net manual adjustments (admin_adjust credits − debits).
+	// Still a liability (counted in Total) but NOT backed by any deposit —
+	// reconciliation flags it.
+	AdminAdjustNet string `json:"adminAdjustNet"`
 }
 
 // Liabilities sums every account-holder balance per asset (platform system:*
@@ -101,7 +105,7 @@ func (s *Store) Liabilities(ctx context.Context, mmUser, hedgeUser string) ([]Li
 		for _, p := range []*string{&l.Total, &l.MarketMaker, &l.VirtualSeed} {
 			*p = decimal.RequireFromString(*p).String()
 		}
-		l.ConvertPosition, l.HedgeBalance, l.NetPosition = "0", "0", "0"
+		l.ConvertPosition, l.HedgeBalance, l.NetPosition, l.AdminAdjustNet = "0", "0", "0", "0"
 		out = append(out, l)
 	}
 	if err := rows.Err(); err != nil {
@@ -121,11 +125,20 @@ func (s *Store) Liabilities(ctx context.Context, mmUser, hedgeUser string) ([]Li
 				return &out[i]
 			}
 		}
-		out = append(out, Liability{Asset: a, Total: "0", MarketMaker: "0", VirtualSeed: "0", ConvertPosition: "0", HedgeBalance: "0", NetPosition: "0"})
+		out = append(out, Liability{Asset: a, Total: "0", MarketMaker: "0", VirtualSeed: "0", ConvertPosition: "0", HedgeBalance: "0", NetPosition: "0", AdminAdjustNet: "0"})
 		return &out[len(out)-1]
 	}
 	for a, v := range pos {
 		line(a).ConvertPosition = v.String()
+	}
+	adj, err := s.AdminAdjustNet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for a, v := range adj {
+		if v.Sign() != 0 {
+			line(a).AdminAdjustNet = v.String()
+		}
 	}
 	for a, v := range hedge {
 		if v.Sign() != 0 || pos[a].Sign() != 0 {

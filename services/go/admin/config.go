@@ -52,6 +52,7 @@ type Config struct {
 	CouponBudgetThreshold decimal.Decimal // ADMIN_COUPON_FINANCE_THRESHOLD (default 10000 USDT)
 	RewardReviewThreshold decimal.Decimal // ADMIN_REWARD_FINANCE_THRESHOLD (default 1000 USDT)
 	WithdrawSecondAmount  decimal.Decimal // ADMIN_WITHDRAW_SECOND_REVIEW_USDT (default 5000)
+	AdjustSecondAmount    decimal.Decimal // ADMIN_ADJUST_SECOND_REVIEW_USDT (default 1000); admin setting overrides
 	WithdrawSecondRisk    int             // ADMIN_WITHDRAW_SECOND_REVIEW_RISK (risk > this; default 40)
 	SchedulerInterval     time.Duration   // ADMIN_SCHEDULER_SECONDS (default 30)
 }
@@ -109,6 +110,7 @@ func LoadConfig() Config {
 		CouponBudgetThreshold: decEnv("ADMIN_COUPON_FINANCE_THRESHOLD", "10000"),
 		RewardReviewThreshold: decEnv("ADMIN_REWARD_FINANCE_THRESHOLD", "1000"),
 		WithdrawSecondAmount:  decEnv("ADMIN_WITHDRAW_SECOND_REVIEW_USDT", "5000"),
+		AdjustSecondAmount:    decEnv("ADMIN_ADJUST_SECOND_REVIEW_USDT", "1000"),
 		WithdrawSecondRisk:    common.EnvInt("ADMIN_WITHDRAW_SECOND_REVIEW_RISK", 40),
 		SchedulerInterval:     time.Duration(common.EnvInt("ADMIN_SCHEDULER_SECONDS", 30)) * time.Second,
 	}

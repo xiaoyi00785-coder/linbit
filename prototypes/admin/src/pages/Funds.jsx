@@ -64,7 +64,7 @@ export function Deposit() {
         { t: '状态', render: r => { const [l, k] = D_ST[r.status] || [r.status, '']; return <Tag k={k}>{l}</Tag> } }]} /></ApiState></>
 }
 
-const TX = { deposit: '充值', withdraw: '提现', withdrawal: '提现', transfer: '划转', trade: '现货成交', fee: '手续费', funding: '资金费', liquidation: '强平', copy_profit: '跟单分润', reward: '活动奖励' }
+const TX = { deposit: '充值', withdraw: '提现', withdrawal: '提现', transfer: '划转', trade: '现货成交', fee: '手续费', funding: '资金费', liquidation: '强平', copy_profit: '跟单分润', reward: '活动奖励', admin_adjust: '人工调账', admin_testnet_credit: '测试网充值' }
 export function Ledger() {
   const [uid, setUid] = useState(''); const [page, setPage] = useState(1)
   const r = useApi('ledger', { userId: uid, page, size: 100 })
