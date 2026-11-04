@@ -7,7 +7,7 @@ name: iOS
 
 on:
   push:
-    branches: [main, "feat/ios-*"]
+    branches: [main]
     paths: ["mobile/**", ".github/workflows/ios.yml"]
   pull_request:
     paths: ["mobile/**", ".github/workflows/ios.yml"]
@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-${{ github.ref }}
+  group: ios-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -29,7 +29,7 @@ env:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -106,28 +106,16 @@ jobs:
             sleep 7
             xcrun simctl io "$UDID" screenshot "shots/${screen}-${mode}.png" || true
           }
-          for screen in home markets spot assets login futures futures-chart futures-plan futures-history futures-position-history futures-algo-history futures-tiers futures-funding \
-                        event earn strategy swap chat subaccounts welfare \
-                        spot-plan spot-market-amount spot-fee spot-conditional spot-history-conditional \
-                        futures-liq spot-history-amount futures-pnl futures-pnl-empty futures-pnl-error password-register password-reset password-change; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
-          for screen in futures-leverage futures-mode futures-tpsl futures-kind futures-tools event-confirm \
-                        futures-orders-tpsl futures-orders-plan futures-amend futures-algo-amend-plan futures-algo-amend-tpsl futures-mode-hedge futures-tpsl-partial earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
-            shoot "$screen" light
-          done
-          # 账户安全：概览 / 资料 / 邮箱手机 / 资金密码 / 防钓鱼码 / 设备会话 / 通行密钥 / 关闭 2FA（日间 + 夜间，含错误/空态）
-          for screen in home-avatar security-avatar security-avatar-crop security-avatar-uploading security-avatar-error security security-error kyc-none kyc-pending kyc-rejected kyc-approved kyc-form kyc-form2 kyc-form2-full kyc-error security-profile security-profile-error security-email security-email-error security-phone security-fund security-fund-error security-fund-reset security-antiphishing security-antiphishing-error security-devices security-sessions security-devices-error security-devices-empty security-passkeys security-passkeys-empty security-passkeys-add security-2fa-disable security-2fa-disable-error; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
-          # 资产模块：总览 / 网络 / 账户划转 / 内部转账 / 提现记录 / 地址簿（日间 + 夜间）
-          for screen in assets-overview assets-networks assets-account-transfer assets-internal-transfer assets-withdraw-records assets-address-book; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
-          # 启动动画：开始 / 中间 / 结束 三个时刻（冻结进度），日间 + 夜间
-          for screen in splash-start splash-mid splash-end; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
+          # 截图清单在 mobile/ci/screens.txt（用 fd 3 读取，避免 simctl 吞掉 stdin）：每行 "<screen> [light|dark|both]"，省略模式 = both；# 开头为注释
+          while read -r screen mode _ <&3; do
+            case "$screen" in ""|\#*) continue ;; esac
+            case "${mode:-both}" in
+              light) shoot "$screen" light ;;
+              dark)  shoot "$screen" dark ;;
+              both)  shoot "$screen" light; shoot "$screen" dark ;;
+              *) echo "::error file=mobile/ci/screens.txt::未知模式: $screen $mode"; exit 1 ;;
+            esac
+          done 3< mobile/ci/screens.txt
           # 启动动画录屏（真实播放，日间 + 夜间）
           for mode in light dark; do
             xcrun simctl ui "$UDID" appearance "$mode"
@@ -141,10 +129,6 @@ jobs:
             sleep 4
             kill -INT "$REC" || true
             wait "$REC" || true
-          done
-          # 合约弹窗夜间版
-          for screen in futures-orders-tpsl futures-orders-plan futures-amend futures-algo-amend-plan futures-algo-amend-tpsl futures-mode-hedge futures-tpsl-partial futures-tpsl futures-mode futures-leverage futures-kind futures-tools; do
-            shoot "$screen" dark
           done
 
       - uses: actions/upload-artifact@v4
