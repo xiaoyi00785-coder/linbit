@@ -46,7 +46,9 @@ class AuthInterceptor(
 
 /**
  * 401 自动用 refreshToken 刷新一次后重试（对应 iOS APIClient.refresh）。
- * 并发 401 只触发一次刷新（synchronized + 比较令牌）；刷新失败清除令牌并置 sessionExpired。
+ * 并发 401 只触发一次刷新（synchronized + 比较令牌）。
+ * 只有服务端明确拒绝刷新令牌（401，或 400 且错误码以 AUTH_ 开头）才清除令牌并置 sessionExpired；
+ * 5xx / 429 / 网络错误 / 响应无法解析 都只返回 null，保留登录态，由调用方按普通错误处理。
  */
 class TokenAuthenticator(
     private val tokens: TokenStore,
@@ -70,32 +72,38 @@ class TokenAuthenticator(
             if (current != null && current != used) return req.withToken(current)
             val rt = tokens.refreshToken ?: return null
             // 网络不可达（IOException）时不清除令牌：保持登录态，让调用方按网络错误处理
-            val fresh = try { refresh(rt) } catch (_: IOException) { return null }
-            if (fresh == null) {
-                tokens.clear()
-                if (!tokens.loggingOut) {
-                    tokens.sessionExpired = true
-                    onSessionExpired()
+            val outcome = try { refresh(rt) } catch (_: IOException) { return null }
+            when (outcome) {
+                is RefreshOutcome.Refreshed -> {
+                    tokens.save(outcome.tokens)
+                    return req.withToken(outcome.tokens.accessToken)
                 }
-                return null
+                RefreshOutcome.Rejected -> {
+                    tokens.clear()
+                    if (!tokens.loggingOut) {
+                        tokens.sessionExpired = true
+                        onSessionExpired()
+                    }
+                    return null
+                }
+                RefreshOutcome.Transient -> return null // 服务端暂时不可用 / 限流：保持登录态
             }
-            tokens.save(fresh)
-            return req.withToken(fresh.accessToken)
         }
     }
 
     @Throws(IOException::class)
-    private fun refresh(refreshToken: String): ApiAuthTokens? {
+    private fun refresh(refreshToken: String): RefreshOutcome {
         val body = json.encodeToString(ApiRefreshTokenRequest.serializer(), ApiRefreshTokenRequest(refreshToken))
             .toRequestBody("application/json".toMediaType())
         val req = Request.Builder().url(baseUrl + "auth/refresh").post(body)
             .header("User-Agent", userAgent).header("Accept", "application/json").build()
         return bareClient.newCall(req).execute().use { r ->
-            if (r.code != 200) return@use null
+            val text = r.body?.string().orEmpty()
+            if (r.code != 200) return@use classifyRefresh(r.code, text)
             try {
-                json.decodeFromString(ApiAuthTokens.serializer(), r.body?.string().orEmpty())
+                RefreshOutcome.Refreshed(json.decodeFromString(ApiAuthTokens.serializer(), text))
             } catch (_: Exception) {
-                null
+                RefreshOutcome.Transient
             }
         }
     }
@@ -108,4 +116,22 @@ class TokenAuthenticator(
         while (p != null) { n++; p = p.priorResponse }
         return n
     }
+}
+
+/** 刷新令牌请求的结果。 */
+sealed interface RefreshOutcome {
+    data class Refreshed(val tokens: ApiAuthTokens) : RefreshOutcome
+
+    /** 服务端明确拒绝刷新令牌（已失效 / 被吊销）：必须重新登录。 */
+    data object Rejected : RefreshOutcome
+
+    /** 暂时性失败（5xx、429、网关页、无法解析）：不要清除登录态。 */
+    data object Transient : RefreshOutcome
+}
+
+/** 非 200 响应的判定：仅 401，或 400 且错误码以 AUTH_ 开头，才算令牌被拒绝。 */
+internal fun classifyRefresh(code: Int, body: String?): RefreshOutcome = when {
+    code == 401 -> RefreshOutcome.Rejected
+    code == 400 && ErrorEnvelope.parse(body)?.code?.startsWith("AUTH_") == true -> RefreshOutcome.Rejected
+    else -> RefreshOutcome.Transient
 }
