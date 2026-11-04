@@ -31,6 +31,9 @@ COPY packages/api-client/package.json packages/api-client/
 RUN pnpm install --frozen-lockfile --filter @linbit/${APP}...
 COPY apps/${APP} apps/${APP}
 COPY packages packages
+COPY scripts scripts
+COPY apps/web apps/web
+COPY apps/partner apps/partner
 
 ARG API_PROXY_TARGET=
 ARG NEXT_PUBLIC_NETWORK=
