@@ -63,3 +63,19 @@ main.trade{display:flex;flex-direction:column}main.trade>.tgrid{flex:1 0 auto;gr
 a.lb{display:inline-flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;box-sizing:border-box}
 a.lb.wide{display:flex;width:100%}
 .lbtn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+/* 充值 / 提现网络选择（浅色资产页令牌） */
+.npk{position:relative;max-width:520px}
+.npk-trg{width:100%;border:0;font:inherit;color:inherit;cursor:pointer;justify-content:space-between;text-align:left}
+.npk-cur{display:inline-flex;align-items:center;gap:10px;font-weight:600}.npk-cur .npk-ic{width:20px;height:20px}
+.npk-ar{transition:transform .15s;display:inline-flex}.npk.open .npk-ar{transform:rotate(180deg)}
+.npk-menu{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);background:var(--lb-white);border:1px solid var(--lb-light-border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:12px;display:flex;flex-direction:column;gap:2px;max-height:420px;overflow:auto}
+.npk-warn{display:flex;align-items:center;gap:10px;background:var(--lb-light-fill);border:1px solid var(--lb-light-border);border-radius:8px;padding:10px 12px;margin-bottom:6px;font-size:13px;color:var(--lb-card)}
+.npk-warn svg{flex:none}
+.npk-it{display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;cursor:pointer;min-height:56px;color:var(--lb-card)}
+.npk-it:hover,.npk-it:focus-visible{background:var(--lb-light-fill-hover,var(--lb-light-fill));outline:0}.npk-it.on{background:var(--lb-light-fill)}
+.npk-ic{width:28px;height:28px;border-radius:50%;flex:none;display:block}
+.npk-ph{display:grid;place-items:center;background:var(--lb-light-fill-3,var(--lb-light-fill));font-size:12px;font-weight:700}
+.npk-n{font-weight:700;font-size:15px}
+.npk-rec{font-style:normal;font-size:12px;font-weight:600;color:#5d8a00;background:var(--lb-light-primary-bg,#f2fbdc);border-radius:4px;padding:2px 8px}
+.npk-meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px;color:var(--lb-light-text-2,#8a8d90);white-space:nowrap}
+.npk-st{padding:12px}
