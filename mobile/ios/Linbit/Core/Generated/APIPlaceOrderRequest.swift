@@ -7,6 +7,7 @@
 
 import Foundation
 
+/** limit 单需 price + quantity；market 卖单需 quantity；market 买单 quantity（按基础币数量， 以 最优卖价×(1+MARKET_BUY_SLIPPAGE，默认 5%) 为保护价冻结并按 IOC 成交，无卖单返回 NO_LIQUIDITY） 与 quoteOrderQty（按计价币金额）二选一。  */
 public struct APIPlaceOrderRequest: Codable, JSONEncodable, Hashable {
 
     public var symbol: String
@@ -14,18 +15,22 @@ public struct APIPlaceOrderRequest: Codable, JSONEncodable, Hashable {
     public var type: APIOrderType
     /** limit 单必填 */
     public var price: String?
-    public var quantity: String
+    /** 基础币数量；limit 单与 market 卖单必填，market 买单与 quoteOrderQty 二选一 */
+    public var quantity: String?
+    /** 仅 market 买单：按计价币金额下单（与 quantity 二选一） */
+    public var quoteOrderQty: String?
     public var timeInForce: APITimeInForce?
     /** 等价于 timeInForce=PostOnly；会立即成交时返回 POST_ONLY_REJECTED */
     public var postOnly: Bool?
     public var clientOrderId: String?
 
-    public init(symbol: String, side: APIOrderSide, type: APIOrderType, price: String? = nil, quantity: String, timeInForce: APITimeInForce? = nil, postOnly: Bool? = nil, clientOrderId: String? = nil) {
+    public init(symbol: String, side: APIOrderSide, type: APIOrderType, price: String? = nil, quantity: String? = nil, quoteOrderQty: String? = nil, timeInForce: APITimeInForce? = nil, postOnly: Bool? = nil, clientOrderId: String? = nil) {
         self.symbol = symbol
         self.side = side
         self.type = type
         self.price = price
         self.quantity = quantity
+        self.quoteOrderQty = quoteOrderQty
         self.timeInForce = timeInForce
         self.postOnly = postOnly
         self.clientOrderId = clientOrderId
@@ -37,6 +42,7 @@ public struct APIPlaceOrderRequest: Codable, JSONEncodable, Hashable {
         case type
         case price
         case quantity
+        case quoteOrderQty
         case timeInForce
         case postOnly
         case clientOrderId
@@ -50,7 +56,8 @@ public struct APIPlaceOrderRequest: Codable, JSONEncodable, Hashable {
         try container.encode(side, forKey: .side)
         try container.encode(type, forKey: .type)
         try container.encodeIfPresent(price, forKey: .price)
-        try container.encode(quantity, forKey: .quantity)
+        try container.encodeIfPresent(quantity, forKey: .quantity)
+        try container.encodeIfPresent(quoteOrderQty, forKey: .quoteOrderQty)
         try container.encodeIfPresent(timeInForce, forKey: .timeInForce)
         try container.encodeIfPresent(postOnly, forKey: .postOnly)
         try container.encodeIfPresent(clientOrderId, forKey: .clientOrderId)

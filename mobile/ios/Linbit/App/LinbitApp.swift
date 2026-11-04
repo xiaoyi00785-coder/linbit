@@ -85,6 +85,11 @@ struct RootTabView: View {
         switch shot {
         case "markets": router.tab = .markets
         case "spot": router.tab = .spot
+        case "spot-plan": router.tab = .spot; router.shotSheet = "spotPlan"
+        case "spot-market-amount": router.tab = .spot; router.shotSheet = "spotMarketAmount"
+        case "spot-fee": router.tab = .spot; router.shotSheet = "spotFee"
+        case "spot-history-conditional": router.tab = .spot; router.shotSheet = "spotHistoryCond"; router.spotPath.append(SpotRoute.history)
+        case "spot-conditional": router.tab = .spot; router.shotSheet = "spotConditional"
         case "assets": router.tab = .assets
         case "futures": router.tab = .futures; router.futuresTop = 0
         case "futures-leverage": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "leverage"

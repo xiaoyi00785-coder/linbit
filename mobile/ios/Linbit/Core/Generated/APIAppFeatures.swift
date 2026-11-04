@@ -11,15 +11,23 @@ public struct APIAppFeatures: Codable, JSONEncodable, Hashable {
 
     public var features: [String: Bool]?
     public var updatedAt: Date?
+    /** 当前关闭的功能 key（前端显示“即将上线”） */
+    public var comingSoon: [String]?
+    /** 部署网络（NETWORK/APP_ENV），如 mainnet / testnet；未设置为空串 */
+    public var network: String?
 
-    public init(features: [String: Bool]? = nil, updatedAt: Date? = nil) {
+    public init(features: [String: Bool]? = nil, updatedAt: Date? = nil, comingSoon: [String]? = nil, network: String? = nil) {
         self.features = features
         self.updatedAt = updatedAt
+        self.comingSoon = comingSoon
+        self.network = network
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case features
         case updatedAt
+        case comingSoon
+        case network
     }
 
     // Encodable protocol methods
@@ -28,6 +36,8 @@ public struct APIAppFeatures: Codable, JSONEncodable, Hashable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(features, forKey: .features)
         try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(comingSoon, forKey: .comingSoon)
+        try container.encodeIfPresent(network, forKey: .network)
     }
 }
 

@@ -153,11 +153,19 @@ struct OrderConfirmSheet: View {
             VStack(spacing: 12) {
                 kv("委托类型", m.kind.title)
                 kv("方向", m.isBuy ? "买入" : "卖出", color: m.isBuy ? p.up : p.down)
-                kv("委托价格", m.kind == .market ? "市价" : "\(m.priceText) \(m.quote)")
-                kv("委托数量", "\(SpotModel.fmt(m.qty, m.qtyPrec)) \(m.base)")
-                kv(m.kind == .market ? "预估交易额" : "交易额", "\(Fmt.amount(m.amount, 2)) \(m.quote)")
-                kv("预估手续费", "\(Fmt.amount(m.fee, 4)) \(m.isBuy ? m.base : m.quote)")
-                if m.kind == .market {
+                if m.isPlan { kv("触发价", "\(m.triggerText) \(m.quote)") }
+                kv("委托价格", m.marketLike ? "市价" : "\(m.priceText) \(m.quote)")
+                if m.byAmount { kv("下单方式", "按金额") } else { kv("委托数量", "\(SpotModel.fmt(m.qty, m.qtyPrec)) \(m.base)") }
+                kv(m.marketLike && !m.byAmount ? "预估交易额" : "交易额", "\(Fmt.amount(m.amount, 2)) \(m.quote)")
+                kv("手续费率", SpotCond.pct(m.feeRate))
+                kv("预估手续费", "\(Fmt.amount(m.fee, 4)) \(m.quote)")
+                if m.tpsl && !m.isPlan {
+                    if Dec.parse(m.tpText) > 0 { kv("止盈触发价", "\(m.tpText) \(m.quote)") }
+                    if Dec.parse(m.slText) > 0 { kv("止损触发价", "\(m.slText) \(m.quote)") }
+                }
+                if m.isPlan {
+                    InlineBanner(text: "最新价到达触发价后按\(m.planMarket ? "市价" : "委托价格")下单，触发前将冻结相应资金")
+                } else if m.kind == .market {
                     InlineBanner(text: "市价单将以盘口最优价格立即成交，实际成交价可能与预估存在偏差")
                 }
                 HStack { Checkbox(on: $skip, label: "不再提示（可在偏好设置中恢复）"); Spacer() }.padding(.top, 4)

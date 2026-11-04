@@ -15,8 +15,8 @@ public struct APISecurityLevel: Codable, JSONEncodable, Hashable {
         case high = "high"
     }
     public enum APIMissing: String, Codable, CaseIterable {
-        case email = "email"
-        case phone = "phone"
+        case emailverified = "emailVerified"
+        case phoneverified = "phoneVerified"
         case twofactor = "twoFactor"
         case fundpassword = "fundPassword"
         case antiphishing = "antiPhishing"
@@ -27,12 +27,15 @@ public struct APISecurityLevel: Codable, JSONEncodable, Hashable {
     public var max: Int
     public var level: APILevel
     public var missing: [APIMissing]
+    /** 每一项的完成状态（固定 5 项、固定顺序）；清单必须按此渲染，✓ 数量恒等于 score */
+    public var items: [APISecurityLevelItemsInner]?
 
-    public init(score: Int, max: Int, level: APILevel, missing: [APIMissing]) {
+    public init(score: Int, max: Int, level: APILevel, missing: [APIMissing], items: [APISecurityLevelItemsInner]? = nil) {
         self.score = score
         self.max = max
         self.level = level
         self.missing = missing
+        self.items = items
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -40,6 +43,7 @@ public struct APISecurityLevel: Codable, JSONEncodable, Hashable {
         case max
         case level
         case missing
+        case items
     }
 
     // Encodable protocol methods
@@ -50,6 +54,7 @@ public struct APISecurityLevel: Codable, JSONEncodable, Hashable {
         try container.encode(max, forKey: .max)
         try container.encode(level, forKey: .level)
         try container.encode(missing, forKey: .missing)
+        try container.encodeIfPresent(items, forKey: .items)
     }
 }
 

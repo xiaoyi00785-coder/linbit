@@ -13,6 +13,7 @@ struct SpotTradeView: View {
     @State private var showConfirm = false
     @State private var showPrecision = false
     @State private var showPairs = false
+    @State private var showFee = false
     @State private var confirm: ConfirmRequest?
     @AppStorage("lb.spot.skipConfirm") private var skipConfirm = false
 
@@ -34,7 +35,17 @@ struct SpotTradeView: View {
             .refreshable { await m.loadBook(); await m.refreshAccount() }
         }
         .background(p.bg.ignoresSafeArea())
-        .task { await m.start() }
+        .task {
+            switch router.shotSheet {
+            case "spotPlan": m.kind = .plan; m.triggerText = "65000"; m.priceText = "64900"; m.qtyText = "0.01"; showConfirm = true
+            case "spotMarketAmount": m.kind = .market; m.marketBuyByAmount = true; m.amountText = "100"
+            case "spotFee": showFee = true
+            case "spotConditional": bottomTab = 2
+            default: break
+            }
+            if ["spotPlan", "spotMarketAmount", "spotFee", "spotConditional"].contains(router.shotSheet ?? "") { router.shotSheet = nil }
+            await m.start()
+        }
         .onDisappear { m.stop() }
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshAccount() } }
         .onChange(of: router.spotSymbol) { s in
@@ -42,12 +53,13 @@ struct SpotTradeView: View {
             Task { await m.start() }
         }
         .lbSheet($showKind) { OrderKindSheet(selected: m.kind) { k in
-            if k.available { m.kind = k; m.qtyEdited() } else { ToastCenter.shared.show("计划委托即将开放") }
+            if k.available { m.kind = k; m.qtyEdited() } else { ToastCenter.shared.show("该委托类型暂未开放") }
             showKind = false
         } onClose: { showKind = false } }
         .lbSheet($showConfirm) { OrderConfirmSheet(m: m, skip: $skipConfirm) {
             showConfirm = false; Task { _ = await m.place() }
         } onClose: { showConfirm = false } }
+        .lbSheet($showFee) { SpotFeeSheet(m: m) { showFee = false } }
         .lbSheet($showPrecision) { PrecisionSheet(m: m) { showPrecision = false } }
         .lbSheet($showPairs) { PairPickerSheet(current: m.symbol) { s in showPairs = false; router.spotSymbol = s } onClose: { showPairs = false } }
         .lbConfirm($confirm)
@@ -97,25 +109,45 @@ struct SpotTradeView: View {
                 }.padding(.horizontal, 10).frame(height: 34).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
             }.buttonStyle(PressableStyle(scale: 1))
 
-            if m.kind == .market {
-                Text("以当前最优价格成交").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
-                    .frame(maxWidth: .infinity).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
-            } else {
-                NumberBox(label: "价格", unit: m.quote, text: $m.priceText, onEdit: m.qtyEdited)
+            if m.isPlan {
+                NumberBox(label: "触发价", unit: m.quote, text: $m.triggerText, onEdit: m.qtyEdited)
+                PillSegment(items: ["限价", "市价"], selected: Binding(get: { m.planMarket ? 1 : 0 }, set: { m.planMarket = $0 == 1; m.qtyEdited() }), height: 30)
             }
-            NumberBox(label: "数量", unit: m.base, text: $m.qtyText, onEdit: m.qtyEdited)
-            PercentSlider(value: Binding(get: { m.percent }, set: { m.setPercent($0) }), tint: m.isBuy ? p.up : p.down)
-                .padding(.horizontal, 2)
-            NumberBox(label: "交易额", unit: m.quote, text: $m.amountText, onEdit: m.amountEdited)
-            Checkbox(on: $m.tpsl, label: "止盈/止损")
-            if m.tpsl {
+            if m.marketLike {
+                Text(m.isPlan ? "触发后以市价成交" : "以当前最优价格成交").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
+                    .frame(maxWidth: .infinity).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
+                if m.isBuy {
+                    PillSegment(items: ["按金额", "按数量"], selected: Binding(get: { m.marketBuyByAmount ? 0 : 1 }, set: { m.marketBuyByAmount = $0 == 0 }), height: 30)
+                        .accessibilityIdentifier("spot.marketBuyMode")
+                }
+            } else {
+                NumberBox(label: m.isPlan ? "委托价格" : "价格", unit: m.quote, text: $m.priceText, onEdit: m.qtyEdited)
+            }
+            if m.byAmount {
+                NumberBox(label: "交易额", unit: m.quote, text: $m.amountText, onEdit: {})
+                PercentSlider(value: Binding(get: { m.percent }, set: { v in m.percent = v; m.amountText = SpotModel.fmt(m.availQuote * Decimal(v), 2) }), tint: p.up)
+                    .padding(.horizontal, 2)
+            } else {
+                NumberBox(label: "数量", unit: m.base, text: $m.qtyText, onEdit: m.qtyEdited)
+                PercentSlider(value: Binding(get: { m.percent }, set: { m.setPercent($0) }), tint: m.isBuy ? p.up : p.down)
+                    .padding(.horizontal, 2)
+                NumberBox(label: "交易额", unit: m.quote, text: $m.amountText, onEdit: m.amountEdited)
+            }
+            if !m.isPlan { Checkbox(on: $m.tpsl, label: "止盈/止损") }
+            if m.tpsl && !m.isPlan {
                 NumberBox(label: "止盈触发价", unit: m.quote, text: $m.tpText, onEdit: {})
                 NumberBox(label: "止损触发价", unit: m.quote, text: $m.slText, onEdit: {})
             }
             VStack(spacing: 6) {
                 info("可用", "\(Fmt.amount(m.isBuy ? m.availQuote : m.availBase, 2)) \(m.isBuy ? m.quote : m.base)", plus: true)
                 info(m.isBuy ? "可买" : "可卖", "\(Fmt.amount(m.isBuy ? m.maxQty : m.availBase * m.price, m.isBuy ? m.qtyPrec : 2)) \(m.isBuy ? m.base : m.quote)")
-                info("预估手续费", Fmt.amount(m.fee, 2))
+                Button { showFee = true } label: {
+                    HStack(spacing: 4) {
+                        Text("手续费率").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).underline(pattern: .dot)
+                        Spacer()
+                        Text("\(SpotCond.pct(m.feeRate)) ≈ \(Fmt.amount(m.fee, 4))").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                    }
+                }.buttonStyle(.plain).accessibilityIdentifier("spot.feeRate")
             }
             LBButton(title: session.isLoggedIn ? "\(m.isBuy ? "买入" : "卖出") \(m.base)" : "登录 / 注册",
                      kind: session.isLoggedIn ? (m.isBuy ? .buy : .sell) : .primary, height: 40, loading: m.placing) { submit() }
@@ -138,7 +170,6 @@ struct SpotTradeView: View {
     private func submit() {
         session.requireLogin {
             if let e = m.validation { ToastCenter.shared.show(e, .error); return }
-            if m.tpsl { ToastCenter.shared.show("止盈止损需后端条件单接口，当前仅提交主委托") }
             if skipConfirm { Task { _ = await m.place() } } else { showConfirm = true }
         }
     }
@@ -148,6 +179,7 @@ struct SpotTradeView: View {
         VStack(spacing: 0) {
             HStack(spacing: 18) {
                 tabText("委托(\(m.openOrders.count))", 0, arrow: true)
+                tabText("条件单(\(m.conditional.count))", 2)
                 tabText("交易机器人(0)", 1)
                 Spacer()
                 NavigationLink(value: SpotRoute.history) {
@@ -180,6 +212,8 @@ struct SpotTradeView: View {
                         }
                     }
                 }
+            } else if bottomTab == 2 {
+                condSection
             } else {
                 HStack(spacing: 18) {
                     ForEach(["现货网格", "现货定投"].indices, id: \.self) { i in
@@ -193,6 +227,27 @@ struct SpotTradeView: View {
                     }.buttonStyle(PressableStyle())
                 }.padding(.horizontal, Spacing.pageH).padding(.top, 14)
                 EmptyStateView(text: "暂无交易机器人")
+            }
+        }
+    }
+    @ViewBuilder private var condSection: some View {
+        switch m.condState {
+        case .idle, .loading: SkeletonList(rows: 3).padding(.top, 14)
+        case .failed(let e): ErrorStateView(message: e) { Task { await m.loadConditional() } }.padding(.top, 14)
+        case .loaded:
+            if m.shownConditional.isEmpty {
+                EmptyStateView(text: session.isLoggedIn ? "暂无未触发的条件单" : "登录后查看条件单")
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(m.shownConditional) { o in
+                        ConditionalOrderRow(o: o) {
+                            confirm = .init(title: "撤销条件单", message: "撤销后将释放冻结资金，确定撤销吗？", confirmTitle: "撤销", destructive: true) {
+                                Task { await m.cancelConditional(o) }
+                            }
+                        }
+                        Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
+                    }
+                }.padding(.top, 8)
             }
         }
     }

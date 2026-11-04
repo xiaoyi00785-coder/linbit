@@ -595,7 +595,7 @@ struct AmendAlgoSheet: View {
                     }
                     if !market { NumberBox(label: "新委托价", unit: m.quote, text: $price, onEdit: { error = nil }) }
                 }
-                NumberBox(label: isPlan ? "新数量" : "新数量（留空为全部仓位）", unit: m.base, text: $qty, onEdit: { error = nil })
+                NumberBox(label: isPlan ? "新数量" : "新数量（留空则保持原数量）", unit: m.base, text: $qty, onEdit: { error = nil })
                 if let mq = maxQty { Text("最多 \(Dec.plain(mq, m.qtyPrec)) \(m.base)（当前持仓）").font(.lb(FontSize.small)).foregroundColor(p.textTertiary) }
                 Text("未修改的项将保持原值").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
                 if let error { InlineBanner(text: error) }
