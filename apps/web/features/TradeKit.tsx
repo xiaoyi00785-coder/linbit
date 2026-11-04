@@ -14,7 +14,7 @@ import type { components } from "@linbit/api-client";
 import { fmtFixed, restBase, useOrderBook, useRecentTrades, useSymbols, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
-export type Contract = { symbol: string; baseAsset: string; quoteAsset: string; maxLeverage: number; maintenanceMarginRate: string; tickSize: string; minQty: string; maxQty?: string; makerFeeRate: string; takerFeeRate: string };
+export type Contract = { symbol: string; baseAsset: string; quoteAsset: string; maxLeverage: number; maintenanceMarginRate: string; tickSize: string; minQty: string; maxQty: string; makerFeeRate: string; takerFeeRate: string };
 const decOf = (s?: string) => (s && s.includes(".") ? s.split(".")[1].replace(/0+$/, "").length : 0);
 let ctP: Promise<Contract[]> | null = null;
 export function loadContracts() {
@@ -107,7 +107,7 @@ function useFutTicker(sym: string, on: boolean) {
   useEffect(() => {
     if (!on) return;
     let dead = false;
-    const get = () => !document.hidden && fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => !dead && j && setT((j.tickers ?? [j]).find((x: any) => x.symbol === sym) ?? null)).catch(() => {});
+    const get = () => !document.hidden && fetch(`${restBase()}/futures/market/ticker?symbol=${sym}`).then((r) => (r.ok ? r.json() : null)).then((j) => !dead && j && setT(normFutT((j.tickers ?? [j]).find((x: any) => x.symbol === sym)))).catch(() => {});
     get(); const i = setInterval(get, 5000);
     const v = () => get(); document.addEventListener("visibilitychange", v);
     return () => { dead = true; clearInterval(i); document.removeEventListener("visibilitychange", v); };
@@ -298,7 +298,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const pErr = ty !== "market" && Number(price) && Math.abs(Number(price) / tick - Math.round(Number(price) / tick)) > 1e-6 ? `价格需为 ${c?.tickSize ?? tick} 的整数倍` : "";
   const notional = qn * px;
   const margin = st.lev ? notional / st.lev : 0;
-  const fee = notional * Number(c?.takerFeeRate ?? 0.0005);
+  const fee = c?.takerFeeRate != null ? notional * Number(c.takerFeeRate) : null; // 费率只取合约数据，无数据不估算
   const submit = async (side: "buy" | "sell") => {
     if (!authed) return nav("/login");
     if (!qty.trim()) return toast("请输入数量", "err");
@@ -369,7 +369,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       {act === 0 && <label className="tk-ck2"><input type="checkbox" checked={tpsl} onChange={(e) => setTpsl(e.target.checked)} />止盈/止损</label>}
       {act === 0 && tpsl && <div className="tk-tp2"><div className="inp"><small>止盈</small><input inputMode="decimal" placeholder="触发价" value={tp} onChange={(e) => setTp(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止盈触发价类型" value={tpTT} onChange={(e) => setTpTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div><div className="inp"><small>止损</small><input inputMode="decimal" placeholder="触发价" value={sl} onChange={(e) => setSl(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="止损触发价类型" value={slTT} onChange={(e) => setSlTT(e.target.value as "LAST" | "MARK")}><option value="MARK">标记价</option><option value="LAST">最新价</option></select></div></div>}
       <div className="kv2 g"><span>保证金</span><span>{fmtFixed(margin, 4)} USDT</span></div>
-      <div className="kv2 g"><span>预估手续费（{(Number(c?.takerFeeRate ?? 0.0005) * 100).toFixed(2)}%）</span><span>{fmtFixed(fee, 4)} USDT</span></div>
+      <div className="kv2 g"><span>预估手续费{c?.takerFeeRate != null ? `（${+(Number(c.takerFeeRate) * 100).toFixed(4)}%）` : ""}</span><span>{fee == null ? "--" : fmtFixed(fee, 4) + " USDT"}</span></div>
       {authed ? (
         <div className="tk-btns">
           <button className="lbtn tk-long" disabled={busy || !!qErr || !!pErr} onClick={() => submit(act === 0 ? "buy" : "buy")}>{act === 0 ? "开多" : "平空"}</button>
@@ -454,6 +454,8 @@ function CalcModal({ pair, lev: l0, max, onClose }: { pair: PairMeta; lev: numbe
   );
 }
 
+/** 后端 r3 起 /futures/market/ticker 返回 high/low/quoteVolume/volume/priceChangePercent（已是百分数，"1.23" = 1.23%）；兼容旧字段名。 */
+export const normFutT = (x: any) => x ? { ...x, priceChangePercent24h: x.priceChangePercent ?? x.priceChangePercent24h, highPrice24h: x.high ?? x.highPrice24h, lowPrice24h: x.low ?? x.lowPrice24h, turnover24h: x.quoteVolume ?? x.turnover24h, volume24h: x.volume ?? x.volume24h } : null;
 /** 合约 K 线：GET /futures/market/klines（无 WS，订阅时 5s 轮询，页面隐藏暂停）。
  *  兼容数组或 { source, items|klines }；顶层 source==='index' 时整段按“无成交”样式绘制。 */
 type FutK = { time?: number; openTime?: number; open: string; high: string; low: string; close: string; volume: string; source?: string };
