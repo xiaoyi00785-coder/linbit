@@ -295,7 +295,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   // 市价单 / 平仓未填价格：保证金与手续费按标记价（无则最新价）估算
   const px = ty === "market" || (act === 1 && !Number(price)) ? mark : Number(price) || 0;
   const qErr = !qn ? "" : minQ && qn < minQ ? `最小下单数量 ${c?.minQty} ${pair.base}` : maxQ && qn > maxQ ? `最大下单数量 ${c?.maxQty} ${pair.base}` : "";
-  const pErr = ty !== "market" && Number(price) && Math.abs(Number(price) / tick - Math.round(Number(price) / tick)) > 1e-6 ? `价格需为 ${c?.tickSize ?? tick} 的整数倍` : "";
+  const pErr = ty !== "market" && price !== "" && price !== "-" && !(Number(price) > 0) ? "价格必须大于 0" : ty !== "market" && price.startsWith("-") ? "价格必须大于 0" : ty !== "market" && Number(price) && Math.abs(Number(price) / tick - Math.round(Number(price) / tick)) > 1e-6 ? `价格需为 ${c?.tickSize ?? tick} 的整数倍` : "";
   const notional = qn * px;
   const margin = st.lev ? notional / st.lev : 0;
   const fee = c?.takerFeeRate != null ? notional * Number(c.takerFeeRate) : null; // 费率只取合约数据，无数据不估算
@@ -360,7 +360,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       <div className="pt sm" role="tablist" aria-label="订单类型">{([["limit", "限价"], ["market", "市价"], ["plan", "计划委托"]] as const).map(([k, x]) => <b key={k} {...tabProps(ty === k, () => setTy(k))} className={ty === k ? "on" : ""} onClick={() => setTy(k)}>{x}</b>)}</div>
       <div className="kv2"><span>可用</span><b>{avail != null ? fmtFixed(avail, 4) : "--"} USDT</b></div>
       {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(cut(e.target.value, tickDp))} onBlur={() => setTrig(snap(trig))} /><select className="tk-tt" aria-label="触发价类型" value={trigType} onChange={(e) => setTrigType(e.target.value as "LAST" | "MARK")}><option value="LAST">最新价</option><option value="MARK">标记价</option></select></div>}
-      {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => setPrice(cut(e.target.value, tickDp))} onBlur={() => setPrice(snap(price))} aria-invalid={!!pErr} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
+      {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => { const v = e.target.value.trim(); setPrice(v.startsWith("-") ? "-" + cut(v, tickDp) : cut(e.target.value, tickDp)); }} onBlur={() => Number(price) > 0 && setPrice(snap(price))} aria-invalid={!!pErr} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
       {pErr && <div className="tk-ferr" role="alert">{pErr}</div>}
       <div className="inp"><small>数量</small><input inputMode="decimal" aria-label="数量" placeholder={minQ ? `最小 ${c?.minQty}` : ""} aria-invalid={!!qErr || (qty !== "" && !(qn > 0))} value={qty} onChange={(e) => { if (/-/.test(e.target.value)) { toast("数量不能为负数", "err"); return; } setQty(cut(e.target.value, pair.qp).replace(/(\..*)\./g, "$1")); setPc(0); }} /><em>{pair.base}</em></div>
       {qErr && <div className="tk-ferr" role="alert">{qErr}</div>}

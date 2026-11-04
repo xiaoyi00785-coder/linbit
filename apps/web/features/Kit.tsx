@@ -47,7 +47,7 @@ function Security({ kind = "other", label, close }: MP) {
     if (kind === "totp") { if (!bind) return toast(be || "绑定密钥未就绪", "err"); const code = (v[fields[0]] || "").trim(); if (!/^\d{6}$/.test(code)) return toast("请输入 6 位验证码", "err");
       setBusy(true); const r = await rest<any>("POST", "/2fa/totp/verify", { code }); setBusy(false); if (r.ok) { toast("谷歌验证已开启"); close(); } else toast(r.status === 400 ? "验证码错误或已过期" : (r as any).error || "验证失败", "err"); return; }
     toast("该安全设置接口暂未开放，请稍后再试", "info"); close(); };
-  return <Box title={label || t} onClose={close} dismissible={!busy} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>{busy ? "提交中…" : "确认"}</button></>}>
+  return <Box title={label || t} onClose={close} dismissible={kind !== "totp" && !busy} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>{busy ? "提交中…" : "确认"}</button></>}>
     {kind === "totp" && (bind ? <><div className="kit-qr"><QRCodeSVG value={bind.otpauthUri} size={140} marginSize={2} /></div><p className="tk-txt">无法扫码？手动输入密钥：<b>{bind.secret}</b> <a role="button" onClick={() => copyText(bind.secret)}>复制</a></p></> : <p className="tk-txt">{be || "正在获取绑定密钥…"}</p>)}
     {kind === "passkey" && <p className="tk-txt">尚未添加通行密钥。通行密钥使用设备生物识别登录，更安全便捷。</p>}
     {fields.map((x) => <div key={x}><div className="tk-lbl">{x}</div><input className="kit-in" type={/密码/.test(x) ? "password" : "text"} value={v[x] || ""} onChange={(e) => setV({ ...v, [x]: e.target.value })} placeholder={"请输入" + x} /></div>)}
