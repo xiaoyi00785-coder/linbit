@@ -288,7 +288,8 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const fee = notional * Number(c?.takerFeeRate ?? 0.0005);
   const submit = async (side: "buy" | "sell") => {
     if (!authed) return nav("/login");
-    if (!qn) return toast("请输入数量", "err");
+    if (!qty.trim()) return toast("请输入数量", "err");
+    if (!(qn > 0) || !isFinite(qn)) return toast("数量必须大于 0", "err");
     if (ty !== "market" && !Number(price)) return toast("请输入价格", "err");
     if (ty === "plan" && !Number(trig)) return toast("请输入触发价", "err");
     const hedge = st.mode.pos === "split";
@@ -341,7 +342,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       <div className="kv2"><span>可用</span><b>{avail != null ? fmtFixed(avail, 4) : "--"} USDT</b></div>
       {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(e.target.value.replace(/[^\d.]/g, ""))} /><select className="tk-tt" aria-label="触发价类型" value={trigType} onChange={(e) => setTrigType(e.target.value as "LAST" | "MARK")}><option value="LAST">最新价</option><option value="MARK">标记价</option></select></div>}
       {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
-      <div className="inp"><small>数量</small><input inputMode="decimal" value={qty} onChange={(e) => { setQty(e.target.value.replace(/[^\d.]/g, "")); setPc(0); }} /><em>{pair.base}</em></div>
+      <div className="inp"><small>数量</small><input inputMode="decimal" value={qty} onChange={(e) => { if (/-/.test(e.target.value)) { toast("数量不能为负数", "err"); return; } setQty(e.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1")); setPc(0); }} aria-invalid={qty !== "" && !(qn > 0)} /><em>{pair.base}</em></div>
       <div className="slider lb-sl"><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="比例" /></div>
       {ty === "limit" && <div className="tk-tif">{TIF.map(([k, x]) => <b key={k} className={tif === k ? "on" : ""} onClick={() => setTif(k)}>{x}</b>)}</div>}
       {act === 0 && <label className="tk-ck2"><input type="checkbox" checked={tpsl} onChange={(e) => setTpsl(e.target.checked)} />止盈/止损</label>}

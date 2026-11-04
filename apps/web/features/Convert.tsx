@@ -171,7 +171,7 @@ export function Convert() {
           </div>
           {qErr && <div className="cv-err">{qErr}</div>}
           {!authed ? <Link to="/login" className="lb wide">登录后兑换</Link>
-            : <button type="button" className={"lb wide" + (canGo ? "" : " dis")} disabled={!canGo} onClick={() => setConfirm(true)}>{avail === "no" ? "暂未开放" : "兑换"}</button>}
+            : <button type="button" className={"lb wide" + (canGo ? "" : " dis")} disabled={!canGo} onClick={() => setConfirm(true)}>{avail === "no" ? "暂未开放" : !amt ? "请输入兑换数量" : amtErr ? amtErr : !quote ? "获取报价中…" : "兑换"}</button>}
         </div>
       </div>
       {authed && avail === "yes" && (
