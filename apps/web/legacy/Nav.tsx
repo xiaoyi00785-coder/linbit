@@ -2,10 +2,9 @@
 "use client";
 import { LANGS, getLang, setLang as setUiLang } from '@/lib/i18n'
 import { useFiat, setCurrency } from '@/lib/fiat'
-import { aprPct, useMaxApr } from '@/lib/live'
 import { siteUrl } from '@/lib/site'
 import { goto } from "@/lib/ui";
-import {G,SOCIAL} from "@/components/Glyph";
+import {G} from "@/components/Glyph";
 import { DOCS } from "./pagedata";
 import { FuturesInfo, FUTURES_INFO } from "./FuturesInfo";
 import { SideIcon } from "../components/SideIcon";
@@ -34,7 +33,6 @@ const M={
 '更多':{w:0,cols:[['合约数据',[['scale','仓位档位','快速了解仓位档位规则'],['house','逐仓参数','查看逐仓交易对参数'],['chart','标记价格历史','查看标记价格历史走势'],['index','指数价格','合约价格指数历史'],['rate','资金费率历史','获取历史资金费率数据'],['shield','保险基金','查看风险保障基金余额']]],['学院',[['book','linbit 学院','学习区块链与数字资产知识','NEW']],'机构',[['api','API','开发者文档与接口支持']]],['帮助',[['help','帮助中心','查看帮助文档'],['announce','公告中心','查看平台重要公告']]]]}}
 const R={'福利中心':'/rewards','公告中心':'/announcements','公告':'/announcements','卡券中心':'/coupons','邀请好友':'/invite','推荐活动':'/invite','积分嘉年华':'/points','充值奖励':'/rewards','交易打卡挑战':'/rewards','简单赚币':'/earn/simple','VIP 私享理财':'/earn/vip','质押借币':'/earn/loan','新人福利':'/rewards','交易大赛':'/rewards','邀请返佣':'/invite','API':'/api','跟单交易':'/copy','合约跟单':'/copy','法币购买':'/buy','充值':'/deposit','闪兑':'/convert','理财总览':'/earn','活期理财':'/earn/simple','定期理财':'/earn/bao','链上理财':'/earn/onchain','现货网格':'/strategy','现货交易':'/spot','U本位永续':'/futures','股票合约':'/coming-soon/stocks','模拟交易':'/sim','传统金融':'/futures',}
 const path=t=>soonPath(t)||R[t]||'/p/'+encodeURIComponent(t)
-function AprTag(){const a=useMaxApr('fixed');return a?<em className="new">最高 {aprPct(a)} APR</em>:null}
 const Item=([k,t,d,hot])=><Link className="dit" key={t} to={path(t)}><I k={k}/><div><b>{t}{hot===1&&<> <G n="fire" s={12} className="hotf"/></>}{soonPath(t)&&<em className="soon-b">即将上线</em>}{hot==='NEW'&&<em className="new">NEW</em>}{hot==='APR'&&<AprTag/>}{hot==='HOT'&&<G n="star" s={12} className="hotf"/>}</b><small>{d}</small></div></Link>
 function Panel({m}){if(m.cols)return <div className={m.w?"dd":"dd wide"} style={m.w?{width:m.w}:undefined}><div className={"ddcols c"+m.cols.length}>{m.cols.map((c,i)=><div key={i}>{c.map((x,j)=>typeof x==='string'?<h5 key={j}>{x}</h5>:x.map(Item))}</div>)}</div></div>
 if(m.groups)return <div className={m.w?"dd nop":"dd nop wide"} style={m.w?{width:m.w}:undefined}><div className="ddsplit"><div>{m.groups.map(([g,l])=><div key={g}><h6>{g}</h6>{l.map(Item)}</div>)}</div><div className="ddcoins"><div className="dds"><G n="search" s={14}/> 搜索币种</div>{coins.slice(0,9).map(c=><Link to="/futures" key={c.s}><CoinIcon s={c.s} col={c.col} size={20}/>{c.s}USDT</Link>)}</div></div></div>

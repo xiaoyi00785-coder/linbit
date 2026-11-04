@@ -80,7 +80,7 @@ function SecModal({ kind, sec, onClose }: { kind: Kind; sec: SecurityOverview; o
           <p className="lg sm">修改成功后，除当前设备外的其他登录会话将全部退出。</p>
         </>}
         {(kind === "email" || kind === "phone") && <>
-          {kind === "email" ? <label className="fx-field">新邮箱<input value={v("email")} onChange={set("email")} placeholder="name@example.com" /></label>
+          {kind === "email" ? <label className="fx-field">新邮箱<input value={v("email")} onChange={set("email")} placeholder="请输入新邮箱" /></label>
             : <label className="fx-field">新手机号<div className="sec-ph"><select value={v("cc")} onChange={set("cc")}>{["+86", "+852", "+853", "+886", "+1", "+65", "+81", "+82", "+44"].map((c) => <option key={c}>{c}</option>)}</select><input inputMode="numeric" value={v("phone")} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, "") })} placeholder="手机号" /></div></label>}
           <div className="fx-field">新{kind === "email" ? "邮箱" : "手机"}验证码<CodeInput value={v("newCode")} onChange={(x) => setF({ ...f, newCode: x })} send={async () => { const r = await sendContactCode(contact); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.ok ? undefined : secMsg(r) }; }} /></div>
           <div className="fx-field">{oldLabel}<CodeInput value={v("oldCode")} onChange={(x) => setF({ ...f, oldCode: x })} send={async () => { const r = await sendAccountCode("security"); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error }; }} /></div>

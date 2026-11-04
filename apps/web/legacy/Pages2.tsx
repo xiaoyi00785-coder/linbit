@@ -1,6 +1,6 @@
 // @ts-nocheck
 "use client";
-import {G,SOCIAL} from "@/components/Glyph";
+import {G} from "@/components/Glyph";
 import { openM } from '@/features/Kit'
 import { useAuthStore } from '@/lib/store'
 import { toast, goto, copyTxt } from '@/lib/ui'

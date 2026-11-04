@@ -3,7 +3,7 @@
 import {useHideSmall} from '@/lib/hideSmall'
 import { useGrowthConfig, pct } from '@/lib/growth'
 import { openTransfer } from "@/components/Transfer";
-import {G,SOCIAL} from "@/components/Glyph";
+import {G} from "@/components/Glyph";
 import { MenuIcon } from "../components/MenuIcon";
 import { SideIcon } from "../components/SideIcon";
 import { useFiat, setCurrency } from '@/lib/fiat'

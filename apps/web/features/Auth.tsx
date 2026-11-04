@@ -104,7 +104,7 @@ function useAcct(initial: Kind = "邮箱") {
   const shown = kind === "邮箱" ? val : `+${cc} ${val}`;
   const label = kind === "邮箱" ? "邮箱" : "手机号";
   /** 区分空值与格式错误 */
-  const msg = !val ? `请输入${label}` : !valid ? (kind === "邮箱" ? "邮箱格式不正确，例如 name@example.com" : "手机号格式不正确") : "";
+  const msg = !val ? `请输入${label}` : !valid ? (kind === "邮箱" ? "邮箱格式不正确，请检查后重新输入" : "手机号格式不正确") : "";
   const ui = (
     <>
       <div className="pt aline" role="tablist" aria-label="账户类型">

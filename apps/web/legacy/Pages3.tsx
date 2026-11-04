@@ -4,7 +4,7 @@ import {useHideSmall,filterSmall} from '@/lib/hideSmall'
 import { openTransfer } from "@/components/Transfer";
 import { goto, copyTxt } from "@/lib/ui";
 import { useOverview } from "@/lib/wallet";
-import {G,SOCIAL} from "@/components/Glyph";
+import {G} from "@/components/Glyph";
 import { MenuIcon } from "../components/MenuIcon";
 import { SideIcon } from "../components/SideIcon";
 import { toast } from '@/lib/ui'

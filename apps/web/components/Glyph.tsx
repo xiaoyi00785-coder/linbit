@@ -49,5 +49,4 @@ export function G({n,s=16,className}:{n:string,s?:number,className?:string}){
   if(F[n])return <svg className={'gly '+(className||'')} width={s} height={s} viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d={F[n]}/></svg>;
   return <svg className={'gly '+(className||'')} width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden dangerouslySetInnerHTML={{__html:S[n]||''}}/>;
 }
-export const SOCIAL=[['x','X'],['telegram','Telegram'],['facebook','Facebook'],['discord','Discord'],['instagram','Instagram'],['youtube','YouTube']];
 export default G;
