@@ -6386,7 +6386,7 @@ paths:
         "403": { description: "SEED_DISABLED（主网/生产）或无权限" }
   /admin/v1/users/{uid}/credit:
     parameters:
-      - { name: uid, in: path, required: true, description: 用户 UID（可先用 GET /admin/v1/users?q=邮箱 查询）, schema: { type: string } }
+      - { name: uid, in: path, required: true, description: "用户 UID（可先用 GET /admin/v1/users?q=邮箱 查询）", schema: { type: string } }
     post:
       tags: [Admin]
       summary: 测试网给普通用户资金账户虚拟充值（仅测试网；否则 404；reward:approve + totpCode + reason，审计）
