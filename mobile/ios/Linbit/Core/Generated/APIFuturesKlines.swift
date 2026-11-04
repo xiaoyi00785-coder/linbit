@@ -11,7 +11,7 @@ public struct APIFuturesKlines: Codable, JSONEncodable, Hashable {
 
     public var symbol: String?
     public var interval: String?
-    /** trades / index。现货：有成交的周期用成交 K 线，无成交的周期用指数价 K 线补齐（单根 source=index、volume=0） */
+    /** 合约：trade / index / mixed / none（成交 K 线与指数价 K 线按周期合并，成交优先；单根指数补齐 source=index、volume=0）。现货：有成交的周期用成交 K 线，无成交的周期用指数价 K 线补齐（单根 source=index、volume=0） */
     public var source: String?
     public var klines: [APIFuturesKlinesKlinesInner]?
 

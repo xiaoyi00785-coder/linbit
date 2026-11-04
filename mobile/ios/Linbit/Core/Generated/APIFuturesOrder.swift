@@ -9,6 +9,14 @@ import Foundation
 
 public struct APIFuturesOrder: Codable, JSONEncodable, Hashable {
 
+    public enum APITpTriggerPriceType: String, Codable, CaseIterable {
+        case last = "LAST"
+        case mark = "MARK"
+    }
+    public enum APISlTriggerPriceType: String, Codable, CaseIterable {
+        case last = "LAST"
+        case mark = "MARK"
+    }
     public var orderId: Int64?
     public var symbol: String?
     public var side: String?
@@ -33,6 +41,8 @@ public struct APIFuturesOrder: Codable, JSONEncodable, Hashable {
     public var source: String?
     public var tpPrice: String?
     public var slPrice: String?
+    public var tpTriggerPriceType: APITpTriggerPriceType?
+    public var slTriggerPriceType: APISlTriggerPriceType?
     public var cancelReason: String?
     public var positionSide: String?
     public var amendCount: Int?
@@ -41,7 +51,7 @@ public struct APIFuturesOrder: Codable, JSONEncodable, Hashable {
     public var createdAt: Date?
     public var updatedAt: Date?
 
-    public init(orderId: Int64? = nil, symbol: String? = nil, side: String? = nil, type: String? = nil, timeInForce: String? = nil, price: String? = nil, qty: String? = nil, filledQty: String? = nil, filledQuote: String? = nil, reservedMargin: String? = nil, fee: String? = nil, status: String? = nil, reduceOnly: Bool? = nil, leverage: Int? = nil, marginMode: String? = nil, source: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, cancelReason: String? = nil, positionSide: String? = nil, amendCount: Int? = nil, avgPrice: String? = nil, createdAt: Date? = nil, updatedAt: Date? = nil) {
+    public init(orderId: Int64? = nil, symbol: String? = nil, side: String? = nil, type: String? = nil, timeInForce: String? = nil, price: String? = nil, qty: String? = nil, filledQty: String? = nil, filledQuote: String? = nil, reservedMargin: String? = nil, fee: String? = nil, status: String? = nil, reduceOnly: Bool? = nil, leverage: Int? = nil, marginMode: String? = nil, source: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, tpTriggerPriceType: APITpTriggerPriceType? = nil, slTriggerPriceType: APISlTriggerPriceType? = nil, cancelReason: String? = nil, positionSide: String? = nil, amendCount: Int? = nil, avgPrice: String? = nil, createdAt: Date? = nil, updatedAt: Date? = nil) {
         self.orderId = orderId
         self.symbol = symbol
         self.side = side
@@ -60,6 +70,8 @@ public struct APIFuturesOrder: Codable, JSONEncodable, Hashable {
         self.source = source
         self.tpPrice = tpPrice
         self.slPrice = slPrice
+        self.tpTriggerPriceType = tpTriggerPriceType
+        self.slTriggerPriceType = slTriggerPriceType
         self.cancelReason = cancelReason
         self.positionSide = positionSide
         self.amendCount = amendCount
@@ -87,6 +99,8 @@ public struct APIFuturesOrder: Codable, JSONEncodable, Hashable {
         case source
         case tpPrice
         case slPrice
+        case tpTriggerPriceType
+        case slTriggerPriceType
         case cancelReason
         case positionSide
         case amendCount
@@ -117,6 +131,8 @@ public struct APIFuturesOrder: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(source, forKey: .source)
         try container.encodeIfPresent(tpPrice, forKey: .tpPrice)
         try container.encodeIfPresent(slPrice, forKey: .slPrice)
+        try container.encodeIfPresent(tpTriggerPriceType, forKey: .tpTriggerPriceType)
+        try container.encodeIfPresent(slTriggerPriceType, forKey: .slTriggerPriceType)
         try container.encodeIfPresent(cancelReason, forKey: .cancelReason)
         try container.encodeIfPresent(positionSide, forKey: .positionSide)
         try container.encodeIfPresent(amendCount, forKey: .amendCount)

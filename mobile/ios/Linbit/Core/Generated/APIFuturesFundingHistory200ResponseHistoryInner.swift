@@ -9,22 +9,31 @@ import Foundation
 
 public struct APIFuturesFundingHistory200ResponseHistoryInner: Codable, JSONEncodable, Hashable {
 
+    public enum APISource: String, Codable, CaseIterable {
+        case settle = "settle"
+        case binance = "binance"
+        case okx = "okx"
+    }
     public var fundingTime: Int64?
     /** 十进制字符串 */
     public var fundingRate: String?
-    /** 十进制字符串 */
+    /** 十进制字符串（外部回填且来源无标记价时为 \"0\"） */
     public var markPrice: String?
+    /** settle = 本平台结算；binance/okx = 启动时从公开接口回填的历史（仅展示，不产生资金划转） */
+    public var source: APISource?
 
-    public init(fundingTime: Int64? = nil, fundingRate: String? = nil, markPrice: String? = nil) {
+    public init(fundingTime: Int64? = nil, fundingRate: String? = nil, markPrice: String? = nil, source: APISource? = nil) {
         self.fundingTime = fundingTime
         self.fundingRate = fundingRate
         self.markPrice = markPrice
+        self.source = source
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case fundingTime
         case fundingRate
         case markPrice
+        case source
     }
 
     // Encodable protocol methods
@@ -34,6 +43,7 @@ public struct APIFuturesFundingHistory200ResponseHistoryInner: Codable, JSONEnco
         try container.encodeIfPresent(fundingTime, forKey: .fundingTime)
         try container.encodeIfPresent(fundingRate, forKey: .fundingRate)
         try container.encodeIfPresent(markPrice, forKey: .markPrice)
+        try container.encodeIfPresent(source, forKey: .source)
     }
 }
 

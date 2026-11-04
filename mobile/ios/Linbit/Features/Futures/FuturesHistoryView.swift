@@ -313,7 +313,7 @@ struct FuturesHistoryOrderRow: View {
             }
             HStack {
                 KVCell(k: "手续费(USDT)", v: o.fee.map { Fmt.amount(Dec.parse($0), 4) } ?? "--")
-                KVCell(k: "止盈/止损", v: "\(o.tpPrice ?? "--")/\(o.slPrice ?? "--")", align: .trailing)
+                KVCell(k: "止盈/止损", v: lbTpslText(o.tpPrice, o.tpTriggerPriceType?.rawValue, o.slPrice, o.slTriggerPriceType?.rawValue), align: .trailing)
             }
             if let d = o.createdAt { Text(Fmt.dateTime(d)).font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary) }
         }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)

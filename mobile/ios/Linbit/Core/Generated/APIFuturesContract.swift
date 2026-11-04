@@ -9,18 +9,18 @@ import Foundation
 
 public struct APIFuturesContract: Codable, JSONEncodable, Hashable {
 
-    public var symbol: String?
+    public var symbol: String
     public var baseAsset: String?
     public var quoteAsset: String?
-    public var maxLeverage: Int?
+    public var maxLeverage: Int
     /** 十进制字符串 */
     public var maintenanceMarginRate: String?
-    /** 十进制字符串 */
-    public var tickSize: String?
-    /** 十进制字符串 */
-    public var minQty: String?
-    /** 十进制字符串 */
-    public var maxQty: String?
+    /** 最小价格变动（十进制字符串，始终返回）；价格/触发价/止盈止损须为其整数倍 */
+    public var tickSize: String
+    /** 最小下单量，同时为数量步长（十进制字符串，始终返回） */
+    public var minQty: String
+    /** 单笔最大下单量（十进制字符串，始终返回） */
+    public var maxQty: String
     /** 十进制字符串 */
     public var makerFeeRate: String?
     /** 十进制字符串 */
@@ -32,7 +32,7 @@ public struct APIFuturesContract: Codable, JSONEncodable, Hashable {
     public var riskTiers: [APIFuturesRiskTier]?
     public var tags: [String]?
 
-    public init(symbol: String? = nil, baseAsset: String? = nil, quoteAsset: String? = nil, maxLeverage: Int? = nil, maintenanceMarginRate: String? = nil, tickSize: String? = nil, minQty: String? = nil, maxQty: String? = nil, makerFeeRate: String? = nil, takerFeeRate: String? = nil, status: String? = nil, contractType: String? = nil, marginAsset: String? = nil, fundingIntervalHours: Int? = nil, riskTiers: [APIFuturesRiskTier]? = nil, tags: [String]? = nil) {
+    public init(symbol: String, baseAsset: String? = nil, quoteAsset: String? = nil, maxLeverage: Int, maintenanceMarginRate: String? = nil, tickSize: String, minQty: String, maxQty: String, makerFeeRate: String? = nil, takerFeeRate: String? = nil, status: String? = nil, contractType: String? = nil, marginAsset: String? = nil, fundingIntervalHours: Int? = nil, riskTiers: [APIFuturesRiskTier]? = nil, tags: [String]? = nil) {
         self.symbol = symbol
         self.baseAsset = baseAsset
         self.quoteAsset = quoteAsset
@@ -74,14 +74,14 @@ public struct APIFuturesContract: Codable, JSONEncodable, Hashable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(symbol, forKey: .symbol)
+        try container.encode(symbol, forKey: .symbol)
         try container.encodeIfPresent(baseAsset, forKey: .baseAsset)
         try container.encodeIfPresent(quoteAsset, forKey: .quoteAsset)
-        try container.encodeIfPresent(maxLeverage, forKey: .maxLeverage)
+        try container.encode(maxLeverage, forKey: .maxLeverage)
         try container.encodeIfPresent(maintenanceMarginRate, forKey: .maintenanceMarginRate)
-        try container.encodeIfPresent(tickSize, forKey: .tickSize)
-        try container.encodeIfPresent(minQty, forKey: .minQty)
-        try container.encodeIfPresent(maxQty, forKey: .maxQty)
+        try container.encode(tickSize, forKey: .tickSize)
+        try container.encode(minQty, forKey: .minQty)
+        try container.encode(maxQty, forKey: .maxQty)
         try container.encodeIfPresent(makerFeeRate, forKey: .makerFeeRate)
         try container.encodeIfPresent(takerFeeRate, forKey: .takerFeeRate)
         try container.encodeIfPresent(status, forKey: .status)

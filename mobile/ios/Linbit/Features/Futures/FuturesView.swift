@@ -32,6 +32,7 @@ struct FuturesTradeView: View {
     // 截图路由在视图创建时就决定初始子 Tab：避免 m.start() 期间视图重建导致 @State 被重置、而 shotSheet 已被消费
     @State private var bottomTab = Router.shared.shotSheet == "ordersTpsl" || Router.shared.shotSheet == "ordersPlan" ? 1 : 0
     @State private var amendTarget: APIFuturesOrder?
+    @State private var algoAmendTarget: APIFuturesAlgoOrder?
     @State private var showMode = false
     @State private var showLev = false
     @State private var showKind = false
@@ -91,6 +92,9 @@ struct FuturesTradeView: View {
         .lbSheet(Binding(get: { marginTarget != nil }, set: { if !$0 { marginTarget = nil } })) {
             if let pos = marginTarget { AdjustMarginSheet(m: m, position: pos) { marginTarget = nil } }
         }
+        .lbSheet(Binding(get: { algoAmendTarget != nil }, set: { if !$0 { algoAmendTarget = nil } })) {
+            if let a = algoAmendTarget { AmendAlgoSheet(m: m, algo: a) { algoAmendTarget = nil } }
+        }
         .lbSheet(Binding(get: { amendTarget != nil }, set: { if !$0 { amendTarget = nil } })) {
             if let o = amendTarget { AmendOrderSheet(m: m, order: o) { amendTarget = nil } }
         }
@@ -123,6 +127,14 @@ struct FuturesTradeView: View {
         case "amend":
             amendTarget = m.openOrders.first ?? APIFuturesOrder(orderId: 0, symbol: m.symbol, side: "buy", type: "limit", timeInForce: "GTC",
                                                                  price: Dec.plain(m.last > 0 ? m.last * Decimal(string: "0.98")! : 0, m.pricePrec), qty: "0.010", filledQty: "0", status: "new", amendCount: 1)
+        case "algoAmendPlan", "algoAmendTpsl":
+            let plan = router.shotSheet == "algoAmendPlan"
+            let ref = m.last > 0 ? m.last : 78000
+            algoAmendTarget = (plan ? m.planAlgos.first : m.tpslAlgos.first) ?? APIFuturesAlgoOrder(
+                algoId: 0, symbol: m.symbol, algoType: plan ? .plan : .tp, side: plan ? "buy" : "sell", positionSide: "BOTH",
+                orderType: plan ? .limit : .market, price: plan ? Dec.plain(ref * Decimal(string: "0.97")!, m.pricePrec) : nil, qty: "0.010",
+                triggerPrice: Dec.plain(ref * Decimal(string: plan ? "0.975" : "1.05")!, m.pricePrec), triggerPriceType: .mark,
+                triggerDirection: plan ? .down : .up, reduceOnly: !plan, status: .active)
         default: break
         }
         if router.shotSheet != nil { router.shotSheet = nil }
@@ -210,8 +222,8 @@ struct FuturesTradeView: View {
                     if m.tpsl { Button("高级设置") { tpslTarget = nil; showTpslForm = true }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary) }
                 }
                 if m.tpsl {
-                    NumberBox(label: "止盈触发价", unit: m.quote, text: $m.tpText, onEdit: {})
-                    NumberBox(label: "止损触发价", unit: m.quote, text: $m.slText, onEdit: {})
+                    NumberBox(label: "止盈触发价(\(m.orderTpType == .last ? "最新" : "标记"))", unit: m.quote, text: $m.tpText, onEdit: {})
+                    NumberBox(label: "止损触发价(\(m.orderSlType == .last ? "最新" : "标记"))", unit: m.quote, text: $m.slText, onEdit: {})
                 }
             }
             VStack(spacing: 6) {
@@ -402,7 +414,7 @@ struct FuturesTradeView: View {
         } else {
             LazyVStack(spacing: 0) {
                 ForEach(list, id: \.self) { a in
-                    AlgoOrderRow(a: a) {
+                    AlgoOrderRow(a: a, onAmend: { algoAmendTarget = a }) {
                         confirm = .init(title: a.algoType == .plan ? "撤销计划委托" : "撤销止盈止损", message: "确定撤销该笔条件委托吗？",
                                         confirmTitle: "撤销", destructive: true) { Task { await m.cancelAlgo(a) } }
                     }
@@ -532,7 +544,7 @@ struct PositionCard: View {
             HStack {
                 KVCell(k: "标记价格", v: Fmt.priceAuto(Dec.parse(pos.markPrice)))
                 KVCell(k: "强平价格", v: pos.liquidationPrice.map { Fmt.priceAuto(Dec.parse($0)) } ?? "--", align: .center)
-                KVCell(k: "止盈/止损", v: "\(pos.tpPrice ?? "--")/\(pos.slPrice ?? "--")", align: .trailing)
+                KVCell(k: "止盈/止损", v: lbTpslText(pos.tpPrice, pos.tpTriggerPriceType?.rawValue, pos.slPrice, pos.slTriggerPriceType?.rawValue), align: .trailing)
             }
             HStack(spacing: 8) {
                 btn(pos.marginMode == .isolated ? "调整保证金" : "保证金", onMargin)
@@ -658,7 +670,7 @@ struct TpslOrderRow: View {
                 KVCell(k: "止损触发价", v: pos.slPrice.flatMap { $0.isEmpty ? nil : Fmt.priceAuto(Dec.parse($0)) } ?? "--", align: .center, vColor: p.down)
                 KVCell(k: "数量", v: pos.qty ?? "--", align: .trailing)
             }
-            Text("触发类型：最新价 · 触发后市价全部平仓").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+            Text("触发类型：止盈\(pos.tpTriggerPriceType == .last ? "最新价" : "标记价") / 止损\(pos.slTriggerPriceType == .last ? "最新价" : "标记价") · 触发后市价全部平仓").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
         }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
     }
     private func small(_ t: String, _ a: @escaping () -> Void) -> some View {
@@ -673,6 +685,7 @@ struct TpslOrderRow: View {
 struct AlgoOrderRow: View {
     @Environment(\.palette) private var p
     let a: APIFuturesAlgoOrder
+    var onAmend: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
     var body: some View {
         let buy = a.side == "buy"
@@ -691,6 +704,12 @@ struct AlgoOrderRow: View {
                 }
                 Spacer()
                 if let onCancel, a.status == .active {
+                    if let onAmend {
+                        Button(action: onAmend) {
+                            Text("修改").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                                .padding(.horizontal, 12).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+                        }
+                    }
                     Button(action: onCancel) {
                         Text("撤销").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
                             .padding(.horizontal, 12).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))

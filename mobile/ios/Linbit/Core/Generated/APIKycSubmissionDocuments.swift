@@ -10,13 +10,13 @@ import Foundation
 /** 由 POST /kyc/documents 返回的 fileId；front 与 selfie 必填，back 可选； 高级认证（level 2）还必须提供 proofOfAddress（side&#x3D;proof_of_address 的地址证明）， 缺失时返回 400 DOCUMENT_REQUIRED。  */
 public struct APIKycSubmissionDocuments: Codable, JSONEncodable, Hashable {
 
-    public var front: String?
-    public var selfie: String?
+    public var front: String
+    public var selfie: String
     public var back: String?
     /** 地址证明（level 2 必填） */
     public var proofOfAddress: String?
 
-    public init(front: String? = nil, selfie: String? = nil, back: String? = nil, proofOfAddress: String? = nil) {
+    public init(front: String, selfie: String, back: String? = nil, proofOfAddress: String? = nil) {
         self.front = front
         self.selfie = selfie
         self.back = back
@@ -34,8 +34,8 @@ public struct APIKycSubmissionDocuments: Codable, JSONEncodable, Hashable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(front, forKey: .front)
-        try container.encodeIfPresent(selfie, forKey: .selfie)
+        try container.encode(front, forKey: .front)
+        try container.encode(selfie, forKey: .selfie)
         try container.encodeIfPresent(back, forKey: .back)
         try container.encodeIfPresent(proofOfAddress, forKey: .proofOfAddress)
     }

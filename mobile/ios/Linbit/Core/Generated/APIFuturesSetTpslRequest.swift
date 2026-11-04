@@ -14,20 +14,36 @@ public struct APIFuturesSetTpslRequest: Codable, JSONEncodable, Hashable {
         case long = "LONG"
         case short = "SHORT"
     }
+    public enum APITpTriggerPriceType: String, Codable, CaseIterable {
+        case last = "LAST"
+        case mark = "MARK"
+    }
+    public enum APISlTriggerPriceType: String, Codable, CaseIterable {
+        case last = "LAST"
+        case mark = "MARK"
+    }
     public var tpPrice: String?
     public var slPrice: String?
     public var positionSide: APIPositionSide?
+    /** 不填 = 保持当前（默认 MARK） */
+    public var tpTriggerPriceType: APITpTriggerPriceType?
+    /** 不填 = 保持当前（默认 MARK） */
+    public var slTriggerPriceType: APISlTriggerPriceType?
 
-    public init(tpPrice: String? = nil, slPrice: String? = nil, positionSide: APIPositionSide? = nil) {
+    public init(tpPrice: String? = nil, slPrice: String? = nil, positionSide: APIPositionSide? = nil, tpTriggerPriceType: APITpTriggerPriceType? = nil, slTriggerPriceType: APISlTriggerPriceType? = nil) {
         self.tpPrice = tpPrice
         self.slPrice = slPrice
         self.positionSide = positionSide
+        self.tpTriggerPriceType = tpTriggerPriceType
+        self.slTriggerPriceType = slTriggerPriceType
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case tpPrice
         case slPrice
         case positionSide
+        case tpTriggerPriceType
+        case slTriggerPriceType
     }
 
     // Encodable protocol methods
@@ -37,6 +53,8 @@ public struct APIFuturesSetTpslRequest: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(tpPrice, forKey: .tpPrice)
         try container.encodeIfPresent(slPrice, forKey: .slPrice)
         try container.encodeIfPresent(positionSide, forKey: .positionSide)
+        try container.encodeIfPresent(tpTriggerPriceType, forKey: .tpTriggerPriceType)
+        try container.encodeIfPresent(slTriggerPriceType, forKey: .slTriggerPriceType)
     }
 }
 

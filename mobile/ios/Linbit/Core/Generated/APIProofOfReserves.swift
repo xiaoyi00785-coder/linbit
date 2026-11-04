@@ -12,9 +12,9 @@ public struct APIProofOfReserves: Codable, JSONEncodable, Hashable {
     public var available: Bool
     /** UTC RFC3339 */
     public var snapshotAt: Date?
-    public var items: [APIProofOfReservesItemsInner]
+    public var items: [APIProofOfReservesItem]
 
-    public init(available: Bool, snapshotAt: Date? = nil, items: [APIProofOfReservesItemsInner]) {
+    public init(available: Bool, snapshotAt: Date? = nil, items: [APIProofOfReservesItem]) {
         self.available = available
         self.snapshotAt = snapshotAt
         self.items = items

@@ -38,8 +38,18 @@ public struct APIFuturesTicker: Codable, JSONEncodable, Hashable {
     /** 十进制字符串 */
     public var openInterest: String?
     public var priceAvailable: Bool?
+    /** 24h 最高价（= highPrice24h，与现货 Ticker 同名字段） */
+    public var high: String?
+    /** 24h 最低价（= lowPrice24h） */
+    public var low: String?
+    /** 24h 成交额（计价币，= turnover24h） */
+    public var quoteVolume: String?
+    /** 24h 成交量（张/基础币，= volume24h） */
+    public var volume: String?
+    /** 24h 涨跌幅，百分比（2 位小数，如 \"1.23\" 表示 1.23%）；priceChangePercent24h 为小数比率 */
+    public var priceChangePercent: String?
 
-    public init(symbol: String? = nil, lastPrice: String? = nil, priceSource: String? = nil, markPrice: String? = nil, indexPrice: String? = nil, fundingRate: String? = nil, lastFundingRate: String? = nil, nextFundingTime: Int64? = nil, openPrice24h: String? = nil, highPrice24h: String? = nil, lowPrice24h: String? = nil, volume24h: String? = nil, turnover24h: String? = nil, priceChangePercent24h: String? = nil, openInterest: String? = nil, priceAvailable: Bool? = nil) {
+    public init(symbol: String? = nil, lastPrice: String? = nil, priceSource: String? = nil, markPrice: String? = nil, indexPrice: String? = nil, fundingRate: String? = nil, lastFundingRate: String? = nil, nextFundingTime: Int64? = nil, openPrice24h: String? = nil, highPrice24h: String? = nil, lowPrice24h: String? = nil, volume24h: String? = nil, turnover24h: String? = nil, priceChangePercent24h: String? = nil, openInterest: String? = nil, priceAvailable: Bool? = nil, high: String? = nil, low: String? = nil, quoteVolume: String? = nil, volume: String? = nil, priceChangePercent: String? = nil) {
         self.symbol = symbol
         self.lastPrice = lastPrice
         self.priceSource = priceSource
@@ -56,6 +66,11 @@ public struct APIFuturesTicker: Codable, JSONEncodable, Hashable {
         self.priceChangePercent24h = priceChangePercent24h
         self.openInterest = openInterest
         self.priceAvailable = priceAvailable
+        self.high = high
+        self.low = low
+        self.quoteVolume = quoteVolume
+        self.volume = volume
+        self.priceChangePercent = priceChangePercent
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -75,6 +90,11 @@ public struct APIFuturesTicker: Codable, JSONEncodable, Hashable {
         case priceChangePercent24h
         case openInterest
         case priceAvailable
+        case high
+        case low
+        case quoteVolume
+        case volume
+        case priceChangePercent
     }
 
     // Encodable protocol methods
@@ -97,6 +117,11 @@ public struct APIFuturesTicker: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(priceChangePercent24h, forKey: .priceChangePercent24h)
         try container.encodeIfPresent(openInterest, forKey: .openInterest)
         try container.encodeIfPresent(priceAvailable, forKey: .priceAvailable)
+        try container.encodeIfPresent(high, forKey: .high)
+        try container.encodeIfPresent(low, forKey: .low)
+        try container.encodeIfPresent(quoteVolume, forKey: .quoteVolume)
+        try container.encodeIfPresent(volume, forKey: .volume)
+        try container.encodeIfPresent(priceChangePercent, forKey: .priceChangePercent)
     }
 }
 

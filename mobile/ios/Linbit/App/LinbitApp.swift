@@ -96,6 +96,8 @@ struct RootTabView: View {
         case "futures-plan": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "plan"
         case "futures-orders-tpsl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "ordersTpsl"
         case "futures-history": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresHistory
+        case "futures-algo-amend-plan": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "algoAmendPlan"
+        case "futures-algo-amend-tpsl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "algoAmendTpsl"
         case "futures-orders-plan": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "ordersPlan"
         case "futures-amend": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "amend"
         case "futures-mode-hedge": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "modeHedge"
