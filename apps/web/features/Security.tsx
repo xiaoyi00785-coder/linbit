@@ -11,7 +11,7 @@ import { maskEmail, sendAccountCode } from "@/lib/account";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import {
   changeContact, changePassword, createPasskey, deletePasskey, fmtUntil, fundPassword, listPasskeys, listSessions, revokeOthers, revokeSession,
-  secChanged, secMsg, sendContactCode, setAntiPhishing, useSecurity, webauthnSupported, type PasskeyItem, type SecurityOverview, type SessionItem,
+  secChanged, secLevel, secMsg, sendContactCode, setAntiPhishing, useSecurity, webauthnSupported, type PasskeyItem, type SecurityOverview, type SessionItem,
 } from "@/lib/security";
 
 type Kind = "password" | "email" | "phone" | "fund-set" | "fund-change" | "fund-reset" | "phishing" | "passkey";
@@ -80,7 +80,7 @@ function SecModal({ kind, sec, onClose }: { kind: Kind; sec: SecurityOverview; o
           <p className="lg sm">修改成功后，除当前设备外的其他登录会话将全部退出。</p>
         </>}
         {(kind === "email" || kind === "phone") && <>
-          {kind === "email" ? <label className="fx-field">新邮箱<input value={v("email")} onChange={set("email")} placeholder="name@example.com" /></label>
+          {kind === "email" ? <label className="fx-field">新邮箱<input value={v("email")} onChange={set("email")} placeholder="请输入新邮箱" /></label>
             : <label className="fx-field">新手机号<div className="sec-ph"><select value={v("cc")} onChange={set("cc")}>{["+86", "+852", "+853", "+886", "+1", "+65", "+81", "+82", "+44"].map((c) => <option key={c}>{c}</option>)}</select><input inputMode="numeric" value={v("phone")} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, "") })} placeholder="手机号" /></div></label>}
           <div className="fx-field">新{kind === "email" ? "邮箱" : "手机"}验证码<CodeInput value={v("newCode")} onChange={(x) => setF({ ...f, newCode: x })} send={async () => { const r = await sendContactCode(contact); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.ok ? undefined : secMsg(r) }; }} /></div>
           <div className="fx-field">{oldLabel}<CodeInput value={v("oldCode")} onChange={(x) => setF({ ...f, oldCode: x })} send={async () => { const r = await sendAccountCode("security"); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error }; }} /></div>
@@ -163,9 +163,9 @@ export function SecurityCenter() {
   const [m, setM] = useState<Kind | null>(null);
   useEffect(() => { if (location.hash) setTimeout(() => document.querySelector(location.hash)?.scrollIntoView({ block: "center" }), 300); }, [loading]);
   const s: SecurityOverview = data ?? {};
-  const checks: [string, boolean][] = [["邮箱验证", !!s.emailVerified], ["手机验证", !!s.phoneVerified], ["谷歌验证器", !!s.twoFactor?.enabled], ["资金密码", !!s.fundPasswordSet], ["通行密钥", (s.passkeysCount ?? 0) > 0]];
-  const score = checks.filter((c) => c[1]).length;
-  const lvl = score >= 4 ? ["高", "up2"] : score >= 2 ? ["中", ""] : ["低", "down2"];
+  const L = secLevel(s);
+  const checks = L.checks, score = L.score;
+  const lvl = [L.label, L.cls];
   const lockedFp = s.fundPasswordLockedUntil && new Date(s.fundPasswordLockedUntil) > new Date();
   const wLock = s.withdrawLockedUntil && new Date(s.withdrawLockedUntil) > new Date();
   return (
@@ -174,7 +174,7 @@ export function SecurityCenter() {
         <div className="lcard"><h3>安全中心</h3><div className="fx-err">{res ? secMsg(res) : "加载失败"}</div></div>
       ) : <>
         {wLock && <div className="sec-lock big"><b>!</b>安全设置变更后 {s.policy?.withdrawLockHours ?? 24} 小时内禁止提现，预计 {fmtUntil(s.withdrawLockedUntil)} 解除{s.withdrawLockReason ? `（${s.withdrawLockReason}）` : ""}。</div>}
-        <div className="lcard"><div className="slv"><div className="sring"><b>{score}/{checks.length}</b></div><div><b className={lvl[1]}>{lvl[0]}</b><div className="lg">安全等级</div></div><div className="schk">{checks.map(([x, ok]) => <span key={x} className={ok ? "ok" : ""}><i>✓</i>{x}</span>)}</div></div></div>
+        <div className="lcard"><div className="slv"><div className="sring"><b>{score}/{L.max}</b></div><div><b className={lvl[1]}>{lvl[0]}</b><div className="lg">安全等级</div></div><div className="schk">{checks.map(([x, ok]) => <span key={x} className={ok ? "ok" : ""}><i aria-hidden="true">{ok ? "✓" : ""}</i>{x}<span className="sr-only">{ok ? "（已设置）" : "（未设置）"}</span></span>)}</div></div></div>
         <div className="lcard"><h3>基础安全设置</h3>
           <Row icon={<G n="lock" s={18} />} t="登录密码" d="用于登录账户，修改后其他设备将退出登录" ok s="已设置"><button className="lb sm" onClick={() => setM("password")}>修改</button></Row>
           <Row icon={<G n="mail" s={18} />} t="邮箱验证" d="用于登录、提币、修改安全设置" ok={!!s.emailVerified} s={s.email ? maskEmail(s.email) : "未绑定"}><button className="lb sm" onClick={() => setM("email")}>{s.email ? "更换" : "绑定"}</button></Row>

@@ -14,6 +14,8 @@ const P = "/futures/market";
 const num = (v: unknown, d = 2) => { const n = Number(v); return Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: 0 }) : "--"; };
 const big = (v?: string) => (Number(v) >= 1e17 ? "∞" : num(v, 0));
 const pct = (v: unknown, d = 4) => { const n = Number(v); return Number.isFinite(n) ? (n * 100).toFixed(d) + "%" : "--"; };
+/** 时间统一按浏览器本地时区显示，表头标注时区（如 UTC+8） */
+const TZ = (() => { const o = -new Date().getTimezoneOffset(); const h = Math.trunc(Math.abs(o) / 60), m = Math.abs(o) % 60; return "UTC" + (o >= 0 ? "+" : "-") + h + (m ? ":" + String(m).padStart(2, "0") : ""); })();
 const ts = (ms?: number) => { if (ms == null) return "--"; const d = new Date(ms); const p = (x: number) => String(x).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
 
 function useGet<T>(path: string | null, nonce = 0): St<T> & { reload: () => void } {
@@ -47,6 +49,8 @@ function usePager(dep: string) {
   return { end, page: stack.length, next: (e?: number) => e && setStack((s) => [...s, e]), prev: () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)) };
 }
 function Pager({ pg, next }: { pg: ReturnType<typeof usePager>; next?: number }) {
+  // 仅一页（无上一页也无下一页）时不展示分页
+  if (pg.page <= 1 && !next) return null;
   return <div className="fi-pager"><button className="fi-btn" disabled={pg.page <= 1} onClick={pg.prev}>上一页</button><span>第 {pg.page} 页</span><button className="fi-btn" disabled={!next} onClick={() => pg.next(next)}>下一页</button></div>;
 }
 
@@ -109,7 +113,7 @@ function Mark({ sym }: { sym: string }) {
   const pts = [...h].reverse().map((r) => Number(k ? r.close : r.markPrice));
   return <section className="box pgc"><div className="fi-hd"><h3>{sym} 永续 · 标记价格历史</h3><div className="fi-tabs">{IVS.map((x) => <button key={x} className={x === iv ? "on" : ""} onClick={() => setIv(x)}>{x || "原始采样"}</button>)}</div></div>
     <State st={st} empty={!h.length}><Spark pts={pts} />
-      <table className="pgt"><thead><tr><th>时间</th>{k ? <><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>指数收盘</th></> : <><th>标记价格</th><th>指数价格</th></>}</tr></thead>
+      <table className="pgt"><thead><tr><th>时间（{TZ}）</th>{k ? <><th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>指数收盘</th></> : <><th>标记价格</th><th>指数价格</th></>}</tr></thead>
         <tbody>{h.map((r) => <tr key={r.openTime ?? r.time}><td>{ts(r.openTime ?? r.time)}</td>{k ? <><td>{num(r.open)}</td><td>{num(r.high)}</td><td>{num(r.low)}</td><td>{num(r.close)}</td><td>{num(r.indexClose)}</td></> : <><td>{num(r.markPrice)}</td><td>{num(r.indexPrice)}</td></>}</tr>)}</tbody></table>
       <Pager pg={pg} next={st.data?.nextEndTime} /></State>
     {st.data?.sampleSeconds ? <p className="fi-note">采样间隔 {String(st.data.sampleSeconds)} 秒；时间为本地时区。</p> : null}</section>;
@@ -122,10 +126,10 @@ function Index({ sym }: { sym: string }) {
   return <>
     <section className="box pgc"><h3>{sym} 指数价格</h3><State st={st} empty={!has}>
       <div className="fi-stats"><div><span>指数价格</span><b>{num(d?.indexPrice, 4)}</b></div><div><span>标记价格</span><b>{num(d?.markPrice, 4)}</b></div>
-        <div><span>计算方式</span><b>{d?.method === "primary_failover" ? "主源优先 · 故障切换" : d?.method}</b></div><div><span>更新时间</span><b>{d?.indexUpdatedAt ? ts(d.indexUpdatedAt) : "--"}</b></div></div>
+        <div><span>计算方式</span><b>{d?.method === "primary_failover" ? "主源优先 · 故障切换" : d?.method}</b></div><div><span>更新时间</span><b>{d?.indexUpdatedAt ? ts(d.indexUpdatedAt) + " " + TZ : "--"}</b></div></div>
     </State></section>
     <section className="box pgc"><h3>成分交易所</h3><State st={st} empty={!comps.length}>
-      <table className="pgt"><thead><tr><th>交易所</th><th>价格</th><th>权重</th><th>状态</th><th>更新时间</th></tr></thead>
+      <table className="pgt"><thead><tr><th>交易所</th><th>价格</th><th>权重</th><th>状态</th><th>更新时间（{TZ}）</th></tr></thead>
         <tbody>{comps.map((c) => <tr key={c.exchange}><td>{c.exchange}</td><td>{c.price ? num(c.price, 4) : "--"}</td><td>{pct(c.weight, 0)}</td><td className={c.fresh ? "up" : "down"}>{c.fresh ? "正常" : "延迟"}</td><td>{c.updatedAt ? ts(c.updatedAt) : "--"}</td></tr>)}</tbody></table>
     </State><p className="fi-note">主源正常时权重为 100%；主源失效或数据过期时自动切换到备用源。</p></section>
   </>;
@@ -137,7 +141,7 @@ function Funding({ sym }: { sym: string }) {
   const h = st.data?.history || [];
   return <section className="box pgc"><h3>{sym} 永续 · 资金费率历史{st.data?.fundingIntervalHours ? <small> · 每 {String(st.data.fundingIntervalHours)} 小时结算</small> : null}</h3>
     <State st={st} empty={!h.length}>
-      <table className="pgt"><thead><tr><th>结算时间</th><th>合约</th><th>资金费率</th><th>结算标记价格</th><th>来源</th></tr></thead>
+      <table className="pgt"><thead><tr><th>结算时间（{TZ}）</th><th>合约</th><th>资金费率</th><th>结算标记价格</th><th>来源</th></tr></thead>
         <tbody>{h.map((r) => <tr key={r.fundingTime}><td>{ts(r.fundingTime)}</td><td>{sym}</td><td className={Number(r.fundingRate) >= 0 ? "up" : "down"}>{pct(r.fundingRate)}</td><td>{Number(r.markPrice) ? num(r.markPrice) : "--"}</td><td>{SRC[r.source ?? ""] ?? "--"}</td></tr>)}</tbody></table>
       <Pager pg={pg} next={st.data?.nextEndTime} /></State></section>;
 }
@@ -155,7 +159,7 @@ function Insurance() {
     </State></section>
     <section className="box pgc"><h3>余额历史{hs.data?.snapshotMinutes ? <small> · 每 {String(hs.data.snapshotMinutes)} 分钟快照</small> : null}</h3>
       {!hs.loading && !hs.error && !h.length ? <div className="fi-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6" /></svg>暂无历史快照，系统将按周期自动记录余额</div> :
-        <State st={hs} empty={false}><table className="pgt"><thead><tr><th>时间</th><th>币种</th><th>余额</th><th>权益</th></tr></thead>
+        <State st={hs} empty={false}><table className="pgt"><thead><tr><th>时间（{TZ}）</th><th>币种</th><th>余额</th><th>权益</th></tr></thead>
           <tbody>{h.map((r) => <tr key={`${r.time}-${r.asset}`}><td>{ts(r.time)}</td><td>{r.asset}</td><td>{num(r.balance)}</td><td>{num(r.equity)}</td></tr>)}</tbody></table>
           <Pager pg={pg} next={hs.data?.nextEndTime} /></State>}
     </section>

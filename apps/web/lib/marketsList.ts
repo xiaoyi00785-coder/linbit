@@ -15,29 +15,30 @@ const CAT_MAP: Record<string, string[]> = {
 };
 /** chip 名称 ↔ 后端分类 id（GET /market/categories、symbols[].tags 使用 id） */
 export const CAT_ID: Record<string, string> = { 公链: "layer1", 贵金属: "metals", 大宗商品: "commodities", 股票: "stocks", Meme: "meme", AI: "ai", DeFi: "defi", "Layer 2": "layer2", 生态: "ecosystem" };
-let catNames: string[] | null = null;
-let catP: Promise<Record<string, string[]> | null> | null = null;
-/** GET /market/categories → { id: symbols[] }；失败时返回 null（退回 tags，再退回本地映射）。 */
-export function loadCategories() {
-  catP ??= fetch(restBase() + "/market/categories")
+export type CatMarket = "spot" | "futures";
+const catNames: Partial<Record<CatMarket, string[]>> = {};
+const catP: Partial<Record<CatMarket, Promise<Record<string, string[]> | null>>> = {};
+/** GET /market/categories?market=&nonEmpty=true → { id: symbols[] }（服务端已剔除空分类，如合约下的 stocks）；失败时返回 null（退回 tags，再退回本地映射）。 */
+export function loadCategories(market: CatMarket = "spot") {
+  return (catP[market] ??= fetch(restBase() + `/market/categories?market=${market}&nonEmpty=true`)
     .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
     .then((l: { id: string; name?: string; symbols: string[] }[]) => {
       if (!Array.isArray(l)) return null;
-      catNames = l.map((c) => { const nm = c.name || c.id; CAT_ID[nm] = c.id; return nm; });
-      return Object.fromEntries(l.map((c) => [c.id, c.symbols ?? []]));
+      const ne = l.filter((c) => (c.symbols?.length ?? 0) > 0); // 双保险：前端也隐藏空分类
+      catNames[market] = ne.map((c) => { const nm = c.name || c.id; CAT_ID[nm] = c.id; return nm; });
+      return Object.fromEntries(ne.map((c) => [c.id, c.symbols ?? []]));
     })
-    .catch(() => ((catP = null), null));
-  return catP;
+    .catch(() => (delete catP[market], null)));
 }
-/** chip 列表：后端 /market/categories 返回什么就渲染什么（前置“全部”）；接口不可用时用本地 CATS。 */
-export function useCatChips(): string[] {
-  const [n, setN] = useState<string[] | null>(catNames);
-  useEffect(() => void loadCategories().then(() => setN(catNames)), []);
-  return n ? ["全部", ...n] : [...CATS];
+/** chip 列表：后端返回什么就渲染什么（前置“全部”）；接口不可用时用本地 CATS（合约下不含“股票”）。 */
+export function useCatChips(market: CatMarket = "spot"): string[] {
+  const [n, setN] = useState<string[] | null>(catNames[market] ?? null);
+  useEffect(() => { setN(catNames[market] ?? null); void loadCategories(market).then(() => setN(catNames[market] ?? null)); }, [market]);
+  return n ? ["全部", ...n] : market === "futures" ? CATS.filter((c) => c !== "股票") : [...CATS];
 }
-export function useCategories() {
+export function useCategories(market: CatMarket = "spot") {
   const [c, setC] = useState<Record<string, string[]> | null>(null);
-  useEffect(() => void loadCategories().then(setC), []);
+  useEffect(() => { setC(null); void loadCategories(market).then(setC); }, [market]);
   return c;
 }
 /** 判断交易对是否属于某 chip：categories 接口 → symbols[].tags → 本地映射 */
@@ -67,7 +68,7 @@ export function useFuturesRows(enabled: boolean) {
         const m = new Map<string, any>((j.tickers ?? []).map((t: any) => [t.symbol, t]));
         setRows(contracts.map((c) => {
           const t = m.get(c.symbol);
-          return { symbol: c.symbol, base: c.baseAsset, tags: c.tags, pp: pp(c.tickSize), last: t?.lastPrice && Number(t.lastPrice) ? t.lastPrice : t?.markPrice, chg: t?.priceChangePercent24h, hi: t?.highPrice24h, lo: t?.lowPrice24h, vol: t?.turnover24h };
+          return { symbol: c.symbol, base: c.baseAsset, tags: c.tags, pp: pp(c.tickSize), last: t?.lastPrice && Number(t.lastPrice) ? t.lastPrice : t?.markPrice, chg: t?.priceChangePercent ?? t?.priceChangePercent24h, hi: t?.high ?? t?.highPrice24h, lo: t?.low ?? t?.lowPrice24h, vol: t?.quoteVolume ?? t?.turnover24h };
         }));
       }).catch(() => {});
     };
@@ -83,4 +84,40 @@ export function useFuturesRows(enabled: boolean) {
     return () => { dead = true; clearInterval(timer); document.removeEventListener("visibilitychange", vis); };
   }, [enabled]);
   return rows;
+}
+
+/**
+ * 服务端排序：GET /market/ticker?sort=symbol|lastPrice|priceChangePercent|high|low|quoteVolume|baseVolume（别名 gainers/losers/volume）&order=asc|desc&limit=&category=&symbols=
+ * （后端 fix/acceptance-r3-clean 新增）。返回排好序的 symbol 列表；接口不支持/失败时返回 null，调用方回退本地排序。
+ */
+export type RankSort = "gainers" | "losers" | "volume" | "symbol" | "lastPrice" | "priceChangePercent" | "high" | "low" | "quoteVolume" | "baseVolume";
+export function useRank(sort: RankSort | null, opt: { limit?: number; category?: string; symbols?: string[]; order?: "asc" | "desc" } = {}) {
+  const [syms, setSyms] = useState<string[] | null>(null);
+  const key = [sort, opt.order, opt.limit, opt.category, opt.symbols?.join(",")].join("|");
+  useEffect(() => {
+    if (!sort) return setSyms(null);
+    let dead = false;
+    const q = new URLSearchParams({ sort });
+    if (opt.order) q.set("order", opt.order);
+    if (opt.limit) q.set("limit", String(opt.limit));
+    if (opt.category) q.set("category", opt.category);
+    if (opt.symbols?.length) q.set("symbols", opt.symbols.join(","));
+    const load = () =>
+      fetch(restBase() + "/market/ticker?" + q)
+        .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+        .then((l: { symbol: string }[]) => !dead && setSyms(Array.isArray(l) ? l.map((x) => x.symbol) : null))
+        .catch(() => !dead && setSyms(null));
+    load();
+    const t = setInterval(() => document.visibilityState === "visible" && load(), 10000);
+    return () => { dead = true; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return syms;
+}
+/** 按服务端顺序重排本地行（行内价格仍取实时 WS）；未在服务端结果中的行丢弃。syms 为 null 时返回 null。 */
+export function byRank<T extends { symbol: string }>(rows: T[], syms: string[] | null, reverse = false): T[] | null {
+  if (!syms) return null;
+  const m = new Map(rows.map((r) => [r.symbol, r]));
+  const out = syms.map((s) => m.get(s)).filter(Boolean) as T[];
+  return reverse ? out.reverse() : out;
 }

@@ -1,6 +1,6 @@
 // @ts-nocheck
 "use client";
-import {G,SOCIAL} from "@/components/Glyph";
+import {G} from "@/components/Glyph";
 import { openM } from '@/features/Kit'
 import { useAuthStore } from '@/lib/store'
 import { toast, goto, copyTxt } from '@/lib/ui'
@@ -12,6 +12,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useGrowthConfig, pct } from '@/lib/growth'
 import { downloadUrl } from '@/lib/siteUrls'
 import { Ico, Footer } from './App'
+import { feePct, useFutFeeRates } from '@/lib/live'
+function VipFee(){const f=useFutFeeRates();const t=f?feePct(f.taker):'--',m=f?feePct(f.maker):'--';return <><b className="goldt">现货 0.1% · 合约 {t}</b><span>所有用户统一费率，不区分等级；合约按仓位价值 × {t} 于开仓、平仓各收一次</span><small className="g">现货 Maker/Taker 0.1% · 合约 Maker {m} / Taker {t}</small></>}
 import { LoanBody } from '@/features/Loan'
 import { coins } from './data'
 import { useMe } from '@/lib/account'
@@ -46,7 +48,7 @@ export function EarnHub({base}){const {tab=''}=useParams();const cur=base??tab
 /* ---------- VIP ---------- */
 export function Vip(){const vme=useMe();const[sh,setSh]=useState(false);const[ok,setOk]=useState(false);const[ct,setCt]=useState('');return <main className="vip"><div className="ewrap"><EarnTabs cur="vip"/></div><div className="vhero" style={{backgroundImage:`url(${asset('/img/vip.webp')})`}}><div className="vtx"><div className="vlogo"><G n="logo" s={18}/> LINBIT <b>VIP</b></div><h1>私享财富管理</h1><p>资产达到 <em>500,000 USDT</em>，即可申请专属 VIP 服务</p><div className="lrow c"><a href="#vapply" className="pill gold">立即申请 VIP</a><button className="pill gold sq" onClick={()=>setSh(true)}><G n="share" s={14}/></button></div></div></div>
 <h2 className="vh2">VIP 专属权益</h2><div className="g3 vben">{[['专属理财方案','根据风险偏好定制配置组合'],['一对一客户经理','7×24 小时专人响应'],['统一透明费率','现货 0.1%、合约 0.05%，所有用户统一']].map(([a,b])=><div key={a}><i><G n="diamond" s={14}/></i><b>{a}</b><small>{b}</small></div>)}</div>
-<div className="vfee"><b className="goldt">现货 0.1% · 合约 0.05%</b><span>所有用户统一费率，不区分等级；合约按仓位价值 × 0.05% 于开仓、平仓各收一次</span><small className="g">现货 Maker/Taker 0.1% · 合约 Maker/Taker 0.05%</small></div>
+<div className="vfee"><VipFee/></div>
 <h2 className="vh2" id="vapply">立即申请 VIP 体验</h2><div className="vform"><div><h4>申请条件</h4><p className="g">· 账户总资产达到 500,000 USDT</p><p className="g">· 或近 30 日交易量达到 5,000 万 USDT</p><h4 className="mt">需要帮助？</h4><button className="lb dk2" onClick={()=>goto('/p/support')}><G n="telegram" s={14}/> 联系客服</button></div><div><h4>申请信息</h4><label className="g">linbit UID</label><input className="vin" value={vme?.uid||''} placeholder="登录后自动填写" readOnly/><label className="g">联系方式 <em className="lime">查看示例</em></label><div className="lrow"><span className="vin sel"><G n="telegram" s={14}/> Telegram ▾</span><input className="vin" placeholder="请输入联系方式" value={ct} onChange={e=>setCt(e.target.value)}/></div><button className="vin btn" onClick={()=>setOk(true)}>提交</button></div></div>
 <Faq dark items={[['成为 linbit VIP 有哪些权益？','包括专属客户经理（全站统一费率：现货 0.1%、合约 0.05%，无等级折扣）、定制理财方案与私享活动。'],['如何成为 linbit VIP？','满足资产或交易量条件后，提交申请，1-3 个工作日内审核。'],['如何联系我们？']]}/><Footer/>
 {sh&&<ShareModal gold onClose={()=>setSh(false)} title="linbit VIP 私享财富" hl="尊享专属权益" img={asset("/img/vip.webp")}/>}

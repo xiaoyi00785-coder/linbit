@@ -3,6 +3,8 @@ import { passkeyLogin, webauthnSupported } from "@/lib/security";
 import { deviceId, deviceName } from "@/lib/account";
 import { G } from "@/components/Glyph";
 import { useEffect, useState } from "react";
+import { useHome } from "@/lib/home";
+import { AuthSkel } from "@/components/AuthSkel";
 import { Link, useNavigate } from "@/lib/router";
 import {
   COUNTRIES, displayAccount, isChallenge, login, loginErrMsg, loginResend, loginVerify, register, resetPassword, verifyResetCode,
@@ -21,7 +23,7 @@ function Shell({ title, sw, children }: { title: string; sw?: [string, string]; 
         <h1>
           在奖励中心最高可赚
           <br />
-          <span className="lime">215 USDT</span> 新人奖励
+          <GiftAmt /> 新人奖励
         </h1>
         <div className="chest">
           <img src={asset("/img/auth.webp")} alt="" />
@@ -42,6 +44,39 @@ function Shell({ title, sw, children }: { title: string; sw?: [string, string]; 
   );
 }
 
+/** 新人礼包金额：接口返回前显示骨架，不再写死金额 */
+function GiftAmt() {
+  const H = useHome();
+  if (!H.ncReady) return <span className="sk-in" style={{ display: "inline-block", width: 140, height: "0.9em", verticalAlign: "middle" }} aria-label="加载中" />;
+  return H.newcomer?.total ? <span className="lime">{Number(H.newcomer.total).toLocaleString("en-US")} {H.newcomer.asset || "USDT"}</span> : <span className="lime">专属</span>;
+}
+
+/** 已登录访问 /login、/register 时直接跳转资产页 */
+function useGuestOnly() {
+  const nav = useNavigate();
+  const tok = useAuthStore((s) => s.accessToken);
+  useEffect(() => { if (tok) nav("/assets", { replace: true } as any); }, [tok, nav]);
+  return !!tok;
+}
+
+const PWD_MAX = 64;
+const ACCT_MAX = 254;
+/** 密码输入：显示/隐藏切换 + 显式长度上限提示 */
+function Pwd({ value, onChange, placeholder, label }: { value: string; onChange: (v: string) => void; placeholder: string; label?: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <>
+      <div className="ai-pwd">
+        <input className="ai" type={show ? "text" : "password"} aria-label={label ?? placeholder} placeholder={placeholder} maxLength={PWD_MAX} value={value} onChange={(e) => onChange(e.target.value)} />
+        <button type="button" className="ai-eye" aria-label={show ? "隐藏密码" : "显示密码"} aria-pressed={show} onClick={() => setShow(!show)}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />{!show && <path d="M3 3l18 18" />}</svg>
+        </button>
+      </div>
+      {value.length >= PWD_MAX && <div className="fx-hint">密码最多 {PWD_MAX} 位</div>}
+    </>
+  );
+}
+
 function useFinish() {
   const nav = useNavigate();
   const store = useAuthStore();
@@ -58,36 +93,46 @@ type Kind = "邮箱" | "手机";
 function useAcct(initial: Kind = "邮箱") {
   const [kind, setKind] = useState<Kind>(initial);
   const [cc, setCc] = useState("86");
-  const [val, setVal] = useState("");
+  const [val, setVal] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const x = (new URLSearchParams(window.location.search).get("account") || "").trim().slice(0, ACCT_MAX);
+    return initial === "邮箱" && x.includes("@") ? x : "";
+  });
+  const [touched, setTouched] = useState(false);
   const valid = kind === "邮箱" ? isEmail(val) : /^\d{5,14}$/.test(val);
   const target = (): Target => (kind === "邮箱" ? { email: val } : { phone: toE164(cc, val), countryCode: cc });
   const shown = kind === "邮箱" ? val : `+${cc} ${val}`;
+  const label = kind === "邮箱" ? "邮箱" : "手机号";
+  /** 区分空值与格式错误 */
+  const msg = !val ? `请输入${label}` : !valid ? (kind === "邮箱" ? "邮箱格式不正确，请检查后重新输入" : "手机号格式不正确") : "";
   const ui = (
     <>
-      <div className="pt aline">
+      <div className="pt aline" role="tablist" aria-label="账户类型">
         {(["邮箱", "手机"] as const).map((x) => (
-          <b key={x} className={kind === x ? "on" : ""} onClick={() => (setKind(x), setVal(""))}>
+          <b key={x} role="tab" tabIndex={0} aria-selected={kind === x} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setKind(x); setVal(""); setTouched(false); } }} className={kind === x ? "on" : ""} onClick={() => (setKind(x), setVal(""), setTouched(false))}>
             {x}
           </b>
         ))}
       </div>
       {kind === "邮箱" ? (
-        <input className="ai" placeholder="邮箱地址" value={val} onChange={(e) => setVal(e.target.value.trim())} />
+        <input className="ai" type="email" aria-label="邮箱地址" placeholder="邮箱地址" maxLength={ACCT_MAX} autoComplete="email" aria-invalid={touched && !!msg} value={val} onBlur={() => setTouched(true)} onChange={(e) => setVal(e.target.value.trim())} />
       ) : (
         <div className="fx-phone">
-          <select className="ai fx-cc" value={cc} onChange={(e) => setCc(e.target.value)}>
+          <select className="ai fx-cc" aria-label="国家/地区区号" value={cc} onChange={(e) => setCc(e.target.value)}>
             {COUNTRIES.map(([c, n]) => (
               <option key={c} value={c}>
                 +{c} {n}
               </option>
             ))}
           </select>
-          <input className="ai" inputMode="numeric" placeholder="手机号" value={val} onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))} />
+          <input className="ai" inputMode="numeric" aria-label="手机号" placeholder="手机号" maxLength={14} aria-invalid={touched && !!msg} value={val} onBlur={() => setTouched(true)} onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))} />
         </div>
       )}
+      {touched && msg && <div className="fx-err" role="alert">{msg}</div>}
+      {kind === "邮箱" && val.length >= ACCT_MAX && <div className="fx-hint">邮箱最多 {ACCT_MAX} 个字符</div>}
     </>
   );
-  return { kind, valid, target, shown, ui };
+  return { kind, valid, target, shown, ui, msg, touch: () => setTouched(true) };
 }
 
 /** 注册：账户+密码 → 验证码（POST /auth/code/send → POST /auth/register） */
@@ -101,20 +146,22 @@ export function Register() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const finish = useFinish();
+  const authed = useGuestOnly();
   const validPwd = pwd.length >= 8 && /[A-Za-z]/.test(pwd) && /\d/.test(pwd);
   const send = async () => {
     const r = await sendAuthCode("register", a.target());
     return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error };
   };
 
+  if (authed) return <AuthSkel />;
   return (
     <Shell title="创建账户" sw={["/login", "立即登录"]}>
       <Steps items={["填写信息", "安全验证"]} cur={step} />
       {step === 0 ? (
         <>
           {a.ui}
-          <input className="ai" type="password" placeholder="设置密码（8 位以上，含字母和数字）" value={pwd} onChange={(e) => setPwd(e.target.value)} />
-          <input className="ai" placeholder="邀请码（选填）" value={invite} onChange={(e) => setInvite(e.target.value.trim())} />
+          <Pwd placeholder={`设置密码（8–${PWD_MAX} 位，含字母和数字）`} value={pwd} onChange={setPwd} />
+          <input className="ai" aria-label="邀请码（选填）" maxLength={32} placeholder="邀请码（选填）" value={invite} onChange={(e) => setInvite(e.target.value.trim())} />
           <label className="agree" onClick={() => setAgree(!agree)}>
             <i className={agree ? "on" : ""}>{agree && "✓"}</i>
             <span>
@@ -124,8 +171,11 @@ export function Register() {
           {err && <div className="fx-err">{err}</div>}
           <button
             className={"abtn" + (agree && a.valid && validPwd && !busy ? "" : " dis")}
+            disabled={busy}
+            aria-disabled={!(agree && a.valid && validPwd)}
             onClick={async () => {
-              if (!a.valid) return setErr(`请输入正确的${a.kind === "邮箱" ? "邮箱" : "手机号"}`);
+              if (!a.valid) { a.touch(); return setErr(a.msg); }
+              if (!pwd) return setErr("请输入密码");
               if (!validPwd) return setErr("密码需 8 位以上且包含字母和数字");
               if (!agree) return setErr("请先同意服务条款");
               setBusy(true);
@@ -146,6 +196,7 @@ export function Register() {
           {err && <div className="fx-err">{err}</div>}
           <button
             className={"abtn" + (code.length === 6 && !busy ? "" : " dis")}
+            disabled={busy || code.length !== 6}
             onClick={async () => {
               if (code.length !== 6) return setErr("请输入 6 位验证码");
               setBusy(true);
@@ -180,6 +231,7 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const finish = useFinish();
   const [tgt, setTgt] = useState<Target>({});
+  const authed = useGuestOnly();
   // 429 RATE_LIMITED：按 Retry-After 倒计时，期间禁用登录按钮
   const [wait, setWait] = useState(0);
   useEffect(() => {
@@ -189,13 +241,14 @@ export function Login() {
   }, [wait]);
   useEffect(() => { if (wait === 0) setErr((e) => (e.startsWith("登录尝试过于频繁") ? "" : e)); }, [wait]);
 
+  if (authed) return <AuthSkel />;
   return (
     <Shell title="欢迎来到 linbit" sw={["/register", "立即注册"]}>
       <Steps items={["账户密码", "安全验证"]} cur={ch ? 1 : 0} />
       {!ch ? (
         <>
           {a.ui}
-          <input className="ai" type="password" placeholder="请输入密码" value={pwd} onChange={(e) => setPwd(e.target.value)} />
+          <Pwd placeholder="请输入密码" value={pwd} onChange={(v) => (setPwd(v), setErr(""))} />
           <Link to="/forgot-password" className="fg">
             忘记密码？
           </Link>
@@ -203,9 +256,11 @@ export function Login() {
           <button
             className={"abtn" + (a.valid && pwd && !busy && wait <= 0 ? "" : " dis")}
             disabled={busy || wait > 0}
+            aria-disabled={!(a.valid && pwd)}
             onClick={async () => {
               if (busy || wait > 0) return;
-              if (!a.valid || !pwd) return setErr("请输入正确的账户和密码");
+              if (!a.valid) { a.touch(); return setErr(a.msg); }
+              if (!pwd) return setErr("请输入密码");
               setBusy(true);
               const t = a.target();
               const r = await login({ ...t, password: pwd });

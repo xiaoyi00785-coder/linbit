@@ -1,6 +1,7 @@
 "use client";
 /** 现货下单面板与委托列表：对接 /spot/*（@linbit/api-client），API 不可达时回退本地 mock */
 import { useCallback, useEffect, useState } from "react";
+import { btnProps, tabProps } from "@/lib/a11y";
 import { useNavigate } from "@/lib/router";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -40,12 +41,18 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const [pc, setPc] = useState(0);
   useEffect(() => setPc(0), [side, SYMBOL]);
   const setByPct = (p: number) => {
+    if (!avail) {
+      // 余额为 0：比例按钮与滑杆保持 0%，并给出提示
+      setPc(0);
+      if (p > 0) setMsg({ ok: false, t: !authed ? "请先登录" : `可用 ${side === "buy" ? "USDT" : B} 余额为 0，请先充值或划转` });
+      return;
+    }
     setPc(p);
-    if (!avail) return;
     const qn = side === "buy" ? (px ? (avail * p) / 100 / px : 0) : (avail * p) / 100;
     setQty(qn ? (Math.floor(qn * 10 ** pair.qp) / 10 ** pair.qp).toFixed(pair.qp) : "");
   };
-  const fee = side === "buy" ? `${(q * SPOT_FEE.taker).toFixed(pair.qp + 2)} ${B}` : `${(q * px * SPOT_FEE.taker).toFixed(4)} USDT`;
+  // 手续费统一 6 位小数（买入按基础币扣，卖出按 USDT 扣）
+  const fee = side === "buy" ? `${(q * SPOT_FEE.taker).toFixed(6)} ${B}` : `${(q * px * SPOT_FEE.taker).toFixed(6)} USDT`;
 
   const submit = async () => {
     if (!authed) return nav("/login");
@@ -70,17 +77,17 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       <div className="sp-side" role="tablist">
         {(["buy", "sell"] as const).map((s) => <button key={s} role="tab" aria-selected={side === s} className={(side === s ? "on " : "") + s} onClick={() => setSide(s)}>{s === "buy" ? "买入" : "卖出"}</button>)}
       </div>
-      <div className="pt sm">
-        {(["limit", "market"] as const).map((t) => <b key={t} className={type === t ? "on" : ""} onClick={() => setType(t)}>{t === "limit" ? "限价" : "市价"}</b>)}
+      <div className="pt sm" role="tablist" aria-label="订单类型">
+        {(["limit", "market"] as const).map((t) => <b key={t} {...tabProps(type === t, () => setType(t))} className={type === t ? "on" : ""} onClick={() => setType(t)}>{t === "limit" ? "限价" : "市价"}</b>)}
       </div>
       {type === "limit" && <div className="inp"><small>价格(USDT)</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(fix(num(e.target.value), pair.pp))} /></div>}
       <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "数量不能为负数" }); return; } setMsg(undefined); setQty(fix(num(v), pair.qp)); }} aria-invalid={qty !== "" && !(q > 0)} /><em>{B}</em></div>
-      <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
+      <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} {...btnProps(() => setByPct(p), `${p}%`)} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
       <div className="kv2 g"><span>可用</span><span>{authed ? `${avail} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
       <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>
       <div className="kv2 g"><span>预估手续费（0.1%）</span><span>{fee}</span></div>
       {msg && <div className={msg.ok ? "fx-ok" : "fx-err"} style={{ fontSize: 12, margin: "6px 0" }}>{msg.t}</div>}
-      <button className="lbtn" disabled={busy} onClick={submit}>{authed ? (side === "buy" ? `买入 ${B}` : `卖出 ${B}`) : "登录/注册"}</button>
+      <button className={"lbtn" + (authed && side === "sell" ? " sell" : "")} disabled={busy} aria-busy={busy || undefined} onClick={submit}>{authed ? (side === "buy" ? `买入 ${B}` : `卖出 ${B}`) : "登录/注册"}</button>
     </div>
   );
 }
@@ -119,7 +126,7 @@ export function SpotOrders({ symbol: SYMBOL }: { symbol: string }) {
   return (
     <div className="orders" data-guide="orders">
       <div className="pt sm">
-        {TABS.map((x, i) => <b key={x} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}{i === 0 && tab === 0 ? `(${rows.length})` : ""}</b>)}
+        {TABS.map((x, i) => <b key={x} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}{i === 0 && tab === 0 ? `(${rows.length})` : ""}</b>)}
         <span className="sp" />{src && <Src s={src} />}
       </div>
       {err && <div className="fx-err" style={{ margin: "8px 12px" }}>{err}</div>}
