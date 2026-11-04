@@ -155,7 +155,17 @@ struct CouponsView: View {
         }
         if data.value == nil { data = .loading }
         async let s = try? CouponAPI.summary()
-        do { data = .loaded(try await CouponAPI.list(status).items ?? []) } catch { data = .failed(securityMessage(error)) }
-        summary = await s ?? summary
+        do {
+            let items = try await CouponAPI.list(status).items ?? []
+            // 切换 Tab 会取消上一次请求：已取消的结果直接丢弃，避免旧 Tab 的数据覆盖新 Tab
+            guard !Task.isCancelled else { return }
+            data = .loaded(items)
+        } catch {
+            // 被取消的请求不是错误，不显示错误页（新的加载会接管状态）
+            if Task.isCancelled || isRequestCancelled(error) { return }
+            data = .failed(securityMessage(error))
+        }
+        let sum = await s
+        if !Task.isCancelled { summary = sum ?? summary }
     }
 }
