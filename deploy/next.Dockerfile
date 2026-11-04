@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1
 #
-# Web frontend (apps/web, Next.js) image for the pnpm monorepo.
+# Next.js frontend image for the pnpm monorepo: APP=web (default) or APP=partner.
 # Build from the repo root:
-#   docker build -f deploy/next.Dockerfile \
+#   docker build -f deploy/next.Dockerfile --build-arg APP=web \
+#     --build-arg NEXT_PUBLIC_NETWORK=mainnet \
+#     --build-arg API_PROXY_TARGET=http://gateway:8080 \
 #     --build-arg NEXT_PUBLIC_SITE_URL=https://www.cowa.click \
 #     --build-arg NEXT_PUBLIC_API_BASE=/api \
 #     -t linbit-web .
+#   (partner: --build-arg APP=partner -t linbit-partner; listens on 3100, web on 3000)
 #
 # NOTE: reconstructed in-repo (the server copy was never committed). Ops: diff
 # this against the Dockerfile on the server before switching over.
@@ -18,15 +21,18 @@ RUN corepack enable && corepack prepare pnpm@10.34.6 --activate
 WORKDIR /repo
 
 FROM base AS build
+ARG APP=web
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-COPY apps/web/package.json apps/web/
+COPY apps/${APP}/package.json apps/${APP}/
 COPY packages/ui/package.json packages/ui/
 COPY packages/chart/package.json packages/chart/
 COPY packages/api-client/package.json packages/api-client/
-RUN pnpm install --frozen-lockfile --filter @linbit/web...
-COPY apps/web apps/web
+RUN pnpm install --frozen-lockfile --filter @linbit/${APP}...
+COPY apps/${APP} apps/${APP}
 COPY packages packages
 
+ARG API_PROXY_TARGET=
+ARG NEXT_PUBLIC_NETWORK=
 ARG NEXT_PUBLIC_SITE_URL=
 ARG NEXT_PUBLIC_API_BASE=
 ARG NEXT_PUBLIC_WS_URL=
@@ -37,7 +43,9 @@ ARG NEXT_PUBLIC_SOCIAL_FACEBOOK=
 ARG NEXT_PUBLIC_SOCIAL_DISCORD=
 ARG NEXT_PUBLIC_SOCIAL_INSTAGRAM=
 ARG NEXT_PUBLIC_SOCIAL_YOUTUBE=
-ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+ENV API_PROXY_TARGET=$API_PROXY_TARGET \
+    NEXT_PUBLIC_NETWORK=$NEXT_PUBLIC_NETWORK \
+    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE \
     NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL \
     NEXT_PUBLIC_INVITE_BASE_URL=$NEXT_PUBLIC_INVITE_BASE_URL \
@@ -47,13 +55,16 @@ ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_SOCIAL_DISCORD=$NEXT_PUBLIC_SOCIAL_DISCORD \
     NEXT_PUBLIC_SOCIAL_INSTAGRAM=$NEXT_PUBLIC_SOCIAL_INSTAGRAM \
     NEXT_PUBLIC_SOCIAL_YOUTUBE=$NEXT_PUBLIC_SOCIAL_YOUTUBE
-RUN pnpm --filter @linbit/web build
+RUN pnpm --filter @linbit/${APP} build
 
 # next.config.mjs does not set output:"standalone", so the runtime keeps the
 # workspace node_modules and runs `next start`.
 FROM base AS run
-ENV NODE_ENV=production PORT=3000
+ARG APP=web
+ARG API_PROXY_TARGET=
+# rewrites() reads API_PROXY_TARGET at build; keep it at runtime too.
+ENV NODE_ENV=production APP=${APP} API_PROXY_TARGET=$API_PROXY_TARGET
 COPY --from=build /repo /repo
-WORKDIR /repo/apps/web
-EXPOSE 3000
+WORKDIR /repo/apps/${APP}
+EXPOSE 3000 3100
 CMD ["pnpm", "start"]
