@@ -184,13 +184,15 @@ export function Register() {
           <button
             className={"abtn" + (agree && a.valid && validPwd && !busy ? "" : " dis")}
             disabled={busy}
-            aria-disabled={!(agree && a.valid && validPwd)}
             onClick={async () => {
               setTried(true);
-              if (!a.valid) { a.touch(); return setErr(a.msg); }
-              if (!pwd) return setErr("请输入密码");
-              if (!validPwd) return setErr("密码还需：" + pwdMissing(pwd).join("、"));
-              if (!agree) return setErr("请先同意服务条款");
+              // 一次性列出全部缺失项：账户 + 密码规则 + 条款
+              const miss: string[] = [];
+              if (!a.valid) { a.touch(); miss.push(a.msg || "请输入正确的邮箱或手机号"); }
+              if (!pwd) miss.push("请输入密码");
+              else if (!validPwd) miss.push("密码还需：" + pwdMissing(pwd).join("、"));
+              if (!agree) miss.push("请先同意服务条款");
+              if (miss.length) return setErr(miss.join("；"));
               setBusy(true);
               const r = await send();
               setBusy(false);
@@ -425,13 +427,14 @@ export function ForgotPassword() {
       )}
       {step === 2 && (
         <>
-          <input className="ai" type="password" placeholder="新密码（8 位以上，含字母和数字）" value={pwd} onChange={(e) => setPwd(e.target.value)} />
+          <input className="ai" type="password" placeholder={`新密码（8–${PWD_MAX} 位，含字母和数字）`} value={pwd} onChange={(e) => setPwd(e.target.value)} />
+          <PwdRules pwd={pwd} show={!!err} />
           <input className="ai" type="password" placeholder="确认新密码" value={pwd2} onChange={(e) => setPwd2(e.target.value)} />
           {err && <div className="fx-err">{err}</div>}
           <button
             className={"abtn" + (busy ? " dis" : "")}
             onClick={async () => {
-              if (pwd.length < 8 || !/[A-Za-z]/.test(pwd) || !/\d/.test(pwd)) return setErr("密码需 8 位以上且包含字母和数字");
+              if (pwdMissing(pwd).length) return setErr("密码还需：" + pwdMissing(pwd).join("、"));
               if (pwd !== pwd2) return setErr("两次输入的密码不一致");
               if (!tok || Date.now() > tok.exp) {
                 setTok(null);
