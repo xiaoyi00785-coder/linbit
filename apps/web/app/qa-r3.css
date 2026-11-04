@@ -79,3 +79,8 @@ body,:lang(sk),:lang(cs),:lang(el){font-family:-apple-system,BlinkMacSystemFont,
 .tk-sel .tk-chip{white-space:nowrap}@media (max-width:600px){.tk-sel{flex-wrap:wrap}}
 /* r3 follow-up：行情页三榜（涨幅/跌幅/成交额，服务端排行） */
 .mlists{grid-template-columns:repeat(3,minmax(0,1fr))}.mlists .mlg{grid-template-columns:1fr}
+
+/* /buy：未勾选免责声明时“下一步”呈禁用态（仍可点击以提示原因） */
+.lb.lime.dis,.lb.lime[aria-disabled="true"]{background:var(--lb-light-border)!important;color:var(--lb-text-2)!important;cursor:not-allowed;box-shadow:none}
+.notice-t{color:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-decoration:none}.notice-t:hover{color:#abe127}
+.tk-obsk{display:flex;flex-direction:column;gap:6px;padding:6px 0}.tk-obsk .sk,.tk-midsk{display:block;height:14px;border-radius:3px;background:linear-gradient(90deg,#1c1c1c 25%,#2a2a2a 50%,#1c1c1c 75%);background-size:200% 100%;animation:skq 1.2s infinite linear}.tk-midsk{display:inline-block;width:90px;height:18px;vertical-align:middle}.fp-unset{font-size:12px;margin:8px 0}.fp-unset a{color:#abe127;cursor:pointer}

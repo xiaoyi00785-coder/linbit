@@ -7,7 +7,7 @@ import { Shell, Side, ACC } from "./layout";
 import { Footer } from "./layout";
 import { toast } from "@/lib/ui";
 import {
-  activateCoupon, couponSummary, listAnnouncements, listCoupons, listNotifications, readNotifications,
+  activateCoupon, couponSummary, listAnnouncements, getAnnouncement, listCoupons, listNotifications, readNotifications,
   type Announcement, type Coupon, type Notice,
 } from "@/lib/services";
 import {
@@ -102,9 +102,28 @@ export function Notifications() {
   );
 }
 
+type AnnDetail = Awaited<ReturnType<typeof getAnnouncement>>;
+/** 公告条目：点击展开详情（GET /announcements/{id}）；404 → 不存在/已下线 */
+function AnnItem({ a, open, toggle }: { a: Announcement; open: boolean; toggle: () => void }) {
+  const [d, setD] = useState<AnnDetail | null>(null);
+  useEffect(() => { if (open && (!d || d.state === "error")) { setD(null); getAnnouncement(a.id).then(setD); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className={"fx-item ann-item" + (open ? " on" : "")} style={{ flexDirection: "column", alignItems: "stretch" }}>
+      <button type="button" className="sp ann-head" aria-expanded={open} onClick={toggle} style={{ display: "flex", justifyContent: "space-between", width: "100%", background: "none", border: 0, color: "inherit", textAlign: "left", cursor: "pointer", padding: 0, font: "inherit" }}>
+        <span>{a.pinned && <span className="fx-pin">置顶</span>}<b>{a.title}</b> <small>{a.category}</small></span><span className="lg">{a.date} {open ? "▴" : "▾"}</span>
+      </button>
+      {open && <div className="ann-body" role="region" style={{ marginTop: 10, whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
+        {!d ? <i className="sk" style={{ display: "block", height: 48 }} /> : d.state === "ok" ? (d.body || "（无正文）") : d.state === "notfound" ? <span className="lg">公告不存在或已下线</span> : <span className="red">{d.error}</span>}
+      </div>}
+    </div>
+  );
+}
+
 export function Announcements() {
   const [list, , src] = useLoad<Announcement[]>(listAnnouncements, []);
   const [cat, setCat] = useState("全部");
+  // 支持 /announcements?id=123 深链：直接展开对应公告
+  const [openId, setOpenId] = useState<string | null>(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("id") : null));
   const cats = ["全部", ...Array.from(new Set(list.map((a) => a.category)))];
   return (
     <main className="light"><div className="lwrap"><section className="lmain" style={{ width: "100%" }}>
@@ -114,7 +133,7 @@ export function Announcements() {
         {!src ? <Skel n={4} h={52} /> : list.filter((a) => cat === "全部" || a.category === cat).length === 0 ? (
           <div className="fx-empty" role="status"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" /><path d="M8 9h8M8 12h5" /></svg><p>暂无公告</p><small>平台最新公告发布后将显示在这里</small></div>
         ) : list.filter((a) => cat === "全部" || a.category === cat).map((a) => (
-          <div key={a.id} className="fx-item"><div className="sp">{a.pinned && <span className="fx-pin">置顶</span>}<b>{a.title}</b><small>{a.category}</small></div><span className="lg">{a.date}</span></div>
+          <AnnItem key={a.id} a={a} open={openId === a.id} toggle={() => setOpenId(openId === a.id ? null : a.id)} />
         ))}
       </div>
     </section></div><Footer light /></main>

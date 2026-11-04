@@ -1,19 +1,25 @@
 "use client";
 /** 前端展示用的“接口来源”数值：费率 / 理财最高 APR / 现货可买币种。加载中返回 null，调用方显示骨架或隐藏，不写死数字。 */
 import { useEffect, useMemo, useState } from "react";
-import { useContracts } from "@/features/TradeKit";
 import { useSymbols } from "./market";
 import { rget } from "./rest";
 
-/** 合约费率：/futures/market/contracts 的 maker/takerFeeRate，取全部合约的最低值（“低至”文案用） */
-export function useFutFeeRates(): { maker: number; taker: number } | null {
-  const cs = useContracts();
-  return useMemo(() => {
-    const m = cs.map((c) => Number(c.makerFeeRate)).filter(Number.isFinite);
-    const t = cs.map((c) => Number(c.takerFeeRate)).filter(Number.isFinite);
-    return m.length && t.length ? { maker: Math.min(...m), taker: Math.min(...t) } : null;
-  }, [cs]);
+type FeePair = { maker?: string; taker?: string };
+let feeP: Promise<{ spot?: FeePair; futures?: FeePair | null } | null> | null = null;
+const num = (p?: FeePair | null) => { const m = Number(p?.maker), t = Number(p?.taker); return p && p.maker != null && p.taker != null && Number.isFinite(m) && Number.isFinite(t) ? { maker: m, taker: t } : null; };
+/** 平台默认费率：GET /spot/fee-schedule（小数）。kind=futures 时 futures 为 null（合约服务不可用）→ 返回 null，调用方显示“以合约详情为准” */
+export function useFeeSchedule(kind: "spot" | "futures" = "futures"): { maker: number; taker: number } | null {
+  const [v, setV] = useState<{ maker: number; taker: number } | null>(null);
+  useEffect(() => {
+    let live = true;
+    // 失败（如旧网关对游客 401）不缓存，下次挂载/登录后重试
+    (feeP ??= rget<{ spot?: FeePair; futures?: FeePair | null }>("/spot/fee-schedule").then((r) => { const d = r.ok && r.source === "api" ? r.data ?? null : null; if (!d) feeP = null; return d; })).then((d) => live && setV(num(d?.[kind])));
+    return () => { live = false; };
+  }, [kind]);
+  return v;
 }
+/** 兼容旧调用：合约默认费率（来自 /spot/fee-schedule.futures） */
+export const useFutFeeRates = () => useFeeSchedule("futures");
 export const feePct = (r: number) => `${+(r * 100).toFixed(3)}%`;
 
 type EarnProduct = { kind?: string; apr?: string; bonusApr?: string };

@@ -9,6 +9,8 @@ import {
   type Order, type SpotTrade,
 } from "@/lib/services";
 import { SPOT_FEE } from "@/lib/fees";
+import { useFeeSchedule } from "@/lib/live";
+import type { PlaceOrderRequest } from "@/lib/services";
 import { Src } from "./common";
 import { useFillPrice, type PairMeta } from "./TradeKit";
 import { useTicker } from "@/lib/market";
@@ -28,18 +30,23 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const [type, setType] = useState<"limit" | "market">("limit");
   const [price, setPrice] = useState("");
   useFillPrice((p) => { setPrice(p); setType("limit"); });
-  useEffect(() => { setPrice(""); setQty(""); }, [SYMBOL]);
+  useEffect(() => { setPrice(""); setQty(""); setAmt(""); }, [SYMBOL]);
   const fix = (v: string, d: number) => { const [a, b] = v.split("."); return b === undefined ? a : a + "." + b.slice(0, d); };
   const [qty, setQty] = useState("");
+  // 市价买入按金额（USDT）下单：POST /spot/orders 的 quoteOrderQty；限价 / 市价卖出仍按数量
+  const [amt, setAmt] = useState("");
+  const byAmt = type === "market" && side === "buy";
   const [msg, setMsg] = useState<{ ok: boolean; t: string }>();
   const [busy, setBusy] = useState(false);
-  const q = Number(qty) || 0;
   const px = type === "limit" ? Number(price) || 0 : last;
+  const an = Number(amt) || 0;
+  // 按金额买入时，数量按最新价估算（仅用于展示）
+  const q = byAmt ? (last ? an / last : 0) : Number(qty) || 0;
   const bal = useBalances();
   const freeOf = (a: string) => Number(((bal.data as any)?.items || []).find((x: any) => x.asset === a)?.free) || 0;
   const avail = side === "buy" ? freeOf("USDT") : freeOf(B);
   const [pc, setPc] = useState(0);
-  useEffect(() => setPc(0), [side, SYMBOL]);
+  useEffect(() => setPc(0), [side, SYMBOL, type]);
   const setByPct = (p: number) => {
     if (!avail) {
       // 余额为 0：比例按钮与滑杆保持 0%，并给出提示
@@ -48,28 +55,42 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       return;
     }
     setPc(p);
+    if (byAmt) { const a = Math.floor(((avail * p) / 100) * 100) / 100; setAmt(a ? a.toFixed(2) : ""); return; }
     const qn = side === "buy" ? (px ? (avail * p) / 100 / px : 0) : (avail * p) / 100;
     setQty(qn ? (Math.floor(qn * 10 ** pair.qp) / 10 ** pair.qp).toFixed(pair.qp) : "");
   };
-  // 手续费统一 6 位小数（买入按基础币扣，卖出按 USDT 扣）
-  const fee = side === "buy" ? `${(q * SPOT_FEE.taker).toFixed(6)} ${B}` : `${(q * px * SPOT_FEE.taker).toFixed(6)} USDT`;
+  // 费率来自 GET /spot/fee-schedule（不可用时回退平台默认 0.1%）；限价按 maker 估算上限取 max(maker,taker)，市价按 taker
+  const fs = useFeeSchedule("spot");
+  const rate = fs ? (type === "market" ? fs.taker : Math.max(fs.maker, fs.taker)) : SPOT_FEE.taker;
+  // 买入从所得基础币扣，卖出从所得 USDT 扣；小额按 8 位有效小数显示，避免恒为 0.000000
+  const fmtFee = (v: number, dp: number) => (v > 0 ? v.toFixed(dp).replace(/\.?0+$/, "") || "0" : "0");
+  const feeV = side === "buy" ? q * rate : q * px * rate;
+  const fee = !q || (side === "sell" && !px) ? "--" : side === "buy" ? `${fmtFee(feeV, Math.max(8, pair.qp))} ${B}` : `${fmtFee(feeV, 8)} USDT`;
 
   const submit = async () => {
     if (!authed) return nav("/login");
-    if (!qty.trim()) return setMsg({ ok: false, t: "请输入数量" });
-    if (!(q > 0) || !isFinite(q)) return setMsg({ ok: false, t: "数量必须大于 0" });
+    if (byAmt) {
+      if (!amt.trim()) return setMsg({ ok: false, t: "请输入买入金额" });
+      if (!(an > 0)) return setMsg({ ok: false, t: "金额必须大于 0" });
+      if (authed && an > avail) return setMsg({ ok: false, t: `可用 USDT 不足（可用 ${avail}）` });
+    } else {
+      if (!qty.trim()) return setMsg({ ok: false, t: "请输入数量" });
+      if (!(q > 0) || !isFinite(q)) return setMsg({ ok: false, t: "数量必须大于 0" });
+    }
     if (type === "market" && !last) return setMsg({ ok: false, t: "暂无市价，请使用限价单" });
     if (type === "limit" && !Number(price)) return setMsg({ ok: false, t: "请输入价格" });
     setBusy(true);
-    const r = await placeSpotOrder({
-      symbol: SYMBOL, side, type, quantity: qty,
+    const body = {
+      symbol: SYMBOL, side, type,
+      ...(byAmt ? { quoteOrderQty: amt } : { quantity: qty }),
       price: type === "limit" ? price : null,
       timeInForce: type === "limit" ? "GTC" : "IOC",
       clientOrderId: `web-${Date.now()}`,
-    });
+    } as PlaceOrderRequest & { quoteOrderQty?: string };
+    const r = await placeSpotOrder(body);
     setBusy(false);
     setMsg(r.ok ? { ok: true, t: `下单成功 #${r.data?.orderId}（${r.data?.status}）` } : { ok: false, t: r.error ?? "下单失败" });
-    if (r.ok) { setQty(""); bump(); }
+    if (r.ok) { setQty(""); setAmt(""); setPc(0); bump(); window.setTimeout(bump, 800); }
   };
 
   return (
@@ -81,11 +102,12 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
         {(["limit", "market"] as const).map((t) => <b key={t} {...tabProps(type === t, () => setType(t))} className={type === t ? "on" : ""} onClick={() => setType(t)}>{t === "limit" ? "限价" : "市价"}</b>)}
       </div>
       {type === "limit" && <div className="inp"><small>价格(USDT)</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(fix(num(e.target.value), pair.pp))} /></div>}
-      <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "数量不能为负数" }); return; } setMsg(undefined); setQty(fix(num(v), pair.qp)); }} aria-invalid={qty !== "" && !(q > 0)} /><em>{B}</em></div>
+      {byAmt ? <div className="inp"><small>金额(USDT)</small><input inputMode="decimal" aria-label="买入金额" placeholder="按金额买入" value={amt} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "金额不能为负数" }); return; } setMsg(undefined); setAmt(fix(num(v), 2)); setPc(0); }} aria-invalid={amt !== "" && !(an > 0)} /><em>USDT</em></div> :
+      <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "数量不能为负数" }); return; } setMsg(undefined); setQty(fix(num(v), pair.qp)); }} aria-invalid={qty !== "" && !(q > 0)} /><em>{B}</em></div>}
       <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} {...btnProps(() => setByPct(p), `${p}%`)} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
       <div className="kv2 g"><span>可用</span><span>{authed ? `${avail} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
-      <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>
-      <div className="kv2 g"><span>预估手续费（0.1%）</span><span>{fee}</span></div>
+      {byAmt ? <div className="kv2 g"><span>预估数量</span><span>{q ? `${q.toFixed(pair.qp)} ${B}` : "--"}</span></div> : <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>}
+      <div className="kv2 g"><span>预估手续费（{+(rate * 100).toFixed(4)}%）</span><span>{fee}</span></div>
       {msg && <div className={msg.ok ? "fx-ok" : "fx-err"} style={{ fontSize: 12, margin: "6px 0" }}>{msg.t}</div>}
       <button className={"lbtn" + (authed && side === "sell" ? " sell" : "")} disabled={busy} aria-busy={busy || undefined} onClick={submit}>{authed ? (side === "buy" ? `买入 ${B}` : `卖出 ${B}`) : "登录/注册"}</button>
     </div>

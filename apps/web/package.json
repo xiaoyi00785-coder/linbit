@@ -9,16 +9,17 @@
     "build": "next build",
     "start": "next start -p 3000",
     "pretypecheck": "node scripts/gen-asset-manifest.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:nav": "node scripts/check-nav-dropdowns.mjs"
   },
   "dependencies": {
     "@linbit/api-client": "workspace:*",
     "@linbit/chart": "workspace:*",
     "@linbit/ui": "workspace:*",
-    "lightweight-charts": "^4.2.3",
-    "qrcode.react": "^4.2.0",
     "@tanstack/react-query": "^5.59.16",
+    "lightweight-charts": "^4.2.3",
     "next": "14.2.15",
+    "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.1"
@@ -28,6 +29,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
+    "playwright": "1.64.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3"

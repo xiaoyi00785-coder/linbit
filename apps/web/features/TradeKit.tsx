@@ -171,7 +171,8 @@ export function OrderBookPanel({ fut, pair }: { fut: boolean; pair: PairMeta }) 
       <span className={side === "a" ? "down" : "up"}>{fmtFixed(r.p, sd)}</span><span>{fmtFixed(r.q, qp, false)}</span><span>{fmtFixed(r.c, qp, false)}</span>
     </div>
   );
-  const empty = <div className="tk-empty">暂无挂单</div>;
+  // 首屏深度未到：骨架行而非“暂无挂单”
+  const empty = !book ? <div className="tk-obsk" aria-busy="true" aria-label="订单簿加载中">{Array.from({ length: n }, (_, i) => <i key={i} className="sk" />)}</div> : <div className="tk-empty">暂无挂单</div>;
   return (
     <div data-guide="book" className="ob">
       <div className="pt" role="tablist">{["订单簿", "最新成交"].map((x, i) => <b key={x} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}</div>
@@ -186,7 +187,7 @@ export function OrderBookPanel({ fut, pair }: { fut: boolean; pair: PairMeta }) 
           <div className="obh"><span>价格({pair.quote})</span><span>数量({base})</span><span>累计({base})</span></div>
           {view !== "bids" && <div className={"tk-side" + (view === "asks" ? " full" : "")}>{A.rows.length ? [...A.rows].reverse().map((r) => row(r, A.max, "a")) : empty}</div>}
           <div className={"obm tk-mid " + (chg >= 0 ? "up" : "down")} onClick={() => mid ? fillPrice(Number(mid).toFixed(pp)) : toast("暂无最新成交价", "info")}>
-            {mid != null ? fmtFixed(mid, pp) : "--"} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ transform: chg >= 0 ? undefined : "rotate(180deg)", verticalAlign: "-1px" }}><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+            {mid != null ? fmtFixed(mid, pp) : !book ? <i className="sk tk-midsk" aria-label="加载中" /> : "--"} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ transform: chg >= 0 ? undefined : "rotate(180deg)", verticalAlign: "-1px" }}><path d="M12 19V5M6 11l6-6 6 6" /></svg>
             {fut && ft?.markPrice && <small className="g"> 标记 {fmtFixed(ft.markPrice, pp)}</small>}
           </div>
           {view !== "asks" && <div className={"tk-side" + (view === "bids" ? " full" : "")}>{B.rows.length ? B.rows.map((r) => row(r, B.max, "b")) : empty}</div>}
@@ -231,6 +232,14 @@ type TrigType = NonNullable<PlaceReq["tpTriggerPriceType"]>;
 type Tif = "GTC" | "IOC" | "POST_ONLY";
 const TIF: [Tif, string][] = [["GTC", "GTC"], ["IOC", "IOC"], ["POST_ONLY", "只做 Maker"]];
 
+/* ---------- 合约下单表单：按订单类型隔离的输入状态 ---------- */
+export type FutTypeState = { limit: { price: string }; plan: { price: string; trig: string } };
+export const EMPTY_FUT_STATE: FutTypeState = { limit: { price: "" }, plan: { price: "", trig: "" } };
+/** 当前订单类型的委托价；市价单无价格 */
+export const futPrice = (f: FutTypeState, ty: "limit" | "market" | "plan") => (ty === "limit" ? f.limit.price : ty === "plan" ? f.plan.price : "");
+/** 只更新指定类型的价格，其余类型保持不变 */
+export const withPrice = (f: FutTypeState, ty: "limit" | "plan", v: string): FutTypeState => (ty === "limit" ? { ...f, limit: { price: v } } : { ...f, plan: { ...f.plan, price: v } });
+
 export function FutForm({ pair }: { pair: PairMeta }) {
   const nav = useNavigate();
   const authed = useAuthStore((s) => !!s.accessToken);
@@ -238,9 +247,16 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const maxLev = c?.maxLeverage ?? 100;
   const [st, setSt] = useState(() => (typeof window === "undefined" ? { lev: 20, mode: { margin: "cross", pos: "merged" } as Mode } : readLocal(pair.symbol)));
   const [act, setAct] = useState<0 | 1>(0);
-  const [ty, setTy] = useState<"limit" | "market" | "plan">("limit");
-  const [price, setPrice] = useState("");
-  const [trig, setTrig] = useState("");
+  const [ty, setTyRaw] = useState<"limit" | "market" | "plan">("limit");
+  // P0：限价 / 计划委托的价格与触发价按订单类型各自独立保存，互不串值；提交时从 ref 读取最新输入，避免闭包旧值
+  const [form, setForm] = useState<FutTypeState>(EMPTY_FUT_STATE);
+  const formRef = useRef(form); formRef.current = form;
+  const tyRef = useRef(ty); tyRef.current = ty;
+  const setTy = (t: "limit" | "market" | "plan") => { tyRef.current = t; setTyRaw(t); };
+  const price = futPrice(form, ty);
+  const trig = form.plan.trig;
+  const setPrice = (v: string) => { const t = tyRef.current; if (t === "market") return; setForm((f) => { const n = withPrice(f, t, v); formRef.current = n; return n; }); };
+  const setTrig = (v: string) => setForm((f) => { const n = { ...f, plan: { ...f.plan, trig: v } }; formRef.current = n; return n; });
   const [qty, setQty] = useState("");
   const [pc, setPc] = useState(0);
   const [modal, setModal] = useState<"" | "mode" | "lev" | "calc">("");
@@ -253,9 +269,9 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   const [sl, setSl] = useState("");
   const [tpTT, setTpTT] = useState<"LAST" | "MARK">("MARK");
   const [slTT, setSlTT] = useState<"LAST" | "MARK">("MARK");
-  useFillPrice((p) => { setPrice(p); if (ty === "market") setTy("limit"); });
+  useFillPrice((p) => { if (tyRef.current === "market") setTy("limit"); setPrice(p); });
   // 切换合约：重置价格、数量、比例与条件单输入
-  useEffect(() => { setSt(readLocal(pair.symbol)); setPrice(""); setQty(""); setPc(0); setTrig(""); setTp(""); setSl(""); }, [pair.symbol]);
+  useEffect(() => { setSt(readLocal(pair.symbol)); setForm(EMPTY_FUT_STATE); formRef.current = EMPTY_FUT_STATE; setQty(""); setPc(0); setTp(""); setSl(""); }, [pair.symbol]);
   const ftk = useFutTicker(pair.symbol, true);
   const mark = Number(ftk?.markPrice) || Number(ftk?.lastPrice) || 0;
   // 价格按 tickSize 对齐；数量按 minQty / maxQty 与数量精度校验
@@ -293,9 +309,9 @@ export function FutForm({ pair }: { pair: PairMeta }) {
   };
   const qn = Number(qty) || 0;
   // 市价单 / 平仓未填价格：保证金与手续费按标记价（无则最新价）估算
-  const px = ty === "market" || (act === 1 && !Number(price)) ? mark : Number(price) || 0;
+  const px = ty === "market" || (act === 1 && !Number(price)) ? mark : ty === "plan" && !Number(price) ? Number(trig) || mark : Number(price) || 0;
   const qErr = !qn ? "" : minQ && qn < minQ ? `最小下单数量 ${c?.minQty} ${pair.base}` : maxQ && qn > maxQ ? `最大下单数量 ${c?.maxQty} ${pair.base}` : "";
-  const pErr = ty !== "market" && Number(price) && Math.abs(Number(price) / tick - Math.round(Number(price) / tick)) > 1e-6 ? `价格需为 ${c?.tickSize ?? tick} 的整数倍` : "";
+  const pErr = ty !== "market" && price !== "" && price !== "-" && !(Number(price) > 0) ? "价格必须大于 0" : ty !== "market" && price.startsWith("-") ? "价格必须大于 0" : ty !== "market" && Number(price) && Math.abs(Number(price) / tick - Math.round(Number(price) / tick)) > 1e-6 ? `价格需为 ${c?.tickSize ?? tick} 的整数倍` : "";
   const notional = qn * px;
   const margin = st.lev ? notional / st.lev : 0;
   const fee = c?.takerFeeRate != null ? notional * Number(c.takerFeeRate) : null; // 费率只取合约数据，无数据不估算
@@ -305,8 +321,13 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     if (!(qn > 0) || !isFinite(qn)) return toast("数量必须大于 0", "err");
     if (qErr) return toast(qErr, "err");
     if (pErr) return toast(pErr, "err");
-    if (ty !== "market" && !Number(price)) return toast("请输入价格", "err");
-    if (ty === "plan" && !Number(trig)) return toast("请输入触发价", "err");
+    // 提交时按当前订单类型读取该类型自己的输入（ref，非渲染闭包）
+    const curTy = tyRef.current;
+    const { price, trig } = { price: futPrice(formRef.current, curTy), trig: formRef.current.plan.trig };
+    // 计划委托：委托价留空 = 触发后按市价成交；仅限价单要求价格
+    if (curTy === "limit" && !Number(price)) return toast("请输入价格", "err");
+    if (curTy === "plan" && !Number(trig)) return toast("请输入触发价", "err");
+    const ty = curTy;
     const hedge = st.mode.pos === "split";
     // 双向持仓：开多/平多 → LONG，开空/平空 → SHORT；单向持仓用 reduceOnly 表示平仓
     const positionSide: PlaceReq["positionSide"] = hedge ? (act === 0 ? (side === "buy" ? "LONG" : "SHORT") : (side === "buy" ? "SHORT" : "LONG")) : undefined;
@@ -360,7 +381,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       <div className="pt sm" role="tablist" aria-label="订单类型">{([["limit", "限价"], ["market", "市价"], ["plan", "计划委托"]] as const).map(([k, x]) => <b key={k} {...tabProps(ty === k, () => setTy(k))} className={ty === k ? "on" : ""} onClick={() => setTy(k)}>{x}</b>)}</div>
       <div className="kv2"><span>可用</span><b>{avail != null ? fmtFixed(avail, 4) : "--"} USDT</b></div>
       {ty === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" value={trig} onChange={(e) => setTrig(cut(e.target.value, tickDp))} onBlur={() => setTrig(snap(trig))} /><select className="tk-tt" aria-label="触发价类型" value={trigType} onChange={(e) => setTrigType(e.target.value as "LAST" | "MARK")}><option value="LAST">最新价</option><option value="MARK">标记价</option></select></div>}
-      {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => setPrice(cut(e.target.value, tickDp))} onBlur={() => setPrice(snap(price))} aria-invalid={!!pErr} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
+      {ty !== "market" ? <div className="inp"><small>{ty === "plan" ? "委托价" : "价格"}</small><input key={ty} inputMode="decimal" placeholder={ty === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => { const v = e.target.value.trim(); setPrice(v.startsWith("-") ? "-" + cut(v, tickDp) : cut(e.target.value, tickDp)); }} onBlur={() => { const t = ty as "limit" | "plan"; const v = futPrice(formRef.current, t); if (Number(v) > 0) setForm((f) => { const n = withPrice(f, t, snap(v)); formRef.current = n; return n; }); }} aria-invalid={!!pErr} /><em>USDT</em></div> : <div className="inp dis"><small>价格</small><input disabled value="市价" /></div>}
       {pErr && <div className="tk-ferr" role="alert">{pErr}</div>}
       <div className="inp"><small>数量</small><input inputMode="decimal" aria-label="数量" placeholder={minQ ? `最小 ${c?.minQty}` : ""} aria-invalid={!!qErr || (qty !== "" && !(qn > 0))} value={qty} onChange={(e) => { if (/-/.test(e.target.value)) { toast("数量不能为负数", "err"); return; } setQty(cut(e.target.value, pair.qp).replace(/(\..*)\./g, "$1")); setPc(0); }} /><em>{pair.base}</em></div>
       {qErr && <div className="tk-ferr" role="alert">{qErr}</div>}
@@ -404,7 +425,7 @@ function LevModal({ lev, max, onClose, onOk }: { lev: number; max: number; onClo
   const [raw, setRaw] = useState(String(lev));
   const clamp = (x: number) => Math.max(1, Math.min(max, Math.round(x) || 1));
   const n = Number(raw);
-  const err = raw.trim() === "" ? "请输入杠杆倍数" : !/^\d+$/.test(raw.trim()) ? "杠杆须为整数" : n < 1 || n > max ? `杠杆范围 1–${max}x` : "";
+  const err = raw.trim() === "" ? "请输入杠杆倍数" : /^-/.test(raw.trim()) ? `杠杆范围 1–${max}x` : !/^\d+$/.test(raw.trim()) ? "杠杆须为整数" : n < 1 || n > max ? `杠杆范围 1–${max}x` : "";
   const v = err ? clamp(Number.isFinite(n) ? n : 1) : n;
   const set = (x: number) => setRaw(String(clamp(x)));
   const presets = [1, 5, 10, 20, 50, 100, 125, 150, 200].filter((x) => x <= max);
