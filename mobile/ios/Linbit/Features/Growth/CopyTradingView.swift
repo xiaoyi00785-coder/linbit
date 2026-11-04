@@ -41,7 +41,7 @@ enum CopyDemo {
                           ["symbol": "ETHUSDT", "side": "short", "entryPrice": "3521.32", "leverage": 5, "marginMode": "isolated", "openedAt": J(DemoShot.nowMs - 86_400_000)]]
         return .obj(o)
     }
-    static let summary: J = ["traders": 236, "totalFollowers": 18420, "followerProfit": "2860312.55", "aum": "48210000"]
+    static let summary: J = ["traders": 236, "totalFollowers": 18420, "followerProfit": "2860312.55", "aum": "48210000", "minAmount": "50"]
     static func follows(_ empty: Bool) -> J {
         if empty { return ["items": []] }
         let day: Int64 = 86_400_000, now = DemoShot.nowMs
@@ -193,6 +193,8 @@ struct CopyTraderDetail: View {
     let onBack: () -> Void
     @State private var data: Loadable<J> = .loading
     @State private var following = CopyDemo.state?.hasPrefix("follow") == true && CopyDemo.state?.hasPrefix("follows") == false
+    /// 跟单二次确认：放在详情页根层，这样确认框能盖在跟单 Sheet 之上
+    @State private var confirm: ConfirmRequest?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -262,8 +264,9 @@ struct CopyTraderDetail: View {
         .background(p.bg.ignoresSafeArea())
         .task { await load() }
         .lbSheet($following) {
-            CopyFollowSheet(trader: data.value.map { $0["trader"].isNull ? $0 : $0["trader"] } ?? .null) { following = false }
+            CopyFollowSheet(trader: data.value.map { $0["trader"].isNull ? $0 : $0["trader"] } ?? .null, confirm: $confirm) { following = false }
         }
+        .lbConfirm($confirm)
     }
 
     private func load() async {
@@ -275,7 +278,11 @@ struct CopyTraderDetail: View {
 struct CopyFollowSheet: View {
     @Environment(\.palette) private var p
     let trader: J
+    @Binding var confirm: ConfirmRequest?
     let onClose: () -> Void
+    /// 最低跟单金额：以 GET /futures/copy/summary 的 minAmount 为准（后端 FUTURES_COPY_MIN_AMOUNT）；
+    /// 接口返回前先用后端默认值 50，服务端仍会校验。
+    @State private var minAmount: Decimal = 50
     @State private var mode = 0
     @State private var amount = CopyDemo.state?.hasPrefix("follow") == true ? "1000" : ""
     @State private var ratio = "1"
@@ -286,15 +293,17 @@ struct CopyFollowSheet: View {
     @State private var loading = false
     @State private var error: String? = CopyDemo.state == "follow-error" ? ErrorText.map["INSUFFICIENT_BALANCE"] : nil
 
-    private var amountErr: String? { amount.isEmpty || Dec.parse(amount) >= 10 ? nil : "跟单金额最低 10 USDT" }
+    private var amountErr: String? { amount.isEmpty || Dec.parse(amount) >= minAmount ? nil : "跟单金额最低 \(minAmount) USDT" }
     private var ratioErr: String? { mode == 0 && !ratio.isEmpty && (Dec.parse(ratio) <= 0 || Dec.parse(ratio) > 10) ? "跟单比例需在 0.01 - 10 倍之间" : nil }
     private var fixedErr: String? { mode == 1 && !fixedMargin.isEmpty && Dec.parse(fixedMargin) <= 0 ? "请输入有效的单笔保证金" : nil }
+    // 与后端校验一致（services/go/futures/copy.go）：止盈 ≥ 0 且无上限，止损 ≥ 0 且 ≤ 100%；留空 / 0 表示不设置，这里只允许留空或 > 0
     private var pctErr: String? {
-        let bad = [tp, sl].contains { !$0.isEmpty && (Dec.parse($0) <= 0 || Dec.parse($0) > 100) }
-        return bad ? "止盈 / 止损比例需在 1% - 100% 之间" : nil
+        if !tp.isEmpty, Dec.parse(tp) <= 0 { return "止盈比例需大于 0%" }
+        if !sl.isEmpty, Dec.parse(sl) <= 0 || Dec.parse(sl) > 100 { return "止损比例需大于 0%，且不超过 100%" }
+        return nil
     }
     private var valid: Bool {
-        Dec.parse(amount) >= 10 && amountErr == nil && ratioErr == nil && fixedErr == nil && pctErr == nil
+        Dec.parse(amount) >= minAmount && amountErr == nil && ratioErr == nil && fixedErr == nil && pctErr == nil
             && (mode == 0 ? !ratio.isEmpty : !fixedMargin.isEmpty)
     }
 
@@ -304,7 +313,7 @@ struct CopyFollowSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if let error { InlineBanner(text: error) }
                     PillSegment(items: ["按比例跟单", "固定保证金"], selected: $mode)
-                    LBTextField(label: "跟单金额 (USDT)", placeholder: "最低 10 USDT", text: $amount, keyboard: .decimalPad, error: amountErr)
+                    LBTextField(label: "跟单金额 (USDT)", placeholder: "最低 \(minAmount) USDT", text: $amount, keyboard: .decimalPad, error: amountErr)
                     if mode == 0 {
                         LBTextField(label: "跟单比例（倍）", placeholder: "带单员仓位的倍数，如 1", text: $ratio, keyboard: .decimalPad, error: ratioErr)
                     } else {
@@ -317,10 +326,25 @@ struct CopyFollowSheet: View {
                     }
                     if let pctErr { Text(pctErr).font(.lb(FontSize.small)).foregroundColor(p.down) }
                     InfoNote(text: "跟单资金将从合约账户划入独立跟单仓位，带单员开平仓时自动跟随。停止跟单将按市价平掉跟单仓位并返还剩余资金。")
-                    LBButton(title: "确认跟单", enabled: valid, loading: loading) { Task { await submit() } }
+                    LBButton(title: "确认跟单", enabled: valid, loading: loading) { askConfirm() }
                 }.padding(.horizontal, Spacing.pageH).padding(.bottom, 16)
             }.frame(maxHeight: 560)
         }
+        .task { await loadMinAmount() }
+    }
+
+    private func loadMinAmount() async {
+        if CopyDemo.state != nil { let m = CopyDemo.summary["minAmount"].d; if m > 0 { minAmount = m }; return }
+        if let s = try? await CopyAPI.summary(), s["minAmount"].d > 0 { minAmount = s["minAmount"].d }
+    }
+
+    /// 跟单会把资金从合约账户划入独立的跟单账户，提交前二次确认
+    private func askConfirm() {
+        guard !loading else { return }
+        let name = trader["nickname"].s ?? "该带单员"
+        let how = mode == 0 ? "按比例 \(ratio) 倍跟单" : "固定保证金 \(fixedMargin) USDT / 笔"
+        let msg = "将从合约账户划转 \(amount) USDT 到独立的跟单账户（\(how)），带单员开平仓时自动跟随，盈利部分按 \(jRatio(trader["profitShare"], 0)) 分润。停止跟单将按市价平仓并返还剩余资金。"
+        confirm = .init(title: "确认跟单 \(name)", message: msg, confirmTitle: "确认跟单") { Task { await submit() } }
     }
 
     private func opt(_ s: String) -> String? { s.isEmpty ? nil : s }
