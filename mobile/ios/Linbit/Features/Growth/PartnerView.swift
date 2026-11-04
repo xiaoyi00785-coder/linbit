@@ -38,7 +38,7 @@ enum PartnerDemo {
         if empty { return ["items": []] }
         let kinds = ["futures", "spot", "override", "referral", "futures", "futures"]
         return ["items": J(kinds.enumerated().map { i, k -> J in
-            ["settlementId": J(100 + i), "sourceUid": "1\(2000 + i * 37)", "kind": k, "rate": k == "override" ? "0.1" : "0.4",
+            ["settlementId": J(100 + i), "sourceUid": "1\(2000 + i * 37)", "kind": .str(k), "rate": .str(k == "override" ? "0.1" : "0.4"),
              "base": "\(120 + i * 31).5", "amount": "\(48 + i * 9).12", "day": "2026-11-0\(3 - i % 3)", "asset": "USDT"] })]
     }
     static func team(_ empty: Bool) -> J {
