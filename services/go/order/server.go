@@ -688,18 +688,25 @@ func fmtPrice(d decimal.Decimal, sym *SymbolConfig) string {
 }
 
 // fmtFee scales a fee to the precision of its charging asset: base fees to
-// quantity_precision, quote fees to price_precision.
+// quantity_precision, quote fees to price_precision. A non-zero fee is never
+// rounded away: when it has more decimals than the asset precision (e.g. a
+// 0.000000065 BTC fee on a tiny fill) the exact value is returned instead.
 func fmtFee(d decimal.Decimal, feeAsset string, sym *SymbolConfig) string {
+	prec := int32(-1)
 	switch {
 	case sym == nil:
-		return d.String()
 	case feeAsset == sym.Base:
-		return d.StringFixed(int32(sym.QuantityPrecision))
+		prec = int32(sym.QuantityPrecision)
 	case feeAsset == sym.Quote:
-		return d.StringFixed(int32(sym.PricePrecision))
-	default:
+		prec = int32(sym.PricePrecision)
+	}
+	if prec < 0 {
 		return d.String()
 	}
+	if !d.IsZero() && !d.Equal(d.Round(prec)) {
+		return d.String()
+	}
+	return d.StringFixed(prec)
 }
 
 func toOrderDTO(o *Order, sym *SymbolConfig) orderDTO {

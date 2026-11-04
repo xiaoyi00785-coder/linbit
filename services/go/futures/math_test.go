@@ -120,3 +120,17 @@ func TestADL(t *testing.T) {
 		t.Fatalf("losing score %s", s)
 	}
 }
+
+// TestLiqPriceCrossSmallLong: cross 5x long 0.0001 BTC @70000 backed by ~2000
+// USDT has no positive liquidation price (returns 0 -> UI shows "--"), while
+// the mirrored short does have one.
+func TestLiqPriceCrossSmallLong(t *testing.T) {
+	q, e := decimal.RequireFromString("0.0001"), decimal.RequireFromString("70000")
+	M, mmr := decimal.RequireFromString("2000"), decimal.RequireFromString("0.004")
+	if p := liqPrice(q, e, M, mmr); !p.IsZero() {
+		t.Fatalf("long liq = %s, want 0", p)
+	}
+	if p := liqPrice(q.Neg(), e, M, mmr); p.Sign() <= 0 {
+		t.Fatalf("short liq = %s, want > 0", p)
+	}
+}

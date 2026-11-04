@@ -76,6 +76,16 @@ func TestToTradeDTOPrecision(t *testing.T) {
 	}
 }
 
+// TestFmtFeeTinyNotRoundedToZero: a sub-precision fee keeps its exact value.
+func TestFmtFeeTinyNotRoundedToZero(t *testing.T) {
+	if got := fmtFee(decimal.RequireFromString("0.000000065"), "BTC", testSym); got != "0.000000065" {
+		t.Fatalf("tiny fee = %q", got)
+	}
+	if got := fmtFee(decimal.Zero, "BTC", testSym); got != "0.000000" {
+		t.Fatalf("zero fee = %q", got)
+	}
+}
+
 // TestFmtFallbackNilSymbol ensures a nil symbol config falls back to raw strings.
 func TestFmtFallbackNilSymbol(t *testing.T) {
 	if got := fmtQty(decimal.RequireFromString("1.23"), nil); got != "1.23" {

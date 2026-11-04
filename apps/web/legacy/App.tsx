@@ -43,8 +43,8 @@ const f=n=>n.toLocaleString('en-US',{maximumFractionDigits:n<1?5:2})
 const feeds={};const feedOf=s=>feeds[s]??=klineFeed(s)
 const live=t=>t&&Number(t.lastPrice)>0
 // 现货行情：有真实成交的交易对用 WS/REST ticker 覆盖演示数据；价格按交易对精度
-function useLiveCoins(){const{tickers}=useTickers();const m=useSymbols();return Object.values(m).filter(x=>x.quote==='USDT').map(x=>{const mc=mockCoins.find(c=>c.s===x.base);const t=tickers[x.symbol];const n=v=>Number(v)||0;return{s:x.base,n:mc?.n??x.base,col:mc?.col??'var(--lb-neutral-400)',symbol:x.symbol,tags:x.tags,p:n(t?.lastPrice),c:n(t?.priceChangePercent),v:t?fmtFixed(t.quoteVolume,2):'--',hi:n(t?.high),lo:n(t?.low),pp:x.pricePrecision,live:live(t)}})}
-const futCoin=r=>({s:r.base,symbol:r.symbol,col:mockCoins.find(c=>c.s===r.base)?.col??'var(--lb-neutral-400)',p:Number(r.last)||0,c:Number(r.chg)||0,v:r.vol!=null?fmtFixed(r.vol,2):'--',pp:r.pp})
+function useLiveCoins(){const{tickers}=useTickers();const m=useSymbols();return Object.values(m).filter(x=>x.quote==='USDT').map(x=>{const mc=mockCoins.find(c=>c.s===x.base);const t=tickers[x.symbol];const n=v=>Number(v)||0;return{s:x.base,n:mc?.n??x.base,col:mc?.col??'var(--lb-neutral-400)',symbol:x.symbol,tags:x.tags,p:n(t?.lastPrice),c:n(t?.priceChangePercent),v:Number(t?.quoteVolume)>0?fmtFixed(t.quoteVolume,2):'--',hi:n(t?.high),lo:n(t?.low),pp:x.pricePrecision,live:live(t)}})}
+const futCoin=r=>({s:r.base,symbol:r.symbol,col:mockCoins.find(c=>c.s===r.base)?.col??'var(--lb-neutral-400)',p:Number(r.last)||0,c:Number(r.chg)||0,v:Number(r.vol)>0?fmtFixed(r.vol,2):'--',pp:r.pp})
 const fp=(c,k='p')=>c.pp!=null?fmtFixed(c[k],c.pp):f(c[k])
 const Pct=({c})=><span className={c>=0?'up':'down'}>{c>=0?'+':''}{c.toFixed(2)}%</span>
 export const Ico=({c,s=20})=><CoinIcon s={c.s} col={c.col} size={s}/>
