@@ -11,7 +11,7 @@
 | `/links` | 合伙人邀请码与链接 |
 | `/apply` | 4 档等级表、二级奖励、规则说明、申请表单 |
 
-## 返佣规则（2026-11-02 确认，见 lib/rules.ts）
+## 返佣规则（2026-11-02 确认；运行时以 GET /partner/rules 为准）
 | 档位 | 条件（直属用户近 30 日合约交易量） | 合约返佣 | 现货返佣 |
 |---|---|---|---|
 | 普通 | 申请 + 审核 | 30% | 20% |
@@ -25,4 +25,4 @@
 - 合伙人返佣与普通邀请返佣不叠加；跟单分润不计返佣。
 
 ## 待补接口
-`GET /partner/rules`、`GET /partner/summary`、`GET /partner/commissions`、`GET /partner/team`、`POST /partner/apply`、SSO 登录。当前全部为 mock。
+`GET /partner/rules`、`GET /partner/summary`、`GET /partner/commissions`、`GET /partner/team`、`POST /partner/apply`、SSO 登录。全部走真实接口；网关不可达时显示错误/空状态，不展示任何演示数据。

@@ -68,8 +68,8 @@ export function Steps({ items, cur }: { items: string[]; cur: number }) {
   );
 }
 
-export function Src(_p: { s?: "api" | "mock" }) {
-  return null; // 数据来源徽标（API/Mock）仅用于联调，生产不展示
+export function Src(_p: { s?: "api" | "network" }) {
+  return null; // 数据来源徽标（API/网络不可达）仅用于联调，生产不展示
 }
 
 export const isEmail = (v: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);

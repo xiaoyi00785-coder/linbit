@@ -1,5 +1,5 @@
 "use client";
-/** 现货下单面板与委托列表：对接 /spot/*（@linbit/api-client），API 不可达时回退本地 mock */
+/** 现货下单面板与委托列表：对接 /spot/*（@linbit/api-client），API 不可达时显示错误，不生成本地数据 */
 import { stLabel, orderToast } from "@/lib/orderStatus";
 import { orderQtyText } from "@/lib/orderDisplay";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -142,7 +142,7 @@ const t = (iso: string) => new Date(iso).toLocaleString("zh-CN", { hour12: false
 export function SpotOrders({ symbol: SYMBOL }: { symbol: string }) {
   const [tab, setTab] = useState(0);
   const [rows, setRows] = useState<(Order | SpotTrade)[]>([]);
-  const [src, setSrc] = useState<"api" | "mock">();
+  const [src, setSrc] = useState<"api" | "network">();
   const [err, setErr] = useState("");
   const authed = useAuthStore((s) => !!s.accessToken);
 

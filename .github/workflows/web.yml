@@ -8,9 +8,9 @@ name: Web
 on:
   push:
     branches: [main]
-    paths: ["apps/web/**", "packages/**", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".github/workflows/web.yml"]
+    paths: ["apps/web/**", "apps/partner/**", "packages/**", "scripts/check-web-no-demo.sh", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".github/workflows/web.yml"]
   pull_request:
-    paths: ["apps/web/**", "packages/**", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".github/workflows/web.yml"]
+    paths: ["apps/web/**", "apps/partner/**", "packages/**", "scripts/check-web-no-demo.sh", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".github/workflows/web.yml"]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: No demo/mock fallback in web/partner (POSIX sh, no pipefail)
+        run: sh scripts/check-web-no-demo.sh
+
       - name: Login redirect safety check (check:redirect)
         working-directory: ${{ env.WEB_DIR }}
         run: npm run check:redirect
@@ -51,6 +54,10 @@ jobs:
 
       - name: Typecheck + build
         working-directory: ${{ env.WEB_DIR }}
+        run: npm run typecheck && npm run build
+
+      - name: Partner typecheck + build
+        working-directory: apps/partner
         run: npm run typecheck && npm run build
 
       - name: Check lib/asset-manifest.json is up to date

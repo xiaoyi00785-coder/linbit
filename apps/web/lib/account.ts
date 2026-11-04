@@ -1,14 +1,14 @@
 "use client";
 /**
  * 账户模块服务层（注册/登录/2FA/找回密码/设备/地址簿/资料）。
- * 真实接口优先；5xx 或网络错误时回退本地 mock（4xx 视为业务错误直接返回）。
+ * 主网规则：只调用真实接口，任何失败（4xx / 5xx / 网络错误）都返回 ok:false，没有 mock 回退。
  */
 import { useEffect, useState } from "react";
 import type { components } from "@linbit/api-client";
 import { api, API_BASE } from "./api";
 import { useAuthStore } from "./store";
 import type { Result } from "./services";
-import { MOCK_ENABLED, NET_ERR } from "./mockFlag";
+const NET_ERR = "网络异常，请稍后再试";
 
 type S = components["schemas"];
 export type AccountInfo = S["Account"];
@@ -19,7 +19,6 @@ export type AddressItem = S["WithdrawAddress"];
 /** 对应 openapi SendCodeResponse（schema.ts 待 openapi-growth 合入后重新生成） */
 type SendCodeRes = { sent: boolean; channel: "email" | "sms"; ttlSeconds?: number };
 
-const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 const CODE_MSG: Record<string, string> = {
   RATE_LIMITED: "发送太频繁，请稍后再试",
   EMAIL_UNAVAILABLE: "邮件暂时无法发送",
@@ -36,20 +35,16 @@ const errMsg = (e: unknown, status: number) => {
 
 async function call<T>(
   fn: () => Promise<{ data?: T; error?: unknown; response: Response }>,
-  fallback: () => T | Promise<T>,
 ): Promise<Result<T>> {
   try {
     const { data, error, response } = await fn();
     if (response.ok) return { ok: true, data: (data ?? (true as unknown)) as T, source: "api" };
-    // 网关可达时的 4xx/5xx 都如实返回（之前 5xx 会落到 mock，导致"验证码已发送"误报）
+    // 网关可达时的 4xx/5xx 都如实返回
     const ra = Number(response.headers.get("Retry-After"));
     return { ok: false, error: errMsg(error, response.status), code: (error as { code?: string } | undefined)?.code ?? (response.status === 429 ? "RATE_LIMITED" : undefined), retryAfter: Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : undefined, source: "api" };
   } catch {
-    /* 网络错误 → mock */
+    return { ok: false, error: NET_ERR, code: "NETWORK", source: "network" };
   }
-  if (!MOCK_ENABLED) return { ok: false, error: NET_ERR, code: "NETWORK", source: "api" };
-  await delay();
-  return { ok: true, data: await fallback(), source: "mock" };
 }
 
 /* ---------- 工具 ---------- */
@@ -111,19 +106,17 @@ export function deviceName() {
 }
 
 /* ---------- 认证 ---------- */
-const MOCK_TOKENS: AuthTokens = { accessToken: "mock-access-token", refreshToken: "mock-refresh-token", tokenType: "Bearer", expiresIn: 3600 };
 export type Target = { email?: string; phone?: string; countryCode?: string };
 
 export const sendAuthCode = (purpose: "register" | "reset_password", t: Target) =>
-  call(() => api.POST("/auth/code/send", { body: { purpose, ...t } }), () => ({ sent: true, channel: t.email ? "email" : "sms", ttlSeconds: 60 }) as SendCodeRes);
+  call(() => api.POST("/auth/code/send", { body: { purpose, ...t } })) as Promise<Result<SendCodeRes>>;
 
 export const register = (b: Target & { password: string; code: string; inviteCode?: string | null }) =>
-  call(() => api.POST("/auth/register", { body: { ...b, deviceId: deviceId(), deviceName: deviceName() } }), () => MOCK_TOKENS);
+  call(() => api.POST("/auth/register", { body: { ...b, deviceId: deviceId(), deviceName: deviceName() } }));
 
 export const login = (b: Target & { password: string }) =>
   call<AuthTokens | LoginChallenge>(
     () => api.POST("/auth/login", { body: { email: b.email, phone: b.phone, password: b.password, deviceId: deviceId(), deviceName: deviceName() } }),
-    () => MOCK_TOKENS,
   );
 /** 登录第一步的错误文案（不进入验证码步骤） */
 export function loginErrMsg(r: { error?: string; code?: string; retryAfter?: number }) {
@@ -138,34 +131,20 @@ export function loginErrMsg(r: { error?: string; code?: string; retryAfter?: num
 export const isChallenge = (x: unknown): x is LoginChallenge => !!x && typeof (x as LoginChallenge).challengeToken === "string";
 
 export const loginVerify = (challengeToken: string, method: string, code: string) =>
-  call(() => api.POST("/auth/login/verify", { body: method === "totp" ? { challengeToken, totpCode: code } : { challengeToken, code } }), () => MOCK_TOKENS);
+  call(() => api.POST("/auth/login/verify", { body: method === "totp" ? { challengeToken, totpCode: code } : { challengeToken, code } }));
 export const loginResend = (challengeToken: string) =>
-  call(() => api.POST("/auth/login/code", { body: { challengeToken } }), () => true);
+  call(() => api.POST("/auth/login/code", { body: { challengeToken } }));
 
 /** 找回密码第一步：校验验证码，换取一次性 resetToken（默认 600 秒有效） */
 export const verifyResetCode = (b: Target & { code: string }) =>
-  call<{ resetToken: string; expiresIn: number }>(() => api.POST("/auth/password/verify-code", { body: b }), () => ({ resetToken: "mock-reset-token", expiresIn: 600 }));
+  call<{ resetToken: string; expiresIn: number }>(() => api.POST("/auth/password/verify-code", { body: b }));
 /** 找回密码第二步：用 resetToken 设置新密码（令牌一次性） */
 export const resetPassword = (b: { resetToken: string; newPassword: string }) =>
-  call(() => api.POST("/auth/password/reset", { body: b }), () => true);
+  call(() => api.POST("/auth/password/reset", { body: b }));
 
 /* ---------- 账户资料 ---------- */
-const isMockToken = () => MOCK_ENABLED && (useAuthStore.getState().accessToken ?? "").startsWith("mock-");
-function mockAccount(): AccountInfo {
-  const c = jwtClaims(useAuthStore.getState().accessToken);
-  return {
-    uid: String(c.sub ?? ""),
-    email: (c.email as string) || useAuthStore.getState().email || null,
-    phone: (c.phone as string) || null,
-    nickname: null,
-    avatarUrl: null,
-    kycLevel: 0,
-    twoFactorEnabled: false,
-    createdAt: new Date().toISOString(),
-  };
-}
 export const getAccount = () =>
-  isMockToken() ? Promise.resolve<Result<AccountInfo>>({ ok: true, data: mockAccount(), source: "mock" }) : call(() => api.GET("/account"), mockAccount);
+  call(() => api.GET("/account"));
 
 let meCache: AccountInfo | null = null;
 const subs = new Set<(a: AccountInfo | null) => void>();
@@ -188,57 +167,35 @@ export function useMe() {
   return me;
 }
 export const updateProfile = (b: { nickname?: string | null; avatarUrl?: string | null }) =>
-  call(() => api.PATCH("/account/profile", { body: b }), () => ({ ...(meCache ?? mockAccount()), ...b }) as AccountInfo);
+  call(() => api.PATCH("/account/profile", { body: b }));
 
 /* ---------- 设备 ---------- */
-let mockDevices: DeviceItem[] = [
-  { deviceId: "cid:web-mock", name: "Chrome on macOS", ip: "203.0.113.24", firstSeen: "2026-11-01T10:00:00Z", lastSeen: new Date().toISOString() },
-  { deviceId: "cid:ios-demo", name: "linbit App · iOS", ip: "198.51.100.7", firstSeen: "2026-10-20T10:00:00Z", lastSeen: "2026-11-01T13:30:00Z" },
-];
 export const listDevices = () =>
   call(async () => {
     const r = await api.GET("/account/devices");
     return { ...r, data: r.data?.items };
-  }, () => mockDevices) as Promise<Result<DeviceItem[]>>;
+  }) as Promise<Result<DeviceItem[]>>;
 export const removeDevice = (id: string) =>
-  call(() => api.DELETE("/account/devices/{deviceId}", { params: { path: { deviceId: id } } }), () => {
-    mockDevices = mockDevices.filter((d) => d.deviceId !== id);
-    return true;
-  });
+  call(() => api.DELETE("/account/devices/{deviceId}", { params: { path: { deviceId: id } } }));
 
 /* ---------- 地址簿 / 白名单 ---------- */
-let mockAddr: AddressItem[] = [
-  { id: "w1", asset: "USDT", network: "TRC20", address: "TDemo0000000000000000000000000001", label: "示例钱包", whitelisted: true, createdAt: "2026-11-01T00:00:00Z" },
-];
-let mockWl = false;
 export const sendAccountCode = (purpose: "address" | "bind" | "reset_password" | "security" | "withdraw" = "address") =>
-  call(() => api.POST("/account/code/send", { body: { purpose } }), () => ({ sent: true, channel: "sms", ttlSeconds: 60 }) as SendCodeRes);
+  call(() => api.POST("/account/code/send", { body: { purpose } })) as Promise<Result<SendCodeRes>>;
 export const listAddresses = () =>
   call(async () => {
     const r = await api.GET("/account/withdraw-addresses");
     return { ...r, data: r.data?.items };
-  }, () => mockAddr) as Promise<Result<AddressItem[]>>;
+  }) as Promise<Result<AddressItem[]>>;
 export const addAddress = (b: S["CreateWithdrawAddressRequest"]) =>
-  call(() => api.POST("/account/withdraw-addresses", { body: b }), () => {
-    const a: AddressItem = { id: `w${Date.now()}`, asset: b.asset, network: b.network, address: b.address, memo: b.memo ?? "", label: b.label ?? "", whitelisted: b.whitelisted ?? true, createdAt: new Date().toISOString() };
-    mockAddr = [...mockAddr, a];
-    return a;
-  });
+  call(() => api.POST("/account/withdraw-addresses", { body: b }));
 export const deleteAddress = (id: string, code: { code?: string; totpCode?: string }) =>
-  call(() => api.DELETE("/account/withdraw-addresses/{id}", { params: { path: { id }, query: code } }), () => {
-    mockAddr = mockAddr.filter((a) => a.id !== id);
-    return true;
-  });
-export const getWhitelist = () => call(() => api.GET("/account/withdraw-whitelist"), () => ({ enabled: mockWl }));
+  call(() => api.DELETE("/account/withdraw-addresses/{id}", { params: { path: { id }, query: code } }));
+export const getWhitelist = () => call(() => api.GET("/account/withdraw-whitelist"));
 export const setWhitelist = (b: S["SetWhitelistRequest"]) =>
-  call(() => api.PUT("/account/withdraw-whitelist", { body: b }), () => {
-    mockWl = b.enabled;
-    return { enabled: mockWl };
-  });
+  call(() => api.PUT("/account/withdraw-whitelist", { body: b }));
 
 /* ---------- 头像上传（multipart，字段 file；jpeg/png/webp ≤2MB） ---------- */
 export async function uploadAvatar(file: File): Promise<Result<AccountInfo>> {
-  if (isMockToken()) return { ok: true, data: { ...(meCache ?? mockAccount()), avatarUrl: URL.createObjectURL(file) }, source: "mock" };
   const fd = new FormData();
   fd.append("file", file);
   try {
@@ -248,7 +205,7 @@ export async function uploadAvatar(file: File): Promise<Result<AccountInfo>> {
     const msg = r.status === 413 ? "头像超过 2MB 大小限制" : r.status === 415 ? "仅支持 JPEG/PNG/WEBP 图片" : j?.message || `上传失败（HTTP ${r.status}）`;
     return { ok: false, error: msg, source: "api" };
   } catch {
-    return { ok: false, error: "网络错误，上传失败", source: "api" };
+    return { ok: false, error: "网络错误，上传失败", source: "network" };
   }
 }
 /** avatarUrl 可能是相对路径 /account/avatars/{file}，需拼接 API 基地址 */

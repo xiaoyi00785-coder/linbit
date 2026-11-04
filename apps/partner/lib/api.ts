@@ -2,14 +2,14 @@
 /**
  * 合伙人站 API：经 /gw 转发到网关（growth 服务 /partner/*）。
  * 主站与合伙人站不同源，无法共享 lb-auth，故本站单独登录（POST /auth/login），令牌存 localStorage「lbp-auth」。
- * source：api = 真实接口；demo = 网关不可达（网络错误 / 5xx）时的演示回退。
+ * source：api = 真实接口；network = 网关不可达（网络错误 / 5xx），页面显示错误/空状态，绝不展示伪造数据。
  */
 import { useCallback, useEffect, useState } from "react";
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "/gw";
 const KEY = "lbp-auth";
 export const getToken = () => (typeof window === "undefined" ? null : localStorage.getItem(KEY));
 export const setToken = (t: string | null) => { t ? localStorage.setItem(KEY, t) : localStorage.removeItem(KEY); window.dispatchEvent(new Event("lbp-auth")); };
-export type Res<T> = { ok: boolean; data?: T; error?: string; code?: string; status?: number; source: "api" | "demo" };
+export type Res<T> = { ok: boolean; data?: T; error?: string; code?: string; status?: number; source: "api" | "network" };
 
 export async function call<T>(method: string, path: string, body?: unknown): Promise<Res<T>> {
   const tok = getToken();
@@ -20,19 +20,19 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
     if (r.status === 401) setToken(null);
     if (r.status < 500) return { ok: false, error: j.message || `HTTP ${r.status}`, code: j.code, status: r.status, source: "api" };
   } catch { /* 不可达 */ }
-  return { ok: false, error: "服务暂不可用", source: "demo" };
+  return { ok: false, error: "服务暂不可用", source: "network" };
 }
 
-export function useApi<T>(path: string | null, demo?: () => T) {
+export function useApi<T>(path: string | null) {
   const [s, set] = useState<{ loading: boolean; r?: Res<T> }>({ loading: !!path });
   const load = useCallback(async () => {
     if (!path) return;
     set((x) => ({ ...x, loading: true }));
     const r = await call<T>("GET", path);
-    set({ loading: false, r: r.source === "demo" && demo && process.env.NEXT_PUBLIC_ENABLE_MOCK === "1" ? { ...r, ok: true, data: demo() } : r });
+    set({ loading: false, r });
   }, [path]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
-  return { loading: s.loading, data: s.r?.ok ? s.r.data : undefined, err: s.r && !s.r.ok ? s.r : undefined, demo: s.r?.source === "demo", reload: load };
+  return { loading: s.loading, data: s.r?.ok ? s.r.data : undefined, err: s.r && !s.r.ok ? s.r : undefined, reload: load };
 }
 
 export function useToken() {

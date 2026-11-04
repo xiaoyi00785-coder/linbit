@@ -3,12 +3,12 @@
  * 行情数据层：REST 快照 + WebSocket 增量（docs/api/websocket.md）。
  * - 单例连接、多频道订阅；断线指数退避重连并自动重新订阅。
  * - 客户端 20s ping，响应服务端 ping；60s 无帧主动断开重连。
- * - REST/WS 均不可用时返回 source="mock"，由调用方回退演示数据。
+ * - REST/WS 均不可用时返回 source="network"，由调用方显示不可用/空状态。
  */
 import { useEffect, useRef, useState } from "react";
 import { API_BASE } from "./api";
 
-export type Source = "api" | "mock" | "loading";
+export type Source = "api" | "network" | "loading";
 export type SymbolMeta = { symbol: string; base: string; quote: string; pricePrecision: number; quantityPrecision: number; minQuantity?: string; status?: string; tags?: string[] };
 export type Ticker = { symbol: string; lastPrice: string; priceChangePercent: string; high: string; low: string; volume: string; quoteVolume: string; priceSource?: "trade" | "mid" | "index" | "mark" | "none" };
 export type Level = [string, string];
@@ -209,7 +209,7 @@ export function useTicker(symbol: string) {
     setT(tickerCache.get(symbol) ?? null);
     fetchTicker(symbol)
       .then((x) => { if (!live) return; if (x) setT(x); setSrc("api"); })
-      .catch(() => live && setSrc((s) => (s === "api" ? s : "mock")));
+      .catch(() => live && setSrc((s) => (s === "api" ? s : "network")));
     const un = marketWS.subscribe(`ticker:${symbol}`, (d) => { setT(d); setSrc("api"); });
     return () => { live = false; un(); };
   }, [symbol]);
@@ -244,7 +244,7 @@ const tickerStore = {
         });
         this.emit();
       })
-      .catch(() => { if (this.src !== "api") { this.src = "mock"; this.emit(); } })
+      .catch(() => { if (this.src !== "api") { this.src = "network"; this.emit(); } })
       .finally(() => { this.inflight = false; });
   },
   schedule() {
@@ -298,7 +298,7 @@ export function useOrderBook(symbol: string, limit = 50) {
     setBook(depthCache.get(symbol) ?? null);
     fetchDepth(symbol, limit)
       .then((d) => { if (!live) return; setBook((b) => (b && b.lastUpdateId >= d.lastUpdateId ? b : d)); setSrc("api"); })
-      .catch(() => live && setSrc((s) => (s === "api" ? s : "mock")));
+      .catch(() => live && setSrc((s) => (s === "api" ? s : "network")));
     const un = marketWS.subscribe(`depth:${symbol}`, (d) => {
       setSrc("api");
       if (first.current) {
@@ -332,14 +332,14 @@ export function useRecentTrades(symbol: string, limit = 30) {
     };
     rest<Trade[]>(`/market/trades?symbol=${symbol}&limit=${limit}`)
       .then((l) => { if (!live) return; setList((c) => merge(c, l)); setSrc("api"); })
-      .catch(() => live && setSrc((s) => (s === "api" ? s : "mock")));
+      .catch(() => live && setSrc((s) => (s === "api" ? s : "network")));
     const un = marketWS.subscribe(`trades:${symbol}`, (d) => { setSrc("api"); setList((c) => merge([d], c)); });
     return () => { live = false; un(); };
   }, [symbol, limit]);
   return { trades: list, source: src };
 }
 
-/** K 线 feed（供 @linbit/chart KLinePro）：load 返回 null 表示不可用→图表回退演示数据。 */
+/** K 线 feed（供 @linbit/chart KLinePro）：load 返回 null 表示不可用→图表显示空状态。 */
 type RawK = { time?: number; openTime?: number; open: string; high: string; low: string; close: string; volume: string; source?: string };
 const toBar = (k: RawK): Bar => ({ time: Number(k.time ?? k.openTime), open: +k.open, high: +k.high, low: +k.low, close: +k.close, v: +k.volume, src: k.source });
 export function klineFeed(symbol: string) {

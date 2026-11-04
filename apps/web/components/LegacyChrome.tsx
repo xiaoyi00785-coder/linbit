@@ -36,10 +36,9 @@ const nav = (k: string) =>
 const Header = nav("Header");
 const Cookie = nav("Cookie");
 const Service = dynamic(() => import("@/components/SupportPanel").then((m) => m.SupportPanel), { ssr: false });
-const DemoToggle = nav("DemoToggle");
 const ModalHost = dynamic(() => import("@/features/Kit").then((m) => m.ModalHost), { ssr: false });
 
-/** 全站外框：顶部导航 + Cookie 提示 + 在线客服 + 演示开关（API 文档页隐藏导航）。 */
+/** 全站外框：顶部导航 + Cookie 提示 + 在线客服（API 文档页隐藏导航）。 */
 export default function LegacyChrome({ children }: { children: React.ReactNode }) {
   const p = usePathname();
   useReveal(p);
@@ -64,7 +63,6 @@ export default function LegacyChrome({ children }: { children: React.ReactNode }
       </Fragment>
       <Cookie />
       <Service />
-      <DemoToggle />
       <ModalHost />
     </>
   );

@@ -1,16 +1,13 @@
 "use client";
 import { copy, useApi, type Links } from "@/lib/api";
-import { ME } from "@/lib/rules";
-import { Demo, ErrBox, Skel } from "../ui";
-
-const demo = (): Links => ({ code: ME.invite, url: `https://linbit.example/invite/${ME.invite}`, registerUrl: `https://linbit.example/register?ref=${ME.invite}` });
+import { ErrBox, Skel } from "../ui";
 
 export default function LinksPage() {
-  const r = useApi<Links>("/partner/links", demo);
+  const r = useApi<Links>("/partner/links");
   const L = r.data;
   return (
     <>
-      <h1>推广链接 <Demo on={r.demo} /></h1>
+      <h1>推广链接</h1>
       {r.loading ? <Skel n={3} h={76} /> : r.err ? <ErrBox err={r.err} reload={r.reload} /> : L && (
         <div className="links fade">
           {[["邀请码", L.code], ["邀请链接", L.url], ["注册链接", L.registerUrl]].map(([t, v]) => (

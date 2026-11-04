@@ -21,11 +21,6 @@ const coinOf = (s: string) => (coins as { s: string; col: string }[]).find((x) =
 
 
 const ASSETS = ["USDT", "BTC", "ETH"];
-const NETS: Record<string, string[]> = {
-  USDT: ["TRC20", "ERC20", "BEP20(BSC)", "Solana", "Arbitrum One"],
-  BTC: ["Bitcoin"],
-  ETH: ["ERC20", "Arbitrum One"],
-};
 
 const St = ({ n, t, children }: { n: string; t: string; children: React.ReactNode }) => <div className="step"><div className="stn"><b>{n}</b>{t}</div><div className="stb">{children}</div></div>;
 
@@ -42,7 +37,7 @@ export function Withdraw() {
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
   const [cfg, setCfg] = useState<WithdrawConfig>();
-  const [cfgSrc, setCfgSrc] = useState<"api" | "mock">();
+  const [cfgSrc, setCfgSrc] = useState<"api" | "network">();
   const [confirm, setConfirm] = useState(false);
   const [totp, setTotp] = useState("");
   const [tfa, setTfa] = useState<TwofaKind>(null);
@@ -65,18 +60,18 @@ export function Withdraw() {
   const [err, setErr] = useState("");
   const [done, setDone] = useState<Withdrawal>();
   const [records, setRecords] = useState<Withdrawal[]>([]);
-  const [recSrc, setRecSrc] = useState<"api" | "mock">();
+  const [recSrc, setRecSrc] = useState<"api" | "network">();
   const bal = useBalances();
   const [apiNets, setApiNets] = useState<Record<string, string[]>>({});
-  const netsOf = (a: string) => apiNets[a] ?? NETS[a];
+  const netsOf = (a: string) => apiNets[a] ?? [];
   const [netInfo, setNetInfo] = useState<Record<string, WalletNetwork>>({});
   const ni = netInfo[`${asset}:${net}`];
   const ov = useOverview();
   const [inner, setInner] = useState<InternalTransfer[]>([]);
-  const [innerSrc, setInnerSrc] = useState<"api" | "mock">();
+  const [innerSrc, setInnerSrc] = useState<"api" | "network">();
   const [innerSoon, setInnerSoon] = useState(false);
 
-  // 网络列表：GET /wallet/networks（含开关/最小额/手续费/到账时间）→ 回退 /wallet/withdraw/networks → 本地列表
+  // 网络列表：GET /wallet/networks（含开关/最小额/手续费/到账时间）→ 回退 /wallet/withdraw/networks；都不可用时网络列表为空（不使用本地列表）
   useEffect(() => {
     getNetworks(asset).then((r) => {
       const l = (r.ok && r.source === "api" ? r.data?.networks ?? [] : []).filter((x) => x.withdrawEnabled !== false);
@@ -128,7 +123,7 @@ export function Withdraw() {
   const n = Number(amt);
   const minS = ni?.minWithdraw ?? cfg?.minAmount;
   const maxS = ni ? ni.maxWithdraw ?? undefined : cfg?.maxAmount;
-  // 手续费只认接口值（wallet_network_settings.withdraw_fee 生效值），mock 回退时不展示估算值
+  // 手续费只认接口值（wallet_network_settings.withdraw_fee 生效值），接口不可用时不展示估算值
   const feeS = ni?.withdrawFee ?? (cfgSrc === "api" ? cfg?.gasFeeEstimate : undefined);
   const eta = ni?.estimatedArrivalMinutes ? `约 ${ni.estimatedArrivalMinutes} 分钟` : "约 5 分钟";
   const memoReq = ni?.memoRequired ?? cfg?.memoRequired;

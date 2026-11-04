@@ -99,7 +99,7 @@ export function FutOrders({ symbol }: { symbol?: string }) {
   </tbody></table> : empty;
   return (
     <div className="orders" data-guide="orders">
-      <div className="pt sm" role="tablist" aria-label="合约订单">{labels.map((x, i) => <b key={x} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}<span className="sp" />{cur.source === "demo" && <span className="fx-src" role="button" style={{ cursor: "pointer" }} onClick={() => cur.reload()}>加载失败，点击重试</span>}{symbol && <label className="tk-only"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} />只看当前合约</label>}</div>
+      <div className="pt sm" role="tablist" aria-label="合约订单">{labels.map((x, i) => <b key={x} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}<span className="sp" />{cur.source === "network" && <span className="fx-src" role="button" style={{ cursor: "pointer" }} onClick={() => cur.reload()}>加载失败，点击重试</span>}{symbol && <label className="tk-only"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} />只看当前合约</label>}</div>
       {!authed ? <p className="empty">登录后查看{T[tab]}</p>
         : cur.loading && !cur.data ? <div style={{ padding: 12 }}><div className="lb-skel" style={{ height: 80 }} /></div>
         : tab === 0 ? (P.length ? <table className="sotbl"><thead><tr><th>合约</th><th>数量</th><th>开仓价</th><th>标记价</th><th>强平价</th><th>保证金</th><th>未实现盈亏(ROE)</th><th>止盈/止损</th><th /></tr></thead><tbody>

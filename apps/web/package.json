@@ -5,7 +5,7 @@
   "scripts": {
     "predev": "node scripts/gen-asset-manifest.mjs",
     "dev": "next dev -p 3000",
-    "prebuild": "node scripts/gen-asset-manifest.mjs",
+    "prebuild": "sh ../../scripts/check-web-no-demo.sh && node scripts/gen-asset-manifest.mjs",
     "build": "next build",
     "start": "next start -p 3000",
     "pretypecheck": "node scripts/gen-asset-manifest.mjs",
@@ -14,7 +14,8 @@
     "check:redirect": "node --experimental-strip-types scripts/check-safe-redirect.mjs",
     "check:nav": "node scripts/check-nav-dropdowns.mjs",
     "check:live-ticks": "node --experimental-strip-types scripts/check-live-ticks.mjs",
-    "check:gw-proxy": "node --experimental-strip-types scripts/check-gw-proxy.mjs"
+    "check:gw-proxy": "node --experimental-strip-types scripts/check-gw-proxy.mjs",
+    "check:no-demo": "sh ../../scripts/check-web-no-demo.sh"
   },
   "dependencies": {
     "@linbit/api-client": "workspace:*",

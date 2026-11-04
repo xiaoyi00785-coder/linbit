@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3100",
+    "prebuild": "sh ../../scripts/check-web-no-demo.sh",
     "build": "next build",
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit"

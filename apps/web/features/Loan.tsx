@@ -16,15 +16,6 @@ type LoanV = { id: number; asset: string; collateralAsset: string; term: string;
 type Quote = { collateral: string; ltv: string; hourlyInterest: string; termInterest?: string; liquidationPrice: string; price: string };
 
 const BLOCK = new Set(["USDC"]); // 已下线：USDC 不再作为借贷币种
-const DEMO: Market = {
-  asset: "USDT", initialLtv: "0.8", warnLtv: "0.88", liquidationLtv: "0.95", minAmount: "10", userLimit: "1200000",
-  terms: [
-    { term: "flexible", days: 0, hourlyRate: "0.000003847", annualRate: "0.0337", status: "online" },
-    { term: "7d", days: 7, hourlyRate: "0.0000042808", annualRate: "0.0375", status: "online" },
-    { term: "30d", days: 30, hourlyRate: "0.0000068493", annualRate: "0.06", status: "online" },
-  ],
-  collaterals: [{ asset: "BTC" }, { asset: "ETH" }],
-};
 const TN: Record<string, string> = { flexible: "活期 · 浮动利率", "7d": "7 天 · 固定利率", "30d": "30 天 · 固定利率" };
 const tn = (t: string) => TN[t] ?? t;
 const pc = (x?: string | number, d = 2) => (x == null || x === "" ? "--" : (Number(x) * 100).toFixed(d) + "%");
@@ -33,7 +24,7 @@ const dt = (ms?: number) => (ms ? new Date(ms).toLocaleString("zh-CN", { hour12:
 const ST: Record<string, string> = { active: "借款中", repaid: "已还清", liquidated: "已强平" };
 
 export function useLoanMarket() {
-  const m = useRest<Market>("/loans/market", () => DEMO);
+  const m = useRest<Market>("/loans/market");
   const d = m.data;
   const market = d && { ...d, collaterals: d.collaterals.filter((c) => !BLOCK.has(c.asset)), terms: d.terms.filter((t) => t.status === "online") };
   return { ...m, market: market && !BLOCK.has(market.asset) ? market : null };
@@ -77,7 +68,7 @@ export function BorrowModal({ m, term0, onClose, onDone }: { m: Market; term0: s
     setBusy(true);
     const r = await rest("POST", "/loans", { collateralAsset: col, amount: amt, term, ...(q ? { collateralAmount: q.collateral } : {}) });
     setBusy(false);
-    if (!r.ok) return setErr(r.source === "demo" ? "服务暂不可用，请稍后再试" : r.error ?? "借款失败");
+    if (!r.ok) return setErr(r.source === "network" ? "服务暂不可用，请稍后再试" : r.error ?? "借款失败");
     toast(`借款成功：${amt} ${m.asset}`);
     onDone();
   };
@@ -131,7 +122,7 @@ function ActModal({ l, kind, onClose, onDone }: { l: LoanV; kind: "repay" | "col
 /** 页面主体：汇总 + 我的借款 + 借贷市场 */
 export function LoanBody({ faq }: { faq?: React.ReactNode }) {
   const authed = !!useAuthStore((s) => s.accessToken);
-  const { market, source, loading, reload } = useLoanMarket();
+  const { market, error: mErr, loading, reload } = useLoanMarket();
   const [tab, setTab] = useState<"active" | "closed">("active");
   const sum = useRest<{ active: number; totalDebt: string; totalCollateralValue: string; asset: string }>(authed ? "/loans/summary" : null);
   const loans = useRest<{ items: LoanV[] }>(authed ? `/loans?status=${tab}` : null);
@@ -178,7 +169,7 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
       </div></div>
       <div className="light"><div className="ewrap">
         <div className="lsteps">{["01 提交申请", "02 收到借款", "03 还款付息", "04 回收质押物"].map((x, i) => <span key={x}><i>{i + 1}</i>{x}</span>)}</div>
-        <div className="lrow"><h2 className="lh2">借贷市场</h2>{source === "demo" && <span className="fx-src">演示数据（服务不可达）</span>}<span className="lg"><G n="info" s={13}/> 初始质押率 {pc(market?.initialLtv ?? 0.8, 0)} · 质押物 {market?.collaterals.map((c) => c.asset).join(" / ") ?? "--"}</span></div>
+        <div className="lrow"><h2 className="lh2">借贷市场</h2>{mErr && <span className="fx-src" role="button" style={{ cursor: "pointer" }} onClick={() => reload()}>加载失败，点击重试</span>}<span className="lg"><G n="info" s={13}/> 初始质押率 {pc(market?.initialLtv ?? 0.8, 0)} · 质押物 {market?.collaterals.map((c) => c.asset).join(" / ") ?? "--"}</span></div>
         <div className="lth"><span>可借币种</span>{(market?.terms ?? []).map((t) => <span key={t.term}>{tn(t.term)}</span>)}<span className="r">操作</span></div>
         {loading && !market ? <div className="fx-skel" style={{ height: 48 }} /> : market ? (
           <div className="ltr e5">

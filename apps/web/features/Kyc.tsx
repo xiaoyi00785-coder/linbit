@@ -38,7 +38,7 @@ export function KycBasic() {
   const [f, setF] = useState<KycForm>({ firstName: "", lastName: "", country: "", idType: "id_card", idNumber: "", dateOfBirth: "" });
   const [docs, setDocs] = useState<{ front?: string; selfie?: string }>({});
   const [msg, setMsg] = useState("");
-  const [src, setSrc] = useState<"api" | "mock">();
+  const [src, setSrc] = useState<"api" | "network">();
   const set = (k: keyof KycForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const ready = f.firstName && f.lastName && f.country && f.idNumber && f.dateOfBirth && docs.front && docs.selfie;
   return (

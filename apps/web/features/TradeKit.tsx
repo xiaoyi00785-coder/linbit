@@ -394,7 +394,7 @@ export function FutForm({ pair }: { pair: PairMeta }) {
       const e = r.error ?? "";
       const M: Record<string, string> = { POST_ONLY_REJECTED: "只做 Maker 订单会立即成交，已被拒绝", POST_ONLY_DISABLED: "只做 Maker 暂未开放", TRIGGER_DEVIATION: "触发价偏离当前价格过大", ALGO_LIMIT: "条件单数量已达上限", INVALID_TPSL: "止盈止损价格不合理", POSITION_SIDE_REQUIRED: "双向持仓需指定仓位方向", POSITION_SIDE_MISMATCH: "仓位方向与持仓模式不一致", REDUCE_ONLY_REJECTED: "无可平仓位" };
       const k = Object.keys(M).find((x) => e.includes(x));
-      return toast(k ? M[k] : (r.status && r.status >= 500 && !r.code) || r.source === "demo" ? "服务暂不可用，下单未提交成功，请稍后重试" : e || "下单失败", "err", 4000);
+      return toast(k ? M[k] : (r.status && r.status >= 500 && !r.code) || r.source === "network" ? "服务暂不可用，下单未提交成功，请稍后重试" : e || "下单失败", "err", 4000);
     }
     if (ty === "plan") toast("计划委托已提交"); else { const o = futOrderOf(r.data); const m = orderToast(o.status, o.filledQty); toast(m.t, m.ok ? undefined : "err"); } setQty(""); window.dispatchEvent(new Event("lb-fut-orders"));
   };

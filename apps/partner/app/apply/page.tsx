@@ -1,15 +1,13 @@
 "use client";
 import { useState } from "react";
 import { call, toast, useApi, useToken, type Me, type Rules } from "@/lib/api";
-import { OVERRIDE, RULE_NOTES, TIERS } from "@/lib/rules";
-import { Demo, Skel, num, pct } from "../ui";
+import { ErrBox, Skel, num, pct } from "../ui";
 
-const demo = (): Rules => ({ tiers: TIERS.map((t) => ({ key: t.key, name: t.name, minVolume30d: String(t.minVolume30d), futuresRate: String(t.futuresRate), spotRate: String(t.spotRate) })), tierBasis: "直推用户近30日合约交易额", overrideRate: String(OVERRIDE.rate), overrideLevels: OVERRIDE.maxLevels + 1, overrideDepth: OVERRIDE.maxLevels, overrideFunding: "平台出资，不扣减下级合伙人佣金", settlement: "每日结算至资金账户", settleHourUtc: 0, payoutAsset: "USDT", validity: "终身有效", rebateBase: "实际支付手续费（不含体验金及手续费抵扣券抵扣部分）", autoApprove: false });
 const ST: Record<string, string> = { pending: "审核中", active: "已是合伙人", rejected: "未通过", suspended: "已暂停" };
 
 export default function Apply() {
   const tok = useToken();
-  const r = useApi<Rules>("/partner/rules", demo);
+  const r = useApi<Rules>("/partner/rules");
   const me = useApi<Me>(tok ? "/partner/me" : null);
   const [f, setF] = useState({ contact: "", channel: "", scale: "" }); const [busy, setB] = useState(false);
   const R = r.data;
@@ -22,9 +20,9 @@ export default function Apply() {
   };
   return (
     <>
-      <h1>合伙人等级与规则 <Demo on={r.demo} /></h1>
+      <h1>合伙人等级与规则</h1>
       <div className="g4">
-        {!R ? <Skel n={4} h={140} /> : R.tiers.map((t) => (
+        {r.err ? <ErrBox err={r.err} reload={r.reload} /> : !R ? <Skel n={4} h={140} /> : R.tiers.map((t) => (
           <div key={t.key} className={"card tier" + (me.data?.tier === t.key ? " on" : "")}>
             <b className="lime">{t.name}</b>
             <small>{+t.minVolume30d ? `${R.tierBasis} ≥ ${num(t.minVolume30d)} USDT` : "提交申请，审核通过"}</small>
@@ -35,15 +33,15 @@ export default function Apply() {
       </div>
       <h2>二级奖励</h2>
       {/* 最多 N 级读 overrideDepth（不含直推层）；overrideLevels 含直推层，不用于此文案 */}
-      <div className="card">上级额外获得下级合伙人佣金的 <b className="lime">{pct(R?.overrideRate ?? OVERRIDE.rate)}</b>（{R?.overrideFunding ?? "平台出资"}），最多 {R?.overrideDepth ?? 2} 级。</div>
+      {R ? <div className="card">上级额外获得下级合伙人佣金的 <b className="lime">{pct(R.overrideRate)}</b>（{R.overrideFunding}），最多 {R.overrideDepth ?? 2} 级。</div> : <Skel h={48} />}
       <h2>规则说明</h2>
       <ol>
-        {R && !r.demo ? <>
+        {R ? <>
           <li>普通合伙人需提交申请{R.autoApprove ? "（当前自动通过）" : "并经平台审核"}；之后按{R.tierBasis}自动升降档。</li>
           <li>返佣基数：{R.rebateBase}。</li>
           <li>佣金{R.settlement}（每日 {R.settleHourUtc}:00 UTC），发放币种 {R.payoutAsset}；被邀请用户{R.validity}。</li>
           <li>合伙人返佣与普通邀请返佣不叠加；跟单分润不计入返佣。</li>
-        </> : RULE_NOTES.map((x) => <li key={x}>{x}</li>)}
+        </> : null}
       </ol>
       <h2>申请成为合伙人</h2>
       <div className="card" style={{ maxWidth: 480 }}>

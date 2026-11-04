@@ -43,7 +43,7 @@ export async function uploadAttachment(f: File): Promise<RestResult<TicketAttach
     const r = await authed("/support/attachments", { method: "POST", body: fd });
     const j = await r.json().catch(() => ({}));
     return r.ok ? { ok: true, data: j, status: r.status, source: "api" } : { ok: false, code: j?.code, error: j?.message || `HTTP ${r.status}`, status: r.status, source: "api" };
-  } catch { return { ok: false, error: "服务暂不可用", source: "demo" }; }
+  } catch { return { ok: false, error: "服务暂不可用", source: "network" }; }
 }
 
 /** 附件是私有资源：带令牌取回后转成 blob URL（<img> 无法携带 Bearer）。 */

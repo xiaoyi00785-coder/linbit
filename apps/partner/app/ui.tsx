@@ -3,7 +3,6 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Res } from "@/lib/api";
 
-export const Demo = ({ on }: { on: boolean }) => (on ? <span className="demo" title="网关不可达，显示演示数据">演示数据</span> : null);
 export const Skel = ({ h = 120, n = 1 }: { h?: number; n?: number }) => <>{Array.from({ length: n }, (_, i) => <div key={i} className="skel" style={{ height: h }} />)}</>;
 export const num = (v: string | number | undefined, d = 2) => Number(v || 0).toLocaleString("en-US", { maximumFractionDigits: d });
 export const pct = (v: string | number | undefined) => `${+(Number(v || 0) * 100).toFixed(2)}%`;

@@ -17,9 +17,9 @@ import {
 import { CodeInput, Src } from "./common";
 import { Sessions } from "./Security";
 
-function useLoad<T>(fn: () => Promise<{ data?: T; source: "api" | "mock"; ok?: boolean; error?: string }>, init: T) {
+function useLoad<T>(fn: () => Promise<{ data?: T; source: "api" | "network"; ok?: boolean; error?: string }>, init: T) {
   const [d, setD] = useState<T>(init);
-  const [src, setSrc] = useState<"api" | "mock">();
+  const [src, setSrc] = useState<"api" | "network">();
   useEffect(() => { fn().then((r) => { setD(r.data ?? init); setSrc(r.source); if (r.ok === false && r.error) toast(r.error, "err"); }); }, []); // eslint-disable-line
   return [d, setD, src] as const;
 }

@@ -1,7 +1,7 @@
 import { createApiClient, DEFAULT_BASE_URL } from "@linbit/api-client";
 import { useAuthStore } from "./store";
 
-/** API 基地址：可通过 NEXT_PUBLIC_API_BASE 覆盖，默认本地 Prism mock。 */
+/** API 基地址：可通过 NEXT_PUBLIC_API_BASE 覆盖，默认本地开发网关。 */
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? DEFAULT_BASE_URL;
 
 /** 全局 API 客户端，自动附加当前登录态的 Bearer 令牌。 */

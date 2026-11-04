@@ -10,7 +10,7 @@ export interface InternalTransfer { id: string; clientId: string; direction: "ou
 type Page<T> = { items: T[]; page: number; pageSize: number; total: number };
 
 export const SOON = "该功能即将上线";
-/** 404 或网关不可达（rest 回退 demo）视为后端尚未上线 */
+/** 404 或网关不可达（source=network）视为后端尚未上线 */
 export const isSoon = (r: RestResult<unknown>) => !r.ok && !r.code && (r.status === 404 || r.status === undefined);
 export const newClientId = () => `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 

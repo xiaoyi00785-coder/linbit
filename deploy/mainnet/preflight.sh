@@ -63,5 +63,9 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 if out=$("$root/scripts/check-admin-no-demo.sh" "$root/prototypes/admin/src" 2>&1); then ok "admin frontend has no demo/mock data"
 else fail "admin frontend still references demo/mock data: $(echo "$out" | tail -n +2 | head -5 | tr '\n' ' ')"; fi
 
+# Web / partner frontends: real APIs only, no mock/demo fallback (POSIX sh script, no pipes needed).
+if out=$(sh "$root/scripts/check-web-no-demo.sh" "$root" 2>&1); then ok "web/partner frontends have no demo/mock fallback"
+else fail "web/partner frontends still reference demo/mock fallbacks: $(echo "$out" | sed -n '2,6p' | tr '\n' ' ')"; fi
+
 echo "preflight: $fails failure(s)"
 [ $fails = 0 ]

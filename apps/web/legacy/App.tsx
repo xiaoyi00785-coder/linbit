@@ -34,9 +34,9 @@ apk:<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d=
 const SK=[['apple','App Store'],['beta','测试版'],['gplay','Google Play'],['apk','Android APK']]
 const PLOGO=[['Nova','M4 18 12 4l8 14z'],['Orbit','M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8z'],['Vertex','M4 6h16l-8 12z'],['Quanta','M5 5h14v14H5z'],['Helix','M6 4c8 4 4 12 12 16M18 4C10 8 14 16 6 20'],['Prism','M12 3 21 9 17 21H7L3 9z'],['Lumen','M12 2v20M2 12h20M5 5l14 14M19 5 5 19'],['Atlas','M3 20 12 4l9 16M7 14h10']]
 const AVC=['#abe127','#5b8cff','#ff9f43','#c56cf0']
-import { coins as mockCoins, candles } from './data'
+import { coins as coinMeta } from './data'
 import { useTicker, useTickers, useOrderBook, useRecentTrades, useSymbols, metaOf, fmtFixed, klineFeed } from '@/lib/market'
-import { Header, Cookie, Service, Page, DemoToggle } from './Nav'
+import { Header, Cookie, Service, Page } from './Nav'
 import { OrderBookPanel, FutForm, PairPicker, useTradePair, useFutTicker, futFeedOf, RefHint } from '@/features/TradeKit'
 import { byRank, CAT_ID, inCat, useCatChips, useCategories, useFuturesRows, useRank } from '@/lib/marketsList'
 
@@ -45,9 +45,9 @@ import { aprPct, feePct, useFutFeeRates, useMaxApr, useSpotBases } from '@/lib/l
 const f=n=>n.toLocaleString('en-US',{maximumFractionDigits:n<1?5:2})
 const feeds={};const feedOf=s=>feeds[s]??=klineFeed(s)
 const live=t=>t&&Number(t.lastPrice)>0
-// 现货行情：有真实成交的交易对用 WS/REST ticker 覆盖演示数据；价格按交易对精度
-function useLiveCoins(){const{tickers}=useTickers();const m=useSymbols();return Object.values(m).filter(x=>x.quote==='USDT').map(x=>{const mc=mockCoins.find(c=>c.s===x.base);const t=tickers[x.symbol];const n=v=>Number(v)||0;return{s:x.base,n:mc?.n??x.base,col:mc?.col??'var(--lb-neutral-400)',symbol:x.symbol,tags:x.tags,p:n(t?.lastPrice),c:n(t?.priceChangePercent),v:Number(t?.quoteVolume)>0?fmtFixed(t.quoteVolume,2):'--',hi:n(t?.high),lo:n(t?.low),pp:x.pricePrecision,live:live(t)}})}
-const futCoin=r=>({s:r.base,symbol:r.symbol,col:mockCoins.find(c=>c.s===r.base)?.col??'var(--lb-neutral-400)',p:Number(r.last)||0,c:Number(r.chg)||0,v:Number(r.vol)>0?fmtFixed(r.vol,2):'--',pp:r.pp})
+// 现货行情：有真实成交的交易对用 WS/REST ticker 填充价格（无行情时显示 --）；价格按交易对精度
+function useLiveCoins(){const{tickers}=useTickers();const m=useSymbols();return Object.values(m).filter(x=>x.quote==='USDT').map(x=>{const mc=coinMeta.find(c=>c.s===x.base);const t=tickers[x.symbol];const n=v=>Number(v)||0;return{s:x.base,n:mc?.n??x.base,col:mc?.col??'var(--lb-neutral-400)',symbol:x.symbol,tags:x.tags,p:n(t?.lastPrice),c:n(t?.priceChangePercent),v:Number(t?.quoteVolume)>0?fmtFixed(t.quoteVolume,2):'--',hi:n(t?.high),lo:n(t?.low),pp:x.pricePrecision,live:live(t)}})}
+const futCoin=r=>({s:r.base,symbol:r.symbol,col:coinMeta.find(c=>c.s===r.base)?.col??'var(--lb-neutral-400)',p:Number(r.last)||0,c:Number(r.chg)||0,v:Number(r.vol)>0?fmtFixed(r.vol,2):'--',pp:r.pp})
 const fp=(c,k='p')=>c.pp!=null?fmtFixed(c[k],c.pp):f(c[k])
 const Pct=({c})=><span className={c>=0?'up':'down'}>{c>=0?'+':''}{c.toFixed(2)}%</span>
 export const Ico=({c,s=20})=><CoinIcon s={c.s} col={c.col} size={s}/>

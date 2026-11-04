@@ -1,4 +1,3 @@
 // @ts-nocheck
-const raw=[['BTC',76771.9,-1.71,'976.11M','#f7931a'],['ETH',2252.77,-0.82,'811.88M','#627eea'],['BNB',699.13,-1.39,'34.92M','#f3ba2f'],['ARB',0.15588,-5.45,'10.41M','#2d374b'],['XRP',1.2499,-0.08,'97.58M','#444'],['SOL',91.97,-2.42,'232.35M','#9945ff'],['DOGE',0.1622,1.3,'332M','#c2a633'],['TON',2.92,1.75,'45.1M','#0098ea'],['LINK',12.85,-0.5,'61.2M','#2a5ada'],['AVAX',18.1,3.2,'40.7M','#e84142']]
-export const coins=raw.map(([s,p,c,v,col])=>({s,p,c,v,col}))
-export function candles(n=160,end=76768){let t=Math.floor(Date.now()/1000)-n*900,p=end*1.03,o=[];for(let i=0;i<n;i++){const op=p,cl=op*(1+(Math.random()-.52)*0.004);o.push({time:t+i*900,open:op,close:cl,high:Math.max(op,cl)*(1+Math.random()*0.0015),low:Math.min(op,cl)*(1-Math.random()*0.0015),v:Math.random()*8});p=cl}const k=end/p;return o.map(c=>({...c,open:c.open*k,close:c.close*k,high:c.high*k,low:c.low*k}))}
+// 币种展示元数据（仅图标颜色）。价格 / 涨跌 / 成交额只来自真实行情接口，此处不含任何行情数据。
+export const coins=[{s:'BTC',col:'#f7931a'},{s:'ETH',col:'#627eea'},{s:'BNB',col:'#f3ba2f'},{s:'ARB',col:'#2d374b'},{s:'XRP',col:'#444'},{s:'SOL',col:'#9945ff'},{s:'DOGE',col:'#c2a633'},{s:'TON',col:'#0098ea'},{s:'LINK',col:'#2a5ada'},{s:'AVAX',col:'#e84142'}]
