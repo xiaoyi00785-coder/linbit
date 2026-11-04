@@ -65,7 +65,7 @@ struct AssetsCard<Content: View>: View {
     }
 }
 
-struct KVRow: View {
+struct AssetKVRow: View {
     @Environment(\.palette) private var p
     let k: String
     let v: String
@@ -278,12 +278,12 @@ struct NetworkCard: View {
                 StatusTag(text: n.withdrawEnabled == false ? "暂停提现" : "可提现", color: n.withdrawEnabled == false ? p.down : p.up)
                 if selected { Image(systemName: "checkmark.circle.fill").foregroundColor(p.textPrimary) }
             }
-            KVRow(k: "提现手续费", v: "\(n.withdrawFee ?? "--") \(n.withdrawFeeAsset ?? n.asset ?? "")")
-            KVRow(k: "最小提现", v: "\(n.minWithdraw ?? "--") \(n.asset ?? "")")
-            if let mx = n.maxWithdraw { KVRow(k: "单笔最大提现", v: "\(mx) \(n.asset ?? "")") }
-            KVRow(k: "最小充值", v: "\(n.minDeposit ?? "--") \(n.asset ?? "")")
-            KVRow(k: "到账确认数", v: n.confirmations.map { "\($0) 次网络确认" } ?? "--")
-            if let m = n.estimatedArrivalMinutes { KVRow(k: "预计到账", v: "约 \(m) 分钟") }
+            AssetKVRow(k: "提现手续费", v: "\(n.withdrawFee ?? "--") \(n.withdrawFeeAsset ?? n.asset ?? "")")
+            AssetKVRow(k: "最小提现", v: "\(n.minWithdraw ?? "--") \(n.asset ?? "")")
+            if let mx = n.maxWithdraw { AssetKVRow(k: "单笔最大提现", v: "\(mx) \(n.asset ?? "")") }
+            AssetKVRow(k: "最小充值", v: "\(n.minDeposit ?? "--") \(n.asset ?? "")")
+            AssetKVRow(k: "到账确认数", v: n.confirmations.map { "\($0) 次网络确认" } ?? "--")
+            if let m = n.estimatedArrivalMinutes { AssetKVRow(k: "预计到账", v: "约 \(m) 分钟") }
         }
     }
 }
@@ -679,11 +679,11 @@ struct WithdrawRecordsView: View {
                 Text("\(w.amount) \(w.asset)").font(.lbNum(FontSize.label, .semibold)).foregroundColor(p.textPrimary)
                 Spacer(); StatusTag(text: Self.statusText(w.status), color: c)
             }
-            KVRow(k: "网络", v: w.network)
-            KVRow(k: "地址", v: w.address)
-            KVRow(k: "Gas 费", v: "\(w.gasFee ?? w.fee) \(w.gasFeeAsset ?? w.asset)")
-            KVRow(k: "预计到账", v: "\(Fmt.amount(Dec.parse(w.amount) - Dec.parse(w.gasFee ?? w.fee), 8)) \(w.asset)")
-            KVRow(k: "时间", v: Fmt.dateTime(w.createdAt))
+            AssetKVRow(k: "网络", v: w.network)
+            AssetKVRow(k: "地址", v: w.address)
+            AssetKVRow(k: "Gas 费", v: "\(w.gasFee ?? w.fee) \(w.gasFeeAsset ?? w.asset)")
+            AssetKVRow(k: "预计到账", v: "\(Fmt.amount(Dec.parse(w.amount) - Dec.parse(w.gasFee ?? w.fee), 8)) \(w.asset)")
+            AssetKVRow(k: "时间", v: Fmt.dateTime(w.createdAt))
             if w.status == .pending {
                 HStack {
                     Spacer()
@@ -787,7 +787,7 @@ struct AddressBookView: View {
                 Spacer()
             }
             Text(a.address).font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary).textSelection(.enabled)
-            if let m = a.memo, !m.isEmpty { KVRow(k: "Memo", v: m) }
+            if let m = a.memo, !m.isEmpty { AssetKVRow(k: "Memo", v: m) }
             HStack {
                 Text("添加于 \(Fmt.dateTime(a.createdAt))").font(.lb(11)).foregroundColor(p.textTertiary)
                 Spacer()
