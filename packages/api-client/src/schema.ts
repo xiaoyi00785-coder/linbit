@@ -4117,6 +4117,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/users/{uid}/credit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 用户 UID（可先用 GET /admin/v1/users?q=邮箱 查询） */
+                uid: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 测试网给普通用户资金账户虚拟充值（仅测试网；否则 404；reward:approve + totpCode + reason，审计）
+         * @description 仅当 WALLET_CHAIN=testnet 且 ADMIN_USER_CREDIT_ENABLED=true 时可用；LINBIT_NETWORK/NETWORK/APP_ENV=mainnet
+         *     或 LINBIT_MAINNET/MAINNET=true 时即使开关打开也拒绝（admin 返回 404，asset 内部接口 403）。
+         *     记账：借 user:<uid>:funding_free，贷 system:testnet_treasury（txType admin_testnet_credit，计入偿付报表 virtualSeed）。
+         *     仅支持 USDT/USDC（按 1:1 计 USDT 等值）；单笔 ≤ ADMIN_USER_CREDIT_MAX（默认 100000），
+         *     UTC 自然日合计 ≤ ADMIN_USER_CREDIT_DAILY_MAX（默认 1000000）。
+         *     ref 为幂等键：相同 ref 且参数相同返回原结果（replayed=true，不重复入账）；参数不同返回 409 REF_CONFLICT。
+         */
+        post: operations["adminUserTestnetCredit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/mm/baselines": {
         parameters: {
             query?: never;
@@ -14754,6 +14782,97 @@ export interface operations {
             };
             /** @description SEED_DISABLED（主网/生产）或无权限 */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminUserTestnetCredit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 用户 UID（可先用 GET /admin/v1/users?q=邮箱 查询） */
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    asset: "USDT" | "USDC";
+                    /**
+                     * @description 最多 8 位小数
+                     * @example 10000
+                     */
+                    amount: string;
+                    /** @description 幂等键 */
+                    ref: string;
+                    /** @description 必填 */
+                    reason: string;
+                    totpCode: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ref?: string;
+                        userId?: string;
+                        asset?: string;
+                        amount?: string;
+                        /** @example funding */
+                        account?: string;
+                        /** @example admin_testnet_credit */
+                        txType?: string;
+                        /** Format: date-time */
+                        createdAt?: string;
+                        /** @description 重放时为空 */
+                        fundingFreeBefore?: string;
+                        /** @description 重放时为空 */
+                        fundingFreeAfter?: string;
+                        replayed?: boolean;
+                    };
+                };
+            };
+            /** @description VALIDATION_ERROR / REASON_REQUIRED / ASSET_NOT_ALLOWED / CREDIT_CAP_EXCEEDED / CREDIT_DAILY_CAP_EXCEEDED */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TOTP_INVALID */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TWO_FACTOR_REQUIRED / ACCOUNT_NOT_ALLOWED（系统或做市账户）/ 无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 非测试网或未开启（接口隐藏）/ 用户不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description REF_CONFLICT：ref 已用于不同参数 */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
