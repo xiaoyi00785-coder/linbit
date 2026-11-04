@@ -11,13 +11,14 @@ import { maskEmail } from "@/lib/account";
 import { addressError, amountError, cleanNum, DEFAULT_MIN_WITHDRAW } from "@/lib/validate";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import { NetPicker } from "@/legacy/Pages";
-import { positiveAmount, withdrawMin } from "@/lib/assetDisplay";
+import { etaMinutes, positiveAmount, withdrawMin, withdrawTip } from "@/lib/assetDisplay";
 import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
 import { Ico } from "@/legacy/App";
 // @ts-ignore
 import { coins } from "@/legacy/data";
 import { fmtAmt, trimFixed } from "@/lib/format";
+import { stLabel } from "@/lib/orderStatus";
 
 const coinOf = (s: string) => (coins as { s: string; col: string }[]).find((x) => x.s === s) ?? { col: "var(--lb-usdt)", s };
 
@@ -85,9 +86,21 @@ export function Withdraw() {
       }
       fallbackNets();
     });
+    // 回退 /wallet/withdraw/networks：同样带 minWithdraw / estimatedArrivalMinutes 等字段，一并写入 netInfo，
+    // 否则回退路径下拉里没有最小额和预计到账时间（只剩网络名）
     const fallbackNets = () => listWithdrawNetworks(asset).then((r) => {
-      const l = (r.data?.networks ?? []).map((x) => x.network);
+      // 与主路径一致：只列后端 withdrawEnabled !== false 的网络
+      const rows = (r.data?.networks ?? []).filter((x) => x.withdrawEnabled !== false);
+      const l = rows.map((x) => x.network);
       if (r.source === "api" && l.length) {
+        setNetInfo((m) => ({
+          ...m,
+          ...Object.fromEntries(rows.map((x) => [`${asset}:${x.network}`, {
+            asset, network: x.network, minWithdraw: x.minWithdraw ?? undefined, maxWithdraw: x.maxWithdraw ?? undefined,
+            withdrawFee: x.gasFeeEstimate ?? undefined, estimatedArrivalMinutes: x.estimatedArrivalMinutes ?? undefined,
+            memoRequired: x.memoRequired, withdrawEnabled: x.withdrawEnabled !== false,
+          } as WalletNetwork])),
+        }));
         setApiNets((m) => ({ ...m, [asset]: l }));
         setNet((cur) => (l.includes(cur) ? cur : l[0]));
       }
@@ -129,7 +142,9 @@ export function Withdraw() {
   const maxS = ni ? ni.maxWithdraw ?? undefined : cfg?.maxAmount;
   // 手续费只认接口值（wallet_network_settings.withdraw_fee 生效值），接口不可用时不展示估算值
   const feeS = ni?.withdrawFee ?? (cfgSrc === "api" ? cfg?.gasFeeEstimate : undefined);
-  const eta = ni?.estimatedArrivalMinutes ? `约 ${ni.estimatedArrivalMinutes} 分钟` : "约 5 分钟";
+  // 预计到账只认后端值（当前网络的 estimatedArrivalMinutes），缺失显示 --，不再用写死的「约 5 分钟」
+  const etaM = etaMinutes(ni?.estimatedArrivalMinutes ?? (cfg && cfg.asset === asset && cfg.network === net ? cfg.estimatedArrivalMinutes : undefined));
+  const eta = etaM ? `约 ${etaM} 分钟` : "--";
   const memoReq = ni?.memoRequired ?? cfg?.memoRequired;
   const min = Number(minS ?? 0) || 0;
   const max = Number(maxS ?? Infinity);
@@ -162,6 +177,8 @@ export function Withdraw() {
     return "";
   };
 
+  // 温馨提示随所选币种 / 网络变化：最小额与预计到账都取上面同一个派生值（minS / etaM），缺失则不显示这一句
+  const tip = tab === "chain" ? withdrawTip(asset, net, minS, etaM) : undefined;
   const submitOk = !wLockUntil && (tab === "inner" ? !!toKey && amtOk : !!addr && !addrE && amtOk && (!memoReq || !!memo));
 
   return (
@@ -198,7 +215,7 @@ export function Withdraw() {
                 <div className="fx-field">
                   提现网络
                   <NetPicker out coin={asset} net={net} setNet={setNet}
-                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: withdrawMin(positiveAmount(i?.minWithdraw), minFloor), recommended: i?.recommended === true || undefined }; })} />
+                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: withdrawMin(positiveAmount(i?.minWithdraw), minFloor), eta: etaMinutes(i?.estimatedArrivalMinutes), recommended: i?.recommended === true || undefined }; })} />
                 </div>
                 <div className="fx-field">
                   <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>
@@ -226,7 +243,7 @@ export function Withdraw() {
               <div className="wkv">
                 <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{fmtAmt(free)} {asset}</b>
                 {tab === "inner" ? <><span>24 小时额度</span><b>50,000 USDT</b></> : <>
-                <span>单笔最小提现</span><b>{min || "--"} {asset}</b>
+                <span>单笔最小提现</span><b>{minS ?? "--"} {asset}</b>
                 <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
               </div>
               <div className="wkv wdiv">
@@ -247,7 +264,7 @@ export function Withdraw() {
           <div className="dtips">
             <div className="lcard sm">
               <b>温馨提示</b>
-              <p className="lg">请确认设备安全，谨防信息被篡改或泄露。<br/>谨防诈骗！linbit 不会向你索要账户密码等敏感信息，也不会要求私下转账或提现。<br/>linbit 不收取平台提现手续费，仅从提现数量中扣除链上网络费（Gas），到账数量 = 提现数量 − Gas。<br/>USDT 单笔最小提现 12 USDT。</p>
+              <p className="lg">请确认设备安全，谨防信息被篡改或泄露。<br/>谨防诈骗！linbit 不会向你索要账户密码等敏感信息，也不会要求私下转账或提现。<br/>linbit 不收取平台提现手续费，仅从提现数量中扣除链上网络费（Gas），到账数量 = 提现数量 − Gas。{tip && <><br/><span data-testid="wd-tip">{tip}</span></>}</p>
             </div>
             <div className="lcard sm">
               <b>常见问题</b>
@@ -259,12 +276,12 @@ export function Withdraw() {
           {tab === "inner" ? (<>
             <h3>站内转账记录 <Src s={innerSrc} /></h3>
             {innerSoon ? <div className="lg">{SOON}</div> : inner.length === 0 ? <div className="lg">暂无数据</div> : inner.map((r) => (
-              <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.direction === "out" ? "转出" : "转入"} {r.amount} {r.asset} · {r.direction === "out" ? (r.toMaskedEmail ? maskEmail(r.toMaskedEmail) : `UID ${r.toUid}`) : `UID ${r.fromUid}`}</span><span>{{ pending: "处理中", completed: "已完成", failed: "失败" }[r.status]}</span></div>
+              <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.direction === "out" ? "转出" : "转入"} {r.amount} {r.asset} · {r.direction === "out" ? (r.toMaskedEmail ? maskEmail(r.toMaskedEmail) : `UID ${r.toUid}`) : `UID ${r.fromUid}`}</span><span>{stLabel(r.status)}</span></div>
             ))}
           </>) : (<>
           <h3>提现记录 <Src s={recSrc} /></h3>
           {records.length === 0 ? <div className="lg">暂无数据</div> : records.map((r) => (
-            <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.amount} {r.asset} · {r.network}</span><span>{r.status}</span></div>
+            <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.amount} {r.asset} · {r.network}</span><span>{stLabel(r.status, "withdraw")}</span></div>
           ))}</>)}
         </div>
       </div>
