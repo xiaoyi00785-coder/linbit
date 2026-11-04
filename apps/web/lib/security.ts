@@ -2,9 +2,9 @@
 import { rest, rget, type RestResult } from "./rest";
 import { useCallback, useEffect, useState } from "react";
 
-export type SecMissing = "email" | "phone" | "twoFactor" | "fundPassword" | "antiPhishing";
+export type SecMissing = "emailVerified" | "phoneVerified" | "twoFactor" | "fundPassword" | "antiPhishing";
 /** 后端 fix/acceptance-r3-clean：/account/security.securityLevel（安全等级唯一来源） */
-export interface SecurityLevel { score: number; max: number; level: "low" | "medium" | "high"; missing: SecMissing[] }
+export interface SecurityLevel { score: number; max: number; level: "low" | "medium" | "high"; missing: SecMissing[]; items?: { key: SecMissing; ok: boolean }[] }
 export interface SecurityOverview {
   securityLevel?: SecurityLevel;
   twoFactor?: { enabled: boolean; method?: "totp" | null };
@@ -100,17 +100,20 @@ export const secMsg = (r: { code?: string; error?: string; status?: number }) =>
   (r.code === "FUND_PASSWORD_LOCKED" ? "资金密码错误次数过多，已被锁定" : null) ?? (r.code && SEC_ERR[r.code]) ?? (r.status === 404 || r.status === undefined ? "服务暂不可用，请稍后再试" : r.error ?? "操作失败");
 
 const LV = { low: ["低", "down2"], medium: ["中", ""], high: ["高", "up2"] } as const;
-export const SEC_ITEMS: [SecMissing, string][] = [["email", "邮箱验证"], ["phone", "手机验证"], ["twoFactor", "谷歌验证器/通行密钥"], ["fundPassword", "资金密码"], ["antiPhishing", "防钓鱼码"]];
-/** 安全等级：优先 securityLevel；旧后端无该字段时按同样 5 项在前端计算（与后端口径一致） */
+const SEC_LABEL: Record<SecMissing, string> = { emailVerified: "邮箱验证", phoneVerified: "手机验证", twoFactor: "谷歌验证器/通行密钥", fundPassword: "资金密码", antiPhishing: "防钓鱼码" };
+const SEC_KEYS = Object.keys(SEC_LABEL) as SecMissing[];
+/** 安全等级：清单直接按后端 securityLevel.items（固定顺序 {key,ok}）渲染，✓ 数 = score；旧后端无 items 时按同口径本地计算 */
 export function secLevel(s: SecurityOverview | undefined | null) {
   const o = s ?? {};
   const sl = o.securityLevel;
-  const missing: SecMissing[] = sl?.missing ?? SEC_ITEMS.map(([k]) => k).filter((k) => !({
-    email: !!o.emailVerified, phone: !!o.phoneVerified, twoFactor: !!o.twoFactor?.enabled || (o.passkeysCount ?? 0) > 0,
+  const local: Record<SecMissing, boolean> = {
+    emailVerified: !!o.emailVerified, phoneVerified: !!o.phoneVerified, twoFactor: !!o.twoFactor?.enabled || (o.passkeysCount ?? 0) > 0,
     fundPassword: !!o.fundPasswordSet, antiPhishing: !!o.antiPhishingSet,
-  } as Record<SecMissing, boolean>)[k]);
-  const max = sl?.max ?? SEC_ITEMS.length;
-  const score = sl?.score ?? max - missing.length;
+  };
+  const items = sl?.items?.length ? sl.items.filter((i) => SEC_LABEL[i.key]) : SEC_KEYS.map((k) => ({ key: k, ok: sl?.missing ? !sl.missing.includes(k) : local[k] }));
+  const missing = items.filter((i) => !i.ok).map((i) => i.key);
+  const max = sl?.max ?? items.length;
+  const score = sl?.score ?? items.filter((i) => i.ok).length;
   const level = sl?.level ?? (score >= 4 ? "high" : score >= 2 ? "medium" : "low");
-  return { score, max, level, label: LV[level][0], cls: LV[level][1], missing, checks: SEC_ITEMS.map(([k, t]) => [t, !missing.includes(k)] as [string, boolean]) };
+  return { score, max, level, label: LV[level][0], cls: LV[level][1], missing, checks: items.map((i) => [SEC_LABEL[i.key], i.ok] as [string, boolean]) };
 }
