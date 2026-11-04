@@ -13,7 +13,7 @@ const T: [string, string][] = [
   ["/forgot-password", "找回密码"], ["/invite", "邀请返佣"], ["/rewards", "奖励中心"], ["/coupons", "卡券中心"],
   ["/points", "积分中心"], ["/events", "活动中心"], ["/copy", "跟单交易"], ["/strategy", "策略交易"],
   ["/sub-accounts", "子账户"], ["/tradfi", "传统金融"], ["/sim", "模拟交易"], ["/api/docs", "API 文档"],
-  ["/account", "账户"], ["/chat", "在线客服"], ["/coming-soon", "即将上线"],
+  ["/account", "账户"], ["/chat", "聊天室"], ["/coming-soon", "即将上线"],
 ];
 const DK = ["/convert", "/buy", "/deposit", "/withdraw", "/orders", "/assets", "/setting", "/notifications", "/account", "/sub-accounts", "/coupons", "/rewards", "/points"];
 const hit = (p: string, pre: string) => p === pre || p.startsWith(pre + "/");
