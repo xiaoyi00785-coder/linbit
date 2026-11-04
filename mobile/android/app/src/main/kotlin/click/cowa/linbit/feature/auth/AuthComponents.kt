@@ -179,7 +179,7 @@ fun AccountField(vm: AuthViewModel, onPickCountry: () -> Unit) {
                 ) {
                     suggestions.forEach { (s, last) ->
                         Row(
-                            Modifier.fillMaxWidth().height(34.dp).pressable(scale = 1f) { vm.onRawChange(s); focused = false }.padding(horizontal = 12.dp),
+                            Modifier.fillMaxWidth().height(32.dp).pressable(scale = 1f) { vm.onRawChange(s); focused = false }.padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(if (last) AccountId.fromRaw(s, vm.countryCode).masked else s, Modifier.weight(1f), style = lb(FontSize.label), color = p.textPrimary, maxLines = 1)

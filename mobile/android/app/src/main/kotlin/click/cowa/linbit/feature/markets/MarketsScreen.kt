@@ -60,7 +60,23 @@ fun MarketsScreen(bottomInset: Dp, modifier: Modifier = Modifier, vm: MarketsVie
     val p = LB.p
     val state by vm.state.collectAsStateWithLifecycle()
     val watch by vm.watch.collectAsStateWithLifecycle()
-    var top by rememberSaveable { mutableIntStateOf(1) }       // 0 自选 1 市场 2 聊天室
+    MarketsContent(state, watch, bottomInset, vm::refresh, vm::addToWatch, modifier)
+}
+
+/** 无状态内容（便于截图对照与预览）。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MarketsContent(
+    state: click.cowa.linbit.data.MarketState,
+    watch: List<String>,
+    bottomInset: Dp,
+    onRefresh: () -> Unit,
+    onAddWatch: (Set<String>) -> Unit,
+    modifier: Modifier = Modifier,
+    initialTop: Int = 1,
+) {
+    val p = LB.p
+    var top by rememberSaveable { mutableIntStateOf(initialTop) }       // 0 自选 1 市场 2 聊天室
     var kind by rememberSaveable { mutableIntStateOf(0) }      // 现货 / 合约 / TradFi
     var category by rememberSaveable { mutableIntStateOf(0) }
     var field by rememberSaveable { mutableStateOf(SortField.VOLUME) }
@@ -82,7 +98,7 @@ fun MarketsScreen(bottomInset: Dp, modifier: Modifier = Modifier, vm: MarketsVie
         }
         HorizontalDivider(color = p.divider)
         when (top) {
-            0 -> WatchlistTab(vm, state, watch, bottomInset)
+            0 -> WatchlistTab(onAddWatch, state, watch, bottomInset)
             1 -> {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 10.dp)) {
                     PrimaryTabs(listOf("现货", "合约", "TradFi"), kind, { kind = it; category = 0 }, size = FontSize.tabSecondary, underline = true)
@@ -96,7 +112,7 @@ fun MarketsScreen(bottomInset: Dp, modifier: Modifier = Modifier, vm: MarketsVie
                     MarketListHeader(field, dir, { f, d -> field = f; dir = d })
                     val mk = if (kind == 0) MarketKind.SPOT else MarketKind.FUTURES
                     val rows = state.filtered(mk, category).sortedByField(field, dir)
-                    PullToRefreshBox(isRefreshing = state.loading && rows.isNotEmpty(), onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
+                    PullToRefreshBox(isRefreshing = state.loading && rows.isNotEmpty(), onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
                         LazyColumn(contentPadding = PaddingValues(bottom = bottomInset)) {
                             if (rows.isEmpty()) item("empty") {
                                 if (state.loading) Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
@@ -115,7 +131,7 @@ fun MarketsScreen(bottomInset: Dp, modifier: Modifier = Modifier, vm: MarketsVie
 
 /** 自选：空时显示推荐（ref/7：两列卡片 + 勾选 + 黑色「加入自选」）；有自选时显示列表。 */
 @Composable
-private fun WatchlistTab(vm: MarketsViewModel, state: click.cowa.linbit.data.MarketState, watch: List<String>, bottomInset: Dp) {
+private fun WatchlistTab(onAddWatch: (Set<String>) -> Unit, state: click.cowa.linbit.data.MarketState, watch: List<String>, bottomInset: Dp) {
     val p = LB.p
     var kind by rememberSaveable { mutableIntStateOf(0) }
     var field by rememberSaveable { mutableStateOf(SortField.VOLUME) }
@@ -152,7 +168,7 @@ private fun WatchlistTab(vm: MarketsViewModel, state: click.cowa.linbit.data.Mar
             }
             Box(
                 Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(Radius.xl)).background(p.primary)
-                    .pressable { vm.addToWatch(picked) },
+                    .pressable { onAddWatch(picked) },
                 contentAlignment = Alignment.Center,
             ) { Text("加入自选", style = lb(FontSize.body, FontWeight.Medium), color = p.textOnPrimary) }
         }
