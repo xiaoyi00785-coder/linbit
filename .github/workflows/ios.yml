@@ -116,6 +116,10 @@ jobs:
                         futures-orders-tpsl futures-orders-plan futures-amend futures-algo-amend-plan futures-algo-amend-tpsl futures-mode-hedge futures-tpsl-partial earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
             shoot "$screen" light
           done
+          # 账户安全：概览 / 资料 / 邮箱手机 / 资金密码 / 防钓鱼码 / 设备会话 / 通行密钥 / 关闭 2FA（日间 + 夜间，含错误/空态）
+          for screen in security security-error security-profile security-profile-error security-email security-email-error security-phone security-fund security-fund-error security-fund-reset security-antiphishing security-antiphishing-error security-devices security-sessions security-devices-error security-devices-empty security-passkeys security-passkeys-empty security-passkeys-add security-2fa-disable security-2fa-disable-error; do
+            for mode in light dark; do shoot "$screen" "$mode"; done
+          done
           # 资产模块：总览 / 网络 / 账户划转 / 内部转账 / 提现记录 / 地址簿（日间 + 夜间）
           for screen in assets-overview assets-networks assets-account-transfer assets-internal-transfer assets-withdraw-records assets-address-book; do
             for mode in light dark; do shoot "$screen" "$mode"; done

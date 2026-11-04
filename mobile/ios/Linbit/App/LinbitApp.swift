@@ -136,6 +136,27 @@ struct RootTabView: View {
         case "futures-pnl-empty": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "pnlEmpty"
         case "password-register": router.tab = .home; router.shotSheet = "pwdRegister"; session.present(.register)
         case "password-reset": router.tab = .home; router.shotSheet = "pwdReset"; session.present(.login)
+        case "security": router.shotSheet = "sec:"; SecShot.raw = "sec:"; router.feature = .security
+        case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
+        case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
+        case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security
+        case "security-email": router.shotSheet = "sec:email"; SecShot.raw = "sec:email"; router.feature = .security
+        case "security-email-error": router.shotSheet = "sec:email:error"; SecShot.raw = "sec:email:error"; router.feature = .security
+        case "security-phone": router.shotSheet = "sec:phone"; SecShot.raw = "sec:phone"; router.feature = .security
+        case "security-fund": router.shotSheet = "sec:fundPassword"; SecShot.raw = "sec:fundPassword"; router.feature = .security
+        case "security-fund-error": router.shotSheet = "sec:fundPassword:error"; SecShot.raw = "sec:fundPassword:error"; router.feature = .security
+        case "security-fund-reset": router.shotSheet = "sec:fundPassword:reset"; SecShot.raw = "sec:fundPassword:reset"; router.feature = .security
+        case "security-antiphishing": router.shotSheet = "sec:antiPhishing"; SecShot.raw = "sec:antiPhishing"; router.feature = .security
+        case "security-antiphishing-error": router.shotSheet = "sec:antiPhishing:error"; SecShot.raw = "sec:antiPhishing:error"; router.feature = .security
+        case "security-devices": router.shotSheet = "sec:devices"; SecShot.raw = "sec:devices"; router.feature = .security
+        case "security-sessions": router.shotSheet = "sec:devices:sessions"; SecShot.raw = "sec:devices:sessions"; router.feature = .security
+        case "security-devices-error": router.shotSheet = "sec:devices:error"; SecShot.raw = "sec:devices:error"; router.feature = .security
+        case "security-devices-empty": router.shotSheet = "sec:devices:empty"; SecShot.raw = "sec:devices:empty"; router.feature = .security
+        case "security-passkeys": router.shotSheet = "sec:passkeys"; SecShot.raw = "sec:passkeys"; router.feature = .security
+        case "security-passkeys-empty": router.shotSheet = "sec:passkeys:empty"; SecShot.raw = "sec:passkeys:empty"; router.feature = .security
+        case "security-passkeys-add": router.shotSheet = "sec:passkeys:add"; SecShot.raw = "sec:passkeys:add"; router.feature = .security
+        case "security-2fa-disable": router.shotSheet = "sec:disable2fa"; SecShot.raw = "sec:disable2fa"; router.feature = .security
+        case "security-2fa-disable-error": router.shotSheet = "sec:disable2fa:error"; SecShot.raw = "sec:disable2fa:error"; router.feature = .security
         case "password-change": router.shotSheet = "changePwd"; router.feature = .changePassword
         case "login":
             router.tab = .home
