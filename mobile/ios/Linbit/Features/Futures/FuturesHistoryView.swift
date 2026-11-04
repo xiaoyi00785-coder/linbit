@@ -312,7 +312,7 @@ struct FuturesHistoryOrderRow: View {
                 KVCell(k: "已成交/数量", v: "\(o.filledQty ?? "0")/\(o.qty ?? "--")", align: .trailing)
             }
             HStack {
-                KVCell(k: "手续费(USDT)", v: o.fee.map { Fmt.amount(Dec.parse($0), 4) } ?? "--")
+                KVCell(k: "手续费(USDT)", v: o.fee ?? "--")
                 KVCell(k: "止盈/止损", v: lbTpslText(o.tpPrice, o.tpTriggerPriceType?.rawValue, o.slPrice, o.slTriggerPriceType?.rawValue), align: .trailing)
             }
             if let d = o.createdAt { Text(Fmt.dateTime(d)).font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary) }
@@ -343,7 +343,7 @@ struct FuturesTradeRow: View {
                 KVCell(k: "成交数量", v: t.qty ?? "--", align: .center)
                 KVCell(k: "成交额(USDT)", v: Fmt.amount(price * qty, 2), align: .trailing)
             }
-            KVRow(k: "手续费", v: "\(Fmt.amount(Dec.parse(t.fee), 6)) USDT")
+            KVRow(k: "手续费", v: "\(t.fee ?? "--") USDT")
         }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
     }
 }
@@ -361,7 +361,7 @@ struct FuturesBillRow: View {
                     .font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
             }
             Spacer()
-            Text((amt > 0 ? "+" : "") + Fmt.amount(amt, 4) + " USDT").font(.lbNum(FontSize.label, .medium))
+            Text((amt > 0 ? "+" : "") + ((b.kind ?? "").hasSuffix("fee") ? (b.amount ?? "0") : Fmt.amount(amt, 4)) + " USDT").font(.lbNum(FontSize.label, .medium))
                 .foregroundColor(amt < 0 ? p.down : p.up)
         }.padding(.horizontal, Spacing.pageH).frame(height: 60)
     }
@@ -398,7 +398,7 @@ struct PositionHistoryRow: View {
             }
             HStack {
                 KVCell(k: "已平数量", v: h.closedQty ?? "--")
-                KVCell(k: "手续费", v: Fmt.amount(Dec.parse(h.fee), 4), align: .center)
+                KVCell(k: "手续费", v: h.fee ?? "--", align: .center)
                 KVCell(k: "资金费用", v: Fmt.amount(Dec.parse(h.fundingFee), 4), align: .trailing)
             }
             HStack {

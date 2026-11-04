@@ -244,7 +244,12 @@ struct AssetOverviewView: View {
                     let b = bs[j]
                     HStack(spacing: 8) {
                         CoinIcon(base: b.asset ?? "", size: 20)
-                        Text(b.asset ?? "--").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textPrimary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(b.asset ?? "--").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textPrimary)
+                            if let px = AssetsModel.unitPrice(asset: b.asset, priceUsd: b.priceUsd) {
+                                Text("$\(Fmt.amount(px, px < 1 ? 6 : 2))").font(.lbNum(11)).foregroundColor(p.textTertiary)
+                            }
+                        }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 1) {
                             Text(Fmt.amount(Dec.parse(b.total), 8)).font(.lbNum(FontSize.caption)).foregroundColor(p.textPrimary)

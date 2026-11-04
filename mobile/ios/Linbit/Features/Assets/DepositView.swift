@@ -176,7 +176,11 @@ struct DepositView: View {
     private func loadNets() async {
         nets = .loading
         do {
-            let l = try await AssetsAPI.networks(asset: asset)
+            // 充值网络按币种取 GET /wallet/networks?asset=（含 minDeposit / 充值开关）
+            let l = try await AssetsAPI.walletNetworks(asset: asset).compactMap { n -> APIWithdrawNetwork? in
+                guard let name = n.network, n.depositEnabled != false, n.asset == nil || n.asset == asset else { return nil }
+                return APIWithdrawNetwork(network: name, minWithdraw: n.minDeposit, confirmations: n.confirmations, estimatedArrivalMinutes: n.estimatedArrivalMinutes)
+            }
             nets = .loaded(l)
             if l.count == 1 { net = l[0]; await loadAddr() } else if !l.isEmpty { showNets = true }
             else { addr = .failed("该币种暂不支持充值") }
