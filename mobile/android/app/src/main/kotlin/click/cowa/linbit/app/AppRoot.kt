@@ -67,9 +67,17 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                         onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { vm.toast.show("全部功能即将开放") },
                         onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.toast.show("充值即将开放") else auth = "login" },
                     )
-                    MainTab.MARKETS -> MarketsScreen(bottomInset)
-                    MainTab.FUTURES -> PlaceholderScreen("合约", bottomInset)
-                    MainTab.SPOT -> PlaceholderScreen("现货", bottomInset)
+                    MainTab.MARKETS -> MarketsScreen(bottomInset, onOpenTrade = { kind, sym ->
+                        if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
+                    })
+                    MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
+                        bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
+                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { vm.toast.show("历史记录即将开放") },
+                    )
+                    MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
+                        bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
+                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { vm.toast.show("历史记录即将开放") },
+                    )
                     MainTab.ASSETS -> PlaceholderScreen("资产", bottomInset, loginHint = !loggedIn, onLogin = { auth = "login" })
                 }
             }

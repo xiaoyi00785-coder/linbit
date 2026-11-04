@@ -12,4 +12,13 @@ object Dec {
     fun parse(s: String?): BigDecimal = s?.trim()?.takeIf { it.isNotEmpty() }?.toBigDecimalOrNull() ?: BigDecimal.ZERO
 
     fun parseOrNull(s: String?): BigDecimal? = s?.trim()?.takeIf { it.isNotEmpty() }?.toBigDecimalOrNull()
+
+    /** 向下截断到 prec 位小数的纯文本（不带千分位，用于提交给服务端 / 回填输入框）。 */
+    fun plain(d: BigDecimal, prec: Int): String = d.setScale(prec.coerceAtLeast(0), java.math.RoundingMode.DOWN).toPlainString()
+
+    /** "0.01" → 2；"1" → 0；"0.50" → 1（去掉末尾 0 后的小数位数）。 */
+    fun precision(of: String?): Int {
+        val d = parseOrNull(of) ?: return 0
+        return d.stripTrailingZeros().scale().coerceAtLeast(0)
+    }
 }

@@ -51,6 +51,7 @@ import click.cowa.linbit.ui.components.LbButton
 import click.cowa.linbit.ui.components.LbImageIcon
 import click.cowa.linbit.ui.components.LbTextField
 import click.cowa.linbit.ui.components.ToastCenter
+import click.cowa.linbit.ui.components.LbIcon
 import click.cowa.linbit.ui.components.pressable
 import click.cowa.linbit.ui.theme.FontSize
 import click.cowa.linbit.ui.theme.LB
@@ -360,7 +361,7 @@ internal fun ForgotScreen(vm: AuthViewModel, onBack: () -> Unit, onNext: () -> U
 // ───────────── 底部弹层 ─────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LbSheet(title: String?, onClose: () -> Unit, content: @Composable () -> Unit) {
+fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, content: @Composable () -> Unit) {
     val p = LB.p
     ModalBottomSheet(
         onDismissRequest = onClose,
@@ -369,7 +370,10 @@ fun LbSheet(title: String?, onClose: () -> Unit, content: @Composable () -> Unit
         shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
     ) {
         Column(Modifier.navigationBarsPadding()) {
-            if (title != null) Text(title, Modifier.padding(horizontal = Spacing.pageH, vertical = 8.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+            if (title != null) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+                if (showClose) LbIcon(R.drawable.ic_close, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onClose))
+            }
             content()
         }
     }

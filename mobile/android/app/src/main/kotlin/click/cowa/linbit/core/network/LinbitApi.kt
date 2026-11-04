@@ -18,7 +18,11 @@ import click.cowa.linbit.core.generated.ApiSymbol
 import click.cowa.linbit.core.generated.ApiVerifyResetCodeRequest
 import click.cowa.linbit.core.generated.ApiVerifyResetCodeResponse
 import kotlinx.serialization.json.JsonElement
+import click.cowa.linbit.core.generated.*
 import retrofit2.http.Body
+import retrofit2.http.DELETE
+import retrofit2.http.PUT
+import retrofit2.http.Path
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.Headers
@@ -99,4 +103,134 @@ interface LinbitApi {
 
     @GET("assets/overview")
     suspend fun assetsOverview(): ApiAssetsOverview
+
+    // ---- 现货交易 ----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/depth")
+    suspend fun depth(@Query("symbol") symbol: String, @Query("limit") limit: Int = 20): ApiDepth
+
+    @GET("assets/balances")
+    suspend fun balances(@Query("account") account: String? = null, @Query("pageSize") pageSize: Int = 200): ApiPaginatedBalances
+
+    @POST("spot/orders")
+    suspend fun placeSpotOrder(@Body body: ApiPlaceOrderRequest): ApiOrder
+
+    @DELETE("spot/orders/{orderId}")
+    suspend fun cancelSpotOrder(@Path("orderId") orderId: String): ApiOrder
+
+    @GET("spot/orders/open")
+    suspend fun spotOpenOrders(@Query("symbol") symbol: String? = null, @Query("pageSize") pageSize: Int = 100): ApiPaginatedOrders
+
+    @GET("spot/orders/history")
+    suspend fun spotOrderHistory(
+        @Query("symbol") symbol: String? = null, @Query("status") status: String? = null,
+        @Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20,
+    ): ApiPaginatedOrders
+
+    @GET("spot/trades")
+    suspend fun spotTrades(@Query("symbol") symbol: String? = null, @Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20): ApiPaginatedTrades
+
+    @POST("spot/orders/conditional")
+    suspend fun createConditional(@Body body: ApiConditionalOrderRequest): ApiConditionalOrder
+
+    @GET("spot/orders/conditional")
+    suspend fun conditionalOrders(@Query("status") status: String? = null, @Query("pageSize") pageSize: Int = 100): ApiListConditionalOrders200Response
+
+    @DELETE("spot/orders/conditional/{id}")
+    suspend fun cancelConditional(@Path("id") id: String): ApiConditionalOrder
+
+    @GET("account/fee-rates")
+    suspend fun feeRates(@Query("symbol") symbol: String? = null): ApiFeeRates
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("spot/fee-schedule")
+    suspend fun feeSchedule(): ApiGetFeeSchedule200Response
+
+    // ---- U 本位合约 ----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("futures/market/contracts")
+    suspend fun futuresContracts(): ApiFuturesContractList
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("futures/market/depth")
+    suspend fun futuresDepth(@Query("symbol") symbol: String, @Query("limit") limit: Int = 20): ApiFuturesDepth
+
+    @GET("futures/account")
+    suspend fun futuresAccount(): ApiFuturesAccount
+
+    @GET("futures/leverage")
+    suspend fun futuresLeverage(@Query("symbol") symbol: String): ApiFuturesGetLeverage200Response
+
+    @POST("futures/leverage")
+    suspend fun setFuturesLeverage(@Body body: ApiFuturesSetLeverageRequest): ApiFuturesGetLeverage200Response
+
+    @GET("futures/position-mode")
+    suspend fun futuresPositionMode(): ApiFuturesPositionMode
+
+    @POST("futures/position-mode")
+    suspend fun setFuturesPositionMode(@Body body: ApiFuturesPositionMode): ApiFuturesPositionMode
+
+    @POST("futures/orders")
+    suspend fun placeFuturesOrder(@Body body: ApiFuturesPlaceOrderRequest): ApiFuturesPlaceOrder200Response
+
+    @GET("futures/orders")
+    suspend fun futuresOrders(
+        @Query("symbol") symbol: String? = null, @Query("status") status: String? = null, @Query("limit") limit: Int = 100,
+    ): ApiFuturesOrders200Response
+
+    @DELETE("futures/orders/{id}")
+    suspend fun cancelFuturesOrder(@Path("id") id: Long): ApiFuturesPlaceOrder200Response
+
+    @GET("futures/positions")
+    suspend fun futuresPositions(): ApiFuturesPositions200Response
+
+    @POST("futures/positions/{symbol}/close")
+    suspend fun closeFuturesPosition(@Path("symbol") symbol: String): ApiFuturesPlaceOrder200Response
+
+    /** 分仓（HEDGE）模式平仓需在请求体带 positionSide */
+    @POST("futures/positions/{symbol}/close")
+    suspend fun closeFuturesPositionSide(@Path("symbol") symbol: String, @Body body: JsonElement): ApiFuturesPlaceOrder200Response
+
+    @POST("futures/plan-orders")
+    suspend fun createFuturesPlan(@Body body: ApiFuturesPlaceOrderRequest): ApiFuturesCreateTpslOrders200Response
+
+    @GET("futures/plan-orders")
+    suspend fun futuresPlanOrders(@Query("status") status: String = "active", @Query("limit") limit: Int = 50): ApiFuturesListTpslOrders200Response
+
+    @GET("futures/tpsl-orders")
+    suspend fun futuresTpslOrders(@Query("status") status: String = "active", @Query("limit") limit: Int = 50): ApiFuturesListTpslOrders200Response
+
+    @DELETE("futures/plan-orders/{id}")
+    suspend fun cancelFuturesPlan(@Path("id") id: Long): ApiFuturesAmendTpslOrder200Response
+
+    @DELETE("futures/tpsl-orders/{id}")
+    suspend fun cancelFuturesTpsl(@Path("id") id: Long): ApiFuturesAmendTpslOrder200Response
+
+    @GET("futures/market/risk-tiers")
+    suspend fun futuresRiskTiers(@Query("symbol") symbol: String? = null): ApiFuturesRiskTiers200Response
+
+    @GET("futures/pnl/today")
+    suspend fun futuresTodayPnl(): ApiFuturesTodayPnl200Response
+
+    @GET("futures/bonus")
+    suspend fun futuresBonus(): ApiFuturesBonus200Response
+
+    @GET("futures/positions/history")
+    suspend fun futuresPositionHistory(@Query("symbol") symbol: String? = null, @Query("limit") limit: Int = 50): ApiFuturesPositionHistory200Response
+
+    @GET("futures/trades")
+    suspend fun futuresMyTrades(@Query("symbol") symbol: String? = null, @Query("limit") limit: Int = 100): ApiFuturesMyTrades200Response
+
+    @GET("futures/bills")
+    suspend fun futuresBills(@Query("kind") kind: String? = null, @Query("limit") limit: Int = 100): ApiFuturesBills200Response
+
+    @POST("futures/transfer")
+    suspend fun futuresTransfer(@Body body: ApiFuturesTransferRequest): ApiFuturesTransfer200Response
+
+    @GET("futures/transfers")
+    suspend fun futuresTransfers(): ApiFuturesTransfers200Response
+
+    // ---- 自选 ----
+    @GET("account/favorites")
+    suspend fun favorites(@Query("market") market: String = "spot"): JsonElement
 }
