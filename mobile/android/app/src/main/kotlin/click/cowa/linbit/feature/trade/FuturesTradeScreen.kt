@@ -175,20 +175,25 @@ fun FuturesTradeContent(
             }
             // 全仓 / 合仓 · 100x · 100x · 资金费率
             Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     ChipButton("${if (vm.cross) "全仓" else "逐仓"} / ${if (vm.hedge) "分仓" else "合仓"}", Modifier.height(24.dp)) { sheet = "mode" }
                     ChipButton("${vm.leverage}x", Modifier.height(24.dp), color = p.up, bg = p.upTint) { sheet = "leverage" }
                     ChipButton("${vm.leverage}x", Modifier.height(24.dp), color = p.down, bg = p.downTint) { sheet = "leverage" }
                 }
+                // 费率与保证金模式同一行，不能占用盘口上方的额外 40dp。
+                Column(Modifier.width(138.dp).height(24.dp), horizontalAlignment = Alignment.End) {
+                    Text("资金费率(8H) / 倒计时", style = lb(10.sp).copy(lineHeight = 12.sp), color = p.textTertiary, maxLines = 1)
+                    Text("${Fmt.amount(vm.fundingRate, 4)}% / ${vm.fundingCountdown}", style = lbNum(10.sp).copy(lineHeight = 12.sp), color = p.textPrimary, maxLines = 1)
+                }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // 左：表单
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     PillSegment(
                         listOf("开仓", "平仓"), if (vm.isOpen) 0 else 1, { vm.isOpen = it == 0; vm.applyPercent(0f) },
                         activeColors = listOf(p.up, p.up), activeText = Color.White,
                     )
-                    SelectBox(vm.kind.title, height = 34.dp) { sheet = "kind" }
+                    SelectBox(vm.kind.title, height = 28.dp) { sheet = "kind" }
                     if (vm.isPlan) {
                         NumberBox("触发价", vm.quote, vm.triggerText, { vm.triggerText = it })
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -220,7 +225,7 @@ fun FuturesTradeContent(
                             NumberBox("止损", vm.quote, vm.slText, { vm.slText = it })
                         }
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         KvRow("可用", if (loggedIn && vm.account != null) "${Fmt.amount(vm.available, 2)} ${vm.quote}" else "-- ${vm.quote}", trailing = {
                             ThemedIcon(R.drawable.ic_mc_plus_square_light, R.drawable.ic_mc_plus_square_dark, 14.dp, Modifier.padding(start = 4.dp).pressable(scale = 1f, onClick = onTransfer))
                         })
@@ -234,12 +239,8 @@ fun FuturesTradeContent(
                         if (!loggedIn) onLogin() else vm.validation?.let { vm.toast.show(it, ToastCenter.Kind.ERROR) } ?: run { confirmLong = false; if (skipConfirm) vm.place(false) else sheet = "confirm" }
                     }
                 }
-                // 右：资金费率 + 盘口
-                Column(Modifier.width(138.dp)) {
-                    Column(Modifier.fillMaxWidth().height(40.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
-                        Text("资金费率(8H) / 倒计时", style = lb(10.sp), color = p.textTertiary, maxLines = 1)
-                        Text("${Fmt.amount(vm.fundingRate, 4)}% / ${vm.fundingCountdown}", style = lbNum(FontSize.small), color = p.textPrimary, maxLines = 1)
-                    }
+                // 盘口表头位于开仓分段下方 24px（8dp）。
+                Column(Modifier.width(138.dp).padding(top = 8.dp)) {
                     OrderBookView(
                         book = bookView, rows = 7, rowHeight = 18.dp, pricePrec = vm.pricePrec, quote = vm.quote, baseUnit = if (vm.byQty) vm.base else vm.quote,
                         mid = { FuturesMid(vm.last, vm.mark, vm.pricePrec, vm.changePct.signum() < 0) { vm.priceText = vm.fmt(vm.last, vm.pricePrec) } },
@@ -250,7 +251,7 @@ fun FuturesTradeContent(
                 }
             }
             // 仓位 / 委托 / 跟单 / 卡券
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 20.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 listOf("仓位 (${vm.positions.size})", "委托 (${vm.openOrders.size + vm.planAlgos.size + vm.tpslAlgos.size})", "跟单 (0)", "卡券 (${vm.bonus.size})").forEachIndexed { i, t ->
                     Text(t, Modifier.pressable(scale = 1f) { bottomTab = i }, style = lb(FontSize.label, if (bottomTab == i) FontWeight.Medium else FontWeight.Normal), color = if (bottomTab == i) p.textPrimary else p.textSecondary)
                 }
@@ -374,10 +375,10 @@ private fun FuturesMid(last: BigDecimal, mark: BigDecimal, prec: Int, down: Bool
 private fun SideButton(vm: FuturesTradeViewModel, loggedIn: Boolean, long: Boolean, onClick: () -> Unit) {
     val p = LB.p
     val label = if (!loggedIn) "登录 / 注册" else if (vm.isOpen) (if (long) "开多" else "开空") else (if (long) "平空" else "平多")
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         LbButton(
             label, kind = if (!loggedIn) ButtonKind.PRIMARY else if (long) ButtonKind.BUY else ButtonKind.SELL,
-            height = if (loggedIn) 46.dp else 40.dp, loading = vm.placing, onClick = onClick,
+            height = if (loggedIn) 39.dp else 40.dp, loading = vm.placing, onClick = onClick,
             subtitle = if (!loggedIn) null else if (!vm.isOpen) null
             else "${if (vm.maxOpenQty.signum() > 0) (if (vm.byQty) Fmt.amount(vm.maxOpenQty, vm.qtyPrec) else Fmt.amount(vm.available.multiply(BigDecimal(vm.leverage)), 2)) else "--"} ${if (vm.byQty) vm.base else vm.quote}",
         )
