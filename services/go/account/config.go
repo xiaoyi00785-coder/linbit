@@ -66,6 +66,14 @@ type Config struct {
 	S3Endpoint   string
 	S3PublicBase string
 
+	// VIP eligibility (vip.go): applicants must meet total assets >=
+	// VIPMinAssetsUSDT OR 30-day volume >= VIPMinVolume30dUSDT (decimal strings;
+	// empty = the published defaults). VIPEligibilitySkip (VIP_ELIGIBILITY_CHECK=off)
+	// disables the server-side check — dev/test stacks only, refused in production.
+	VIPMinAssetsUSDT    string
+	VIPMinVolume30dUSDT string
+	VIPEligibilitySkip  bool
+
 	// Quote (display fiat) currency preference.
 	DefaultQuoteCurrency string
 	QuoteCurrencies      []string
@@ -95,6 +103,9 @@ func LoadConfig() Config {
 		ResendAPIKey:         common.Env("RESEND_API_KEY", ""),
 		ResendFrom:           common.Env("RESEND_FROM", ""),
 		ResendURL:            common.Env("RESEND_API_URL", "https://api.resend.com/emails"),
+		VIPMinAssetsUSDT:     common.Env("VIP_MIN_TOTAL_ASSETS_USDT", defaultVIPMinAssets),
+		VIPMinVolume30dUSDT:  common.Env("VIP_MIN_VOLUME_30D_USDT", defaultVIPMinVolume30d),
+		VIPEligibilitySkip:   strings.EqualFold(common.Env("VIP_ELIGIBILITY_CHECK", "on"), "off"),
 
 		StorageBackend:   common.Env("STORAGE_BACKEND", "local"),
 		AvatarDir:        common.Env("AVATAR_STORAGE_DIR", "data/avatars"),

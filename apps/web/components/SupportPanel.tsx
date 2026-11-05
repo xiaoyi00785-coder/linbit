@@ -23,6 +23,7 @@ export function SupportPanel() {
   }, [o, ann]);
   const close = () => { setO(false); setTimeout(() => btn.current?.focus({ preventScroll: true }), 0); };
   const ch = supportChannels();
+  const tickets = isOn("supportTickets");
   const community = socialLinks().filter(([k]) => k === "telegram" || k === "discord");
   return <>
     <button ref={btn} className="svc" onClick={() => setO((v) => !v)} title="在线客服" aria-label="在线客服" aria-haspopup="dialog" aria-expanded={o} data-testid="svc-btn">
@@ -33,11 +34,11 @@ export function SupportPanel() {
         <div className="svc-hd"><b id="svc-t">在线客服</b><button className="fx-x" aria-label="关闭" onClick={close}>×</button></div>
         <div className="svc-bd">
           <section>
-            <h4>联系客服</h4>
+            <h4>{ch.length ? "联系客服" : "在线客服即将开放"}</h4>
             {ch.length ? <div className="svc-ch">{ch.map((c) => <a key={c.key} href={c.href} target={c.key === "email" ? undefined : "_blank"} rel="noopener noreferrer" data-testid={"svc-ch-" + c.key}><span>{c.label}</span><em>{c.hint}</em></a>)}</div>
-              : <p className="svc-note" data-testid="svc-none">在线客服暂未开通。请先查看下方帮助中心和常见问题，联系方式开通后会在这里显示。</p>}
+              : <p className="svc-note" data-testid="svc-none">{tickets ? "人工在线客服正在筹备中，开放后会在这里显示联系方式。现在遇到问题，请先提交工单，客服回复后会在站内通知你。" : "人工在线客服正在筹备中，开放后会在这里显示联系方式。现在可以先查看下方帮助中心的常见问题。"}</p>}
           </section>
-          {isOn("supportTickets") && <section>
+          {tickets && <section>
             <h4>工单</h4>
             <div className="svc-ch">
               <a href="/support/tickets?new=1" data-testid="svc-ticket-new"><span>提交工单</span><em>在线提交问题，客服回复后站内通知</em></a>

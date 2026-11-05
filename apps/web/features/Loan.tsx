@@ -1,4 +1,5 @@
 "use client";
+import { stLabel } from "@/lib/orderStatus";
 import { G } from "@/components/Glyph";
 /**
  * 质押借币：对接 earn 服务 /loans/*（gateway 前缀 /loans；market、quote 公开，其余需登录）。
@@ -161,7 +162,7 @@ export function LoanBody({ faq }: { faq?: React.ReactNode }) {
                     {l.term !== "flexible" && <button className="lb sm" onClick={() => renew(l)}>续借</button>}
                     <button className="lb lime sm" onClick={() => setAct({ l, k: "repay" })}>还款</button>
                   </span>
-                ) : <span className="r g">{ST[l.status] ?? l.status}</span>}
+                ) : <span className="r g">{ST[l.status] ?? stLabel(l.status)}</span>}
               </div>
             ))}
           </div>
