@@ -22,3 +22,26 @@ export function useHome() {
   }, []);
   return { carousel: slots?.carousel || [], bar: slots?.promo_bar?.[0] || null, newcomer: nc?.available ? nc : null, ncReady };
 }
+
+/** 首页跟单区：真实接口 GET /futures/copy/summary（交易员数 / 跟单者累计收益）+ GET /futures/copy/traders（近 30 日收益率前 3）。
+ *  无数据、接口失败时返回空：调用方隐藏人数 / 卡片 / 整块，绝不展示写死的人数或示例交易员。 */
+export type HomeTrader = { id: string; name: string; roi: number; followers: number; maxFollowers: number; aum: number };
+export type CopyHome = { ready: boolean; traders: number; followerProfit: number; list: HomeTrader[] };
+const fin = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+export function useCopyHome(): CopyHome {
+  const [st, set] = useState<CopyHome>({ ready: false, traders: 0, followerProfit: 0, list: [] });
+  useEffect(() => {
+    let live = true;
+    Promise.all([
+      rget<{ traders?: number; followerProfit?: string; maxFollowers?: number }>("/futures/copy/summary"),
+      rget<{ traders?: { traderId: string; nickname?: string; roi?: string; followers?: number; maxFollowers?: number; aum?: string }[] }>("/futures/copy/traders?days=30&sort=roi&limit=3"),
+    ]).then(([s, t]) => {
+      if (!live) return;
+      const maxF = fin(s.data?.maxFollowers);
+      const list = (t.ok ? t.data?.traders ?? [] : []).slice(0, 3).map((x) => ({ id: x.traderId, name: x.nickname || x.traderId, roi: fin(x.roi) * 100, followers: fin(x.followers), maxFollowers: fin(x.maxFollowers) || maxF, aum: fin(x.aum) }));
+      set({ ready: true, traders: s.ok ? fin(s.data?.traders) : 0, followerProfit: s.ok ? fin(s.data?.followerProfit) : 0, list });
+    });
+    return () => { live = false; };
+  }, []);
+  return st;
+}

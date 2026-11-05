@@ -1,5 +1,6 @@
 "use client";
 /** 通用交互件：全局弹窗宿主、下拉、日期区间、刷新按钮。legacy 静态标记通过 openM() 打开弹窗。 */
+import { stLabel } from "@/lib/orderStatus";
 import { openTransfer } from "@/components/Transfer";
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
@@ -69,7 +70,7 @@ function Grid({ symbol = "BTCUSDT", close }: MP) {
 function MyBots({ close }: MP) {
   const [l, setL] = useState<any[] | null>(null); const [e, setE] = useState("");
   useEffect(() => { rest<any>("GET", "/strategy/grid?status=all").then((r) => r.ok ? setL(Array.isArray(r.data) ? r.data : r.data?.items || []) : (setE(r.status === 401 ? "请先登录查看我的策略" : r.error || "加载失败"), setL([]))); }, []);
-  return <Box title="我的策略" onClose={close}>{l === null ? <p className="tk-txt">加载中…</p> : l.length ? l.map((b: any) => <div key={b.id} className="lrow pd"><span>{b.symbol} · {b.status}</span><b>{b.investment} USDT</b></div>) : <p className="tk-txt">{e || "暂无运行中的策略"}</p>}</Box>;
+  return <Box title="我的策略" onClose={close}>{l === null ? <p className="tk-txt">加载中…</p> : l.length ? l.map((b: any) => <div key={b.id} className="lrow pd"><span>{b.symbol} · {stLabel(b.status)}</span><b>{b.investment} USDT</b></div>) : <p className="tk-txt">{e || "暂无运行中的策略"}</p>}</Box>;
 }
 const MODALS: Record<string, (p: MP) => JSX.Element> = { download: Download, security: Security, grid: Grid, mybots: MyBots };
 export function ModalHost() {

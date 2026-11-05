@@ -268,7 +268,7 @@ button::-moz-focus-inner{border:0}
 :where(a,button,summary,[role=button]){-webkit-tap-highlight-color:transparent}
 /* 价格跳动闪烁（Flash 组件） */
 .lb-flash{border-radius:2px;padding:0 2px;margin:0 -2px;transition:color .2s}
-.lb-flash-up,.lb-flash-up2{color:var(--lb-up)}.lb-flash-down,.lb-flash-down2{color:var(--lb-down)}
+/* 闪烁只动背景，不设 color：静止颜色由 .up/.down（24h 涨跌符号）决定 */
 .lb-flash-up{animation:lbFlashUp .8s ease-out}.lb-flash-up2{animation:lbFlashUp2 .8s ease-out}
 .lb-flash-down{animation:lbFlashDn .8s ease-out}.lb-flash-down2{animation:lbFlashDn2 .8s ease-out}
 @keyframes lbFlashUp{from{background:color-mix(in srgb,var(--lb-up) 22%,transparent)}to{background:transparent}}
