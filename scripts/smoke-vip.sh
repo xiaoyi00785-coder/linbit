@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Smoke for VIP applications: apply (UID implicit, channel + contact), one open
-# application at a time, admin RBAC, 2FA-gated approve/reject with audit,
+# application at a time, server-side eligibility (VIP_NOT_ELIGIBLE until the
+# user holds >= 500,000 USDT), admin RBAC, 2FA-gated approve/reject with audit,
 # re-apply after rejection, ALREADY_VIP after approval, user notification.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -39,6 +40,9 @@ G="$(ok "$(api "$T" GET /vip/application)" get)"
 [ "$(jq -r .conditions.minTotalAssetsUSDT <<<"$G")" = 500000 ] || fail "conditions: $G"
 R="$(api "$T" POST /vip/applications '{"channel":"carrier-pigeon","contact":"x"}')"; [ "$(code "$R")" = 400 ] || fail "bad channel accepted"
 R="$(api "$T" POST /vip/applications '{"channel":"telegram","contact":" "}')"; [ "$(code "$R")" = 400 ] || fail "empty contact accepted"
+R="$(api "$T" POST /vip/applications '{"channel":"telegram","contact":"@smoke_vip"}')"
+[ "$(code "$R")" = 403 ] && [ "$(errcode "$R")" = VIP_NOT_ELIGIBLE ] || fail "ineligible applicant not blocked: $R"
+credit "$U" USDT 600000
 G="$(ok "$(api "$T" POST /vip/applications '{"channel":"Telegram","contact":"@smoke_vip"}')" apply)"
 [ "$(jq -r .status <<<"$G")" = pending ] && [ "$(jq -r .application.channel <<<"$G")" = telegram ] || fail "apply: $G"
 R="$(api "$T" POST /vip/applications '{"channel":"telegram","contact":"@again"}')"

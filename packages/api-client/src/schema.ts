@@ -1251,6 +1251,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vip/application": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 我的 VIP 申请状态与申请条件
+         * @description `conditions` 为服务端实际执行的申请条件（默认总资产 ≥ 500,000 USDT 或近 30 日交易量 ≥ 50,000,000 USDT，
+         *     可由 `VIP_MIN_TOTAL_ASSETS_USDT` / `VIP_MIN_VOLUME_30D_USDT` 配置）。
+         */
+        get: operations["vipGetApplication"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vip/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 提交 VIP 申请（服务端校验资格，不满足条件直接拒绝）
+         * @description 提交时服务端核验资格：账户总资产（资金 + 现货 + 合约钱包，按指数价折算 USDT）≥ 500,000 USDT，
+         *     **或** 近 30 日交易量（现货 USD 计价交易对 + 合约名义成交额）≥ 50,000,000 USDT；阈值可配置。
+         *     不满足返回 403 `VIP_NOT_ELIGIBLE`（`message` 为中文，`eligibility` 含阈值与用户当前数值）。
+         *     资产或交易量数据无法获取时 fail closed，返回可重试的 503 `VIP_ELIGIBILITY_UNAVAILABLE`，不会创建申请。
+         *     已是 VIP / 已有审核中的申请时返回 409（不依赖上游数据服务）。
+         */
+        post: operations["vipApply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/support/attachments": {
         parameters: {
             query?: never;
@@ -5554,6 +5599,46 @@ export interface components {
             createdAt?: string;
             /** Format: date-time */
             appliedAt?: string | null;
+        };
+        VipApplicationState: {
+            uid: string;
+            vip: boolean;
+            /** @enum {string} */
+            status: "none" | "pending" | "approved" | "rejected";
+            application?: {
+                /** @example vip_12 */
+                id?: string;
+                channel?: string;
+                contact?: string;
+                /** @enum {string} */
+                status?: "pending" | "approved" | "rejected";
+                reason?: string;
+                /** Format: date-time */
+                createdAt?: string;
+                /** Format: date-time */
+                reviewedAt?: string | null;
+            } | null;
+            conditions: {
+                /** @example 500000 */
+                minTotalAssetsUSDT?: string;
+                /** @example 50000000 */
+                min30dVolumeUSDT?: string;
+                /** @example 1-3 */
+                reviewDays?: string;
+            };
+            channels?: string[];
+        };
+        VipNotEligibleError: components["schemas"]["Error"] & {
+            eligibility?: {
+                /** @example 500000 */
+                minTotalAssetsUSDT?: string;
+                /** @example 50000000 */
+                min30dVolumeUSDT?: string;
+                /** @example 1234.50 */
+                totalAssetsUSDT?: string;
+                /** @example 0.00 */
+                volume30dUSDT?: string;
+            };
         };
         Error: {
             /**
@@ -11121,6 +11206,84 @@ export interface operations {
                      *     ]
                      */
                     "application/json": components["schemas"]["Kline"][];
+                };
+            };
+        };
+    };
+    vipGetApplication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VipApplicationState"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    vipApply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    channel: "telegram" | "whatsapp" | "wechat" | "email" | "phone";
+                    contact: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已提交，返回最新申请状态（status=pending） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VipApplicationState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description 不满足 VIP 申请条件（VIP_NOT_ELIGIBLE） */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VipNotEligibleError"];
+                };
+            };
+            /** @description 已是 VIP（ALREADY_VIP）或已有审核中的申请（APPLICATION_PENDING） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 暂时无法核验资产 / 交易量，请稍后重试（VIP_ELIGIBILITY_UNAVAILABLE，可重试） */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
