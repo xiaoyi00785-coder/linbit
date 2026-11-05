@@ -38,7 +38,7 @@ assert.equal(fmtFeeExact("-0.00911000"), "-0.00911000");
 assert.equal(fmtFeeExact("-0.03540000"), "-0.03540000");
 console.log("pnl-exact ok");
 // network picker display: labels / icons / fallback / min amount
-import { netLabel, netIcon, netInfosOf, positiveAmount, withdrawMin, DEP_NETS_FALLBACK } from "../lib/assetDisplay.ts";
+import { netLabel, netIcon, netInfosOf, positiveAmount, DEP_NETS_FALLBACK } from "../lib/assetDisplay.ts";
 assert.equal(netLabel("TRC20"), "Tron（TRC20）");
 assert.equal(netLabel("BEP20"), "BNB智能链（BEP20）");
 assert.equal(netLabel("ERC20"), "以太坊（ERC20）");
@@ -70,18 +70,12 @@ assert.deepEqual(dep[0], { network: "TRC20", min: undefined, eta: undefined, rec
 assert.deepEqual(dep[1], { network: "SOL", min: "1", eta: 1, recommended: undefined });
 assert.equal(netInfosOf("USDT", apiNets, true)[0].min, undefined);
 assert.equal(netInfosOf("USDT", apiNets, true)[1].min, "10");
-// withdraw min: one value = max(api min, local floor)
-assert.equal(withdrawMin("10", 12), "12");
-assert.equal(withdrawMin("20", 12), "20");
-assert.equal(withdrawMin("12", 12), "12");
-assert.equal(withdrawMin(undefined, 12), "12");
-assert.equal(withdrawMin("0.0005", undefined), "0.0005");
-assert.equal(withdrawMin(undefined, undefined), undefined);
+// withdraw min：只认后端值（无本地下限，见下方 networkWithdrawMin 断言）
 console.log("net-display ok");
 // QA 批次 1（主网 5e65414）
 import { fmtVolume, fmtFeeEst } from "../lib/format.ts";
 import { stLabel, KNOWN_STATUSES } from "../lib/orderStatus.ts";
-import { etaMinutes, withdrawTip } from "../lib/assetDisplay.ts";
+import { etaMinutes, withdrawTip, networkWithdrawMin } from "../lib/assetDisplay.ts";
 import { sparkPoints, sparkPath } from "../lib/sparkLine.ts";
 // 1. 零 / 缺失成交额统一 "--"
 for (const v of [0, "0", "0.00", "0.00000000", "", undefined, null, "abc", NaN, -5]) assert.equal(fmtVolume(v), "--", String(v));
@@ -154,6 +148,16 @@ assert.equal(withdrawTip("ETH", "ERC20", undefined, undefined), undefined);
 assert.doesNotMatch(withdrawTip("BTC", "BTC", "0.001", undefined), /USDT|12/);
 console.log("qa-batch1 ok");
 
+// 网络下拉的最小额文案：「最小提现 12 USDT / 最小充值 1 USDT」，最小额是「不低于」，不带 ">"；
+// 已删除 legacy 充值页里写死的「最小提现 10 USDT / 网络费 ≈1 USDT」（不可达死代码）
+{
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../legacy/Pages.tsx", import.meta.url), "utf8");
+  assert.match(src, /\{out\?'最小提现':'最小充值'\} \{x\.min\} \{coin\}/);
+  assert.doesNotMatch(src, /最小(提现|充值)['"]?\}? ?(&gt;|>)/);
+  assert.doesNotMatch(src, /最小提现 10 USDT|网络费（链上 Gas）≈1 USDT|export const NETS/);
+}
+console.log("netpicker-min ok");
 // 行情卡片走势：只来自真实 K 线收盘价（近 24 根），无数据不画线
 {
   const k = (t, c) => ({ time: t, close: String(c) });
@@ -186,3 +190,45 @@ console.log("qa-batch1 ok");
   assert.doesNotMatch(wl, /50,000/);
 }
 console.log("spark-and-limit ok");
+
+// 最小提现额单一规则 networkWithdrawMin：下拉每行 / 单笔最小提现行 / 占位符 / 提示 / 校验共用。
+// 只认后端：该网络 minWithdraw(>0) → 该网络 cfg.minAmount(>0) → 没有就 undefined；没有任何前端写死的下限（不做 max）。
+{
+  const cfg = (asset, network, minAmount) => ({ asset, network, minAmount });
+  // 后端预期值：TRC20 / BEP20 / SOL = 10，ERC20 = 20（USDT）；10 不会被抬到 12
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: "10.00000000" }, undefined), "10");
+  assert.equal(networkWithdrawMin("USDT", "BEP20", { minWithdraw: "10" }, undefined), "10");
+  assert.equal(networkWithdrawMin("USDT", "SOL", { minWithdraw: "10" }, undefined), "10");
+  assert.equal(networkWithdrawMin("USDT", "ERC20", { minWithdraw: "20.00000000" }, undefined), "20");
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: "1" }, undefined), "1"); // 后端说 1 就是 1，不被任何常量抬高
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: "10" }, cfg("USDT", "TRC20", "20")), "10"); // 网络值优先于 cfg
+  // 没有网络接口值：回退本网络的 cfg.minAmount
+  assert.equal(networkWithdrawMin("USDT", "TRC20", undefined, cfg("USDT", "TRC20", "10.00000000")), "10");
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: "0.00000000" }, cfg("USDT", "TRC20", "10")), "10"); // "0" 视为缺失
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: null }, cfg("USDT", "TRC20", "10")), "10");
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: "abc" }, cfg("USDT", "TRC20", "10")), "10");
+  // cfg 只属于它自己的 asset + network：别的网络 / 别的币种的 cfg 不能串进来
+  assert.equal(networkWithdrawMin("USDT", "TRC20", undefined, cfg("USDT", "ERC20", "20")), undefined);
+  assert.equal(networkWithdrawMin("USDT", "TRC20", undefined, cfg("BTC", "TRC20", "20")), undefined);
+  assert.equal(networkWithdrawMin("USDT", "ERC20", { minWithdraw: undefined }, cfg("USDT", "TRC20", "10")), undefined);
+  // 都没有 / 都不是正数 → 不展示（没有常量兜底，USDT 也一样）
+  assert.equal(networkWithdrawMin("USDT", "TRC20", undefined, undefined), undefined);
+  assert.equal(networkWithdrawMin("USDT", "TRC20", {}, null), undefined);
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: "0" }, cfg("USDT", "TRC20", "0.00000000")), undefined);
+  assert.equal(networkWithdrawMin("USDT", "TRC20", { minWithdraw: "-5" }, cfg("USDT", "TRC20", "-1")), undefined);
+  assert.equal(networkWithdrawMin("BTC", "BTC", { minWithdraw: "0.00100000" }, undefined), "0.001");
+  assert.equal(networkWithdrawMin("BTC", "BTC", undefined, cfg("BTC", "BTC", "0.002")), "0.002");
+  assert.equal(networkWithdrawMin("BTC", "BTC", undefined, undefined), undefined);
+  // 源码：本地下限已删除；Withdraw.tsx 不再自己拼最小额规则，下拉与面板都经 minOf
+  const { readFileSync } = await import("node:fs");
+  const wd = readFileSync(new URL("../features/Withdraw.tsx", import.meta.url), "utf8");
+  const va = readFileSync(new URL("../lib/validate.ts", import.meta.url), "utf8");
+  const ad = readFileSync(new URL("../lib/assetDisplay.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(va, /DEFAULT_MIN_WITHDRAW/);
+  assert.doesNotMatch(wd + ad, /DEFAULT_MIN_WITHDRAW|\bwithdrawMin\(|minFloor/);
+  assert.doesNotMatch(wd, /\bpositiveAmount\(/);
+  assert.match(wd, /const minS = minOf\(net, ni\)/);
+  assert.match(wd, /min: minOf\(n, i\)/);
+  assert.equal((wd.match(/networkWithdrawMin\(/g) || []).length, 1);
+}
+console.log("withdraw-min ok");
