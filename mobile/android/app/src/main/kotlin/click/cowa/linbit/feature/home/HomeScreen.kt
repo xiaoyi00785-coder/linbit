@@ -127,7 +127,7 @@ fun HomeContent(
                 TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onSoon("福利中心即将开放") }
                 RedPacket(Modifier.padding(top = 15.dp)) { onSoon("福利中心即将开放") }
                 Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onSoon("$it 即将开放") })
-                Hairline(Modifier.padding(top = 20.dp))
+                Hairline(Modifier.padding(top = (64f / 3).dp))
                 CardPromo(s.banners.getOrNull(bannerPage), bannerPage, s.banners.size) { onSoon("Linbit Card 即将开放") }
                 Hairline()
                 EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onSoon("理财即将开放") }
