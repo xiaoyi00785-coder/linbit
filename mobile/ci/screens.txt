@@ -81,6 +81,13 @@ notif-error
 notif-settings
 notif-settings-error
 home-bell
+coupon-issued
+coupon-active
+coupon-expired
+coupon-empty
+coupon-error
+coupon-confirm
+coupon-fail
 security-profile
 security-profile-error
 security-email

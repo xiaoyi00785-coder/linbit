@@ -22,6 +22,7 @@ security light
 kyc-none light
 notif-list light
 home-bell light
+coupon-issued light
 
 # 资产子页
 assets-overview light
