@@ -58,6 +58,15 @@ enum J: Decodable, Equatable, ExpressibleByDictionaryLiteral, ExpressibleByArray
     var isNull: Bool { self == .null }
     /// items 数组（{items:[...]} 或直接数组）
     var items: [J] { if case .arr = self { return a }; return self["items"].a }
+    /// 按候选键取数组（生产 copy traders/follows 等用专用键；Demo/部分接口仍用 items）
+    func arr(_ keys: String...) -> [J] {
+        if case .arr = self { return a }
+        for k in keys {
+            let v = self[k]
+            if case .arr = v { return v.a }
+        }
+        return []
+    }
     /// 时间：毫秒 / 秒时间戳或 ISO8601 字符串
     var time: String {
         if case let .num(v) = self { return Fmt.dateTime(Date(timeIntervalSince1970: v > 1e12 ? v / 1000 : v)) }
