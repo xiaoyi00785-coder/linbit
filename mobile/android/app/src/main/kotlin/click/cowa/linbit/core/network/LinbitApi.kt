@@ -34,7 +34,7 @@ import retrofit2.http.Part
 import okhttp3.MultipartBody
 
 /**
- * Retrofit 接口：认证、行情、首页、理财、资产总览/划转/充提/地址簿、现货与合约交易等端点（按 mobile/openapi.yaml 逐步补齐）。
+ * Retrofit 接口：认证、行情、首页、理财、资产总览/划转/充提/地址簿、现货与合约交易、通知、卡券、跟单、合伙人、TradFi 与客服工单等端点（按 mobile/openapi.yaml 逐步补齐）。
  * 路径不带前导 "/"，基地址为 https://api.cowa.click/ 。
  * oneOf 响应（login / ticker / futures ticker）以 JsonElement 返回，由 [OneOfResponses] 判别解码。
  */
@@ -406,5 +406,127 @@ interface LinbitApi {
 
     @POST("sub-accounts")
     suspend fun createSubAccount(@Body body: ApiSubAccountCreateRequest): ApiSubAccount
+
+
+    // ---- 福利 / 通知 / 卡券 ----
+    @GET("notifications")
+    suspend fun notifications(
+        @Query("kind") kind: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 20,
+    ): ApiNotificationList
+
+    @GET("notifications/unread-count")
+    suspend fun unreadCount(): ApiUnreadCount
+
+    @POST("notifications/read")
+    suspend fun readNotifications(@Body body: ApiReadNotificationsRequest): ApiUpdatedCount
+
+    @GET("notifications/settings")
+    suspend fun notificationSettings(): ApiNotifyPrefs
+
+    @PUT("notifications/settings")
+    suspend fun updateNotificationSettings(@Body body: ApiNotifyPrefsPatch): ApiNotifyPrefs
+
+    @GET("coupons")
+    suspend fun coupons(@Query("status") status: String): ApiCouponList
+
+    @GET("coupons/summary")
+    suspend fun couponSummary(): ApiCouponSummary
+
+    @POST("coupons/{id}/activate")
+    suspend fun activateCoupon(@Path("id") id: Long): ApiCouponActivateResult
+
+    // ---- 跟单（公开榜单 + 登录后操作）----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("futures/copy/summary")
+    suspend fun copySummary(): JsonElement
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("futures/copy/traders")
+    suspend fun copyTraders(
+        @Query("sort") sort: String = "composite",
+        @Query("days") days: Int = 30,
+    ): ApiCopyTraderList
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("futures/copy/traders/{id}")
+    suspend fun copyTrader(@Path("id") id: String, @Query("days") days: Int = 30): ApiCopyTraderDetail
+
+    @GET("futures/copy/follows")
+    suspend fun copyFollows(@Query("status") status: String = "all"): JsonElement
+
+    @POST("futures/copy/follows")
+    suspend fun followTrader(@Body body: ApiCopyFollowRequest): ApiCopyFollow
+
+    @DELETE("futures/copy/follows/{id}")
+    suspend fun stopCopyFollow(@Path("id") id: Long): ApiCopyFollow
+
+    @POST("futures/copy/trader")
+    suspend fun becomeCopyTrader(@Body body: ApiCopyTraderRequest): ApiCopyTrader
+
+    // ---- 合伙人 ----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("partner/rules")
+    suspend fun partnerRules(): ApiPartnerRules
+
+    @GET("partner/me")
+    suspend fun partnerMe(): ApiPartnerMe
+
+    @POST("partner/apply")
+    suspend fun applyPartner(@Body body: ApiPartnerApplyRequest): ApiPartnerMe
+
+    @GET("partner/summary")
+    suspend fun partnerSummary(): ApiPartnerSummary
+
+    @GET("partner/links")
+    suspend fun partnerLinks(): ApiPartnerLinks
+
+    @GET("partner/commissions")
+    suspend fun partnerCommissions(
+        @Query("kind") kind: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 30,
+    ): ApiPartnerCommissions
+
+    @GET("partner/team")
+    suspend fun partnerTeam(
+        @Query("type") type: String = "all",
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 100,
+    ): ApiPartnerTeam
+
+    // ---- TradFi（公开）----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("tradfi/assets")
+    suspend fun tradFiAssets(@Query("kind") kind: String? = null): ApiListTradFiAssets200Response
+
+    // ---- 客服工单 ----
+    @GET("support/tickets")
+    suspend fun supportTickets(
+        @Query("status") status: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 20,
+    ): ApiSupportTicketList
+
+    @POST("support/tickets")
+    suspend fun createSupportTicket(@Body body: ApiSupportCreateTicketRequest): ApiSupportTicket
+
+    @GET("support/tickets/{id}")
+    suspend fun supportTicket(@Path("id") id: String): ApiSupportTicket
+
+    @POST("support/tickets/{id}/messages")
+    suspend fun replySupportTicket(@Path("id") id: String, @Body body: ApiSupportReplyTicketRequest): ApiSupportTicket
+
+    @POST("support/tickets/{id}/close")
+    suspend fun closeSupportTicket(@Path("id") id: String): ApiSupportTicket
+
+    @retrofit2.http.Streaming
+    @GET("support/attachments/{id}")
+    suspend fun supportAttachment(@Path("id") id: String): okhttp3.ResponseBody
+
+    @Multipart
+    @POST("support/attachments")
+    suspend fun uploadSupportAttachment(@Part file: MultipartBody.Part): ApiSupportAttachment
 
 }

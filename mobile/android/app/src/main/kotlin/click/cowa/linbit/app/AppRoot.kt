@@ -26,6 +26,10 @@ import click.cowa.linbit.feature.markets.MarketsScreen
 import click.cowa.linbit.feature.assets.AssetsHost
 import click.cowa.linbit.feature.assets.AssetsScreen
 import click.cowa.linbit.feature.profile.UserCenterHost
+import click.cowa.linbit.feature.more.MoreHost
+import click.cowa.linbit.feature.more.MorePage
+import click.cowa.linbit.feature.more.NotificationBadgeViewModel
+import click.cowa.linbit.feature.more.MoreMenuScreen
 import click.cowa.linbit.ui.components.FloatingTabBar
 import click.cowa.linbit.ui.components.MainTab
 import click.cowa.linbit.ui.components.ToastOverlay
@@ -48,6 +52,21 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
     var userCenter by rememberSaveable { mutableStateOf(false) }
     var splash by rememberSaveable { mutableStateOf(true) }
     var historyKind by rememberSaveable { mutableStateOf<String?>(null) } // null | "spot" | "futures"
+    var morePage by rememberSaveable { mutableStateOf<MorePage?>(null) }
+    var moreMenu by rememberSaveable { mutableStateOf(false) }
+    val badgeVm: NotificationBadgeViewModel = hiltViewModel()
+    val unread by badgeVm.unread.collectAsStateWithLifecycle()
+    fun openFeature(title: String) {
+        val page = when (title) {
+            "福利中心" -> MorePage.WELFARE
+            "跟单" -> MorePage.COPY
+            "TradFi" -> MorePage.TRADFI
+            "卡券中心" -> MorePage.COUPONS
+            "合伙人计划" -> MorePage.PARTNER
+            else -> null
+        }
+        if (page != null) morePage = page else vm.toast.show("$title 即将开放")
+    }
 
     LinbitTheme(dark) {
         val view = LocalView.current
@@ -68,8 +87,12 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                 when (tab) {
                     MainTab.HOME -> HomeScreen(
                         bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "login" },
-                        onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { vm.toast.show("全部功能即将开放") },
+                        onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { moreMenu = true },
                         onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.assetsNav.openDeposit(switchTab = true) else auth = "login" },
+                        onFeature = ::openFeature,
+                        onNotifications = { morePage = MorePage.NOTIFICATIONS },
+                        onSupport = { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login" },
+                        unread = unread,
                     )
                     MainTab.MARKETS -> MarketsScreen(bottomInset, onOpenTrade = { kind, sym ->
                         if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
@@ -106,7 +129,21 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                 onLogout = { vm.logout { userCenter = false } },
                 onClose = { userCenter = false },
                 onLoginOther = { userCenter = false; auth = "login" },
+                onFeature = { page -> userCenter = false; morePage = page },
             )
+            if (moreMenu) MoreMenuScreen(onBack = { moreMenu = false }, onOpen = { moreMenu = false; morePage = it })
+            morePage?.let { page -> MoreHost(
+                page,
+                onClose = { morePage = null; badgeVm.refresh() },
+                onLogin = { morePage = null; auth = "login" },
+                onOpen = { morePage = it },
+                onTrade = { futures, symbol ->
+                    if (futures) { vm.tradeNav.setFutures(symbol); tab = MainTab.FUTURES }
+                    else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
+                    morePage = null
+                },
+                onProfile = { morePage = null; userCenter = true },
+            ) }
             when (historyKind) {
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
                 "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol)
