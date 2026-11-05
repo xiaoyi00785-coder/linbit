@@ -21,8 +21,12 @@ public struct APIWithdrawNetwork: Codable, JSONEncodable, Hashable {
     public var confirmations: Int?
     /** 预计到账时间（分钟）。 */
     public var estimatedArrivalMinutes: Int?
+    /** 该网络当前是否开放提现（后端始终返回；false 的网络前端不应列出）。 */
+    public var withdrawEnabled: Bool
+    /** 该网络提现是否必须填写 Memo / Tag（后端始终返回）。 */
+    public var memoRequired: Bool
 
-    public init(network: String, minWithdraw: String? = nil, maxWithdraw: String? = nil, gasFeeEstimate: String? = nil, gasFeeAsset: String? = nil, confirmations: Int? = nil, estimatedArrivalMinutes: Int? = nil) {
+    public init(network: String, minWithdraw: String? = nil, maxWithdraw: String? = nil, gasFeeEstimate: String? = nil, gasFeeAsset: String? = nil, confirmations: Int? = nil, estimatedArrivalMinutes: Int? = nil, withdrawEnabled: Bool, memoRequired: Bool) {
         self.network = network
         self.minWithdraw = minWithdraw
         self.maxWithdraw = maxWithdraw
@@ -30,6 +34,8 @@ public struct APIWithdrawNetwork: Codable, JSONEncodable, Hashable {
         self.gasFeeAsset = gasFeeAsset
         self.confirmations = confirmations
         self.estimatedArrivalMinutes = estimatedArrivalMinutes
+        self.withdrawEnabled = withdrawEnabled
+        self.memoRequired = memoRequired
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -40,6 +46,8 @@ public struct APIWithdrawNetwork: Codable, JSONEncodable, Hashable {
         case gasFeeAsset
         case confirmations
         case estimatedArrivalMinutes
+        case withdrawEnabled
+        case memoRequired
     }
 
     // Encodable protocol methods
@@ -53,6 +61,8 @@ public struct APIWithdrawNetwork: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(gasFeeAsset, forKey: .gasFeeAsset)
         try container.encodeIfPresent(confirmations, forKey: .confirmations)
         try container.encodeIfPresent(estimatedArrivalMinutes, forKey: .estimatedArrivalMinutes)
+        try container.encode(withdrawEnabled, forKey: .withdrawEnabled)
+        try container.encode(memoRequired, forKey: .memoRequired)
     }
 }
 

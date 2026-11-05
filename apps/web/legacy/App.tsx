@@ -8,6 +8,8 @@ import { useFeatureOn } from '@/lib/useFeatures'
 import { Flash } from "@/components/Flash";
 import { isEmail } from '@/features/common'
 import { useHome, useCopyHome } from '@/lib/home'
+import { useSpark } from '@/lib/spark'
+import { sparkPath } from '@/lib/sparkLine'
 import { useFavorites } from '@/lib/favorites'
 import { soonPath } from '@/lib/features'
 import { openM, Dropdown, DateRange, Refresh } from '@/features/Kit'
@@ -15,7 +17,7 @@ import { CoinIcon } from '@/components/CoinIcon'
 import { SpotForm, SpotOrders } from '@/features/Spot'
 import { FutOrders } from '@/features/Futures'
 import { setAuthed, useAuth } from './auth'
-import { Assets, FuturesAcct, EarnAcct, Orders, Deposit, Account, Security, Kyc, KycBasic, Settings, ApiKeys, Buy, Convert, Earn, Strategy } from './Pages'
+import { Assets, FuturesAcct, EarnAcct, Orders, Account, Security, Kyc, KycBasic, Settings, ApiKeys, Buy, Convert, Earn, Strategy } from './Pages'
 import { KLinePro as KPro } from '@linbit/chart'
 import { EarnHub, Rewards, Invite, Api, ApiDocs, SimTrade, Copy, Guide } from './Pages2'
 import { useLocation, Navigate } from '@/lib/router'
@@ -56,7 +58,8 @@ const Logo=()=><Link to="/" className="logo"><svg width="22" height="22" viewBox
 export function Footer({light}){const auth=useAuth();const featureOn=useFeatureOn();const buyLinks=useSpotBases(5).map(b=>'买 '+b);const cols={'关于':['帮助中心','社区','服务条款','隐私政策'],'产品':['现货交易','合约交易','股票合约','贵金属','模拟交易','跟单交易','法币买币','API'],'交易':buyLinks,'服务':['费率','储备证明','币价','仓位档位','标记价格历史','资金费率历史','保险基金']}
 return <div className={light?"lfoot":""}>{!auth&&<div className="strip">注册即可领取 <b className="lime">新人礼包</b> <Link to="/register" className="mini-btn">注册</Link></div>}<footer className="ft"><div className="ftin">{Object.entries(cols).map(([k,v])=><div key={k}><h2>{k}</h2>{v.map(x=>{const fk=featureKeyOf(x);const live=fk?featureOn(fk):true;return <Link key={x} to={fk?featureHref(fk,live):({'现货交易':'/spot','合约交易':'/futures','模拟交易':'/sim','跟单交易':'/copy','法币买币':'/buy','API':'/api',...Object.fromEntries(buyLinks.map(x=>[x,'/buy?coin='+x.slice(2)])),'币价':'/markets','社区':'/announcements'})[x]||'/p/'+encodeURIComponent(x)}>{x}{!live&&<em className="soon-b">即将上线</em>}</Link>})}</div>)}
 <div><h2>扫码下载 App<br/>随时随地交易</h2><div className="qr sm"><QRCodeSVG bgColor="transparent" fgColor="currentColor" value={downloadUrl()} size={84} marginSize={1}/></div><h2 style={{marginTop:20}}>社区</h2><FooterSocial/></div></div><p className="copy">© 2026 linbit. All Rights Reserved.</p></footer></div>}
-function Spark({c}){const pts=Array.from({length:30},(_,i)=>`${i*3},${20+Math.sin(i/3+c.p)*8+Math.random()*6+(c.c<0?i/3:-i/3)}`).join(' ');const col=c.c>0?'var(--lb-up)':c.c<0?'var(--lb-down)':'var(--lb-neutral-400)';return <svg width="90" height="44" viewBox="0 0 90 44"><defs><linearGradient id={'g'+c.s} x1="0" y1="0" x2="0" y2="1"><stop offset="0" style={{stopColor:col}} stopOpacity=".5"/><stop offset="1" style={{stopColor:col}} stopOpacity="0"/></linearGradient></defs><polygon points={`0,44 ${pts} 87,44`} fill={`url(#g${c.s})`}/><polyline points={pts} fill="none" style={{stroke:col}} strokeWidth="1.2"/></svg>}
+/** 行情卡片走势：近 24 小时每小时收盘价（真实 K 线，见 lib/spark）；无数据不画线；颜色按 24h 涨跌符号（changeClass） */
+function Spark({c}){const k=useSpark(c.symbol);if(!k)return null;const pts=sparkPath(k);const d=changeClass(c.c);return <svg className={d} data-spark={d} width="90" height="44" viewBox="0 0 90 44" style={d==='flat'?{color:'var(--lb-neutral-400)'}:undefined}><defs><linearGradient id={'g'+c.s} x1="0" y1="0" x2="0" y2="1"><stop offset="0" style={{stopColor:'currentColor'}} stopOpacity=".5"/><stop offset="1" style={{stopColor:'currentColor'}} stopOpacity="0"/></linearGradient></defs><polygon points={`0,44 ${pts} 90,44`} fill={`url(#g${c.s})`}/><polyline points={pts} fill="none" style={{stroke:'currentColor'}} strokeWidth="1.2"/></svg>}
 function Home(){const coins=useLiveCoins();const authed=useAuth();const n=useNavigate();const[gt,setGt]=useState(0);const rk=(byRank(coins,useRank(gt?'losers':'gainers',{limit:6}))??[...coins].sort((a,b)=>gt?a.c-b.c:b.c-a.c)).filter(c=>gt?c.c<0:c.c>0);const futR=useFuturesRows(true);const[ht,setHt]=useState(1);const hot=ht===0?[...coins].sort((a,b)=>(Number(String(b.v).replace(/,/g,''))||0)-(Number(String(a.v).replace(/,/g,''))||0)):(futR&&futR.length?futR.map(futCoin):coins);const[sl,setSl]=useState(0)
 const H=useHome();const CH=useCopyHome();const go=u=>!u?n('/rewards'):/^https?:/.test(u)?window.open(u,'_blank','noopener'):n(soonPath(u)||u);
 const fr=useFutFeeRates();const promos0=[['连胜挑战赛，赢取真实奖励','首笔交易即得体验金，最高可领 1,000 USDT',null,'/rewards'],['传统金融交易挑战','按等级解锁奖励，最高 2,000 USDT',null,soonPath('传统金融')||'/tradfi'],['交易打卡第四季开启','美股合约等更多品种可参与',null,'/rewards'],['股票合约 低费率',fr?`挂单费低至 ${feePct(fr.maker)}，吃单费低至 ${feePct(fr.taker)}`:'费率以合约详情为准',null,soonPath('股票合约')||'/coming-soon'],['邀请好友，共享返佣','每邀请一位好友交易即可获得返佣',null,'/invite']]
