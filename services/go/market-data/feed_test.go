@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,6 +19,10 @@ func TestIndexFeedFailover(t *testing.T) {
 			w.WriteHeader(http.StatusTeapot)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/api/v3/exchangeInfo") {
+			w.Write([]byte(`{"symbols":[{"symbol":"BTCUSDT","status":"TRADING"},{"symbol":"ETHUSDT","status":"TRADING"}]}`))
+			return
+		}
 		w.Write([]byte(`[{"symbol":"BTCUSDT","price":"60000.10"},{"symbol":"ETHUSDT","price":"3000"}]`))
 	}))
 	defer bn.Close()
@@ -25,6 +30,10 @@ func TestIndexFeedFailover(t *testing.T) {
 	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if okxDown.Load() {
 			w.WriteHeader(500)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/v5/public/instruments") {
+			w.Write([]byte(`{"code":"0","data":[{"instId":"BTC-USDT","state":"live"}]}`))
 			return
 		}
 		w.Write([]byte(`{"code":"0","data":[{"instId":"BTC-USDT","last":"60001"}]}`))
@@ -77,6 +86,9 @@ func TestIndexFeedLocal(t *testing.T) {
 
 func TestParseFeed(t *testing.T) {
 	if got := parseFeed("binance, OKX"); len(got) != 2 || got[1] != "okx" {
+		t.Fatal(got)
+	}
+	if got := parseFeed("binance,okx,Bybit,gate,gateio"); len(got) != 5 || got[2] != "bybit" || got[3] != "gateio" {
 		t.Fatal(got)
 	}
 	if parseFeed("off") != nil {

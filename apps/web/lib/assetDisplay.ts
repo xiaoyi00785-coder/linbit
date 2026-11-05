@@ -31,12 +31,20 @@ const NET_NAMES: Record<string, string> = {
 export const netLabel = (code?: string | null) => (code ? NET_NAMES[netKey(code)] ?? code : "");
 
 /**
- * 提现最小额的唯一取值：接口值（已过 positiveAmount）与本地兜底下限（DEFAULT_MIN_WITHDRAW）取较大者，返回展示用字符串。
- * 占位符、下拉、「单笔最小提现」行与超限校验都用它，避免各处不一致；两者都没有则为 undefined。
+ * 某个网络的最小提现额（全站唯一规则，只认后端，没有任何前端写死的下限）：
+ * 该网络接口值 minWithdraw（/wallet/networks 或回退 /wallet/withdraw/networks，须为 > 0）
+ * → 该网络的提现配置 cfg.minAmount（须为 > 0，且 cfg 正是这个 asset + network 的配置，避免把别的网络 / 上一个币种的值串过来）
+ * → 都没有则返回 undefined（界面显示 "--" / 不展示，不校验最小额，由后端兜底拒绝）。
+ * 下拉每一行、「单笔最小提现」行、占位符、温馨提示和数量校验都只调用它，不再各自拼规则，因此不会出现不一致。
  */
-export function withdrawMin(apiMin: string | undefined, floor?: number): string | undefined {
-  if (!floor || floor <= 0) return apiMin;
-  return apiMin !== undefined && Number(apiMin) >= floor ? apiMin : String(floor);
+export function networkWithdrawMin(
+  asset: string,
+  network: string | undefined,
+  info: { minWithdraw?: unknown } | null | undefined,
+  cfg: { asset?: string; network?: string; minAmount?: unknown } | null | undefined,
+): string | undefined {
+  const cfgMin = cfg && cfg.asset === asset && cfg.network === network ? positiveAmount(cfg.minAmount) : undefined;
+  return positiveAmount(info?.minWithdraw) ?? cfgMin;
 }
 
 /**
@@ -70,7 +78,7 @@ export function etaMinutes(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
 }
 
-/** 提现页「温馨提示」里随币种 / 网络变化的一句：最小提现额（withdrawMin 的唯一取值）+ 后端给出的预计到账时间；两者都缺失时返回 undefined（不展示）。 */
+/** 提现页「温馨提示」里随币种 / 网络变化的一句：最小提现额（networkWithdrawMin 的唯一取值）+ 后端给出的预计到账时间；两者都缺失时返回 undefined（不展示）。 */
 export function withdrawTip(asset: string, network: string | undefined, min: string | undefined, eta: number | undefined): string | undefined {
   if (!min && !eta) return undefined;
   const head = `当前选择 ${asset}${network ? ` · ${netLabel(network)}` : ""}：`;

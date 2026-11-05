@@ -109,6 +109,7 @@ func (s *Server) Routes() http.Handler {
 		}
 		common.WriteJSON(w, http.StatusOK, map[string]any{"uid": uid, "code": code})
 	}))
+	mux.HandleFunc("GET /internal/growth/volume", s.internal(s.handleInternalVolume))
 	mux.HandleFunc("POST /internal/dev/growth/sync", s.dev(func(w http.ResponseWriter, r *http.Request) {
 		if err := s.Sync(r.Context()); err != nil {
 			writeErr(w, err)
