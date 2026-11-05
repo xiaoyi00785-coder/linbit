@@ -22,3 +22,14 @@ struct IconView: View {
         .frame(width: size, height: size)
     }
 }
+
+/// 品牌字标（链环标志 + 「Linbit」），Assets 中 ic-wordmark：日间深色字 / 夜间品牌绿标志 + 白字，透明背景。
+struct LinbitWordmark: View {
+    var height: CGFloat = 28
+    var body: some View {
+        Image("ic-wordmark").resizable().renderingMode(.original)
+            .aspectRatio(1427.0 / 540.0, contentMode: .fit)
+            .frame(height: height)
+            .accessibilityLabel("Linbit")
+    }
+}

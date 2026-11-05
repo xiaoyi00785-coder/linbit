@@ -117,7 +117,7 @@ export async function getWithdrawConfig(asset: string, network: string): Promise
       gasFeeEstimate: n.gasFeeEstimate,
       gasFeeAsset: n.gasFeeAsset ?? asset,
       estimatedArrivalMinutes: n.estimatedArrivalMinutes ?? null,
-      memoRequired: false,
+      memoRequired: n.memoRequired === true,
     },
   };
 }
