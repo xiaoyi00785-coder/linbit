@@ -1,4 +1,5 @@
 "use client";
+import { stLabel } from "@/lib/orderStatus";
 import { emitBalances } from "@/lib/rest";
 import { Dropdown } from "@/features/Kit";
 import { useEffect, useState } from "react";
@@ -60,7 +61,7 @@ export function TransferHost() {
         <label className="trl">数量<span className="wamt"><input inputMode="decimal" placeholder="请输入划转数量" value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(avail)}>全部</a><em>{coin}</em></span></label>
         {amtE && <div className="fx-err fe-inline">{amtE}</div>}
         <div className="lg trv">可用 {avail} {coin}</div>
-        {hist.length > 0 && <div className="trhist"><div className="lg">最近划转</div>{hist.map((h) => <div key={h.id}><span>{ACCT_NAME[h.from] ?? h.from} → {ACCT_NAME[h.to] ?? h.to}</span><span>{h.amount} {h.asset}</span><span className="lg">{{ pending: "处理中", done: "已完成", failed: "失败" }[h.status]}</span></div>)}</div>}
+        {hist.length > 0 && <div className="trhist"><div className="lg">最近划转</div>{hist.map((h) => <div key={h.id}><span>{ACCT_NAME[h.from] ?? h.from} → {ACCT_NAME[h.to] ?? h.to}</span><span>{h.amount} {h.asset}</span><span className="lg">{stLabel(h.status)}</span></div>)}</div>}
         <button className={"lb dark wide" + (canSubmit ? "" : " dis")} disabled={!canSubmit} onClick={submit}>{busy ? "划转中…" : "确认划转"}</button>
       </div>
     </div>

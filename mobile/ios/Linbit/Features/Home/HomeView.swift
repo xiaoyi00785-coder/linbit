@@ -210,7 +210,7 @@ struct HomeView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 6).fill(p.brand).frame(width: 74, height: 46).rotationEffect(.degrees(-12)).offset(x: -10, y: 4)
                 RoundedRectangle(cornerRadius: 6).fill(p.primary).frame(width: 74, height: 46)
-                    .overlay(IconView(icon: .logo, size: 16).padding(6), alignment: .topLeading)
+                    .overlay(IconView(icon: .logo, size: 16, tint: p.bg).padding(6), alignment: .topLeading)
                     .rotationEffect(.degrees(8)).offset(x: 8)
             }
             .frame(width: 110, height: 70)

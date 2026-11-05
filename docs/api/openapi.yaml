@@ -3505,7 +3505,7 @@ paths:
     get:
       tags:
       - Futures
-      summary: 当前指数价格与成分交易所（Binance 主、OKX 备，当前生效来源权重为 1）
+      summary: 当前指数价格与成分交易所（Binance 主，OKX、Bybit、Gate.io 依次备用；TON 等 INDEX_USD_FALLBACK_SYMBOLS 另接 Coinbase/Kraken BASE/USD 换算 USDT；仅采用交易中的交易对，当前生效来源权重为 1）
       operationId: futuresIndex
       security: []
       parameters:
