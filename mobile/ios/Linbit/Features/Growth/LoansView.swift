@@ -23,7 +23,7 @@ enum LoanDemo {
     static let market: J = ["asset": "USDT", "initialLtv": "0.65", "warnLtv": "0.75", "liquidationLtv": "0.85", "userLimit": "200000", "minAmount": "100",
                             "earlyRepayPenaltyRate": "0", "overdueMultiplier": "3", "overdueLiquidationDays": 3,
                             "terms": [["term": "7d", "hourlyRate": "0.0000042", "status": "active"], ["term": "30d", "hourlyRate": "0.0000048", "status": "active"],
-                                      ["term": "90d", "hourlyRate": "0.0000055", "status": "active"], ["term": "flex", "hourlyRate": "0.0000061", "status": "offline"]],
+                                      ["term": "90d", "hourlyRate": "0.0000055", "status": "active"], ["term": "flexible", "hourlyRate": "0.0000061", "status": "active"]],
                             "collaterals": [["asset": "BTC", "cap": "50", "price": "67250.5"], ["asset": "ETH", "cap": "800", "price": "3521.32"], ["asset": "SOL", "cap": "20000", "price": "168.4"]]]
     static let quote: J = ["amount": "5000", "collateral": "0.11376", "price": "67250.5", "ltv": "0.65", "hourlyRate": "0.0000048",
                            "hourlyInterest": "0.024", "termInterest": "17.28", "liquidationPrice": "51695.8"]
@@ -40,14 +40,19 @@ enum LoanDemo {
              "ltv": "0.6541", "liquidationPrice": "51748.2", "warning": false],
             ["id": 29, "asset": "USDT", "collateralAsset": "ETH", "term": "7d", "hourlyRate": "0.0000042", "principal": "8000", "collateral": "3.05",
              "interest": "12.88", "debt": "8012.88", "status": "active", "startedAt": J(now - day * 6), "dueAt": J(now + day), "price": "3521.32",
-             "ltv": "0.7461", "liquidationPrice": "3089.2", "warning": true]]]
+             "ltv": "0.7461", "liquidationPrice": "3089.2", "warning": true],
+            // 活期：term=flexible 且无 dueAt，UI 不得显示续期
+            ["id": 40, "asset": "USDT", "collateralAsset": "BTC", "term": "flexible", "hourlyRate": "0.0000061", "principal": "1500", "collateral": "0.04",
+             "interest": "0.55", "debt": "1500.55", "status": "active", "startedAt": J(now - day * 3), "price": "67250.5",
+             "ltv": "0.557", "liquidationPrice": "44118.0", "warning": false]]]
     }
-    static let summary: J = ["active": 2, "totalDebt": "13016.91", "totalCollateralValue": "18390.2", "asset": "USDT"]
+    static let summary: J = ["active": 3, "totalDebt": "14517.46", "totalCollateralValue": "21080.2", "asset": "USDT"]
 }
 
 private func termName(_ t: String?) -> String {
     guard let t else { return "--" }
-    if t == "flex" { return "灵活" }
+    // 生产/openapi 为 flexible；兼容误写的 flex
+    if t == "flexible" || t == "flex" { return "灵活" }
     return t.hasSuffix("d") ? "\(t.dropLast()) 天" : t
 }
 
@@ -252,8 +257,8 @@ struct LoanListView: View {
         }.lbCard()
     }
 
-    /// 活期借款：期限为 flex，或没有到期时间
-    private func isFlexible(_ l: J) -> Bool { l["term"].s == "flex" || l["dueAt"].isNull }
+    /// 活期借款：生产 term=flexible（无 dueAt）；误写 flex 不再当作活期判定的唯一依据，但 flexible 优先
+    private func isFlexible(_ l: J) -> Bool { l["term"].s == "flexible" || l["dueAt"].isNull }
 
     private func renew(_ l: J) async {
         banner = nil
