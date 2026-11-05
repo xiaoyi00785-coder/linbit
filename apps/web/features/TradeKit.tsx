@@ -13,6 +13,7 @@ import { btnProps, onActivate, tabProps } from "@/lib/a11y";
 import { CoinIcon } from "@/components/CoinIcon";
 import type { components } from "@linbit/api-client";
 import { mergeWsBar, wsKline, type LiveBar } from "@/lib/tick";
+import { changeDir } from "@/lib/format";
 import { fmtFixed, marketWS, restBase, useOrderBook, useRecentTrades, useSymbols, DEFAULT_META, useTicker, type Level, type SymbolMeta } from "@/lib/market";
 
 /* ---------- 交易对 / 精度 ---------- */
@@ -199,6 +200,8 @@ export function OrderBookPanel({ fut, pair }: { fut: boolean; pair: PairMeta }) 
   const lastRaw = fut ? (Number(ft?.lastPrice) ? ft.lastPrice : ft?.markPrice) : Number(ticker?.lastPrice) ? ticker!.lastPrice : undefined;
   const mid = lastRaw ?? (bestA && bestB ? (bestA + bestB) / 2 : undefined);
   const chg = Number(fut ? ft?.priceChangePercent24h : ticker?.priceChangePercent) || 0;
+  // 颜色与箭头同源：都由 24h 涨跌符号决定（无涨跌 / 无成交时不画箭头、不着色）
+  const dir = changeDir(chg);
   const row = (r: { p: number; q: number; c: number }, max: number, side: "a" | "b") => (
     <div key={side + r.p} className="obr tk-r" onClick={() => fillPrice(r.p.toFixed(sd))} title="点击填入价格">
       <i style={{ width: (r.c / max) * 100 + "%", background: side === "a" ? "rgba(244,63,94,.12)" : "rgba(171,225,39,.1)" }} />
@@ -220,8 +223,8 @@ export function OrderBookPanel({ fut, pair }: { fut: boolean; pair: PairMeta }) 
           </div>
           <div className="obh"><span>价格({pair.quote})</span><span>数量({base})</span><span>累计({base})</span></div>
           {view !== "bids" && <div className={"tk-side" + (view === "asks" ? " full" : "")}>{A.rows.length ? [...A.rows].reverse().map((r) => row(r, A.max, "a")) : empty}</div>}
-          <div className={"obm tk-mid " + (chg >= 0 ? "up" : "down")} onClick={() => mid ? fillPrice(Number(mid).toFixed(pp)) : toast("暂无最新成交价", "info")}>
-            {mid != null ? fmtFixed(mid, pp) : !book ? <i className="sk tk-midsk" aria-label="加载中" /> : "--"} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ transform: chg >= 0 ? undefined : "rotate(180deg)", verticalAlign: "-1px" }}><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+          <div className={"obm tk-mid " + dir} onClick={() => mid ? fillPrice(Number(mid).toFixed(pp)) : toast("暂无最新成交价", "info")}>
+            {mid != null ? fmtFixed(mid, pp) : !book ? <i className="sk tk-midsk" aria-label="加载中" /> : "--"}{dir !== "flat" && <> <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" data-testid="mid-arrow" data-dir={dir} style={{ transform: dir === "down" ? "rotate(180deg)" : undefined, verticalAlign: "-1px" }}><path d="M12 19V5M6 11l6-6 6 6" /></svg></>}
             {fut && ft?.markPrice && <small className="g"> 标记 {fmtFixed(ft.markPrice, pp)}</small>}
           </div>
           {view !== "asks" && <div className={"tk-side" + (view === "bids" ? " full" : "")}>{B.rows.length ? B.rows.map((r) => row(r, B.max, "b")) : empty}</div>}

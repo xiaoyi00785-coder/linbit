@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,14 +16,19 @@ import (
 )
 
 // vip.go: VIP application + manual review. The UI's form submits the UID
-// (implicit), a contact channel and the contact value; operators review in
-// 1-3 business days against the published conditions (total assets >= 500,000
-// USDT or 30-day volume >= 50,000,000 USDT), which are informational here and
-// checked by the reviewer. VIP has no fee tiers: fees are uniform.
+// (implicit), a contact channel and the contact value. The published
+// conditions (total assets >= 500,000 USDT or 30-day volume >= 50,000,000 USDT)
+// are enforced server-side at submit (vip_eligibility.go): an ineligible
+// applicant gets 403 VIP_NOT_ELIGIBLE, and when assets/volume cannot be
+// determined the call fails closed with a retryable 503
+// VIP_ELIGIBILITY_UNAVAILABLE. Operators still review eligible applications in
+// 1-3 business days. VIP has no fee tiers: fees are uniform.
 
 var vipChannels = map[string]bool{"telegram": true, "whatsapp": true, "wechat": true, "email": true, "phone": true}
 
-// VIPConditions are the published (informational) eligibility thresholds.
+// VIPConditions are the published eligibility thresholds (defaults; the
+// enforced values come from VIP_MIN_TOTAL_ASSETS_USDT / VIP_MIN_VOLUME_30D_USDT
+// and are what GET /vip/application reports, see Server.vipConditions).
 var VIPConditions = map[string]string{"minTotalAssetsUSDT": "500000", "min30dVolumeUSDT": "50000000", "reviewDays": "1-3"}
 
 var (
@@ -136,11 +142,16 @@ func (s *Server) handleGetVIP(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{
 		"uid": u.UID, "vip": status == "approved", "status": status, "application": a,
-		"conditions": VIPConditions, "channels": []string{"telegram", "whatsapp", "wechat", "email", "phone"},
+		"conditions": s.vipConditions(), "channels": []string{"telegram", "whatsapp", "wechat", "email", "phone"},
 	})
 }
 
 // POST /vip/applications {channel, contact}
+//
+// 400 VALIDATION_ERROR; 409 ALREADY_VIP / APPLICATION_PENDING; 403
+// VIP_NOT_ELIGIBLE (assets and 30-day volume both below the thresholds);
+// 503 VIP_ELIGIBILITY_UNAVAILABLE (retryable: the figures could not be
+// determined, never approved on missing data).
 func (s *Server) handleApplyVIP(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.authedUser(r)
 	if !ok {
@@ -161,6 +172,33 @@ func (s *Server) handleApplyVIP(w http.ResponseWriter, r *http.Request) {
 	if contact == "" || len(contact) > 128 {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请输入联系方式")
 		return
+	}
+	// Existing VIP / open application first: those answers must not depend on
+	// the upstream balance and volume services being reachable.
+	prev, err := s.store.LatestVIPApplication(r.Context(), u.ID)
+	if err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	if prev != nil && prev.Status == "approved" {
+		common.WriteError(w, http.StatusConflict, "ALREADY_VIP", "您已是 VIP")
+		return
+	}
+	if prev != nil && prev.Status == "pending" {
+		common.WriteError(w, http.StatusConflict, "APPLICATION_PENDING", "已有审核中的申请")
+		return
+	}
+	if !s.cfg.VIPEligibilitySkip {
+		chk, err := s.checkVIPEligibility(r.Context(), u.UID)
+		if err != nil {
+			log.Printf("vip: eligibility %s: %v", u.UID, err)
+			writeVIPUnavailable(w)
+			return
+		}
+		if !chk.Eligible {
+			s.writeVIPNotEligible(w, chk)
+			return
+		}
 	}
 	switch err := s.store.CreateVIPApplication(r.Context(), u.ID, ch, contact); {
 	case errors.Is(err, errVIPAlready):
