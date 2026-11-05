@@ -184,7 +184,7 @@ struct DepositView: View {
             recommended = Set(raw.filter { $0.recommended == true && $0.depositEnabled != false }.compactMap(\.network))
             let l = raw.compactMap { n -> APIWithdrawNetwork? in
                 guard let name = n.network, n.depositEnabled != false, n.asset == nil || n.asset == asset else { return nil }
-                return APIWithdrawNetwork(network: name, minWithdraw: n.minDeposit, confirmations: n.confirmations, estimatedArrivalMinutes: n.estimatedArrivalMinutes)
+                return APIWithdrawNetwork(network: name, minWithdraw: n.minDeposit, confirmations: n.confirmations, estimatedArrivalMinutes: n.estimatedArrivalMinutes, withdrawEnabled: n.withdrawEnabled ?? true, memoRequired: n.memoRequired ?? false)
             }
             nets = .loaded(l)
             // 服务端已按 资产 → sortOrder → 网络名 排好序，且不保证每个资产只有一个推荐：取排序后的第一个推荐网络
