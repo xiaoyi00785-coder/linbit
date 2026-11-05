@@ -15,6 +15,7 @@
     "check:nav": "node scripts/check-nav-dropdowns.mjs",
     "check:live-ticks": "node --experimental-strip-types scripts/check-live-ticks.mjs",
     "check:gw-proxy": "node --experimental-strip-types scripts/check-gw-proxy.mjs",
+    "check:partner-url": "node --experimental-strip-types scripts/check-partner-url.mjs",
     "check:no-demo": "sh ../../scripts/check-web-no-demo.sh"
   },
   "dependencies": {
