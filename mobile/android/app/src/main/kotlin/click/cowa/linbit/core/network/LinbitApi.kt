@@ -26,11 +26,12 @@ import retrofit2.http.Path
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.Headers
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Query
 
 /**
- * Retrofit 接口：认证、行情、首页、理财、资产概览、现货与合约交易等端点（按 mobile/openapi.yaml 逐步补齐）。
+ * Retrofit 接口：认证、行情、首页、理财、资产总览/划转/充提/地址簿、现货与合约交易等端点（按 mobile/openapi.yaml 逐步补齐）。
  * 路径不带前导 "/"，基地址为 https://api.cowa.click/ 。
  * oneOf 响应（login / ticker / futures ticker）以 JsonElement 返回，由 [OneOfResponses] 判别解码。
  */
@@ -233,4 +234,54 @@ interface LinbitApi {
     // ---- 自选 ----
     @GET("account/favorites")
     suspend fun favorites(@Query("market") market: String = "spot"): JsonElement
+
+    // ---- Assets / Wallet（充提、划转、地址簿）----
+    @GET("wallet/networks")
+    suspend fun walletNetworks(@Query("asset") asset: String? = null): ApiListWalletNetworks200Response
+
+    @GET("wallet/withdraw/networks")
+    suspend fun withdrawNetworks(@Query("asset") asset: String): ApiWithdrawNetworkOptions
+
+    @GET("wallet/deposit/address")
+    suspend fun depositAddress(@Query("asset") asset: String, @Query("network") network: String): ApiDepositAddress
+
+    @GET("wallet/deposit/records")
+    suspend fun depositRecords(@Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20): ApiPaginatedDeposits
+
+    @POST("wallet/withdraw")
+    suspend fun withdraw(@Body body: ApiWithdrawRequest): ApiWithdrawal
+
+    @GET("wallet/withdraw/records")
+    suspend fun withdrawRecords(@Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20): ApiPaginatedWithdrawals
+
+    @POST("wallet/withdraw/{id}/cancel")
+    suspend fun cancelWithdraw(@Path("id") id: String): ApiWithdrawal
+
+    @POST("wallet/internal-transfer")
+    suspend fun internalTransfer(@Body body: ApiInternalTransferRequest): ApiInternalTransfer
+
+    @GET("wallet/internal-transfers")
+    suspend fun internalTransfers(@Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20): ApiListInternalTransfers200Response
+
+    @POST("assets/transfer")
+    suspend fun assetsTransfer(@Body body: ApiTransferRequest): ApiTransfer
+
+    @GET("assets/transfers")
+    suspend fun assetsTransfers(@Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20): ApiListAssetTransfers200Response
+
+    @GET("account/withdraw-addresses")
+    suspend fun withdrawAddresses(): ApiWithdrawAddressList
+
+    @POST("account/withdraw-addresses")
+    suspend fun createWithdrawAddress(@Body body: ApiCreateWithdrawAddressRequest): ApiWithdrawAddress
+
+    @PATCH("account/withdraw-addresses/{id}")
+    suspend fun updateWithdrawAddress(@Path("id") id: String, @Body body: ApiUpdateWithdrawAddressRequest): ApiWithdrawAddress
+
+    @GET("account/withdraw-whitelist")
+    suspend fun withdrawWhitelist(): ApiWhitelistStatus
+
+    @PUT("account/withdraw-whitelist")
+    suspend fun setWithdrawWhitelist(@Body body: ApiSetWhitelistRequest): ApiWhitelistStatus
+
 }

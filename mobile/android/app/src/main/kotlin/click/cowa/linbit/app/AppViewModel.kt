@@ -24,6 +24,7 @@ class AppViewModel @Inject constructor(
     events: SessionEvents,
     val toast: ToastCenter,
     val tradeNav: click.cowa.linbit.data.trade.TradeNav,
+    val assetsNav: click.cowa.linbit.data.assets.AssetsNav,
 ) : ViewModel() {
     val themeMode: StateFlow<ThemeMode> = prefs.themeMode.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.LIGHT)
     val loggedIn: StateFlow<Boolean> get() = tokens.loggedIn
