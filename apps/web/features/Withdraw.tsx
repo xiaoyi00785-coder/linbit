@@ -305,7 +305,7 @@ export function Withdraw() {
               {fpe === "missing" && <div className="fx-err tfa-inv">请输入资金密码</div>}
             </div>}
             {fpe === "unset" && <div className="tfa-req"><span><b>!</b>请先设置资金密码，设置后才能{tab === "inner" ? "转账" : "提现"}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>去设置</button></div>}
-            {fpe && typeof fpe === "object" && <div className="tfa-req"><span><b>!</b>资金密码错误次数过多，已锁定{fpe.locked ? `至 ${fpe.locked}` : ""}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>重置资金密码</button></div>}
+            {fpe && typeof fpe === "object" && <div className="tfa-req"><span><b>!</b>{`资金密码错误次数过多，已锁定${fpe.locked ? `至 ${fpe.locked}` : ""}。`}</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>重置资金密码</button></div>}
             <button
               className={"lb lime wide" + (sending ? " dis" : "")}
               disabled={sending}

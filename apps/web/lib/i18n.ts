@@ -18,7 +18,12 @@ export function getLang(): Lang {
 }
 const toTW = (s: string) => { const t = s.trim(); if (TW_PHRASES[t]) return s.replace(t, TW_PHRASES[t]); return s.replace(/[\u4e00-\u9fff]/g, (c) => TW.get(c) ?? c); };
 export function tr(s: string, lang: Lang = getLang()): string {
-  if (lang === "zh-CN" || !/[\u4e00-\u9fff]/.test(s)) return s;
+  if (lang === "zh-CN") return s;
+  if (!/[\u4e00-\u9fff]/.test(s)) {
+    // 无汉字但含全角括号的网络展示名（如「Tron（TRC20）」）：英文下仅按 EN 精确项换成半角写法，其他无汉字文本原样返回
+    if (lang === "en" && /[（）]/.test(s)) { const t = s.trim(); const hit = EN[t]; if (hit) return s.replace(t, hit); }
+    return s;
+  }
   if (lang === "zh-TW") return toTW(s);
   const t = s.trim();
   const hit = EN[t] ?? tpl(t) ?? pat(t);
