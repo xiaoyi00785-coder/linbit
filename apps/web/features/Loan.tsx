@@ -77,7 +77,7 @@ export function BorrowModal({ m, term0, onClose, onDone }: { m: Market; term0: s
     <Mask title={"借 " + m.asset} sub="选择质押物与借款期限" onClose={onClose}>
       <label className="lg">借款期限</label>
       <div className="pt fx-chips">{m.terms.map((t) => <b key={t.term} className={term === t.term ? "on" : ""} onClick={() => setTerm(t.term)}>{tn(t.term).split(" · ")[0]} {pc(t.annualRate)}</b>)}</div>
-      <label className="lg">借款数量（{m.asset}）</label>
+      <label className="lg">{`借款数量（${m.asset}）`}</label>
       <input className="xin" inputMode="decimal" placeholder={`最低 ${m.minAmount}`} value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
       <label className="lg">质押币种</label>
       <div className="pt fx-chips">{m.collaterals.map((c) => <b key={c.asset} className={col === c.asset ? "on" : ""} onClick={() => setCol(c.asset)}><CoinIcon s={c.asset} size={16} /> {c.asset}</b>)}</div>
@@ -86,7 +86,7 @@ export function BorrowModal({ m, term0, onClose, onDone }: { m: Market; term0: s
       <div className="lrow"><span className="lg">预估每小时利息</span><span className="sp" /><b>{q ? `${n(q.hourlyInterest, 6)} ${m.asset}` : "--"}</b></div>
       {q?.termInterest && term !== "flexible" && <div className="lrow"><span className="lg">到期总利息</span><span className="sp" /><b>{n(q.termInterest, 6)} {m.asset}</b></div>}
       <div className="lrow"><span className="lg">强平价格</span><span className="sp" /><b>{q ? `${n(q.liquidationPrice, 2)} USDT` : "--"}</b></div>
-      <p className="lg">质押率达 {pc(m.warnLtv, 0)} 时预警，达 {pc(m.liquidationLtv, 0)} 将触发强平。</p>
+      <p className="lg">{`质押率达 ${pc(m.warnLtv, 0)} 时预警，达 ${pc(m.liquidationLtv, 0)} 将触发强平。`}</p>
       {err && <div className="fx-err">{err}</div>}
       <button className={"lb dark wide" + (busy ? " dis" : "")} onClick={submit}>{busy ? "提交中…" : authed ? "确认借款" : "登录后借款"}</button>
     </Mask>

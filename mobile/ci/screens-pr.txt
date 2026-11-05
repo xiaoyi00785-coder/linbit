@@ -1,0 +1,36 @@
+# iOS CI PR/push 冒烟截图清单（精简）。完整清单见 screens.txt。
+# 格式：<screen> [light|dark|both]，省略第二列表示 both（日间 + 夜间各一张）。
+# 以 # 开头的行和空行会被忽略。目标：≤ ~30 张截图，多数仅 light。
+
+# 主 Tab（home / futures / login 日夜各一张，其余仅日间）
+home
+markets light
+spot light
+futures
+assets light
+login
+
+# 高价值交易
+futures-chart light
+futures-leverage light
+futures-tpsl light
+spot-conditional light
+
+# 认证 / 账户安全
+password-register light
+security light
+kyc-none light
+notif-list light
+home-bell light
+coupon-issued light
+partner-none light
+copy-list light
+loan-market light
+
+# 资产子页
+assets-overview light
+assets-networks light
+
+# 其他高流量入口
+earn light
+swap light
