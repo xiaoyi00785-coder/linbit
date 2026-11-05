@@ -202,9 +202,10 @@ fun PrimaryTabs(
     modifier: Modifier = Modifier,
     size: TextUnit = FontSize.tabPrimary,
     underline: Boolean = false,
+    spacing: Dp = 20.dp,
 ) {
     val p = LB.p
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(spacing)) {
         items.forEachIndexed { i, t ->
             val sel = i == selected
             Column(

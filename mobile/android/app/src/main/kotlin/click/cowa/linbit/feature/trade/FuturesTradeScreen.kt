@@ -95,7 +95,7 @@ fun FuturesRootScreen(
     DisposableEffect(nav, top) { if (top == 0 && autoStart) vm.start(); onDispose { vm.stop() } }
     Column(modifier.fillMaxSize().background(p.bg)) {
         Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
-            PrimaryTabs(listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { top = it }, size = 16.sp)
+            PrimaryTabs(listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { top = it }, size = 16.sp, spacing = 16.dp)
         }
         HorizontalDivider(color = p.divider)
         when (top) {
