@@ -8,6 +8,7 @@
  *   GET  /convert/orders?page&pageSize&asset → { items, page, pageSize, total }
  * pairs 接口不可用时才显示「闪兑暂未开放」。
  */
+import { stLabel } from "@/lib/orderStatus";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import { useBalances } from "@/lib/queries";
@@ -180,7 +181,7 @@ export function Convert() {
           <h3>兑换记录</h3>
           {orders.length === 0 ? <div className="cv-empty">暂无记录</div> : (
             <table><thead><tr><th>时间</th><th>从</th><th>到</th><th>价格</th><th>状态</th></tr></thead>
-              <tbody>{orders.map((o) => <tr key={o.id}><td>{new Date(o.createdAt).toLocaleString()}</td><td>{o.fromAmount} {o.from}</td><td>{o.toAmount} {o.to}</td><td>{o.rate}</td><td>{o.status === "filled" ? "已完成" : o.status}</td></tr>)}</tbody></table>
+              <tbody>{orders.map((o) => <tr key={o.id}><td>{new Date(o.createdAt).toLocaleString()}</td><td>{o.fromAmount} {o.from}</td><td>{o.toAmount} {o.to}</td><td>{o.rate}</td><td>{o.status === "filled" ? "已完成" : stLabel(o.status)}</td></tr>)}</tbody></table>
           )}
           {total > PAGE && (
             <div className="cv-pg">
