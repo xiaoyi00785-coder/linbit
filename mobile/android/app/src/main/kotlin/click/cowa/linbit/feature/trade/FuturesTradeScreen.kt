@@ -140,6 +140,10 @@ fun FuturesTradeContent(
     var cancelTarget by remember { mutableStateOf<ApiFuturesOrder?>(null) }
     var cancelAlgoTarget by remember { mutableStateOf<ApiFuturesAlgoOrder?>(null) }
     var closeAllAsk by remember { mutableStateOf(false) }
+    var tpslTarget by remember { mutableStateOf<ApiFuturesPosition?>(null) }
+    var marginTarget by remember { mutableStateOf<ApiFuturesPosition?>(null) }
+    var amendTarget by remember { mutableStateOf<ApiFuturesOrder?>(null) }
+    var showCalculator by remember { mutableStateOf(false) }
 
     val step = vm.bookPrecision ?: BigDecimal.ONE.movePointLeft(vm.pricePrec)
     val shownBook = remember(vm.book, step, vm.byQty) {
@@ -276,7 +280,7 @@ fun FuturesTradeContent(
                             ChipButton("跟单交易", Modifier.weight(1f).height(36.dp)) { vm.toast.show("跟单交易即将开放") }
                         }
                     } else vm.shownPositions.forEach { pos ->
-                        PositionCard(pos, vm.livePnl(pos), { vm.toast.show("止盈止损设置即将开放") }, { vm.toast.show("保证金调整即将开放") }, { closeTarget = pos })
+                        PositionCard(pos, vm.livePnl(pos), { tpslTarget = pos }, { marginTarget = pos }, { closeTarget = pos })
                         Box(Modifier.fillMaxWidth().height(8.dp).background(p.fill))
                     }
                 }
@@ -293,7 +297,10 @@ fun FuturesTradeContent(
                     if (!loggedIn) EmptyState("登录后查看委托") { ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin) } else when (orderFilter) {
                         0 -> {
                             val l = vm.shownOrders.filter { it.source != "tpsl" }
-                            if (l.isEmpty()) EmptyState("暂无委托") else l.forEach { o -> FuturesOrderRow(o) { cancelTarget = o }; HorizontalDivider(Modifier.padding(horizontal = Spacing.pageH), color = p.divider) }
+                            if (l.isEmpty()) EmptyState("暂无委托") else l.forEach { o ->
+                                FuturesOrderRow(o, onAmend = if (o.type == "market") null else ({ amendTarget = o })) { cancelTarget = o }
+                                HorizontalDivider(Modifier.padding(horizontal = Spacing.pageH), color = p.divider)
+                            }
                         }
                         1 -> if (vm.shownTpsl.isEmpty()) EmptyState("暂无止盈止损") else vm.shownTpsl.forEach { a -> AlgoOrderRow(a) { cancelAlgoTarget = a }; HorizontalDivider(Modifier.padding(horizontal = Spacing.pageH), color = p.divider) }
                         else -> if (vm.shownPlans.isEmpty()) EmptyState("暂无计划委托") else vm.shownPlans.forEach { a -> AlgoOrderRow(a) { cancelAlgoTarget = a }; HorizontalDivider(Modifier.padding(horizontal = Spacing.pageH), color = p.divider) }
@@ -317,7 +324,11 @@ fun FuturesTradeContent(
             KvRow("标记价格", Fmt.priceAuto(vm.mark))
             KvRow("指数价格", Fmt.priceAuto(Dec.parse(vm.ticker?.indexPrice)))
             KvRow("24h 成交额", Fmt.volumeCN(Dec.parse(vm.ticker?.turnover24h)))
-            Text("K 线图表即将开放", style = lb(FontSize.small), color = p.textTertiary)
+            TradeChartPanel(
+                symbol = vm.symbol, pricePrec = vm.pricePrec, showTrades = true,
+                loadCandles = { iv -> vm.loadKlines(iv) },
+                loadTrades = { vm.loadMarketTrades() },
+            )
         }
         Box(Modifier.height(bottomInset))
     }
@@ -332,7 +343,12 @@ fun FuturesTradeContent(
         "pairs" -> PairPickerSheet(marketRows, vm.symbol, false, { vm.switchSymbol(it) }, { sheet = null })
         "precision" -> PrecisionSheet(vm.pricePrec, vm.bookPrecision, { vm.bookPrecision = it }, { sheet = null })
         "theme" -> ThemeModeSheet(themeMode, onTheme, { sheet = null })
-        "tools" -> ToolsSheet(vm.toast::show) { sheet = null }
+        "tools" -> ToolsSheet(vm.toast::show, { sheet = null }) { tool ->
+            when (tool) {
+                "计算器" -> showCalculator = true
+                "价格预警" -> vm.toast.show("价格预警即将开放")
+            }
+        }
         "mode" -> MarginModeSheet(vm) { sheet = null }
         "leverage" -> LeverageSheet(vm) { sheet = null }
         "confirm" -> {
@@ -360,6 +376,10 @@ fun FuturesTradeContent(
     cancelTarget?.let { o -> ConfirmDialog("撤销委托", "确定撤销该笔委托吗？", "撤销", { cancelTarget = null }) { vm.cancel(o); cancelTarget = null } }
     cancelAlgoTarget?.let { a -> ConfirmDialog("撤销条件委托", "确定撤销该笔条件委托吗？", "撤销", { cancelAlgoTarget = null }) { vm.cancelAlgo(a); cancelAlgoTarget = null } }
     if (closeAllAsk) ConfirmDialog("一键平仓", "将以市价平掉${if (vm.onlyCurrent) "当前合约" else "全部"}的 ${vm.shownPositions.size} 个仓位，确定吗？", "全部平仓", { closeAllAsk = false }) { vm.closeAll(); closeAllAsk = false }
+    tpslTarget?.let { PositionTpslSheet(vm, it) { tpslTarget = null } }
+    marginTarget?.let { AdjustMarginSheet(vm, it) { marginTarget = null } }
+    amendTarget?.let { AmendOrderSheet(vm, it) { amendTarget = null } }
+    if (showCalculator) CalculatorSheet(vm) { showCalculator = false }
 }
 
 @Composable
@@ -516,7 +536,7 @@ private fun PositionCard(pos: ApiFuturesPosition, live: Triple<BigDecimal, BigDe
 }
 
 @Composable
-private fun FuturesOrderRow(o: ApiFuturesOrder, onCancel: () -> Unit) {
+private fun FuturesOrderRow(o: ApiFuturesOrder, onAmend: (() -> Unit)? = null, onCancel: () -> Unit) {
     val p = LB.p
     val buy = o.side == "buy"
     val ps = o.positionSide ?: "BOTH"
@@ -528,7 +548,9 @@ private fun FuturesOrderRow(o: ApiFuturesOrder, onCancel: () -> Unit) {
             Text(o.symbol ?: "", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
             Text(if (o.type == "market") "市价" else "限价", style = lb(FontSize.small), color = p.textSecondary)
             if (o.timeInForce == "POST_ONLY" || o.timeInForce == "GTX") Text("只做Maker", style = lb(10.sp), color = p.textSecondary)
+            if ((o.amendCount ?: 0) > 0) Text("改${o.amendCount}次", style = lb(10.sp), color = p.textTertiary)
             Box(Modifier.weight(1f))
+            if (onAmend != null) ChipButton("改单", Modifier.height(24.dp), onClick = onAmend)
             ChipButton("撤单", Modifier.height(24.dp), onClick = onCancel)
         }
         Row {
