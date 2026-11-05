@@ -97,6 +97,8 @@ fun WithdrawScreen(
                 nets = list.map {
                     ApiWithdrawNetwork(
                         network = it.network!!,
+                        withdrawEnabled = it.withdrawEnabled != false,
+                        memoRequired = it.memoRequired == true,
                         minWithdraw = it.minWithdraw,
                         maxWithdraw = it.maxWithdraw,
                         gasFeeEstimate = it.withdrawFee,
