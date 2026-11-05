@@ -275,7 +275,7 @@ func fetchBybit(ctx context.Context, base string) (map[string]decimal.Decimal, e
 	}
 	out := make(map[string]decimal.Decimal, len(body.Result.List))
 	for _, r := range body.Result.List {
-		if p, err := decimal.NewFromString(r.LastPrice); err == nil {
+		if p, err := decimal.NewFromString(r.LastPrice); err == nil && p.IsPositive() {
 			out[r.Symbol] = p
 		}
 	}
@@ -297,7 +297,7 @@ func fetchGate(ctx context.Context, base string) (map[string]decimal.Decimal, er
 	}
 	out := make(map[string]decimal.Decimal, len(rows))
 	for _, r := range rows {
-		if p, err := decimal.NewFromString(r.Last); err == nil {
+		if p, err := decimal.NewFromString(r.Last); err == nil && p.IsPositive() {
 			out[strings.ReplaceAll(r.Pair, "_", "")] = p
 		}
 	}
