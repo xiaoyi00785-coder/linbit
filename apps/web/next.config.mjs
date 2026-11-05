@@ -1,3 +1,5 @@
+import { partnerUrl } from "./lib/partnerUrl.mjs";
+
 // 主网构建保护：NEXT_PUBLIC_NETWORK=mainnet（或 NETWORK/APP_ENV=mainnet）时禁止任何 mock/演示开关。
 const network = (process.env.NEXT_PUBLIC_NETWORK || process.env.NETWORK || process.env.APP_ENV || "").toLowerCase();
 if (network === "mainnet") {
@@ -24,6 +26,9 @@ const nextConfig = {
     return [
       { source: "/assets/futures-account", destination: "/assets/trading-account", permanent: false },
       { source: "/earn/wealth", destination: "/earn", permanent: false },
+      // 合伙人站点（NEXT_PUBLIC_PARTNER_URL，默认 https://partner.cowa.click）：旧入口 /partner、/partner/apply 跳过去
+      { source: "/partner", destination: partnerUrl(process.env.NEXT_PUBLIC_PARTNER_URL, "/"), permanent: false },
+      { source: "/partner/apply", destination: partnerUrl(process.env.NEXT_PUBLIC_PARTNER_URL, "/apply"), permanent: false },
       // 费率说明页统一在 /p/费率
       { source: "/fees", destination: "/p/%E8%B4%B9%E7%8E%87", permanent: false },
       ...[

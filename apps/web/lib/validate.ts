@@ -30,6 +30,3 @@ export function amountError(raw: string, opts: { dp?: number } = {}): string {
 
 /** 数量输入框 onChange：只去掉空白，保留用户输入以便提示 */
 export const cleanNum = (v: string) => v.replace(/[\s,，]/g, "");
-
-/** 无配置时的兜底最小提现额 */
-export const DEFAULT_MIN_WITHDRAW: Record<string, number> = { USDT: 12 };
