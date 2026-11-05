@@ -193,7 +193,7 @@ struct AssetsView: View {
                         CoinIcon(base: b.asset)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(b.asset).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
-                            Text(Dec.parse(b.locked) > 0 ? "冻结 \(b.locked)" : b.asset).font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                            Text(Dec.parse(b.locked) > 0 ? "冻结 \(b.locked)" : (m.unitPrice(b).map { "单价 $\(Fmt.amount($0, $0 < 1 ? 6 : 2))" } ?? b.asset)).font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 3) {

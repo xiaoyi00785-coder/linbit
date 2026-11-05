@@ -2,12 +2,12 @@
 # 放置位置：仓库根目录 .github/workflows/ios.yml；IOS_DIR 指向 project.yml 所在目录
 #
 # macos-14 已于 2026-11-02 下线，且其上的 iPhone 15 模拟器不在现行镜像里。
-# 使用 macos-15 + Xcode 16.4（默认）+ iOS 18.5 的 iPhone 16。
+# 使用 macos-15 + Xcode 16.4；运行时自动选择可用的 iPhone 模拟器及其系统版本。
 name: iOS
 
 on:
   push:
-    branches: [main, "feat/ios-*"]
+    branches: [main]
     paths: ["mobile/**", ".github/workflows/ios.yml"]
   pull_request:
     paths: ["mobile/**", ".github/workflows/ios.yml"]
@@ -17,19 +17,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-${{ github.ref }}
+  group: ios-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 env:
   IOS_DIR: mobile/ios
-  SIM_NAME: iPhone 16
-  SIM_OS: "18.5"
   DERIVED: ${{ github.workspace }}/build
 
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -68,11 +66,68 @@ jobs:
         working-directory: ${{ env.IOS_DIR }}
         run: xcodegen generate
 
+      - name: Select available iPhone simulator
+        working-directory: ${{ env.IOS_DIR }}
+        run: |
+          set -euo pipefail
+          echo "Available simulator devices:"
+          xcrun simctl list devices available
+          echo "Xcode build destinations:"
+          xcodebuild -project Linbit.xcodeproj -scheme Linbit -showdestinations
+
+          xcrun simctl list devices available --json > /tmp/linbit-simulators.json
+          python3 - <<'PY_SELECT_SIM'
+          import json
+          import os
+          import re
+
+          with open('/tmp/linbit-simulators.json', encoding='utf-8') as f:
+              devices_by_runtime = json.load(f)['devices']
+
+          candidates = []
+          for runtime, devices in devices_by_runtime.items():
+              match = re.search(r'(?:SimRuntime\.)?iOS-(\d+(?:-\d+)*)$', runtime)
+              if not match:
+                  continue
+              sim_os = match.group(1).replace('-', '.')
+              os_version = tuple(int(part) for part in sim_os.split('.'))
+              for device in devices:
+                  name = device.get('name', '')
+                  udid = device.get('udid', '')
+                  if not name.startswith('iPhone') or not udid:
+                      continue
+                  # --json 在部分 Xcode 版本中仍会列出不可用设备，需再过滤。
+                  if device.get('isAvailable') is False:
+                      continue
+                  if device.get('availability') not in (None, '(available)'):
+                      continue
+                  if name == 'iPhone 16':
+                      preference = 0
+                  elif name == 'iPhone 15 Pro':
+                      preference = 1
+                  else:
+                      preference = 2
+                  candidates.append((preference, os_version, name, sim_os, udid))
+
+          if not candidates:
+              raise SystemExit('::error::没有找到可用的 iPhone 模拟器；请查看上面的 simctl 设备列表。')
+
+          # 先按机型优先级，再选该机型可用的最新 iOS 运行时。
+          _, _, name, sim_os, udid = min(candidates, key=lambda item: (item[0], tuple(-v for v in item[1]), item[2]))
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
+              f.write(f'SIM_NAME={name}\n')
+              f.write(f'SIM_OS={sim_os}\n')
+              f.write(f'SIM_UDID={udid}\n')
+          print(f'Selected simulator: {name}, iOS {sim_os}, UDID {udid}')
+          PY_SELECT_SIM
+
       - name: Build for simulator
         working-directory: ${{ env.IOS_DIR }}
         run: |
-          set -o pipefail
-          DEST="platform=iOS Simulator,name=${SIM_NAME},OS=${SIM_OS}"
+          set -euo pipefail
+          DEST="platform=iOS Simulator,id=${SIM_UDID},OS=${SIM_OS}"
+          echo "Building for selected destination: ${SIM_NAME}, iOS ${SIM_OS}, UDID ${SIM_UDID}"
+          echo "xcodebuild destination: ${DEST}"
           if command -v xcbeautify >/dev/null 2>&1; then
             xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Debug \
               -destination "$DEST" \
@@ -84,18 +139,34 @@ jobs:
           fi
 
       - name: Launch & screenshot (light / dark)
+        env:
+          # pull_request / push：冒烟清单 + 短等待；workflow_dispatch：完整清单
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           APP=$(find "$DERIVED/Build/Products" -name "Linbit.app" -maxdepth 3 | head -1)
           echo "APP=$APP"
-          UDID=$(xcrun simctl list devices "iOS ${SIM_OS}" | sed -n 's/^[[:space:]]*iPhone 16 (\([A-F0-9-]*\)).*/\1/p' | head -1)
-          echo "UDID=$UDID"
+          UDID="$SIM_UDID"
+          echo "Using selected simulator: ${SIM_NAME}, iOS ${SIM_OS}, UDID ${UDID}"
           test -n "$UDID"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
-          # 主页面日间/夜间各一张；主要弹窗仅日间。lb.shot 只在 CI 写入。
+
+          # pull_request / push：冒烟清单 + sleep 4；仅 workflow_dispatch 跑完整清单 + sleep 7
+          # （完整套件约 183 张，仍可能逼近 90 分钟上限，故不在 push/main 自动跑）
+          SCREEN_LIST=mobile/ci/screens-pr.txt
+          SLEEP_SECS=4
+          RUN_SPLASH_VIDEO=0
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            SCREEN_LIST=mobile/ci/screens.txt
+            SLEEP_SECS=7
+            RUN_SPLASH_VIDEO=1
+          fi
+          echo "SCREEN_LIST=$SCREEN_LIST SLEEP_SECS=$SLEEP_SECS RUN_SPLASH_VIDEO=$RUN_SPLASH_VIDEO"
+
+          # lb.shot 只在 CI 写入。
           shoot() {
             local screen="$1" mode="$2"
             xcrun simctl ui "$UDID" appearance "$mode"
@@ -103,49 +174,36 @@ jobs:
             xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
             xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.shot "$screen"
             xcrun simctl launch "$UDID" click.cowa.linbit
-            sleep 7
+            sleep "$SLEEP_SECS"
             xcrun simctl io "$UDID" screenshot "shots/${screen}-${mode}.png" || true
           }
-          for screen in home markets spot assets login futures futures-chart futures-plan futures-history futures-position-history futures-algo-history futures-tiers futures-funding \
-                        event earn strategy swap chat subaccounts welfare \
-                        spot-plan spot-market-amount spot-fee spot-conditional spot-history-conditional \
-                        futures-liq spot-history-amount futures-pnl futures-pnl-empty futures-pnl-error password-register password-reset password-change; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
-          for screen in futures-leverage futures-mode futures-tpsl futures-kind futures-tools event-confirm \
-                        futures-orders-tpsl futures-orders-plan futures-amend futures-algo-amend-plan futures-algo-amend-tpsl futures-mode-hedge futures-tpsl-partial earn-subscribe grid-create grid-confirm swap-picker sub-create account-switch; do
-            shoot "$screen" light
-          done
-          # 账户安全：概览 / 资料 / 邮箱手机 / 资金密码 / 防钓鱼码 / 设备会话 / 通行密钥 / 关闭 2FA（日间 + 夜间，含错误/空态）
-          for screen in home-avatar security-avatar security-avatar-crop security-avatar-uploading security-avatar-error security security-error kyc-none kyc-pending kyc-rejected kyc-approved kyc-form kyc-form2 kyc-form2-full kyc-error notif-list notif-empty notif-error notif-settings notif-settings-error home-bell security-profile security-profile-error security-email security-email-error security-phone security-fund security-fund-error security-fund-reset security-antiphishing security-antiphishing-error security-devices security-sessions security-devices-error security-devices-empty security-passkeys security-passkeys-empty security-passkeys-add security-2fa-disable security-2fa-disable-error; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
-          # 资产模块：总览 / 网络 / 账户划转 / 内部转账 / 提现记录 / 地址簿（日间 + 夜间）
-          for screen in assets-overview assets-networks assets-account-transfer assets-internal-transfer assets-withdraw-records assets-address-book; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
-          # 启动动画：开始 / 中间 / 结束 三个时刻（冻结进度），日间 + 夜间
-          for screen in splash-start splash-mid splash-end; do
-            for mode in light dark; do shoot "$screen" "$mode"; done
-          done
-          # 启动动画录屏（真实播放，日间 + 夜间）
-          for mode in light dark; do
-            xcrun simctl ui "$UDID" appearance "$mode"
-            xcrun simctl terminate "$UDID" click.cowa.linbit || true
-            xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
-            xcrun simctl spawn "$UDID" defaults delete click.cowa.linbit lb.shot || true
-            xcrun simctl io "$UDID" recordVideo --codec=h264 --force "shots/splash-${mode}.mp4" &
-            REC=$!
-            sleep 2
-            xcrun simctl launch "$UDID" click.cowa.linbit
-            sleep 4
-            kill -INT "$REC" || true
-            wait "$REC" || true
-          done
-          # 合约弹窗夜间版
-          for screen in futures-orders-tpsl futures-orders-plan futures-amend futures-algo-amend-plan futures-algo-amend-tpsl futures-mode-hedge futures-tpsl-partial futures-tpsl futures-mode futures-leverage futures-kind futures-tools; do
-            shoot "$screen" dark
-          done
+          # 截图清单（用 fd 3 读取，避免 simctl 吞掉 stdin）：每行 "<screen> [light|dark|both]"，省略模式 = both；# 开头为注释
+          while read -r screen mode _ <&3; do
+            case "$screen" in ""|\#*) continue ;; esac
+            case "${mode:-both}" in
+              light) shoot "$screen" light ;;
+              dark)  shoot "$screen" dark ;;
+              both)  shoot "$screen" light; shoot "$screen" dark ;;
+              *) echo "::error file=${SCREEN_LIST}::未知模式: $screen $mode"; exit 1 ;;
+            esac
+          done 3< "$SCREEN_LIST"
+
+          # 启动动画录屏仅跑全量套件（真实播放，日间 + 夜间）
+          if [ "$RUN_SPLASH_VIDEO" = "1" ]; then
+            for mode in light dark; do
+              xcrun simctl ui "$UDID" appearance "$mode"
+              xcrun simctl terminate "$UDID" click.cowa.linbit || true
+              xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
+              xcrun simctl spawn "$UDID" defaults delete click.cowa.linbit lb.shot || true
+              xcrun simctl io "$UDID" recordVideo --codec=h264 --force "shots/splash-${mode}.mp4" &
+              REC=$!
+              sleep 2
+              xcrun simctl launch "$UDID" click.cowa.linbit
+              sleep 4
+              kill -INT "$REC" || true
+              wait "$REC" || true
+            done
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()

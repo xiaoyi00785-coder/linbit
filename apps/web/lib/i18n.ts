@@ -3,7 +3,7 @@
  *  以 MutationObserver 翻译文本节点与 placeholder/title/aria-label，WeakMap 保存原文以便切回。语言存 localStorage lb_lang。 */
 import { EN } from "./i18n-en";
 import { EN_T, EN_P } from "./i18n-en2";
-import { TW_PAIRS, TW_PHRASES } from "./i18n-tw";
+import { TW_PAIRS, TW_PHRASES, TW_P } from "./i18n-tw";
 
 export type Lang = "zh-CN" | "zh-TW" | "en";
 export const LANGS: { k: Lang; label: string }[] = [{ k: "zh-CN", label: "简体中文" }, { k: "zh-TW", label: "繁體中文" }, { k: "en", label: "English" }];
@@ -16,7 +16,16 @@ export function getLang(): Lang {
   const v = localStorage.getItem(KEY);
   return v === "zh-TW" || v === "en" ? v : "zh-CN";
 }
-const toTW = (s: string) => { const t = s.trim(); if (TW_PHRASES[t]) return s.replace(t, TW_PHRASES[t]); return s.replace(/[\u4e00-\u9fff]/g, (c) => TW.get(c) ?? c); };
+const TW_PATS = TW_P.map(([k, v]) => [new RegExp("^" + k.split("{}").map((x) => x.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("(.+?)") + "$"), v] as const);
+function toTW(s: string) {
+  const t = s.trim();
+  if (TW_PHRASES[t]) return s.replace(t, TW_PHRASES[t]);
+  for (const [re, v] of TW_PATS) {
+    const m = t.match(re);
+    if (m) { let i = 1; return s.replace(t, v.replace(/\{\}/g, () => toTW(m[i++] ?? ""))); }
+  }
+  return s.replace(/[\u4e00-\u9fff]/g, (c) => TW.get(c) ?? c);
+}
 export function tr(s: string, lang: Lang = getLang()): string {
   if (lang === "zh-CN") return s;
   if (!/[\u4e00-\u9fff]/.test(s)) {
