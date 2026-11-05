@@ -256,7 +256,7 @@ export function Withdraw() {
               {tfa === "required" && <TwofaRequired />}
               {wLockUntil && !err && <div className="sec-lock"><b>!</b>{WLOCK}，预计 {fmtUntil(wLockUntil)} 解除。</div>}
               {err && <div className="fx-err">{err}</div>}
-              {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
+              {done && <div className="fx-ok">{`✓ 提现申请已提交（${done.id}），状态：审核中`}</div>}
               <button className={"lb dark wide" + (submitOk ? "" : " dis")} disabled={!submitOk} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) { setFpe(null); setTfa(null); setConfirm(true); } }}>
                 {tab === "inner" ? "转账" : "提现"}
               </button>
@@ -304,7 +304,7 @@ export function Withdraw() {
               {fpe === "invalid" && <div className="fx-err tfa-inv">资金密码错误，请重新输入</div>}
               {fpe === "missing" && <div className="fx-err tfa-inv">请输入资金密码</div>}
             </div>}
-            {fpe === "unset" && <div className="tfa-req"><span><b>!</b>请先设置资金密码，设置后才能{tab === "inner" ? "转账" : "提现"}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>去设置</button></div>}
+            {fpe === "unset" && <div className="tfa-req"><span><b>!</b>{`请先设置资金密码，设置后才能${tab === "inner" ? "转账" : "提现"}。`}</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>去设置</button></div>}
             {fpe && typeof fpe === "object" && <div className="tfa-req"><span><b>!</b>{`资金密码错误次数过多，已锁定${fpe.locked ? `至 ${fpe.locked}` : ""}。`}</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>重置资金密码</button></div>}
             <button
               className={"lb lime wide" + (sending ? " dis" : "")}

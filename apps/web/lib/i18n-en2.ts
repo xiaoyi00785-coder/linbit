@@ -35,6 +35,7 @@ export const EN_T: Record<string, string> = {
   "# 位 #FA 动态码":"#-digit 2FA code","请输入 # 位 #FA 动态码":"Enter the #-digit 2FA code","可用余额不足（可用":"Insufficient balance (available","最小提现数量":"Min withdrawal","至":"to","免手续费，实时到账":"no fee, instant",
   "扣除链上":"minus on-chain","到账":"credited","平台不收手续费":"no platform fee","你尚未设置资金密码，本次无需填写。建议前往":"You haven't set a fund password, so none is needed this time. We recommend setting one in","设置以提升资金安全。":"to better protect your funds.","成交量":"Volume",
   "资金密码错误次数过多，已锁定。":"Too many incorrect fund password attempts. Locked.",
+  "请先设置资金密码，设置后才能转账。":"Set a fund password first to make transfers.","请先设置资金密码，设置后才能提现。":"Set a fund password first to make withdrawals.",
 };
 /** 带占位的整句（{} 匹配任意片段，命中后各片段再经 tr 翻译后回填）：用于中间插入币种 / 网络名 / 金额、含全角标点的句子，避免片段替换残留全角标点。 */
 export const EN_P: [string, string][] = [
@@ -52,6 +53,7 @@ export const EN_P: [string, string][] = [
   ["划转转入（{}）", "Transfer in ({})"],
   ["划转转出（{}）", "Transfer out ({})"],
   ["平仓状态：{}", "Close status: {}"],
+  ["✓ 提现申请已提交（{}），状态：审核中", "✓ Withdrawal request submitted ({}). Status: Under review"],
   ["资金密码错误次数过多，已锁定至 {}。", "Too many incorrect fund password attempts. Locked until {}."],
   ["订单状态：{}", "Order status: {}"],
 ];
