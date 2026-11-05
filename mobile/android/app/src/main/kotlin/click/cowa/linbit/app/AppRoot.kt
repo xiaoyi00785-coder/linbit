@@ -105,7 +105,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                 mode, vm::setTheme,
                 onLogout = { vm.logout { userCenter = false } },
                 onClose = { userCenter = false },
-                onLoginOther = { vm.logout { userCenter = false; auth = "login" } },
+                onLoginOther = { userCenter = false; auth = "login" },
             )
             when (historyKind) {
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)

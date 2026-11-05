@@ -34,6 +34,8 @@ class SavedAccounts(
     constructor(store: SecureStore, tokens: TokenStore) : this(SecureAccountStorage(store), tokens)
 
     private val json = Json { ignoreUnknownKeys = true }
+    private var pendingUid: String? = null
+    private var pendingAccess: String? = null
 
     fun list(): List<SavedAccount> = store.get(ACCOUNTS)?.let {
         runCatching { json.decodeFromString(ListSerializer(SavedAccount.serializer()), it) }.getOrNull()
@@ -46,9 +48,21 @@ class SavedAccounts(
         store.set(refreshKey(a.uid), tokens.refreshToken)
     }
 
-    /** 切换期间目标账号失效不清空当前会话，由调用方恢复原账号并提示重新登录。 */
-    fun beginSwitch() {
-        store.set(PENDING, "${tokens.accessToken.orEmpty()}\n${tokens.refreshToken.orEmpty()}\n${tokens.sessionExpired}")
+    /** 添加账号只保存本机当前会话，不调用服务端 logout，保留以后切回的能力。 */
+    fun beginAddAccount(uid: String) {
+        beginSwitch(uid)
+        tokens.clear()
+        store.set(PENDING, null)
+        tokens.loggingOut = false
+        tokens.notifySessionChanged()
+    }
+
+    /** 切走前立即把刷新后的最新令牌写回原 uid，再保留 PENDING 供失败或进程中断恢复。 */
+    fun beginSwitch(uid: String) {
+        pendingUid = uid
+        pendingAccess = tokens.accessToken
+        persistCurrent(uid)
+        store.set(PENDING, "${tokens.accessToken.orEmpty()}\n${tokens.refreshToken.orEmpty()}\n${tokens.sessionExpired}\n$uid")
         tokens.loggingOut = true
     }
 
@@ -62,17 +76,26 @@ class SavedAccounts(
     }
 
     fun restore() {
-        val old = store.get(PENDING)?.split('\n', limit = 3) ?: return
+        val old = store.get(PENDING)?.split('\n', limit = 4) ?: return
+        old.getOrNull(3)?.takeIf(String::isNotBlank)?.let { pendingUid = it }
+        pendingAccess = tokens.accessToken
         tokens.accessToken = old[0].ifEmpty { null }
         tokens.refreshToken = old.getOrNull(1)?.ifEmpty { null }
         tokens.sessionExpired = old.getOrNull(2)?.toBooleanStrictOrNull() ?: false
         store.set(PENDING, null)
+        persistPendingIfUnchanged()
+        pendingUid = null
+        pendingAccess = null
         tokens.loggingOut = false
     }
 
     fun commit() {
         store.set(PENDING, null)
+        persistPendingIfUnchanged()
+        pendingUid = null
+        pendingAccess = null
         tokens.loggingOut = false
+        tokens.notifySessionChanged()
     }
 
     fun remove(uids: Set<String>) {
@@ -81,6 +104,18 @@ class SavedAccounts(
             store.set(refreshKey(it), null)
         }
         persist(list().filterNot { it.uid in uids })
+    }
+
+    /** 只有当前仍持有切走前的 access token 才能回写，避免在途请求跨账号串写。 */
+    private fun persistPendingIfUnchanged() {
+        val uid = pendingUid ?: return
+        if (tokens.accessToken == pendingAccess) persistCurrent(uid)
+    }
+
+    private fun persistCurrent(uid: String) {
+        if (list().none { it.uid == uid }) return
+        store.set(accessKey(uid), tokens.accessToken)
+        store.set(refreshKey(uid), tokens.refreshToken)
     }
 
     private fun persist(items: List<SavedAccount>) {

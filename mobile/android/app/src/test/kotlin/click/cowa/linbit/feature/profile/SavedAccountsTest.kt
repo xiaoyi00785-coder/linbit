@@ -22,7 +22,7 @@ class SavedAccountsTest {
         accounts.remember(ApiAccount("b", 0, false, "2026-01-01", email = "b@example.com"))
 
         tokens.accessToken = "latest-a"; tokens.refreshToken = "latest-refresh-a"; tokens.sessionExpired = true
-        accounts.beginSwitch()
+        accounts.beginSwitch("a")
         assertTrue(accounts.switchTo("b"))
         assertEquals("access-b", tokens.accessToken)
         assertFalse(tokens.sessionExpired)
@@ -32,6 +32,63 @@ class SavedAccountsTest {
         assertEquals("latest-refresh-a", tokens.refreshToken)
         assertTrue(tokens.sessionExpired)
         assertFalse(tokens.loggingOut)
+    }
+
+    @Test fun switchingPersistsLatestTokensIntoPreviousAccountSlot() {
+        val storage = Storage(); val tokens = InMemoryTokenStore(); val accounts = SavedAccounts(storage, tokens)
+        tokens.accessToken = "old-a"; tokens.refreshToken = "old-refresh-a"
+        accounts.remember(ApiAccount("a", 0, false, "2026-01-01"))
+        tokens.accessToken = "b"; tokens.refreshToken = "rb"
+        accounts.remember(ApiAccount("b", 0, false, "2026-01-01"))
+        tokens.accessToken = "latest-a"; tokens.refreshToken = "latest-refresh-a"
+
+        accounts.beginSwitch("a")
+        assertEquals("latest-a", storage.get("lb.acct.a.a"))
+        assertEquals("latest-refresh-a", storage.get("lb.acct.a.r"))
+        assertTrue(accounts.switchTo("b"))
+        accounts.commit()
+
+        tokens.accessToken = "refreshed-b"; tokens.refreshToken = "refreshed-rb"
+        accounts.beginSwitch("b")
+        assertTrue(accounts.switchTo("a"))
+        assertEquals("latest-a", tokens.accessToken)
+        assertEquals("latest-refresh-a", tokens.refreshToken)
+    }
+
+    @Test fun addingAccountKeepsSavedTokensAndOnlyClearsCurrentSession() {
+        val storage = Storage(); val tokens = InMemoryTokenStore(); val accounts = SavedAccounts(storage, tokens)
+        tokens.accessToken = "latest-a"; tokens.refreshToken = "latest-refresh-a"
+        accounts.remember(ApiAccount("a", 0, false, "2026-01-01"))
+
+        accounts.beginAddAccount("a")
+        assertNull(tokens.accessToken)
+        assertNull(tokens.refreshToken)
+        assertFalse(tokens.loggedIn.value)
+        assertEquals("latest-a", storage.get("lb.acct.a.a"))
+        assertEquals("latest-refresh-a", storage.get("lb.acct.a.r"))
+        assertNull(storage.get("lb.account.switch.pending"))
+
+        tokens.accessToken = "b"; tokens.refreshToken = "rb"
+        accounts.remember(ApiAccount("b", 0, false, "2026-01-01"))
+        accounts.beginSwitch("b")
+        assertTrue(accounts.switchTo("a"))
+        assertEquals("latest-refresh-a", tokens.refreshToken)
+    }
+
+    @Test fun successfulSwitchEmitsSessionVersionEvenWhileLoggedIn() {
+        val storage = Storage(); val tokens = InMemoryTokenStore(); val accounts = SavedAccounts(storage, tokens)
+        tokens.accessToken = "a"; tokens.refreshToken = "ra"
+        accounts.remember(ApiAccount("a", 0, false, "2026-01-01"))
+        tokens.accessToken = "b"; tokens.refreshToken = "rb"
+        accounts.remember(ApiAccount("b", 0, false, "2026-01-01"))
+        tokens.accessToken = "a"; tokens.refreshToken = "ra"
+
+        accounts.beginSwitch("a")
+        assertTrue(accounts.switchTo("b"))
+        val before = tokens.sessionVersion.value
+        assertTrue(tokens.loggedIn.value)
+        accounts.commit()
+        assertEquals(before + 1, tokens.sessionVersion.value)
     }
 
     @Test fun removingAccountDeletesOnlyItsEncryptedTokens() {

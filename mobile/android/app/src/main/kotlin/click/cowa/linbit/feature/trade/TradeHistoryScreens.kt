@@ -64,6 +64,7 @@ class TradeHistoryViewModel @Inject constructor(
     private val tokens: TokenStore,
 ) : ViewModel() {
     val loggedIn get() = tokens.loggedIn
+    val sessionVersion get() = tokens.sessionVersion
 
     var spotOpen by mutableStateOf<List<ApiOrder>>(emptyList()); private set
     var spotHistory by mutableStateOf<List<ApiOrder>>(emptyList()); private set
@@ -75,6 +76,13 @@ class TradeHistoryViewModel @Inject constructor(
     var futBills by mutableStateOf<List<ApiFuturesBills200ResponseBillsInner>>(emptyList()); private set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
+
+    fun clear() {
+        spotOpen = emptyList(); spotHistory = emptyList(); spotTrades = emptyList()
+        futOrders = emptyList(); futHistory = emptyList(); futPositions = emptyList()
+        futTrades = emptyList(); futBills = emptyList()
+        loading = false; error = null
+    }
 
     fun loadSpot(tab: Int, symbol: String?) {
         if (!tokens.loggedIn.value) return
@@ -125,8 +133,12 @@ class TradeHistoryViewModel @Inject constructor(
 fun SpotHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: String? = null, vm: TradeHistoryViewModel = hiltViewModel()) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf(0) }
-    LaunchedEffect(tab, loggedIn) { if (loggedIn) vm.loadSpot(tab, symbol) }
+    LaunchedEffect(tab, sessionVersion) {
+        vm.clear()
+        if (loggedIn) vm.loadSpot(tab, symbol)
+    }
     HistoryShell("历史记录", onClose) {
         PrimaryTabs(listOf("当前委托", "历史委托", "成交明细"), tab, { tab = it }, size = FontSize.label)
         HorizontalDivider(Modifier.padding(top = 8.dp), color = p.divider)
@@ -150,9 +162,13 @@ fun SpotHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: String? 
 fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: String? = null, vm: TradeHistoryViewModel = hiltViewModel()) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf(0) }
     val tabs = listOf("当前委托", "历史委托", "历史仓位", "成交明细", "资金流水")
-    LaunchedEffect(tab, loggedIn) { if (loggedIn) vm.loadFutures(tab, symbol) }
+    LaunchedEffect(tab, sessionVersion) {
+        vm.clear()
+        if (loggedIn) vm.loadFutures(tab, symbol)
+    }
     HistoryShell("历史记录", onClose) {
         Row(
             Modifier.fillMaxWidth().padding(bottom = 4.dp).horizontalScroll(rememberScrollState()),

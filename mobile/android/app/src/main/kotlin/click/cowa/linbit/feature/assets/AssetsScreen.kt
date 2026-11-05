@@ -66,13 +66,14 @@ fun AssetsScreen(
     vm: AssetsViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     val s by vm.state.collectAsStateWithLifecycle()
     var showWithdraw by remember { mutableStateOf(false) }
     var showFilter by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     val p = LB.p
 
-    LaunchedEffect(loggedIn) { vm.load() }
+    LaunchedEffect(sessionVersion) { vm.load() }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {

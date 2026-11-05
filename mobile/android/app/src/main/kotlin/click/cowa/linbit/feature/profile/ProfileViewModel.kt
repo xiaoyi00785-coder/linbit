@@ -44,6 +44,13 @@ class ProfileViewModel @Inject constructor(
 
     init { restoreInterruptedSwitch() }
 
+    fun addAccount(onDone: () -> Unit) {
+        val uid = _s.value.account?.uid ?: return
+        accounts.beginAddAccount(uid)
+        _s.value = ProfileUiState(saved = accounts.list())
+        onDone()
+    }
+
     fun load(silent: Boolean = false) {
         viewModelScope.launch {
             if (!silent) _s.value = _s.value.copy(loading = true, error = null)
@@ -63,14 +70,19 @@ class ProfileViewModel @Inject constructor(
         if (_s.value.switching || uid == _s.value.account?.uid) { onDone(); return }
         viewModelScope.launch {
             _s.value = _s.value.copy(switching = true, error = null)
-            accounts.beginSwitch()
+            val currentUid = _s.value.account?.uid ?: run {
+                _s.value = _s.value.copy(switching = false, error = "当前账号信息尚未加载")
+                onDone()
+                return@launch
+            }
+            accounts.beginSwitch(currentUid)
             try {
                 if (!accounts.switchTo(uid)) throw IllegalStateException("该账号的登录凭证已失效，请重新登录")
                 val target = apiCall { api.account() }
                 if (target.uid != uid) throw IllegalStateException("账号校验失败，请重新登录")
                 accounts.commit()
                 accounts.remember(target)
-                _s.value = _s.value.copy(account = target, saved = accounts.list())
+                _s.value = _s.value.copy(account = target, kyc = null, security = null, saved = accounts.list())
                 load(silent = true)
                 toast.show("已切换至 ${ProfileLogic.displayName(target)}")
                 onDone()

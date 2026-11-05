@@ -68,6 +68,7 @@ class SpotSubpagesViewModel @Inject constructor(
     val toast: ToastCenter,
 ) : ViewModel() {
     val loggedIn get() = tokens.loggedIn
+    val sessionVersion get() = tokens.sessionVersion
 
     var earnProducts by mutableStateOf<List<ApiEarnProduct>>(emptyList()); private set
     var earnSummary by mutableStateOf<ApiEarnSummary200Response?>(null); private set
@@ -78,6 +79,12 @@ class SpotSubpagesViewModel @Inject constructor(
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     var quoting by mutableStateOf(false); private set
+
+    fun clearAccountData() {
+        earnSummary = null
+        myGrids = emptyList()
+        quote = null
+    }
 
     fun loadEarn() {
         viewModelScope.launch {
@@ -140,7 +147,8 @@ class SpotSubpagesViewModel @Inject constructor(
 fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel()) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.loadStrategy() }
+    val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
+    LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadStrategy() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Text("策略广场", Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         when {
@@ -184,7 +192,8 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
 fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel()) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.loadEarn() }
+    val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
+    LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadEarn() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Text("理财", Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         vm.earnSummary?.let { s ->
@@ -232,7 +241,8 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
     var from by remember { mutableStateOf("USDT") }
     var to by remember { mutableStateOf("BTC") }
     var amount by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { vm.loadConvert() }
+    val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
+    LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadConvert() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = bottomInset + 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("闪兑", Modifier.padding(vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         when {

@@ -50,7 +50,7 @@ fun UserCenterHost(
     BackHandler { if (page == ProfilePage.HUB) onClose() else page = ProfilePage.HUB }
     when (page) {
         ProfilePage.HUB -> UserCenterScreen(themeMode, onTheme, onLogout, onClose, onOpen = { page = it }, vm = vm)
-        ProfilePage.SWITCH -> AccountSwitchScreen(onBack = { page = ProfilePage.HUB }, onAdd = onLoginOther, vm = vm, onLogout = onLogout)
+        ProfilePage.SWITCH -> AccountSwitchScreen(onBack = { page = ProfilePage.HUB }, onAdd = { vm.addAccount(onLoginOther) }, vm = vm, onLogout = onLogout)
         ProfilePage.SECURITY -> SecurityHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
         ProfilePage.KYC -> KycHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
         ProfilePage.SUBACCOUNTS -> SubAccountsScreen(onBack = { page = ProfilePage.HUB }, onSwitch = { page = ProfilePage.SWITCH })

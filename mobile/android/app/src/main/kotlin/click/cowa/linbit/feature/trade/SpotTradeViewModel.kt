@@ -31,6 +31,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -95,6 +96,18 @@ class SpotTradeViewModel @Inject constructor(
     val market get() = store.state
 
     private var jobs = emptyList<Job>()
+
+    init {
+        viewModelScope.launch {
+            tokens.sessionVersion.drop(1).collect {
+                clearAccountData()
+                if (tokens.loggedIn.value) {
+                    loadFees()
+                    refreshAccount()
+                }
+            }
+        }
+    }
 
     val base get() = meta?.base ?: symbol.removeSuffix("USDT")
     val quote get() = meta?.quote ?: "USDT"
@@ -185,8 +198,16 @@ class SpotTradeViewModel @Inject constructor(
         }.onFailure { if (!silent) bookLoaded = true }
     }
 
+    fun clearAccountData() {
+        balances = emptyMap()
+        openOrders = emptyList()
+        conditional = emptyList()
+        makerRate = null
+        takerRate = null
+    }
+
     fun refreshAccount() {
-        if (!tokens.loggedIn.value) { balances = emptyMap(); openOrders = emptyList(); conditional = emptyList(); return }
+        if (!tokens.loggedIn.value) { clearAccountData(); return }
         viewModelScope.launch {
             coroutineScope {
                 val b = async { runCatching { apiCall { api.balances() } }.getOrNull() }

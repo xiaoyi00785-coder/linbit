@@ -38,6 +38,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -118,6 +119,18 @@ class FuturesTradeViewModel @Inject constructor(
     val market get() = store.state
     private var jobs = emptyList<Job>()
     private var markJobs = emptyMap<String, Job>()
+
+    init {
+        viewModelScope.launch {
+            tokens.sessionVersion.drop(1).collect {
+                clearAccountData()
+                if (tokens.loggedIn.value) {
+                    refreshAccountNow()
+                    loadTodayPnl()
+                }
+            }
+        }
+    }
 
     val base get() = contract?.baseAsset ?: symbol.removeSuffix("USDT")
     val quote get() = contract?.quoteAsset ?: "USDT"
@@ -278,10 +291,23 @@ class FuturesTradeViewModel @Inject constructor(
         viewModelScope.launch { refreshAccountNow() }
     }
 
+    fun clearAccountData() {
+        account = null
+        positions = emptyList()
+        openOrders = emptyList()
+        tpslAlgos = emptyList()
+        planAlgos = emptyList()
+        bonus = emptyList()
+        todayPnl = null
+        todayPnlError = null
+        accountLoaded = false
+    }
+
     private suspend fun refreshAccountNow() {
         if (!tokens.loggedIn.value) {
-            account = null; positions = emptyList(); openOrders = emptyList(); tpslAlgos = emptyList(); planAlgos = emptyList()
-            accountLoaded = true; return
+            clearAccountData()
+            accountLoaded = true
+            return
         }
         coroutineScope {
             val pm = async { runCatching { apiCall { api.futuresPositionMode() } }.getOrNull() }
