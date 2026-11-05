@@ -2,7 +2,7 @@
 /** 轻量 i18n：zh-CN 为源文案；zh-TW 逐字转繁（opencc 生成），en 按词典精确替换。
  *  以 MutationObserver 翻译文本节点与 placeholder/title/aria-label，WeakMap 保存原文以便切回。语言存 localStorage lb_lang。 */
 import { EN } from "./i18n-en";
-import { EN_T } from "./i18n-en2";
+import { EN_T, EN_P } from "./i18n-en2";
 import { TW_PAIRS, TW_PHRASES } from "./i18n-tw";
 
 export type Lang = "zh-CN" | "zh-TW" | "en";
@@ -21,8 +21,17 @@ export function tr(s: string, lang: Lang = getLang()): string {
   if (lang === "zh-CN" || !/[\u4e00-\u9fff]/.test(s)) return s;
   if (lang === "zh-TW") return toTW(s);
   const t = s.trim();
-  const hit = EN[t] ?? tpl(t);
+  const hit = EN[t] ?? tpl(t) ?? pat(t);
   return hit ? s.replace(t, hit) : s.replace(/[\u4e00-\u9fff][^\x00-\x7f]*[\u4e00-\u9fff]|[\u4e00-\u9fff]/g, (r) => EN[r] ?? tpl(r) ?? r);
+}
+/** 整句占位匹配：{} 捕获的片段（币种、网络名、金额等）各自再翻译后回填 */
+const PATS = EN_P.map(([k, v]) => [new RegExp("^" + k.split("{}").map((x) => x.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("(.+?)") + "$"), v] as const);
+function pat(t: string): string | undefined {
+  for (const [re, v] of PATS) {
+    const m = t.match(re);
+    if (m) { let i = 1; return v.replace(/\{\}/g, () => { const x = m[i++] ?? ""; return EN[x.trim()] ?? tr(x, "en"); }); }
+  }
+  return undefined;
 }
 /** 模板匹配：数字归一为 #，命中后按顺序回填原数字 */
 const NUM = /\d+(?:[.,]\d+)*/g;

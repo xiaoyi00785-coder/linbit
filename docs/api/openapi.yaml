@@ -27,6 +27,7 @@ tags:
   - { name: App, description: 客户端功能开关 }
   - { name: SubAccount, description: 子账户 }
   - { name: Support, description: 站内客服工单 }
+  - { name: VIP, description: VIP 申请 }
   - { name: Chat, description: 聊天室 }
   - { name: Event, description: 事件合约 }
   - { name: TradFi, description: 传统金融资产 }
@@ -2018,6 +2019,60 @@ paths:
                   close: "76771.90"
                   volume: "98.76"
 
+  /vip/application:
+    get:
+      tags: [VIP]
+      summary: 我的 VIP 申请状态与申请条件
+      description: |
+        `conditions` 为服务端实际执行的申请条件（默认总资产 ≥ 500,000 USDT 或近 30 日交易量 ≥ 50,000,000 USDT，
+        可由 `VIP_MIN_TOTAL_ASSETS_USDT` / `VIP_MIN_VOLUME_30D_USDT` 配置）。
+      operationId: vipGetApplication
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VipApplicationState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /vip/applications:
+    post:
+      tags: [VIP]
+      summary: 提交 VIP 申请（服务端校验资格，不满足条件直接拒绝）
+      description: |
+        提交时服务端核验资格：账户总资产（资金 + 现货 + 合约钱包，按指数价折算 USDT）≥ 500,000 USDT，
+        **或** 近 30 日交易量（现货 USD 计价交易对 + 合约名义成交额）≥ 50,000,000 USDT；阈值可配置。
+        不满足返回 403 `VIP_NOT_ELIGIBLE`（`message` 为中文，`eligibility` 含阈值与用户当前数值）。
+        资产或交易量数据无法获取时 fail closed，返回可重试的 503 `VIP_ELIGIBILITY_UNAVAILABLE`，不会创建申请。
+        已是 VIP / 已有审核中的申请时返回 409（不依赖上游数据服务）。
+      operationId: vipApply
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, contact]
+              properties:
+                channel: { type: string, enum: [telegram, whatsapp, wechat, email, phone] }
+                contact: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: 已提交，返回最新申请状态（status=pending）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VipApplicationState" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: 不满足 VIP 申请条件（VIP_NOT_ELIGIBLE）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VipNotEligibleError" }
+        "409": { description: 已是 VIP（ALREADY_VIP）或已有审核中的申请（APPLICATION_PENDING）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: 暂时无法核验资产 / 交易量，请稍后重试（VIP_ELIGIBILITY_UNAVAILABLE，可重试）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+      x-error-codes: [VALIDATION_ERROR, ALREADY_VIP, APPLICATION_PENDING, VIP_NOT_ELIGIBLE, VIP_ELIGIBILITY_UNAVAILABLE]
   /support/attachments:
     post:
       tags: [Support]
@@ -3450,7 +3505,7 @@ paths:
     get:
       tags:
       - Futures
-      summary: 当前指数价格与成分交易所（Binance 主、OKX 备，当前生效来源权重为 1）
+      summary: 当前指数价格与成分交易所（Binance 主，OKX、Bybit、Gate.io 依次备用；TON 等 INDEX_USD_FALLBACK_SYMBOLS 另接 Coinbase/Kraken BASE/USD 换算 USDT；仅采用交易中的交易对，当前生效来源权重为 1）
       operationId: futuresIndex
       security: []
       parameters:
@@ -7940,6 +7995,43 @@ components:
         error: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         appliedAt: { type: string, format: date-time, nullable: true }
+    VipApplicationState:
+      type: object
+      required: [uid, vip, status, conditions]
+      properties:
+        uid: { type: string }
+        vip: { type: boolean }
+        status: { type: string, enum: [none, pending, approved, rejected] }
+        application:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string, example: vip_12 }
+            channel: { type: string }
+            contact: { type: string }
+            status: { type: string, enum: [pending, approved, rejected] }
+            reason: { type: string }
+            createdAt: { type: string, format: date-time }
+            reviewedAt: { type: string, format: date-time, nullable: true }
+        conditions:
+          type: object
+          properties:
+            minTotalAssetsUSDT: { type: string, example: "500000" }
+            min30dVolumeUSDT: { type: string, example: "50000000" }
+            reviewDays: { type: string, example: 1-3 }
+        channels: { type: array, items: { type: string } }
+    VipNotEligibleError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            eligibility:
+              type: object
+              properties:
+                minTotalAssetsUSDT: { type: string, example: "500000" }
+                min30dVolumeUSDT: { type: string, example: "50000000" }
+                totalAssetsUSDT: { type: string, example: "1234.50" }
+                volume30dUSDT: { type: string, example: "0.00" }
     Error:
       type: object
       required: [code, message]
