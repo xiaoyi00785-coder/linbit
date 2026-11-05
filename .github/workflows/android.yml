@@ -1,0 +1,83 @@
+# Linbit Android CI：assembleDebug + 单元测试 + Lint，并上传 debug APK / 报告
+# 工程在 mobile/android；gradle-wrapper.jar 入库（评审认可的例外），CI 先做 wrapper-validation 再用 ./gradlew 构建。
+name: Android
+
+on:
+  push:
+    branches: [main, "feat/android-*"]
+    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "docs/api/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["mobile/android/**", "mobile/tokens/**", "mobile/icons/**", "mobile/openapi.yaml", "docs/api/openapi.yaml", "mobile/tools/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANDROID_DIR: mobile/android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # ubuntu-latest 镜像自带 Android SDK（ANDROID_HOME）；只确保需要的平台 / 构建工具与许可已就绪
+      - name: Prepare Android SDK
+        run: |
+          # 不开 pipefail：`yes` 在 sdkmanager 退出后会收到 SIGPIPE，管道状态应取 sdkmanager 的退出码
+          set -eu
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          SDKM="$(command -v sdkmanager || true)"
+          [ -z "$SDKM" ] && SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses >/dev/null
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" >/dev/null
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Setup Gradle（使用仓库内 wrapper：Gradle 8.9，已固定校验和）
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Generated resources are up to date (vector drawables / tokens)
+        run: |
+          set -euo pipefail
+          python3 mobile/tools/gen_android_vectors.py
+          python3 mobile/tools/gen_android_tokens.py
+          if [ -n "$(git status --porcelain -- mobile/android)" ]; then
+            echo "::error::mobile/android 下的生成物（drawable / Tokens.kt）与源文件不一致，请运行 mobile/tools/gen_android_vectors.py 与 gen_android_tokens.py 后提交"
+            git status --short -- mobile/android
+            exit 1
+          fi
+
+      - name: Assemble debug, unit tests, lint
+        working-directory: ${{ env.ANDROID_DIR }}
+        run: ./gradlew --no-daemon --stacktrace assembleDebug testDebugUnitTest lint
+
+      - name: Upload debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linbit-debug-apk
+          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-reports
+          path: |
+            ${{ env.ANDROID_DIR }}/app/build/reports/lint-results-debug.html
+            ${{ env.ANDROID_DIR }}/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
