@@ -16,7 +16,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
-	common.RequireProduction("account", append(append(common.MainnetVars("GROWTH_INTERNAL_URL", "GROWTH_INVITE_BASE_URL", "WEBAUTHN_RP_ID", "WEBAUTHN_RP_ORIGINS"), common.MainnetIf(!strings.HasPrefix(os.Getenv("GROWTH_INVITE_BASE_URL"), "https://"), "GROWTH_INVITE_BASE_URL must be https on mainnet")...), common.ProblemIf(cfg.ResendAPIKey == "" || cfg.ResendFrom == "", "RESEND_API_KEY and RESEND_FROM must be set (the log email sender is not allowed)")...), "DATABASE_URL", "INTERNAL_TOKEN", "JWT_SECRET", "REDIS_URL")
+	common.RequireProduction("account", append(append(append(common.MainnetVars("GROWTH_INTERNAL_URL", "GROWTH_INVITE_BASE_URL", "WEBAUTHN_RP_ID", "WEBAUTHN_RP_ORIGINS"), common.MainnetIf(!strings.HasPrefix(os.Getenv("GROWTH_INVITE_BASE_URL"), "https://"), "GROWTH_INVITE_BASE_URL must be https on mainnet")...), common.ProblemIf(cfg.ResendAPIKey == "" || cfg.ResendFrom == "", "RESEND_API_KEY and RESEND_FROM must be set (the log email sender is not allowed)")...), common.ProblemIf(cfg.VIPEligibilitySkip, "VIP_ELIGIBILITY_CHECK=off is not allowed")...), "DATABASE_URL", "INTERNAL_TOKEN", "JWT_SECRET", "REDIS_URL")
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {

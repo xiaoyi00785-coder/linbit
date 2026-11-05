@@ -79,6 +79,7 @@ struct LoginAccountView: View {
             AuthTopBar(isRoot: true) { session.cancelAuth() }
             ScrollView {
                 VStack(spacing: 0) {
+                    LinbitWordmark(height: 30).frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 12)
                     AuthHeader(title: "登录", subtitle: Text("立即登录，每日登录领红包 🧧"))
                     FieldLabel(text: "邮箱/手机号码").padding(.bottom, 8)
                     AccountField(id: $m.id, raw: $m.raw, error: error)
