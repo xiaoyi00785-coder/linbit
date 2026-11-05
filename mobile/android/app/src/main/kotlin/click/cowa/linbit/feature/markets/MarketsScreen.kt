@@ -56,11 +56,11 @@ import click.cowa.linbit.ui.theme.lb
 /** 行情页（对照图 ref/7 自选空态推荐、ref/8 / ref/9 市场-现货，ref/15 合约列表样式在后续里程碑）。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MarketsScreen(bottomInset: Dp, modifier: Modifier = Modifier, vm: MarketsViewModel = hiltViewModel()) {
+fun MarketsScreen(bottomInset: Dp, onOpenTrade: (MarketKind, String) -> Unit = { _, _ -> }, modifier: Modifier = Modifier, vm: MarketsViewModel = hiltViewModel()) {
     val p = LB.p
     val state by vm.state.collectAsStateWithLifecycle()
     val watch by vm.watch.collectAsStateWithLifecycle()
-    MarketsContent(state, watch, bottomInset, vm::refresh, vm::addToWatch, modifier)
+    MarketsContent(state, watch, bottomInset, vm::refresh, vm::addToWatch, modifier, onOpenTrade = onOpenTrade)
 }
 
 /** 无状态内容（便于截图对照与预览）。 */
@@ -74,6 +74,7 @@ fun MarketsContent(
     onAddWatch: (Set<String>) -> Unit,
     modifier: Modifier = Modifier,
     initialTop: Int = 1,
+    onOpenTrade: (MarketKind, String) -> Unit = { _, _ -> },
 ) {
     val p = LB.p
     var top by rememberSaveable { mutableIntStateOf(initialTop) }       // 0 自选 1 市场 2 聊天室
@@ -98,7 +99,7 @@ fun MarketsContent(
         }
         HorizontalDivider(color = p.divider)
         when (top) {
-            0 -> WatchlistTab(onAddWatch, state, watch, bottomInset)
+            0 -> WatchlistTab(onAddWatch, state, watch, bottomInset, onOpenTrade)
             1 -> {
                 Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 10.dp)) {
                     PrimaryTabs(listOf("现货", "合约", "TradFi"), kind, { kind = it; category = 0 }, size = FontSize.tabSecondary, underline = true)
@@ -119,7 +120,7 @@ fun MarketsContent(
                                     androidx.compose.material3.CircularProgressIndicator(color = p.textTertiary, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                                 } else EmptyState(state.error ?: "暂无数据")
                             }
-                            items(rows, key = { it.symbol }) { MarketRowView(it, state.cnyRate) }
+                            items(rows, key = { it.symbol }) { MarketRowView(it, state.cnyRate, onClick = { onOpenTrade(mk, it.symbol) }) }
                         }
                     }
                 }
@@ -131,7 +132,7 @@ fun MarketsContent(
 
 /** 自选：空时显示推荐（ref/7：两列卡片 + 勾选 + 黑色「加入自选」）；有自选时显示列表。 */
 @Composable
-private fun WatchlistTab(onAddWatch: (Set<String>) -> Unit, state: click.cowa.linbit.data.MarketState, watch: List<String>, bottomInset: Dp) {
+private fun WatchlistTab(onAddWatch: (Set<String>) -> Unit, state: click.cowa.linbit.data.MarketState, watch: List<String>, bottomInset: Dp, onOpenTrade: (MarketKind, String) -> Unit) {
     val p = LB.p
     var kind by rememberSaveable { mutableIntStateOf(0) }
     var field by rememberSaveable { mutableStateOf(SortField.VOLUME) }
@@ -176,7 +177,7 @@ private fun WatchlistTab(onAddWatch: (Set<String>) -> Unit, state: click.cowa.li
         MarketListHeader(field, dir, { f, d -> field = f; dir = d }, Modifier.padding(top = 8.dp))
         val all = (state.spot + state.futures).filter { it.symbol in watch }.sortedByField(field, dir)
         LazyColumn(contentPadding = PaddingValues(bottom = bottomInset)) {
-            items(all) { MarketRowView(it, state.cnyRate) }
+            items(all) { r -> MarketRowView(r, state.cnyRate, onClick = { onOpenTrade(if (state.futures.any { it.symbol == r.symbol } && state.spot.none { it.symbol == r.symbol }) MarketKind.FUTURES else MarketKind.SPOT, r.symbol) }) }
         }
     }
 }

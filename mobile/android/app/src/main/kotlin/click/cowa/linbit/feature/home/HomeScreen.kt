@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -123,10 +124,10 @@ fun HomeContent(
         PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 40.dp)) {
                 AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
-                TaskCard(s.newcomer, Modifier.padding(top = 14.dp)) { onSoon("福利中心即将开放") }
-                RedPacket(Modifier.padding(top = 16.dp)) { onSoon("福利中心即将开放") }
-                Grid(Modifier.padding(top = 16.dp), onTap = { if (it == "更多") onOpenMore() else onSoon("$it 即将开放") })
-                Hairline(Modifier.padding(top = 20.dp))
+                TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onSoon("福利中心即将开放") }
+                RedPacket(Modifier.padding(top = 15.dp)) { onSoon("福利中心即将开放") }
+                Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onSoon("$it 即将开放") })
+                Hairline(Modifier.padding(top = (64f / 3).dp))
                 CardPromo(s.banners.getOrNull(bannerPage), bannerPage, s.banners.size) { onSoon("Linbit Card 即将开放") }
                 Hairline()
                 EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onSoon("理财即将开放") }
@@ -167,11 +168,12 @@ private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> 
     }
 }
 
+// 首页局部尺寸按 1170px 参考图的 3 倍密度换算；不修改其他页面的共享令牌。
 // ── 总资产（ref/1：标签 → 40 高数字行（含 80×32 充值按钮）→ ≈ 折合）──
 @Composable
 private fun AssetHeader(hide: Boolean, onToggle: () -> Unit, total: java.math.BigDecimal, cnyRate: java.math.BigDecimal?, onDeposit: () -> Unit) {
     val p = LB.p
-    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 24.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = (79f / 3).dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("总资产估值", style = lb(FontSize.caption), color = p.textSecondary)
             LbIcon(if (hide) R.drawable.ic_eye_off else R.drawable.ic_eye, 14.dp, p.textSecondary, Modifier.pressable(scale = 1f, onClick = onToggle))
@@ -191,9 +193,9 @@ private fun AssetHeader(hide: Boolean, onToggle: () -> Unit, total: java.math.Bi
             Box(
                 Modifier.size(Metrics.heroButtonW, Metrics.heroButtonH).clip(RoundedCornerShape(Radius.md)).background(p.primary).pressable(onClick = onDeposit),
                 contentAlignment = Alignment.Center,
-            ) { Text("充值", style = lb(FontSize.label, FontWeight.Medium), color = p.textOnPrimary) }
+            ) { Text("充值", style = lb(12.sp, FontWeight.Medium), color = p.textOnPrimary) }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         // 汇率取不到时不用硬编码汇率：总资产为 0 仍显示 0.00，否则显示 --
         val fiat = when {
             hide -> "≈ ****"
@@ -249,7 +251,7 @@ private fun countdown(deadline: String?): () -> String? = {
 private fun RedPacket(modifier: Modifier, onClick: () -> Unit) {
     val p = LB.p
     Row(
-        modifier.padding(horizontal = Spacing.pageH).fillMaxWidth().height(Metrics.bannerH).clip(RoundedCornerShape(Radius.lg)).background(p.fill)
+        modifier.padding(horizontal = Spacing.pageH).fillMaxWidth().height(62.dp).clip(RoundedCornerShape(Radius.lg)).background(p.fill)
             .pressable(scale = 1f, onClick = onClick).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -275,7 +277,7 @@ private fun Grid(modifier: Modifier, onTap: (String) -> Unit) {
                             Box(Modifier.size(Metrics.gridIcon).clip(RoundedCornerShape(Radius.lg)).background(p.iconTileBg), contentAlignment = Alignment.Center) {
                                 LbImageIcon(if (p.isDark) item.dark else item.light, Metrics.gridIconGlyph)
                             }
-                            Text(item.title, style = lb(11.sp), color = p.textPrimary)
+                            Text(item.title, style = lb((32f / 3).sp), color = p.textPrimary)
                         }
                     }
                 }
@@ -290,17 +292,18 @@ private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onClick: () ->
     val p = LB.p
     val b = banner ?: LOCAL_BANNERS[0]
     val isCard = b.id == "card"
-    Box(Modifier.fillMaxWidth().height(138.dp).pressable(scale = 1f, onClick = onClick)) {
-        Row(Modifier.fillMaxSize().padding(start = 24.dp, end = Spacing.pageH, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Box(Modifier.fillMaxWidth().height((413f / 3).dp).pressable(scale = 1f, onClick = onClick)) {
+        Row(Modifier.fillMaxSize().padding(start = 24.dp, end = Spacing.pageH), verticalAlignment = Alignment.Top) {
             if (isCard) {
-                CardArt(Modifier.size(width = 92.dp, height = 80.dp))
+                // ref/1：卡面整体 ≈ 59×48dp，居中于文案块上半（比 92×80 容器缩 0.8，左对齐）
+                CardArt(Modifier.padding(top = 21.dp).size(width = 92.dp, height = 80.dp).graphicsLayer { scaleX = 0.8f; scaleY = 0.8f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) })
                 Spacer(Modifier.width(2.dp))
             }
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f).padding(top = 20.dp)) {
                 b.subtitle?.let { Text(it, style = lb(FontSize.small), color = p.textSecondary, maxLines = 1) }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(5.dp))
                 Text(b.title, style = lb(14.sp, FontWeight.Medium), color = p.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(Modifier.padding(top = 28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.padding(top = 39.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("查看详情", style = lb(FontSize.small), color = p.textPrimary)
                     LbIcon(R.drawable.ic_arrow_right, 14.dp, p.textPrimary)
                 }
@@ -343,13 +346,13 @@ private fun Image(res: Int, size: Dp, modifier: Modifier) =
 @Composable
 private fun EarnStrip(e: click.cowa.linbit.core.generated.ApiEarnProduct?, page: Int, count: Int, onClick: () -> Unit) {
     val p = LB.p
-    Box(Modifier.fillMaxWidth().height(86.dp).pressable(scale = 1f, onClick = onClick).padding(horizontal = Spacing.pageH)) {
-        Column(Modifier.align(Alignment.CenterStart), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Box(Modifier.fillMaxWidth().height((260f / 3).dp).pressable(scale = 1f, onClick = onClick).padding(horizontal = Spacing.pageH)) {
+        Column(Modifier.align(Alignment.CenterStart), verticalArrangement = Arrangement.spacedBy(0.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("理财宝", style = lb(FontSize.small), color = p.textPrimary)
+                Text("理财宝", style = lb(11.sp), color = p.textPrimary)
                 if (e != null) CoinIcon(e.asset ?: "USDT", 18.dp)
             }
-            val apr = e?.let { Fmt.percent(Dec.parse(it.apr).multiply(java.math.BigDecimal(100))).trimStart('+') }
+            val apr = e?.let { Dec.parse(it.apr).multiply(java.math.BigDecimal(100)).setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + "%" }
             Text(
                 if (e != null) "${e.title ?: e.asset ?: ""}，${apr}APR" else "",
                 style = lb(15.sp, FontWeight.Medium), color = p.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,

@@ -12,6 +12,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -113,6 +114,7 @@ fun LbButton(
     enabled: Boolean = true,
     loading: Boolean = false,
     radius: Dp = Radius.md,
+    subtitle: String? = null,
     onClick: () -> Unit,
 ) {
     val p = LB.p
@@ -139,7 +141,10 @@ fun LbButton(
         contentAlignment = Alignment.Center,
     ) {
         if (loading) CircularProgressIndicator(color = fg, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-        else Text(title, style = lb(FontSize.body, FontWeight.Medium), color = fg)
+        else if (subtitle != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, style = lb(FontSize.body, FontWeight.Medium), color = fg)
+            Text(subtitle, style = lbNum(10.sp), color = fg.copy(alpha = 0.8f), maxLines = 1)
+        } else Text(title, style = lb(FontSize.body, FontWeight.Medium), color = fg)
     }
 }
 
@@ -197,9 +202,10 @@ fun PrimaryTabs(
     modifier: Modifier = Modifier,
     size: TextUnit = FontSize.tabPrimary,
     underline: Boolean = false,
+    spacing: Dp = 20.dp,
 ) {
     val p = LB.p
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(spacing)) {
         items.forEachIndexed { i, t ->
             val sel = i == selected
             Column(
@@ -245,15 +251,14 @@ fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Mod
     )
 }
 
-/** 空状态（灰色小钱包示意 + 文案）。 */
+/** 空状态（灰色文件夹插画 + 文案，对照图「暂无数据」「划转资金，开始现货交易」）。 */
 @Composable
-fun EmptyState(text: String = "暂无数据", modifier: Modifier = Modifier) {
+fun EmptyState(text: String = "暂无数据", modifier: Modifier = Modifier, iconSize: Dp = 64.dp, verticalPadding: Dp = 24.dp, content: (@Composable () -> Unit)? = null) {
     val p = LB.p
-    Column(modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        Box(Modifier.size(56.dp, 44.dp).clip(RoundedCornerShape(Radius.md)).background(p.fillStrong), contentAlignment = Alignment.TopCenter) {
-            Box(Modifier.padding(top = 8.dp).size(28.dp, 20.dp).clip(RoundedCornerShape(3.dp)).background(p.brand))
-        }
-        Text(text, style = lb(FontSize.caption), color = p.textSecondary, textAlign = TextAlign.Center)
+    Column(modifier.fillMaxWidth().padding(vertical = verticalPadding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        LbImageIcon(R.drawable.ic_empty_folder, iconSize)
+        Text(text, style = lb(FontSize.caption), color = if (content != null) p.textPrimary else p.textSecondary, textAlign = TextAlign.Center)
+        content?.invoke()
     }
 }
 

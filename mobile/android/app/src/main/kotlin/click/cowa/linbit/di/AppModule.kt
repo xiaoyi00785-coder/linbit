@@ -84,6 +84,9 @@ object AppModule {
     fun marketStore(api: LinbitApi, socket: MarketSocket, @ApplicationScope scope: CoroutineScope) = MarketStore(api, socket, scope)
 
     @Provides @Singleton
+    fun tradeNav() = click.cowa.linbit.data.trade.TradeNav()
+
+    @Provides @Singleton
     fun auth(api: LinbitApi, tokens: TokenStore, store: SecureStore, @ApplicationScope scope: CoroutineScope) =
         AuthRepository(api, tokens, { store.deviceId }, { Build.MODEL ?: "Android" }, scope)
 }
