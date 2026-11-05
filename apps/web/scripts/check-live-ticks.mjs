@@ -1,6 +1,7 @@
 // node --experimental-strip-types scripts/check-live-ticks.mjs
 import assert from "node:assert/strict";
 import { flashDir, mergeTick, mergeWsBar, wsKline } from "../lib/tick.ts";
+import { changeClass, changeDir } from "../lib/format.ts";
 assert.equal(flashDir(null, 1), null);
 assert.equal(flashDir(78600, 78600), null);
 assert.equal(flashDir(78600, 78600.01), "up");
@@ -24,4 +25,20 @@ const tk = readFileSync(new URL("../features/TradeKit.tsx", import.meta.url), "u
 assert.match(tk, /futures-ticker:\$\{sym\}/);
 assert.match(tk, /futures-kline:\$\{symbol\}:\$\{interval\}/);
 assert.doesNotMatch(tk, /mark:\$\{symbol\}/, "mark-index candle hack removed");
+// 静态颜色 / 箭头只由 24h 涨跌符号决定（QA：-1.8% 的币不能是绿价，红价不能配上箭头）；tick 闪烁只是瞬时背景
+assert.equal(changeDir(-1.8), "down");
+assert.equal(changeDir("-0.01"), "down");
+assert.equal(changeDir("1.14"), "up");
+assert.equal(changeDir(0), "flat");
+for (const v of [undefined, null, "", "--", NaN]) assert.equal(changeDir(v), "flat", String(v));
+assert.equal(changeClass(-1.79), "down");
+assert.equal(changeClass(0.77), "up");
+assert.equal(changeClass(undefined), "flat");
+const css = readFileSync(new URL("../app/linbit.css", import.meta.url), "utf8");
+assert.doesNotMatch(css, /\.lb-flash-(up|down)2?\s*[,{][^}]*\bcolor\s*:/, "tick flash must not set the resting text colour");
+const fl = readFileSync(new URL("../components/Flash.tsx", import.meta.url), "utf8");
+assert.match(fl, /changeClass\(chg\)/, "Flash resting colour comes from 24h change");
+assert.doesNotMatch(fl, /return \(\) => clearTimeout\(t\)/, "flash timer must not be cleared by the next tick (stuck flash class)");
+assert.match(tk, /changeDir\(chg\)/, "order-book mid colour + arrow share one direction");
+assert.doesNotMatch(tk, /chg >= 0/, "no sign test that disagrees with the colour");
 console.log("live-ticks ok");
