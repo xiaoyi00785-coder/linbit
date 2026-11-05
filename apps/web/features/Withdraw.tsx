@@ -8,10 +8,10 @@ import { toast } from "@/lib/ui";
 import { useSecurity, fmtUntil } from "@/lib/security";
 import { goto } from "@/lib/ui";
 import { maskEmail } from "@/lib/account";
-import { addressError, amountError, cleanNum, DEFAULT_MIN_WITHDRAW } from "@/lib/validate";
+import { addressError, amountError, cleanNum } from "@/lib/validate";
 import { TotpErr, TwofaRequired, twofaKind, type TwofaKind } from "@/lib/twofa";
 import { NetPicker } from "@/legacy/Pages";
-import { etaMinutes, positiveAmount, withdrawMin, withdrawTip } from "@/lib/assetDisplay";
+import { etaMinutes, networkWithdrawMin, withdrawTip } from "@/lib/assetDisplay";
 import { createInternalTransfer, errMsg, getNetworks, listInternalTransfers, newClientId, SOON, useOverview, type InternalTransfer, type WalletNetwork } from "@/lib/wallet";
 // @ts-ignore legacy JS 组件
 import { Ico } from "@/legacy/App";
@@ -136,9 +136,10 @@ export function Withdraw() {
   const ovFree = ov.data?.accounts?.find((a) => a.account === wAcct)?.balances?.find((b) => b.asset === asset)?.free;
   const free = ovFree ?? items?.find((b) => b.asset === asset)?.free ?? "0";
   const n = Number(amt);
-  // 最小提现额只有一个派生值：接口值（含 cfg.minAmount 回退）与 DEFAULT_MIN_WITHDRAW 取较大者；占位符、下拉、单笔最小提现行与校验都用它
-  const minFloor = DEFAULT_MIN_WITHDRAW[asset];
-  const minS = withdrawMin(positiveAmount(ni?.minWithdraw) ?? positiveAmount(cfg?.minAmount), minFloor);
+  // 最小提现额只有一个派生规则（networkWithdrawMin）：该网络接口值 → 该网络的 cfg.minAmount → 没有就不展示；没有任何前端写死的下限。
+  // 下拉每一行、单笔最小提现行、占位符、温馨提示与校验都经 minOf 取值
+  const minOf = (network: string | undefined, info: { minWithdraw?: unknown } | null | undefined) => networkWithdrawMin(asset, network, info, cfg);
+  const minS = minOf(net, ni);
   const maxS = ni ? ni.maxWithdraw ?? undefined : cfg?.maxAmount;
   // 手续费只认接口值（wallet_network_settings.withdraw_fee 生效值），接口不可用时不展示估算值
   const feeS = ni?.withdrawFee ?? (cfgSrc === "api" ? cfg?.gasFeeEstimate : undefined);
@@ -161,7 +162,7 @@ export function Withdraw() {
   const fmtE = amountError(amt, { dp: 8 });
   const amtE = fmtE || (!amt ? "" :
     n > freeN ? `可用余额不足（可用 ${fmtAmt(free)} ${asset}）` :
-    tab === "chain" && n < min ? `最小提现数量 ${min} ${asset}` :
+    tab === "chain" && n < min ? `最小提现数量 ${minS} ${asset}` :
     tab === "chain" && n > max ? `单笔最大提现 ${maxS} ${asset}` :
     tab === "chain" && n <= fee ? `提现数量需大于链上网络费（Gas）${fee} ${asset}` : "");
   const amtOk = !!amt && !amtE;
@@ -215,7 +216,7 @@ export function Withdraw() {
                 <div className="fx-field">
                   提现网络
                   <NetPicker out coin={asset} net={net} setNet={setNet}
-                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: withdrawMin(positiveAmount(i?.minWithdraw), minFloor), eta: etaMinutes(i?.estimatedArrivalMinutes), recommended: i?.recommended === true || undefined }; })} />
+                    nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: minOf(n, i), eta: etaMinutes(i?.estimatedArrivalMinutes), recommended: i?.recommended === true || undefined }; })} />
                 </div>
                 <div className="fx-field">
                   <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>
@@ -227,7 +228,7 @@ export function Withdraw() {
                   <input placeholder="Memo / Tag" value={memo} onChange={(e) => setMemo(e.target.value.trim())} />
                 </div>
               </>) : (<>
-                <div className="wwarn"><b>!</b>转给 linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器；不支持转入子账户；24 小时额度 50,000 USDT。</div>
+                <div className="wwarn"><b>!</b>转给 linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器；不支持转入子账户。</div>
                 <div className="fx-field">
                   收款方
                   <input placeholder="输入对方 UID 或邮箱" value={to} onChange={(e) => setTo(e.target.value.trim())} />
@@ -242,7 +243,7 @@ export function Withdraw() {
               </div>
               <div className="wkv">
                 <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{fmtAmt(free)} {asset}</b>
-                {tab === "inner" ? <><span>24 小时额度</span><b>50,000 USDT</b></> : <>
+                {tab !== "inner" && <>
                 <span>单笔最小提现</span><b>{minS ?? "--"} {asset}</b>
                 <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
               </div>
@@ -255,7 +256,7 @@ export function Withdraw() {
               {tfa === "required" && <TwofaRequired />}
               {wLockUntil && !err && <div className="sec-lock"><b>!</b>{WLOCK}，预计 {fmtUntil(wLockUntil)} 解除。</div>}
               {err && <div className="fx-err">{err}</div>}
-              {done && <div className="fx-ok">✓ 提现申请已提交（{done.id}），状态：审核中</div>}
+              {done && <div className="fx-ok">{`✓ 提现申请已提交（${done.id}），状态：审核中`}</div>}
               <button className={"lb dark wide" + (submitOk ? "" : " dis")} disabled={!submitOk} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) { setFpe(null); setTfa(null); setConfirm(true); } }}>
                 {tab === "inner" ? "转账" : "提现"}
               </button>
@@ -303,8 +304,8 @@ export function Withdraw() {
               {fpe === "invalid" && <div className="fx-err tfa-inv">资金密码错误，请重新输入</div>}
               {fpe === "missing" && <div className="fx-err tfa-inv">请输入资金密码</div>}
             </div>}
-            {fpe === "unset" && <div className="tfa-req"><span><b>!</b>请先设置资金密码，设置后才能{tab === "inner" ? "转账" : "提现"}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>去设置</button></div>}
-            {fpe && typeof fpe === "object" && <div className="tfa-req"><span><b>!</b>资金密码错误次数过多，已锁定{fpe.locked ? `至 ${fpe.locked}` : ""}。</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>重置资金密码</button></div>}
+            {fpe === "unset" && <div className="tfa-req"><span><b>!</b>{`请先设置资金密码，设置后才能${tab === "inner" ? "转账" : "提现"}。`}</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>去设置</button></div>}
+            {fpe && typeof fpe === "object" && <div className="tfa-req"><span><b>!</b>{`资金密码错误次数过多，已锁定${fpe.locked ? `至 ${fpe.locked}` : ""}。`}</span><button className="lb sm lime" onClick={() => { setConfirm(false); goto("/setting/security#fund"); }}>重置资金密码</button></div>}
             <button
               className={"lb lime wide" + (sending ? " dis" : "")}
               disabled={sending}
