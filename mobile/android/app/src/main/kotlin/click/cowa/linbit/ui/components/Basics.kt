@@ -232,17 +232,22 @@ fun SortLabel(title: String, showArrow: Boolean = true, modifier: Modifier = Mod
     }
 }
 
-/** 币种图标：远程图标（与 iOS 同源 coincap），加载失败/未加载时用首字母圆。 */
+/** 币种图标：优先本地 CC0 矢量图；未打包时远程加载，仍失败才显示首字母圆。 */
 @Composable
 fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Modifier) {
+    val local = remember(base) { CoinIcons.drawable(base) }
+    if (local != null) {
+        Image(painterResource(local), contentDescription = null, modifier = modifier.size(size))
+        return
+    }
     val p = LB.p
     val fallback: @Composable () -> Unit = {
-        Box(Modifier.size(size).clip(CircleShape).background(p.fillStrong), contentAlignment = Alignment.Center) {
-            Text(base.take(1), style = lb(FontSize.small, FontWeight.SemiBold), color = p.textSecondary)
+        Box(modifier.size(size).clip(CircleShape).background(p.fillStrong), contentAlignment = Alignment.Center) {
+            Text(base.trim().firstOrNull()?.uppercase() ?: "?", style = lb(FontSize.small, FontWeight.SemiBold), color = p.textSecondary)
         }
     }
     SubcomposeAsyncImage(
-        model = "https://assets.coincap.io/assets/icons/${base.lowercase()}@2x.png",
+        model = "https://assets.coincap.io/assets/icons/${base.trim().lowercase()}@2x.png",
         contentDescription = null,
         contentScale = ContentScale.Fit,
         modifier = modifier.size(size).clip(CircleShape),
