@@ -46,6 +46,7 @@ import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.data.trade.BookLevel
 import click.cowa.linbit.data.trade.OrderBook
 import click.cowa.linbit.feature.auth.LbSheet
+import click.cowa.linbit.feature.more.TradFiScreen
 import click.cowa.linbit.ui.components.ButtonKind
 import click.cowa.linbit.ui.components.CheckRow
 import click.cowa.linbit.ui.components.ChipButton
@@ -82,6 +83,9 @@ fun FuturesRootScreen(
     onDeposit: () -> Unit,
     onTransfer: () -> Unit,
     onHistory: () -> Unit,
+    /** TradFi 资产点击：futures=true 切合约交易对，false 切现货 Tab。 */
+    onTrade: (Boolean, String) -> Unit = { _, _ -> },
+    onCopy: () -> Unit = {},
     modifier: Modifier = Modifier,
     initialTop: Int = 0,
     autoStart: Boolean = true,
@@ -99,9 +103,20 @@ fun FuturesRootScreen(
         }
         HorizontalDivider(color = p.divider)
         when (top) {
-            0 -> FuturesTradeContent(vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, Modifier.weight(1f))
+            0 -> FuturesTradeContent(
+                vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
+                onSim = { top = 3 }, onCopy = onCopy, modifier = Modifier.weight(1f),
+            )
             1 -> ComingSoon("事件合约", "猜涨跌，到期按指数价结算，敬请期待", bottomInset)
-            2 -> ComingSoon("TradFi", "股票、贵金属等传统金融资产交易即将上线", bottomInset)
+            2 -> TradFiScreen(
+                onBack = {},
+                onTrade = { futures, symbol ->
+                    onTrade(futures, symbol)
+                    if (futures) top = 0
+                },
+                embedded = true,
+                bottomInset = bottomInset,
+            )
             else -> ComingSoon("模拟交易", "使用模拟资金体验合约交易，即将上线", bottomInset)
         }
     }
@@ -127,6 +142,8 @@ fun FuturesTradeContent(
     onDeposit: () -> Unit,
     onTransfer: () -> Unit,
     onHistory: () -> Unit,
+    onSim: () -> Unit = {},
+    onCopy: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val p = LB.p
@@ -276,8 +293,8 @@ fun FuturesTradeContent(
                     if (vm.shownPositions.isEmpty()) EmptyState("可用余额：${Fmt.amount(vm.available, 2)} ${vm.quote}\n划转资金到合约账户开始交易，或尝试0风险模拟交易") {
                         Row(Modifier.padding(horizontal = Spacing.pageH), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ChipButton("充值", Modifier.weight(1f).height(36.dp), onClick = onDeposit)
-                            ChipButton("模拟盘", Modifier.weight(1f).height(36.dp)) { vm.toast.show("模拟交易即将上线") }
-                            ChipButton("跟单交易", Modifier.weight(1f).height(36.dp)) { vm.toast.show("跟单交易即将开放") }
+                            ChipButton("模拟盘", Modifier.weight(1f).height(36.dp), onClick = onSim)
+                            ChipButton("跟单交易", Modifier.weight(1f).height(36.dp), onClick = onCopy)
                         }
                     } else vm.shownPositions.forEach { pos ->
                         PositionCard(pos, vm.livePnl(pos), { tpslTarget = pos }, { marginTarget = pos }, { closeTarget = pos })
@@ -347,6 +364,7 @@ fun FuturesTradeContent(
             when (tool) {
                 "计算器" -> showCalculator = true
                 "价格预警" -> vm.toast.show("价格预警即将开放")
+                "模拟交易" -> onSim()
             }
         }
         "mode" -> MarginModeSheet(vm) { sheet = null }
