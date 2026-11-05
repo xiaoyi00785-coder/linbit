@@ -100,6 +100,11 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                     MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
                         onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "futures" },
+                        onTrade = { futures, symbol ->
+                            if (futures) { vm.tradeNav.setFutures(symbol); /* 留在合约 Tab，由 FuturesRoot 切回「合约」 */ }
+                            else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
+                        },
+                        onCopy = { if (loggedIn) morePage = MorePage.COPY else auth = "login" },
                     )
                     MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },

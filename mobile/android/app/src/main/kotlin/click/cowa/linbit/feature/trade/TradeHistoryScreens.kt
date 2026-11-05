@@ -42,7 +42,6 @@ import click.cowa.linbit.core.network.LinbitApi
 import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.network.apiCall
 import click.cowa.linbit.core.util.Dec
-import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.ui.components.ChipButton
 import click.cowa.linbit.ui.components.EmptyState
 import click.cowa.linbit.ui.components.LbIcon
@@ -235,9 +234,9 @@ private fun HistOrderRow(symbol: String, side: String, price: String?, qty: Stri
             else Text(status ?: "", style = lb(FontSize.small), color = p.textSecondary)
         }
         Row {
-            KVCell("价格", price ?: "市价", Modifier.weight(1f))
-            KVCell("数量", qty ?: "--", Modifier.weight(1f), TextAlign.Center)
-            KVCell("已成交", filled ?: "0", Modifier.weight(1f), TextAlign.End)
+            KVCell("价格", apiAmount(price, "市价"), Modifier.weight(1f))
+            KVCell("数量", apiAmount(qty), Modifier.weight(1f), TextAlign.Center)
+            KVCell("已成交", apiAmount(filled, "0"), Modifier.weight(1f), TextAlign.End)
         }
     }
     HorizontalDivider(color = p.divider)
@@ -255,8 +254,8 @@ private fun HistTradeRow(symbol: String, side: String, price: String?, qty: Stri
             Text(time?.take(19)?.replace('T', ' ') ?: "--", style = lb(FontSize.small), color = p.textTertiary)
         }
         Row {
-            KVCell("成交价", price ?: "--", Modifier.weight(1f))
-            KVCell("数量", qty ?: "--", Modifier.weight(1f), TextAlign.End)
+            KVCell("成交价", apiAmount(price), Modifier.weight(1f))
+            KVCell("数量", apiAmount(qty), Modifier.weight(1f), TextAlign.End)
         }
     }
     HorizontalDivider(color = p.divider)
@@ -265,18 +264,19 @@ private fun HistTradeRow(symbol: String, side: String, price: String?, qty: Stri
 @Composable
 private fun PosHistRow(h: ApiFuturesPositionHistory) {
     val p = LB.p
-    val pnl = Dec.parse(h.netPnl ?: h.realizedPnl)
+    val pnlRaw = h.netPnl ?: h.realizedPnl
+    val pnlSign = Dec.parse(pnlRaw).signum()
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(h.symbol ?: "", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
             Text(" ${if (h.side == ApiFuturesPositionHistory.Side.SHORT) "空" else "多"}", style = lb(FontSize.small), color = if (h.side == ApiFuturesPositionHistory.Side.SHORT) p.down else p.up)
             Box(Modifier.weight(1f))
-            Text((if (pnl.signum() > 0) "+" else "") + Fmt.amount(pnl, 4), style = lbNum(FontSize.label, FontWeight.Medium), color = if (pnl.signum() < 0) p.down else p.up)
+            Text(apiAmount(pnlRaw), style = lbNum(FontSize.label, FontWeight.Medium), color = if (pnlSign < 0) p.down else p.up)
         }
         Row {
-            KVCell("开仓价", Fmt.priceAuto(Dec.parse(h.entryPrice)), Modifier.weight(1f))
-            KVCell("平仓价", Fmt.priceAuto(Dec.parse(h.closePrice)), Modifier.weight(1f), TextAlign.Center)
-            KVCell("数量", h.closedQty ?: h.maxQty ?: "--", Modifier.weight(1f), TextAlign.End)
+            KVCell("开仓价", apiAmount(h.entryPrice), Modifier.weight(1f))
+            KVCell("平仓价", apiAmount(h.closePrice), Modifier.weight(1f), TextAlign.Center)
+            KVCell("数量", apiAmount(h.closedQty ?: h.maxQty), Modifier.weight(1f), TextAlign.End)
         }
     }
     HorizontalDivider(color = p.divider)
@@ -285,12 +285,13 @@ private fun PosHistRow(h: ApiFuturesPositionHistory) {
 @Composable
 private fun BillRow(b: ApiFuturesBills200ResponseBillsInner) {
     val p = LB.p
-    val amt = Dec.parse(b.amount)
+    val amtRaw = b.amount
+    val amtSign = Dec.parse(amtRaw).signum()
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(b.kind ?: "--", style = lb(FontSize.body), color = p.textPrimary)
             Box(Modifier.weight(1f))
-            Text((if (amt.signum() > 0) "+" else "") + Fmt.amount(amt, 4), style = lbNum(FontSize.label), color = if (amt.signum() < 0) p.down else p.up)
+            Text(apiAmount(amtRaw), style = lbNum(FontSize.label), color = if (amtSign < 0) p.down else p.up)
         }
         Text(b.time?.take(19)?.replace('T', ' ') ?: "--", style = lb(FontSize.small), color = p.textTertiary)
     }
