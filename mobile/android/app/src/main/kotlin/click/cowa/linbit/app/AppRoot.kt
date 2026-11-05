@@ -25,7 +25,7 @@ import click.cowa.linbit.feature.home.HomeScreen
 import click.cowa.linbit.feature.markets.MarketsScreen
 import click.cowa.linbit.feature.assets.AssetsHost
 import click.cowa.linbit.feature.assets.AssetsScreen
-import click.cowa.linbit.feature.user.UserCenterScreen
+import click.cowa.linbit.feature.profile.UserCenterHost
 import click.cowa.linbit.ui.components.FloatingTabBar
 import click.cowa.linbit.ui.components.MainTab
 import click.cowa.linbit.ui.components.ToastOverlay
@@ -88,6 +88,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                         assetsNav = vm.assetsNav,
                         onOpenFutures = { tab = MainTab.FUTURES },
                         onOpenSpot = { tab = MainTab.SPOT },
+                        onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
                     )
                 }
             }
@@ -100,7 +101,12 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
             }
             if (assetsRoute != null) AssetsHost(vm.assetsNav)
 
-            if (userCenter && loggedIn) UserCenterScreen(mode, vm::setTheme, onLogout = { vm.logout { userCenter = false } }, onClose = { userCenter = false })
+            if (userCenter && loggedIn) UserCenterHost(
+                mode, vm::setTheme,
+                onLogout = { vm.logout { userCenter = false } },
+                onClose = { userCenter = false },
+                onLoginOther = { vm.logout { userCenter = false; auth = "login" } },
+            )
             when (historyKind) {
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
                 "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol)

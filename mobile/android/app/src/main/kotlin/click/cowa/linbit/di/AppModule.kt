@@ -90,6 +90,9 @@ object AppModule {
     fun assetsNav() = click.cowa.linbit.data.assets.AssetsNav()
 
     @Provides @Singleton
+    fun savedAccounts(store: SecureStore, tokens: TokenStore) = click.cowa.linbit.feature.profile.SavedAccounts(store, tokens)
+
+    @Provides @Singleton
     fun auth(api: LinbitApi, tokens: TokenStore, store: SecureStore, @ApplicationScope scope: CoroutineScope) =
         AuthRepository(api, tokens, { store.deviceId }, { Build.MODEL ?: "Android" }, scope)
 }
