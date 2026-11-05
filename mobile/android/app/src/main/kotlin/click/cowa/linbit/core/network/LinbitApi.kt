@@ -30,7 +30,7 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 
 /**
- * Retrofit 接口（本期只含 Markets + 登录所需端点；其余模块按 mobile/openapi.yaml 逐步补）。
+ * Retrofit 接口：认证、行情、首页、理财、资产概览、现货与合约交易等端点（按 mobile/openapi.yaml 逐步补齐）。
  * 路径不带前导 "/"，基地址为 https://api.cowa.click/ 。
  * oneOf 响应（login / ticker / futures ticker）以 JsonElement 返回，由 [OneOfResponses] 判别解码。
  */
