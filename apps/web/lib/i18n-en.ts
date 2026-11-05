@@ -32,4 +32,7 @@ export const EN: Record<string, string> = {
   "复制":"Copy","确认":"Confirm","取消":"Cancel","关闭":"Close","返回":"Back","回到首页":"Back to Home","保存":"Save","提交":"Submit","全部":"All","搜索":"Search","下载":"Download","通知":"Notifications",
   "资产":"Assets","订单":"Orders","现货":"Spot","可用":"Available","数量":"Amount","价格":"Price","买入":"Buy","卖出":"Sell","限价":"Limit","市价":"Market","上一页":"Prev","下一页":"Next","暂无数据":"No data",
   "页面不存在":"Page not found","扫码下载":"Scan to download","语言":"Language","汇率":"Currency","简体中文":"简体中文","繁體中文":"繁體中文",
+  // 网络展示名（lib/assetDisplay.ts netLabel），含数字，需精确匹配
+  "以太坊（ERC20）":"Ethereum (ERC20)","BNB智能链（BEP20）":"BNB Smart Chain (BEP20)","比特币（BTC）":"Bitcoin (BTC)","Avalanche C链（AVAX-C）":"Avalanche C-Chain (AVAX-C)","Tron（TRC20）":"Tron (TRC20)","Arbitrum One（ARB）":"Arbitrum One (ARB)",
+  "Solana（SOL）":"Solana (SOL)","Polygon（MATIC）":"Polygon (MATIC)","Toncoin（TON）":"Toncoin (TON)","Optimism（OP）":"Optimism (OP)","以太坊":"Ethereum","比特币":"Bitcoin",
 };
