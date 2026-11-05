@@ -133,5 +133,44 @@ class TradeLogicTest {
         assertEquals(bd("2"), c.close)
     }
 
-}
+    @Test fun apiAmountKeepsRawString() {
+        assertEquals("80000.12", apiAmount("80000.12"))
+        assertEquals("市价", apiAmount(null, "市价"))
+        assertEquals("--", apiAmount("  "))
+        assertEquals("0", apiAmount("", "0"))
+    }
 
+    @Test fun amendRejectsBlankAndUnchanged() {
+        val fmt = { v: java.math.BigDecimal -> v.stripTrailingZeros().toPlainString() }
+        assertEquals("请至少修改价格或数量", AmendOrderLogic.prepare("", "", "100", "1", "0", fmt, fmt).error)
+        assertEquals("价格与数量均未变化", AmendOrderLogic.prepare("100", "1", "100", "1", "0", fmt, fmt).error)
+        assertEquals("请输入有效价格", AmendOrderLogic.prepare("0", "1", "100", "1", "0", fmt, fmt).error)
+        assertEquals("新数量不能小于已成交数量", AmendOrderLogic.prepare("100", "0.5", "100", "2", "1", fmt, fmt).error)
+        val ok = AmendOrderLogic.prepare("101", "2", "100", "1", "0", fmt, fmt)
+        assertNull(ok.error)
+        assertEquals("101", ok.price)
+        assertEquals("2", ok.qty)
+    }
+
+    @Test fun amendOnlySendsChangedFields() {
+        val fmt = { v: java.math.BigDecimal -> v.stripTrailingZeros().toPlainString() }
+        val priceOnly = AmendOrderLogic.prepare("105", "1", "100", "1", "0", fmt, fmt)
+        assertNull(priceOnly.error)
+        assertEquals("105", priceOnly.price)
+        assertNull(priceOnly.qty)
+        val qtyOnly = AmendOrderLogic.prepare("100", "3", "100", "1", "0", fmt, fmt)
+        assertNull(qtyOnly.error)
+        assertNull(qtyOnly.price)
+        assertEquals("3", qtyOnly.qty)
+    }
+
+    @Test fun tpslDirectionRelativeToEntry() {
+        val entry = bd("80000")
+        assertEquals("止盈价需高于开仓价", TpslLogic.validate(true, entry, "79000", ""))
+        assertEquals("止损价需低于开仓价", TpslLogic.validate(true, entry, "", "81000"))
+        assertNull(TpslLogic.validate(true, entry, "82000", "78000"))
+        assertEquals("止盈价需低于开仓价", TpslLogic.validate(false, entry, "81000", ""))
+        assertEquals("止损价需高于开仓价", TpslLogic.validate(false, entry, "", "79000"))
+        assertNull(TpslLogic.validate(false, entry, "78000", "82000"))
+    }
+}
