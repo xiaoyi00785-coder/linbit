@@ -23,7 +23,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import click.cowa.linbit.feature.auth.AuthFlow
 import click.cowa.linbit.feature.home.HomeScreen
 import click.cowa.linbit.feature.markets.MarketsScreen
-import click.cowa.linbit.feature.placeholder.PlaceholderScreen
+import click.cowa.linbit.feature.assets.AssetsHost
+import click.cowa.linbit.feature.assets.AssetsScreen
 import click.cowa.linbit.feature.user.UserCenterScreen
 import click.cowa.linbit.ui.components.FloatingTabBar
 import click.cowa.linbit.ui.components.MainTab
@@ -68,23 +69,36 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                     MainTab.HOME -> HomeScreen(
                         bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "login" },
                         onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { vm.toast.show("全部功能即将开放") },
-                        onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.toast.show("充值即将开放") else auth = "login" },
+                        onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.assetsNav.openDeposit(switchTab = true) else auth = "login" },
                     )
                     MainTab.MARKETS -> MarketsScreen(bottomInset, onOpenTrade = { kind, sym ->
                         if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
                     })
                     MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { historyKind = "futures" },
+                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "futures" },
                     )
                     MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { historyKind = "spot" },
+                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" },
                     )
-                    MainTab.ASSETS -> PlaceholderScreen("资产", bottomInset, loginHint = !loggedIn, onLogin = { auth = "login" })
+                    MainTab.ASSETS -> AssetsScreen(
+                        bottomInset,
+                        onLogin = { auth = "login" },
+                        assetsNav = vm.assetsNav,
+                        onOpenFutures = { tab = MainTab.FUTURES },
+                        onOpenSpot = { tab = MainTab.SPOT },
+                    )
                 }
             }
             FloatingTabBar(tab, { tab = it }, Modifier.align(Alignment.BottomCenter))
+
+            // 首页/交易页打开充值或划转时切到资产 Tab
+            val assetsRoute by vm.assetsNav.route.collectAsStateWithLifecycle()
+            LaunchedEffect(assetsRoute) {
+                if (assetsRoute != null && vm.assetsNav.consumeTab()) tab = MainTab.ASSETS
+            }
+            if (assetsRoute != null) AssetsHost(vm.assetsNav)
 
             if (userCenter && loggedIn) UserCenterScreen(mode, vm::setTheme, onLogout = { vm.logout { userCenter = false } }, onClose = { userCenter = false })
             when (historyKind) {
