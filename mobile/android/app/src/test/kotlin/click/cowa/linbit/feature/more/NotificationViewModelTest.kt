@@ -25,10 +25,9 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
-import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
-import org.mockito.kotlin.wheneverBlocking
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationViewModelTest {
@@ -53,11 +52,11 @@ class NotificationViewModelTest {
         val second = CompletableDeferred<ApiUpdatedCount>()
         val tokens = InMemoryTokenStore().apply { accessToken = "account-a" }
         val api = mock<LinbitApi> {
-            wheneverBlocking { notifications(anyOrNull(), any(), any()) } doReturn ApiNotificationList(
+            this.onBlocking { notifications(anyOrNull(), any(), any()) } doReturn ApiNotificationList(
                 items = listOf(unread("1"), unread("2", ApiNotification.Kind.TRADE)),
                 total = 2, unread = 2, unreadByKind = mapOf("system" to 1, "trade" to 1),
             )
-            wheneverBlocking { readNotifications(any()) } doAnswer { call ->
+            this.onBlocking { readNotifications(any()) } doSuspendableAnswer { call ->
                 val ids = call.getArgument<ApiReadNotificationsRequest>(0).ids.orEmpty()
                 if (ids == listOf("1")) first.await() else second.await()
             }
@@ -80,14 +79,35 @@ class NotificationViewModelTest {
         assertEquals(0, vm.state.value.byKind["trade"])
     }
 
+    @Test fun `分页刷新保留本条已读且未读计数不重复增加`() = runTest {
+        val tokens = InMemoryTokenStore().apply { accessToken = "account-a" }
+        val api = mock<LinbitApi> {
+            this.onBlocking { notifications(anyOrNull(), any(), any()) } doReturn ApiNotificationList(
+                items = listOf(unread("1")), total = 2, unread = 2, unreadByKind = mapOf("system" to 2),
+            )
+            this.onBlocking { readNotifications(any()) } doSuspendableAnswer { CompletableDeferred<ApiUpdatedCount>().await() }
+        }
+        val vm = NotificationViewModel(api, tokens, ToastCenter(toastScope))
+        vm.load()
+        advanceUntilIdle()
+        vm.markRead(unread("1"))
+        assertEquals(1, vm.state.value.unread)
+
+        vm.load(append = true)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.items.single { it.id == "1" }.read == true)
+        assertEquals(1, vm.state.value.unread)
+        assertEquals(1, vm.state.value.byKind["system"])
+    }
+
     @Test fun `切账号后旧已读失败不能写回旧通知`() = runTest {
         val oldRequest = CompletableDeferred<ApiUpdatedCount>()
         val tokens = InMemoryTokenStore().apply { accessToken = "account-a" }
         val api = mock<LinbitApi> {
-            wheneverBlocking { notifications(anyOrNull(), any(), any()) } doReturn ApiNotificationList(
+            this.onBlocking { notifications(anyOrNull(), any(), any()) } doReturn ApiNotificationList(
                 items = listOf(unread("old")), total = 1, unread = 1, unreadByKind = mapOf("system" to 1),
             )
-            wheneverBlocking { readNotifications(any()) } doAnswer { oldRequest.await() }
+            this.onBlocking { readNotifications(any()) } doSuspendableAnswer { oldRequest.await() }
         }
         val vm = NotificationViewModel(api, tokens, ToastCenter(toastScope))
         vm.load()
@@ -104,9 +124,12 @@ class NotificationViewModelTest {
 
     @Test fun `切账号后旧未读角标不能覆盖新账号`() = runTest {
         val oldCount = CompletableDeferred<click.cowa.linbit.core.generated.ApiUnreadCount>()
+        val newCount = CompletableDeferred<click.cowa.linbit.core.generated.ApiUnreadCount>()
         val tokens = InMemoryTokenStore().apply { accessToken = "account-a" }
         val api = mock<LinbitApi> {
-            wheneverBlocking { unreadCount() } doAnswer { oldCount.await() }
+            this.onBlocking { unreadCount() } doSuspendableAnswer {
+                if (tokens.accessToken == "account-a") oldCount.await() else newCount.await()
+            }
         }
         val vm = NotificationBadgeViewModel(api, tokens)
         advanceUntilIdle()

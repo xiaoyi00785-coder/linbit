@@ -22,17 +22,17 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param kycRequired 
- * @param kycOk 
- * @param enrolled 
+ *
+ * @param kycRequired
+ * @param kycOk
+ * @param enrolled
  * @param enrolledAt 毫秒时间戳
  * @param deadline 毫秒时间戳
- * @param total 
- * @param asset 
- * @param days 
- * @param tasks 
+ * @param total
+ * @param asset
+ * @param days
+ * @param tasks
  */
 @Serializable
 
@@ -71,4 +71,3 @@ data class ApiNewcomerState (
 
 
 }
-

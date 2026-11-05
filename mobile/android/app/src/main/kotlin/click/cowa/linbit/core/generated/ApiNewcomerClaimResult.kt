@@ -21,13 +21,13 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param task 
- * @param couponId 
- * @param title 
- * @param kind 
- * @param amount 
+ *
+ * @param task
+ * @param couponId
+ * @param title
+ * @param kind
+ * @param amount
  */
 @Serializable
 
@@ -51,7 +51,7 @@ data class ApiNewcomerClaimResult (
 ) {
 
     /**
-     * 
+     *
      *
      * Values: TRIAL,DEDUCTION
      */
@@ -62,4 +62,3 @@ data class ApiNewcomerClaimResult (
     }
 
 }
-

@@ -21,17 +21,17 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param key 
- * @param title 
- * @param type 
- * @param kind 
- * @param amount 
- * @param target 
- * @param progress 
- * @param status 
- * @param couponId 
+ *
+ * @param key
+ * @param title
+ * @param type
+ * @param kind
+ * @param amount
+ * @param target
+ * @param progress
+ * @param status
+ * @param couponId
  */
 @Serializable
 
@@ -67,7 +67,7 @@ data class ApiNewcomerTask (
 ) {
 
     /**
-     * 
+     *
      *
      * Values: BIND,FIRST_DEPOSIT,VOLUME
      */
@@ -78,7 +78,7 @@ data class ApiNewcomerTask (
         @SerialName(value = "volume") VOLUME("volume");
     }
     /**
-     * 
+     *
      *
      * Values: TRIAL,DEDUCTION
      */
@@ -88,7 +88,7 @@ data class ApiNewcomerTask (
         @SerialName(value = "deduction") DEDUCTION("deduction");
     }
     /**
-     * 
+     *
      *
      * Values: LOCKED,IN_PROGRESS,CLAIMABLE,CLAIMED,EXPIRED
      */
@@ -102,4 +102,3 @@ data class ApiNewcomerTask (
     }
 
 }
-

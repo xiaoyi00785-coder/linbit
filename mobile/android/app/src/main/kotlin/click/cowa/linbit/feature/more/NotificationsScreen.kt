@@ -54,6 +54,11 @@ class NotificationViewModel @Inject constructor(
     var kind: String? = null
         private set
 
+    private fun isCurrent(session: Long) = session == tokens.sessionVersion.value
+    private var loadSequence = 0L
+    private val optimisticReadVersions = mutableMapOf<String, Long>()
+    private var markAllVersion = 0L
+
     init {
         viewModelScope.launch {
             tokens.sessionVersion.collect {
@@ -65,11 +70,6 @@ class NotificationViewModel @Inject constructor(
             }
         }
     }
-
-    private fun isCurrent(session: Long) = session == tokens.sessionVersion.value
-    private var loadSequence = 0L
-    private val optimisticReadVersions = mutableMapOf<String, Long>()
-    private var markAllVersion = 0L
 
     fun load(tab: String? = kind, append: Boolean = false) {
         kind = tab
@@ -84,13 +84,17 @@ class NotificationViewModel @Inject constructor(
             val pending = optimisticReadVersions.toMap()
             result.onSuccess { r ->
                 val seen = _state.value.items.mapNotNull { it.id }.toSet()
+                val merged = (if (append) _state.value.items + r.items.orEmpty().filter { it.id !in seen } else r.items.orEmpty())
+                    .map { if (it.id in pending) it.copy(read = true) else it }
+                val optimisticUnread = r.items.orEmpty().count { it.id in pending && it.read == false }
+                val kindCounts = r.items.orEmpty().filter { it.id in pending && it.read == false }
+                    .groupingBy { it.kind?.value }.eachCount()
                 _state.value = _state.value.copy(
-                    items = (if (append) _state.value.items + r.items.orEmpty().filter { it.id !in seen } else r.items.orEmpty())
-                        .map { if (it.id in pending) it.copy(read = true) else it },
+                    items = merged,
                     total = r.total ?: 0,
-                    unread = r.unread?.plus(pending.size)?.coerceAtMost(r.total ?: Int.MAX_VALUE) ?: 0,
+                    unread = (r.unread ?: 0).minus(optimisticUnread).coerceIn(0, r.total ?: Int.MAX_VALUE),
                     byKind = r.unreadByKind.orEmpty().mapValues { (k, count) ->
-                        count + pending.count { (id, _) -> _state.value.items.firstOrNull { it.id == id }?.kind?.value == k }
+                        (count - (kindCounts[k] ?: 0)).coerceAtLeast(0)
                     },
                     page = nextPage, loading = false,
                 )

@@ -19,7 +19,7 @@ coil = "2.7.0"
 coreKtx = "1.15.0"
 splashscreen = "1.0.1"
 junit = "4.13.2"
-mockito = "5.14.2"
+mockito = "5.4.0"
 zxing = "3.5.3"
 
 [libraries]
