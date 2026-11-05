@@ -1,4 +1,5 @@
-# iOS CI 截图清单：每行一个界面（lb.shot 的值）。
+# iOS CI 完整截图清单（workflow_dispatch / 全量回归用）：每行一个界面（lb.shot 的值）。
+# PR 与 push 冒烟清单见同目录 screens-pr.txt。
 # 格式：<screen> [light|dark|both]，省略第二列表示 both（日间 + 夜间各一张）。
 # 以 # 开头的行和空行会被忽略。新增界面请在对应分组末尾追加新的一行。
 

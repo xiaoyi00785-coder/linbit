@@ -84,6 +84,9 @@ jobs:
           fi
 
       - name: Launch & screenshot (light / dark)
+        env:
+          # pull_request / push：冒烟清单 + 短等待；workflow_dispatch：完整清单
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           APP=$(find "$DERIVED/Build/Products" -name "Linbit.app" -maxdepth 3 | head -1)
@@ -95,7 +98,20 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
-          # 主页面日间/夜间各一张；主要弹窗仅日间。lb.shot 只在 CI 写入。
+
+          # pull_request / push：冒烟清单 + sleep 4；仅 workflow_dispatch 跑完整清单 + sleep 7
+          # （完整套件约 183 张，仍可能逼近 90 分钟上限，故不在 push/main 自动跑）
+          SCREEN_LIST=mobile/ci/screens-pr.txt
+          SLEEP_SECS=4
+          RUN_SPLASH_VIDEO=0
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            SCREEN_LIST=mobile/ci/screens.txt
+            SLEEP_SECS=7
+            RUN_SPLASH_VIDEO=1
+          fi
+          echo "SCREEN_LIST=$SCREEN_LIST SLEEP_SECS=$SLEEP_SECS RUN_SPLASH_VIDEO=$RUN_SPLASH_VIDEO"
+
+          # lb.shot 只在 CI 写入。
           shoot() {
             local screen="$1" mode="$2"
             xcrun simctl ui "$UDID" appearance "$mode"
@@ -103,33 +119,36 @@ jobs:
             xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
             xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.shot "$screen"
             xcrun simctl launch "$UDID" click.cowa.linbit
-            sleep 7
+            sleep "$SLEEP_SECS"
             xcrun simctl io "$UDID" screenshot "shots/${screen}-${mode}.png" || true
           }
-          # 截图清单在 mobile/ci/screens.txt（用 fd 3 读取，避免 simctl 吞掉 stdin）：每行 "<screen> [light|dark|both]"，省略模式 = both；# 开头为注释
+          # 截图清单（用 fd 3 读取，避免 simctl 吞掉 stdin）：每行 "<screen> [light|dark|both]"，省略模式 = both；# 开头为注释
           while read -r screen mode _ <&3; do
             case "$screen" in ""|\#*) continue ;; esac
             case "${mode:-both}" in
               light) shoot "$screen" light ;;
               dark)  shoot "$screen" dark ;;
               both)  shoot "$screen" light; shoot "$screen" dark ;;
-              *) echo "::error file=mobile/ci/screens.txt::未知模式: $screen $mode"; exit 1 ;;
+              *) echo "::error file=${SCREEN_LIST}::未知模式: $screen $mode"; exit 1 ;;
             esac
-          done 3< mobile/ci/screens.txt
-          # 启动动画录屏（真实播放，日间 + 夜间）
-          for mode in light dark; do
-            xcrun simctl ui "$UDID" appearance "$mode"
-            xcrun simctl terminate "$UDID" click.cowa.linbit || true
-            xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
-            xcrun simctl spawn "$UDID" defaults delete click.cowa.linbit lb.shot || true
-            xcrun simctl io "$UDID" recordVideo --codec=h264 --force "shots/splash-${mode}.mp4" &
-            REC=$!
-            sleep 2
-            xcrun simctl launch "$UDID" click.cowa.linbit
-            sleep 4
-            kill -INT "$REC" || true
-            wait "$REC" || true
-          done
+          done 3< "$SCREEN_LIST"
+
+          # 启动动画录屏仅跑全量套件（真实播放，日间 + 夜间）
+          if [ "$RUN_SPLASH_VIDEO" = "1" ]; then
+            for mode in light dark; do
+              xcrun simctl ui "$UDID" appearance "$mode"
+              xcrun simctl terminate "$UDID" click.cowa.linbit || true
+              xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
+              xcrun simctl spawn "$UDID" defaults delete click.cowa.linbit lb.shot || true
+              xcrun simctl io "$UDID" recordVideo --codec=h264 --force "shots/splash-${mode}.mp4" &
+              REC=$!
+              sleep 2
+              xcrun simctl launch "$UDID" click.cowa.linbit
+              sleep 4
+              kill -INT "$REC" || true
+              wait "$REC" || true
+            done
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
