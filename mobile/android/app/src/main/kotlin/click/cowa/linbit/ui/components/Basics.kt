@@ -253,10 +253,10 @@ fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Mod
 
 /** 空状态（灰色文件夹插画 + 文案，对照图「暂无数据」「划转资金，开始现货交易」）。 */
 @Composable
-fun EmptyState(text: String = "暂无数据", modifier: Modifier = Modifier, content: (@Composable () -> Unit)? = null) {
+fun EmptyState(text: String = "暂无数据", modifier: Modifier = Modifier, iconSize: Dp = 64.dp, verticalPadding: Dp = 24.dp, content: (@Composable () -> Unit)? = null) {
     val p = LB.p
-    Column(modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        LbImageIcon(R.drawable.ic_empty_folder, 64.dp)
+    Column(modifier.fillMaxWidth().padding(vertical = verticalPadding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        LbImageIcon(R.drawable.ic_empty_folder, iconSize)
         Text(text, style = lb(FontSize.caption), color = if (content != null) p.textPrimary else p.textSecondary, textAlign = TextAlign.Center)
         content?.invoke()
     }
