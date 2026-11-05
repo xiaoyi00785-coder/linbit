@@ -5745,6 +5745,65 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+  /rewards/newcomer:
+    get:
+      tags: [Home]
+      summary: 新人任务完整进度（登录）
+      operationId: getNewcomerState
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewcomerState" }
+  /rewards/newcomer/enroll:
+    post:
+      tags: [Home]
+      summary: 报名新人限时任务（登录，需达到活动要求的 KYC 等级）
+      operationId: enrollNewcomer
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: 报名成功，返回最新任务进度
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewcomerState" }
+        "403":
+          description: 未达到活动要求的 KYC 等级
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: 已报名或当前状态不可执行
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /rewards/newcomer/tasks/{key}/claim:
+    post:
+      tags: [Home]
+      summary: 领取已完成的新人任务奖励（登录）
+      operationId: claimNewcomerTask
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 领取成功，奖励发放至卡券中心
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewcomerClaimResult" }
+        "403":
+          description: 未达到活动要求的 KYC 等级
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: 未报名、任务未完成或奖励已领取
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /home/newcomer:
     get:
       tags: [Home]
@@ -10216,17 +10275,41 @@ components:
         degraded: { type: boolean }
         tasks:
           type: array
-          items:
-            type: object
-            properties:
-              key: { type: string }
-              title: { type: string }
-              type: { type: string }
-              kind: { type: string }
-              amount: { type: string }
-              target: { type: string }
-              progress: { type: string }
-              status: { type: string }
+          items: { $ref: "#/components/schemas/NewcomerTask" }
+    NewcomerTask:
+      type: object
+      properties:
+        key: { type: string }
+        title: { type: string }
+        type: { type: string, enum: [bind, first_deposit, volume] }
+        kind: { type: string, enum: [trial, deduction] }
+        amount: { type: string }
+        target: { type: string }
+        progress: { type: string }
+        status: { type: string, enum: [locked, in_progress, claimable, claimed, expired] }
+        couponId: { type: integer, format: int64, nullable: true }
+    NewcomerState:
+      type: object
+      properties:
+        kycRequired: { type: integer }
+        kycOk: { type: boolean }
+        enrolled: { type: boolean }
+        enrolledAt: { type: integer, format: int64, description: 毫秒时间戳 }
+        deadline: { type: integer, format: int64, nullable: true, description: 毫秒时间戳 }
+        total: { type: string }
+        asset: { type: string, example: USDT }
+        days: { type: integer }
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/NewcomerTask" }
+    NewcomerClaimResult:
+      type: object
+      properties:
+        task: { type: string }
+        couponId: { type: integer, format: int64 }
+        title: { type: string }
+        kind: { type: string, enum: [trial, deduction] }
+        amount: { type: string }
     FiatRates:
       type: object
       properties:

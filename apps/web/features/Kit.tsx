@@ -30,7 +30,7 @@ function Download({ kind = "apple", close }: MP) {
   return <Box title="下载 linbit App" onClose={close}>
     <div className="tk-sel">{Object.entries(DL).map(([id, t]) => <button key={id} className={"tk-chip" + (k === id ? " long" : "")} onClick={() => setK(id)}>{t}</button>)}</div>
     <div className="kit-qr"><QRCodeSVG value={url} size={160} marginSize={2} /></div>
-    <p className="tk-txt" style={{ textAlign: "center" }}>使用手机扫码下载「{DL[k]}」版本</p>
+    <p className="tk-txt" style={{ textAlign: "center" }}>{`使用手机扫码下载「${DL[k]}」版本`}</p>
     <div className="tk-mf"><button className="tk-b2" onClick={() => copyText(url, "下载链接已复制")}>复制链接</button><button className="tk-b1" onClick={close}>完成</button></div>
   </Box>;
 }
@@ -99,7 +99,7 @@ export function DateRange({ preset }: { preset?: boolean }) {
   useDismiss(o, () => setO(false), r);
   const q = (n: number) => { setA(iso(new Date(+now - (n - 1) * 864e5))); setB(iso(now)); };
   return <div ref={r} className="lsel date kit-dd" onClick={() => setO(!o)}>{a ? <span>{a}</span> : <span className="lg">开始日期</span>}<span className="lg">→</span>{b ? <span>{b}</span> : <span className="lg">结束日期</span>}<em>▦</em>
-    {o && <div className="kit-menu kit-date" onClick={(e) => e.stopPropagation()}><div className="tk-sel">{[7, 30, 90].map((n) => <button key={n} className="tk-chip" onClick={() => q(n)}>近{n}天</button>)}</div>
+    {o && <div className="kit-menu kit-date" onClick={(e) => e.stopPropagation()}><div className="tk-sel">{[7, 30, 90].map((n) => <button key={n} className="tk-chip" onClick={() => q(n)}>{`近${n}天`}</button>)}</div>
       <input type="date" className="kit-in" value={a} max={b || undefined} onChange={(e) => setA(e.target.value)} /><input type="date" className="kit-in" value={b} min={a || undefined} onChange={(e) => setB(e.target.value)} />
       <button className="tk-chip long" onClick={() => { setO(false); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k: "date", v: [a, b] } })); toast(a && b ? `已筛选 ${a} 至 ${b}` : "已清除日期筛选", "info"); }}>确定</button></div>}
   </div>;

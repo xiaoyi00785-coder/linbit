@@ -76,7 +76,7 @@ function Pwd({ value, onChange, placeholder, label }: { value: string; onChange:
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" />{!show && <path d="M3 3l18 18" />}</svg>
         </button>
       </div>
-      {value.length >= PWD_MAX && <div className="fx-hint">密码最多 {PWD_MAX} 位</div>}
+      {value.length >= PWD_MAX && <div className="fx-hint">{`密码最多 ${PWD_MAX} 位`}</div>}
     </>
   );
 }
@@ -133,7 +133,7 @@ function useAcct(initial: Kind = "邮箱") {
         </div>
       )}
       {touched && msg && <div className="fx-err" role="alert">{msg}</div>}
-      {kind === "邮箱" && val.length >= ACCT_MAX && <div className="fx-hint">邮箱最多 {ACCT_MAX} 个字符</div>}
+      {kind === "邮箱" && val.length >= ACCT_MAX && <div className="fx-hint">{`邮箱最多 ${ACCT_MAX} 个字符`}</div>}
     </>
   );
   return { kind, valid, target, shown, ui, msg, touch: () => setTouched(true) };
@@ -209,7 +209,7 @@ export function Register() {
         </>
       ) : (
         <>
-          <p className="fx-hint">验证码已发送至 {a.shown}，请在有效期内输入。</p>
+          <p className="fx-hint">{`验证码已发送至 ${a.shown}，请在有效期内输入。`}</p>
           <CodeInput value={code} onChange={setCode} send={send} autoSent />
           {err && <div className="fx-err">{err}</div>}
           <button
@@ -331,7 +331,7 @@ export function Login() {
             </>
           ) : (
             <>
-              <p className="fx-hint">检测到新设备登录，验证码已发送至 {displayAccount(tgt)}（{METHOD[method]}）。</p>
+              <p className="fx-hint">{`检测到新设备登录，验证码已发送至 ${displayAccount(tgt)}（${METHOD[method]}）。`}</p>
               <CodeInput
                 value={code}
                 onChange={setCode}

@@ -43,7 +43,7 @@ function Attach({ ids, setIds, onBusy }: { ids: TicketAttachment[]; setIds: (f: 
       if (r.ok && r.data) { const d = r.data; setIds((x) => [...x, d]); } else toast(ticketErr(r), "err");
     } } finally { setBusy(false); } if (inp.current) inp.current.value = "";
   };
-  return <div className="ff-f"><span>图片附件（选填，最多 {ATTACH_MAX} 张，JPG/PNG/WEBP，单张 ≤ 5 MB）</span>
+  return <div className="ff-f"><span>{`图片附件（选填，最多 ${ATTACH_MAX} 张，JPG/PNG/WEBP，单张 ≤ 5 MB）`}</span>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
       {ids.map((a, i) => <span key={a.id} className="ff-tag tk-att">图片 {i + 1} · {(a.size / 1024).toFixed(0)} KB <button type="button" aria-label={`移除图片 ${i + 1}`} onClick={() => setIds((x) => x.filter((y) => y.id !== a.id))}>×</button></span>)}
       {ids.length < ATTACH_MAX && <button type="button" className="ff-btn" disabled={busy} onClick={() => inp.current?.click()}>{busy ? "上传中…" : "添加图片"}</button>}
@@ -132,7 +132,7 @@ export function SupportTickets() {
       : isNew ? <NewTicket onDone={(t) => r.replace("/support/tickets?id=" + encodeURIComponent(t.id))} />
       : <>
         <div className="ff-bar"><div className="ff-tabs tk-tabs" role="tablist">{TABS.map(([k, n]) => <button key={k} type="button" role="tab" aria-selected={st === k} className={st === k ? "on" : ""} onClick={() => { setSt(k); setPage(1); }}>{n}</button>)}</div><Link className="ff-btn pri" href="/support/tickets?new=1" data-testid="tk-new-btn">提交工单</Link></div>
-        {err ? <Empty t={err}><button type="button" className="ff-btn" onClick={() => setNonce((n) => n + 1)}>重试</button></Empty> : !list ? <div className="ff-skel" aria-label="加载中" /> : <>{list.total > 0 && <p className="ff-mut tk-total">共 {list.total} 个工单</p>}
+        {err ? <Empty t={err}><button type="button" className="ff-btn" onClick={() => setNonce((n) => n + 1)}>重试</button></Empty> : !list ? <div className="ff-skel" aria-label="加载中" /> : <>{list.total > 0 && <p className="ff-mut tk-total">{`共 ${list.total} 个工单`}</p>}
         {!list.items.length ? <Empty t={st ? "该状态下暂无工单" : "暂无工单"}>{!st && <Link className="ff-btn pri" href="/support/tickets?new=1">提交工单</Link>}</Empty> : <table className="ff-t"><thead><tr><th>标题</th><th>分类</th><th>状态</th><th>最近更新</th></tr></thead>
           <tbody>{list.items.map((t) => <tr key={t.id} className="tk-tr" onClick={() => r.push("/support/tickets?id=" + encodeURIComponent(t.id))}><td><Link href={"/support/tickets?id=" + encodeURIComponent(t.id)} onClick={(e) => e.stopPropagation()}>{t.unread && <span className="ff-tag ok">新回复</span>} {t.subject}</Link></td>
             <td>{catName(t.category)}</td><td><StatusTag s={t.status} /></td><td className="ff-mut">{fmt(t.lastReplyAt)}</td></tr>)}</tbody></table>}
