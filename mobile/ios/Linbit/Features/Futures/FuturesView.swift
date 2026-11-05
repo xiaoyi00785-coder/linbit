@@ -822,11 +822,11 @@ struct TodayPnlCard: View {
                 if total == 0 && realized == 0 && funding == 0 && fee == 0 && other == 0 {
                     Text("今日暂无已实现盈亏、资金费或手续费记录").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                 } else {
-                    Text(signed(total)).font(.lbNum(FontSize.title, .semibold)).foregroundColor(color(total))
+                    Text(raw(v.pnl, total)).font(.lbNum(FontSize.title, .semibold)).foregroundColor(color(total))
                     HStack {
-                        KVCell(k: "已实现盈亏", v: signed(realized), vColor: color(realized))
-                        KVCell(k: "资金费", v: signed(funding), align: .center, vColor: color(funding))
-                        KVCell(k: "手续费", v: signed(fee), align: .trailing, vColor: color(fee))
+                        KVCell(k: "已实现盈亏", v: raw(v.realizedPnl, realized), vColor: color(realized))
+                        KVCell(k: "资金费", v: raw(v.funding, funding), align: .center, vColor: color(funding))
+                        KVCell(k: "手续费", v: Dec.parse(v.liquidationFee) == 0 ? raw(v.fee, fee) : signed(fee), align: .trailing, vColor: color(fee))
                     }
                 }
             }
@@ -836,6 +836,12 @@ struct TodayPnlCard: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border))
         .padding(.horizontal, Spacing.pageH).padding(.top, 10)
     }
-    private func signed(_ d: Decimal) -> String { (d > 0 ? "+" : "") + Fmt.amount(d, 4) }
+    /// 后端金额为固定 8 位小数字符串，原样展示（不截断、不去尾零），仅为正数补 "+"
+    private func raw(_ s: String?, _ d: Decimal) -> String {
+        guard let s, !s.isEmpty else { return signed(d) }
+        return (d > 0 && !s.hasPrefix("+") ? "+" : "") + s
+    }
+    /// 仅在需要客户端求和时使用，保留 8 位小数
+    private func signed(_ d: Decimal) -> String { (d > 0 ? "+" : "") + Fmt.amount(d, 8) }
     private func color(_ d: Decimal) -> Color { d > 0 ? p.up : (d < 0 ? p.down : p.textPrimary) }
 }
