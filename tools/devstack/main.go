@@ -258,6 +258,8 @@ func run(root, execCmd string) int {
 			"JWT_SECRET=" + jwtSecret,
 			"ASSET_INTERNAL_URL=http://localhost:" + assetPort,
 			"ORDER_INTERNAL_URL=http://localhost:" + orderPort,
+			// VIP applications check 30-day volume through growth.
+			"GROWTH_INTERNAL_URL=http://localhost:" + growthPort,
 			"INTERNAL_TOKEN=" + internalTok,
 			"REDIS_URL=" + redisURL,
 			// Dev mode exposes the internal "last verification code" endpoint so
