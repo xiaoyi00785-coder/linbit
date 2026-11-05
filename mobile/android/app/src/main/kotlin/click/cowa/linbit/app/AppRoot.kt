@@ -143,6 +143,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                     morePage = null
                 },
                 onProfile = { morePage = null; userCenter = true },
+                onDeposit = { morePage = null; vm.assetsNav.openDeposit(switchTab = true) },
             ) }
             when (historyKind) {
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)

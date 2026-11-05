@@ -31,8 +31,10 @@ class NotificationBadgeViewModel @Inject constructor(
 
     fun refresh() {
         if (!tokens.loggedIn.value) { _unread.value = 0; return }
+        val session = tokens.sessionVersion.value
         viewModelScope.launch {
-            _unread.value = runCatching { apiCall { api.unreadCount() }.unread ?: 0 }.getOrDefault(0)
+            val result = runCatching { apiCall { api.unreadCount() }.unread ?: 0 }
+            if (session == tokens.sessionVersion.value) _unread.value = result.getOrDefault(0)
         }
     }
 }

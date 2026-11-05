@@ -54,19 +54,44 @@ class NotificationViewModel @Inject constructor(
     var kind: String? = null
         private set
 
-    init { viewModelScope.launch { tokens.sessionVersion.collect { _state.value = NotificationState() } } }
+    init {
+        viewModelScope.launch {
+            tokens.sessionVersion.collect {
+                kind = null
+                optimisticReadVersions.clear()
+                markAllVersion++
+                loadSequence++
+                _state.value = NotificationState()
+            }
+        }
+    }
+
+    private fun isCurrent(session: Long) = session == tokens.sessionVersion.value
+    private var loadSequence = 0L
+    private val optimisticReadVersions = mutableMapOf<String, Long>()
+    private var markAllVersion = 0L
 
     fun load(tab: String? = kind, append: Boolean = false) {
         kind = tab
+        val session = tokens.sessionVersion.value
+        val readAll = markAllVersion
+        val sequence = ++loadSequence
         val nextPage = if (append) _state.value.page + 1 else 1
         _state.value = _state.value.copy(loading = !append, error = null)
         viewModelScope.launch {
             val result = runCatching { apiCall { api.notifications(tab, nextPage) } }
+            if (!isCurrent(session) || sequence != loadSequence || readAll != markAllVersion) return@launch
+            val pending = optimisticReadVersions.toMap()
             result.onSuccess { r ->
                 val seen = _state.value.items.mapNotNull { it.id }.toSet()
                 _state.value = _state.value.copy(
-                    items = if (append) _state.value.items + r.items.orEmpty().filter { it.id !in seen } else r.items.orEmpty(),
-                    total = r.total ?: 0, unread = r.unread ?: 0, byKind = r.unreadByKind.orEmpty(),
+                    items = (if (append) _state.value.items + r.items.orEmpty().filter { it.id !in seen } else r.items.orEmpty())
+                        .map { if (it.id in pending) it.copy(read = true) else it },
+                    total = r.total ?: 0,
+                    unread = r.unread?.plus(pending.size)?.coerceAtMost(r.total ?: Int.MAX_VALUE) ?: 0,
+                    byKind = r.unreadByKind.orEmpty().mapValues { (k, count) ->
+                        count + pending.count { (id, _) -> _state.value.items.firstOrNull { it.id == id }?.kind?.value == k }
+                    },
                     page = nextPage, loading = false,
                 )
             }.onFailure {
@@ -77,45 +102,77 @@ class NotificationViewModel @Inject constructor(
     }
 
     fun markRead(item: ApiNotification) {
-        if (item.read == true || item.id == null) return
-        val old = _state.value
-        _state.value = old.copy(
-            items = old.items.map { if (it.id == item.id) it.copy(read = true) else it },
-            unread = (old.unread - 1).coerceAtLeast(0),
-            byKind = old.byKind + ((item.kind?.value ?: return) to (old.byKind[item.kind?.value] ?: 0).minus(1).coerceAtLeast(0)),
+        val id = item.id ?: return
+        val current = _state.value.items.firstOrNull { it.id == id } ?: return
+        if (current.read != false) return
+        val session = tokens.sessionVersion.value
+        val readAll = markAllVersion
+        optimisticReadVersions[id] = readAll
+        _state.value = _state.value.copy(
+            items = _state.value.items.map { if (it.id == id) it.copy(read = true) else it },
+            unread = (_state.value.unread - 1).coerceAtLeast(0),
+            byKind = current.kind?.let { k ->
+                _state.value.byKind + (k.value to (_state.value.byKind[k.value] ?: 0).minus(1).coerceAtLeast(0))
+            } ?: _state.value.byKind,
         )
         viewModelScope.launch {
-            runCatching { apiCall { api.readNotifications(ApiReadNotificationsRequest(ids = listOf(item.id))) } }
-                .onFailure { _state.value = old; toast.error(it) }
+            try {
+                runCatching { apiCall { api.readNotifications(ApiReadNotificationsRequest(ids = listOf(id))) } }
+                .onFailure {
+                    // 只撤销本条，且仍被标为已读时才回滚；不得覆盖其他条目、分页或新账号状态。
+                    if (isCurrent(session) && markAllVersion == readAll) {
+                        val rollback = _state.value.items.any { it.id == id && it.read == true } && _state.value.unread < _state.value.total
+                        if (rollback) {
+                            _state.value = _state.value.copy(
+                                items = _state.value.items.map { if (it.id == id) it.copy(read = false) else it },
+                                unread = _state.value.unread + 1,
+                                byKind = current.kind?.let { k ->
+                                    _state.value.byKind + (k.value to (_state.value.byKind[k.value] ?: 0) + 1)
+                                } ?: _state.value.byKind,
+                            )
+                        }
+                        toast.error(it)
+                    }
+                }
+            } finally {
+                if (isCurrent(session) && optimisticReadVersions[id] == readAll) optimisticReadVersions.remove(id)
+            }
         }
     }
 
     fun readAll() {
+        val session = tokens.sessionVersion.value
+        val tab = kind
         viewModelScope.launch {
-            runCatching { apiCall { api.readNotifications(ApiReadNotificationsRequest(all = true, kind = kind)) } }
+            runCatching { apiCall { api.readNotifications(ApiReadNotificationsRequest(all = true, kind = tab)) } }
                 .onSuccess {
+                    if (!isCurrent(session)) return@onSuccess
+                    markAllVersion++
+                    optimisticReadVersions.clear()
                     toast.show("已全部标为已读", ToastCenter.Kind.SUCCESS)
                     _state.value = _state.value.copy(
                         items = _state.value.items.map { it.copy(read = true) },
-                        unread = if (kind == null) 0 else _state.value.unread,
-                        byKind = if (kind == null) emptyMap() else _state.value.byKind + (kind!! to 0),
+                        unread = if (tab == null) 0 else _state.value.unread,
+                        byKind = if (tab == null) emptyMap() else _state.value.byKind + (tab to 0),
                     )
                     load()
-                }.onFailure { toast.error(it) }
+                }.onFailure { if (isCurrent(session)) toast.error(it) }
         }
     }
 
     fun loadPrefs() {
         if (_state.value.prefs != null) return
+        val session = tokens.sessionVersion.value
         viewModelScope.launch {
             runCatching { apiCall { api.notificationSettings() } }
-                .onSuccess { _state.value = _state.value.copy(prefs = it) }
-                .onFailure { toast.error(it) }
+                .onSuccess { if (isCurrent(session)) _state.value = _state.value.copy(prefs = it) }
+                .onFailure { if (isCurrent(session)) toast.error(it) }
         }
     }
 
     fun setPref(key: String, value: Boolean) {
         if (_state.value.saving) return
+        val session = tokens.sessionVersion.value
         _state.value = _state.value.copy(saving = true)
         viewModelScope.launch {
             val patch = ApiNotifyPrefsPatch(
@@ -124,8 +181,13 @@ class NotificationViewModel @Inject constructor(
                 emailActivity = if (key == "activity") value else null,
             )
             runCatching { apiCall { api.updateNotificationSettings(patch) } }
-                .onSuccess { _state.value = _state.value.copy(prefs = it, saving = false) }
-                .onFailure { _state.value = _state.value.copy(saving = false); toast.error(it) }
+                .onSuccess { if (isCurrent(session)) _state.value = _state.value.copy(prefs = it, saving = false) }
+                .onFailure {
+                    if (isCurrent(session)) {
+                        _state.value = _state.value.copy(saving = false)
+                        toast.error(it)
+                    }
+                }
         }
     }
 }

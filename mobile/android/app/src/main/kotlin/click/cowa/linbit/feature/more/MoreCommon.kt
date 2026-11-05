@@ -48,12 +48,13 @@ fun MoreHost(
     onOpen: (MorePage) -> Unit,
     onTrade: (Boolean, String) -> Unit,
     onProfile: () -> Unit,
+    onDeposit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onClose)
     Box(modifier.fillMaxSize().background(LB.p.bg).statusBarsPadding().navigationBarsPadding()) {
         when (initial) {
-            MorePage.WELFARE -> WelfareScreen(onClose, onLogin, onOpen, onTrade, onProfile)
+            MorePage.WELFARE -> WelfareScreen(onClose, onLogin, onOpen, onTrade, onProfile, onDeposit)
             MorePage.COPY -> CopyTradingScreen(onClose, onLogin)
             MorePage.NOTIFICATIONS -> NotificationsScreen(onClose, onLogin)
             MorePage.COUPONS -> CouponsScreen(onClose, onLogin)

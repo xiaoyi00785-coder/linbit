@@ -25,6 +25,27 @@ class MoreApiTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `新人任务报名领取和进度使用真实路径`() = runTest {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("""{"enrolled":false,"tasks":[{"key":"first_deposit","type":"first_deposit","status":"locked"}]}"""))
+        server.enqueue(MockResponse().setBody("""{"enrolled":true,"tasks":[]}"""))
+        server.enqueue(MockResponse().setBody("""{"task":"first_deposit","couponId":12,"title":"合约体验金","amount":"5"}"""))
+        server.start()
+        try {
+            val api = NetworkFactory.api(NetworkFactory.bareClient(), server.url("/").toString())
+            assertEquals("first_deposit", api.newcomerState().tasks?.single()?.type?.value)
+            assertEquals("/rewards/newcomer", server.takeRequest().path)
+            assertEquals(true, api.enrollNewcomer().enrolled)
+            val enroll = server.takeRequest()
+            assertEquals("/rewards/newcomer/enroll", enroll.path)
+            assertEquals("POST", enroll.method)
+            assertEquals(12L, api.claimNewcomerTask("first_deposit").couponId)
+            val claim = server.takeRequest()
+            assertEquals("/rewards/newcomer/tasks/first_deposit/claim", claim.path)
+            assertEquals("POST", claim.method)
+        } finally { server.shutdown() }
+    }
+
     @Test fun `通知卡券TradFi工单请求使用契约路径`() = runTest {
         val server = MockWebServer()
         server.enqueue(MockResponse().setBody("""{"items":[],"total":0,"unread":0}"""))

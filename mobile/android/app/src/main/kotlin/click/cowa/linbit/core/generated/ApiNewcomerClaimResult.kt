@@ -23,45 +23,43 @@ import kotlinx.serialization.Contextual
 /**
  * 
  *
- * @param key 
+ * @param task 
+ * @param couponId 
  * @param title 
- * @param type 
  * @param kind 
  * @param amount 
- * @param target 
- * @param progress 
- * @param status 
  */
 @Serializable
 
-data class ApiHomeNewcomerTasksInner (
+data class ApiNewcomerClaimResult (
 
-    @SerialName(value = "key")
-    val key: kotlin.String? = null,
+    @SerialName(value = "task")
+    val task: kotlin.String? = null,
+
+    @SerialName(value = "couponId")
+    val couponId: kotlin.Long? = null,
 
     @SerialName(value = "title")
     val title: kotlin.String? = null,
 
-    @SerialName(value = "type")
-    val type: kotlin.String? = null,
-
     @SerialName(value = "kind")
-    val kind: kotlin.String? = null,
+    val kind: ApiNewcomerClaimResult.Kind? = null,
 
     @SerialName(value = "amount")
-    val amount: kotlin.String? = null,
-
-    @SerialName(value = "target")
-    val target: kotlin.String? = null,
-
-    @SerialName(value = "progress")
-    val progress: kotlin.String? = null,
-
-    @SerialName(value = "status")
-    val status: kotlin.String? = null
+    val amount: kotlin.String? = null
 
 ) {
 
+    /**
+     * 
+     *
+     * Values: TRIAL,DEDUCTION
+     */
+    @Serializable
+    enum class Kind(val value: kotlin.String) {
+        @SerialName(value = "trial") TRIAL("trial"),
+        @SerialName(value = "deduction") DEDUCTION("deduction");
+    }
 
 }
 

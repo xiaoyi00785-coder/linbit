@@ -25,12 +25,23 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** 福利只展示服务端进度与余额；领取/报名没有端点时不伪造成功，明确标为即将开放。 */
+/** 福利进度、报名、任务领取与卡券均使用 growth 服务真实接口。 */
+enum class WelfareTaskRoute { Profile, Deposit, Futures }
+
+fun welfareTaskRoute(type: ApiNewcomerTask.Type?): WelfareTaskRoute? = when (type) {
+    ApiNewcomerTask.Type.BIND -> WelfareTaskRoute.Profile
+    ApiNewcomerTask.Type.FIRST_DEPOSIT -> WelfareTaskRoute.Deposit
+    ApiNewcomerTask.Type.VOLUME -> WelfareTaskRoute.Futures
+    else -> null
+}
+
 data class WelfareState(
     val newcomer: ApiHomeNewcomer? = null,
     val bonus: ApiFuturesBonus200Response? = null,
     val loading: Boolean = true,
     val error: String? = null,
+    val enrolling: Boolean = false,
+    val claiming: Set<String> = emptySet(),
 )
 
 @HiltViewModel
@@ -43,7 +54,12 @@ class WelfareViewModel @Inject constructor(
     val state: kotlinx.coroutines.flow.StateFlow<WelfareState> = _state
     val loggedIn get() = tokens.loggedIn
 
+    init {
+        viewModelScope.launch { tokens.sessionVersion.collect { _state.value = WelfareState() } }
+    }
+
     fun load() {
+        val session = tokens.sessionVersion.value
         _state.value = _state.value.copy(loading = _state.value.newcomer == null, error = null)
         viewModelScope.launch {
             val n = async { runCatching { apiCall { api.homeNewcomer() } } }
@@ -52,12 +68,60 @@ class WelfareViewModel @Inject constructor(
                 else null
             }
             val newcomer = n.await()
+            val bonus = b.await()
+            if (session != tokens.sessionVersion.value) return@launch
             _state.value = WelfareState(
                 newcomer = newcomer.getOrNull(),
-                bonus = b.await(),
+                bonus = bonus,
                 loading = false,
                 error = newcomer.exceptionOrNull()?.lbMessage(),
             )
+        }
+    }
+
+    fun enroll() {
+        if (_state.value.enrolling) return
+        val session = tokens.sessionVersion.value
+        _state.value = _state.value.copy(enrolling = true)
+        viewModelScope.launch {
+            runCatching { apiCall { api.enrollNewcomer() } }
+                .onSuccess {
+                    if (session == tokens.sessionVersion.value) {
+                        _state.value = _state.value.copy(enrolling = false)
+                        toast.show("报名成功，完成任务即可领取奖励", ToastCenter.Kind.SUCCESS)
+                        load()
+                    }
+                }
+                .onFailure {
+                    if (session == tokens.sessionVersion.value) {
+                        _state.value = _state.value.copy(enrolling = false)
+                        toast.error(it)
+                    }
+                }
+        }
+    }
+
+    fun claim(task: ApiNewcomerTask) {
+        if (task.status != ApiNewcomerTask.Status.CLAIMABLE) return
+        val key = task.key ?: return
+        if (key in _state.value.claiming) return
+        val session = tokens.sessionVersion.value
+        _state.value = _state.value.copy(claiming = _state.value.claiming + key)
+        viewModelScope.launch {
+            runCatching { apiCall { api.claimNewcomerTask(key) } }
+                .onSuccess { result ->
+                    if (session == tokens.sessionVersion.value) {
+                        _state.value = _state.value.copy(claiming = _state.value.claiming - key)
+                        toast.show("${result.title ?: "任务奖励"}已发放至卡券中心", ToastCenter.Kind.SUCCESS)
+                        load()
+                    }
+                }
+                .onFailure {
+                    if (session == tokens.sessionVersion.value) {
+                        _state.value = _state.value.copy(claiming = _state.value.claiming - key)
+                        toast.error(it)
+                    }
+                }
         }
     }
 }
@@ -69,6 +133,7 @@ fun WelfareScreen(
     onOpen: (MorePage) -> Unit,
     onTrade: (Boolean, String) -> Unit,
     onProfile: () -> Unit,
+    onDeposit: () -> Unit,
     vm: WelfareViewModel = hiltViewModel(),
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
@@ -88,22 +153,34 @@ fun WelfareScreen(
                         Text(n.asset ?: "USDT", Modifier.padding(bottom = 4.dp), style = lb(FontSize.label, FontWeight.Medium), color = LB.p.textPrimary)
                     }
                     val completed = n.completed?.let { "已完成 $it/${n.tasks?.size ?: 0} · " } ?: ""
-                    val expiry = n.deadline?.let { "截止 ${formatTime(it)}" } ?: n.days?.let { "注册后 $it 天内有效" } ?: "完成任务领取奖励"
+                    val expiry = n.deadline?.let { "截止 ${formatTime(it)}" } ?: n.days?.let { "报名后 $it 天内有效" } ?: "完成任务领取奖励"
                     Text(completed + expiry, Modifier.padding(top = 6.dp), style = lb(FontSize.small), color = LB.p.textSecondary)
                     if (n.degraded == true) Text("进度暂时无法读取，请稍后刷新", Modifier.padding(top = 6.dp), style = lb(FontSize.small), color = LB.p.down)
-                    LbButton(newcomerCta(n.cta?.value), Modifier.padding(top = 14.dp), enabled = n.cta != ApiHomeNewcomer.Cta.DONE && n.cta != ApiHomeNewcomer.Cta.NONE) {
+                    LbButton(newcomerCta(n.cta?.value), Modifier.padding(top = 14.dp), enabled = n.cta != ApiHomeNewcomer.Cta.DONE && n.cta != ApiHomeNewcomer.Cta.NONE,
+                        loading = s.enrolling) {
                         when (n.cta) {
                             ApiHomeNewcomer.Cta.LOGIN -> onLogin()
                             ApiHomeNewcomer.Cta.KYC -> onProfile()
-                            ApiHomeNewcomer.Cta.CONTINUE, ApiHomeNewcomer.Cta.ENROLL, ApiHomeNewcomer.Cta.OPEN -> onTrade(false, "BTCUSDT")
-                            else -> vm.toast.show("奖励领取即将开放")
+                            ApiHomeNewcomer.Cta.ENROLL -> vm.enroll()
+                            ApiHomeNewcomer.Cta.CLAIM, ApiHomeNewcomer.Cta.CONTINUE, ApiHomeNewcomer.Cta.OPEN -> {
+                                n.tasks.orEmpty().firstOrNull { it.status == ApiNewcomerTask.Status.CLAIMABLE }?.let(vm::claim)
+                                    ?: n.tasks.orEmpty().firstOrNull { it.status == ApiNewcomerTask.Status.IN_PROGRESS }?.let { task ->
+                                        when (welfareTaskRoute(task.type)) {
+                                            WelfareTaskRoute.Profile -> onProfile()
+                                            WelfareTaskRoute.Deposit -> onDeposit()
+                                            WelfareTaskRoute.Futures -> onTrade(true, "BTCUSDT")
+                                            else -> Unit
+                                        }
+                                    }
+                            }
+                            else -> Unit
                         }
                     }
                 }
                 Text("任务", style = lb(FontSize.title, FontWeight.SemiBold), color = LB.p.textPrimary)
                 if (n.tasks.isNullOrEmpty()) EmptyState("暂无任务")
                 n.tasks.orEmpty().forEach { task ->
-                    val done = task.status in setOf("done", "completed", "claimed")
+                    val done = task.status in setOf(ApiNewcomerTask.Status.CLAIMED, ApiNewcomerTask.Status.CLAIMABLE)
                     MoreCard {
                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             LbImageIcon(if (done) R.drawable.ic_mc_check_circle_light else R.drawable.ic_g_gift_light, 26.dp)
@@ -112,8 +189,41 @@ fun WelfareScreen(
                                 Text(task.title ?: "新手任务", style = lb(FontSize.label, FontWeight.Medium), color = LB.p.textPrimary)
                                 val target = click.cowa.linbit.core.util.Dec.parse(task.target)
                                 if (target.signum() > 0) Text("${task.progress ?: "0"} / ${task.target}", Modifier.padding(top = 4.dp), style = lbNum(FontSize.small), color = LB.p.textSecondary)
+                                Text(when (task.status) {
+                                    ApiNewcomerTask.Status.LOCKED -> if (n.enrolled == true) "完成身份认证后可参与" else "报名后可参与"
+                                    ApiNewcomerTask.Status.IN_PROGRESS -> "进行中"
+                                    ApiNewcomerTask.Status.CLAIMABLE -> "已完成，可领取"
+                                    ApiNewcomerTask.Status.CLAIMED -> "已领取"
+                                    ApiNewcomerTask.Status.EXPIRED -> "已过期"
+                                    else -> ""
+                                }, Modifier.padding(top = 4.dp), style = lb(FontSize.small), color = LB.p.textSecondary)
                             }
-                            Text("+${task.amount ?: "--"}", style = lbNum(FontSize.label, FontWeight.SemiBold), color = LB.p.brand)
+                            Spacer(Modifier.width(8.dp))
+                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                                Text("+${task.amount ?: "--"}", style = lbNum(FontSize.label, FontWeight.SemiBold), color = LB.p.brand)
+                                when (task.status) {
+                                    ApiNewcomerTask.Status.CLAIMABLE -> LbButton(
+                                        "领取", Modifier.padding(top = 8.dp).width(76.dp), height = 32.dp,
+                                        loading = task.key in s.claiming,
+                                    ) { vm.claim(task) }
+                                    ApiNewcomerTask.Status.IN_PROGRESS -> LbButton(
+                                        when (task.type) {
+                                            ApiNewcomerTask.Type.BIND -> "去绑定"
+                                            ApiNewcomerTask.Type.FIRST_DEPOSIT -> "去充值划转"
+                                            ApiNewcomerTask.Type.VOLUME -> "去合约交易"
+                                            else -> "继续任务"
+                                        }, Modifier.padding(top = 8.dp).width(108.dp), height = 32.dp,
+                                    ) {
+                                        when (welfareTaskRoute(task.type)) {
+                                            WelfareTaskRoute.Profile -> onProfile()
+                                            WelfareTaskRoute.Deposit -> onDeposit()
+                                            WelfareTaskRoute.Futures -> onTrade(true, "BTCUSDT")
+                                            else -> Unit
+                                        }
+                                    }
+                                    else -> Unit
+                                }
+                            }
                         }
                     }
                 }

@@ -101,6 +101,15 @@ interface LinbitApi {
     @GET("home/newcomer")
     suspend fun homeNewcomer(): ApiHomeNewcomer
 
+    @GET("rewards/newcomer")
+    suspend fun newcomerState(): ApiNewcomerState
+
+    @POST("rewards/newcomer/enroll")
+    suspend fun enrollNewcomer(): ApiNewcomerState
+
+    @POST("rewards/newcomer/tasks/{key}/claim")
+    suspend fun claimNewcomerTask(@Path("key") key: String): ApiNewcomerClaimResult
+
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("earn/products")
     suspend fun earnProducts(): ApiEarnProducts200Response
