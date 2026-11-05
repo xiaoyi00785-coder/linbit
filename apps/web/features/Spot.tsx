@@ -129,7 +129,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
       <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} {...btnProps(() => setByPct(p), `${p}%`)} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
       <div className="kv2 g"><span>可用</span><span>{authed ? `${fmtAmt(avail)} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
       {byAmt ? <div className="kv2 g"><span>预估数量</span><span>{q ? `${q.toFixed(pair.qp)} ${B}` : "--"}</span></div> : <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>}
-      <div className="kv2 g"><span>预估手续费（{+(rate * 100).toFixed(4)}%）</span><span>{fee}</span></div>
+      <div className="kv2 g"><span>{`预估手续费（${+(rate * 100).toFixed(4)}%）`}</span><span>{fee}</span></div>
       {msg && <div className={msg.ok ? "fx-ok" : "fx-err"} style={{ fontSize: 12, margin: "6px 0" }}>{msg.t}</div>}
       <button className={"lbtn" + (authed && side === "sell" ? " sell" : "")} disabled={busy || sellBelowMin} title={sellBelowMin ? belowMinText : undefined} aria-busy={busy || undefined} onClick={submit}>{!authed ? "登录/注册" : sellBelowMin ? "低于最小下单量" : side === "buy" ? `买入 ${B}` : `卖出 ${B}`}</button>
     </div>

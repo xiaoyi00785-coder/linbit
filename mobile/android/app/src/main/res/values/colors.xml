@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 系统启动页背景：品牌绿（#abe127），日夜一致；符号为 #070808（drawable/ic_splash_icon） -->
+    <color name="splash_bg">#ABE127</color>
+    <!-- 窗口背景：与 tokens.json bg 一致（夜间 #070808，见 values-night） -->
+    <color name="window_bg">#FFFFFF</color>
+</resources>

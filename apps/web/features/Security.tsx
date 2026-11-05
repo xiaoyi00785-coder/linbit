@@ -72,7 +72,7 @@ function SecModal({ kind, sec, onClose }: { kind: Kind; sec: SecurityOverview; o
       <div onClick={(e) => e.stopPropagation()}>
         <span className="fx-x" role="button" aria-label="关闭" onClick={onClose}>✕</span>
         <h3>{TITLE[kind]}</h3>
-        {kind !== "phishing" && kind !== "passkey" && <div className="sec-lock"><b>!</b>为保障资产安全，修改后 {hours} 小时内将禁止提现和站内转出。</div>}
+        {kind !== "phishing" && kind !== "passkey" && <div className="sec-lock"><b>!</b>{`为保障资产安全，修改后 ${hours} 小时内将禁止提现和站内转出。`}</div>}
         {kind === "password" && <>
           <label className="fx-field">原登录密码{pw("old", "请输入原密码")}</label>
           <label className="fx-field">新登录密码{pw("new", "8–128 位，建议包含字母、数字和符号")}</label>
@@ -82,7 +82,7 @@ function SecModal({ kind, sec, onClose }: { kind: Kind; sec: SecurityOverview; o
         {(kind === "email" || kind === "phone") && <>
           {kind === "email" ? <label className="fx-field">新邮箱<input value={v("email")} onChange={set("email")} placeholder="请输入新邮箱" /></label>
             : <label className="fx-field">新手机号<div className="sec-ph"><select value={v("cc")} onChange={set("cc")}>{["+86", "+852", "+853", "+886", "+1", "+65", "+81", "+82", "+44"].map((c) => <option key={c}>{c}</option>)}</select><input inputMode="numeric" value={v("phone")} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, "") })} placeholder="手机号" /></div></label>}
-          <div className="fx-field">新{kind === "email" ? "邮箱" : "手机"}验证码<CodeInput value={v("newCode")} onChange={(x) => setF({ ...f, newCode: x })} send={async () => { const r = await sendContactCode(contact); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.ok ? undefined : secMsg(r) }; }} /></div>
+          <div className="fx-field">{`新${kind === "email" ? "邮箱" : "手机"}验证码`}<CodeInput value={v("newCode")} onChange={(x) => setF({ ...f, newCode: x })} send={async () => { const r = await sendContactCode(contact); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.ok ? undefined : secMsg(r) }; }} /></div>
           <div className="fx-field">{oldLabel}<CodeInput value={v("oldCode")} onChange={(x) => setF({ ...f, oldCode: x })} send={async () => { const r = await sendAccountCode("security"); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error }; }} /></div>
         </>}
         {kind === "fund-change" && <label className="fx-field">原资金密码{pw("oldFp", "6 位数字", true)}</label>}
@@ -173,7 +173,7 @@ export function SecurityCenter() {
       {loading ? <div className="lcard"><Skel n={4} h={56} /></div> : !data ? (
         <div className="lcard"><h3>安全中心</h3><div className="fx-err">{res ? secMsg(res) : "加载失败"}</div></div>
       ) : <>
-        {wLock && <div className="sec-lock big"><b>!</b>安全设置变更后 {s.policy?.withdrawLockHours ?? 24} 小时内禁止提现，预计 {fmtUntil(s.withdrawLockedUntil)} 解除{s.withdrawLockReason ? `（${s.withdrawLockReason}）` : ""}。</div>}
+        {wLock && <div className="sec-lock big"><b>!</b>{`安全设置变更后 ${s.policy?.withdrawLockHours ?? 24} 小时内禁止提现，预计 ${fmtUntil(s.withdrawLockedUntil)} 解除${s.withdrawLockReason ? `（${s.withdrawLockReason}）` : ""}。`}</div>}
         <div className="lcard"><div className="slv"><div className="sring"><b>{score}/{L.max}</b></div><div><b className={lvl[1]}>{lvl[0]}</b><div className="lg">安全等级</div></div><div className="schk">{checks.map(([x, ok]) => <span key={x} className={ok ? "ok" : ""}><i aria-hidden="true">{ok ? "✓" : ""}</i>{x}<span className="sr-only">{ok ? "（已设置）" : "（未设置）"}</span></span>)}</div></div></div>
         <div className="lcard"><h3>基础安全设置</h3>
           <Row icon={<G n="lock" s={18} />} t="登录密码" d="用于登录账户，修改后其他设备将退出登录" ok s="已设置"><button className="lb sm" onClick={() => setM("password")}>修改</button></Row>

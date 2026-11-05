@@ -12,6 +12,14 @@ final class AssetsModel: ObservableObject {
     @Published var query = ""
 
     var list: [APIBalance] { balances.value ?? [] }
+    /// 单价：优先用服务端实时指数价 priceUsd；缺失时才回退（USDT=1 / 行情最新价）。不得用 valuationUsd ÷ 数量反推。
+    static func unitPrice(asset: String?, priceUsd: String?) -> Decimal? {
+        if let p = priceUsd, !p.isEmpty { return Dec.parse(p) }
+        guard let asset else { return nil }
+        if asset == "USDT" { return 1 }
+        return MarketStore.shared.spot.first { $0.symbol == asset + "USDT" }?.last
+    }
+    func unitPrice(_ b: APIBalance) -> Decimal? { Self.unitPrice(asset: b.asset, priceUsd: b.priceUsd) }
     func usd(_ b: APIBalance) -> Decimal {
         if let v = b.valuationUsd { return Dec.parse(v) }
         if b.asset == "USDT" { return Dec.parse(b.total) }
