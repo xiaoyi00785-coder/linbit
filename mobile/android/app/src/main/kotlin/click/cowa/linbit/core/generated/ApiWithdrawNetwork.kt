@@ -24,6 +24,8 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param network 
+ * @param withdrawEnabled 该网络当前是否开放提现（后端始终返回；false 的网络前端不应列出）。
+ * @param memoRequired 该网络提现是否必须填写 Memo / Tag（后端始终返回）。
  * @param minWithdraw 
  * @param maxWithdraw 单笔最大提现数量；USDT 各网络为 20000。为空表示无上限。
  * @param gasFeeEstimate 预估链上 Gas 费（提现唯一费用，无平台手续费）。实现前可为 null。
@@ -37,6 +39,14 @@ data class ApiWithdrawNetwork (
 
     @SerialName(value = "network")
     val network: kotlin.String,
+
+    /* 该网络当前是否开放提现（后端始终返回；false 的网络前端不应列出）。 */
+    @SerialName(value = "withdrawEnabled")
+    val withdrawEnabled: kotlin.Boolean,
+
+    /* 该网络提现是否必须填写 Memo / Tag（后端始终返回）。 */
+    @SerialName(value = "memoRequired")
+    val memoRequired: kotlin.Boolean,
 
     @SerialName(value = "minWithdraw")
     val minWithdraw: kotlin.String? = null,
