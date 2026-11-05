@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import click.cowa.linbit.core.generated.ApiDepositAddress
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.network.lbMessage
@@ -70,7 +71,9 @@ fun CoinPickerScreen(
     BackHandler(onBack = onBack)
     val p = LB.p
     var q by remember { mutableStateOf("") }
-    val all = remember(vm.state.value, vm.marketState.value) { vm.coinUniverse() }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val marketState by vm.marketState.collectAsStateWithLifecycle()
+    val all = remember(state, marketState) { vm.coinUniverse() }
     val filtered = all.filter { q.isBlank() || it.contains(q, true) || (CoinNames[it] ?: "").contains(q, true) }
     val hot = listOf("BTC", "ETH", "USDT").filter { it in all }
     val groups = filtered.groupBy { it.first().uppercaseChar().toString() }.toSortedMap()
@@ -90,11 +93,11 @@ fun CoinPickerScreen(
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 if (q.isBlank() && mode == AssetsRoute.CoinPicker.Mode.Deposit && hot.isNotEmpty()) {
                     Text("热门币种", Modifier.padding(horizontal = Spacing.pageH).padding(top = 14.dp, bottom = 4.dp), style = lb(FontSize.caption, FontWeight.SemiBold), color = p.textPrimary)
-                    hot.forEach { CoinRow(it, mode, vm, onPick) }
+                    hot.forEach { CoinRow(it, mode, state, vm, onPick) }
                 }
                 groups.forEach { (k, list) ->
                     Text(k, Modifier.padding(horizontal = Spacing.pageH).padding(top = 14.dp, bottom = 4.dp), style = lb(FontSize.caption), color = p.textTertiary)
-                    list.forEach { CoinRow(it, mode, vm, onPick) }
+                    list.forEach { CoinRow(it, mode, state, vm, onPick) }
                 }
             }
         }
@@ -102,9 +105,9 @@ fun CoinPickerScreen(
 }
 
 @Composable
-private fun CoinRow(asset: String, mode: AssetsRoute.CoinPicker.Mode, vm: AssetsViewModel, onPick: (String) -> Unit) {
+private fun CoinRow(asset: String, mode: AssetsRoute.CoinPicker.Mode, state: AssetsUiState, vm: AssetsViewModel, onPick: (String) -> Unit) {
     val p = LB.p
-    val bal = (vm.state.value.spot + vm.state.value.funding).firstOrNull { it.asset.equals(asset, true) }
+    val bal = (state.spot + state.funding).firstOrNull { it.asset.equals(asset, true) }
     Row(
         Modifier.fillMaxWidth().height(54.dp).pressable(scale = 1f) { onPick(asset) }.padding(horizontal = Spacing.pageH),
         verticalAlignment = Alignment.CenterVertically,
@@ -118,7 +121,7 @@ private fun CoinRow(asset: String, mode: AssetsRoute.CoinPicker.Mode, vm: Assets
         if (mode == AssetsRoute.CoinPicker.Mode.Withdraw || bal != null) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(bal?.total ?: "0.00", style = lbNum(FontSize.label), color = p.textPrimary)
-                val rate = vm.state.value.cnyRate
+                val rate = state.cnyRate
                 if (rate != null && bal != null) {
                     Text("≈ " + Fmt.fiat(vm.usd(bal), rate, 2), style = lbNum(11.sp), color = p.textTertiary)
                 }

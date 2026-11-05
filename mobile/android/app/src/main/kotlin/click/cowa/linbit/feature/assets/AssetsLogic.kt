@@ -2,6 +2,7 @@ package click.cowa.linbit.feature.assets
 
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiWalletNetwork
+import click.cowa.linbit.core.generated.ApiWithdrawNetwork
 import click.cowa.linbit.core.util.Dec
 import java.math.BigDecimal
 
@@ -57,6 +58,13 @@ object AssetsLogic {
 
     fun withdrawEnabledNetworks(nets: List<ApiWalletNetwork>): List<ApiWalletNetwork> =
         nets.filter { it.withdrawEnabled != false && !it.network.isNullOrBlank() }
+
+    @JvmName("filterWithdrawNetworkOptions")
+    fun withdrawEnabledNetworks(nets: List<ApiWithdrawNetwork>): List<ApiWithdrawNetwork> =
+        nets.filter { it.withdrawEnabled }
+
+    fun withdrawMemoRequired(primary: ApiWithdrawNetwork?, wallet: ApiWalletNetwork?): Boolean =
+        primary?.memoRequired == true || wallet?.memoRequired == true
 
     fun usd(b: ApiBalance, lastPrice: (String) -> BigDecimal): BigDecimal {
         b.valuationUsd?.let { return Dec.parse(it) }

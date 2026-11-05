@@ -131,7 +131,7 @@ class AssetsViewModel @Inject constructor(
 
     // ---- 提现网络（min 来自后端 WALLET_NETWORKS_JSON）----
     suspend fun loadWithdrawNetworks(asset: String): Result<List<ApiWithdrawNetwork>> = runCatching {
-        apiCall { api.withdrawNetworks(asset) }.networks
+        AssetsLogic.withdrawEnabledNetworks(apiCall { api.withdrawNetworks(asset) }.networks)
     }
 
     suspend fun loadWalletNetworksForWithdraw(asset: String): Result<List<ApiWalletNetwork>> = runCatching {

@@ -121,7 +121,7 @@ fun WithdrawScreen(
     val maxS = AssetsLogic.positiveAmount(net?.maxWithdraw)
     val feeS = AssetsLogic.positiveAmount(net?.gasFeeEstimate)
     val eta = AssetsLogic.etaShort(net?.estimatedArrivalMinutes ?: walletNet?.estimatedArrivalMinutes)
-    val memoReq = walletNet?.memoRequired == true
+    val memoReq = AssetsLogic.withdrawMemoRequired(net, walletNet)
     val value = Dec.parse(amount)
     val receive = AssetsLogic.receiveAmount(amount, net?.gasFeeEstimate)
 

@@ -2,7 +2,9 @@ package click.cowa.linbit.feature.assets
 
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiWalletNetwork
+import click.cowa.linbit.core.generated.ApiWithdrawNetwork
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -62,6 +64,24 @@ class AssetsLogicTest {
         )
         val out = AssetsLogic.depositNetworks("USDT", raw).map { it.network }
         assertEquals(listOf("TRC20", "SOL"), out)
+    }
+
+    @Test fun withdrawNetworksFiltersDisabled() {
+        val raw = listOf(
+            ApiWithdrawNetwork(network = "TRC20", withdrawEnabled = true, memoRequired = false),
+            ApiWithdrawNetwork(network = "ERC20", withdrawEnabled = false, memoRequired = false),
+        )
+        assertEquals(listOf("TRC20"), AssetsLogic.withdrawEnabledNetworks(raw).map { it.network })
+    }
+
+    @Test fun withdrawMemoRequiredUsesEitherNetworkSource() {
+        val primary = ApiWithdrawNetwork(network = "EOS", withdrawEnabled = true, memoRequired = true)
+        val wallet = ApiWalletNetwork(network = "EOS", withdrawEnabled = true, memoRequired = true)
+        assertTrue(AssetsLogic.withdrawMemoRequired(primary, null))
+        assertTrue(AssetsLogic.withdrawMemoRequired(null, wallet))
+        assertTrue(AssetsLogic.withdrawMemoRequired(primary.copy(memoRequired = false), wallet))
+        assertFalse(AssetsLogic.withdrawMemoRequired(primary.copy(memoRequired = false), wallet.copy(memoRequired = false)))
+        assertFalse(AssetsLogic.withdrawMemoRequired(null, null))
     }
 
     @Test fun receiveAmountSubtractsGas() {
