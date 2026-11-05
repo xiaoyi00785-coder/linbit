@@ -103,4 +103,25 @@ class TradeLogicTest {
     @Test fun futuresPositionModeBlockedWithoutOpenState() {
         assertNull(futuresVm().positionModeBlockReason)
     }
+    @Test fun calculatorCostAndLiqAndPnl() {
+        val cost = TradeCalculator.cost(bd("0.1"), bd("80000"), 20)
+        assertEquals(0, cost.compareTo(bd("400")))
+        val liqLong = TradeCalculator.liqPrice(bd("80000"), 20, true, bd("0.004"))
+        // 80000 * (1 - 0.05 + 0.004) = 80000 * 0.954 = 76320
+        assertEquals(0, liqLong.compareTo(bd("76320")))
+        val pnl = TradeCalculator.pnl(bd("80000"), bd("82000"), bd("0.1"), true)
+        assertEquals(0, pnl.compareTo(bd("200")))
+        val target = TradeCalculator.targetPrice(bd("80000"), bd("0.1"), bd("200"), true)
+        assertEquals(0, target.compareTo(bd("82000")))
+    }
+
+    @Test fun candleFromSpotParsesOhlc() {
+        val c = Candle.fromSpot(click.cowa.linbit.core.generated.ApiKline(time = 1, open = "1", high = "3", low = "0.5", close = "2", volume = "10"))
+        assertEquals(bd("1"), c.open)
+        assertEquals(bd("3"), c.high)
+        assertEquals(bd("0.5"), c.low)
+        assertEquals(bd("2"), c.close)
+    }
+
 }
+

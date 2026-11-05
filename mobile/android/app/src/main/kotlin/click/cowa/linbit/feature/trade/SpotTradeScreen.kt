@@ -105,15 +105,21 @@ fun SpotTradeContent(
     var sheet by remember { mutableStateOf<String?>(null) }
     var skipConfirm by remember { mutableStateOf(false) }
     var ordersTab by remember { mutableStateOf(0) }
+    var topTab by remember { mutableStateOf(0) }
+    var chartOpen by remember { mutableStateOf(false) }
     val step = vm.bookPrecision ?: BigDecimal.ONE.movePointLeft(vm.pricePrec)
     val grouped = remember(vm.book, step) { vm.book.grouped(step) }
 
     Column(modifier.fillMaxSize().background(p.bg)) {
         Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
-            PrimaryTabs(listOf("现货", "策略", "理财", "闪兑"), 0, { if (it != 0) vm.toast.show("该功能即将开放") }, size = 16.sp)
+            PrimaryTabs(listOf("现货", "策略", "理财", "闪兑"), topTab, { topTab = it }, size = 16.sp)
         }
         HorizontalDivider(color = p.divider)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = bottomInset)) {
+        when (topTab) {
+            1 -> StrategySubpage(bottomInset, onLogin)
+            2 -> EarnSubpage(bottomInset, onLogin)
+            3 -> ConvertSubpage(bottomInset, onLogin)
+            else -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = bottomInset)) {
             // 交易对头
             Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.pressable(scale = 1f) { sheet = "pairs" }) {
@@ -127,7 +133,7 @@ fun SpotTradeContent(
                 Box(Modifier.weight(1f))
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     LbIcon(R.drawable.ic_sun, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { sheet = "theme" })
-                    LbIcon(R.drawable.ic_candles, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { vm.toast.show("K 线页即将开放") })
+                    LbIcon(R.drawable.ic_candles, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { chartOpen = !chartOpen })
                     LbIcon(R.drawable.ic_more, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { vm.toast.show("更多功能即将开放") })
                 }
             }
@@ -194,6 +200,11 @@ fun SpotTradeContent(
                     modifier = Modifier.width(138.dp),
                 )
             }
+            if (chartOpen) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TradeChartPanel(symbol = vm.symbol, pricePrec = vm.pricePrec, showTrades = false, loadCandles = { iv -> vm.loadKlines(iv) })
+                }
+            }
             // 委托区
             Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 20.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 Row(Modifier.pressable(scale = 1f) { if (ordersTab == 0 || ordersTab == 2) sheet = "orderKind" else ordersTab = 0 }, verticalAlignment = Alignment.CenterVertically) {
@@ -216,9 +227,10 @@ fun SpotTradeContent(
                 else -> EmptyState("暂无交易机器人")
             }
         }
+        } // end when topTab else
     }
 
-    when (sheet) {
+    if (topTab == 0) when (sheet) {
         "orderKind" -> LbSheet(null, { sheet = null }) {
             Column(Modifier.padding(bottom = 20.dp)) {
                 listOf(0 to "当前委托", 2 to "条件单").forEach { (i, t) -> SheetOptionRow(t, ordersTab == i) { ordersTab = i; sheet = null } }
