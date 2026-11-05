@@ -145,7 +145,7 @@ function EditModal({ o, onClose, onDone }: { o: Ord; onClose: () => void; onDone
       <div className="tk-ed">
         <div className="inp"><small>价格</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(num(e.target.value))} /><em>USDT</em></div>
         <div className="inp"><small>数量</small><input inputMode="decimal" value={qty} onChange={(e) => setQty(num(e.target.value))} /></div>
-        <p className="tk-txt g">改价或增加数量会失去时间优先级；减少数量保留原排队位置。已成交 {o.filledQty}。</p>
+        <p className="tk-txt g">{`改价或增加数量会失去时间优先级；减少数量保留原排队位置。已成交 ${o.filledQty}。`}</p>
       </div>
     </Modal>
   );
@@ -199,7 +199,7 @@ function TpslModal({ p, cur, onClose, onDone }: { p: Pos; cur: { tp?: Algo; sl?:
       <div className="tk-ed">
         <div className="kv2 g"><span>开仓价 / 标记价</span><span>{p.entryPrice} / <span data-testid="tpsl-mark">{mark}</span></span></div>
         {(cur.tp || cur.sl) && <div className="kv2 g"><span>当前止盈 / 止损</span><span>{cur.tp?.triggerPrice || "--"} / {cur.sl?.triggerPrice || "--"}</span></div>}
-        <div className="tk-tif">{(["MARK", "LAST"] as const).map((k) => <b key={k} className={f.tt === k ? "on" : ""} onClick={() => setF({ ...f, tt: k })}>按{TT[k]}触发</b>)}</div>
+        <div className="tk-tif">{(["MARK", "LAST"] as const).map((k) => <b key={k} className={f.tt === k ? "on" : ""} onClick={() => setF({ ...f, tt: k })}>{`按${TT[k]}触发`}</b>)}</div>
         <div className="inp"><small>止盈触发价</small><input inputMode="decimal" aria-label="止盈触发价" value={f.tp} onChange={(e) => setF({ ...f, tp: num(e.target.value) })} /><em>USDT</em></div>
         <div className="inp"><small>止损触发价</small><input inputMode="decimal" aria-label="止损触发价" value={f.sl} onChange={(e) => setF({ ...f, sl: num(e.target.value) })} /><em>USDT</em></div>
         <div className="inp"><small>数量</small><input inputMode="decimal" placeholder={`留空为全部仓位（${p.qty}）`} value={f.qty} onChange={(e) => setF({ ...f, qty: num(e.target.value) })} /></div>
@@ -231,7 +231,7 @@ function PlanEditModal({ o, onClose, onDone }: { o: Algo; onClose: () => void; o
   return (
     <Modal title={`修改计划委托 · ${o.symbol}`} onClose={onClose} foot={<><button className="tk-b2" onClick={onClose}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>确认</button></>}>
       <div className="tk-ed">
-        <div className="tk-tif">{(["LAST", "MARK"] as const).map((k) => <b key={k} className={f.tt === k ? "on" : ""} onClick={() => setF({ ...f, tt: k })}>按{TT[k]}触发</b>)}</div>
+        <div className="tk-tif">{(["LAST", "MARK"] as const).map((k) => <b key={k} className={f.tt === k ? "on" : ""} onClick={() => setF({ ...f, tt: k })}>{`按${TT[k]}触发`}</b>)}</div>
         <div className="inp"><small>触发价</small><input inputMode="decimal" aria-label="触发价" value={f.trig} onChange={(e) => setF({ ...f, trig: num(e.target.value) })} /><em>USDT</em></div>
         <div className="inp"><small>委托价</small><input inputMode="decimal" aria-label="委托价" placeholder="留空则市价" value={f.price} onChange={(e) => setF({ ...f, price: num(e.target.value) })} /><em>USDT</em></div>
         <div className="inp"><small>数量</small><input inputMode="decimal" aria-label="数量" value={f.qty} onChange={(e) => setF({ ...f, qty: num(e.target.value) })} /></div>
