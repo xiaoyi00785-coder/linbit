@@ -17,16 +17,19 @@ import (
 
 // feed.go: external index prices. The index for a symbol (e.g. BTCUSDT) is the
 // latest spot price from an external public market-data source: Binance first,
-// then OKX, Bybit and Gate.io as backups (INDEX_FEED order = failover order; the
-// active source has weight 1). All are polled over REST (public endpoints, no
-// API key). A quote is only usable when:
+// then OKX, Bybit, Gate.io, and (for INDEX_USD_FALLBACK_SYMBOLS such as TONUSDT)
+// Coinbase / Kraken BASE/USD converted via that venue's live USDT/USD rate
+// (INDEX_FEED order = failover order; the active source has weight 1). All are
+// polled over REST (public endpoints, no API key). A quote is only usable when:
 //   - the venue lists the symbol as trading (Binance status TRADING, OKX state
-//     live, Bybit status Trading, Gate trade_status tradable): last-price
-//     tickers keep answering for halted pairs, e.g. Binance TONUSDT (BREAK);
+//     live, Bybit status Trading, Gate trade_status tradable, Coinbase product
+//     online, Kraken AssetPairs status online): last-price tickers keep
+//     answering for halted pairs, e.g. Binance TONUSDT (BREAK);
 //   - it was fetched within IndexStale; and
 //   - its price changed within IndexUnchangedStale (a venue that keeps serving
 //     the same frozen price is treated as stale; INDEX_UNCHANGED_EXEMPT lists
-//     pegged pairs that legitimately stay flat).
+//     pegged pairs that legitimately stay flat; for USD venues the guard watches
+//     the raw USD price so a moving USDT/USD rate cannot hide a frozen BASE/USD).
 // When every source is unusable the index is unavailable and callers (futures
 // mark price, KYC/admin USD conversion, market maker) fail closed.
 //
@@ -36,16 +39,19 @@ import (
 type indexQuote struct {
 	price     decimal.Decimal
 	at        time.Time // last successful fetch containing the symbol
-	changedAt time.Time // last time the price differed from the previous fetch
+	changedAt time.Time // last time the watched price differed from the previous fetch
+	raw       decimal.Decimal // USD venues: raw BASE/USD used by the unchanged guard
 }
 
 type indexSource struct {
-	name    string
-	fetch   func(ctx context.Context) (map[string]decimal.Decimal, error)
-	mu      sync.Mutex
-	quotes  map[string]indexQuote
-	lastOK  time.Time
-	lastErr string
+	name      string
+	fetch     func(ctx context.Context) (map[string]decimal.Decimal, error) // nil when fetchMeta is set
+	fetchMeta metaFetch                                                       // USD venues: prices + derivation
+	usd       bool                                                            // unchanged guard watches raw USD
+	mu        sync.Mutex
+	quotes    map[string]indexQuote
+	lastOK    time.Time
+	lastErr   string
 }
 
 // IndexFeed polls the configured sources and answers index lookups.
@@ -117,6 +123,10 @@ func NewIndexFeed(cfg Config, local func(string) (decimal.Decimal, bool)) *Index
 			st := newStatusCache(cfg.IndexStatusRefresh, gateTrading(base))
 			f.sources = append(f.sources, &indexSource{name: "gateio", quotes: map[string]indexQuote{},
 				fetch: withStatus(func(ctx context.Context) (map[string]decimal.Decimal, error) { return fetchGate(ctx, base) }, st)})
+		case "coinbase", "kraken":
+			if src := newUSDSources(n, cfg); src != nil {
+				f.sources = append(f.sources, src)
+			}
 		}
 	}
 	return f
@@ -141,7 +151,14 @@ func (f *IndexFeed) run(ctx context.Context, src *indexSource) {
 	failing := false
 	for {
 		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		prices, err := src.fetch(cctx)
+		var prices map[string]decimal.Decimal
+		var metas map[string]quoteMeta
+		var err error
+		if src.fetchMeta != nil {
+			prices, metas, err = src.fetchMeta(cctx)
+		} else {
+			prices, err = src.fetch(cctx)
+		}
 		cancel()
 		now := time.Now()
 		src.mu.Lock()
@@ -163,8 +180,18 @@ func (f *IndexFeed) run(ctx context.Context, src *indexSource) {
 					continue
 				}
 				q := indexQuote{price: p, at: now, changedAt: now}
-				if old, ok := src.quotes[sym]; ok && old.price.Equal(p) {
-					q.changedAt = old.changedAt
+				if m, ok := metas[sym]; ok {
+					q.raw = m.Raw
+				}
+				if old, ok := src.quotes[sym]; ok {
+					same := old.price.Equal(p)
+					if src.usd {
+						// watch raw USD so a moving USDT/USD rate cannot hide a frozen BASE/USD
+						same = !old.raw.IsZero() && old.raw.Equal(q.raw)
+					}
+					if same {
+						q.changedAt = old.changedAt
+					}
 				}
 				src.quotes[sym] = q
 			}

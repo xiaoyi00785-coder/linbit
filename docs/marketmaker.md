@@ -1,8 +1,9 @@
 # 外部指数价格 / 做市服务 / 偿付对账
 
 ## 外部指数价格（market-data）
-- 来源：Binance 公共行情（主），OKX、Bybit、Gate.io 依次备用（主备切换，生效来源权重为 1）。`INDEX_FEED=binance,okx,bybit,gateio`，顺序即优先级。
-- 只采用交易所标记为“交易中”的交易对：Binance `exchangeInfo` status=TRADING、OKX instruments state=live、Bybit instruments-info status=Trading、Gate currency_pairs trade_status=tradable；状态列表每 `INDEX_STATUS_REFRESH_SECONDS=900` 秒刷新（首次加载失败则该来源不报价）。暂停/下架的交易对（例如 Binance TONUSDT 为 BREAK）不再产生指数。
+- 来源：Binance 公共行情（主），OKX、Bybit、Gate.io 依次备用；`INDEX_USD_FALLBACK_SYMBOLS`（默认 TONUSDT）再接 Coinbase / Kraken 的 BASE/USD，按同所实时 USDT/USD 换算为 USDT（主备切换，生效来源权重为 1）。`INDEX_FEED=binance,okx,bybit,gateio,coinbase,kraken`，顺序即优先级。
+- 只采用交易所标记为“交易中”的交易对：Binance `exchangeInfo` status=TRADING、OKX instruments state=live、Bybit instruments-info status=Trading、Gate currency_pairs trade_status=tradable、Coinbase product online、Kraken AssetPairs status=online；状态列表每 `INDEX_STATUS_REFRESH_SECONDS=900` 秒刷新（首次加载失败则该来源不报价）。暂停/下架的交易对（例如 Binance TONUSDT 为 BREAK）不再从该所产生指数。
+- USD 源：`INDEX_USDT_USD_MIN/MAX`（默认 0.97..1.03）约束同所 USDT/USD；汇率缺失、不可解析或越界则整所本轮失败（fail-closed）。不变价守卫看原始 USD 价，避免汇率抖动掩盖冻结的 BASE/USD。
 - 价格连续 `INDEX_UNCHANGED_STALE_SECONDS=1800` 秒完全不变视为不新鲜（0=关闭）；锚定币对在 `INDEX_UNCHANGED_EXEMPT` 中豁免。
 - 所有来源都不新鲜时 `/market/index` 返回 503 `INDEX_UNAVAILABLE`（body 含 `fresh:false` 与各来源 components）。
 - 实现：**REST 轮询**（`INDEX_POLL_MS=2000`），不是 WebSocket 订阅。

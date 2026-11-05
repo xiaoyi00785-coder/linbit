@@ -20,7 +20,7 @@ type Config struct {
 	// list is read from the shared `symbols` table.
 	Symbols []string
 	// External index feed (feed.go).
-	IndexFeed  []string // ordered failover sources: binance, okx, bybit, gateio; empty = off (local last price)
+	IndexFeed  []string // ordered failover: binance, okx, bybit, gateio, coinbase, kraken; empty = off
 	IndexPoll  time.Duration
 	IndexStale time.Duration
 	// IndexUnchangedStale: a source price that has not changed for this long is
@@ -34,7 +34,16 @@ type Config struct {
 	OKXURL             string
 	BybitURL           string
 	GateURL            string
-	BinanceFAPIURL     string // Binance USDⓈ-M futures (TradFi perps) for tokenized-stock/metal reference prices
+	CoinbaseURL        string
+	KrakenURL          string
+	// IndexUSDFallbackSymbols: BASEUSDT pairs quoted from Coinbase/Kraken BASE/USD
+	// (default TONUSDT). Other symbols are never taken from a USD venue.
+	IndexUSDFallbackSymbols []string
+	// IndexUsdtUsdMin/Max: live USDT/USD rate must fall in [min,max] or the whole
+	// USD venue fails closed for that poll (defaults 0.97..1.03).
+	IndexUsdtUsdMin string
+	IndexUsdtUsdMax string
+	BinanceFAPIURL  string // Binance USDⓈ-M futures (TradFi perps) for tokenized-stock/metal reference prices
 	DevMode            bool
 	// EarnURL serves the live APR for home placements tied to an earn product.
 	EarnURL string
@@ -54,17 +63,22 @@ func LoadConfig() Config {
 		EngineURL:            common.Env("ENGINE_URL", "http://localhost:8083"),
 		RedisURL:             common.Env("REDIS_URL", ""),
 		Symbols:              splitCSV(common.Env("SYMBOLS", "")),
-		IndexFeed:            parseFeed(common.Env("INDEX_FEED", "binance,okx,bybit,gateio")),
-		IndexPoll:            time.Duration(common.EnvInt("INDEX_POLL_MS", 2000)) * time.Millisecond,
-		IndexStale:           time.Duration(common.EnvInt("INDEX_STALE_SECONDS", 10)) * time.Second,
-		IndexUnchangedStale:  time.Duration(common.EnvInt("INDEX_UNCHANGED_STALE_SECONDS", 1800)) * time.Second,
-		IndexUnchangedExempt: splitCSV(common.Env("INDEX_UNCHANGED_EXEMPT", "USDCUSDT,FDUSDUSDT,TUSDUSDT,USDPUSDT,USDEUSDT,PYUSDUSDT,DAIUSDT")),
-		IndexStatusRefresh:   time.Duration(common.EnvInt("INDEX_STATUS_REFRESH_SECONDS", 900)) * time.Second,
-		BybitURL:             common.Env("BYBIT_API_URL", "https://api.bybit.com"),
-		GateURL:              common.Env("GATE_API_URL", "https://api.gateio.ws"),
-		BinanceURL:           common.Env("BINANCE_API_URL", "https://data-api.binance.vision"),
-		OKXURL:               common.Env("OKX_API_URL", "https://www.okx.com"),
-		BinanceFAPIURL:       common.Env("BINANCE_FAPI_URL", "https://fapi.binance.com"),
+		IndexFeed:                 parseFeed(common.Env("INDEX_FEED", "binance,okx,bybit,gateio,coinbase,kraken")),
+		IndexPoll:                 time.Duration(common.EnvInt("INDEX_POLL_MS", 2000)) * time.Millisecond,
+		IndexStale:                time.Duration(common.EnvInt("INDEX_STALE_SECONDS", 10)) * time.Second,
+		IndexUnchangedStale:       time.Duration(common.EnvInt("INDEX_UNCHANGED_STALE_SECONDS", 1800)) * time.Second,
+		IndexUnchangedExempt:      splitCSV(common.Env("INDEX_UNCHANGED_EXEMPT", "USDCUSDT,FDUSDUSDT,TUSDUSDT,USDPUSDT,USDEUSDT,PYUSDUSDT,DAIUSDT")),
+		IndexStatusRefresh:        time.Duration(common.EnvInt("INDEX_STATUS_REFRESH_SECONDS", 900)) * time.Second,
+		BybitURL:                  common.Env("BYBIT_API_URL", "https://api.bybit.com"),
+		GateURL:                   common.Env("GATE_API_URL", "https://api.gateio.ws"),
+		CoinbaseURL:               common.Env("COINBASE_API_URL", "https://api.exchange.coinbase.com"),
+		KrakenURL:                 common.Env("KRAKEN_API_URL", "https://api.kraken.com"),
+		IndexUSDFallbackSymbols:   splitCSV(common.Env("INDEX_USD_FALLBACK_SYMBOLS", "TONUSDT")),
+		IndexUsdtUsdMin:           common.Env("INDEX_USDT_USD_MIN", "0.97"),
+		IndexUsdtUsdMax:           common.Env("INDEX_USDT_USD_MAX", "1.03"),
+		BinanceURL:                common.Env("BINANCE_API_URL", "https://data-api.binance.vision"),
+		OKXURL:                    common.Env("OKX_API_URL", "https://www.okx.com"),
+		BinanceFAPIURL:            common.Env("BINANCE_FAPI_URL", "https://fapi.binance.com"),
 		DevMode:              common.Env("DEV_MODE", "") == "true",
 		EarnURL:              common.Env("EARN_URL", "http://localhost:8092"),
 		AccountURL:           common.Env("ACCOUNT_URL", "http://localhost:8081"),
@@ -84,7 +98,7 @@ func splitCSV(s string) []string {
 	return out
 }
 
-// parseFeed parses INDEX_FEED ("binance,okx,bybit,gateio" | "off").
+// parseFeed parses INDEX_FEED ("binance,okx,bybit,gateio,coinbase,kraken" | "off").
 func parseFeed(v string) []string {
 	var out []string
 	for _, n := range splitCSV(strings.ToLower(v)) {
@@ -94,7 +108,8 @@ func parseFeed(v string) []string {
 		if n == "gate" {
 			n = "gateio"
 		}
-		if n == "binance" || n == "okx" || n == "bybit" || n == "gateio" {
+		switch n {
+		case "binance", "okx", "bybit", "gateio", "coinbase", "kraken":
 			out = append(out, n)
 		}
 	}
