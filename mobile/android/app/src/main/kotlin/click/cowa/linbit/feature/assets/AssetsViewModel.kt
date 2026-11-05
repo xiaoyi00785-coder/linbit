@@ -55,6 +55,7 @@ class AssetsViewModel @Inject constructor(
     private val _s = MutableStateFlow(AssetsUiState())
     val state: StateFlow<AssetsUiState> = _s.asStateFlow()
     val loggedIn: StateFlow<Boolean> = tokens.loggedIn
+    val sessionVersion: StateFlow<Long> = tokens.sessionVersion
     val marketState = market.state.stateIn(viewModelScope, SharingStarted.Eagerly, market.state.value)
 
     fun setTab(i: Int) { _s.value = _s.value.copy(tab = i) }

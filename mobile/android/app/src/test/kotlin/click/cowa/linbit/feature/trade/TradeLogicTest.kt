@@ -14,13 +14,23 @@ import click.cowa.linbit.data.trade.TradeNav
 import click.cowa.linbit.ui.components.ToastCenter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Before
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.math.BigDecimal
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TradeLogicTest {
+    @Before fun setUpMain() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    @After fun tearDownMain() { Dispatchers.resetMain() }
+
     private fun bd(s: String) = BigDecimal(s)
 
     @Test fun parseSortsBidsDescAndAsksAsc() {

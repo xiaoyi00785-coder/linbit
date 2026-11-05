@@ -29,6 +29,9 @@ import retrofit2.http.Headers
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Multipart
+import retrofit2.http.Part
+import okhttp3.MultipartBody
 
 /**
  * Retrofit 接口：认证、行情、首页、理财、资产总览/划转/充提/地址簿、现货与合约交易等端点（按 mobile/openapi.yaml 逐步补齐）。
@@ -362,5 +365,46 @@ interface LinbitApi {
 
     @PUT("account/withdraw-whitelist")
     suspend fun setWithdrawWhitelist(@Body body: ApiSetWhitelistRequest): ApiWhitelistStatus
+
+    // ---- 个人中心 / 安全 / KYC / 子账户 ----
+    @GET("account")
+    suspend fun account(): ApiAccount
+
+    @PATCH("account/profile")
+    suspend fun updateProfile(@Body body: ApiUpdateProfileRequest): ApiAccount
+
+    @GET("account/security")
+    suspend fun securityOverview(): ApiSecurityOverview
+
+    @POST("2fa/totp/bind")
+    suspend fun bindTotp(): ApiTotpBinding
+
+    @POST("2fa/totp/verify")
+    suspend fun verifyTotp(@Body body: ApiVerifyTotpRequest): ApiTwoFactorStatus
+
+    @POST("2fa/totp/disable")
+    suspend fun disableTotp(@Body body: ApiDisableTotpRequest): ApiTwoFactorStatus
+
+    @GET("kyc/status")
+    suspend fun kycStatus(): ApiKycStatus
+
+    @Multipart
+    @POST("kyc/documents")
+    suspend fun uploadKycDocument(
+        @Part file: MultipartBody.Part,
+        @Part("side") side: okhttp3.RequestBody,
+    ): ApiKycDocument
+
+    @POST("kyc")
+    suspend fun submitKyc(@Body body: ApiKycSubmission): ApiKycStatus
+
+    @GET("sub-accounts")
+    suspend fun subAccounts(
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 100,
+    ): ApiSubAccountList200Response
+
+    @POST("sub-accounts")
+    suspend fun createSubAccount(@Body body: ApiSubAccountCreateRequest): ApiSubAccount
 
 }

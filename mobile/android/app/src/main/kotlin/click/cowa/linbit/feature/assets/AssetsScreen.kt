@@ -62,16 +62,18 @@ fun AssetsScreen(
     assetsNav: AssetsNav,
     onOpenFutures: () -> Unit = {},
     onOpenSpot: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
     vm: AssetsViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     val s by vm.state.collectAsStateWithLifecycle()
     var showWithdraw by remember { mutableStateOf(false) }
     var showFilter by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     val p = LB.p
 
-    LaunchedEffect(loggedIn) { vm.load() }
+    LaunchedEffect(sessionVersion) { vm.load() }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -109,6 +111,9 @@ fun AssetsScreen(
         val emptyOverview = s.tab == 0 && total.signum() == 0
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
+                LbIcon(R.drawable.ic_avatar, 22.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onOpenProfile))
+            }
             if (emptyOverview) {
                 OverviewEmpty(onDeposit = { assetsNav.openDeposit(switchTab = false) }, onFutures = onOpenFutures)
             } else {

@@ -57,8 +57,13 @@ class HomeViewModel @Inject constructor(
 
     init {
         load()
-        // 登录 / 退出后刷新总资产与新手任务
-        viewModelScope.launch { tokens.loggedIn.collect { load(refreshMarket = false) } }
+        // 登录 / 退出 / 切换账号后先清掉旧账号数据，再刷新总资产与新手任务。
+        viewModelScope.launch {
+            tokens.sessionVersion.collect {
+                _state.value = _state.value.copy(totalUsdt = java.math.BigDecimal.ZERO, newcomer = null)
+                load(refreshMarket = false)
+            }
+        }
     }
 
     fun load(refreshMarket: Boolean = true) {
