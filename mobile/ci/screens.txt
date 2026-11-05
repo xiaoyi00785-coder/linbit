@@ -75,6 +75,12 @@ kyc-form
 kyc-form2
 kyc-form2-full
 kyc-error
+notif-list
+notif-empty
+notif-error
+notif-settings
+notif-settings-error
+home-bell
 security-profile
 security-profile-error
 security-email

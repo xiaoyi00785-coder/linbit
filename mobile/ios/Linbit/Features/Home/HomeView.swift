@@ -8,6 +8,7 @@ struct HomeView: View {
     @StateObject private var watch = Watchlist.shared
     @ObservedObject private var session = Session.shared
     @State private var hideAssets = false
+    @ObservedObject private var notif = NotifCenter.shared
     @State private var rankTab = 1
     @State private var rankKind = 0
     @State private var newsTab = 0
@@ -39,6 +40,7 @@ struct HomeView: View {
             .refreshable { await vm.load(); await store.load() }
         }
         .background(p.bg)
+        .task { await NotifCenter.shared.refresh() }
         .task { await vm.load(); if store.spot.isEmpty { await store.load() } }
         .lbSheet($moreSheet) { HomeMoreSheet { moreSheet = false } }
     }
@@ -63,7 +65,10 @@ struct HomeView: View {
             .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
             IconView(icon: .scan, tint: p.textPrimary)
             IconView(icon: .headset, tint: p.textPrimary)
-            IconView(icon: .bell, tint: p.textPrimary)
+            Button { if session.isLoggedIn || NotifShot.state != nil { Router.shared.openFeature(.notifications) } else { session.showAuth = true } } label: {
+                IconView(icon: .bell, tint: p.textPrimary)
+                    .overlay(alignment: .topTrailing) { if notif.unread > 0 { Badge(n: notif.unread).offset(x: 8, y: -6) } }
+            }.buttonStyle(.plain).accessibilityLabel("消息通知")
         }
         .padding(.horizontal, Spacing.pageH)
         .frame(height: 44)

@@ -219,6 +219,7 @@ enum ErrorText {
         "CHAT_WORD_BLOCKED": "消息包含敏感词",
         "CHAT_UNAVAILABLE": "聊天室暂不可用",
         "KYC_REQUIRED": "请先完成身份认证",
+        "SECURITY_EMAIL_REQUIRED": "安全通知邮件不可关闭",
         "UNDERAGE": "未满 18 周岁，无法完成身份认证",
         "KYC_LEVEL_REQUIRED": "请先完成基础认证",
         "KYC_PENDING": "认证资料审核中，请勿重复提交",

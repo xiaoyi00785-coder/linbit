@@ -20,6 +20,8 @@ spot-conditional light
 password-register light
 security light
 kyc-none light
+notif-list light
+home-bell light
 
 # 资产子页
 assets-overview light
