@@ -88,6 +88,15 @@ coupon-empty
 coupon-error
 coupon-confirm
 coupon-fail
+partner-none
+partner-pending
+partner-rejected
+partner-active
+partner-empty
+partner-error
+partner-apply
+partner-apply-error
+partner-team
 security-profile
 security-profile-error
 security-email
