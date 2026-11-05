@@ -90,6 +90,10 @@ fun HomeScreen(
     onOpenMore: () -> Unit,
     onSoon: (String) -> Unit,
     onDeposit: () -> Unit,
+    onFeature: (String) -> Unit = {},
+    onNotifications: () -> Unit = {},
+    onSupport: () -> Unit = {},
+    unread: Int = 0,
     modifier: Modifier = Modifier,
     vm: HomeViewModel = hiltViewModel(),
 ) {
@@ -98,7 +102,7 @@ fun HomeScreen(
     val m by vm.market_.collectAsStateWithLifecycle()
     val watch by vm.watchlist.symbols.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onRefresh = vm::refresh, modifier = modifier)
+    HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh, modifier = modifier)
 }
 
 /** 无状态首页内容（便于截图测试 / 预览）。 */
@@ -107,6 +111,7 @@ fun HomeScreen(
 fun HomeContent(
     s: HomeState, m: click.cowa.linbit.data.MarketState, watch: List<String>, loggedIn: Boolean, bottomInset: Dp,
     onOpenAvatar: () -> Unit, onOpenMarkets: () -> Unit, onOpenMore: () -> Unit, onSoon: (String) -> Unit, onDeposit: () -> Unit,
+    onFeature: (String) -> Unit = {}, onNotifications: () -> Unit = {}, onSupport: () -> Unit = {}, unread: Int = 0,
     onRefresh: () -> Unit, modifier: Modifier = Modifier,
 ) {
     val p = LB.p
@@ -120,13 +125,13 @@ fun HomeContent(
     LaunchedEffect(s.earn.size) { earnPage = 0; while (s.earn.size > 1) { delay(4_000); earnPage = (earnPage + 1) % s.earn.size } }
 
     Column(modifier.fillMaxSize().background(p.bg)) {
-        TopBar(loggedIn, onOpenAvatar, onSoon)
+        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread)
         PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 40.dp)) {
                 AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
-                TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onSoon("福利中心即将开放") }
-                RedPacket(Modifier.padding(top = 15.dp)) { onSoon("福利中心即将开放") }
-                Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onSoon("$it 即将开放") })
+                TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
+                RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
+                Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
                 Hairline(Modifier.padding(top = (64f / 3).dp))
                 CardPromo(s.banners.getOrNull(bannerPage), bannerPage, s.banners.size) { onSoon("Linbit Card 即将开放") }
                 Hairline()
@@ -145,7 +150,7 @@ private fun Hairline(modifier: Modifier = Modifier) {
 
 // ── 顶栏：Logo / 搜索 / 扫码 / 客服 / 通知（ref/1：左上为品牌 Logo，搜索框 31 高，3 个 22 图标）──
 @Composable
-private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit) {
+private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int) {
     val p = LB.p
     Row(
         Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH),
@@ -163,8 +168,13 @@ private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> 
             Text("BTC", style = lb(FontSize.label), color = p.textTertiary)
         }
         LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable { onSoon("扫一扫即将开放") })
-        LbIcon(R.drawable.ic_headset, modifier = Modifier.pressable { onSoon("在线客服即将开放") })
-        LbIcon(R.drawable.ic_bell, modifier = Modifier.pressable { onSoon("通知即将开放") })
+        LbIcon(R.drawable.ic_headset, modifier = Modifier.pressable { onSupport() })
+        Box(Modifier.pressable(scale = 1f, onClick = onNotifications)) {
+            LbIcon(R.drawable.ic_bell)
+            if (unread > 0) Box(Modifier.align(Alignment.TopEnd).background(p.down, RoundedCornerShape(8.dp)).padding(horizontal = 3.dp)) {
+                Text(if (unread > 99) "99+" else "$unread", style = lbNum(8.sp), color = Color.White)
+            }
+        }
     }
 }
 

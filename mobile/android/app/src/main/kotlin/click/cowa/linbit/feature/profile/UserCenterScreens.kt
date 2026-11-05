@@ -29,6 +29,7 @@ import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.R
 import click.cowa.linbit.core.storage.ThemeMode
 import click.cowa.linbit.feature.assets.AssetsNavBar
+import click.cowa.linbit.feature.more.MorePage
 import click.cowa.linbit.ui.components.*
 import click.cowa.linbit.ui.theme.*
 
@@ -41,6 +42,7 @@ fun UserCenterHost(
     onLogout: () -> Unit,
     onClose: () -> Unit,
     onLoginOther: () -> Unit,
+    onFeature: (MorePage) -> Unit,
     vm: ProfileViewModel = hiltViewModel(),
 ) {
     var page by remember { mutableStateOf(ProfilePage.HUB) }
@@ -49,7 +51,7 @@ fun UserCenterHost(
     LaunchedEffect(loggedIn) { if (!loggedIn) page = ProfilePage.HUB }
     BackHandler { if (page == ProfilePage.HUB) onClose() else page = ProfilePage.HUB }
     when (page) {
-        ProfilePage.HUB -> UserCenterScreen(themeMode, onTheme, onLogout, onClose, onOpen = { page = it }, vm = vm)
+        ProfilePage.HUB -> UserCenterScreen(themeMode, onTheme, onLogout, onClose, onOpen = { page = it }, onFeature = onFeature, vm = vm)
         ProfilePage.SWITCH -> AccountSwitchScreen(onBack = { page = ProfilePage.HUB }, onAdd = { vm.addAccount(onLoginOther) }, vm = vm, onLogout = onLogout)
         ProfilePage.SECURITY -> SecurityHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
         ProfilePage.KYC -> KycHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
@@ -64,6 +66,7 @@ fun UserCenterScreen(
     onLogout: () -> Unit,
     onClose: () -> Unit,
     onOpen: (ProfilePage) -> Unit,
+    onFeature: (MorePage) -> Unit,
     vm: ProfileViewModel,
 ) {
     val p = LB.p
@@ -104,6 +107,10 @@ fun UserCenterScreen(
                         ProfileRow("账户安全") { onOpen(ProfilePage.SECURITY) }
                         ProfileRow("子账户") { onOpen(ProfilePage.SUBACCOUNTS) }
                         ProfileRow("切换账号") { onOpen(ProfilePage.SWITCH) }
+                        ProfileRow("福利中心") { onFeature(MorePage.WELFARE) }
+                        ProfileRow("卡券中心") { onFeature(MorePage.COUPONS) }
+                        ProfileRow("合伙人计划") { onFeature(MorePage.PARTNER) }
+                        ProfileRow("客服工单") { onFeature(MorePage.SUPPORT) }
                         ProfileRow("退出当前账户", destructive = true) { logoutConfirm = true }
                     }
                     1 -> Column {
@@ -117,7 +124,7 @@ fun UserCenterScreen(
                         ProfileRow("默认计价货币", a?.quoteCurrency ?: "系统默认") { vm.toast.show("计价货币设置将在后续批次接入") }
                     }
                     else -> Box(Modifier.padding(Spacing.pageH).padding(top = 12.dp)) {
-                        InfoNote("推送通知设置将在 Firebase / FCM 接入后开放。")
+                        InfoNote("站内信与邮件通知可在消息通知页查看和设置；系统推送将在 Firebase / FCM 接入后开放。")
                     }
                 }
             }

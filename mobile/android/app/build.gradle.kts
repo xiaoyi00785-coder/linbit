@@ -96,6 +96,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.mockito.kotlin)
 }
 
 // 本地截图对照（不入库）：存在 shots.gradle.kts 时加载 Robolectric / Compose 测试依赖

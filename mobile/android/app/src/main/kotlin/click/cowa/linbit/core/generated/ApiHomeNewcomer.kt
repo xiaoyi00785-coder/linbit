@@ -15,7 +15,7 @@
 
 package click.cowa.linbit.core.generated
 
-import click.cowa.linbit.core.generated.ApiHomeNewcomerTasksInner
+import click.cowa.linbit.core.generated.ApiNewcomerTask
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -79,7 +79,7 @@ data class ApiHomeNewcomer (
     val degraded: kotlin.Boolean? = null,
 
     @SerialName(value = "tasks")
-    val tasks: kotlin.collections.List<ApiHomeNewcomerTasksInner>? = null
+    val tasks: kotlin.collections.List<ApiNewcomerTask>? = null
 
 ) {
 
