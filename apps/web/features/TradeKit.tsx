@@ -78,7 +78,7 @@ export function PairPicker({ cur, list, pick, fut }: { cur: PairMeta; list: Pair
               <CoinIcon s={x.base} size={18} /> {fut ? x.symbol : `${x.base}/${x.quote}`}
             </div>
           ))}
-          {!list.length ? <div className="tk-opt g">加载中…</div> : !hits.length && <div className="tk-opt g tk-none">未找到匹配“{q.trim()}”的交易对</div>}
+          {!list.length ? <div className="tk-opt g">加载中…</div> : !hits.length && <div className="tk-opt g tk-none">{`未找到匹配“${q.trim()}”的交易对`}</div>}
         </div>
       )}
     </span>
@@ -479,7 +479,7 @@ function LevModal({ lev, max, onClose, onOk }: { lev: number; max: number; onClo
       {err && <div className="tk-ferr" role="alert">{err}</div>}
       <input className="tk-range" type="range" min={1} max={max} step={1} value={v} onChange={(e) => setRaw(e.target.value)} aria-label="杠杆" />
       <div className="tk-presets">{presets.map((p) => <span key={p} {...btnProps(() => setRaw(String(p)))} className={v === p && !err ? "on" : ""} onClick={() => setRaw(String(p))}>{p}x</span>)}</div>
-      <p className="tk-txt">最大杠杆 {max}x。杠杆越高，强平风险越大，请谨慎设置。</p>
+      <p className="tk-txt">{`最大杠杆 ${max}x。杠杆越高，强平风险越大，请谨慎设置。`}</p>
       {v >= 50 && <p className="tk-txt down">当前杠杆较高，价格小幅波动即可能触发强平。</p>}
     </Modal>
   );
