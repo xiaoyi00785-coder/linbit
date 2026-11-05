@@ -17,7 +17,7 @@ export const EN_T: Record<string, string> = {
   "暂无下跌的交易对":"No losers","该分类暂无交易对":"No pairs in this category","暂无自选，点击":"No favorites yet. Click","添加":"to add","取消自选":"Remove from Favorites","暂无成交":"No trades",
   "更多平台":"More platforms","请选择与收款平台一致的网络，否则将会造成您的资产丢失":"Select the same network as the receiving platform, or your assets may be lost","请选择与提现平台一致的网络，否则将会造成您的资产丢失":"Select the same network as the sending platform, or your assets may be lost","暂无可用网络":"No networks available","未成交":"Open","待处理":"Pending",
   "部分成交":"Partially filled","已撤销":"Canceled","撤销中":"Canceling","部分成交已撤销":"Partially filled, canceled","已过期":"Expired","已拒绝":"Rejected",
-  "失败":"Failed","挂单中":"Resting","待触发":"Untriggered","触发中":"Triggering","已触发":"Triggered","已平仓":"Closed",
+  "失败":"Failed","挂单中":"Open","待触发":"Untriggered","触发中":"Triggering","已触发":"Triggered","已平仓":"Closed",
   "强平":"Liquidated","自动减仓":"ADL","已完成":"Completed","成功":"Successful","处理中":"Processing","已通过":"Approved",
   "审核中":"Under review","待审批":"Pending approval","待复核":"Pending second review","结算中":"Settling","已结算":"Settled","已支付":"Paid",
   "已发放":"Issued","已释放":"Released","运行中":"Running","停止中":"Stopping","已停止":"Stopped","持有中":"Holding",
@@ -33,5 +33,23 @@ export const EN_T: Record<string, string> = {
   "（必填）":" (required)","转账":"Transfer","转账成功":"Transfer successful","提现失败":"Withdrawal failed","确认转账":"Confirm Transfer","确认提现":"Confirm Withdrawal",
   "安全设置变更后 # 小时内禁止提现":"Withdrawals are disabled for # hours after a security settings change","# 位资金密码":"#-digit fund password","资金密码错误，请重新输入":"Incorrect fund password. Please try again","请输入资金密码":"Enter fund password","去设置":"Set up","重置资金密码":"Reset fund password",
   "# 位 #FA 动态码":"#-digit 2FA code","请输入 # 位 #FA 动态码":"Enter the #-digit 2FA code","可用余额不足（可用":"Insufficient balance (available","最小提现数量":"Min withdrawal","至":"to","免手续费，实时到账":"no fee, instant",
-  "扣除链上":"minus on-chain","到账":"receive","平台不收手续费":"no platform fee","你尚未设置资金密码，本次无需填写。建议前往":"You haven't set a fund password, so none is needed this time. We recommend setting one in","设置以提升资金安全。":"to better protect your funds.","成交量":"Volume",
+  "扣除链上":"minus on-chain","到账":"credited","平台不收手续费":"no platform fee","你尚未设置资金密码，本次无需填写。建议前往":"You haven't set a fund password, so none is needed this time. We recommend setting one in","设置以提升资金安全。":"to better protect your funds.","成交量":"Volume",
 };
+/** 带占位的整句（{} 匹配任意片段，命中后各片段再经 tr 翻译后回填）：用于中间插入币种 / 网络名 / 金额、含全角标点的句子，避免片段替换残留全角标点。 */
+export const EN_P: [string, string][] = [
+  ["当前选择 {} · {}：单笔最小提现 {} {}，预计到账约 {} 分钟。", "Selected {} · {}: min per withdrawal {} {}, est. arrival ~{} min."],
+  ["当前选择 {} · {}：单笔最小提现 {} {}。", "Selected {} · {}: min per withdrawal {} {}."],
+  ["当前选择 {} · {}：预计到账约 {} 分钟。", "Selected {} · {}: est. arrival ~{} min."],
+  ["当前选择 {}：单笔最小提现 {} {}，预计到账约 {} 分钟。", "Selected {}: min per withdrawal {} {}, est. arrival ~{} min."],
+  ["当前选择 {}：单笔最小提现 {} {}。", "Selected {}: min per withdrawal {} {}."],
+  ["当前选择 {}：预计到账约 {} 分钟。", "Selected {}: est. arrival ~{} min."],
+  ["可用余额不足（可用 {} {}）", "Insufficient balance (available {} {})"],
+  ["提现数量需大于链上网络费（Gas）{} {}", "Withdrawal amount must exceed the network fee (Gas) of {} {}"],
+  ["提现 {} {}（{}），扣除链上 Gas {} {}，到账 {} {}（平台不收手续费）", "Withdraw {} {} ({}), minus on-chain Gas {} {}, {} {} credited (no platform fee)"],
+  ["站内转账 {} {} 至 {}，免手续费，实时到账", "Internal transfer of {} {} to {}: no fee, instant"],
+  ["{}（即将开放）", "{} (coming soon)"],
+  ["划转转入（{}）", "Transfer in ({})"],
+  ["划转转出（{}）", "Transfer out ({})"],
+  ["平仓状态：{}", "Close status: {}"],
+  ["订单状态：{}", "Order status: {}"],
+];
