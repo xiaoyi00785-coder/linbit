@@ -39,6 +39,8 @@ import click.cowa.linbit.ui.theme.resolveDark
 fun AppRoot(vm: AppViewModel = hiltViewModel()) {
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
+    val futuresSymbol by vm.tradeNav.futuresSymbol.collectAsStateWithLifecycle()
     val dark = resolveDark(mode)
     var tab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var auth by rememberSaveable { mutableStateOf<String?>(null) } // null | "login" | "register"
@@ -86,8 +88,8 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
 
             if (userCenter && loggedIn) UserCenterScreen(mode, vm::setTheme, onLogout = { vm.logout { userCenter = false } }, onClose = { userCenter = false })
             when (historyKind) {
-                "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = vm.tradeNav.spotSymbol.value)
-                "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = vm.tradeNav.futuresSymbol.value)
+                "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
+                "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol)
             }
             auth?.let { start -> AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
             ToastOverlay(vm.toast)
