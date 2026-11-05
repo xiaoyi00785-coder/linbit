@@ -84,6 +84,7 @@ fun FuturesRootScreen(
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
     initialTop: Int = 0,
+    autoStart: Boolean = true,
     vm: FuturesTradeViewModel = hiltViewModel(),
 ) {
     val p = LB.p
@@ -91,7 +92,7 @@ fun FuturesRootScreen(
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
-    DisposableEffect(nav, top) { if (top == 0) vm.start(); onDispose { vm.stop() } }
+    DisposableEffect(nav, top) { if (top == 0 && autoStart) vm.start(); onDispose { vm.stop() } }
     Column(modifier.fillMaxSize().background(p.bg)) {
         Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
             PrimaryTabs(listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { top = it }, size = 16.sp)
@@ -220,7 +221,7 @@ fun FuturesTradeContent(
                         }
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        KvRow("可用", if (loggedIn) "${Fmt.amount(vm.available, 2)} ${vm.quote}" else "-- ${vm.quote}", trailing = {
+                        KvRow("可用", if (loggedIn && vm.account != null) "${Fmt.amount(vm.available, 2)} ${vm.quote}" else "-- ${vm.quote}", trailing = {
                             ThemedIcon(R.drawable.ic_mc_plus_square_light, R.drawable.ic_mc_plus_square_dark, 14.dp, Modifier.padding(start = 4.dp).pressable(scale = 1f, onClick = onTransfer))
                         })
                         KvRow("可买", "${Fmt.amount(if (vm.isOpen) vm.maxOpenQty else BigDecimal.ZERO, vm.qtyPrec.coerceAtMost(2))} ${if (vm.byQty) vm.base else vm.quote}")

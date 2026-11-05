@@ -76,12 +76,13 @@ fun SpotTradeScreen(
     onTransfer: () -> Unit,
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
+    autoStart: Boolean = true,
     vm: SpotTradeViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
-    DisposableEffect(nav) { vm.start(); onDispose { vm.stop() } }
+    DisposableEffect(nav) { if (autoStart) vm.start(); onDispose { vm.stop() } }
     SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier)
 }
 
