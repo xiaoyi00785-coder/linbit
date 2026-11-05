@@ -335,6 +335,10 @@ class SpotTradeViewModel @Inject constructor(
         }
     }
 
+    /** 加载现货 K 线（/market/klines）。 */
+    suspend fun loadKlines(interval: String): List<Candle> =
+        apiCall { api.spotKlines(symbol, interval) }.map(Candle::fromSpot)
+
     /** 截图 / 单测：直接注入行情状态，不触发网络。 */
     internal fun seedForShot(meta: ApiSymbol, book: OrderBook, last: BigDecimal, changePct: BigDecimal) {
         this.meta = meta; this.book = book; this.last = last; this.changePct = changePct
