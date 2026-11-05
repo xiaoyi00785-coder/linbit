@@ -39,11 +39,14 @@ import click.cowa.linbit.ui.theme.resolveDark
 fun AppRoot(vm: AppViewModel = hiltViewModel()) {
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
+    val futuresSymbol by vm.tradeNav.futuresSymbol.collectAsStateWithLifecycle()
     val dark = resolveDark(mode)
     var tab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var auth by rememberSaveable { mutableStateOf<String?>(null) } // null | "login" | "register"
     var userCenter by rememberSaveable { mutableStateOf(false) }
     var splash by rememberSaveable { mutableStateOf(true) }
+    var historyKind by rememberSaveable { mutableStateOf<String?>(null) } // null | "spot" | "futures"
 
     LinbitTheme(dark) {
         val view = LocalView.current
@@ -72,11 +75,11 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                     })
                     MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { vm.toast.show("历史记录即将开放") },
+                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { historyKind = "futures" },
                     )
                     MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { vm.toast.show("历史记录即将开放") },
+                        onDeposit = { vm.toast.show("充值即将开放") }, onTransfer = { vm.toast.show("划转即将开放") }, onHistory = { historyKind = "spot" },
                     )
                     MainTab.ASSETS -> PlaceholderScreen("资产", bottomInset, loginHint = !loggedIn, onLogin = { auth = "login" })
                 }
@@ -84,6 +87,10 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
             FloatingTabBar(tab, { tab = it }, Modifier.align(Alignment.BottomCenter))
 
             if (userCenter && loggedIn) UserCenterScreen(mode, vm::setTheme, onLogout = { vm.logout { userCenter = false } }, onClose = { userCenter = false })
+            when (historyKind) {
+                "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
+                "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol)
+            }
             auth?.let { start -> AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
             ToastOverlay(vm.toast)
             if (splash) SplashOverlay(reduceMotion = false, onFinish = { splash = false })

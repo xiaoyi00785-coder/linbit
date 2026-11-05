@@ -230,6 +230,85 @@ interface LinbitApi {
     @GET("futures/transfers")
     suspend fun futuresTransfers(): ApiFuturesTransfers200Response
 
+    // ---- K 线 / 成交 ----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/klines")
+    suspend fun spotKlines(
+        @Query("symbol") symbol: String,
+        @Query("interval") interval: String,
+        @Query("limit") limit: Int = 160,
+    ): List<ApiKline>
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("futures/market/klines")
+    suspend fun futuresKlines(
+        @Query("symbol") symbol: String,
+        @Query("interval") interval: String,
+        @Query("limit") limit: Int = 120,
+    ): ApiFuturesKlines
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("futures/market/trades")
+    suspend fun futuresMarketTrades(@Query("symbol") symbol: String, @Query("limit") limit: Int = 50): ApiFuturesMarketTrades200Response
+
+    // ---- 合约改单 / 仓位止盈止损 / 调整保证金 ----
+    @PUT("futures/orders/{id}")
+    suspend fun amendFuturesOrder(@Path("id") id: Long, @Body body: ApiFuturesAmendOrderRequest): ApiFuturesPlaceOrder200Response
+
+    @POST("futures/tpsl-orders")
+    suspend fun createFuturesTpsl(@Body body: ApiFuturesTpslOrderRequest): ApiFuturesCreateTpslOrders200Response
+
+    @PUT("futures/tpsl-orders/{id}")
+    suspend fun amendFuturesTpsl(@Path("id") id: Long, @Body body: ApiFuturesAlgoAmendRequest): ApiFuturesAmendTpslOrder200Response
+
+    @PUT("futures/plan-orders/{id}")
+    suspend fun amendFuturesPlan(@Path("id") id: Long, @Body body: ApiFuturesAlgoAmendRequest): ApiFuturesAmendTpslOrder200Response
+
+    @POST("futures/positions/{symbol}/tpsl")
+    suspend fun setFuturesPositionTpsl(
+        @Path("symbol") symbol: String,
+        @Query("positionSide") positionSide: String? = null,
+        @Body body: ApiFuturesSetTpslRequest,
+    ): ApiFuturesPositions200Response
+
+    @POST("futures/positions/{symbol}/margin")
+    suspend fun adjustFuturesMargin(
+        @Path("symbol") symbol: String,
+        @Query("positionSide") positionSide: String? = null,
+        @Body body: ApiFuturesAdjustMarginRequest,
+    ): ApiFuturesPositions200Response
+
+    // ---- 闪兑 / 策略 / 理财扩展 ----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("convert/pairs")
+    suspend fun convertPairs(): ApiConvertPairs
+
+    @POST("convert/quote")
+    suspend fun convertQuote(@Body body: ApiConvertQuoteRequest): ApiConvertQuote
+
+    @POST("convert/accept")
+    suspend fun acceptConvertQuote(@Body body: ApiAcceptConvertQuoteRequest): ApiAcceptConvertQuote200Response
+
+    @GET("convert/orders")
+    suspend fun convertOrders(@Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20): ApiListConvertOrders200Response
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("strategy/config")
+    suspend fun strategyConfig(): ApiStrategyConfig200Response
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("strategy/grid/square")
+    suspend fun strategySquare(@Query("page") page: Int = 1, @Query("pageSize") pageSize: Int = 20): ApiStrategySquare200Response
+
+    @GET("strategy/grid")
+    suspend fun strategyGrids(@Query("status") status: String? = null): ApiStrategyListGrids200Response
+
+    @GET("earn/summary")
+    suspend fun earnSummary(): ApiEarnSummary200Response
+
+    @GET("earn/positions")
+    suspend fun earnPositions(): ApiEarnPositions200Response
+
     // ---- 自选 ----
     @GET("account/favorites")
     suspend fun favorites(@Query("market") market: String = "spot"): JsonElement

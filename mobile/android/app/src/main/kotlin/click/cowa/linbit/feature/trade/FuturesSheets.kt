@@ -78,7 +78,7 @@ private fun BookModeGlyph(mode: Int) {
 
 /** 常用功能（对照图 ref/13：4 列 × 3 行图标网格）。 */
 @Composable
-fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit) {
+fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit, onTool: (String) -> Unit = {}) {
     val p = LB.p
     val items = listOf(
         "交易偏好", "计算器", "价格预警", "模拟交易", "仓位档位介绍", "历史资金费率", "历史标记价格", "风险准备金", "添加自选", "新手教学",
@@ -88,7 +88,14 @@ fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit) {
             items.chunked(4).forEach { row ->
                 Row(Modifier.fillMaxWidth()) {
                     row.forEach { t ->
-                        Column(Modifier.weight(1f).pressable(scale = 1f) { onClose(); toast(if (t == "添加自选") "已添加到自选" else "${t}即将开放") }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f).pressable(scale = 1f) {
+                            onClose()
+                            when (t) {
+                                "添加自选" -> toast("已添加到自选")
+                                "计算器", "价格预警" -> onTool(t)
+                                else -> toast("${t}即将开放")
+                            }
+                        }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(44.dp).border(1.dp, p.border, RoundedCornerShape(Radius.lg)), contentAlignment = Alignment.Center) {
                                 LbIcon(R.drawable.ic_doc_text, 20.dp, p.textPrimary)
                             }

@@ -16,6 +16,11 @@ import click.cowa.linbit.core.generated.ApiFuturesPosition
 import click.cowa.linbit.core.generated.ApiFuturesPositionMode
 import click.cowa.linbit.core.generated.ApiFuturesRiskTiers200ResponseContractsInnerTiersInner
 import click.cowa.linbit.core.generated.ApiFuturesSetLeverageRequest
+import click.cowa.linbit.core.generated.ApiFuturesAdjustMarginRequest
+import click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest
+import click.cowa.linbit.core.generated.ApiFuturesAmendOrderRequest
+import click.cowa.linbit.core.generated.ApiFuturesSetTpslRequest
+import click.cowa.linbit.core.generated.ApiFuturesTpslOrderRequest
 import click.cowa.linbit.core.generated.ApiFuturesTicker
 import click.cowa.linbit.core.network.LinbitApi
 import click.cowa.linbit.core.network.OneOfResponses
@@ -471,6 +476,86 @@ class FuturesTradeViewModel @Inject constructor(
     /** 指定杠杆下可持有的最大名义价值：取 maxLeverage ≥ lev 的最高档上限。 */
     fun maxNotional(lev: Int): BigDecimal? =
         tiers.filter { (it.maxLeverage ?: 0) >= lev }.maxByOrNull { Dec.parse(it.maxNotional) }?.let { Dec.parse(it.maxNotional) }
+
+
+    /** 加载合约 K 线（/futures/market/klines）。 */
+    suspend fun loadKlines(interval: String): List<Candle> =
+        apiCall { api.futuresKlines(symbol, interval) }.klines.orEmpty().map(Candle::fromFutures)
+
+    suspend fun loadMarketTrades() =
+        apiCall { api.futuresMarketTrades(symbol) }.trades.orEmpty()
+
+    /** 改单：PUT /futures/orders/{id}。 */
+    fun amend(o: ApiFuturesOrder, price: String?, qty: String?, onDone: (Boolean, String?) -> Unit = { _, _ -> }) {
+        val id = o.orderId ?: run { onDone(false, "无效订单"); return }
+        if (price == null && qty == null) { onDone(false, "请至少修改价格或数量"); return }
+        viewModelScope.launch {
+            try {
+                apiCall { api.amendFuturesOrder(id, ApiFuturesAmendOrderRequest(price = price, qty = qty)) }
+                toast.show("改单成功", ToastCenter.Kind.SUCCESS); refreshAccountNow(); onDone(true, null)
+            } catch (e: Throwable) { toast.error(e); onDone(false, e.message) }
+        }
+    }
+
+    /** 整仓止盈止损：POST /futures/positions/{symbol}/tpsl（空字符串清除该项）。 */
+    fun setTpsl(pos: ApiFuturesPosition, tp: String, sl: String, onDone: (Boolean) -> Unit = {}) {
+        val sym = pos.symbol ?: symbol
+        viewModelScope.launch {
+            try {
+                apiCall {
+                    api.setFuturesPositionTpsl(
+                        sym, sideOf(pos),
+                        ApiFuturesSetTpslRequest(
+                            tpPrice = tp.ifBlank { "" }, slPrice = sl.ifBlank { "" },
+                            positionSide = sideOf(pos)?.let { runCatching { ApiFuturesSetTpslRequest.PositionSide.valueOf(it) }.getOrNull() },
+                            tpTriggerPriceType = if (tp.isNotBlank()) ApiFuturesSetTpslRequest.TpTriggerPriceType.MARK else null,
+                            slTriggerPriceType = if (sl.isNotBlank()) ApiFuturesSetTpslRequest.SlTriggerPriceType.MARK else null,
+                        ),
+                    )
+                }
+                toast.show(if (tp.isBlank() && sl.isBlank()) "已撤销止盈止损" else "止盈止损已设置", ToastCenter.Kind.SUCCESS)
+                refreshAccountNow(); onDone(true)
+            } catch (e: Throwable) { toast.error(e); onDone(false) }
+        }
+    }
+
+    fun clearTpsl(pos: ApiFuturesPosition, onDone: (Boolean) -> Unit = {}) = setTpsl(pos, "", "", onDone)
+
+    /** 部分止盈止损委托：POST /futures/tpsl-orders。 */
+    fun createTpslOrder(pos: ApiFuturesPosition, qty: String?, tp: String?, sl: String?, onDone: (Boolean) -> Unit = {}) {
+        val sym = pos.symbol ?: symbol
+        viewModelScope.launch {
+            try {
+                apiCall {
+                    api.createFuturesTpsl(
+                        ApiFuturesTpslOrderRequest(
+                            symbol = sym,
+                            positionSide = sideOf(pos)?.let { runCatching { ApiFuturesTpslOrderRequest.PositionSide.valueOf(it) }.getOrNull() },
+                            qty = qty,
+                            tpTriggerPrice = tp,
+                            slTriggerPrice = sl,
+                            tpTriggerPriceType = if (tp != null) ApiFuturesTpslOrderRequest.TpTriggerPriceType.MARK else null,
+                            slTriggerPriceType = if (sl != null) ApiFuturesTpslOrderRequest.SlTriggerPriceType.MARK else null,
+                        ),
+                    )
+                }
+                toast.show("止盈止损委托已提交", ToastCenter.Kind.SUCCESS); refreshAccountNow(); onDone(true)
+            } catch (e: Throwable) { toast.error(e); onDone(false) }
+        }
+    }
+
+    /** 逐仓调整保证金：正数追加、负数减少。 */
+    fun adjustMargin(pos: ApiFuturesPosition, amount: BigDecimal, onDone: (Boolean) -> Unit = {}) {
+        val sym = pos.symbol ?: symbol
+        viewModelScope.launch {
+            try {
+                apiCall {
+                    api.adjustFuturesMargin(sym, sideOf(pos), ApiFuturesAdjustMarginRequest(amount = amount.stripTrailingZeros().toPlainString()))
+                }
+                toast.show("保证金已调整", ToastCenter.Kind.SUCCESS); refreshAccountNow(); onDone(true)
+            } catch (e: Throwable) { toast.error(e); onDone(false) }
+        }
+    }
 
     /** 截图 / 单测：直接注入行情状态，不触发网络。 */
     internal fun seedForShot(contract: ApiFuturesContract, ticker: ApiFuturesTicker, book: OrderBook, account: ApiFuturesAccount?) {
