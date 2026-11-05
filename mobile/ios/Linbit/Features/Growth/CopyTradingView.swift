@@ -34,7 +34,7 @@ enum CopyDemo {
                 "followers": J(286 - i * 41), "maxFollowers": 300, "aum": "\(1_250_000 - i * 180_000)", "followerProfit": "\(Int(roi * 52000))",
                 "equity": "\(52000 - i * 6000)", "score": "\(92 - i * 6)", "curve": J(curve)]
     }
-    static var traders: J { ["items": J((0..<6).map { trader($0) })] }
+    static var traders: J { ["traders": J((0..<6).map { trader($0) })] }
     static var detail: J {
         guard case var .obj(o) = trader(0) else { return .null }
         o["positions"] = [["symbol": "BTCUSDT", "side": "long", "entryPrice": "67250.5", "leverage": 10, "marginMode": "cross", "openedAt": J(DemoShot.nowMs - 7_200_000)],
@@ -42,13 +42,22 @@ enum CopyDemo {
         return .obj(o)
     }
     static let summary: J = ["traders": 236, "totalFollowers": 18420, "followerProfit": "2860312.55", "aum": "48210000", "minAmount": "50"]
+    /// 与生产一致：列表键为 follows；元素为 followView（嵌套 follow + traderNickname + pnl）
     static func follows(_ empty: Bool) -> J {
-        if empty { return ["items": []] }
+        if empty { return ["follows": []] }
         let day: Int64 = 86_400_000, now = DemoShot.nowMs
-        return ["items": [
-            ["id": 81, "traderId": "T1001", "nickname": "\(names[0])", "status": "active", "mode": "ratio", "ratio": "1", "principal": "1000", "returned": "0", "sharePaid": "12.6", "pnl": "238.42", "createdAt": J(now - day * 9)],
-            ["id": 77, "traderId": "T1003", "nickname": "\(names[2])", "status": "active", "mode": "fixed", "fixedMargin": "50", "principal": "500", "returned": "0", "sharePaid": "0", "pnl": "-18.20", "createdAt": J(now - day * 20)],
-            ["id": 52, "traderId": "T1005", "nickname": "\(names[4])", "status": "stopped", "mode": "ratio", "ratio": "0.5", "principal": "300", "returned": "342.18", "sharePaid": "4.2", "pnl": "42.18", "createdAt": J(now - day * 60), "stoppedAt": J(now - day * 30)]]]
+        func view(_ id: Int, trader: String, nick: String, status: String, mode: String, ratio: String?, fixed: String?, principal: String, share: String, pnl: String, created: Int64, stopped: Int64? = nil) -> J {
+            var f: J = ["id": J(id), "traderId": .str(trader), "status": .str(status), "mode": .str(mode),
+                        "principal": .str(principal), "returned": "0", "sharePaid": .str(share), "createdAt": J(created)]
+            if let ratio { if case var .obj(o) = f { o["ratio"] = .str(ratio); f = .obj(o) } }
+            if let fixed { if case var .obj(o) = f { o["fixedMargin"] = .str(fixed); f = .obj(o) } }
+            if let stopped { if case var .obj(o) = f { o["stoppedAt"] = J(stopped); f = .obj(o) } }
+            return ["follow": f, "traderNickname": .str(nick), "pnl": .str(pnl)]
+        }
+        return ["follows": [
+            view(81, trader: "T1001", nick: names[0], status: "active", mode: "ratio", ratio: "1", fixed: nil, principal: "1000", share: "12.6", pnl: "238.42", created: now - day * 9),
+            view(77, trader: "T1003", nick: names[2], status: "active", mode: "fixed", ratio: nil, fixed: "50", principal: "500", share: "0", pnl: "-18.20", created: now - day * 20),
+            view(52, trader: "T1005", nick: names[4], status: "stopped", mode: "ratio", ratio: "0.5", fixed: nil, principal: "300", share: "4.2", pnl: "42.18", created: now - day * 60, stopped: now - day * 30)]]
     }
 }
 
@@ -116,11 +125,11 @@ struct CopyTradingView: View {
     private func load() async {
         if let st = CopyDemo.state {
             summary = CopyDemo.summary
-            list = st == "error" ? .failed("网络连接失败，请检查网络") : .loaded(st == "empty" ? [] : CopyDemo.traders.items); return
+            list = st == "error" ? .failed("网络连接失败，请检查网络") : .loaded(st == "empty" ? [] : CopyDemo.traders.arr("traders", "items")); return
         }
         if list.value == nil { list = .loading }
         async let s = try? CopyAPI.summary()
-        do { list = .loaded(try await CopyAPI.traders(Self.sorts[sort].0, days: [7, 30, 90][days]).items) } catch { list = .failed(securityMessage(error)) }
+        do { list = .loaded(try await CopyAPI.traders(Self.sorts[sort].0, days: [7, 30, 90][days]).arr("traders", "items")) } catch { list = .failed(securityMessage(error)) }
         summary = await s ?? summary
     }
 }
@@ -387,12 +396,21 @@ struct CopyFollowsView: View {
         .lbConfirm($confirm)
     }
 
-    private func card(_ f: J) -> some View {
+    /// 生产 followView：{follow, traderNickname, pnl}；Demo/旧扁平行也可读
+    private func followBody(_ view: J) -> J {
+        let nested = view["follow"]
+        if case .obj = nested { return nested }
+        return view
+    }
+
+    private func card(_ view: J) -> some View {
+        let f = followBody(view)
         let active = f["status"].s == "active"
-        let pnl = f["pnl"]
+        let pnl = view["pnl"].isNull ? f["pnl"] : view["pnl"]
+        let nick = view["traderNickname"].s ?? f["nickname"].s ?? f["traderId"].s ?? "--"
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(f["nickname"].s ?? f["traderId"].s ?? "--").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
+                Text(nick).font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
                 Text(active ? "跟单中" : "已停止").font(.lb(10)).foregroundColor(active ? p.up : p.textTertiary)
                     .padding(.horizontal, 4).frame(height: 16).background(RoundedRectangle(cornerRadius: 3).fill(active ? p.up.opacity(0.12) : p.fill))
                 Spacer()
@@ -405,28 +423,28 @@ struct CopyFollowsView: View {
             if active {
                 LBButton(title: "停止跟单", kind: .outline, height: 34) {
                     confirm = .init(title: "停止跟单", message: "停止后将按市价平掉该带单员的全部跟单仓位，剩余资金返还至合约账户。", confirmTitle: "确认停止", destructive: true) {
-                        Task { await stop(f) }
+                        Task { await stop(view) }
                     }
                 }
             }
         }.lbCard()
     }
 
-    private func stop(_ f: J) async {
+    private func stop(_ view: J) async {
         banner = nil
         if CopyDemo.state != nil { return }
-        guard let id = f["id"].i else { return }
+        guard let id = followBody(view)["id"].i else { return }
         do { try await CopyAPI.stop(id); Haptics.success(); ToastCenter.shared.show("已停止跟单", .success); await load() }
         catch { banner = securityMessage(error); Haptics.error() }
     }
 
     private func load() async {
         if let st = CopyDemo.state {
-            data = .loaded(CopyDemo.follows(st == "follows-empty").items); return
+            data = .loaded(CopyDemo.follows(st == "follows-empty").arr("follows", "items")); return
         }
         guard Session.shared.isLoggedIn else { data = .loaded([]); return }
         if data.value == nil { data = .loading }
-        do { data = .loaded(try await CopyAPI.follows().items) } catch { data = .failed(securityMessage(error)) }
+        do { data = .loaded(try await CopyAPI.follows().arr("follows", "items")) } catch { data = .failed(securityMessage(error)) }
     }
 }
 

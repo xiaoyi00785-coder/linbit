@@ -68,21 +68,17 @@ fun AmendOrderSheet(vm: FuturesTradeViewModel, order: ApiFuturesOrder, onClose: 
             }
             error?.let { Text(it, Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(p.fill).padding(10.dp), style = lb(FontSize.small), color = p.down) }
             LbButton("确认修改", kind = if (buy) ButtonKind.BUY else ButtonKind.SELL, loading = saving) {
-                val np = Dec.parse(price); val nq = Dec.parse(qty); val op = Dec.parse(order.price); val oq = Dec.parse(order.qty)
-                val filled = Dec.parse(order.filledQty)
-                when {
-                    price.isBlank() && qty.isBlank() -> error = "请至少修改价格或数量"
-                    price.isNotBlank() && np.signum() <= 0 -> error = "请输入有效价格"
-                    qty.isNotBlank() && nq.signum() <= 0 -> error = "请输入有效数量"
-                    qty.isNotBlank() && nq < filled -> error = "新数量不能小于已成交数量"
-                    np.compareTo(op) == 0 && nq.compareTo(oq) == 0 -> error = "价格与数量均未变化"
-                    else -> {
-                        saving = true
-                        vm.amend(order, if (price.isNotBlank() && np.compareTo(op) != 0) vm.fmt(np, vm.pricePrec) else null,
-                            if (qty.isNotBlank() && nq.compareTo(oq) != 0) vm.fmt(nq, vm.qtyPrec) else null) { ok, msg ->
-                            saving = false
-                            if (ok) onClose() else error = msg
-                        }
+                val prepared = AmendOrderLogic.prepare(
+                    price, qty, order.price, order.qty, order.filledQty,
+                    formatPrice = { vm.fmt(it, vm.pricePrec) },
+                    formatQty = { vm.fmt(it, vm.qtyPrec) },
+                )
+                val err = prepared.error
+                if (err != null) error = err else {
+                    saving = true
+                    vm.amend(order, prepared.price, prepared.qty) { ok, msg ->
+                        saving = false
+                        if (ok) onClose() else error = msg
                     }
                 }
             }
@@ -140,14 +136,14 @@ fun PositionTpslSheet(vm: FuturesTradeViewModel, position: ApiFuturesPosition, o
                         vm.clearTpsl(position) { ok -> saving = false; if (ok) onClose() }
                     }
                     LbButton("修改", Modifier.weight(1f), loading = saving) {
-                        if (!validateTpsl(long, entry, tp, sl, vm)) return@LbButton
+                        TpslLogic.validate(long, entry, tp, sl)?.let { vm.toast.show(it); return@LbButton }
                         saving = true
                         vm.setTpsl(position, tp, sl) { ok -> saving = false; if (ok) onClose() }
                     }
                 }
             } else {
                 LbButton(if (partial) "提交" else "确定", loading = saving) {
-                    if (!validateTpsl(long, entry, tp, sl, vm)) return@LbButton
+                    TpslLogic.validate(long, entry, tp, sl)?.let { vm.toast.show(it); return@LbButton }
                     if (tp.isBlank() && sl.isBlank()) { vm.toast.show("请至少填写止盈或止损触发价"); return@LbButton }
                     saving = true
                     if (partial) {
@@ -164,16 +160,6 @@ fun PositionTpslSheet(vm: FuturesTradeViewModel, position: ApiFuturesPosition, o
     }
 }
 
-private fun validateTpsl(long: Boolean, entry: BigDecimal, tp: String, sl: String, vm: FuturesTradeViewModel): Boolean {
-    val t = Dec.parse(tp); val s = Dec.parse(sl)
-    if (tp.isNotBlank() && (if (long) t <= entry else t >= entry)) {
-        vm.toast.show("止盈价需${if (long) "高于" else "低于"}开仓价"); return false
-    }
-    if (sl.isNotBlank() && (if (long) s >= entry else s <= entry)) {
-        vm.toast.show("止损价需${if (long) "低于" else "高于"}开仓价"); return false
-    }
-    return true
-}
 
 /** 逐仓调整保证金：正数追加、负数减少，POST /futures/positions/{symbol}/margin。 */
 @Composable
