@@ -123,6 +123,7 @@ struct DepositView: View {
             LBButton(title: "保存并分享地址", enabled: addr.value != nil) { share() }.padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
         }
         .scrollDismissesKeyboard(.interactively)
+        .lbKeyboardDone()
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
         .task { await loadNets() }
         .lbSheet($showNets) { NetworkSheet(asset: asset, nets: nets.value ?? [], selected: net?.network, recommended: recommended) { n in showNets = false; net = n; Task { await loadAddr() } } onClose: { showNets = false } }

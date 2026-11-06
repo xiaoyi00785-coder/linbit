@@ -481,6 +481,7 @@ struct SupportTicketDetailView: View {
     @State private var confirm: ConfirmRequest?
     @State private var viewing: APISupportAttachment?
     @StateObject private var cooldown = RetryCountdown()
+    @FocusState private var composerFocus: Bool
 
     private var closed: Bool { closedByConflict || data.value?.status == .closed }
 
@@ -507,9 +508,9 @@ struct SupportTicketDetailView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-
             if data.value != nil { composer }
         }
+        .lbKeyboardDone(focus: $composerFocus)
         .background(p.bg.ignoresSafeArea())
         .task { await load() }
         .lbConfirm($confirm)
@@ -572,8 +573,8 @@ struct SupportTicketDetailView: View {
                         .font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
                         .padding(.horizontal, 12).padding(.vertical, 10)
                         .frame(minHeight: 40)
-
                         .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                        .focused($composerFocus)
                         .disabled(cooldown.active)
                     LBButton(title: cooldown.active ? "\(cooldown.left)s" : "发送", kind: .primary, height: 40,
                              enabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.count <= 5000 && !cooldown.active,

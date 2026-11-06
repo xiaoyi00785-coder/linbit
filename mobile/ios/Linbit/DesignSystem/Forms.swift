@@ -245,11 +245,27 @@ struct SearchField: View {
 // MARK: - 键盘「完成」（numberPad / decimalPad 无回车键）
 extension View {
     /// 在键盘工具条右侧放「完成」，点击后收起键盘。
+    /// 同时 resignFirstResponder，覆盖 LBTextField 内部 FocusState 等子视图焦点。
     func lbKeyboardDone(focus: FocusState<Bool>.Binding) -> some View {
         toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("完成") { focus.wrappedValue = false }
+                Button("完成") {
+                    focus.wrappedValue = false
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            }
+        }
+    }
+
+    /// 无外部 FocusState 时仅 resign（用于 TextField 自管焦点的页面）。
+    func lbKeyboardDone() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
             }
         }
     }

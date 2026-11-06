@@ -45,6 +45,7 @@ struct FuturesTradeView: View {
     @State private var confirm: ConfirmRequest?
     @State private var couponTab = 0
     @State private var orderFilter = Router.shared.shotSheet == "ordersTpsl" ? 1 : (Router.shared.shotSheet == "ordersPlan" ? 2 : 0)     // 委托：0 普通委托 1 止盈止损 2 计划委托
+    @FocusState private var keyboardFocus: Bool
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -66,6 +67,7 @@ struct FuturesTradeView: View {
             .padding(.bottom, Metrics.tabBarH + 60)
         }
         .scrollDismissesKeyboard(.interactively)
+        .lbKeyboardDone(focus: $keyboardFocus)
         .task {
             // 截图：把 K 线 / 委托区滚动到画面内
             let target: String? = router.shotSheet == "chart" ? "lb.chart" : (["ordersTpsl", "ordersPlan", "pnl", "pnlError", "pnlEmpty", "liq"].contains(router.shotSheet ?? "") ? "lb.bottom" : nil)

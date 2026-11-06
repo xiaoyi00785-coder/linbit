@@ -30,8 +30,9 @@ struct SpotTradeView: View {
                     .padding(.horizontal, Spacing.pageH).padding(.top, 8)
                     ordersSection.padding(.top, 20)
                 }
-                .padding(.bottom, 100)
+                .padding(.bottom, Metrics.tabBarH + 72)
             }
+            .scrollDismissesKeyboard(.interactively)
             .refreshable { await m.loadBook(); await m.refreshAccount() }
         }
         .background(p.bg.ignoresSafeArea())

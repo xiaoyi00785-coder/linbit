@@ -69,90 +69,115 @@ struct WithdrawView: View {
                     Image(systemName: "doc.text.magnifyingglass").foregroundColor(p.textPrimary)
                 }
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let loadError {
-                        InlineBanner(text: loadError).padding(.bottom, 4)
-                    }
-                    Button { showAsset = true } label: {
-                        HStack(spacing: 8) {
-                            CoinIcon(base: asset, size: 22)
-                            Text(asset).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
-                            Spacer()
-                            Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textTertiary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if let loadError {
+                            InlineBanner(text: loadError).padding(.bottom, 4)
                         }
-                        .padding(.horizontal, 12).frame(minHeight: 48)
-                        .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
-                    }.buttonStyle(PressableStyle(scale: 1))
+                        Button { showAsset = true } label: {
+                            HStack(spacing: 8) {
+                                CoinIcon(base: asset, size: 22)
+                                Text(asset).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                                Spacer()
+                                Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textTertiary)
+                            }
+                            .padding(.horizontal, 12).frame(minHeight: 48)
+                            .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                        }.buttonStyle(PressableStyle(scale: 1))
 
-                    PickerField(label: "网络", value: network?.network ?? "", placeholder: "请选择网络") { showNet = true }
-                    if let n = network {
-                        VStack(alignment: .leading, spacing: 4) {
-                            AssetKVRow(k: "最小提现", v: "\(n.minWithdraw ?? "--") \(asset)")
-                            if let mx = n.maxWithdraw { AssetKVRow(k: "单笔最大", v: "\(mx) \(asset)") }
-                            AssetKVRow(k: "预估 Gas", v: "\(n.gasFeeEstimate ?? "--") \(n.gasFeeAsset ?? asset)")
-                            if let m = n.estimatedArrivalMinutes {
-                                AssetKVRow(k: "预计到账", v: "约 \(m) 分钟")
+                        PickerField(label: "网络", value: network?.network ?? "", placeholder: "请选择网络") { showNet = true }
+                        if let n = network {
+                            VStack(alignment: .leading, spacing: 4) {
+                                AssetKVRow(k: "最小提现", v: "\(n.minWithdraw ?? "--") \(asset)")
+                                if let mx = n.maxWithdraw { AssetKVRow(k: "单笔最大", v: "\(mx) \(asset)") }
+                                AssetKVRow(k: "预估 Gas", v: "\(n.gasFeeEstimate ?? "--") \(n.gasFeeAsset ?? asset)")
+                                if let m = n.estimatedArrivalMinutes {
+                                    AssetKVRow(k: "预计到账", v: "约 \(m) 分钟")
+                                }
+                            }
+                            .padding(12).background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill.opacity(0.6)))
+                        }
+
+                        // 小屏：地址与地址簿纵向排布，避免挤扁输入框
+                        VStack(alignment: .leading, spacing: 8) {
+                            LBTextField(label: "提现地址", placeholder: "粘贴或输入地址", text: $address)
+                            HStack {
+                                Spacer(minLength: 0)
+                                Button { showBook = true } label: {
+                                    Text("从地址簿选择").font(.lb(FontSize.small, .medium)).foregroundColor(p.brand)
+                                }
                             }
                         }
-                        .padding(12).background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill.opacity(0.6)))
-                    }
-
-                    HStack {
-                        LBTextField(label: "提现地址", placeholder: "粘贴或输入地址", text: $address)
-                        Button { showBook = true } label: {
-                            Text("地址簿").font(.lb(FontSize.small, .medium)).foregroundColor(p.brand)
-                                .padding(.horizontal, 10).frame(minHeight: 40)
+                        if network?.memoRequired == true {
+                            LBTextField(label: "Memo / Tag", placeholder: "该网络必须填写", text: $memo)
                         }
-                    }
-                    if network?.memoRequired == true {
-                        LBTextField(label: "Memo / Tag", placeholder: "该网络必须填写", text: $memo)
-                    }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        NumberBox(label: "提现数量", unit: asset, text: $amount, onEdit: { fieldError = nil })
-                        HStack {
-                            Text("可用 \(Fmt.amount(avail, 8)) \(asset)").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
-                            Spacer()
-                            Button("最大") {
-                                let leave = gas
-                                let v = max(0, avail - leave)
-                                amount = SpotModel.fmt(v, 8)
-                            }.font(.lb(FontSize.small, .medium)).foregroundColor(p.brand)
-                        }
-                    }
-
-                    InlineBanner(text: "提现从资金/现货可用余额扣款；链上 Gas 从提现数量中扣除，请仔细核对地址与网络。")
-
-                    if useTotp {
-                        LBTextField(label: "谷歌验证码", placeholder: "请输入 6 位谷歌验证码", text: $totp, keyboard: .numberPad)
-                    } else {
-                        LBTextField(label: "安全验证码", placeholder: "6 位验证码", text: $smsCode, keyboard: .numberPad) {
-                            Button {
-                                Task { await sendCode() }
-                            } label: {
-                                Text(codeLeft > 0 ? "\(codeLeft)s" : (sendingCode ? "发送中" : "获取验证码"))
-                                    .font(.lb(FontSize.small, .medium))
-                                    .foregroundColor(codeLeft > 0 || sendingCode ? p.textTertiary : p.brand)
+                        VStack(alignment: .leading, spacing: 6) {
+                            NumberBox(label: "提现数量", unit: asset, text: $amount, onEdit: { fieldError = nil })
+                            HStack {
+                                Text("可用 \(Fmt.amount(avail, 8)) \(asset)").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                                    .lineLimit(1).minimumScaleFactor(0.8)
+                                Spacer()
+                                Button("最大") {
+                                    let leave = gas
+                                    let v = max(0, avail - leave)
+                                    amount = SpotModel.fmt(v, 8)
+                                }.font(.lb(FontSize.small, .medium)).foregroundColor(p.brand)
                             }
-                            .disabled(codeLeft > 0 || sendingCode)
                         }
-                    }
-                    LBTextField(label: "资金密码（如已设置）", placeholder: "未设置可留空", text: $fundPassword, secure: true)
 
-                    if let fieldError { Text(fieldError).font(.lb(FontSize.small)).foregroundColor(p.down) }
-                    else if let v = validation, !amount.isEmpty || !address.isEmpty {
-                        Text(v).font(.lb(FontSize.small)).foregroundColor(p.down)
-                    }
+                        InlineBanner(text: "提现从资金/现货可用余额扣款；链上 Gas 从提现数量中扣除，请仔细核对地址与网络。")
 
-                    LBButton(title: "确认提现", enabled: session.isLoggedIn && validation == nil, loading: submitting) {
-                        session.requireLogin { Task { await submit() } }
+                        VStack(alignment: .leading, spacing: 12) {
+                            if useTotp {
+                                LBTextField(label: "谷歌验证码", placeholder: "请输入 6 位谷歌验证码", text: $totp, keyboard: .numberPad)
+                                    .id("sec.totp")
+                            } else {
+                                LBTextField(label: "安全验证码", placeholder: "6 位验证码", text: $smsCode, keyboard: .numberPad) {
+                                    Button {
+                                        Task { await sendCode() }
+                                    } label: {
+                                        Text(codeLeft > 0 ? "\(codeLeft)s" : (sendingCode ? "发送中" : "获取验证码"))
+                                            .font(.lb(FontSize.small, .medium))
+                                            .foregroundColor(codeLeft > 0 || sendingCode ? p.textTertiary : p.brand)
+                                    }
+                                    .disabled(codeLeft > 0 || sendingCode)
+                                }
+                                .id("sec.code")
+                            }
+                            LBTextField(label: "资金密码（如已设置）", placeholder: "未设置可留空", text: $fundPassword, secure: true)
+                                .id("sec.fund")
+                        }
+                        .padding(.top, 4)
+
+                        if let fieldError { Text(fieldError).font(.lb(FontSize.small)).foregroundColor(p.down) }
+                        else if let v = validation, !amount.isEmpty || !address.isEmpty {
+                            Text(v).font(.lb(FontSize.small)).foregroundColor(p.down)
+                        }
+                        // 给吸底按钮留出滚动空间，避免 2FA 键盘挡住确认
+                        Color.clear.frame(height: 12).id("sec.bottom")
                     }
+                    .padding(.horizontal, Spacing.pageH).padding(.vertical, 12).padding(.bottom, 8)
                 }
-                .padding(.horizontal, Spacing.pageH).padding(.vertical, 12).padding(.bottom, 24)
+                .scrollDismissesKeyboard(.interactively)
+                .lbKeyboardDone(focus: $focus)
+                .onChange(of: totp) { c in if useTotp && c.count >= 1 { withAnimation { proxy.scrollTo("sec.totp", anchor: .center) } } }
+                .onChange(of: smsCode) { c in if !useTotp && c.count >= 1 { withAnimation { proxy.scrollTo("sec.code", anchor: .center) } } }
+                .onChange(of: fundPassword) { c in if !c.isEmpty { withAnimation { proxy.scrollTo("sec.fund", anchor: .center) } } }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .lbKeyboardDone(focus: $focus)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider().overlay(p.divider)
+                LBButton(title: "确认提现", enabled: session.isLoggedIn && validation == nil, loading: submitting) {
+                    session.requireLogin { Task { await submit() } }
+                }
+                .padding(.horizontal, Spacing.pageH)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+            }
+            .background(p.bg.ignoresSafeArea(edges: .bottom))
         }
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
         .task { await reload() }
@@ -261,6 +286,7 @@ struct WithdrawView: View {
 
     private func submit() async {
         focus = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         if let v = validation { fieldError = v; return }
         guard let net = network?.network else { return }
         submitting = true; defer { submitting = false }
