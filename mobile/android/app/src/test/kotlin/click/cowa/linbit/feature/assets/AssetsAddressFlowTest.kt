@@ -41,5 +41,33 @@ class AssetsAddressFlowTest {
         assertTrue(vm.submitCreateAddressConfirmed(request));withTimeout(5_000){while(vm.addressBusy)delay(10)}
         assertEquals("MOCK-ADDRESS-NEW",vm.addressReceipt?.readback?.id);assertNull(vm.addressError);assertEquals(2,server.requestCount);assertFalse(vm.submitCreateAddressConfirmed(request))
     }
+    @Test fun editHoldsBeforeListReadbackAndQuarantinesOldSession()=runBlocking {
+        val arrived=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>()
+        val old="""{"id":"MOCK-ADDRESS-OLD","asset":"USDT","network":"TRC20","address":"INVALID-ADDRESS-BOOK-LOCAL","label":"Mock edited label","memo":"MEMO-LOCAL","whitelisted":false,"createdAt":"2026-11-06T00:00:00Z"}"""
+        server.dispatcher=object:Dispatcher(){override fun dispatch(req:RecordedRequest):MockResponse = if(req.method=="PATCH"){
+            assertEquals("/account/withdraw-addresses/MOCK-ADDRESS-OLD",req.path);assertEquals("""{"label":"Mock edited label","memo":"MEMO-LOCAL","totpCode":"123456"}""",req.body.readUtf8());arrived.complete(Unit);runBlocking{withTimeout(5_000){release.await()}}
+            MockResponse().setHeader("Content-Type","application/json").setBody(old)
+        }else MockResponse().setResponseCode(404)}
+        assertTrue(vm.submitEditAddressConfirmed("MOCK-ADDRESS-OLD","Mock edited label","MEMO-LOCAL","123456"));assertTrue(vm.addressEditBusy);assertFalse(vm.submitEditAddressConfirmed("MOCK-ADDRESS-OLD","Mock edited label","MEMO-LOCAL","123456"));withTimeout(5_000){arrived.await()}
+        tokens.accessToken="OTHER_INVALID_SESSION";release.complete(Unit);withTimeout(5_000){while(vm.addressEditBusy)delay(10)}
+        assertNull(vm.addressEditReceipt);assertNull(vm.addressEditError);assertEquals(1,server.requestCount)
+    }
+    @Test fun editReadbackMismatchMustNotReplayAcceptedPatch()=runBlocking {
+        val old="""{"id":"MOCK-ADDR-READBACK","asset":"USDT","network":"TRC20","address":"INVALID-ADDRESS-BOOK-LOCAL","label":"Mock original label","memo":"OLD-MEMO","whitelisted":false,"createdAt":"2026-11-06T00:00:00Z"}"""
+        val stale="""{"id":"MOCK-ADDR-READBACK","asset":"USDT","network":"TRC20","address":"INVALID-ADDRESS-BOOK-LOCAL","label":"Mock original label","memo":"OLD-MEMO","whitelisted":false,"createdAt":"2026-11-06T00:00:00Z"}"""
+        server.dispatcher=object:Dispatcher(){override fun dispatch(req:RecordedRequest):MockResponse {
+            if(req.method=="PATCH") {
+                assertEquals("/account/withdraw-addresses/MOCK-ADDR-READBACK",req.path?.substringBefore('?'))
+                assertEquals("""{"label":"Mock edited label","memo":"MEMO-LOCAL","totpCode":"123456"}""",req.body.readUtf8())
+                return MockResponse().setHeader("Content-Type","application/json").setBody(old)
+            }
+            assertEquals("GET",req.method)
+            return MockResponse().setHeader("Content-Type","application/json").setBody("""{"items":[$stale]}""")
+        }}
+        assertTrue(vm.submitEditAddressConfirmed("MOCK-ADDR-READBACK","Mock edited label","MEMO-LOCAL","123456"))
+        try{withTimeout(5_000){while(vm.addressEditBusy)delay(10)}}catch(t:Throwable){throw AssertionError("edit guard count=${server.requestCount} error=${vm.addressEditError} receipt=${vm.addressEditReceipt} session=${vm.sessionVersion.value}",t)}
+        assertNull(vm.addressEditReceipt);assertNotNull(vm.addressEditError);assertEquals(2,server.requestCount)
+        assertFalse(vm.submitEditAddressConfirmed("MOCK-ADDR-READBACK","Mock edited label","MEMO-LOCAL","123456"));assertEquals(2,server.requestCount)
+    }
     @After fun close(){runCatching{server.shutdown()};Dispatchers.resetMain()}
 }

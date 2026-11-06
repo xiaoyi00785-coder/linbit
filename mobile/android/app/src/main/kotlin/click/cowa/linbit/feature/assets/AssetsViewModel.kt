@@ -212,6 +212,31 @@ class AssetsViewModel @Inject constructor(
             finally{if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressBusy=false}
         };return true
     }
+    data class AddressEditReceipt(val updated: ApiWithdrawAddress, val readback: ApiWithdrawAddress)
+    var addressEditBusy by androidx.compose.runtime.mutableStateOf(false); private set
+    var addressEditError by androidx.compose.runtime.mutableStateOf<String?>(null); private set
+    var addressEditReceipt by androidx.compose.runtime.mutableStateOf<AddressEditReceipt?>(null); private set
+    private var addressEditAccepted = false
+    fun submitEditAddressConfirmed(id: String, label: String, memo: String, totp: String): Boolean {
+        if (addressEditBusy || addressEditAccepted || addressBusy || !tokens.loggedIn.value) return false
+        addressEditBusy=true; addressEditError=null; addressEditReceipt=null
+        val generation=++addressGeneration; val epoch=withdrawEpoch.value
+        addressJob=viewModelScope.launch {
+            try {
+                val updated=apiCall{api.updateWithdrawAddress(id,ApiUpdateWithdrawAddressRequest(label=label,memo=memo,totpCode=totp))}
+                addressEditAccepted=true
+                val actual=apiCall{api.withdrawAddresses()}.items.firstOrNull{it.id==id}
+                if(epoch!=withdrawEpoch.value||generation!=addressGeneration)return@launch
+                require(actual!=null&&actual.label==label&&actual.memo==memo){"地址修改已返回，但列表读回未确认同一记录的标签/Memo；请稍后查看地址簿。"}
+                addressEditReceipt=AddressEditReceipt(updated,actual)
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressEditError=e.lbMessage()}
+            finally{if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressEditBusy=false}
+        };return true
+    }
+
+    fun acknowledgeAddressEdit(){if(addressEditReceipt!=null){addressEditReceipt=null;addressEditError=null}}
+
     fun clearAddressFeedback(){if(!addressBusy&&!addressAccepted){addressError=null;addressReceipt=null}}
 
     var withdrawBusy by androidx.compose.runtime.mutableStateOf(false); private set
@@ -254,7 +279,7 @@ class AssetsViewModel @Inject constructor(
     private var transferGeneration = 0L
     init { viewModelScope.launch { tokens.sessionVersion.collect {
         transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null
-        withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false; addressGeneration++; addressJob?.cancel(); addressBusy=false; addressError=null; addressReceipt=null; addressAccepted=false
+        withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false; addressGeneration++; addressJob?.cancel(); addressBusy=false; addressError=null; addressReceipt=null; addressAccepted=false; addressEditAccepted=false; addressEditBusy=false; addressEditError=null; addressEditReceipt=null
     } } }
     fun transferFutures(toFutures: Boolean, amount: String): Boolean {
         if (transferBusy || !tokens.loggedIn.value) return false

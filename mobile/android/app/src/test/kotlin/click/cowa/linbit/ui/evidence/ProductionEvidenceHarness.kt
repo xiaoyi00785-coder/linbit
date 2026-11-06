@@ -86,6 +86,7 @@ internal class ProductionEvidenceHarness<A : androidx.activity.ComponentActivity
             c.name.startsWith("auth-") -> "AuthHost(AuthFlow,LocalLbSheetInlineEvidence=false)"
             c.name.startsWith("deposit-") || c.name.startsWith("withdraw-") -> "Production AssetsHost/AssetsNav (direct Host; not an AppRoot click-through)"
             c.name.startsWith("security-") -> "ProfileHost/SecurityHost/SecurityPage (real security Host)"
+            c.name.startsWith("approot-address-edit-") -> "Verified production AppRoot HOME -> Assets -> Withdraw choice -> AddressBook card edit -> label/memo form -> true final Window -> exact loopback PATCH -> same-id/value list readback"
             c.name.startsWith("approot-address-") -> "Verified production AppRoot HOME -> Assets -> Withdraw choice -> Address book -> AddAddress -> true final review Window -> exact loopback create -> list readback"
             c.name.startsWith("approot-withdraw-") -> "Verified production AppRoot HOME -> Assets -> Withdraw form -> real security-review Window -> exact loopback withdrawal -> submitted/readback status and debit-balance evidence; not blockchain settlement"
             c.name.startsWith("approot-transfer-") -> "Verified production AppRoot HOME -> Assets tab -> Transfer form -> true LbSheet review -> exact loopback futures transfer -> actual server ref/status and balance readback"

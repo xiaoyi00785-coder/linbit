@@ -60,7 +60,7 @@
 | 充值 | 网络；自动到账账户选择 | `DepositScreens.kt:141-175,287-301` | 正常/空/明确错误 P；正确地址是在线网络 mock 的无效演示值，不得转账。弹层及 AppRoot 点击 U，不拿合成预览代替。 |
 | 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；本批仅链上已开2FA的AppRoot两适配local pending闭环 P/W：取消0 POST、在途ViewModel防重、503保留安全Window/金额/地址/TOTP并重试，202/pending提交与同id记录/借记余额readback分别显示；不是链上到账。地址簿/站内/撤销U。 |
 | 资产划转 | 现货→合约最终复核/失败重试/成功结果 | `TransferScreen.kt:55-160`；`AssetsViewModel.kt:184-222` | AppRoot P/W：320dp fontScale1.3浅色、360dp暗色；fake token与127.0.0.1精确POST；取消0写；真机、反向和其他设备 V/C 仍U。 |
-| 地址簿 | 新增label/网络；白名单验证/edit；删除；撤销 pending 提现 | `AddressBookScreen.kt`；`AssetsViewModel.kt` | 新增单链两项适配P/W见下文；label/memo PATCH、delete、单条名单PATCH/全局开关、撤销U。 |
+| 地址簿 | 新增label/网络；白名单验证/edit；删除；撤销 pending 提现 | `AddressBookScreen.kt`；`AssetsViewModel.kt` | 新增及本批label/memo编辑各两适配P/W见下文；单条名单PATCH、DELETE、全局开关、pending撤销U，不因共用生产PATCH/OpenAPI推定通过。 |
 | More | 卡券激活确认；合伙人申请；跟单；跟单二次确认；成为带单员；停止跟单；关闭工单 | `CouponsScreen.kt:94-132`；`PartnerScreen.kt:262-277`；`CopyTradingScreen.kt:311-365`；`SupportTicketsScreen.kt:309-314` | U。 |
 | Profile | 修改昵称；退出；移除本机账号；创建子账户；2FA 关闭确认 | `UserCenterScreens.kt:76-158,179-223`；`SubAccountsScreen.kt:42-88`；`SecurityScreens.kt:182-197` | U。 |
 | 安全（新） | 登录密码/防钓鱼/邮箱/手机/资金密码安全确认 | `SecurityFeatureScreens.kt`、`SecurityContactScreens.kt` | 表单 P；独立离屏Window按本批实际manifest，PixelCopy/真机U。契约按生成模型 loopback 测试，真机PixelCopy/V U，禁止 UI 自动发码/绑定。 |
@@ -220,3 +220,15 @@ OpenAPI支持本批create和仍未验的PATCH/del三种实际写，不能把接�
 发现并修正复核内容在现有纵向Sheet里再套verticalScroll造成真独立Window 0x0/黑图：复用现有容器滚动，Root断言Window非零，并保存新的可Read窗口图片。期间早期匹配到表单自身label的假列表结果未沿用；正式断言同一生产Root已回AddressBook、真实list label/address、GET≥3且无REJECTED。无精确新增UI reference，明确no-exact-reference；8 PNG/manifest已Read，不是整本地址簿、编辑删除、设备PixelCopy或全V。
 
 独立XML `address-create-xml`；图片/元数据 `address-create-evidence`。独立Root **4 tests / 0 failures / 0 errors / 0 skipped**；VM 2项0 skipped。默认实测 **358 tests / 0 failures / 0 errors / 130 skipped**（本批Root 4项默认Assume skipped）；顺序Debug compile→Release compile→lintDebug→默认全测全部BUILD SUCCESSFUL。默认XML `address-default-xml`。保持U：pending提现撤销、反向out划转、提现其他状态、站内、地址白名单/PATCH/DELETE与非2FA/真机。本批超出预算，真实诊断包括资产币种资料、同font输入tag、嵌套滚动窗口归零及网络回调整合，不把中间错误XML当passed。
+
+## 2026-11-06 address label/memo PATCH limited batch
+
+OpenAPI `PATCH /account/withdraw-addresses/{id}` 同样支持 `whitelisted`，但本批只允许 label、memo、totpCode 的精确 body；没有用同一Endpoint顺带修改名单。真实生产 `AppRoot` 通过资产→提现方式→地址簿→地址卡编辑进入表单与独立最终复核Window。编辑写入由家庭 `AssetsViewModel` 同步拒重，维护session transaction/generation；旧会话取消且不能发布receipt。取消不写；held503保留label、memo、fake TOTP和错误可重试。PATCH 200后必须重新GET列表，并要求同id且label/memo都等于最终输入才发布已读回receipt，随后展示该GET得到的列表；readback失败或值不匹配保持PATCH accepted且禁止再次POST/PATCH，不宣称修改完成。
+
+**最终独立结果先保存：** `/workspace/android-verification/address-edit-xml` = 320dp/fontScale1.3/light及360dp/dark各取消零写和held503/重试/同id新值列表readback，合计 **4 tests / 0 failures / 0 errors / 0 skipped**。VM隔离XML另为 **4 / 0 / 0 / 0**：在途防重与旧session隔离、200后值不匹配阻止repost。`address-edit-evidence/` 存8张最终PNG、对应manifest和校验sha256。这些结果只涵盖本批，不把早期getter定义、缺按钮、错误fixture路径与窗口诊断try过算passed。
+
+8张最终图已实际Read：表单与独立确认窗口能读清原/新label、memo、地址及验证输入；503保留已填数据与可重试按钮；结果窗口已离开编辑回到真实列表，显示新值和“已从服务端列表读回修改”。320大字的编辑按钮与滚动表单位置可读，360暗色文本/错误可见；真实Window manifest非零960×2532px/1080×2532px，非inline替代、非instrumentation PixelCopy。此精确编辑界面未定位精确参考：**no-exact-reference**，不宣称reference-identical或全V。真机/其它宽度/IME等仍U。
+
+**准确未验边界：** 单条 `whitelisted` PATCH、地址 `DELETE`、全局 `/account/withdraw-whitelist` 写及读，pending提现撤销，反向 `out` 划转，站内提现、资金/提醒/发码等不在本批。全部仅 `127.0.0.1` 精确route/body的fake token/TOTP；没有远端写、部署、真实发送验证码、iOS或我方真机APK前置。
+
+顺序Debug compile→Release compile→lintDebug→默认全测全部BUILD SUCCESSFUL，见 `address-edit-build.jsonl` 及 `/workspace/edit-{debug-compile,release-compile,lint,default}.log`；默认XML另存 `address-edit-default-xml`。默认实测 **364 tests / 0 failures / 0 errors / 134 skipped**。默认中4条Root Assume skip、`AssetsAddressFlowTest` 4条0 skip；skip不计Root通过，不沿用create旧358数字。

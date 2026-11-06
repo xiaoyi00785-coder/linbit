@@ -57,6 +57,7 @@ fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel(), onDi
                     } else assetsNav.clear()
                 },
                 onAdd = { assetsNav.openAddAddress(it) },
+                onDialogWindow = onDialogWindow,
                 onPickForWithdraw = if (assetsNav.addressBookForWithdraw) { { a ->
                     assetsNav.pickWithdrawAddress(
                         WithdrawAddressPrefill(

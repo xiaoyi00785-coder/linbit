@@ -45,6 +45,8 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
 
     var futuresTransferFailureGate: java.util.concurrent.CountDownLatch? = null
 
+    var addressEditFailureGate: java.util.concurrent.CountDownLatch? = null
+
     var addressCreateFailureGate: java.util.concurrent.CountDownLatch? = null
 
     var withdrawSubmissionFailureGate: java.util.concurrent.CountDownLatch? = null
@@ -68,13 +70,14 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val futuresTransfer = method == "POST" && path == "/futures/transfer" && response != null && request.body.readUtf8() == "{\"direction\":\"in\",\"amount\":\"10.00\"}"
         val withdrawSubmit = method == "POST" && path == "/wallet/withdraw" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ONCHAIN-ADDRESS-NOT-FOR-TRANSFER\",\"amount\":\"10.00\",\"totpCode\":\"123456\"}"
         val addressCreate = method == "POST" && path == "/account/withdraw-addresses" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ADDRESS-BOOK-LOCAL\",\"label\":\"Mock local label\",\"whitelisted\":false,\"totpCode\":\"123456\"}"
-        if (sensitive && !addressCreate && !withdrawSubmit && !futuresTransfer && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
+        val addressEdit = method == "PATCH" && path == "/account/withdraw-addresses/MOCK-ADDRESS-EDIT" && response != null && request.body.readUtf8() == "{\"label\":\"Mock edited label\",\"memo\":\"MEMO-LOCAL\",\"totpCode\":\"123456\"}"
+        if (sensitive && !addressEdit && !addressCreate && !withdrawSubmit && !futuresTransfer && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
             return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
         val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
         val algoCancelFailure = algoCancel && response?.httpCode() == 503
         val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !withdrawSubmit && !addressCreate) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !withdrawSubmit && !addressCreate && !addressEdit) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }
@@ -94,6 +97,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (path == "/auth/passkey/login/finish") {
             check(passkeyFinishGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback finish latch timed out" }
         }
+        if (addressEdit && response?.httpCode() == 503) { check(addressEditFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address PATCH latch timed out" } }
         if (addressCreate && response?.httpCode() == 503) { check(addressCreateFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address failure latch timed out" } }
         if (withdrawSubmit && response?.httpCode() == 503) { check(withdrawSubmissionFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback withdrawal failure latch timed out" } }
         if (futuresTransfer && response?.httpCode() == 503) {

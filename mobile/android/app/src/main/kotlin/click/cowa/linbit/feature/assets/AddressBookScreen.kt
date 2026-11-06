@@ -61,6 +61,7 @@ fun AddressBookScreen(
     vm: AssetsViewModel,
     onBack: () -> Unit,
     onAdd: (String?) -> Unit,
+    onDialogWindow: (android.view.Window?) -> Unit = {},
     onPickForWithdraw: ((ApiWithdrawAddress) -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
@@ -72,6 +73,19 @@ fun AddressBookScreen(
     var whitelist by remember { mutableStateOf<Boolean?>(null) }
     var filter by remember { mutableStateOf(0) }
     var verify by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
+    var editTarget by remember { mutableStateOf<ApiWithdrawAddress?>(null) }
+    var editPhase by remember { mutableStateOf(0) }
+    var editLabel by remember { mutableStateOf("") }
+    var editMemo by remember { mutableStateOf("") }
+    var editTotp by remember { mutableStateOf("") }
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+    LaunchedEffect(session) { editTarget = null }
+    LaunchedEffect(vm.addressEditReceipt?.readback?.id) {
+        if (vm.addressEditReceipt != null) {
+            editTarget = null; list = null
+            scope.launch { vm.addresses().fold(onSuccess={list=it},onFailure={err=it.lbMessage();list=emptyList()}) }
+        }
+    }
 
     fun reload() {
         scope.launch {
@@ -125,6 +139,7 @@ fun AddressBookScreen(
                 err != null && list!!.isEmpty() -> EmptyState(err ?: "加载失败")
                 else -> {
                     val shown = if (filter == 1) list!!.filter { it.whitelisted } else list!!
+                    list!!.firstOrNull { it.id == vm.addressEditReceipt?.readback?.id }?.let { Text("已从服务端列表读回修改", Modifier.testTag("address.edit.readback"), style = lb(FontSize.small), color = p.brand) }
                     if (shown.isEmpty()) {
                         EmptyState(if (filter == 1) "暂无白名单地址" else "暂无地址")
                         Spacer(Modifier.height(12.dp))
@@ -150,6 +165,9 @@ fun AddressBookScreen(
                                 Spacer(Modifier.height(4.dp)); AssetKv("Memo", a.memo!!)
                             }
                             Spacer(Modifier.height(8.dp))
+                            LbButton("编辑", kind = ButtonKind.OUTLINE, height = 32.dp, testTag = "address.edit.open") {
+                                editTarget = a; editPhase = 0; editLabel = a.label.orEmpty(); editMemo = a.memo.orEmpty(); editTotp = ""
+                            }
                             Row {
                                 Spacer(Modifier.weight(1f))
                                 if (onPickForWithdraw != null) {
@@ -182,6 +200,36 @@ fun AddressBookScreen(
             }
         }
         LbButton("添加地址", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), onClick = { onAdd(null) })
+    }
+
+    editTarget?.let { target ->
+        val busy = vm.addressEditBusy
+        LbSheet(if (editPhase == 0) "编辑提现地址" else "确认修改提现地址", onClose = { if (!busy) editTarget = null }, showClose = !busy, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
+                AssetKv("币种 / 网络", "${target.asset} / ${AssetsLogic.displayNetwork(target.network)}")
+                AssetKv("地址", target.address)
+                Spacer(Modifier.height(10.dp))
+                if (editPhase == 0) {
+                    LbTextField(editLabel, { if (!busy) editLabel = it }, "标签", testTag = "address.edit.label")
+                    Spacer(Modifier.height(10.dp))
+                    LbTextField(editMemo, { if (!busy) editMemo = it }, "Memo", testTag = "address.edit.memo")
+                    Spacer(Modifier.height(12.dp))
+                    LbButton("复核修改", enabled = !busy, testTag = "address.edit.review") { if (editPhase == 0) editPhase = 1 }
+                } else {
+                    AssetKv("修改后标签", editLabel); AssetKv("修改后 Memo", editMemo)
+                    Text("仅修改标签/Memo；服务端列表必须读回同 id 才算列表更新。", Modifier.padding(top=8.dp), style = lb(FontSize.small), color = p.textSecondary)
+                    Spacer(Modifier.height(10.dp))
+                    LbTextField(editTotp, { if (!busy) editTotp = it.filter(Char::isDigit).take(6) }, "请输入 6 位谷歌验证码", keyboardType = KeyboardType.Number, testTag = "address.edit.totp")
+                    Spacer(Modifier.height(12.dp))
+                    vm.addressEditError?.let { Text(it, Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down) }
+                    LbButton(if (busy) "等待服务端结果…" else "确认修改", enabled = !busy && editTotp.length == 6, loading = busy, testTag = "address.edit.confirm") {
+                        vm.submitEditAddressConfirmed(target.id, editLabel, editMemo, editTotp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                LbButton("取消", kind = ButtonKind.SECONDARY, enabled = !busy, testTag = "address.edit.dismiss") { editTarget = null }
+            }
+        }
     }
 
     verify?.let { (title, act) ->
