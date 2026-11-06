@@ -10,6 +10,8 @@ export const EN_T: Record<string, string> = {
   // #76/#79/#81/#89 新增文案补译：充提网络下拉与提现提示、客服面板与工单入口、状态文案、行情空状态
   "联系客服":"Contact Support","在线客服即将开放":"Live chat coming soon","人工在线客服正在筹备中，开放后会在这里显示联系方式。现在遇到问题，请先提交工单，客服回复后会在站内通知你。":"Live chat support is being set up; contact details will appear here once it opens. For now, please submit a ticket and you'll be notified on-site when support replies.","人工在线客服正在筹备中，开放后会在这里显示联系方式。现在可以先查看下方帮助中心的常见问题。":"Live chat support is being set up; contact details will appear here once it opens. Meanwhile, check the FAQ in the Help Center below.","工单":"Tickets","提交工单":"Submit a Ticket",
   "在线提交问题，客服回复后站内通知":"Submit an issue online; you'll be notified on-site when support replies","我的工单":"My Tickets","查看进度与客服回复":"Track progress and support replies","常见问题与操作指南。如未找到答案，可点击页面右下角「在线客服」，在面板里提交工单，客服回复后会在站内通知你。":"FAQs and how-to guides. Can't find an answer? Click Support at the bottom right, submit a ticket from the panel, and you'll be notified on-site when support replies.","社区即将开放":"community coming soon","即将开放":"Coming soon",
+  "确认申购":"Confirm subscription","登录后申购":"Log in to subscribe","预计日收益":"Est. daily yield","预计到期收益":"Est. maturity yield","现货可用":"Spot available","赎回规则":"Redemption","个人上限":"Personal limit","申购数量低于最低限额":"Amount below the minimum","现货可用余额不足":"Insufficient spot balance","产品额度不足":"Product quota exceeded","已达个人申购上限":"Personal subscription limit reached","该产品仅限新用户":"Newcomers only","产品已下架":"Product offline","产品不存在":"Product not found","请检查申购数量":"Check the subscription amount","申购成功":"Subscribed","Telegram 开发者群":"Telegram developer group","Telegram 开发者群（即将开放）":"Telegram developer group (coming soon)","申购将从现货账户扣款；预计收益仅供参考，以实际到账为准。":"Subscriptions debit your spot account; estimated yield is indicative only.",
+
   "最近划转":"Recent transfers","最小充值":"Min. deposit","最小提现":"Min. withdrawal","个区块确认后到账":"block confirmations to credit","· # 个区块确认后到账":"· Credited after # block confirmations","我的策略":"My Bots",
   "加载中…":"Loading…","加载中":"Loading","暂无运行中的策略":"No running bots","暂无最新成交价":"No last price yet","预计到账约 # 分钟":"Est. arrival ~# min","预计到账约":"Est. arrival ~",
   "分钟":"min","当前选择":"Selected","单笔最小提现 #":"Min per withdrawal #","转给 linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器；不支持转入子账户。":"Send to a linbit user: no fees, instant, off-chain. Google Authenticator required; sub-accounts can't receive.","请输入转账数量":"Enter transfer amount","请输入提现数量":"Enter withdrawal amount",
@@ -115,4 +117,11 @@ export const EN_P: [string, string][] = [
   ["{} 最多 {} 位小数", "{} max {} decimal places"],
   ["改价或增加数量会失去时间优先级；减少数量保留原排队位置。已成交 {}。", "Changing price or increasing size loses time priority; reducing size keeps your place. Filled: {}."],
   ["留空为全部仓位（{}）", "Leave blank for full position ({})"],
+  ["申购 · {}", "Subscribe · {}"],
+  ["最低 {}", "Min {}"],
+  ["最低申购 {} {}", "Min subscription {} {}"],
+  ["锁仓 {} 天 · 参考年化 {}", "Lock {} days · ref. APR {}"],
+  ["活期 · 参考年化 {}", "Flexible · ref. APR {}"],
+  ["申购成功，预计收益 {} {}", "Subscribed; est. yield {} {}"],
+  ["期限 {} 天", "Term {} days"],
 ];
