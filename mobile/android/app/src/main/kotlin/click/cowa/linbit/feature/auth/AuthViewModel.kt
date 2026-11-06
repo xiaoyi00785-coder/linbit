@@ -16,6 +16,8 @@ import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.storage.AppPrefs
 import click.cowa.linbit.ui.components.ToastCenter
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -32,6 +34,7 @@ class AuthViewModel @Inject constructor(
     private val tokens: TokenStore,
     private val prefs: AppPrefs,
     val toast: ToastCenter,
+    private val passkey: PasskeyLoginService,
 ) : ViewModel() {
     var raw by mutableStateOf("")
     var countryCode by mutableStateOf("86")
@@ -47,10 +50,51 @@ class AuthViewModel @Inject constructor(
     /** 429 RATE_LIMITED：按 Retry-After 倒计时，期间禁止再次提交 */
     var cooldown by mutableStateOf(0)
     var lastLogin by mutableStateOf("")
+    var passkeyLoading by mutableStateOf(false); private set
+    var passkeyError by mutableStateOf<String?>(null); private set
+    private var passkeyInFlight = false
+    private var passkeyGeneration = 0L
+    private var passkeyEpoch = tokens.sessionVersion.value
+    private var passkeyJob: kotlinx.coroutines.Job? = null
 
     val id: AccountId get() = AccountId.fromRaw(raw, countryCode)
 
-    init { viewModelScope.launch { lastLogin = prefs.lastLogin.first() } }
+    init {
+        viewModelScope.launch { lastLogin = prefs.lastLogin.first() }
+        viewModelScope.launch { tokens.sessionVersion.collect { version ->
+            if (passkeyEpoch != version) {
+                passkeyEpoch = version; passkeyGeneration++; passkeyJob?.cancel()
+                passkeyInFlight = false; passkeyLoading = false; passkeyError = null
+            }
+        } }
+    }
+    fun loginWithPasskey(activity: android.app.Activity, onDone: () -> Unit) {
+        if (passkeyInFlight || loading || tokens.loggedIn.value || activity.isFinishing || activity.isDestroyed) return
+        passkeyInFlight = true; passkeyLoading = true; passkeyError = null
+        val generation = ++passkeyGeneration; val epoch = passkeyEpoch
+        passkeyJob = viewModelScope.launch {
+            try {
+                val token = passkey.login(activity)
+                val current = generation == passkeyGeneration && epoch == passkeyEpoch && tokens.sessionVersion.value == epoch && !tokens.loggedIn.value
+                if (current) {
+                    tokens.save(token)
+                    if (generation == passkeyGeneration && epoch == passkeyEpoch) { password = ""; onDone() }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                if (generation == passkeyGeneration && epoch == passkeyEpoch) passkeyError = (e as? ApiFailure)?.userMessage() ?: e.message ?: "通行密钥登录失败，请稍后重试"
+            } finally {
+                if (generation == passkeyGeneration && epoch == passkeyEpoch) { passkeyInFlight = false; passkeyLoading = false }
+            }
+        }
+    }
+    fun cancelPasskeyLogin() {
+        if (!passkeyInFlight) return
+        passkeyGeneration++; passkeyJob?.cancel(); passkeyInFlight = false; passkeyLoading = false
+        passkeyError = PasskeyLoginFailure.Cancelled.message
+    }
+    override fun onCleared() { passkeyGeneration++; super.onCleared() }
 
     fun onRawChange(v: String) { raw = v; accountError = null }
     fun onPasswordChange(v: String) { password = v; passwordError = null }

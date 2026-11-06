@@ -14,6 +14,8 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     private val mutationStatuses = mutableListOf<Int>()
     private val expectedFailureKeys = mutableSetOf<String>()
     var defaultFeatureFlags: String? = null
+    /** Test-only loopback response hold; it cannot call or configure any production host. */
+    var passkeyFinishGate: java.util.concurrent.CountDownLatch? = null
 
     init { server.dispatcher = this; server.start() }
 
@@ -50,10 +52,11 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val response = routes[key]?.removeFirstOrNull() ?: defaultFeatureFlags?.takeIf { key == "GET /app/features" }?.let { flags ->
             MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(flags)
         }
+        val passkeyLogin = path in setOf("/auth/passkey/login/begin", "/auth/passkey/login/finish")
         val alertWrite = path == "/price-alerts" || path.startsWith("/price-alerts/")
         val paperBuy = method == "POST" && path == "/paper/orders"
         val expected = declaredFailure && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         requests += "$key${if (method != "GET") " [${if (declaredFailure) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}"
@@ -63,6 +66,9 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
             val data = org.json.JSONObject(request.body.clone().readUtf8()).getString("clientOrderId")
             val fulfilled = payload.replace("MOCK_CLIENT_ID", data.replace("\\", "\\\\").replace("\"", "\\\""))
             return response.clone().setBody(fulfilled)
+        }
+        if (path == "/auth/passkey/login/finish") {
+            check(passkeyFinishGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback finish latch timed out" }
         }
         return response ?: undeclared(request, "Evidence route must be declared explicitly")
     }

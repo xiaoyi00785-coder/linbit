@@ -25,7 +25,8 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
     fun auth(): AuthViewModel {
         val ctx = org.robolectric.RuntimeEnvironment.getApplication()
         val repo = AuthRepository(retrofit, tokens, { "evidence-invalid-device" }, { "Robolectric Content Capture" }, scope)
-        return AuthViewModel(repo, tokens, AppPrefs(ctx), toast)
+        val fakeBridge = click.cowa.linbit.feature.auth.PasskeyCredentialBridge { _, _ -> error("Native bridge must be explicitly mocked per passkey scenario") }
+        return AuthViewModel(repo, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(retrofit, fakeBridge, { "evidence-invalid-device" }, { "Robolectric" }))
     }
 
     fun security(): SecurityViewModel = SecurityViewModel(retrofit, toast)

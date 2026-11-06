@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalDensity
@@ -106,10 +108,10 @@ fun OrDivider(modifier: Modifier = Modifier) {
 
 /** 第三方登录灰按钮：图标靠左，文案居中（ref2 #3）。 */
 @Composable
-fun SocialButton(iconRes: Int, title: String, multicolor: Boolean = false, onClick: () -> Unit) {
+fun SocialButton(iconRes: Int, title: String, multicolor: Boolean = false, enabled: Boolean = true, testTag: String? = null, onClick: () -> Unit) {
     val p = LB.p
     Box(
-        Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(Radius.xl)).background(p.fill).pressable(onClick = onClick).padding(horizontal = 24.dp),
+        Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(Radius.xl)).background(p.fill).alpha(if (enabled) 1f else 0.5f).pressable(onClick = onClick, enabled = enabled).then(if (testTag == null) Modifier else Modifier.testTag(testTag)).padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.align(Alignment.CenterStart)) {

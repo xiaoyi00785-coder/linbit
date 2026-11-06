@@ -24,6 +24,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -79,13 +80,17 @@ fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hi
     val p = LB.p
     val nav = rememberNavController()
     var resetToken by remember { mutableStateOf("") }
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    DisposableEffect(vm, activity) {
+        onDispose { vm.cancelPasskeyLogin() }
+    }
     val soon: (String) -> Unit = { vm.toast.show(it) }
     Box(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         NavHost(nav, startDestination = if (startRegister) Route.REGISTER else Route.LOGIN) {
             composable(Route.LOGIN) {
                 LoginAccountScreen(vm, onClose = onClose, onNext = { nav.navigate(Route.PASSWORD) }, onRegister = {
                     nav.navigate(Route.REGISTER) { popUpTo(Route.LOGIN) { inclusive = true } }
-                }, soon = soon)
+                }, soon = soon, onPasskey = { activity?.let { vm.loginWithPasskey(it, onClose) } })
             }
             composable(Route.PASSWORD) {
                 PasswordScreen(vm, onBack = { nav.popBackStack() }, onForgot = { nav.navigate(Route.FORGOT) },
@@ -127,7 +132,7 @@ private fun lightSubtitle(text: String) = AnnotatedString(text)
 // ───────────── 登录 · 账户（ref2 #3 / #9）─────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -> Unit, onRegister: () -> Unit, soon: (String) -> Unit) {
+internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -> Unit, onRegister: () -> Unit, soon: (String) -> Unit, onPasskey: () -> Unit = {}) {
     val p = LB.p
     var showCountry by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
@@ -139,7 +144,8 @@ internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: 
             AuthButton("登录", Modifier.padding(top = 32.dp), testTag = "auth.login.next") { vm.submitAccount(onNext) }
             OrDivider(Modifier.padding(vertical = 32.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SocialButton(R.drawable.ic_passkey, "使用通行密钥继续") { soon("通行密钥登录即将开放") }
+                SocialButton(R.drawable.ic_passkey, if (vm.passkeyLoading) "正在等待系统通行密钥…" else "使用通行密钥继续", enabled = !vm.passkeyLoading && !vm.loading, testTag = "auth.passkey.login") { onPasskey() }
+                vm.passkeyError?.let { Text(it, color = p.down, style = click.cowa.linbit.ui.theme.lb(FontSize.small)) }
                 SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 登录即将开放") }
                 SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 登录即将开放") }
             }

@@ -94,6 +94,14 @@ interface LinbitApi {
     @POST("auth/logout")
     suspend fun logout(@Body body: ApiLogoutRequest)
 
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @POST("auth/passkey/login/begin")
+    suspend fun passkeyLoginBegin(): ApiPasskeyCeremony
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @POST("auth/passkey/login/finish")
+    suspend fun passkeyLoginFinish(@Body body: ApiFinishPasskeyLoginRequest): ApiAuthTokens
+
     // ---- Market（公开）----
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("market/symbols")

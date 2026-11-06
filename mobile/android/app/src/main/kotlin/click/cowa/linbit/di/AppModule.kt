@@ -109,6 +109,10 @@ object AppModule {
     fun savedAccounts(store: SecureStore, tokens: TokenStore) = click.cowa.linbit.feature.profile.SavedAccounts(store, tokens)
 
     @Provides @Singleton
+    fun passkeyLoginService(api: LinbitApi, store: SecureStore): click.cowa.linbit.feature.auth.PasskeyLoginService =
+        click.cowa.linbit.feature.auth.PasskeyLoginService(api, click.cowa.linbit.feature.auth.AndroidPasskeyCredentialBridge(), { store.deviceId }, { Build.MODEL ?: "Android" })
+
+    @Provides @Singleton
     fun auth(api: LinbitApi, tokens: TokenStore, store: SecureStore, @ApplicationScope scope: CoroutineScope) =
         AuthRepository(api, tokens, { store.deviceId }, { Build.MODEL ?: "Android" }, scope)
 }
