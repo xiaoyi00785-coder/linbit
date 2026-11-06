@@ -57,6 +57,8 @@ fun rememberAssetRouteViewModels(): AssetRouteViewModels {
     return remember { AssetRouteViewModels(assets, spot, tradFi, paper, priceAlerts) }
 }
 
+val LocalTradeHistoryFactory = androidx.compose.runtime.staticCompositionLocalOf<@Composable () -> click.cowa.linbit.feature.trade.TradeHistoryViewModel> { { hiltViewModel() } }
+
 /** Root stays the sole owner of feature routing. Optional factory is DI, not a synthetic navigation path. */
 @Composable
 fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewModel = hiltViewModel(), routeVms: AssetRouteViewModels = rememberAssetRouteViewModels(), showSplash: Boolean = true, onDialogWindow: (android.view.Window?) -> Unit = {}) {
@@ -186,7 +188,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewMo
             ) }
             when (historyKind) {
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
-                "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol)
+                "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol, vm = LocalTradeHistoryFactory.current.invoke(), onDialogWindow = onDialogWindow)
             }
             auth?.let { start -> AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
             ToastOverlay(vm.toast)

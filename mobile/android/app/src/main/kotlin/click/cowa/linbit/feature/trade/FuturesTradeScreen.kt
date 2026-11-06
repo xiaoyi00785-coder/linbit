@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -291,7 +293,7 @@ fun FuturesTradeContent(
                     Text(t, Modifier.pressable(scale = 1f) { bottomTab = i }, style = lb(FontSize.label, if (bottomTab == i) FontWeight.Medium else FontWeight.Normal), color = if (bottomTab == i) p.textPrimary else p.textSecondary)
                 }
                 Box(Modifier.weight(1f))
-                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.pressable(scale = 1f, onClick = onHistory))
+                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" })
             }
             HorizontalDivider(color = p.divider)
             if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {

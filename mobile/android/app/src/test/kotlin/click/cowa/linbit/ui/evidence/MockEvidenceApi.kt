@@ -60,11 +60,13 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val passkeyRegister = path in setOf("/account/passkeys/register/begin", "/account/passkeys/register/finish")
         val alertWrite = path == "/price-alerts" || path.startsWith("/price-alerts/")
         val paperBuy = method == "POST" && path == "/paper/orders"
-        val expected = declaredFailure && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey) {
+        val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
+        val algoCancelFailure = algoCancel && response?.httpCode() == 503
+        val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
-        requests += "$key${if (method != "GET") " [${if (declaredFailure) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}"
+        synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }
         if (method != "GET") mutationStatuses += response?.httpCode() ?: 599
         if (paperBuy && response != null) {
             val payload = response.getBody()?.clone()?.readUtf8() ?: throw AssertionError("Paper response required")

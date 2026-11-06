@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -67,6 +68,7 @@ fun FloatingTabBar(selected: MainTab, onSelect: (MainTab) -> Unit, modifier: Mod
                     .height(Metrics.tabBarH - 10.dp)
                     .clip(CircleShape)
                     .background(if (sel) p.tabBarSelected else Color.Transparent)
+                    .testTag("main-tab-${tab.name.lowercase()}")
                     .clickable(remember { MutableInteractionSource() }, indication = null) { onSelect(tab) },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
