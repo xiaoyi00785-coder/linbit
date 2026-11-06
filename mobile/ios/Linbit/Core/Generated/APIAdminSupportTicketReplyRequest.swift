@@ -35,4 +35,3 @@ public struct APIAdminSupportTicketReplyRequest: Codable, JSONEncodable, Hashabl
         try container.encodeIfPresent(status, forKey: .status)
     }
 }
-

@@ -42,4 +42,3 @@ public struct APISupportCreateTicketRequest: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(attachments, forKey: .attachments)
     }
 }
-

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { BRAND_PATHS } from "@/lib/brandIcons";
-import { MORE_SOCIAL, PRIMARY_SOCIAL, socialItem } from "@/lib/social";
+import { MORE_SOCIAL, PRIMARY_SOCIAL, socialItem, useSocialLinks } from "@/lib/social";
 import { toast } from "@/lib/ui";
 
 const Icon = ({ k }: { k: string }) => <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="currentColor"><path d={BRAND_PATHS[k]} /></svg>;
@@ -16,8 +16,9 @@ function Item({ k, row }: { k: string; row?: boolean }) {
     : <button type="button" className={row ? "fsoc-row" : "fsoc-i"} aria-label={label} title={it.name} role={row ? "menuitem" : undefined} onClick={() => soon(it.name)}>{body}</button>;
 }
 
-/** 页脚「社区」：两行圆形图标，始终展示；配置了 NEXT_PUBLIC_SOCIAL_* 的新标签页打开，未配置的点击提示即将开放 */
+/** 页脚「社区」：两行圆形图标，始终展示；读取公开配置（构建期环境变量兜底）的新标签页打开，未配置的点击提示即将开放 */
 export function FooterSocial() {
+  useSocialLinks();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {

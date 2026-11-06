@@ -33,10 +33,10 @@ type publicRoute struct {
 type Gateway struct {
 	cfg    Config
 	routes []route
-	// announcements proxies ONLY the exact public path GET /announcements to
-	// the admin service. No other admin path is reachable through the gateway.
-	announcements *httputil.ReverseProxy
-	public        []publicRoute
+	// publicAdmin proxies ONLY anonymous read-only announcements and social links.
+	// No /admin/v1 path is reachable through the gateway.
+	publicAdmin *httputil.ReverseProxy
+	public      []publicRoute
 	// accessLog is nil when GATEWAY_ACCESS_LOG is off.
 	accessLog *slog.Logger
 	tradfi    *tradfiGuard
@@ -111,14 +111,13 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	annProxy := newProxy(admin)
-	annDirector := annProxy.Director
-	annProxy.Director = func(r *http.Request) {
-		annDirector(r)
-		// Pin the upstream path and strip any credentials: the admin service
-		// only ever sees an anonymous GET /announcements.
-		// Only /announcements or /announcements/<digits> ever reach admin.
-		if annPath(r.URL.Path) == "" {
+	publicProxy := newProxy(admin)
+	publicDirector := publicProxy.Director
+	publicProxy.Director = func(r *http.Request) {
+		publicDirector(r)
+		// Pin the upstream path and strip all credentials. Only announcements
+		// and the exact social settings path may reach this anonymous proxy.
+		if annPath(r.URL.Path) == "" && r.URL.Path != "/site/social" {
 			r.URL.Path = "/announcements"
 		}
 		r.URL.RawPath = ""
@@ -133,9 +132,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	return &Gateway{
-		cfg:           cfg,
-		announcements: annProxy,
-		tradfi:        newTradFiGuard(cfg),
+		cfg:         cfg,
+		publicAdmin: publicProxy,
+		tradfi:      newTradFiGuard(cfg),
 		// Order matters: longest/most-specific prefixes first.
 		routes: []route{
 			{prefix: "/auth", proxy: accountProxy},
@@ -250,14 +249,14 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Public, read-only announcements (admin service public handler only).
-	if annPath(r.URL.Path) != "" {
+	// Public, read-only content from explicit admin service public handlers.
+	if annPath(r.URL.Path) != "" || r.URL.Path == "/site/social" {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			common.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "仅支持 GET")
 			return
 		}
-		g.announcements.ServeHTTP(w, r)
+		g.publicAdmin.ServeHTTP(w, r)
 		return
 	}
 

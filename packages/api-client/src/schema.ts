@@ -1155,6 +1155,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/site/social": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 公开社区链接（未配置为 ""，仅返回合法 HTTPS URL）
+         * @description 匿名只读；网关仅转发此精确路径的 GET/HEAD。响应允许公共短缓存（30 秒）。不返回操作人、原因或历史记录。
+         */
+        get: operations["getSiteSocial"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/market/symbols": {
         parameters: {
             query?: never;
@@ -2910,7 +2930,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 当前指数价格与成分交易所（Binance 主、OKX 备，当前生效来源权重为 1） */
+        /** 当前指数价格与成分交易所（Binance 主，OKX、Bybit、Gate.io 依次备用；TON 等 INDEX_USD_FALLBACK_SYMBOLS 另接 Coinbase/Kraken BASE/USD 换算 USDT；仅采用交易中的交易对，当前生效来源权重为 1） */
         get: operations["futuresIndex"];
         put?: never;
         post?: never;
@@ -3637,6 +3657,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rewards/newcomer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 新人任务完整进度（登录） */
+        get: operations["getNewcomerState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rewards/newcomer/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 报名新人限时任务（登录，需达到活动要求的 KYC 等级） */
+        post: operations["enrollNewcomer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rewards/newcomer/tasks/{key}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 领取已完成的新人任务奖励（登录） */
+        post: operations["claimNewcomerTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/home/newcomer": {
         parameters: {
             query?: never;
@@ -3941,6 +4012,27 @@ export interface paths {
          */
         get: operations["getAnnouncement"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/site/social": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 社区链接（需 content:edit；含空渠道） */
+        get: operations["adminGetSiteSocial"];
+        /**
+         * 部分更新社区链接（content:edit + 2FA + 原因 + 完整前后值审计）
+         * @description 仅接受九种渠道的合法 http(s) 绝对 URL（最长 2048 字符，不含用户信息）；空字符串清除，未提交渠道保持不变。公开端点只暴露 HTTPS 链接。
+         */
+        put: operations["adminUpdateSiteSocial"];
         post?: never;
         delete?: never;
         options?: never;
@@ -6921,6 +7013,54 @@ export interface components {
             /** @description 邀请链接前缀 */
             inviteBaseUrl?: string;
         };
+        /** @description 固定渠道；后台返回合法 http(s) 配置，公开接口仅保留 HTTPS。 */
+        SocialLinks: {
+            /**
+             * @example https://x.com/linbit
+             * @example
+             */
+            x: string;
+            /**
+             * @example https://t.me/linbit
+             * @example
+             */
+            telegram: string;
+            /**
+             * @example https://www.facebook.com/linbit
+             * @example
+             */
+            facebook: string;
+            /**
+             * @example https://discord.gg/linbit
+             * @example
+             */
+            discord: string;
+            /**
+             * @example https://www.instagram.com/linbit
+             * @example
+             */
+            instagram: string;
+            /**
+             * @example https://www.youtube.com/@linbit
+             * @example
+             */
+            youtube: string;
+            /**
+             * @example https://www.tiktok.com/@linbit
+             * @example
+             */
+            tiktok: string;
+            /**
+             * @example https://www.reddit.com/r/linbit
+             * @example
+             */
+            reddit: string;
+            /**
+             * @example https://medium.com/@linbit
+             * @example
+             */
+            medium: string;
+        };
         CopyTrader: {
             /** @description GET /futures/copy/trader：未申请带单时返回 200 {isTrader:false,status:none} */
             isTrader?: boolean;
@@ -7739,16 +7879,51 @@ export interface components {
             /** @enum {string} */
             cta?: "login" | "kyc" | "enroll" | "claim" | "continue" | "done" | "none" | "open";
             degraded?: boolean;
-            tasks?: {
-                key?: string;
-                title?: string;
-                type?: string;
-                kind?: string;
-                amount?: string;
-                target?: string;
-                progress?: string;
-                status?: string;
-            }[];
+            tasks?: components["schemas"]["NewcomerTask"][];
+        };
+        NewcomerTask: {
+            key?: string;
+            title?: string;
+            /** @enum {string} */
+            type?: "bind" | "first_deposit" | "volume";
+            /** @enum {string} */
+            kind?: "trial" | "deduction";
+            amount?: string;
+            target?: string;
+            progress?: string;
+            /** @enum {string} */
+            status?: "locked" | "in_progress" | "claimable" | "claimed" | "expired";
+            /** Format: int64 */
+            couponId?: number | null;
+        };
+        NewcomerState: {
+            kycRequired?: number;
+            kycOk?: boolean;
+            enrolled?: boolean;
+            /**
+             * Format: int64
+             * @description 毫秒时间戳
+             */
+            enrolledAt?: number;
+            /**
+             * Format: int64
+             * @description 毫秒时间戳
+             */
+            deadline?: number | null;
+            total?: string;
+            /** @example USDT */
+            asset?: string;
+            days?: number;
+            tasks?: components["schemas"]["NewcomerTask"][];
+        };
+        NewcomerClaimResult: {
+            task?: string;
+            /** Format: int64 */
+            couponId?: number;
+            title?: string;
+            /** @enum {string} */
+            kind?: "trial" | "deduction";
+            amount?: string;
         };
         FiatRates: {
             /** @example USDT */
@@ -10991,6 +11166,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GrowthConfig"];
+                };
+            };
+        };
+    };
+    getSiteSocial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "links": {
+                     *         "x": "https://x.com/linbit",
+                     *         "telegram": "",
+                     *         "facebook": "",
+                     *         "discord": "",
+                     *         "instagram": "",
+                     *         "youtube": "",
+                     *         "tiktok": "",
+                     *         "reddit": "",
+                     *         "medium": ""
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        links: components["schemas"]["SocialLinks"];
+                    };
                 };
             };
         };
@@ -14544,6 +14756,105 @@ export interface operations {
             };
         };
     };
+    getNewcomerState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewcomerState"];
+                };
+            };
+        };
+    };
+    enrollNewcomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 报名成功，返回最新任务进度 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewcomerState"];
+                };
+            };
+            /** @description 未达到活动要求的 KYC 等级 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 已报名或当前状态不可执行 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    claimNewcomerTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 领取成功，奖励发放至卡券中心 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewcomerClaimResult"];
+                };
+            };
+            /** @description 未达到活动要求的 KYC 等级 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description 未报名、任务未完成或奖励已领取 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getHomeNewcomer: {
         parameters: {
             query?: never;
@@ -15057,6 +15368,76 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    adminGetSiteSocial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        links: components["schemas"]["SocialLinks"];
+                        /** Format: date-time */
+                        updatedAt?: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    adminUpdateSiteSocial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "links": {
+                 *         "telegram": "https://t.me/linbit",
+                 *         "discord": ""
+                 *       },
+                 *       "totpCode": "123456",
+                 *       "reason": "更新开发者社区入口"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminWriteMeta"] & {
+                    /** @description 部分更新；仅允许 x/telegram/facebook/discord/instagram/youtube/tiktok/reddit/medium。 */
+                    links: {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        links: components["schemas"]["SocialLinks"];
+                        updatedBy?: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden2FA"];
         };
     };
     adminUpdateAnnouncement: {
