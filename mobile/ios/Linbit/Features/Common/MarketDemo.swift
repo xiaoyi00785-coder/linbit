@@ -192,6 +192,50 @@ enum MarketDemo {
         return out
     }
 
+    // MARK: - 行情列表（Markets 页 / MarketStore；covers("markets") 已声明但原先未注入）
+
+    static func symbols() -> [APISymbol] {
+        [
+            APISymbol(symbol: "BTCUSDT", base: "BTC", quote: "USDT", pricePrecision: 2, quantityPrecision: 5, minQuantity: "0.00001", status: .trading, tags: ["public-chain"]),
+            APISymbol(symbol: "ETHUSDT", base: "ETH", quote: "USDT", pricePrecision: 2, quantityPrecision: 4, minQuantity: "0.0001", status: .trading, tags: ["public-chain"]),
+            APISymbol(symbol: "SOLUSDT", base: "SOL", quote: "USDT", pricePrecision: 2, quantityPrecision: 2, minQuantity: "0.01", status: .trading, tags: ["solana"]),
+            APISymbol(symbol: "BNBUSDT", base: "BNB", quote: "USDT", pricePrecision: 2, quantityPrecision: 3, minQuantity: "0.001", status: .trading, tags: ["public-chain"]),
+            APISymbol(symbol: "XRPUSDT", base: "XRP", quote: "USDT", pricePrecision: 4, quantityPrecision: 1, minQuantity: "1", status: .trading, tags: ["public-chain"]),
+            APISymbol(symbol: "DOGEUSDT", base: "DOGE", quote: "USDT", pricePrecision: 5, quantityPrecision: 0, minQuantity: "10", status: .trading, tags: ["meme"]),
+        ]
+    }
+
+    static func categories() -> [APIMarketCategory] {
+        [
+            APIMarketCategory(id: "public-chain", name: "公链", symbols: ["BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT"]),
+            APIMarketCategory(id: "meme", name: "Meme", symbols: ["DOGEUSDT"]),
+            APIMarketCategory(id: "solana", name: "Solana 生态", symbols: ["SOLUSDT"]),
+        ]
+    }
+
+    static func spotTickers() -> [APITicker] {
+        switch mode {
+        case .empty, .error: return []
+        case .ok:
+            return [
+                APITicker(symbol: "BTCUSDT", lastPrice: "67250.50", priceChangePercent: "0.66", high: "68420.00", low: "65810.00", volume: "12840.552", quoteVolume: "864512340.12"),
+                APITicker(symbol: "ETHUSDT", lastPrice: "3520.50", priceChangePercent: "1.24", high: "3588.00", low: "3412.00", volume: "84210.12", quoteVolume: "296540210.55"),
+                APITicker(symbol: "SOLUSDT", lastPrice: "178.40", priceChangePercent: "-0.82", high: "185.20", low: "172.10", volume: "1520340.5", quoteVolume: "271120450.00"),
+                APITicker(symbol: "BNBUSDT", lastPrice: "612.30", priceChangePercent: "0.35", high: "620.00", low: "598.50", volume: "42100.2", quoteVolume: "25781200.00"),
+                APITicker(symbol: "XRPUSDT", lastPrice: "0.6234", priceChangePercent: "2.15", high: "0.6410", low: "0.5980", volume: "98234500", quoteVolume: "61234000.00"),
+                APITicker(symbol: "DOGEUSDT", lastPrice: "0.1428", priceChangePercent: "-1.50", high: "0.1510", low: "0.1380", volume: "420000000", quoteVolume: "59976000.00"),
+            ]
+        }
+    }
+
+    static func listFuturesTickers() -> [APIFuturesTicker] {
+        switch mode {
+        case .empty, .error: return []
+        case .ok:
+            return ["BTCUSDT", "ETHUSDT", "SOLUSDT"].map { futuresTicker(symbol: $0) }
+        }
+    }
+
     private static func synthFuturesCandles(symbol: String, interval: String, count: Int) -> [APIFuturesKlinesKlinesInner] {
         synthSpotCandles(symbol: symbol, interval: interval, count: count).map { c in
             APIFuturesKlinesKlinesInner(
