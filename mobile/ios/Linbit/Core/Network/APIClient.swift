@@ -178,6 +178,7 @@ actor APIClient {
 }
 
 struct EmptyResponse: Decodable {}
+struct EmptyJSON: Encodable {}
 
 extension Notification.Name {
     static let lbSessionExpired = Notification.Name("lb.sessionExpired")

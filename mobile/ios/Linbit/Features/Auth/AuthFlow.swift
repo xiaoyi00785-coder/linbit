@@ -73,6 +73,8 @@ struct LoginAccountView: View {
     @Binding var path: [AuthFlow.Step]
     let switchTo: () -> Void
     @State private var error: String?
+    @State private var passkeyBusy = false
+    @StateObject private var passkeys = RegistrarBox()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -90,9 +92,9 @@ struct LoginAccountView: View {
                     .padding(.top, 28)
                     OrDivider().padding(.vertical, 24)
                     VStack(spacing: 10) {
-                        SocialButton(icon: "person.badge.key", title: "使用通行密钥继续") { ToastCenter.shared.show("通行密钥登录即将开放") }
-                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { ToastCenter.shared.show("Apple 登录即将开放") }
-                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { ToastCenter.shared.show("Google 登录即将开放") }
+                        SocialButton(icon: "person.badge.key", title: "使用通行密钥继续") { Task { await passkeyLogin() } }
+                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { ToastCenter.shared.show("Apple 登录需 OAuth 契约，OpenAPI 暂无端点") }
+                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { ToastCenter.shared.show("Google 登录需 OAuth 契约，OpenAPI 暂无端点") }
                     }
                     Button("创建账户", action: switchTo).font(.lb(FontSize.label, .medium)).foregroundColor(p.brand).padding(.top, 20)
                 }
@@ -102,6 +104,23 @@ struct LoginAccountView: View {
         }
         .background(p.bg.ignoresSafeArea())
         .onChange(of: m.raw) { _ in error = nil }
+        .disabled(passkeyBusy || m.loading)
+    }
+
+    private func passkeyLogin() async {
+        passkeyBusy = true
+        defer { passkeyBusy = false }
+        do {
+            let c = try await AuthAPI.beginPasskeyLogin()
+            guard let sid = c.sessionId, let opts = c.publicKey else { throw PasskeyError.badOptions }
+            let cred = try await passkeys.r.assert(options: opts)
+            try await AuthAPI.finishPasskeyLogin(session: sid, credential: cred)
+            await m.finishLogin()
+        } catch PasskeyError.cancelled {
+        } catch {
+            ToastCenter.shared.error(error)
+            Haptics.error()
+        }
     }
 }
 
@@ -300,8 +319,8 @@ struct RegisterView: View {
                     LBButton(title: "注册", enabled: !m.raw.isEmpty, loading: m.loading) { Task { await next() } }.padding(.top, 16)
                     OrDivider().padding(.vertical, 24)
                     VStack(spacing: 10) {
-                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { ToastCenter.shared.show("Apple 注册即将开放") }
-                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { ToastCenter.shared.show("Google 注册即将开放") }
+                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { ToastCenter.shared.show("Apple 注册需 OAuth 契约，OpenAPI 暂无端点") }
+                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { ToastCenter.shared.show("Google 注册需 OAuth 契约，OpenAPI 暂无端点") }
                     }
                     Button("已有账户，立即登录", action: switchTo).font(.lb(FontSize.label, .medium)).foregroundColor(p.brand)
                         .frame(maxWidth: .infinity).padding(.top, 20)
