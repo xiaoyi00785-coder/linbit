@@ -2,6 +2,7 @@ package click.cowa.linbit.feature.assets
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -139,7 +140,10 @@ fun WithdrawScreen(
     }
     LaunchedEffect(assetInit) { if (!assetInit.isNullOrBlank()) asset = assetInit }
 
-    val free = (vm.state.value.funding + vm.state.value.spot)
+    // Host load is asynchronous; a plain StateFlow.value read cannot invalidate
+    // the form and strands a valid account on 0 until another recomposition.
+    val accountState by vm.state.collectAsStateWithLifecycle()
+    val free = (accountState.funding + accountState.spot)
         .firstOrNull { it.asset.equals(asset, true) }?.free
         ?.let { Dec.parse(it) } ?: BigDecimal.ZERO
     val minS = AssetsLogic.positiveAmount(net?.minWithdraw)

@@ -71,7 +71,6 @@ class ProductionAssetEvidenceTest {
     }
     private fun assets(route: AssetsRoute): AssetsViewModel {
         val vm = fixtures.assets()
-        if (route is AssetsRoute.Withdraw) { vm.load() }
         val nav = AssetsNav().also { it.open(route) }
         rule.setContent { LinbitTheme(darkTheme = false) { AssetsHost(nav, vm, onDialogWindow = { dialog = it }) } }
         rule.waitForIdle()
@@ -106,6 +105,7 @@ class ProductionAssetEvidenceTest {
         api.route("GET", "/wallet/withdraw/networks?asset=USDT", """{"asset":"USDT","networks":[{"network":"TRC20","withdrawEnabled":true,"memoRequired":false,"minWithdraw":"1","maxWithdraw":"200","gasFeeEstimate":"0.1","gasFeeAsset":"USDT","estimatedArrivalMinutes":3}]}""")
         api.route("GET", "/wallet/networks?asset=USDT", """{"networks":[{"asset":"USDT","network":"TRC20","depositEnabled":true,"withdrawEnabled":true,"minWithdraw":"1","maxWithdraw":"200","withdrawFee":"0.1","withdrawFeeAsset":"USDT","estimatedArrivalMinutes":3}]}""")
         validBalances()
+        validBalances() // Host/root read-only reload: no synthetic ViewModel balance seed.
         api.route("GET", "/account/security", """{"twoFactor":{"enabled":true,"method":"totp"}}""")
         val vm = assets(AssetsRoute.Withdraw("USDT"))
         waitText("TRC20", substring = true)

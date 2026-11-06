@@ -3,13 +3,13 @@ package click.cowa.linbit.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -29,6 +29,7 @@ import click.cowa.linbit.feature.profile.UserCenterHost
 import click.cowa.linbit.feature.more.MoreHost
 import click.cowa.linbit.feature.more.MorePage
 import click.cowa.linbit.feature.more.NotificationBadgeViewModel
+import click.cowa.linbit.feature.assets.AssetFeatureHost
 import click.cowa.linbit.feature.more.MoreMenuScreen
 import click.cowa.linbit.ui.components.FloatingTabBar
 import click.cowa.linbit.ui.components.MainTab
@@ -53,6 +54,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
     var splash by rememberSaveable { mutableStateOf(true) }
     var historyKind by rememberSaveable { mutableStateOf<String?>(null) } // null | "spot" | "futures"
     var morePage by rememberSaveable { mutableStateOf<MorePage?>(null) }
+    var assetFeature by rememberSaveable { mutableStateOf<String?>(null) }
     var moreMenu by rememberSaveable { mutableStateOf(false) }
     val badgeVm: NotificationBadgeViewModel = hiltViewModel()
     val unread by badgeVm.unread.collectAsStateWithLifecycle()
@@ -108,7 +110,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                     )
                     MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" },
+                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" }
                     )
                     MainTab.ASSETS -> AssetsScreen(
                         bottomInset,
@@ -117,6 +119,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                         onOpenFutures = { tab = MainTab.FUTURES },
                         onOpenSpot = { tab = MainTab.SPOT },
                         onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
+                        onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
                     )
                 }
             }
@@ -128,6 +131,15 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                 if (assetsRoute != null && vm.assetsNav.consumeTab()) tab = MainTab.ASSETS
             }
             if (assetsRoute != null) AssetsHost(vm.assetsNav)
+
+            assetFeature?.let { feature -> AssetFeatureHost(feature,
+                onBack = { assetFeature = null },
+                onLogin = { assetFeature = null; auth = "login" },
+                onTrade = { futures, symbol ->
+                    if (futures) { vm.tradeNav.setFutures(symbol); tab = MainTab.FUTURES } else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
+                    assetFeature = null
+                },
+            ) }
 
             if (userCenter && loggedIn) UserCenterHost(
                 mode, vm::setTheme,

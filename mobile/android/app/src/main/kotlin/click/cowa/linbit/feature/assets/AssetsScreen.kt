@@ -64,6 +64,8 @@ fun AssetsScreen(
     onOpenFutures: () -> Unit = {},
     onOpenSpot: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
+    /** Production earn/strategy/TradFi hosts; no placeholder success or duplicate balances. */
+    onOpenAssetFeature: (String) -> Unit = {},
     vm: AssetsViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
@@ -78,7 +80,11 @@ fun AssetsScreen(
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         PrimaryTabs(Tabs, s.tab, onSelect = { i ->
-            if (i >= 4) vm.toast.show("${Tabs[i]}即将开放") else vm.setTab(i)
+            if (i >= 4) {
+                // The old guest guard below suppressed every tab action. These
+                // destinations have real production login handling.
+                if (loggedIn) onOpenAssetFeature(listOf("earn", "strategy", "tradfi")[i - 4]) else onLogin()
+            } else vm.setTab(i)
         }, Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH), scrollable = true)
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))
 

@@ -11,7 +11,7 @@
 - `P`：通过真实生产 Host/NavHost 或其明确记录的生产子页入口，数据由隔离 MockWebServer 提供，使用真实 inset 和实际窗口布局。`P`不等于从 AppRoot 全路径点击、不排斥离屏限制或字段级业务覆盖；两 host 分身不在范围内不能算补齐。
 - `W`：真实生产 ModalBottomSheet/Dialog 窗口可独立捕获，且与内容截图分开标记；不能遇到限制就降级 inline sheet。
 - `V`：已 Read 对参考图核对配色、字号/字重、基线、间距及必要适配组合；不是测试 pass 的同义词。
-- `C`：本批完成实际内容矩形/裁切机器校验，18 张全部逐张 Read；有 ref 的列表与字重/间距已人工看，但每个页面都有直接参考和所有适配未齐，完整视觉 V 仍 U。
+- `C`：实际内容矩形/裁切机器校验，按轮次新的PNG逐张 Read；有 ref 的列表与字重/间距已人工看，但每个页面都有直接参考和所有适配未齐，完整视觉 V 仍 U。
 - `U`：未验、当前环境不可验或仍缺功能。请勿转换为通过。
 - `S`：模拟器/离屏器 limitation，必须提供可在支持环境跑的 instrumentation 用例。
 
@@ -22,19 +22,19 @@
 | 分区 | 项 | 生产入口 | 当前证据 / 未查与占位 |
 |---|---|---|---|
 | MainTab 5 | Home；Markets；Futures；Spot；Assets | `app/AppRoot.kt:87-120`；`ui/components/TabBar.kt:37-42` | 全 U（尚待 P/V）。Markets 聊天室与 TradFi、模拟盘、资产部分功能仍占位；Futures/Spot 的子页不能归并进根截图。 |
-| Spot 内部 4 | 现货交易、策略、理财、闪兑 | `feature/trade/SpotTradeScreen.kt:117-125` | 现货/策略/理财 U；闪兑正常、空、暂停 P；quote/final-review 生产路径可达，独立窗口 S，真机视觉 U。 |
+| Spot 内部 4 | 现货交易、策略、理财、闪兑 | `feature/trade/SpotTradeScreen.kt:117-125` | 现货 U；策略/理财本批 P(empty)；闪兑正常、空、暂停 P；quote/final-review 生产路径可达，独立离屏Window实测；PixelCopy/真机视觉 U。 |
 | Futures 内部 4 | 合约、事件合约、TradFi、模拟盘 | `feature/trade/FuturesTradeScreen.kt:98-130` | 前 3 U；模拟盘明确后端契约缺失，不完成。 |
 | 交易全屏 2 | 现货历史、合约历史 | `app/AppRoot.kt:153-156` | U。不能拿全 503 首 Tab 代替各历史 Tab、数据/改单/撤单。 |
 | More 8 | 菜单、福利、跟单、通知、卡券、合伙人、TradFi、工单 | `feature/more/MoreCommon.kt:38-90` | 全 U；跟单/工单需要下层子路由。 |
-| Profile 5 | HUB、账号切换、安全、KYC、子账户 | `feature/profile/UserCenterScreens.kt:36-59` | 安全在本轮只补账户密码及防钓鱼码；其余仍 U。KYC、账号/子账户必须看创建和提交反馈态。 |
+| Profile 5 | HUB、账号切换、安全、KYC、子账户 | `feature/profile/UserCenterScreens.kt:36-59` | 安全本轮补账户密码、防钓鱼码、邮箱、手机、资金密码；Passkey仍占位。KYC、账号/子账户必须看创建和提交反馈态。 |
 
-## B. 子路由与承载页（逐项九 Auth + 七 Assets + 五 Security）
+## B. 子路由与承载页（逐项九 Auth + 七 Assets + 八 Security）
 
 | 分区 | 页面/子路由 | 生产依据 | 当前状态 |
 |---|---|---|---|
 | Auth 9 | LOGIN；PASSWORD；VERIFY_LOGIN；REGISTER；VERIFY_REGISTER；SET_PASSWORD；FORGOT；VERIFY_RESET；RESET | `feature/auth/AuthFlow.kt:63-73,83-119` | 生产共有 9 个声明目的，其中 LOGIN/REGISTER 为两个入口；登录三步、注册三步、找回三步；九个 destination 各自保留，不隐藏。注册/找回的 P 不含实际开通账户；仅到最终表单，不提交。 |
-| AssetsRoute 7 | Transfer；CoinPicker(Deposit/Withdraw 两 mode)；Deposit；Withdraw；AddressBook；AddAddress；WithdrawRecords | `data/assets/AssetsNav.kt:8-17`；`feature/assets/AssetsHost.kt:24-77` | Deposit 正常/空/错误 P；Withdraw 空网络/错误 P，正常安全确认可达但独立窗 S。其余 U，直到对应 P/V。CoinPicker 两个 mode 不合并。 |
-| Security 5（新增） | CENTER；BIND；DISABLE；PASSWORD；ANTI_PHISHING | `feature/profile/SecurityScreens.kt:30-43` | 密码/防钓鱼码已实现 OpenAPI 与二次安全确认，生产 mock 表单 P；独立弹层像素 S，真机 U。邮箱/手机/Passkey/资金密码仍占位；BIND 的 QR 只能采用明确无效测试数据作布局，不可称真实绑定通过。 |
+| AssetsRoute 7 | Transfer；CoinPicker(Deposit/Withdraw 两 mode)；Deposit；Withdraw；AddressBook；AddAddress；WithdrawRecords | `data/assets/AssetsNav.kt:8-17`；`feature/assets/AssetsHost.kt:24-77` | Deposit 正常/空/错误 P；Withdraw 空网络/错误 P，正常安全确认可达但独立离屏Window按manifest，PixelCopy/真机U。其余 U，直到对应 P/V。CoinPicker 两个 mode 不合并。 |
+| Security 8 | CENTER；BIND；DISABLE；PASSWORD；ANTI_PHISHING；EMAIL；PHONE；FUND_PASSWORD | `feature/profile/SecurityScreens.kt:30-52` | 密码/防钓鱼/邮箱/手机/资金密码已实现 OpenAPI 与生产复核，表单 P；离屏独立Window实测，PixelCopy/真机 U。Passkey仍占位；BIND 的 QR 只能采用明确无效测试数据作布局，不可称真实绑定通过。 |
 | KYC 2 | 状态；基础/高级表单（包括 Lv1/Lv2、提交错误/成功） | `feature/profile/KycScreens.kt:45-55,115-175` | U；表单必须独立，不能只看状态卡。 |
 | Copy 2 | 带单员详情；我的跟单列表/停止流 | `feature/more/CopyTradingScreen.kt:142-187,243-307` | U；列表截屏不能代替详情和停止确认。 |
 | Support 3 | 列表；新建；详情/回复 | `feature/more/SupportTicketsScreen.kt:163-183,187-315` | U；还需关闭工单结果和冲突态。 |
@@ -55,14 +55,14 @@
 | 历史 | 币对筛选（允许全部）；条件单/止盈止损改单；撤单流 | `TradeHistoryScreens.kt:268-284,365-385,610-645` | U。 |
 | 策略 | 创建网格；复制策略；停止网格（撤单及卖底仓选择） | `SpotSubpages.kt:484-550,554-630` | U；保留现有停网格防重与确认。 |
 | 理财 | 申购；赎回；持仓/订单/流水 | `SpotSubpages.kt:633-716` | U。 |
-| 闪兑 | 兑出/兑入、报价有效期、暂停币对、接受报价结果 | `SpotSubpages.kt:722-845` | 正常/空/暂停 P；报价→最终币额 Sheet 可达，accept 未提交；独立窗 S，接受报价结果 U；保留 canAccept/quote revision 资金闸。 |
-| 资产 | 提现方式；资产筛选；搜索；快捷买币/盈亏入口 | `AssetsScreen.kt:72-82,138-167,245-265` | U；快捷买币/盈亏及理财/策略/TradFi 顶栏断链。 |
+| 闪兑 | 兑出/兑入、报价有效期、暂停币对、接受报价结果 | `SpotSubpages.kt:722-845` | 正常/空/暂停 P；报价→最终币额 Sheet 可达，accept 未提交；独立离屏Window按manifest，PixelCopy/真机U，接受报价结果 U；保留 canAccept/quote revision 资金闸。 |
+| 资产 | 提现方式；资产筛选；搜索；快捷买币/盈亏入口 | `AssetsScreen.kt:72-82,138-167,245-265` | U；快捷买币/盈亏仍占位；理财/策略/TradFi 顶栏已接真实 Host，但这里没有把它们标为快捷入口或弹窗P。 |
 | 充值 | 网络；自动到账账户选择 | `DepositScreens.kt:141-175,287-301` | 正常/空/明确错误 P；正确地址是在线网络 mock 的无效演示值，不得转账。弹层及 AppRoot 点击 U，不拿合成预览代替。 |
-| 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立窗 S；空网络/错误 P；真实提交/最终成功 U。 |
+| 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；真实提交/最终成功 U。 |
 | 地址簿 | 白名单验证；改白名单；新增选择币种/网络；撤销 pending 提现 | `AddressBookScreen.kt:70-187,289-300,372-419` | U。 |
 | More | 卡券激活确认；合伙人申请；跟单；跟单二次确认；成为带单员；停止跟单；关闭工单 | `CouponsScreen.kt:94-132`；`PartnerScreen.kt:262-277`；`CopyTradingScreen.kt:311-365`；`SupportTicketsScreen.kt:309-314` | U。 |
 | Profile | 修改昵称；退出；移除本机账号；创建子账户；2FA 关闭确认 | `UserCenterScreens.kt:76-158,179-223`；`SubAccountsScreen.kt:42-88`；`SecurityScreens.kt:182-197` | U。 |
-| 安全（新） | 登录密码安全确认；防钓鱼码安全确认 | `SecurityFeatureScreens.kt` | 表单 P；独立弹层像素 S。契约按生成模型 loopback 测试，真机 W/V U。 |
+| 安全（新） | 登录密码/防钓鱼/邮箱/手机/资金密码安全确认 | `SecurityFeatureScreens.kt`、`SecurityContactScreens.kt` | 表单 P；独立离屏Window按本批实际manifest，PixelCopy/真机U。契约按生成模型 loopback 测试，真机PixelCopy/V U，禁止 UI 自动发码/绑定。 |
 
 ## D. 状态与适配横切分母
 
@@ -72,9 +72,10 @@
 
 当前适配目标为关键页 320/360/412dp、大字体、明暗，而不是固定 390dp 一批通过。
 
-本批 **21=16 passed+0 failed+5 skipped**（6 安全契约、15 UI/状态，五项 Window capture S）；18 张 PNG = 10 Auth、3 充值、3 闪兑（normal/empty/paused）、2 安全表单。每页业务正常、输入错误、API failure、提交结果各自保留，不能用 18 张推导整页视觉全过。
+round1 保留 **21=16 passed+0 failed+5 skipped**；round2 独立脚本见 `production-evidence.sh` 与外部 `junit-summary.json`，以同一次结果计数，不把各次Debug结果拼接。round1实际content为1170×2364px；round2适配实际dp按各自真实host记，不沿用390常量。
 
-本批启用项只为 `zh-rCN-w390dp-h844dp-xxhdpi` **浅色、fontScale=1**；实际 content 为 1170×2364px（390×788dp），配置 h844 不能代替可用 content 高度。其余宽度/暗色/大字体/RTL/IME/旋转均 U。
+round1 **21=16 passed+0 failed+5 skipped**，18张PNG；round2独立 summary 为本轮唯一计数，不得与旧默认XML拼接。
+round1启用项只为 `zh-rCN-w390dp-h844dp-xxhdpi` **浅色、fontScale=1**；实际 content 为 1170×2364px（390×788dp），配置 h844 不能代替可用 content 高度。其余宽度/暗色/大字体/RTL/IME/旋转均 U。
 `OffscreenVisualEvidenceTest` 固定配置并 `requiredSize(390,844)` 的历史 PNG 只能标为合成预览，不计入 P/V。
 `LayoutAdaptSmokeTest` 的合成历史/事件骨架增资不映射为对应生产页面通过。
 
@@ -85,13 +86,15 @@
 | 功能 | 当前状态 | 依据 / 后续优先级 |
 |---|---|---|
 | 模拟盘、价格预警 | 尚未实现；**正式 OpenAPI 仍无 user CRUD**，不得标完成 | `FuturesTradeScreen.kt:129-140`；More 预警导航仍需对齐现有完整路由。仅准备草案 `/home/box/linbit-handoff/reviews/scope-sim-price-alerts.md`，不称后端已就绪。 |
-| 安全：邮箱/手机/Passkey/资金密码 | 占位；联系方式的 bind_new 与 security 双 code 以及 Passkey 平台集成均须独立实现 | `SecurityScreens.kt:63-70`；优先邮箱/手机和资金密码，勿把已有 generated model 当成 UI 已完成。 |
+| 安全：Passkey | 占位，不能拿本批其他安全契约当完成功能 | `SecurityScreens.kt`；platform CredentialManager begin/finish与列表/撤销尚需独立安全实现。 |
+| 安全：邮箱/手机/资金密码 | 正式 OpenAPI + Retrofit +生产 Host 已接；P只覆盖表单与mock body，发送错误/SMS即使禁用/真实绑定及窗 W/V 未完成 | `SecurityContactScreens.kt`；双验证码严格区分bind_new/security，2FA开启另需totp。 |
 | 安全：登录密码/防钓鱼码 | 本批实现已接 PUT/POST，二次验证、确认和刷新；需 mock/W/V 与真机回读 | `SecurityFeatureScreens.kt`；`LinbitApi.kt`；`mobile/openapi.yaml:637-663,786-806`。 |
-| 资产：理财/策略/TradFi、快捷买币、盈亏分析 | 断链 Toast | `AssetsScreen.kt:57,80-82,245-248`；已有功能页优先做实际导航，再单装快捷功能契约。 |
+| 资产：理财/策略/TradFi | 已接生产 AssetFeatureHost，非 Toast，P仅为只读/错误/资产点击到理财的 mock 路径，资金动作仍 U | `AssetsScreen.kt`、`AssetFeatureHost.kt`、`app/AppRoot.kt`。 |
+| 资产：快捷买币、盈亏分析 | 仍为占位，不能默默从范围删除 | `AssetsScreen.kt:245-248`；尚无完整生产宿主与状态验收。 |
 | 首页搜索、扫码、Card；More 搜索、聊天室和行情 TradFi；授权登录三方/客服 | 未接 Toast | `AppRoot.kt:59-68`；`AuthFlow.kt:134-143`；逐条对接已有页或保留阻断。 |
 | 提现/闪兑/停网格 | 已有生产安全闸；仍需隔离服务的状态与最终后端契约核验 | 本批不改变确认、防重、防旧 quote；截图确认不是提交成功。 |
 
-## F. 本批逐项结果（以本批外部 enabled XML / 人工视觉复核为准）
+## F. round1 历史逐项结果（不能代表round2；以各轮外部 enabled XML / 人工视觉复核为准）
 
 | case | 实际目标 | Mock/结果 |
 |---|---|---|
@@ -99,24 +102,37 @@
 | Auth register / verify / set-password | 注册到密码表单 | P；3 张，使用无效 OTP=000000，未调用 `/auth/register` |
 | Auth forgot / verify-reset / reset | 找回密码到最终表单 | P；4 张，`INVALID_RESET_TOKEN`；不调用 password reset |
 | Auth 九目的地与三流程 API 失败、输入错误、已提交反馈 | 每个状态生产证据 | 九目的地有 P，错误/负载/完成状态 U，不将多步通过等同账户流程成功 |
-| Auth modal help / country / exit | 真实弹层 | 帮助 Sheet 生产语义可达；独立 window W=S，country/exit U；PixelCopy instrumentation 只编译 |
+| Auth modal help / country / exit | 真实弹层 | 帮助 Sheet 生产语义可达；离屏Window分批实测；PixelCopy/device U，country/exit U；PixelCopy instrumentation 只编译 |
 | Assets deposit normal/empty/error | 直接生产 AssetsHost + 明确 GET | P；3 张；没有把 ref2/15 错当充值参考 |
-| Assets withdraw normal/error/confirm | Host/form/2FA sheet | 空网络/错误 P；正常安全确认含真实网络+余额，并 assert 无 POST；独立窗 S |
-| Assets convert normal/empty/paused/confirm | 直接生产 ConvertSubpage + GET/quote mock | normal/empty/paused P；最终币额 Sheet 不可离屏像素验 MA=S；禁止 accept；保留 quote revision |
-| Security password / anti-phishing | 真实 SecurityHost + 二次确认；表单 P | 2 张表单，mock 无敏感提交；独立窗 S。六项安全契约测试含 fail-closed 校验与精确 header/body |
-| 逐图视觉 V | ref2/3、10、11 对应登录/密码/OTP | 本批视觉：**C / U(full visual pass)**；已 Read 18 张，并核对 ref2/3、10、11 布局；尺寸/底部无裁切已核，但没有系统性像素/真机比对足够据以给 V 全过。没有直接参考的页面仅 P；暗色/小屏/大字体/真机从未执行 |
+| Assets withdraw normal/error/confirm | Host/form/2FA sheet | 空网络/错误 P；正常安全确认含真实网络+余额，并 assert 无 POST；独立离屏Window按manifest，PixelCopy/真机U |
+| Assets convert normal/empty/paused/confirm | 直接生产 ConvertSubpage + GET/quote mock | normal/empty/paused P；最终币额 Sheet 独立Dialog Canvas与Window回调可达；PixelCopy/真机U；禁止 accept；保留 quote revision |
+| Security password / anti-phishing | 真实 SecurityHost + 二次确认；表单 P | 2 张表单，mock 无敏感提交；独立离屏Window按manifest，PixelCopy/真机U。六项安全契约测试含 fail-closed 校验与精确 header/body |
+| Earn/Strategy/TradFi + 三安全表单 | 本批新增生产Host；只读空/503/form/review与mock精确body | P/C；Window见本轮独立capture，PixelCopy/device U；申购/赎回/网格写链U；Passkey占位 |
+
+| 逐图视觉 V | ref2/3、10、11 对应登录/密码/OTP | round1视觉：**C / U(full visual pass)**；已 Read 18 张，并核对 ref2/3、10、11 布局；尺寸/底部无裁切已核，但没有系统性像素/真机比对足够据以给 V 全过。没有直接参考的页面仅 P；round1暗色/小屏/大字体/真机未执行；round2按实际组合另表，不再覆盖全部页面 |
+
+## F2. round2 当前结果与分母
+
+本轮XML **44=43 passed+0 failed+1 skipped；44 PNG**（安全契约10、UI/状态34）。唯一S是真实认证help Window不能Canvas attach，其他真实Window仅计offscreen独立Dialog Canvas；八项设备PixelCopy另计全NOT RUN。round2并没有用44反推44个功能全完成。新适配只覆盖 Earn empty、Email form、Email review Window：
+
+- 320dp浅色fontScale1.3，xxhdpi；真实App content为960×2364px（320×788dp）。
+- 360dp深色fontScale1.0，xxhdpi；真实App content为1080×2364px（360×788dp）。
+- 412dp浅色fontScale1.0，xxhdpi；真实App content为1236×2577px（412×859dp）。
+- 390dp浅色fontScale1.0基准及旧路径回归，1170×2364px。
+
+实际读取者必须逐张Read本次文件，不把XML passed或没有异常当V。所有Window声明必须manifest productionDialogWindow=true且canvas记独立Dialog；PixelCopy八项只编译从未执行。新的P不等于全功能或全适配，320深色/360大字/412深色、横屏、IME、RTL仍U。三安全mock body与UI review不证明真实发码、绑定或改密成功。申购/赎回/网格mutation未验收。快捷买币/盈亏、模拟盘/预警、Passkey继续U。
 
 ## G. 本批评判方式
 
 1. 真正启用 Offscreen 新生产套件，独立复制 XML、manifest 与 PNG 后才运行默认总套件。
 2. App 位图采取根 `android.R.id.content` 的实际尺寸，布局与位图必须是同一矩形；罗列出 status/navigation/IME 值。禁止强制 844dp 视图再拍 788dp。
-3. ModalBottomSheet/Dialog 只接受真实 Production `DialogWindowProvider.window`；Robolectric 无法证明独立 window capture 时，用 Assume 将其明确标 S，不 retry inline、不替代主内容截图。最终像素归 `ProductionDialogPixelCopyTest` 的支持环境执行，NOT RUN 时不得标 W。
+3. ModalBottomSheet/Dialog 只接受真实 Production `DialogWindowProvider.window`，从Modal作用域捕获；Robolectric独立Dialog Canvas不等同instrumentation PixelCopy。无法证明时Assume为S，不retry inline。`ProductionDialogPixelCopyTest`八项 device/PixelCopy均NOT RUN，不自比设备通过。
 4. MockWebServer 只允许 loopback；显式按方法+path+query 响应。未配置路由直接失败，不能全部 503 后仍主张正常页面证据。
 5. 资金、开通账户、绑定 2FA、KYC 均只到最终表单/确认层；测试输配若带提交动作则必须在 Mock API 中 fail closed。这些图片不证明任何真实交易或身份流程已完成。
 
 ## H. 下一批优先（不等催）
 
-1. 在支持的环境运行并人工核验五个 `ProductionDialogPixelCopyTest`，同时生成真实 AppRoot 从生产导航进入的记录；没有设备结果就维持 S/U。
-2. 用已有 OpenAPI 接通资产入口到理财/策略/TradFi，而不是更多 Toast；保留真实资金确认与防重。
-3. 安全邮箱/手机复用 `bind_new` + security 双验证码；资金密码及 Passkey 分开实现，不把 layout invalid 数据当真实绑定。
+1. 在支持的环境运行并人工核验八个 `ProductionDialogPixelCopyTest`，同时生成真实 AppRoot 从生产导航进入的记录；没有设备结果就维持 S/U。
+2. 验收资产->策略/TradFi点击，补真实正常持仓/产品列表与安全交互，不误把当前空/错状态覆盖当完成。
+3. Passkey 分开实现平台凭据流程，其他安全项补390外/错误/发送/提交结果；真实绑定全部留给用户自行验收。
 4. 对每个生产 Sheet/Dialog 补正常、空、错误、确认/最终反馈，以及 320/360/412dp、大字体、暗色；缺 OpenAPI 的功能保留明确阻断，不伪造。

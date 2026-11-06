@@ -16,10 +16,7 @@ rm -rf app/build/test-results/testDebugUnitTest app/build/reports/tests/testDebu
 set +e
 ./gradlew :app:testDebugUnitTest \
   --tests 'click.cowa.linbit.feature.profile.SecurityFeatureTest' \
-  --tests 'click.cowa.linbit.ui.evidence.ProductionSecurityEvidenceTest' \
-  --tests 'click.cowa.linbit.ui.evidence.ProductionAuthEvidenceTest' \
-  --tests 'click.cowa.linbit.ui.evidence.ProductionAssetEvidenceTest' \
-  --tests 'click.cowa.linbit.ui.evidence.ProductionConvertConfirmationTest' \
+  --tests 'click.cowa.linbit.ui.evidence.*' \
   -Doffscreen.shots=1 -Dproduction.evidence=1 -Dproduction.evidence.dir="$OUT/png" \
   --no-build-cache
 status=$?
@@ -29,7 +26,7 @@ if [[ -d app/build/test-results/testDebugUnitTest ]]; then
 else
   printf 'No XML emitted: compilation or runner failed before test execution\n' > "$OUT/junit/NO_JUNIT_REPORT.txt"
 fi
-printf 'gitSha=%s\nverifiedWorkingTree=%s\nenabledTestExit=%s\nscope=SecurityFeatureTest(6),ProductionAuthEvidenceTest(4),ProductionAssetEvidenceTest(8),ProductionConvertConfirmationTest(1),ProductionSecurityEvidenceTest(2)\n' "$(git rev-parse HEAD)" "$(git diff --quiet && echo clean || echo local-uncommitted-validation)" "$status" > "$OUT/run.properties"
+printf 'gitSha=%s\nverifiedWorkingTree=%s\nenabledTestExit=%s\nscope=See junit-summary.json and production test classes; no fixed PNG denominator\n' "$(git rev-parse HEAD)" "$(test -z "$(git status --porcelain)" && echo clean || echo local-uncommitted-validation)" "$status" > "$OUT/run.properties"
 python3 - "$OUT" <<'PY_SUMMARY'
 import json, pathlib, sys, xml.etree.ElementTree as E
 out=pathlib.Path(sys.argv[1]);total=failed=skipped=0;details=[]
@@ -38,7 +35,9 @@ for p in sorted((out/'junit').glob('TEST-*.xml')):
 summary={'tests':total,'passed':total-failed-skipped,'failures':failed,'skipped':skipped,'png':len(list((out/'png').glob('*.png'))),'classes':details}
 (out/'junit-summary.json').write_text(json.dumps(summary,indent=2))
 print('Independent enabled JUnit summary:',json.dumps(summary))
-if failed or total != 21 or skipped != 5: print('This is NOT a complete enabled five-skip run.')
+if failed or total != 44:
+    print('Unexpected selected test counts: no completion claim; inspect every JUnit XML.',file=sys.stderr)
+    sys.exit(70)
 PY_SUMMARY
 if [[ "$status" -ne 0 ]]; then exit "$status"; fi
 printf 'instrumentation=compile-only;NOT_RUN_WITHOUT_DEVICE\nnetwork=loopback explicit mock;production HTTP disabled by test Application\n' >> "$OUT/run.properties"

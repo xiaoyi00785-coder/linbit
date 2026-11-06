@@ -22,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,13 +82,15 @@ fun SpotTradeScreen(
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
     autoStart: Boolean = true,
+    /** Preserve the production Host origin (Assets -> Spot earn/strategy); not a fixture flag. */
+    initialTop: Int = 0,
     vm: SpotTradeViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
     DisposableEffect(nav) { if (autoStart) vm.start(); onDispose { vm.stop() } }
-    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier)
+    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier, initialTop)
 }
 
 @Composable
@@ -103,12 +107,13 @@ fun SpotTradeContent(
     onTransfer: () -> Unit,
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
+    initialTop: Int = 0,
 ) {
     val p = LB.p
     var sheet by remember { mutableStateOf<String?>(null) }
     var skipConfirm by remember { mutableStateOf(false) }
     var ordersTab by remember { mutableStateOf(0) }
-    var topTab by remember { mutableStateOf(0) }
+    var topTab by rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
     var chartOpen by remember { mutableStateOf(false) }
     val step = vm.bookPrecision ?: BigDecimal.ONE.movePointLeft(vm.pricePrec)
     val grouped = remember(vm.book, step) { vm.book.grouped(step) }

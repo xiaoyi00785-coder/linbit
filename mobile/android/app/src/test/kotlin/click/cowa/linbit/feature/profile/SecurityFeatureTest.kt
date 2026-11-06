@@ -124,4 +124,60 @@ class SecurityFeatureTest {
         assertTrue(send.body.readUtf8().contains("\"purpose\":\"security\""))
         // Fixture challenge is invalid and deliberately never submitted to a real user/API.
     }
+    @Test fun emailAndPhoneUseBothInvalidFixtureCodesAndTotpOnlyWhenEnabled() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        vm.runContactChange(click.cowa.linbit.feature.profile.SecurityContactPayload(false, "next@example.invalid", null, "000001", "000002", "000003"), overview(true))
+        val e = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS).let { requireNotNull(it) }
+        assertEquals("PUT", e.method); assertEquals("/openapi/account/email", e.path)
+        val eb = e.body.readUtf8()
+        assertTrue(eb.contains("\"newCode\":\"000001\"")); assertTrue(eb.contains("\"oldCode\":\"000002\"")); assertTrue(!eb.contains("phone"))
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        vm.runContactChange(click.cowa.linbit.feature.profile.SecurityContactPayload(true, "10000000000", "+1", "000001", "000002", null), overview(false))
+        val ph = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS).let { requireNotNull(it) }
+        assertEquals("PUT", ph.method); assertEquals("/openapi/account/phone", ph.path)
+        val pb = ph.body.readUtf8()
+        assertTrue(pb.contains("\"countryCode\":\"+1\"")); assertTrue(!pb.contains("totpCode")); assertTrue(!pb.contains("email"))
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"sent":true,"channel":"email","ttlSeconds":60}"""))
+        vm.sendContactCode(false, "next@example.invalid", "+1")
+        val send = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS).let { requireNotNull(it) }
+        assertEquals("/openapi/account/contact/code", send.path)
+        assertTrue(send.body.readUtf8().contains("\"email\":\"next@example.invalid\""))
+    }
+
+    @Test fun invalidContactCodesOrOmittedOverviewDoNotSendOrBind() = runTest {
+        listOf(
+            runCatching { vm.runContactChange(click.cowa.linbit.feature.profile.SecurityContactPayload(false, "bad", null, "000001", "000002", "000003"), overview(true)) },
+            runCatching { vm.runContactChange(click.cowa.linbit.feature.profile.SecurityContactPayload(false, "next@example.invalid", null, "000001", "1", "000003"), overview(true)) },
+            runCatching { vm.runContactChange(click.cowa.linbit.feature.profile.SecurityContactPayload(false, "next@example.invalid", null, "000001", "000002", null), null) },
+        ).forEach { assertTrue(it.isFailure) }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun firstAndExistingFundPasswordExactMethodsAndVerificationBodies() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        vm.runFundPassword("000000", "000000", "", false, overview(false), "", "000001")
+        val first = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS).let { requireNotNull(it) }
+        assertEquals("POST", first.method); assertEquals("/openapi/account/fund-password", first.path)
+        assertTrue(first.body.readUtf8().contains("\"code\":\"000001\""))
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        vm.runFundPassword("000001", "000001", "000000", true, overview(true), "000002", "invalid")
+        val change = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS).let { requireNotNull(it) }
+        assertEquals("PUT", change.method)
+        val cb = kotlinx.serialization.json.Json.parseToJsonElement(change.body.readUtf8()).jsonObject
+        assertEquals("000000", cb["oldFundPassword"]?.jsonPrimitive?.content)
+        assertEquals("000002", cb["totpCode"]?.jsonPrimitive?.content)
+        assertFalse("code" in cb)
+    }
+
+    @Test fun invalidFundPasswordOrWrongVerificationFailsWithoutNetwork() = runTest {
+        assertTrue(runCatching { vm.runFundPassword("000001", "000000", "", false, overview(false), "", "000001") }.isFailure)
+        assertTrue(runCatching { vm.runFundPassword("1234567", "1234567", "", false, overview(false), "", "000001") }.isFailure)
+        assertTrue(runCatching { vm.runFundPassword("000001", "000001", "", true, overview(false), "", "000001") }.isFailure)
+        assertTrue(runCatching { vm.runFundPassword("000001", "000001", "", false, null, "", "000001") }.isFailure)
+        assertEquals(0, server.requestCount)
+    }
+
 }

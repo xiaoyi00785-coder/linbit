@@ -16,13 +16,19 @@ internal class ProductionEvidenceHarness<A : androidx.activity.ComponentActivity
     private val rule: AndroidComposeTestRule<ActivityScenarioRule<A>, A>,
 ) {
     val out = File(System.getProperty("production.evidence.dir") ?: "build/reports/production-evidence").apply { mkdirs() }
+    private val expected: Qualifier by lazy {
+        val prop = System.getProperty("production.evidence.qualifier") ?: "w=390;h=844;xxhdpi;densityDpi=480;night=no;fontScale=1.0"
+        val d = prop.split(';').associate { it.substringBefore('=') to it.substringAfter('=', "") }
+        Qualifier(d.getValue("w").toInt(), d.getValue("h").toInt(), d.getValue("densityDpi").toInt(), d["night"] == "yes", d.getValue("fontScale").toFloat())
+    }
+    data class Qualifier(val width: Int, val height: Int, val density: Int, val dark: Boolean, val fontScale: Float)
 
     data class Capture(val name: String, val width: Int, val height: Int, val insets: String, val window: Boolean)
 
     fun app(name: String, requiredWidthPx: Int? = null, requiredHeightPx: Int? = null): Capture {
         val cfg = rule.activity.resources.configuration
-        check(cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_NO) { "Only explicitly light evidence" }
-        check(cfg.screenWidthDp == 390 && cfg.densityDpi == 480) { "Expected xml qualifiers got ${cfg.screenWidthDp} / ${cfg.densityDpi}" }
+        check(cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == if (expected.dark) android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO) { "Night mode must match this run" }
+        check(cfg.screenWidthDp == expected.width && cfg.screenHeightDp == expected.height && cfg.densityDpi == expected.density && cfg.fontScale == expected.fontScale) { "Expected $expected got ${cfg.screenWidthDp}x${cfg.screenHeightDp} / ${cfg.densityDpi} / ${cfg.fontScale}" }
         lateinit var result: Capture
         rule.runOnIdle {
             val view = rule.activity.findViewById<View>(android.R.id.content)
@@ -58,7 +64,7 @@ internal class ProductionEvidenceHarness<A : androidx.activity.ComponentActivity
             val bitmap = Bitmap.createBitmap(dialog.width, dialog.height, Bitmap.Config.ARGB_8888)
             dialog.draw(Canvas(bitmap))
             save(name, bitmap)
-            result = Capture(name, bitmap.width, bitmap.height, "realDialogWindow=true; dialogDecorViewMeasured=${dialog.width}x${dialog.height}px; pixelCopy=not-required for Android Canvas capture; systemBars=${dialog.rootWindowInsets?.getInsets(WindowInsets.Type.systemBars())}", true)
+            result = Capture(name, bitmap.width, bitmap.height, "realDialogWindow=true; dialogDecorViewMeasured=${dialog.width}x${dialog.height}px; pixelCopy=NOT_RUN; independent Dialog Canvas capture is not instrumentation; systemBars=${dialog.rootWindowInsets?.getInsets(WindowInsets.Type.systemBars())}", true)
         }
         writeManifest(result)
         return result
@@ -79,7 +85,8 @@ internal class ProductionEvidenceHarness<A : androidx.activity.ComponentActivity
         val entries = when {
             c.name.startsWith("auth-") -> "AuthHost(AuthFlow,LocalLbSheetInlineEvidence=false)"
             c.name.startsWith("deposit-") || c.name.startsWith("withdraw-") -> "Production AssetsHost/AssetsNav (direct Host; not an AppRoot click-through)"
-            c.name.startsWith("security-") -> "ProfileHost/SecurityHost/SecurityPage (real password/anti-phishing)"
+            c.name.startsWith("security-") -> "ProfileHost/SecurityHost/SecurityPage (real security Host)"
+            c.name.startsWith("asset-") -> "AppRoot AssetFeatureHost (actual production earn/strategy/TradFi Host)"
             c.name.startsWith("convert-") -> "Production ConvertSubpage/quote/final-review LbSheet (direct Subpage; not an AppRoot click-through)"
             else -> "UNMAPPED"
         }

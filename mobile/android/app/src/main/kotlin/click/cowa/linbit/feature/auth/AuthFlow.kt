@@ -369,7 +369,7 @@ val LocalLbSheetInlineEvidence = staticCompositionLocalOf { false }
 fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, onWindowReady: (android.view.Window?) -> Unit = {}, content: @Composable () -> Unit) {
     val p = LB.p
     val sheetBody: @Composable () -> Unit = {
-        Column(Modifier.navigationBarsPadding()) {
+        Column(Modifier.navigationBarsPadding().imePadding().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
             if (title != null) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
                 if (showClose) LbIcon(R.drawable.ic_close, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onClose))
@@ -387,18 +387,23 @@ fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, onW
             ) { sheetBody() }
         }
     } else {
-        val dialog = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)
-        val callback = androidx.compose.runtime.rememberUpdatedState(onWindowReady)
-        androidx.compose.runtime.DisposableEffect(dialog?.window) {
-            callback.value(dialog?.window)
-            onDispose { callback.value(null) }
-        }
         ModalBottomSheet(
             onDismissRequest = onClose,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = p.bgElevated,
             shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
-        ) { sheetBody() }
+        ) {
+            // LocalView is dialog-scoped INSIDE ModalBottomSheet. Outside it, parent
+            // belongs to the Activity and silently returns no independent Window.
+            val dialog = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)
+            val callback = androidx.compose.runtime.rememberUpdatedState(onWindowReady)
+            androidx.compose.runtime.DisposableEffect(dialog?.window) {
+                check(dialog?.window != null) { "Production sheet did not expose its independent Window" }
+                callback.value(dialog.window)
+                onDispose { callback.value(null) }
+            }
+            sheetBody()
+        }
     }
 }
 

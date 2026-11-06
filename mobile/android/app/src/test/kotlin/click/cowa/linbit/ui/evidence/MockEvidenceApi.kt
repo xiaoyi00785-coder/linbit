@@ -29,7 +29,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val key = "${request.method} ${request.path.orEmpty()}"
         val path = request.path?.substringBefore('?').orEmpty()
         val method = request.method.orEmpty()
-        if (path.endsWith("/wallet/withdraw") || path.endsWith("/wallet/internal/transfer") || path.endsWith("/convert/accept") || path.endsWith("/2fa/verify") || path.endsWith("/2fa/enable") || path.endsWith("/2fa/disable") || (path.contains("/kyc/") && method != "GET")) {
+        if (path.startsWith("/account/email") || path.startsWith("/account/phone") || path.startsWith("/account/fund-password") || path.startsWith("/account/contact/code") || path.startsWith("/account/code/send") || path.startsWith("/account/passkeys") || path.startsWith("/earn/") && method != "GET" || path.startsWith("/strategy/") && method != "GET" || path.endsWith("/wallet/withdraw") || path.endsWith("/wallet/internal/transfer") || path.endsWith("/convert/accept") || path.endsWith("/2fa/verify") || path.endsWith("/2fa/enable") || path.endsWith("/2fa/disable") || (path.contains("/kyc/") && method != "GET")) {
             throw AssertionError("Sensitive mutation must remain unconfirmed: $key")
         }
         requests += key

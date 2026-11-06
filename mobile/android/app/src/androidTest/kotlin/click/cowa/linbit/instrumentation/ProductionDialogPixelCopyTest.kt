@@ -62,7 +62,7 @@ class ProductionDialogPixelCopyTest {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val key = "${request.method} ${request.path}"
                 val path = request.path?.substringBefore('?').orEmpty()
-                assertFalse("No financial/2FA/KYC final mutation", path in setOf("/wallet/withdraw", "/wallet/internal/transfer", "/convert/accept", "/account/password/change", "/account/anti-phishing", "/2fa/verify", "/2fa/enable", "/2fa/disable"))
+                assertFalse("No financial/2FA/KYC final mutation", path in setOf("/wallet/withdraw", "/wallet/internal/transfer", "/convert/accept", "/account/password/change", "/account/anti-phishing", "/2fa/verify", "/2fa/enable", "/2fa/disable", "/account/email", "/account/phone", "/account/fund-password", "/account/code/send", "/account/contact/code", "/earn/products/invalid/subscribe", "/earn/products/invalid/redeem", "/strategy/grid"))
                 requests += key
                 return MockResponse().setHeader("Content-Type", "application/json")
                     .also { if (responses.remove(key)?.let(it::setBody) == null) throw AssertionError("Unmapped route: $key") }
@@ -97,6 +97,32 @@ class ProductionDialogPixelCopyTest {
 
     @Test fun changePasswordReviewRealDialogWindow() = securityReview("password")
     @Test fun antiPhishingReviewRealDialogWindow() = securityReview("anti-phishing")
+    @Test fun emailReviewRealDialogWindow() = contactReview(false)
+    @Test fun phoneReviewRealDialogWindow() = contactReview(true)
+    @Test fun fundPasswordReviewRealDialogWindow() = fundReview()
+
+    private fun contactReview(phone: Boolean) {
+        get("/account/security", """{"twoFactor":{"enabled":true,"method":"totp"},"email":"old@example.invalid","phone":"10000000000"}""")
+        val vm = SecurityViewModel(api, toast); val feature = SecurityFeatureViewModel(api, toast); var window: Window? = null
+        rule.setContent { LinbitTheme(false) { SecurityHost({}, vm, feature, onDialogWindow = { window = it }) } }
+        waitText(if (phone) "手机" else "邮箱"); rule.onNodeWithText(if (phone) "手机" else "邮箱").performClick()
+        rule.onNodeWithTag("security.contact.value").performTextReplacement(if (phone) "10000000000" else "next@example.invalid")
+        rule.onNodeWithText("核对并继续").performClick(); waitText("新联系方式验证码")
+        capture("security-${if (phone) "phone" else "email"}-confirm", window)
+        assertFalse(requests.any { it != "GET /account/security" })
+    }
+
+    private fun fundReview() {
+        get("/account/security", """{"twoFactor":{"enabled":true,"method":"totp"},"fundPasswordSet":false}""")
+        val vm = SecurityViewModel(api, toast); val feature = SecurityFeatureViewModel(api, toast); var window: Window? = null
+        rule.setContent { LinbitTheme(false) { SecurityHost({}, vm, feature, onDialogWindow = { window = it }) } }
+        waitText("资金密码"); rule.onNodeWithText("资金密码").performClick()
+        rule.onNodeWithTag("security.fund.value").performTextReplacement("000000")
+        rule.onNodeWithTag("security.fund.confirm").performTextReplacement("000000")
+        rule.onNodeWithText("核对并继续").performClick(); waitText("确认资金密码")
+        capture("security-fund-confirm", window)
+        assertFalse(requests.any { it != "GET /account/security" })
+    }
 
     private fun securityReview(kind: String) {
         get("/account/security", """{"twoFactor":{"enabled":true,"method":"totp"},"antiPhishingSet":false}""")
@@ -112,7 +138,7 @@ class ProductionDialogPixelCopyTest {
             rule.onNodeWithText("下一步").performClick(); waitText("修改登录密码会注销其他设备会话。请核对后完成安全验证。", substring = true)
         } else {
             waitText("防钓鱼码"); rule.onNodeWithText("防钓鱼码").performClick()
-            rule.onNodeWithTag("security.antiphishing.value").performTextReplacement("INVALID_TEST_ONLY")
+            rule.onNodeWithTag("security.antiphishing.value").performTextReplacement("INVALIDTESTONLY")
             rule.onNodeWithText("核对并设置").performClick(); waitText("保存后请勿向他人泄露动态验证码", substring = true)
         }
         capture("security-$kind-confirm", window)

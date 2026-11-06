@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import click.cowa.linbit.core.generated.ApiAcceptConvertQuoteRequest
 import click.cowa.linbit.feature.auth.LbSheet
+import click.cowa.linbit.feature.profile.ProfileNavBar
 import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.core.network.ApiEarnSubscribeRequest
 import click.cowa.linbit.core.generated.ApiStrategyStopGridRequest
@@ -418,7 +419,7 @@ class SpotSubpagesViewModel @Inject constructor(
 }
 
 @Composable
-fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel()) {
+fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel(), onBack: (() -> Unit)? = null) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
@@ -426,7 +427,9 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
     var stopTarget by remember { mutableStateOf<ApiGridBot?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadStrategy() }
-    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
+    Column(Modifier.fillMaxSize()) {
+        onBack?.let { ProfileNavBar("策略", it) }
+        Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("策略广场", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
             Box(Modifier.weight(1f))
@@ -480,6 +483,7 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
                 }
             }
         }
+    }
     }
     copyTarget?.let { item ->
         var inv by remember { mutableStateOf("") }
@@ -598,13 +602,15 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
 }
 
 @Composable
-fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel()) {
+fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel(), onBack: (() -> Unit)? = null) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     var earnAction by remember { mutableStateOf<EarnAction?>(null) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadEarn() }
-    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
+    Column(Modifier.fillMaxSize()) {
+        onBack?.let { ProfileNavBar("理财", it) }
+        Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Text("理财", Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         vm.earnSummary?.let { s ->
             Column(
@@ -690,6 +696,7 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
                     }
                 }
             }
+        }
         }
     }
     earnAction?.let { act ->

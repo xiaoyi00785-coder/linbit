@@ -40,6 +40,22 @@ import okhttp3.MultipartBody
  * oneOf 响应（login / ticker / futures ticker）以 JsonElement 返回，由 [OneOfResponses] 判别解码。
  */
 interface LinbitApi {
+
+    /** Exact existing /account/contact/code and /account/email|phone contract. */
+    @POST("account/contact/code")
+    suspend fun sendContactCode(@Body body: ApiSendContactCodeRequest): ApiSendContactCode200Response
+
+    @PUT("account/email")
+    suspend fun changeEmail(@Body body: ApiChangeContactRequest): ApiOkResponse
+
+    @PUT("account/phone")
+    suspend fun changePhone(@Body body: ApiChangeContactRequest): ApiOkResponse
+
+    @POST("account/fund-password")
+    suspend fun setFundPassword(@Body body: ApiFundPasswordRequest): ApiOkResponse
+
+    @PUT("account/fund-password")
+    suspend fun changeFundPassword(@Body body: ApiFundPasswordRequest): ApiOkResponse
     // ---- Auth（公开）----
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @POST("auth/login")

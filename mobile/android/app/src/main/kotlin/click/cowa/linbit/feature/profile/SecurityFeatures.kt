@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import click.cowa.linbit.core.auth.AccountId
 import click.cowa.linbit.core.auth.PasswordRule
 import click.cowa.linbit.core.generated.ApiSecurityOverview
+import click.cowa.linbit.core.generated.ApiChangeContactRequest
+import click.cowa.linbit.core.generated.ApiFundPasswordRequest
 import click.cowa.linbit.core.generated.ApiSendCodeAuthedRequest
 import click.cowa.linbit.core.generated.ApiSetAntiPhishingRequest
 import click.cowa.linbit.core.network.LinbitApi
@@ -58,6 +60,15 @@ object SecurityFeatureLogic {
     }
 }
 
+data class SecurityContactPayload(
+    val phone: Boolean,
+    val value: String,
+    val countryCode: String?,
+    val newCode: String,
+    val oldCode: String,
+    val totpCode: String?,
+)
+
 @HiltViewModel
 class SecurityFeatureViewModel @Inject constructor(
     private val api: LinbitApi,
@@ -71,7 +82,7 @@ class SecurityFeatureViewModel @Inject constructor(
         return apiCall { api.changePassword(SecurityChangePasswordRequest(
             oldPassword = oldPassword, newPassword = newPassword,
             totpCode = totp.takeIf { overview?.twoFactor?.enabled == true },
-            code = code.takeUnless { overview?.twoFactor?.enabled == true },
+            code = code.takeIf { overview?.twoFactor?.enabled == false },
             revokeOtherSessions = true,
         )) }.revokedSessions
     }
@@ -90,7 +101,7 @@ class SecurityFeatureViewModel @Inject constructor(
         require(SecurityFeatureLogic.verificationReady(overview, totp, code)) { "请先完成安全验证" }
         apiCall { api.setAntiPhishing(ApiSetAntiPhishingRequest(value,
             totpCode = totp.takeIf { overview?.twoFactor?.enabled == true },
-            code = code.takeUnless { overview?.twoFactor?.enabled == true },
+            code = code.takeIf { overview?.twoFactor?.enabled == false },
         )) }
     }
 
@@ -99,6 +110,39 @@ class SecurityFeatureViewModel @Inject constructor(
             runAntiPhishing(value, overview, totp, code)
             toast.show("防钓鱼码已保存"); done()
         } }
+    }
+
+    suspend fun sendContactCode(phone: Boolean, value: String, countryCode: String) {
+        require(SecurityFeatureLogic.contactError(value, phone) == null) { "请输入有效联系方式" }
+        require(!phone || countryCode.matches(Regex("\\+[0-9]{1,4}"))) { "请输入国际区号" }
+        apiCall { api.sendContactCode(if (phone) click.cowa.linbit.core.generated.ApiSendContactCodeRequest(phone = value.filter(Char::isDigit), countryCode = countryCode) else click.cowa.linbit.core.generated.ApiSendContactCodeRequest(email = value.trim())) }
+    }
+
+    suspend fun runContactChange(payload: SecurityContactPayload, overview: ApiSecurityOverview?) {
+        require(SecurityFeatureLogic.contactError(payload.value, payload.phone) == null) { "请输入有效联系方式" }
+        require(payload.newCode.length >= 6 && payload.oldCode.length >= 6) { "请输入新、旧联系方式验证码" }
+        require(!payload.phone || payload.countryCode?.matches(Regex("\\+[0-9]{1,4}")) == true) { "请输入国际区号" }
+        when (val current = overview) {
+            null -> error("安全状态尚未加载，禁止变更联系方式")
+            else -> require(if (current.twoFactor?.enabled == true) payload.totpCode?.length == 6 else payload.totpCode == null) { "请按当前安全状态完成验证" }
+        }
+        apiCall {
+            val body = ApiChangeContactRequest(payload.newCode, payload.oldCode,
+                email = payload.value.trim().takeUnless { payload.phone },
+                phone = payload.value.filter(Char::isDigit).takeIf { payload.phone },
+                countryCode = payload.countryCode.takeIf { payload.phone }, totpCode = payload.totpCode)
+            if (payload.phone) api.changePhone(body) else api.changeEmail(body)
+        }
+    }
+
+    suspend fun runFundPassword(value: String, confirmation: String, old: String, alreadySet: Boolean, overview: ApiSecurityOverview?, totp: String, code: String) {
+        require(value.length == 6 && value.all(Char::isDigit)) { "资金密码需为 6 位数字" }
+        require(value == confirmation) { "两次资金密码不一致" }
+        require(!alreadySet || (old.length == 6 && old.all(Char::isDigit))) { "请输入原资金密码" }
+        require(SecurityFeatureLogic.verificationReady(overview, totp, code)) { "请先完成安全验证" }
+        val body = ApiFundPasswordRequest(value, oldFundPassword = old.takeIf { alreadySet },
+            totpCode = totp.takeIf { overview?.twoFactor?.enabled == true }, code = code.takeIf { overview?.twoFactor?.enabled == false })
+        apiCall<click.cowa.linbit.core.generated.ApiOkResponse> { if (alreadySet) api.changeFundPassword(body) else api.setFundPassword(body) }
     }
 
     private suspend inline fun runCatchingFeature(error: (String) -> Unit, block: () -> Unit) {
