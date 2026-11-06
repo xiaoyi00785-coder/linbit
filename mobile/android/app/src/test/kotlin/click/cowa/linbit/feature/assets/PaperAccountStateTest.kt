@@ -6,7 +6,6 @@ import click.cowa.linbit.di.AppModule
 import click.cowa.linbit.ui.components.ToastCenter
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
-import okhttp3.Headers.Companion.headersOf
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.*
 import org.junit.Assert.*
@@ -21,7 +20,7 @@ import retrofit2.Response
 class PaperAccountStateTest {
     private val tokens = InMemoryTokenStore()
     @Before fun main() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-    @After fun reset() { Dispatchers.resetMain() }
+    @After fun tearDown() { Dispatchers.resetMain() }
     private val account = PaperAccount("pa_mock", "paper", "spot", 3, "USDT", "10000", 1, 0, null, listOf("market"), "INDEX", "none", "none", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
     private fun vm(client: PaperTradingClient) = PaperAccountViewModel(client, tokens, ToastCenter(CoroutineScope(Dispatchers.Main)))
     private class MemoryApi(val account: PaperAccount) : PaperTradingApi {
@@ -30,11 +29,13 @@ class PaperAccountStateTest {
         var accountReply = CompletableDeferred<PaperAccount>()
         var resetReply = CompletableDeferred<Response<PaperReset>>()
         val resetKeys = mutableListOf<String>()
+        val orderRequests = mutableListOf<PaperOrderRequest>()
+        var orderReply = CompletableDeferred<Response<PaperOrder>>()
         override suspend fun account(): Response<PaperAccount> = Response.success(accountReply.await())
         override suspend fun balances(page: Int, pageSize: Int): Response<PaperBalances> = Response.success(
-            PaperBalances(page, pageSize, if (empty) 0 else 1, if (empty) emptyList() else listOf(PaperBalance("USDT", "10000", "0", "10000")), "paper", "paper", balanceGeneration))
+            PaperBalances(page, pageSize, if (empty) 0 else 2, if (empty) emptyList() else listOf(PaperBalance("USDT", if (orderRequests.any()) "9900" else "10000", "0", if (orderRequests.any()) "9900" else "10000"), PaperBalance("BTC", if (orderRequests.any()) "0.00125" else "2", "0", if (orderRequests.any()) "0.00125" else "2")), "paper", "paper", balanceGeneration))
         override suspend fun reset(key: String, request: PaperResetRequest): Response<PaperReset> { resetKeys += key; assertEquals("RESET_PAPER_ACCOUNT", request.confirmation); return resetReply.await() }
-        override suspend fun placeOrder(request: PaperOrderRequest): Response<PaperOrder> = error("Not this batch")
+        override suspend fun placeOrder(request: PaperOrderRequest): Response<PaperOrder> { orderRequests += request; return orderReply.await() }
         override suspend fun orders(symbol: String?, status: String?, generation: Long?, page: Int, pageSize: Int): Response<PaperOrders> = error("Not this batch")
         override suspend fun order(id: String): Response<PaperOrder> = error("Not this batch")
         override suspend fun trades(symbol: String?, generation: Long?, page: Int, pageSize: Int): Response<PaperTrades> = error("Not this batch")
@@ -43,10 +44,10 @@ class PaperAccountStateTest {
         override suspend fun updateAlert(id: String, request: UpdatePriceAlertRequest): Response<PriceAlert> = error("Not this batch")
         override suspend fun deleteAlert(id: String, revision: Int?): Response<Unit> = error("Not this batch")
     }
-    private fun ready(configure: MemoryApi.() -> Unit = {}): Pair<PaperAccountViewModel, MemoryApi> {
+    private fun ready(enabled: () -> Boolean = { true }, configure: MemoryApi.() -> Unit = {}): Pair<PaperAccountViewModel, MemoryApi> {
         tokens.accessToken = "test-paper-only"
         val api = MemoryApi(account).apply(configure).also { it.accountReply.complete(account) }
-        val vm = vm(PaperTradingClient(api, PaperFeatureGate(PublicFeatureFlags { Response.success(click.cowa.linbit.core.generated.ApiAppFeatures(features = mapOf("paperTrading" to true))) })))
+        val vm = vm(PaperTradingClient(api, PaperFeatureGate(PublicFeatureFlags { Response.success(click.cowa.linbit.core.generated.ApiAppFeatures(features = mapOf("paperTrading" to enabled()))) })))
         return vm to api
     }
     @Test fun productionHiltClientIsFailClosedAndGuestHasNoRequest() {
@@ -66,7 +67,7 @@ class PaperAccountStateTest {
     @Test fun generationMismatchIsAReadableVMFailureNotAnOverwrittenString() = runTest {
         val (vm, api) = ready { balanceGeneration = 4 }; advanceUntilIdle()
         assertEquals("虚拟账户余额代次不一致，请重试", vm.failure)
-        assertNull(vm.account); assertNull(vm.balances); assertEquals("PAPER", vm.account?.mode ?: "PAPER")
+        assertNull(vm.account); assertNull(vm.balances)
     }
     @Test fun heldResetBlocksRepeatAndShowsRetry429WithoutChangingGeneration() = runTest {
         val (vm, api) = ready(); advanceUntilIdle()
@@ -87,6 +88,79 @@ class PaperAccountStateTest {
         assertEquals(listOf("reset-mock-exact", "reset-mock-exact"), api.resetKeys)
         assertTrue(vm.resetting); assertEquals(3L, vm.account?.generation); assertNull(vm.resetFailure)
     }
+    private suspend fun makeOrder(vm: PaperAccountViewModel) {
+        assertNull(vm.orderDraft(true, "100.010")); vm.confirmOrder()
+    }
+    private fun order(query: PaperOrderRequest) = PaperOrder("po_mock", query.clientOrderId, "paper", "pa_mock", 3L, query.symbol, query.side, "market", "79999.999", "0.00125", query.quoteOrderQty, "0.00125", "filled", "INDEX", "79999.999", "2026-01-01T00:00:00Z", "0", "USDT", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+    private fun paperError(code: String, status: Int = 400, retry: Int? = null): Response<PaperOrder> {
+        val raw = okhttp3.Response.Builder().protocol(okhttp3.Protocol.HTTP_1_1).code(status)
+        retry?.let { raw.header("Retry-After", it.toString()) }
+        return Response.error("""{"code":"$code","message":"mock-server-$code"}""".toResponseBody(), raw.request(okhttp3.Request.Builder().url("http://127.0.0.1/paper/orders").build()).message("Mock only").build())
+    }
+    @Test fun buyUsesExactQuoteDecimalReplaySameClientIdAndRefreshesActualBalance() = runTest {
+        val (vm, api) = ready(); advanceUntilIdle()
+        val pending = CompletableDeferred<Response<PaperOrder>>()
+        api.orderReply = pending
+        makeOrder(vm); assertEquals(null, vm.confirmOrder()); assertTrue(vm.orderSubmitting)
+        assertEquals("100.010", api.orderRequests.single().quoteOrderQty); assertEquals("", api.orderRequests.single().quantity)
+        assertEquals("market", api.orderRequests.single().type)
+        pending.complete(Response.success(order(api.orderRequests.single()))); advanceUntilIdle()
+        assertEquals(3L, vm.account?.generation); assertTrue(api.accountReply.isCompleted)
+        assertEquals("79999.999", vm.lastOrder?.price); assertEquals("0.00125", vm.lastOrder?.quantity)
+        assertEquals("9900", vm.balances?.items?.first()?.free); assertTrue(vm.lastOrder?.status == "filled")
+    }
+    @Test fun sellHasOnlyDecimalQuantityNoQuoteNoLocalPrice() = runTest {
+        val (vm, api) = ready(); advanceUntilIdle()
+        assertNotNull(vm.orderDraft(false, "NaN")); assertTrue(api.orderRequests.isEmpty())
+        assertNull(vm.orderDraft(false, "0.25001")); vm.confirmOrder(); advanceUntilIdle()
+        assertEquals("0.25001", api.orderRequests.single().quantity); assertEquals("", api.orderRequests.single().quoteOrderQty)
+    }
+    @Test fun allFailureCodesPreserveReviewAndOriginalIdUntilExplicitRetry() = runTest {
+        for ((code,status,retry) in listOf(Triple("INDEX_UNAVAILABLE",503,null), Triple("PAPER_BALANCE_INSUFFICIENT",400,null), Triple("RATE_LIMITED",429,7), Triple("IDEMPOTENCY_CONFLICT",409,null))) {
+            val (vm, api) = ready(); advanceUntilIdle()
+            api.orderReply = CompletableDeferred<Response<PaperOrder>>().also { it.complete(paperError(code, status, retry)) }
+            makeOrder(vm); advanceUntilIdle()
+            assertFalse("code=$code failure=${vm.orderFailure}", vm.orderFailure.isNullOrBlank()); assertEquals(retry, vm.orderRetryAfter)
+            assertTrue(vm.orderAmount.isNotEmpty())
+            val first = api.orderRequests.single()
+            vm.confirmOrder(); advanceUntilIdle()
+            assertEquals(first, api.orderRequests.last()); assertEquals(2, api.orderRequests.size)
+        }
+    }
+    @Test fun flagClosedInvalidatesPreparedOrderBeforeAnyPost() = runTest {
+        var enabled = true
+        val (vm, api) = ready(enabled = { enabled }); advanceUntilIdle()
+        assertNull(vm.orderDraft(true, "100.010"))
+        // A draft has no transport. Refresh receives the closed production gate on loopback.
+        assertTrue(api.orderRequests.isEmpty())
+        enabled = false; vm.load(); advanceUntilIdle()
+        assertFalse(vm.available); assertNotNull(vm.confirmOrder()); assertTrue(api.orderRequests.isEmpty())
+        assertTrue(vm.orderAmount.isEmpty())
+    }
+    @Test fun mismatchedGenerationAndClientOrderIdsNeverCommitAsFilled() = runTest {
+        for (wrongGeneration in listOf(true, false)) {
+            val (vm, api) = ready(); advanceUntilIdle()
+            makeOrder(vm)
+            val sent = api.orderRequests.single()
+            api.orderReply.complete(Response.success(order(sent).copy(
+                generation = if (wrongGeneration) 4 else 3,
+                clientOrderId = if (wrongGeneration) sent.clientOrderId else "android-paper-old-session",
+            ))); advanceUntilIdle()
+            assertNull(vm.lastOrder)
+            assertEquals("10000", vm.balances?.items?.first()?.free)
+            assertTrue(vm.orderFailure.orEmpty().contains("不匹配"))
+            assertFalse(vm.orderSubmitting)
+            assertEquals("100.010", vm.orderAmount)
+            assertEquals(sent.clientOrderId, api.orderRequests.single().clientOrderId)
+        }
+    }
+    @Test fun sessionEpochInvalidatesJsonReplyAndFlagGateCannotLeaveCalculatedBalance() = runTest {
+        val (vm, api) = ready(); advanceUntilIdle()
+        makeOrder(vm); tokens.accessToken = null
+        api.orderReply.complete(Response.success(order(api.orderRequests.single()))); advanceUntilIdle()
+        assertNull(vm.account); assertNull(vm.lastOrder)
+    }
+
     @Test fun emptyPaperPaginationIsActualEmptyStateNotRealAssetFallback() = runTest {
         val (vm, api) = ready { empty = true }; advanceUntilIdle()
         assertEquals(0, vm.balances?.total); assertTrue(vm.balances?.items?.isEmpty() == true)

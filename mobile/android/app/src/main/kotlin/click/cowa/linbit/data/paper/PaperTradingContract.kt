@@ -18,7 +18,6 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
- * Stable main d7713500704fc8ce341f4cef6775941af39f566b, not obsolete PR head df276c7.
  * Production Hilt binds this separate service with the public /app/features paperTrading gate.
  * Disabled, missing or failed feature reads deny every Paper operation.
  * Positive-path tests may instantiate only with an isolated mock or in-memory API.
@@ -40,6 +39,7 @@ interface PaperTradingApi {
 
 class PaperTradingClient(private val api: PaperTradingApi, private val gate: PaperFeatureGate) {
     val enabled: Boolean get() = gate.enabled
+    val featureState: kotlinx.coroutines.flow.StateFlow<PaperFeatureSnapshot> get() = gate.snapshot
     val featureFailure: String? get() = gate.snapshot.value.failure
     suspend fun refreshFeature(): Boolean = gate.refresh()
     private fun requireEnabled() = require(enabled) { "Paper trading is disabled or unset" }

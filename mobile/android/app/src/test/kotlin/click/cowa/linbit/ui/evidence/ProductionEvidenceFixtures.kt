@@ -52,16 +52,16 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
     fun badge(): click.cowa.linbit.feature.more.NotificationBadgeViewModel = click.cowa.linbit.feature.more.NotificationBadgeViewModel(retrofit, tokens)
 
     /** Same production ViewModel, with test-only loopback adapter. Never a LinbitApi/paper hybrid. */
-    fun paper(): click.cowa.linbit.feature.assets.PaperAccountViewModel {
+    fun paper(client: click.cowa.linbit.data.paper.PaperTradingClient = paperClient(true)): click.cowa.linbit.feature.assets.PaperAccountViewModel {
         return click.cowa.linbit.feature.assets.PaperAccountViewModel(
-            paperClient(true), tokens, toast)
+            client, tokens, toast)
     }
 
     fun paperClient(enabled: Boolean): click.cowa.linbit.data.paper.PaperTradingClient {
         val paper = NetworkFactory.paperApi(http, api.baseUrl)
         val gate = click.cowa.linbit.di.AppModule.paperFeatureGate(NetworkFactory.api(http, api.baseUrl))
         return click.cowa.linbit.di.AppModule.paperClient(paper, gate).also {
-            api.route("GET", "/app/features", """{"features":{"paperTrading":$enabled,"priceAlerts":false}}""")
+            api.defaultFeatureFlags = """{"features":{"paperTrading":$enabled,"priceAlerts":false}}"""
             kotlinx.coroutines.runBlocking { it.refreshFeature() }
         }
     }

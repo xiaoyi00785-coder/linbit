@@ -2,8 +2,6 @@ package click.cowa.linbit.data.paper
 
 import click.cowa.linbit.core.network.*
 import click.cowa.linbit.di.AppModule
-import click.cowa.linbit.feature.assets.PaperAccountViewModel
-import click.cowa.linbit.ui.components.ToastCenter
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
@@ -77,17 +75,7 @@ class PaperFeatureGateTest {
             assertTrue(requests.all { it.method == "GET" })
         } finally { server.shutdown() }
     }
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @Test fun disabledVmDoesNotEraseSessionEpochOrSendPaperRead() = runTest {
-        val (server, requests, _) = fixture("false")
-        try {
-            val vm = PaperAccountViewModel(client(server), InMemoryTokenStore().apply { accessToken = "mock-session" }, ToastCenter(this))
-            assertFalse(vm.available)
-            vm.load(); advanceUntilIdle()
-            assertFalse(vm.available); assertNull(vm.account)
-            assertEquals(listOf("GET /app/features"), requests.map { "${it.method} ${it.path}" })
-        } finally { server.shutdown() }
-    }
+
     companion object {
         const val ACCOUNT = """{"accountId":"p","mode":"paper","market":"spot","generation":3,"quoteAsset":"USDT","initialBalance":"10000","resetLimitPerUtcDay":1,"resetsUsedToday":0,"orderTypes":["market"],"priceSource":"INDEX","feeModel":"none","slippageModel":"none","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}"""
         const val BALANCES = """{"page":1,"pageSize":20,"total":1,"items":[{"asset":"USDT","free":"10000","locked":"0","total":"10000"}],"account":"paper","mode":"paper","generation":3}"""

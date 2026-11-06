@@ -13,6 +13,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     val mutationRequests = mutableListOf<RecordedRequest>()
     private val mutationStatuses = mutableListOf<Int>()
     private val expectedFailureKeys = mutableSetOf<String>()
+    var defaultFeatureFlags: String? = null
 
     init { server.dispatcher = this; server.start() }
 
@@ -45,13 +46,22 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (sensitive && !declaredFailure) {
             return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
-        val response = routes[key]?.removeFirstOrNull()
-        val expected = declaredFailure && response?.httpCode() == 503
-        if (method != "GET" && !expected) {
-            return undeclared(request, "Only one explicit loopback failure is allowed")
+        val response = routes[key]?.removeFirstOrNull() ?: defaultFeatureFlags?.takeIf { key == "GET /app/features" }?.let { flags ->
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(flags)
         }
-        requests += "$key${if (method != "GET") " [EXPECTED_LOOPBACK_FAILURE=503]" else ""}"
+        val paperBuy = method == "POST" && path == "/paper/orders"
+        val expected = declaredFailure && response?.httpCode() == 503
+        if (method != "GET" && !expected && !paperBuy) {
+            return undeclared(request, "Only a declared Paper order or explicit loopback failure is allowed")
+        }
+        requests += "$key${if (method != "GET") " [${if (declaredFailure) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_PAPER_ORDER"}]" else ""}"
         if (method != "GET") mutationStatuses += response?.httpCode() ?: 599
+        if (paperBuy && response != null) {
+            val payload = response.getBody()?.clone()?.readUtf8() ?: throw AssertionError("Paper response required")
+            val data = org.json.JSONObject(request.body.clone().readUtf8()).getString("clientOrderId")
+            val fulfilled = payload.replace("MOCK_CLIENT_ID", data.replace("\\", "\\\\").replace("\"", "\\\""))
+            return response.clone().setBody(fulfilled)
+        }
         return response ?: undeclared(request, "Evidence route must be declared explicitly")
     }
 
@@ -72,6 +82,12 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val accepted = mutationStatuses.all { it == 503 }
         check(accepted && requests.none { it.contains("[REJECTED]") || it.contains("[REJECTED:") }) { "Only declared failures allowed: requests=$requests statuses=$mutationStatuses" }
         check(expectedFailureKeys.isEmpty()) { "Declared failure routes not consumed: $expectedFailureKeys" }
+    }
+
+    fun assertOnlyDeclaredWrites() {
+        check(mutationStatuses.isNotEmpty()) { "Expected a declared loopback Paper order" }
+        check(mutationStatuses.all { it == 200 } && requests.none { it.contains("[REJECTED:") }) { "Only declared successful Paper writes allowed: $requests statuses=$mutationStatuses" }
+        check(expectedFailureKeys.isEmpty()) { "Unexpected declared failure routes: $expectedFailureKeys" }
     }
 
     fun lastMutationBody(): String = mutationRequests.last().body.clone().readUtf8()
