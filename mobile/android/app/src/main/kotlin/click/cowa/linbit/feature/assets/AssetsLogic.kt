@@ -3,6 +3,7 @@ package click.cowa.linbit.feature.assets
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawNetwork
+import click.cowa.linbit.core.generated.ApiWithdrawal
 import click.cowa.linbit.core.util.Dec
 import java.math.BigDecimal
 
@@ -129,6 +130,30 @@ object AssetsLogic {
         val c = smsOrEmailCode.filter(Char::isDigit).take(8)
         return if (twoFactorEnabled) WithdrawAuthCodes(totpCode = t.takeIf { it.length == 6 }, code = null)
         else WithdrawAuthCodes(totpCode = null, code = c.takeIf { it.length >= 4 })
+    }
+
+
+    /** OpenAPI：仅 pending（待人工审核）可撤；processing/completed/failed/canceled 不可撤。 */
+    fun canCancelWithdrawal(status: ApiWithdrawal.Status?): Boolean =
+        status == ApiWithdrawal.Status.PENDING
+
+    /** 撤销成功后用服务端回写状态更新列表（竞态：已非 pending 则本地同步）。 */
+    fun applyWithdrawalUpdate(list: List<ApiWithdrawal>, updated: ApiWithdrawal): List<ApiWithdrawal> =
+        list.map { if (it.id == updated.id) updated else it }
+
+
+    /** 提现记录时间展示：ISO 尽量落到本地可读；解析失败则原样。 */
+    fun displayWithdrawTime(raw: String?): String {
+        val s = raw?.trim().orEmpty()
+        if (s.isEmpty()) return "--"
+        return try {
+            val instant = java.time.Instant.parse(s)
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(instant)
+        } catch (_: Throwable) {
+            s.replace('T', ' ').removeSuffix("Z")
+        }
     }
 
 }

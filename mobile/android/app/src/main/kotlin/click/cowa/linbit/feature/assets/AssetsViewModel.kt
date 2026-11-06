@@ -206,8 +206,18 @@ class AssetsViewModel @Inject constructor(
         apiCall { api.updateWithdrawAddress(id, ApiUpdateWithdrawAddressRequest(whitelisted = whitelisted, totpCode = totp)) }
     }
 
-    suspend fun withdrawRecords(): Result<List<ApiWithdrawal>> = runCatching {
-        apiCall { api.withdrawRecords() }.items
+    suspend fun withdrawRecords(): Result<List<ApiWithdrawal>> {
+        evidenceWithdrawRecords?.let { return Result.success(it) }
+        return runCatching { apiCall { api.withdrawRecords() }.items }
+    }
+
+    /** 离屏证据：提现记录示例（非生产）。 */
+    internal var evidenceWithdrawRecords: List<ApiWithdrawal>? = null
+
+    /** 撤销 pending 提现。调用方二次确认；测试/生产均不得静默连点。 */
+    suspend fun cancelWithdraw(id: String): Result<ApiWithdrawal> = runCatching {
+        require(id.isNotBlank()) { "无效提现单" }
+        apiCall { api.cancelWithdraw(id) }
     }
 
     fun coinUniverse(): List<String> {

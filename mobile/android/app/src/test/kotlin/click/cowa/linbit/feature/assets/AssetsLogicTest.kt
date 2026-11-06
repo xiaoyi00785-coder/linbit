@@ -3,6 +3,7 @@ package click.cowa.linbit.feature.assets
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawNetwork
+import click.cowa.linbit.core.generated.ApiWithdrawal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -130,6 +131,36 @@ class AssetsLogicTest {
         assertEquals("654321", sms.code)
         assertTrue(AssetsLogic.withdrawVerifyReady(false, "", "6543"))
         assertFalse(AssetsLogic.withdrawVerifyReady(false, "", "12"))
+    }
+
+
+    @Test fun canCancelWithdrawalOnlyPending() {
+        assertTrue(AssetsLogic.canCancelWithdrawal(ApiWithdrawal.Status.PENDING))
+        assertFalse(AssetsLogic.canCancelWithdrawal(ApiWithdrawal.Status.PROCESSING))
+        assertFalse(AssetsLogic.canCancelWithdrawal(ApiWithdrawal.Status.COMPLETED))
+        assertFalse(AssetsLogic.canCancelWithdrawal(ApiWithdrawal.Status.FAILED))
+        assertFalse(AssetsLogic.canCancelWithdrawal(ApiWithdrawal.Status.CANCELED))
+        assertFalse(AssetsLogic.canCancelWithdrawal(null))
+    }
+
+    @Test fun applyWithdrawalUpdateReplacesMatchingId() {
+        fun w(id: String, st: ApiWithdrawal.Status) = ApiWithdrawal(
+            id = id, asset = "USDT", network = "TRC20", address = "Txxx", amount = "10",
+            fee = "1", status = st, createdAt = "2026-11-05T00:00:00Z",
+        )
+        val list = listOf(w("a", ApiWithdrawal.Status.PENDING), w("b", ApiWithdrawal.Status.PENDING))
+        val updated = w("a", ApiWithdrawal.Status.CANCELED)
+        val next = AssetsLogic.applyWithdrawalUpdate(list, updated)
+        assertEquals(ApiWithdrawal.Status.CANCELED, next[0].status)
+        assertEquals(ApiWithdrawal.Status.PENDING, next[1].status)
+    }
+
+    @Test fun displayWithdrawTimeFormatsIso() {
+        val s = AssetsLogic.displayWithdrawTime("2026-11-05T12:00:00Z")
+        assertTrue(s.contains("2026-11-05"))
+        assertFalse(s.contains("T"))
+        assertEquals("--", AssetsLogic.displayWithdrawTime(null))
+        assertEquals("--", AssetsLogic.displayWithdrawTime(""))
     }
 
 }

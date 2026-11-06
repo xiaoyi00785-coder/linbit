@@ -2,6 +2,7 @@ package click.cowa.linbit.feature.assets
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,10 +34,12 @@ import click.cowa.linbit.R
 import click.cowa.linbit.core.generated.ApiCreateWithdrawAddressRequest
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawAddress
+import click.cowa.linbit.core.generated.ApiWithdrawal
 import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.ui.components.CoinIcon
 import click.cowa.linbit.ui.components.EmptyState
+import click.cowa.linbit.ui.components.ButtonKind
 import click.cowa.linbit.ui.components.LbButton
 import click.cowa.linbit.ui.components.LbIcon
 import click.cowa.linbit.ui.components.LbTextField
@@ -308,24 +311,111 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
 fun WithdrawRecordsScreen(vm: AssetsViewModel, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val p = LB.p
-    var items by remember { mutableStateOf<List<click.cowa.linbit.core.generated.ApiWithdrawal>?>(null) }
-    LaunchedEffect(Unit) {
-        vm.withdrawRecords().onSuccess { items = it }.onFailure { vm.toast.show(it.lbMessage()); items = emptyList() }
+    val scope = rememberCoroutineScope()
+    var items by remember { mutableStateOf<List<ApiWithdrawal>?>(null) }
+    var cancelTarget by remember { mutableStateOf<ApiWithdrawal?>(null) }
+    var cancellingId by remember { mutableStateOf<String?>(null) }
+
+    fun reload() {
+        scope.launch {
+            vm.withdrawRecords().fold(
+                onSuccess = { items = it },
+                onFailure = { e -> vm.toast.show(e.lbMessage()); if (items == null) items = emptyList() },
+            )
+        }
     }
+    LaunchedEffect(Unit) { reload() }
+
+    fun statusLabel(s: ApiWithdrawal.Status): String = when (s) {
+        ApiWithdrawal.Status.PENDING -> "待审核"
+        ApiWithdrawal.Status.PROCESSING -> "处理中"
+        ApiWithdrawal.Status.COMPLETED -> "已完成"
+        ApiWithdrawal.Status.FAILED -> "失败"
+        ApiWithdrawal.Status.CANCELED -> "已撤销"
+    }
+
     Column(Modifier.fillMaxSize().background(p.bg)) {
         AssetsNavBar("提现记录", onBack = onBack)
         when {
-            items == null -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(Modifier.padding(40.dp), color = p.brand, strokeWidth = 2.dp) }
+            items == null -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(Modifier.padding(40.dp), color = p.brand, strokeWidth = 2.dp)
+            }
             items!!.isEmpty() -> EmptyState("暂无提现记录")
             else -> Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
                 items!!.forEach { w ->
+                    val canCancel = AssetsLogic.canCancelWithdrawal(w.status) && cancellingId != w.id
                     AssetsCard(Modifier.padding(bottom = 10.dp)) {
-                        Text("${w.amount} ${w.asset} · ${AssetsLogic.displayNetwork(w.network)}", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+                        Text(
+                            "${w.amount} ${w.asset} · ${AssetsLogic.displayNetwork(w.network)}",
+                            style = lb(FontSize.label, FontWeight.Medium),
+                            color = p.textPrimary,
+                        )
                         Spacer(Modifier.height(4.dp))
-                        AssetKv("状态", w.status.value)
-                        AssetKv("时间", w.createdAt)
+                        AssetKv("状态", statusLabel(w.status))
+                        AssetKv("时间", AssetsLogic.displayWithdrawTime(w.createdAt))
+                        if (AssetsLogic.canCancelWithdrawal(w.status) || cancellingId == w.id) {
+                            Spacer(Modifier.height(8.dp))
+                            LbButton(
+                                "撤销申请",
+                                kind = ButtonKind.OUTLINE,
+                                height = 36.dp,
+                                loading = cancellingId == w.id,
+                                enabled = canCancel,
+                            ) { cancelTarget = w }
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    val target = cancelTarget
+    if (target != null) {
+        LbSheet("确认撤销提现", onClose = { if (cancellingId == null) cancelTarget = null }, showClose = cancellingId == null) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "仅待审核（pending）可撤销。撤销后冻结金额将解冻退回可用余额。",
+                    style = lb(FontSize.small),
+                    color = p.textSecondary,
+                )
+                AssetKv("数量", "${target.amount} ${target.asset}")
+                AssetKv("网络", AssetsLogic.displayNetwork(target.network))
+                AssetKv("地址", target.address)
+                LbButton(
+                    "确认撤销",
+                    kind = ButtonKind.SELL,
+                    loading = cancellingId == target.id,
+                    enabled = cancellingId == null && AssetsLogic.canCancelWithdrawal(target.status),
+                ) {
+                    if (cancellingId != null) return@LbButton
+                    // 竞态：确认瞬间再判一次；非 pending 则提示并刷新
+                    if (!AssetsLogic.canCancelWithdrawal(target.status)) {
+                        vm.toast.show("该提现已无法撤销", click.cowa.linbit.ui.components.ToastCenter.Kind.ERROR)
+                        cancelTarget = null
+                        reload()
+                        return@LbButton
+                    }
+                    scope.launch {
+                        cancellingId = target.id
+                        vm.cancelWithdraw(target.id).fold(
+                            onSuccess = { updated ->
+                                items = items?.let { AssetsLogic.applyWithdrawalUpdate(it, updated) }
+                                vm.toast.show("已撤销提现申请")
+                                cancelTarget = null
+                                vm.load(silent = true) // 余额解冻刷新
+                                reload()
+                            },
+                            onFailure = { e ->
+                                vm.toast.show(e.lbMessage())
+                                // 409 / WITHDRAW_NOT_CANCELABLE：刷新列表对齐真实状态
+                                reload()
+                                cancelTarget = null
+                            },
+                        )
+                        cancellingId = null
+                    }
+                }
+                LbButton("取消", kind = ButtonKind.OUTLINE, enabled = cancellingId == null) { cancelTarget = null }
             }
         }
     }

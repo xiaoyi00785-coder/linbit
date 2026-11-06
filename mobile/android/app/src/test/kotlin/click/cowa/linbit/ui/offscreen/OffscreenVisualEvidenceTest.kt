@@ -36,6 +36,7 @@ import click.cowa.linbit.core.generated.ApiGridSquareItem
 import click.cowa.linbit.core.generated.ApiStrategyConfig200Response
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawNetwork
+import click.cowa.linbit.core.generated.ApiWithdrawal
 import click.cowa.linbit.core.generated.ApiFuturesContract
 import click.cowa.linbit.core.generated.ApiFuturesTicker
 import click.cowa.linbit.core.generated.ApiHomeNewcomer
@@ -70,6 +71,7 @@ import click.cowa.linbit.data.MarketRow
 import click.cowa.linbit.feature.assets.DepositNetworkSheet
 import click.cowa.linbit.feature.auth.LocalLbSheetInlineEvidence
 import click.cowa.linbit.feature.assets.WithdrawScreen
+import click.cowa.linbit.feature.assets.WithdrawRecordsScreen
 import click.cowa.linbit.feature.trade.AmendAlgoSheet
 import click.cowa.linbit.feature.trade.ConvertSubpage
 import click.cowa.linbit.feature.trade.EarnSubpage
@@ -513,6 +515,43 @@ class OffscreenVisualEvidenceTest {
             rule.onNodeWithText("安全验证", useUnmergedTree = true).assertIsDisplayed()
             capture("Withdraw-confirm-sheet")
         }
+    }
+
+    @Test fun withdrawRecordsCancelSheet() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = AssetsViewModel(api, tokens, store, toast)
+        vm.evidenceWithdrawRecords = listOf(
+            ApiWithdrawal(
+                id = "wd_pending", asset = "USDT", network = "TRC20",
+                address = "TXy1Z9DemoAddr000000000000000000000", amount = "100",
+                fee = "1", status = ApiWithdrawal.Status.PENDING, createdAt = "2026-11-05T12:00:00Z",
+            ),
+            ApiWithdrawal(
+                id = "wd_done", asset = "USDT", network = "ERC20",
+                address = "0xDemo", amount = "50",
+                fee = "5", status = ApiWithdrawal.Status.COMPLETED, createdAt = "2026-11-04T12:00:00Z",
+            ),
+        )
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    WithdrawRecordsScreen(vm, onBack = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("提现记录", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("撤销申请", useUnmergedTree = true).assertIsDisplayed()
+        // completed 行不应有可点撤销（仅 pending 显示按钮；列表里可能只有一处「撤销申请」）
+        check(rule.onAllNodesWithText("撤销申请", useUnmergedTree = true).fetchSemanticsNodes().size == 1)
+        capture("Withdraw-records")
+        rule.onNodeWithText("撤销申请", useUnmergedTree = true).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("确认撤销提现", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("确认撤销", useUnmergedTree = true).assertIsDisplayed()
+        capture("Withdraw-cancel-confirm")
+        // 不点确认：避免走真实/拦截网络；仅证据打开态
     }
 
     @Test fun inlineSheetEvidenceFlagDefaultsOffInProductionPath() {
