@@ -24,6 +24,7 @@ notif-list light
 home-bell light
 coupon-issued light
 partner-none light
+copy-list light
 
 # 资产子页
 assets-overview light

@@ -97,6 +97,16 @@ partner-error
 partner-apply
 partner-apply-error
 partner-team
+copy-list
+copy-empty
+copy-error
+copy-detail
+copy-follow
+copy-follow-error
+copy-follows
+copy-follows-empty
+copy-become
+copy-become-error
 security-profile
 security-profile-error
 security-email
