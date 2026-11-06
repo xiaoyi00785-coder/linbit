@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -149,7 +150,12 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 onLoginOther = { userCenter = false; auth = "login" },
                 onFeature = { page -> userCenter = false; morePage = page }, vm = profileVm,
             )
-            if (moreMenu) MoreMenuScreen(onBack = { moreMenu = false }, onOpen = { moreMenu = false; morePage = it })
+            if (moreMenu) {
+                // This overlay is outside Home's padding; own its system bar insets exactly once.
+                Box(Modifier.fillMaxSize().background(LB.p.bg).statusBarsPadding().navigationBarsPadding()) {
+                    MoreMenuScreen(onBack = { moreMenu = false }, onOpen = { moreMenu = false; morePage = it })
+                }
+            }
             morePage?.let { page -> MoreHost(
                 page,
                 onClose = { morePage = null; badgeVm.refresh() },

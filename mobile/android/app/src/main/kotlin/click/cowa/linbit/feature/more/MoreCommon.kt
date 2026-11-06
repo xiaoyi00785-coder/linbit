@@ -27,6 +27,8 @@ import click.cowa.linbit.feature.assets.AssetsNavBar
 import click.cowa.linbit.feature.profile.InfoNote
 import click.cowa.linbit.feature.profile.ProfileNavBar
 import click.cowa.linbit.ui.components.*
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import click.cowa.linbit.ui.theme.*
 import kotlinx.serialization.json.*
 import java.math.BigDecimal
@@ -73,8 +75,15 @@ fun MoreHost(
 
 @Composable
 fun MoreMenuScreen(onBack: () -> Unit, onOpen: (MorePage) -> Unit) {
-    MoreFrame("全部功能", onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).testTag("more.back").semantics(mergeDescendants = true) {}.pressable(scale = 1f, onClick = onBack), contentAlignment = Alignment.CenterStart) {
+                LbIcon(R.drawable.ic_arrow_left, 22.dp, LB.p.textPrimary)
+            }
+            Text("全部功能", Modifier.weight(1f).testTag("more.title"), style = lb(FontSize.title, FontWeight.SemiBold), color = LB.p.textPrimary)
+            Spacer(Modifier.size(48.dp))
+        }
+        Column(Modifier.testTag("more.list").weight(1f).verticalScroll(rememberScrollState()).padding(Spacing.pageH).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             MorePage.entries.forEach { page ->
                 Row(Modifier.fillMaxWidth().background(LB.p.fill, RoundedCornerShape(Radius.lg)).pressable(scale = 1f) { onOpen(page) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     LbIcon(when (page) {
