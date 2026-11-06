@@ -168,7 +168,8 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
- * 可复现离屏视觉证据（默认跳过，不进 CI 主路径）。
+ * 历史合成组件预览（默认跳过，不进 CI 主路径；不是生产视觉验收）。
+ * 强制内联 sheet、seed/holdEvidence 与统一 503 均只限此套件。
  * 启用：./gradlew testDebugUnitTest -Doffscreen.shots=1 --tests '...OffscreenVisualEvidenceTest'
  * 输出：app/build/reports/offscreen-shots/（gitignore，不入库二进制）
  * 网络全拦截；无真实资金；不等于真机/ref 像素通过。
@@ -196,8 +197,9 @@ class OffscreenVisualEvidenceTest {
 
     private fun enabled() {
         Assume.assumeTrue(
-            "set -Doffscreen.shots=1 to generate evidence PNGs",
-            System.getProperty("offscreen.shots") == "1" || System.getenv("OFFSCREEN_SHOTS") == "1",
+            "legacy synthetic preview only: -Doffscreen.shots=1 -Dlegacy.composite.shots=1",
+            (System.getProperty("offscreen.shots") == "1" || System.getenv("OFFSCREEN_SHOTS") == "1") &&
+                (System.getProperty("legacy.composite.shots") == "1" || System.getenv("LEGACY_COMPOSITE_SHOTS") == "1"),
         )
     }
 

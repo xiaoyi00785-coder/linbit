@@ -451,6 +451,12 @@ interface LinbitApi {
     @GET("account/security")
     suspend fun securityOverview(): ApiSecurityOverview
 
+    @POST("account/password/change")
+    suspend fun changePassword(@Body body: click.cowa.linbit.feature.profile.SecurityChangePasswordRequest): ApiChangePassword200Response
+
+    @PUT("account/anti-phishing")
+    suspend fun setAntiPhishing(@Body body: ApiSetAntiPhishingRequest): ApiOkResponse
+
     @POST("2fa/totp/bind")
     suspend fun bindTotp(): ApiTotpBinding
 

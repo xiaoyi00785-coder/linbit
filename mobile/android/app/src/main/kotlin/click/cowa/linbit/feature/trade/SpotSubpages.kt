@@ -719,12 +719,13 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
 private data class EarnAction(val product: ApiEarnProduct, val subscribe: Boolean)
 
 @Composable
-fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel()) {
+fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     var from by remember { mutableStateOf("USDT") }
     var to by remember { mutableStateOf("BTC") }
     var amount by remember { mutableStateOf("") }
+    var pendingConfirm by remember { mutableStateOf<ConvertQuoteLogic.Form?>(null) }
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadConvert() }
     // 报价过期本地倒计时：到期清 quote 并禁止 accept
@@ -787,7 +788,7 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                             amount = it
                             vm.bumpConvertForm()
                         }
-                    })
+                    }, testTag = "convert.amount")
                     Text("兑入 $to", style = lb(FontSize.small), color = p.textSecondary)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         toAssets.take(8).forEach { a ->
@@ -835,10 +836,26 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                                 kind = ButtonKind.BUY,
                                 loading = vm.accepting,
                                 enabled = quoteOk && !vm.quoting && !vm.accepting,
-                            ) { vm.acceptQuote(from, to, amount) }
+                            ) { pendingConfirm = form }
                         }
                     }
                 }
+            }
+        }
+    }
+    val confirm = pendingConfirm
+    if (confirm != null) {
+        val q = vm.quote
+        val valid = ConvertQuoteLogic.canAccept(q, confirm)
+        LbSheet("确认闪兑", onClose = { if (!vm.accepting) pendingConfirm = null }, showClose = !vm.accepting, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(horizontal = Spacing.pageH)) {
+                KvRow("兑出", "${confirm.amount} ${confirm.from}")
+                KvRow("预计到账", "${q?.toAmount ?: "--"} ${confirm.to}")
+                KvRow("兑换率", "1 ${confirm.from} ≈ ${q?.rate ?: "--"} ${confirm.to}")
+                if (!valid) Text("报价已失效，请关闭并重新询价", Modifier.padding(top = 8.dp), color = p.down, style = lb(FontSize.small))
+            }
+            LbButton("确认兑换", Modifier.padding(Spacing.pageH), enabled = valid && !vm.quoting && !vm.accepting, loading = vm.accepting) {
+                vm.acceptQuote(confirm.from, confirm.to, confirm.amount) { pendingConfirm = null }
             }
         }
     }

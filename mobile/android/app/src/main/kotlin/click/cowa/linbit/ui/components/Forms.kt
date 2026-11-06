@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import click.cowa.linbit.R
@@ -53,6 +54,7 @@ fun LbTextField(
     height: Dp = 44.dp,
     leading: (@Composable () -> Unit)? = null,
     onFocusChange: (Boolean) -> Unit = {},
+    testTag: String? = null,
 ) {
     val p = LB.p
     var focused by remember { mutableStateOf(false) }
@@ -86,7 +88,7 @@ fun LbTextField(
                         keyboardType = if (secure) KeyboardType.Password else keyboardType,
                         autoCorrectEnabled = false,
                     ),
-                    modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused; onFocusChange(it.isFocused) },
+                    modifier = Modifier.then(if (testTag == null) Modifier else Modifier.testTag(testTag)).fillMaxWidth().onFocusChanged { focused = it.isFocused; onFocusChange(it.isFocused) },
                 )
             }
             if (value.isNotEmpty() && focused) {

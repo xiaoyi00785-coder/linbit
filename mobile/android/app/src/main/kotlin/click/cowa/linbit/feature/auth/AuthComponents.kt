@@ -38,6 +38,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -119,7 +124,7 @@ fun SocialButton(iconRes: Int, title: String, multicolor: Boolean = false, onCli
 fun Checkbox(on: Boolean, onChange: (Boolean) -> Unit) {
     val p = LB.p
     Box(
-        Modifier.size(15.dp).clip(RoundedCornerShape(3.dp)).background(if (on) p.textPrimary else Color.Transparent)
+        Modifier.size(15.dp).testTag(if (on) "auth.register.agree.checked" else "auth.register.agree.unchecked").semantics { role = Role.Checkbox; stateDescription = if (on) "已同意" else "未同意" }.clip(RoundedCornerShape(3.dp)).background(if (on) p.textPrimary else Color.Transparent)
             .border(BorderStroke(1.2.dp, if (on) p.textPrimary else p.textTertiary), RoundedCornerShape(3.dp))
             .clickable(remember { MutableInteractionSource() }, indication = null) { onChange(!on) },
         contentAlignment = Alignment.Center,
@@ -153,7 +158,7 @@ fun AccountField(vm: AuthViewModel, onPickCountry: () -> Unit) {
     Box(Modifier.fillMaxWidth().onGloballyPositioned { widthPx = it.size.width; heightPx = it.size.height }) {
         LbTextField(
             value = raw, onValueChange = vm::onRawChange, placeholder = "邮箱/手机号码 (不含国际区号)",
-            keyboardType = KeyboardType.Email, error = vm.accountError, onFocusChange = { focused = it },
+            keyboardType = KeyboardType.Email, error = vm.accountError, testTag = "auth.account", onFocusChange = { focused = it },
             leading = if (isPhone) ({
                 Row(Modifier.pressable(onClick = onPickCountry), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(CountryCodes.flag(vm.countryCode), style = lb(FontSize.price))
@@ -223,7 +228,7 @@ fun OtpBoxes(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 cursorBrush = SolidColor(Color.Transparent),
                 textStyle = lb(FontSize.body).copy(color = Color.Transparent),
-                modifier = Modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused }.size(1.dp),
+                modifier = Modifier.testTag("auth.otp.input").focusRequester(focus).onFocusChanged { focused = it.isFocused }.size(1.dp),
             )
             Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null) { focus.requestFocus() }, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 repeat(6) { i ->
@@ -275,6 +280,6 @@ fun LabeledAccountField(vm: AuthViewModel, onPickCountry: () -> Unit) {
 
 /** 登录 / 注册流程的主按钮：黑底白字，高 48、圆角 12，始终可点（空输入时由校验给出错误提示，ref2 #3/#10/#11）。 */
 @Composable
-fun AuthButton(title: String, modifier: Modifier = Modifier, loading: Boolean = false, onClick: () -> Unit) {
-    click.cowa.linbit.ui.components.LbButton(title, modifier, height = 48.dp, loading = loading, radius = Radius.xl, onClick = onClick)
+fun AuthButton(title: String, modifier: Modifier = Modifier, loading: Boolean = false, testTag: String? = null, onClick: () -> Unit) {
+    click.cowa.linbit.ui.components.LbButton(title, modifier, height = 48.dp, loading = loading, radius = Radius.xl, testTag = testTag, onClick = onClick)
 }

@@ -64,6 +64,7 @@ fun WithdrawScreen(
     assetsNav: AssetsNav,
     onBack: () -> Unit,
     onChangeAsset: () -> Unit,
+    onDialogWindow: (android.view.Window?) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val p = LB.p
@@ -215,13 +216,13 @@ fun WithdrawScreen(
                     Spacer(Modifier.weight(1f))
                     Text("地址簿 ›", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook(forWithdraw = true) }, style = lb(FontSize.small), color = p.brand)
                 }
-                LbTextField(addr, { addr = it.trim() }, "输入或粘贴地址", Modifier.padding(top = 4.dp))
+                LbTextField(addr, { addr = it.trim() }, "输入或粘贴地址", Modifier.padding(top = 4.dp), testTag = "withdraw.address")
                 Spacer(Modifier.height(8.dp))
-                LbTextField(memo, { memo = it.trim() }, if (memoReq) "Memo / Tag（必填）" else "Memo / Tag（选填）")
+                LbTextField(memo, { memo = it.trim() }, if (memoReq) "Memo / Tag（必填）" else "Memo / Tag（选填）", testTag = "withdraw.memo")
             } else {
                 WarnBanner("转给 Linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器。")
                 Spacer(Modifier.height(8.dp))
-                LbTextField(to, { to = it.trim() }, "请输入接收方 UID 或邮箱")
+                LbTextField(to, { to = it.trim() }, "请输入接收方 UID 或邮箱", testTag = "withdraw.recipient")
             }
             Spacer(Modifier.height(12.dp))
             Text(if (tab == 0) "提现数量" else "转账数量", style = lb(FontSize.caption), color = p.textSecondary)
@@ -235,7 +236,7 @@ fun WithdrawScreen(
                     if (tab == 0 && minS != null) "最小提现数量: $minS" else "请输入数量",
                     Modifier.weight(1f),
                     keyboardType = KeyboardType.Decimal,
-                    error = amtError(),
+                    error = amtError(), testTag = "withdraw.amount",
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(asset, style = lb(FontSize.label), color = p.textPrimary)
@@ -272,7 +273,7 @@ fun WithdrawScreen(
                     color = p.textPrimary,
                 )
             }
-            LbButton(if (tab == 0) "提现" else "转账", Modifier.width(140.dp), enabled = canSubmit) { showConfirm = true }
+            LbButton(if (tab == 0) "提现" else "转账", Modifier.width(140.dp), enabled = canSubmit, testTag = "withdraw.review") { showConfirm = true }
         }
     }
 
@@ -291,7 +292,7 @@ fun WithdrawScreen(
         )
     }
     if (showConfirm) {
-        LbSheet("安全验证", onClose = { if (!submitting) showConfirm = false }, showClose = !submitting) {
+        LbSheet("安全验证", onClose = { if (!submitting) showConfirm = false }, showClose = !submitting, onWindowReady = onDialogWindow) {
             Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
                 Text(
                     if (tab == 0) "提现 $amount $asset（${AssetsLogic.displayNetwork(net?.network)}），扣除 Gas ${feeS ?: "--"}，到账 ${receive ?: "--"}"

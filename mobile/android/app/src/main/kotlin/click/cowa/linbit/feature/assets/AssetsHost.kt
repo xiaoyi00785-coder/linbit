@@ -16,7 +16,7 @@ import click.cowa.linbit.ui.theme.LB
 
 /** 资产子页全屏覆盖层（充值 / 提现 / 划转 / 地址簿）。 */
 @Composable
-fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel()) {
+fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val route by assetsNav.route.collectAsStateWithLifecycle()
     val r = route ?: return
     val p = LB.p
@@ -46,6 +46,7 @@ fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel()) {
                 assetsNav = assetsNav,
                 onBack = assetsNav::clear,
                 onChangeAsset = { assetsNav.open(AssetsRoute.CoinPicker(AssetsRoute.CoinPicker.Mode.Withdraw)) },
+                onDialogWindow = onDialogWindow,
             )
             is AssetsRoute.AddressBook -> AddressBookScreen(
                 vm = vm,
