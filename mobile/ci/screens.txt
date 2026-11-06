@@ -107,6 +107,15 @@ copy-follows
 copy-follows-empty
 copy-become
 copy-become-error
+loan-market
+loan-quote
+loan-borrow-error
+loan-loans
+loan-loans-empty
+loan-closed
+loan-repay
+loan-collateral
+loan-error
 security-profile
 security-profile-error
 security-email

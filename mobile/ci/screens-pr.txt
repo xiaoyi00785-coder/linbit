@@ -25,6 +25,7 @@ home-bell light
 coupon-issued light
 partner-none light
 copy-list light
+loan-market light
 
 # 资产子页
 assets-overview light

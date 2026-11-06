@@ -308,7 +308,7 @@ enum HomeLink {
     private static let routes: [String: FeaturePage] = [
         "earn": .earn, "grid": .strategy, "strategy": .strategy, "swap": .swap, "convert": .swap,
         "chat": .chat, "reward": .welfare, "rewards": .welfare, "newcomer": .welfare, "welfare": .welfare,
-        "sub-account": .subAccounts, "partner": .partner, "affiliate": .partner, "copy": .copyTrading, "tradfi": .tradfi,
+        "sub-account": .subAccounts, "partner": .partner, "loans": .loans, "loan": .loans, "affiliate": .partner, "copy": .copyTrading, "tradfi": .tradfi,
     ]
     private static let webHosts: Set<String> = ["cowa.click", "www.cowa.click"]
 
@@ -347,7 +347,7 @@ struct HomeMoreSheet: View {
     private let items: [(String, String, FeaturePage?, String?)] = [
         ("arrow.left.arrow.right.circle", "闪兑", .swap, "convert"), ("chart.bar.xaxis", "策略交易", .strategy, nil),
         ("banknote", "理财", .earn, nil), ("bubble.left.and.bubble.right", "聊天室", .chat, "chat"),
-        ("person.2", "子账户", .subAccounts, "subAccounts"), ("gift", "福利中心", .welfare, nil), ("person.3.sequence", "合伙人", .partner, nil),
+        ("person.2", "子账户", .subAccounts, "subAccounts"), ("gift", "福利中心", .welfare, nil), ("person.3.sequence", "合伙人", .partner, nil), ("banknote", "质押借币", .loans, nil),
         ("doc.on.doc", "跟单", .copyTrading, "copyTrading"), ("building.columns", "TradFi", .tradfi, "tokenizedStocks"),
         ("clock.arrow.circlepath", "事件合约", nil, "eventContracts"), ("person.3", "P2P", nil, "p2p"),
         ("creditcard", "快捷买币", nil, "fiatOnRamp"), ("function", "期权", nil, "options")]
