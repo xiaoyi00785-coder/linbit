@@ -63,7 +63,8 @@ enum SecurityAPI {
     }
 }
 
-private extension String {
+extension String {
+    /// Path-segment percent-encoding shared by SecurityAPI / HomeAPI claim paths.
     var urlPath: String { addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? self }
 }
 
