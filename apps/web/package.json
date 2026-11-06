@@ -17,7 +17,8 @@
     "check:gw-proxy": "node --experimental-strip-types scripts/check-gw-proxy.mjs",
     "check:vip-apply": "node --experimental-strip-types scripts/check-vip-apply.mjs",
     "check:partner-url": "node --experimental-strip-types scripts/check-partner-url.mjs",
-    "check:no-demo": "sh ../../scripts/check-web-no-demo.sh"
+    "check:no-demo": "sh ../../scripts/check-web-no-demo.sh",
+    "check:i18n-attr": "node --experimental-strip-types --import ./scripts/ts-resolve-register.mjs scripts/check-i18n-attr-cache.mjs"
   },
   "dependencies": {
     "@linbit/api-client": "workspace:*",
