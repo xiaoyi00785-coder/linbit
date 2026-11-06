@@ -483,6 +483,22 @@ enum PaperTradingDemo {
         return s == "paper-reset" || s.hasSuffix(":reset") || s.contains("-reset")
     }
 
+    /// paper-place | paper-place-ok | paper-place-fail
+    static var openPlace: Bool {
+        guard let s = ShotGate.launchShot else { return false }
+        return s.hasPrefix("paper-place") || s.contains("-place")
+    }
+
+    static var placeForceFail: Bool {
+        guard let s = ShotGate.launchShot else { return false }
+        return s.contains("place-fail") || s.hasSuffix(":place-fail") || s.contains("place-error")
+    }
+
+    static var placeForceOk: Bool {
+        guard let s = ShotGate.launchShot else { return false }
+        return s.contains("place-ok") || s.hasSuffix(":place-ok") || s.contains("place-success")
+    }
+
     static var mockWriteLog: [(op: String, id: String)] = []
     static func resetMockLog() { mockWriteLog.removeAll() }
 
@@ -515,6 +531,10 @@ enum PaperTradingDemo {
         guard blocksRemoteWrites else { return nil }
         guard on else {
             throw APIFailure.server(status: 403, error: APIError(code: "SHOT_BLOCKED", message: "截图夹具不提交模拟订单"), retryAfter: nil)
+        }
+        if placeForceFail {
+            mockWriteLog.append((op: "place-fail", id: body.clientOrderId))
+            throw APIFailure.server(status: 503, error: APIError(code: "INDEX_UNAVAILABLE", message: "新鲜外部指数不可用"), retryAfter: nil)
         }
         var o = exampleOrder(side: body.side)
         o.clientOrderId = body.clientOrderId

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 模拟交易垂直切片：独立虚拟现货账户 / 余额 / 重置确认（买卖与历史下批）。
+/// 模拟交易垂直切片：独立虚拟现货账户 / 余额 / 重置 / 市价买卖（历史下批）。
 /// 契约：paper · spot · INDEX market-only；与合约真钱账户隔离；非完整合约模拟盘。
 struct PaperTradingView: View {
     @Environment(\.palette) private var p
@@ -8,6 +8,8 @@ struct PaperTradingView: View {
     @ObservedObject private var flags = AppFeatures.shared
     @StateObject private var model = PaperTradingSession()
     @State private var showReset = false
+    @State private var showPlace = false
+    @State private var placeSide = "buy"
     /// Feature 壳返回；合约 Tab 内嵌时为 nil
     var onBack: (() -> Void)? = nil
 
@@ -41,6 +43,7 @@ struct PaperTradingView: View {
         .task {
             await reloadAll()
             if PaperTradingDemo.openReset { showReset = true }
+            if PaperTradingDemo.openPlace { showPlace = true }
         }
         .onChange(of: session.isLoggedIn) { _ in
             model.invalidate()
@@ -49,6 +52,12 @@ struct PaperTradingView: View {
         .lbSheet($showReset) {
             PaperResetSheet(session: model) { ok in
                 showReset = false
+                if ok { Task { await reloadAll() } }
+            }
+        }
+        .lbSheet($showPlace) {
+            PaperPlaceSheet(session: model, initialSide: placeSide) { ok in
+                showPlace = false
                 if ok { Task { await reloadAll() } }
             }
         }
@@ -125,7 +134,18 @@ struct PaperTradingView: View {
                     accountSection
                     balancesSection
 
-                    Text("买卖下单与成交历史将在下一批接入；本页仅账户 / 余额 / 重置。DEBUG 截图夹具不写生产。")
+                    HStack(spacing: 10) {
+                        LBButton(title: "模拟买入", kind: .buy, enabled: !model.isRateLimited) {
+                            placeSide = "buy"; showPlace = true
+                        }
+                        LBButton(title: "模拟卖出", kind: .sell, enabled: !model.isRateLimited) {
+                            placeSide = "sell"; showPlace = true
+                        }
+                    }
+                    .padding(.horizontal, Spacing.pageH)
+                    .padding(.top, 8)
+
+                    Text("成交历史下一批接入。DEBUG 截图夹具仅 mock，不写生产 / 不走真钱下单。")
                         .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
                         .padding(.horizontal, Spacing.pageH)
                         .padding(.bottom, 28)
@@ -178,6 +198,7 @@ struct PaperTradingView: View {
         case let .loaded(pg) where pg.items.isEmpty:
             EmptyStateView(text: "暂无虚拟余额")
                 .padding(.vertical, 16)
+            // 仍允许下单入口（账户可能有 quote）；具体余额由服务端校验
         case let .loaded(pg):
             LazyVStack(spacing: 0) {
                 ForEach(pg.items) { b in

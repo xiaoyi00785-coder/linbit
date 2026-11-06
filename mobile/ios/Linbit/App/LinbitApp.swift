@@ -164,7 +164,7 @@ struct RootTabView: View {
         case "kyc-error": SecShot.raw = "kyc:error"; router.feature = .kyc
         case "price-alerts", "price-alerts-empty", "price-alerts-error", "price-alerts-disabled", "price-alerts-create", "price-alerts-edit", "price-alerts-delete":
             router.feature = .priceAlerts
-        case "paper", "paper-empty", "paper-error", "paper-disabled", "paper-reset":
+        case "paper", "paper-empty", "paper-error", "paper-disabled", "paper-reset", "paper-place", "paper-place-ok", "paper-place-fail":
             router.tab = .futures
             router.futuresTop = 3
             router.feature = .paperTrading

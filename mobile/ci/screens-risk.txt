@@ -44,3 +44,6 @@ paper-empty light
 paper-error light
 paper-disabled light
 paper-reset light
+paper-place light
+paper-place-ok light
+paper-place-fail light
