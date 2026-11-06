@@ -302,8 +302,22 @@ ac = read('mobile/ios/Linbit/Features/Home/AcademyHomeSection.swift')
 ok('linbit 学院' in ac and '合约指南' in ac and 'AcademyHomeSection()' in read('mobile/ios/Linbit/Features/Home/HomeView.swift'), 'home 学院目录 from pagedata')
 ok('学院即将上线' not in read('mobile/ios/Linbit/Features/Home/HomeView.swift'), 'academy placeholder removed')
 
+
+# ---------- 7) Dynamic type cap + fixed-frame mitigations (source) ----------
+theme = read('mobile/ios/Linbit/DesignSystem/Theme.swift')
+ok('dynamicCap: CGFloat = 1.35' in theme, 'UIFontMetrics cap remains 1.35 (not expanded)')
+comp = read('mobile/ios/Linbit/DesignSystem/Components.swift')
+ok('frame(minHeight: Metrics.chipH)' in comp, 'ChipBar uses minHeight not fixed height')
+ok('frame(minHeight: Metrics.tabBarH)' in comp, 'FloatingTabBar outer minHeight')
+home = read('mobile/ios/Linbit/Features/Home/HomeView.swift')
+ok('frame(minHeight: 14)' in home or 'minHeight: 14' in home, 'home grid label minHeight')
+ok('ScrollView(.horizontal' in home and '涨幅榜' in home, 'home rank tabs horizontally scrollable')
+spot = read('mobile/ios/Linbit/Features/Spot/SpotTradeView.swift')
+ok('ScrollView(.horizontal' in spot.split('private var topBar')[1].split('private var pairHeader')[0], 'spot top tabs scrollable')
+
 if failures:
     print('FAIL', len(failures))
     for f in failures: print(' -', f)
     sys.exit(1)
 print('ALL PASSED (Python simulation ≠ Swift XCTest; no real fund/reward network)')
+

@@ -32,11 +32,21 @@
 | Auth.passkey | 通行密钥登录 | login-* 有入口 | ref2/3 | 本地接线待 push |
 | Auth.apple/google | 社交登录 | login-* |  | 无 OAuth 契约 |
 
-## screens 分母
-- screens.txt：167 张图 / 155 screen 键
-- screens-pr：28 张图 / 28 screen 键（含充提/客服详情扩展）
-- 显式 shot case：141；support-* 走前缀
-- screens.txt 中无独立 case、靠前缀/默认：support-*、home（默认 tab）、splash-*
+## screens 分母（务必分开，勿混用）
+
+| 分母 | 当前值 | 含义 |
+|---|---|---|
+| screens.txt **行** | **172** | 配置行条目（含同 key 重复行） |
+| screens.txt **unique keys** | **160** | 去重后的 screen 键；其中重复 key 12 个：futures-algo-amend-plan, futures-algo-amend-tpsl, futures-amend, futures-kind, futures-leverage, futures-mode, futures-mode-hedge, futures-orders-plan, futures-orders-tpsl, futures-tools, futures-tpsl, futures-tpsl-partial |
+| screens.txt **展开张数估计** | **313** | 按行主题列：`both`→2，`light`/`dark`→1（CI 实际还可能再滤） |
+| screens-pr **行/键** | **33 / 33** | PR 冒烟清单 |
+| screens-pr **展开张数估计** | **36** | |
+| screens-adapt **行** | **8** | 手动 adapt 清单 |
+| adapt **已下载 PNG** | **5**（750×1334 / **仅 375pt**） | 缺清单内 deposit/withdraw/support-detail；见 `2026-11-05-adapt-device-evidence.md` |
+| PR 冒烟已下载 PNG（tip 2300fb6） | **28**（1179×2556） | 单机型非 xxxl，**不能**当多宽度适配 |
+
+历史口头「167 行 / 155 键」为加 `futures-guide` 等之前；**以本表当前值为准**。
+
 
 ## 断链 / ComingSoon / 假 Toast（契约结论）
 | 入口 | 现状 | OpenAPI | 处理 |
@@ -129,3 +139,23 @@
 - 新人 task.status 严格 OpenAPI：`locked|in_progress|claimable|claimed|expired`，**仅 claimable 可领**（不再用 completed/done）。
 - 首页「学院」：`AcademyHomeSection` 展示 pagedata「linbit 学院」分类目录；合约细则标「合约指南」，不伪称完整学院。
 - 现货：无独立现货指南页（无同源独立 DOCS）；仅学院新手入门收录「现货与合约区别」摘要。
+
+## 设计 ref ↔ screen 键（已存在对照）
+
+| screen 键 | 设计 ref | screens-pr | 视觉证据状态 |
+|---|---|---|---|
+| home | ref/1.jpg | 有（2300fb6 home-light/dark） | 已 Read：品牌绿体验金额、悬浮底栏、宫格；**非 tip 6e96d41/330c552** |
+| login | ref2/3.jpg | 有 | adapt xxxl 有；配色黑主按钮 |
+| futures | ref/11.jpg | 有 | adapt+pr 有；行情区域限制横幅属环境 |
+| spot | ref/28.jpg | 有 | adapt+pr 有；盘口区域限制遮罩属环境 |
+| assets | （资产总览对照） | 有 | adapt 未登录空态居中 OK；顶 Tab「策略」右裁属横滑预期 |
+| password-register | ref2 注册 | 有 | adapt xxxl 有 |
+| theme / 设置 | ref/14.jpg | 未入 pr 必拍 | screens.txt 有 security 等 |
+
+` /workspace/ref ` 共 **49** 张（1–49.jpg）；多数交易弹层/历史对照未一一写入 screens-pr。
+
+## screens-pr 未覆盖的 unique keys（129）
+
+account-switch, assets-account-transfer, assets-address-book, assets-internal-transfer, assets-withdraw-records, chat, copy-become, copy-become-error, copy-detail, copy-empty, copy-error, copy-follow, copy-follow-error, copy-follows, copy-follows-empty, coupon-active, coupon-confirm, coupon-empty, coupon-error, coupon-expired, coupon-fail, earn-subscribe, event, event-confirm, futures-algo-amend-plan, futures-algo-amend-tpsl, futures-algo-history, futures-amend, futures-funding, futures-history, futures-kind, futures-liq, futures-mode, futures-mode-hedge, futures-orders-plan, futures-orders-tpsl, futures-plan, futures-pnl, futures-pnl-empty, futures-pnl-error, futures-position-history, futures-tiers, futures-tools, futures-tpsl-partial, grid-confirm, grid-create, home-avatar, kyc-approved, kyc-error, kyc-form, kyc-form2, kyc-form2-full, kyc-pending, kyc-rejected, loan-borrow-error, loan-closed, loan-collateral, loan-error, loan-loans, loan-loans-empty, loan-quote, loan-repay, notif-empty, notif-error, notif-settings, notif-settings-error, partner-active, partner-apply, partner-apply-error, partner-empty, partner-error, partner-pending, partner-rejected, partner-team, password-change, password-reset, security-2fa-disable, security-2fa-disable-error, security-antiphishing, security-antiphishing-error, security-avatar, security-avatar-crop, security-avatar-error, security-avatar-uploading, security-devices, security-devices-empty, security-devices-error, security-email, security-email-error, security-error, security-fund, security-fund-error, security-fund-reset, security-passkeys, security-passkeys-add, security-passkeys-empty, security-phone, security-profile, security-profile-error, security-sessions, splash-end, splash-mid, splash-start, spot-fee, spot-history-amount, spot-history-conditional, spot-market-amount, spot-plan, strategy, sub-create, subaccounts, support-create, support-create-error, support-create-ratelimit, support-detail-closed, support-detail-conflict, support-detail-error, support-detail-ratelimit, support-detail-replied, support-list-empty, support-list-error, swap-picker, tradfi-disabled, tradfi-empty, tradfi-error, tradfi-metal, tradfi-restricted, tradfi-unavailable, welfare
+
+（完整键仍在 screens.txt / 需 workflow_dispatch 全量或补 pr 清单后才有 CI 视觉。）

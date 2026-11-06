@@ -74,12 +74,13 @@ struct SpotTradeView: View {
 
     // 一级 Tab：现货 / 策略 / 理财 / 闪兑
     private var topBar: some View {
-        HStack {
+        ScrollView(.horizontal, showsIndicators: false) {
             PrimaryTabs(items: ["现货", "策略", "理财", "闪兑"], selected: Binding(get: { topTab }, set: { i in
                 if i == 0 { topTab = 0 } else { Haptics.tap(); Router.shared.openFeature([FeaturePage.strategy, .strategy, .earn, .swap][i]) }
             }))
-            Spacer()
-        }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+            .padding(.horizontal, Spacing.pageH)
+        }
+        .frame(minHeight: 44)
     }
 
     private var pairHeader: some View {

@@ -115,7 +115,7 @@ struct HomeView: View {
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); Router.shared.openFeature(.welfare) }
         .padding(.horizontal, 12)
-        .frame(height: Metrics.taskCardH)
+        .frame(minHeight: Metrics.taskCardH)
         .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border, lineWidth: 1))
         .padding(.horizontal, Spacing.pageH)
     }
@@ -136,7 +136,7 @@ struct HomeView: View {
             IconView(icon: .gGift, size: 40)
         }
         .padding(.horizontal, 14)
-        .frame(height: Metrics.bannerH)
+        .frame(minHeight: Metrics.bannerH)
         .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); HomeLink.open(vm.promo?.linkUrl, fallback: .welfare) }
@@ -154,7 +154,7 @@ struct HomeView: View {
                     IconView(icon: icon, size: Metrics.gridIconGlyph)
                         .frame(width: Metrics.gridIcon, height: Metrics.gridIcon)
                         .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.iconTileBg))
-                    Text(title).font(.lb(11)).foregroundColor(p.textPrimary).frame(height: 14)
+                    Text(title).font(.lb(11)).foregroundColor(p.textPrimary).lineLimit(1).minimumScaleFactor(0.8).frame(minHeight: 14)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { Haptics.tap(); gridTap(title) }
@@ -191,20 +191,20 @@ struct HomeView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(currentBanner == nil ? "数字资产 · 全球消费" : (currentBanner?.subtitle ?? ""))
-                    .font(.lb(12)).foregroundColor(p.textSecondary).lineLimit(1).frame(height: 17, alignment: .leading)
+                    .font(.lb(12)).foregroundColor(p.textSecondary).lineLimit(1).minimumScaleFactor(0.85).frame(minHeight: 17, alignment: .leading)
                 Text(currentBanner?.title ?? "Linbit Card").font(.lb(14, .medium)).foregroundColor(p.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.85).frame(height: 17, alignment: .leading).padding(.top, 5.5)
+                    .lineLimit(1).minimumScaleFactor(0.85).frame(minHeight: 17, alignment: .leading).padding(.top, 5.5)
                 HStack(spacing: 6) {
                     Text("查看详情").font(.lb(12)).foregroundColor(p.textPrimary)
                     IconView(icon: .arrowRight, size: 16, tint: p.textPrimary)
                 }
-                .frame(height: 17, alignment: .leading).padding(.top, 39.5)
+                .frame(minHeight: 17, alignment: .leading).padding(.top, 39.5)
             }
             .padding(.top, 20)
             Spacer(minLength: 8)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: 138)
+        .frame(minHeight: 138)
         .overlay(alignment: .bottomTrailing) { pager(bannerPage + 1, max(vm.banners.count, 1)).padding(.trailing, 23).padding(.bottom, 4) }
         .contentShape(Rectangle())
         .onTapGesture { HomeLink.open(currentBanner?.link, fallback: nil) }
@@ -250,7 +250,7 @@ struct HomeView: View {
                 if let e = vm.earn[safe: earnPage] { CoinIcon(base: e.asset ?? "USDT", size: 18) }
             }
             .frame(height: 18)
-            Text(earnLine).font(.lb(FontSize.body)).foregroundColor(p.textPrimary).lineLimit(1).frame(height: 18, alignment: .leading)
+            Text(earnLine).font(.lb(FontSize.body)).foregroundColor(p.textPrimary).lineLimit(1).minimumScaleFactor(0.85).frame(minHeight: 18, alignment: .leading)
         }
         .padding(.top, 24).padding(.leading, Spacing.pageH)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -272,8 +272,11 @@ struct HomeView: View {
     private var ranking: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 对照图 #2：分隔线到 Tab 文字顶 23pt；Tab 间距 18pt、选中项下 16×3 横线；横线到筛选块 19pt
-            PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16, underline: true, spacing: 17)
-                .padding(.horizontal, Spacing.pageH).padding(.top, 20)
+            ScrollView(.horizontal, showsIndicators: false) {
+                PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16, underline: true, spacing: 17)
+                    .padding(.horizontal, Spacing.pageH)
+            }
+            .padding(.top, 20)
             ChipBar(items: ["现货", "合约"], selected: $rankKind).padding(.top, 19).padding(.bottom, 12)
             HStack {
                 Text("交易对"); Spacer(); Text("最新价")
