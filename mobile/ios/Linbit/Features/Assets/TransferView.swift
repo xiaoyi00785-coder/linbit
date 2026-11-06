@@ -54,8 +54,10 @@ struct TransferView: View {
                         .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(error != nil ? p.down : focus ? p.textPrimary : .clear))
                     if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
                     HStack { Text("可用").foregroundColor(p.textSecondary); Spacer(); Text("\(Fmt.amount(avail, 2)) USDT").foregroundColor(p.textPrimary) }.font(.lbNum(FontSize.small))
-                }.padding(.horizontal, Spacing.pageH).padding(.top, 8)
+                }.padding(.horizontal, Spacing.pageH).padding(.top, 8).padding(.bottom, 16)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .lbKeyboardDone(focus: $focus)
             LBButton(title: "确认划转", enabled: value > 0 && error == nil, loading: submitting) { Task { await submit() } }
                 .padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
         }

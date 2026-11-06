@@ -284,9 +284,10 @@ struct NumberBox: View {
             }
             Text(unit).font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
         }
-        .padding(.horizontal, 10).frame(height: 44)
+        .padding(.horizontal, 10).frame(minHeight: 44)
         .background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
         .overlay(RoundedRectangle(cornerRadius: Radius.sm).stroke(f ? p.textPrimary : .clear))
+        .lbKeyboardDone(focus: $f)
     }
 }
 

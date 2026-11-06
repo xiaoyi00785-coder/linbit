@@ -96,8 +96,9 @@ struct LoginAccountView: View {
                     }
                     Button("创建账户", action: switchTo).font(.lb(FontSize.label, .medium)).foregroundColor(p.brand).padding(.top, 20)
                 }
-                .padding(.horizontal, Spacing.pageH)
+                .padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .background(p.bg.ignoresSafeArea())
         .onChange(of: m.raw) { _ in error = nil }
@@ -192,6 +193,7 @@ struct VerifyView: View {
     var body: some View {
         VStack(spacing: 0) {
             AuthTopBar(isRoot: false) { path.removeLast() }
+            ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 AuthHeader(title: title, subtitle: subtitle)
                 FieldLabel(text: "验证码").padding(.bottom, 8)
@@ -206,9 +208,11 @@ struct VerifyView: View {
                             .font(.lb(FontSize.label)).foregroundColor(p.brand)
                     }
                 }.padding(.top, 20)
-                Spacer()
             }
             .padding(.horizontal, Spacing.pageH)
+            .padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.interactively)
         }
         .background(p.bg.ignoresSafeArea())
         .onChange(of: m.code) { c in error = false; if c.count == 6 && !m.loading { Task { await submit() } } }
@@ -302,8 +306,9 @@ struct RegisterView: View {
                     Button("已有账户，立即登录", action: switchTo).font(.lb(FontSize.label, .medium)).foregroundColor(p.brand)
                         .frame(maxWidth: .infinity).padding(.top, 20)
                 }
-                .padding(.horizontal, Spacing.pageH)
+                .padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .background(p.bg.ignoresSafeArea())
         .onChange(of: m.raw) { _ in error = nil }
@@ -343,7 +348,7 @@ struct SetPasswordView: View {
     @ObservedObject var m: AuthModel
     @Binding var path: [AuthFlow.Step]
     let mode: Mode
-    @State private var pwd = Router.shared.shotSheet == "pwdShotBad" ? "linbitpass" : (Router.shared.shotSheet == "pwdShotGood" ? "linbit2026" : "")
+    @State private var pwd = ShotGate.enabled && Router.shared.shotSheet == "pwdShotBad" ? "linbitpass" : (ShotGate.enabled && Router.shared.shotSheet == "pwdShotGood" ? "linbit2026" : "")
     @State private var pwd2 = ""
     @State private var error: String?
 
@@ -353,26 +358,28 @@ struct SetPasswordView: View {
     var body: some View {
         VStack(spacing: 0) {
             AuthTopBar(isRoot: false) { path.removeLast() }
-            VStack(alignment: .leading, spacing: 0) {
-                AuthHeader(title: mode == .register ? "设置密码" : "重置密码",
-                           subtitle: Text(mode == .register ? m.id.masked : "为保障资金安全，重置密码后 24 小时内禁止提现。"))
-                FieldLabel(text: "密码").padding(.bottom, 8)
-                LBTextField(placeholder: "8-64 位，含字母和数字", text: $pwd, secure: true, error: PasswordRule.hint(pwd))
-                HStack(spacing: 14) {
-                    ForEach(rules, id: \.0) { r in
-                        HStack(spacing: 4) {
-                            Image(systemName: r.1 ? "checkmark.circle.fill" : "circle").font(.system(size: 11))
-                            Text(r.0).font(.lb(FontSize.small))
-                        }.foregroundColor(r.1 ? p.up : p.textTertiary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    AuthHeader(title: mode == .register ? "设置密码" : "重置密码",
+                               subtitle: Text(mode == .register ? m.id.masked : "为保障资金安全，重置密码后 24 小时内禁止提现。"))
+                    FieldLabel(text: "密码").padding(.bottom, 8)
+                    LBTextField(placeholder: "8-64 位，含字母和数字", text: $pwd, secure: true, error: PasswordRule.hint(pwd))
+                    HStack(spacing: 14) {
+                        ForEach(rules, id: \.0) { r in
+                            HStack(spacing: 4) {
+                                Image(systemName: r.1 ? "checkmark.circle.fill" : "circle").font(.system(size: 11))
+                                Text(r.0).font(.lb(FontSize.small))
+                            }.foregroundColor(r.1 ? p.up : p.textTertiary)
+                        }
+                    }.padding(.top, 8)
+                    if case .reset = mode {
+                        FieldLabel(text: "确认密码").padding(.top, 20).padding(.bottom, 8)
+                        LBTextField(placeholder: "再次输入密码", text: $pwd2, secure: true, error: error)
                     }
-                }.padding(.top, 8)
-                if case .reset = mode {
-                    FieldLabel(text: "确认密码").padding(.top, 20).padding(.bottom, 8)
-                    LBTextField(placeholder: "再次输入密码", text: $pwd2, secure: true, error: error)
-                }
-                LBButton(title: "确认", enabled: PasswordRule.ok(pwd), loading: m.loading) { Task { await submit() } }.padding(.top, 28)
-                Spacer()
-            }.padding(.horizontal, Spacing.pageH)
+                    LBButton(title: "确认", enabled: PasswordRule.ok(pwd), loading: m.loading) { Task { await submit() } }.padding(.top, 28)
+                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.interactively)
         }
         .background(p.bg.ignoresSafeArea())
     }
@@ -409,20 +416,22 @@ struct ForgotAccountView: View {
     var body: some View {
         VStack(spacing: 0) {
             AuthTopBar(isRoot: false) { path.removeLast() }
-            VStack(alignment: .leading, spacing: 0) {
-                AuthHeader(title: "重置密码", subtitle: Text("为保障资金安全，重置密码后 24 小时内禁止提现。"))
-                FieldLabel(text: "邮箱/手机号码").padding(.bottom, 8)
-                AccountField(id: $m.id, raw: $m.raw, error: error)
-                LBButton(title: "下一步", enabled: !m.raw.isEmpty, loading: m.loading) {
-                    Task {
-                        guard m.id.isValid else { error = "请输入正确的邮箱/手机号"; return }
-                        m.loading = true; defer { m.loading = false }
-                        do { try await AuthAPI.sendCode(m.id, purpose: .resetPassword); m.code = ""; path.append(.forgotCode) }
-                        catch { ToastCenter.shared.error(error) }
-                    }
-                }.padding(.top, 28)
-                Spacer()
-            }.padding(.horizontal, Spacing.pageH)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    AuthHeader(title: "重置密码", subtitle: Text("为保障资金安全，重置密码后 24 小时内禁止提现。"))
+                    FieldLabel(text: "邮箱/手机号码").padding(.bottom, 8)
+                    AccountField(id: $m.id, raw: $m.raw, error: error)
+                    LBButton(title: "下一步", enabled: !m.raw.isEmpty, loading: m.loading) {
+                        Task {
+                            guard m.id.isValid else { error = "请输入正确的邮箱/手机号"; return }
+                            m.loading = true; defer { m.loading = false }
+                            do { try await AuthAPI.sendCode(m.id, purpose: .resetPassword); m.code = ""; path.append(.forgotCode) }
+                            catch { ToastCenter.shared.error(error) }
+                        }
+                    }.padding(.top, 28)
+                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.interactively)
         }
         .background(p.bg.ignoresSafeArea())
     }

@@ -1,0 +1,9 @@
+# iOS 布局适配冒烟截图（仅 workflow_dispatch + adapt_layout=true）。
+# 不跑完整 screens.txt，控制 CI 资源。格式同 screens-pr.txt。
+# 配合模拟器 Content Size / 小屏设备验证动态字体与安全区。
+
+login light
+password-register light
+spot light
+futures light
+assets light

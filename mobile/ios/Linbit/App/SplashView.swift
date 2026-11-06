@@ -154,10 +154,11 @@ struct SplashView: View {
 /// 冷启动播放一次；进入后台再回前台不重复（状态挂在 App 生命周期内的 StateObject 上）。
 final class SplashState: ObservableObject {
     @Published var done = false
-    /// CI：lb.shot = splash-start / splash-mid / splash-end 时冻结
+    /// CI：lb.shot = splash-start / splash-mid / splash-end 时冻结（仅 Debug / ShotGate）
     /// start = 链环刚开始滑入（仍分开），mid = 即将扣合，end = 扣合完成、开始淡出
     let frozen: Double? = {
-        switch UserDefaults.standard.string(forKey: "lb.shot") {
+        guard ShotGate.enabled else { return nil }
+        switch ShotGate.launchShot {
         case "splash-start": return 0.28
         case "splash-mid": return 0.5
         case "splash-end": return 0.88

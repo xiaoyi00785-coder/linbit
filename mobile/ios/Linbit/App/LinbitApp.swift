@@ -64,7 +64,11 @@ struct RootTabView: View {
         }
         .background(p.bg.ignoresSafeArea())
         .overlay(alignment: .top) { ToastOverlay() }
-        .onAppear { applyScreenshotRoute() }
+        .onAppear {
+            #if DEBUG
+            applyScreenshotRoute()
+            #endif
+        }
         .task { await AppFeatures.shared.refresh(); await Watchlist.shared.sync() }
         .fullScreenCover(item: $router.feature) { page in
             ThemedRoot { FeatureHost(page: page) }
@@ -79,9 +83,10 @@ struct RootTabView: View {
         }
     }
 
-    /// CI 截图用：仅当模拟器写入 lb.shot 时切换页面，正常启动不改变界面。
+    /// CI 截图用：仅 Debug + 模拟器写入 lb.shot 时切换页面。Release 整段剥离，无法经 defaults/启动参数进入演示。
+    #if DEBUG
     private func applyScreenshotRoute() {
-        guard let shot = UserDefaults.standard.string(forKey: "lb.shot"), !shot.isEmpty else { return }
+        guard ShotGate.enabled, let shot = ShotGate.launchShot else { return }
         switch shot {
         case "markets": router.tab = .markets
         case "spot": router.tab = .spot
@@ -228,4 +233,5 @@ struct RootTabView: View {
             router.tab = .home
         }
     }
+    #endif
 }
