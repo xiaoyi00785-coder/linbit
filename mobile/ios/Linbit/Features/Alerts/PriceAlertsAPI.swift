@@ -103,7 +103,8 @@ enum PriceAlertsFeature {
 
     /// 409 幂等/revision 冲突（OpenAPI PaperConflict）
     static func isConflictFailure(_ error: Error) -> Bool {
-        (error as? APIFailure)?.status == 409
+        guard let f = error as? APIFailure, f.status == 409 else { return false }
+        return f.code != "SESSION_STALE" // 会话隔离用同 status，不算 revision 冲突
     }
 
     static func isNotFoundFailure(_ error: Error) -> Bool {
@@ -176,10 +177,15 @@ final class PriceAlertsSession: ObservableObject {
         return max(0, Int(t.timeIntervalSinceNow.rounded(.up)))
     }
 
+    /// 与 reloadSeq 同步递增：切账号/登出时丢弃进行中的写成功回调，避免旧会话结果落地
+    private var writeGen: UInt64 = 0
+
     func invalidate() {
         reloadSeq &+= 1
+        writeGen &+= 1
         page = .idle
         featureDisabled = false
+        rateLimitUntil = nil // 限流按账户；切会话不沿用上一用户窗口
     }
 
     private var listSymbol: String?
@@ -267,12 +273,18 @@ final class PriceAlertsSession: ObservableObject {
 
     /// 写入口：Release / 无 shot → 正式 API；DEBUG+lb.shot → 本地 mock 或 SHOT_BLOCKED（永不远端写）。
     func createForTestOrUI(_ body: CreatePriceAlertRequest) async throws -> PriceAlert {
-        if let mocked = try PriceAlertDemo.interceptCreate(body) { return mocked }
+        let gen = writeGen
+        if let mocked = try PriceAlertDemo.interceptCreate(body) {
+            guard gen == writeGen else { throw Self.staleWriteError }
+            return mocked
+        }
         if isRateLimited {
             throw APIFailure.server(status: 429, error: APIError(code: "RATE_LIMITED", message: "价格预警写操作过于频繁，请稍后再试"), retryAfter: rateLimitRemainingSec)
         }
         do {
-            return try await PriceAlertsAPI.create(body)
+            let r = try await PriceAlertsAPI.create(body)
+            guard gen == writeGen else { throw Self.staleWriteError }
+            return r
         } catch {
             applyRateLimit(from: error)
             throw error
@@ -280,12 +292,18 @@ final class PriceAlertsSession: ObservableObject {
     }
 
     func updateForTestOrUI(alertId: String, _ body: UpdatePriceAlertRequest) async throws -> PriceAlert {
-        if let mocked = try PriceAlertDemo.interceptUpdate(alertId: alertId, body) { return mocked }
+        let gen = writeGen
+        if let mocked = try PriceAlertDemo.interceptUpdate(alertId: alertId, body) {
+            guard gen == writeGen else { throw Self.staleWriteError }
+            return mocked
+        }
         if isRateLimited {
             throw APIFailure.server(status: 429, error: APIError(code: "RATE_LIMITED", message: "价格预警写操作过于频繁，请稍后再试"), retryAfter: rateLimitRemainingSec)
         }
         do {
-            return try await PriceAlertsAPI.update(alertId: alertId, body)
+            let r = try await PriceAlertsAPI.update(alertId: alertId, body)
+            guard gen == writeGen else { throw Self.staleWriteError }
+            return r
         } catch {
             applyRateLimit(from: error)
             throw error
@@ -293,16 +311,25 @@ final class PriceAlertsSession: ObservableObject {
     }
 
     func deleteForTestOrUI(alertId: String, revision: Int64?) async throws {
-        if try PriceAlertDemo.interceptDelete(alertId: alertId, revision: revision) { return }
+        let gen = writeGen
+        if try PriceAlertDemo.interceptDelete(alertId: alertId, revision: revision) {
+            guard gen == writeGen else { throw Self.staleWriteError }
+            return
+        }
         if isRateLimited {
             throw APIFailure.server(status: 429, error: APIError(code: "RATE_LIMITED", message: "价格预警写操作过于频繁，请稍后再试"), retryAfter: rateLimitRemainingSec)
         }
         do {
             try await PriceAlertsAPI.delete(alertId: alertId, revision: revision)
+            guard gen == writeGen else { throw Self.staleWriteError }
         } catch {
             applyRateLimit(from: error)
             throw error
         }
+    }
+
+    private static var staleWriteError: APIFailure {
+        .server(status: 409, error: APIError(code: "SESSION_STALE", message: "登录状态已变更，未应用本次修改"), retryAfter: nil)
     }
 
     private func applyRateLimit(from error: Error) {

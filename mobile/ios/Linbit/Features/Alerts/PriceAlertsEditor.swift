@@ -167,7 +167,7 @@ struct PriceAlertEditorSheet: View {
                     .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
                 HStack(spacing: 10) {
                     LBButton(title: "返回修改", kind: .secondary, enabled: !busy) { showConfirm = false }
-                    LBButton(title: "确认提交", enabled: !busy, loading: busy) { Task { await submit() } }
+                    LBButton(title: "确认提交", enabled: !busy && !session.isRateLimited, loading: busy) { Task { await submit() } }
                 }
             }
             .padding(.horizontal, Spacing.pageH)
@@ -197,6 +197,11 @@ struct PriceAlertEditorSheet: View {
     @MainActor
     private func submit() async {
         guard !busy else { return }
+        guard !session.isRateLimited else {
+            formError = "操作过于频繁，请 \(session.rateLimitRemainingSec) 秒后再试"
+            showConfirm = false
+            return
+        }
         guard thresholdValid, symbolValid else {
             formError = "请填写有效交易对与正数触发价"
             showConfirm = false
@@ -237,10 +242,22 @@ struct PriceAlertEditorSheet: View {
             onDone(true)
         } catch {
             showConfirm = false // 关确认层，保留编辑表单
-            if PriceAlertsFeature.isConflictFailure(error) {
+            if (error as? APIFailure)?.code == "SESSION_STALE" {
+                // 须先于 isConflictFailure：SESSION_STALE 也用了 status 409
+                formError = "登录状态已变更，未应用本次修改"
+                ToastCenter.shared.show(formError ?? "", .error)
+                onDone(false)
+            } else if PriceAlertsFeature.isConflictFailure(error) {
                 formError = ErrorText.map["REVISION_CONFLICT"] ?? "数据已变更，请刷新后重试"
                 ToastCenter.shared.show(formError ?? "", .error)
-                await session.reload() // revision 冲突刷新
+                await session.reload() // revision 冲突刷新列表
+                // 失败保留编辑：若同 alert 仍在列表，抬升本地 revision，避免用旧锁连撞
+                if isEdit, case let .loaded(pg) = session.page,
+                   let fresh = pg.items.first(where: { $0.alertId == alertId }) {
+                    revision = fresh.revision
+                    enabled = fresh.enabled
+                    if threshold.isEmpty { threshold = fresh.threshold }
+                }
             } else if let f = error as? APIFailure, f.status == 429 {
                 formError = "操作过于频繁，请 \(session.rateLimitRemainingSec) 秒后再试"
                 ToastCenter.shared.show(formError ?? "", .error)
@@ -291,6 +308,10 @@ struct PriceAlertDeleteSheet: View {
     @MainActor
     private func del() async {
         guard !busy else { return }
+        guard !session.isRateLimited else {
+            err = "操作过于频繁，请 \(session.rateLimitRemainingSec) 秒后再试"
+            return
+        }
         busy = true
         defer { busy = false }
         do {
@@ -298,7 +319,12 @@ struct PriceAlertDeleteSheet: View {
             ToastCenter.shared.show("已删除", .success)
             onDone(true)
         } catch {
-            if PriceAlertsFeature.isConflictFailure(error) {
+            if (error as? APIFailure)?.code == "SESSION_STALE" {
+                err = "登录状态已变更，未应用本次删除"
+                ToastCenter.shared.show(err ?? "", .error)
+                onDone(false)
+                return
+            } else if PriceAlertsFeature.isConflictFailure(error) {
                 err = ErrorText.map["REVISION_CONFLICT"] ?? "数据已变更，请刷新后重试"
                 await session.reload()
             } else if let f = error as? APIFailure, f.status == 429 {

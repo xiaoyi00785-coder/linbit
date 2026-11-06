@@ -135,7 +135,12 @@ struct PriceAlertsListView: View {
             case .idle, .loading:
                 Spacer(); ProgressView(); Spacer()
             case let .failed(m):
+                // 429：横幅已提示 Retry-After；重试闭包在点击时再读 isRateLimited（无 Timer）
                 ErrorStateView(message: m) {
+                    guard !model.isRateLimited else {
+                        ToastCenter.shared.show("请 \(model.rateLimitRemainingSec) 秒后再试", .error)
+                        return
+                    }
                     Task { await model.reload() }
                 }
             case let .loaded(pg) where pg.items.isEmpty:
