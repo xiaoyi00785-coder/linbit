@@ -1785,6 +1785,25 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/GrowthConfig" }
+  /site/social:
+    get:
+      tags: [Admin]
+      summary: 公开社区链接（未配置为 ""，仅返回合法 HTTPS URL）
+      description: 匿名只读；网关仅转发此精确路径的 GET/HEAD。响应允许公共短缓存（30 秒）。不返回操作人、原因或历史记录。
+      operationId: getSiteSocial
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [links]
+                properties:
+                  links: { $ref: "#/components/schemas/SocialLinks" }
+              example:
+                links: { x: "https://x.com/linbit", telegram: "", facebook: "", discord: "", instagram: "", youtube: "", tiktok: "", reddit: "", medium: "" }
   /market/symbols:
     get:
       tags: [Market]
@@ -6153,6 +6172,65 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /admin/v1/site/social:
+    get:
+      tags: [Admin]
+      summary: 社区链接（需 content:edit；含空渠道）
+      operationId: adminGetSiteSocial
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [links]
+                properties:
+                  links: { $ref: "#/components/schemas/SocialLinks" }
+                  updatedAt: { type: string, format: date-time, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    put:
+      tags: [Admin]
+      summary: 部分更新社区链接（content:edit + 2FA + 原因 + 完整前后值审计）
+      description: 仅接受九种渠道的合法 http(s) 绝对 URL（最长 2048 字符，不含用户信息）；空字符串清除，未提交渠道保持不变。公开端点只暴露 HTTPS 链接。
+      operationId: adminUpdateSiteSocial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: "#/components/schemas/AdminWriteMeta" }
+                - type: object
+                  required: [links]
+                  properties:
+                    links:
+                      type: object
+                      minProperties: 1
+                      description: 部分更新；仅允许 x/telegram/facebook/discord/instagram/youtube/tiktok/reddit/medium。
+                      additionalProperties:
+                        type: string
+                        pattern: "^(https?://.*)?$"
+                        maxLength: 2048
+                        examples: ["https://t.me/linbit", ""]
+            example:
+              links: { telegram: "https://t.me/linbit", discord: "" }
+              totpCode: "123456"
+              reason: "更新开发者社区入口"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [links]
+                properties:
+                  links: { $ref: "#/components/schemas/SocialLinks" }
+                  updatedBy: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden2FA" }
   /admin/v1/announcements/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -9179,6 +9257,20 @@ components:
             total: { type: string, description: 新人礼包总额 }
             days: { type: integer }
         inviteBaseUrl: { type: string, description: 邀请链接前缀 }
+    SocialLinks:
+      type: object
+      description: 固定渠道；后台返回合法 http(s) 配置，公开接口仅保留 HTTPS。
+      required: [x, telegram, facebook, discord, instagram, youtube, tiktok, reddit, medium]
+      properties:
+        x: { type: string, examples: ["https://x.com/linbit", ""] }
+        telegram: { type: string, examples: ["https://t.me/linbit", ""] }
+        facebook: { type: string, examples: ["https://www.facebook.com/linbit", ""] }
+        discord: { type: string, examples: ["https://discord.gg/linbit", ""] }
+        instagram: { type: string, examples: ["https://www.instagram.com/linbit", ""] }
+        youtube: { type: string, examples: ["https://www.youtube.com/@linbit", ""] }
+        tiktok: { type: string, examples: ["https://www.tiktok.com/@linbit", ""] }
+        reddit: { type: string, examples: ["https://www.reddit.com/r/linbit", ""] }
+        medium: { type: string, examples: ["https://medium.com/@linbit", ""] }
     CopyTrader:
       type: object
       properties:

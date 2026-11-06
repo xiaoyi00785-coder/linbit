@@ -55,6 +55,7 @@ func (s *Server) Routes() http.Handler {
 	// Public (no admin auth): published announcements.
 	mux.HandleFunc("GET /announcements", s.handlePublicAnnouncements)
 	mux.HandleFunc("GET /announcements/{id}", s.handlePublicAnnouncement)
+	mux.HandleFunc("GET /site/social", s.handlePublicSocial)
 
 	a := func(pattern, perm string, h http.HandlerFunc) {
 		mux.HandleFunc(pattern, s.guard(s.authed(perm, h)))
@@ -93,6 +94,9 @@ func (s *Server) Routes() http.Handler {
 	a("GET /admin/v1/symbols", permSymbolView, s.handleSymbols)
 	a("POST /admin/v1/symbols", permSymbolEdit, s.handleCreateSymbol)
 	a("PATCH /admin/v1/symbols/{symbol}", permSymbolEdit, s.handlePatchSymbol)
+
+	a("GET /admin/v1/site/social", permContentEdit, s.handleSocialGet)
+	a("PUT /admin/v1/site/social", permContentEdit, s.handleSocialPut)
 
 	s.assetGapRoutes(a)
 	s.viewRoutes(a)
