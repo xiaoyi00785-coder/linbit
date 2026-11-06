@@ -46,9 +46,7 @@ fun UserCenterHost(
     vm: ProfileViewModel = hiltViewModel(),
 ) {
     var page by remember { mutableStateOf(ProfilePage.HUB) }
-    val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.load() }
-    LaunchedEffect(loggedIn) { if (!loggedIn) page = ProfilePage.HUB }
     BackHandler { if (page == ProfilePage.HUB) onClose() else page = ProfilePage.HUB }
     when (page) {
         ProfilePage.HUB -> UserCenterScreen(themeMode, onTheme, onLogout, onClose, onOpen = { page = it }, onFeature = onFeature, vm = vm)

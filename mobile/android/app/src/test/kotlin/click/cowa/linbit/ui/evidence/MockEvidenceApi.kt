@@ -17,6 +17,8 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     private val declaredRouteBodies = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val expectedFailureKeys = mutableSetOf<String>()
     var defaultFeatureFlags: String? = null
+    /** Only the dedicated root-auth regression may explicitly declare these local fake calls. */
+    var allowAuthRootMocks: Boolean = false
     /** Test-only loopback response hold; it cannot call or configure any production host. */
     var passkeyFinishGate: java.util.concurrent.CountDownLatch? = null
     var passkeyRegistrationFinishGate: java.util.concurrent.CountDownLatch? = null
@@ -65,6 +67,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (method != "GET") mutationRequests += MutationEvidence(request.method,request.path,okio.Buffer().writeUtf8(requestBody))
         val declaredFailure = expectedFailureKeys.remove(key)
         val deletePasskey = method == "DELETE" && path.startsWith("/account/passkeys/")
+        val rootAuth = allowAuthRootMocks && path in setOf("/auth/login","/auth/logout")
         val sensitive = method != "GET" && (path.startsWith("/account/") || path.startsWith("/earn/") || path.startsWith("/strategy/") || path.contains("/wallet/") || path.endsWith("/convert/accept") || path.contains("/2fa/") || path.contains("/kyc/"))
         val passkeyRegisterPath = path in setOf("/account/passkeys/register/begin", "/account/passkeys/register/finish")
         val response = routes[key]?.removeFirstOrNull() ?: defaultFeatureFlags?.takeIf { key == "GET /app/features" }?.let { flags ->
@@ -82,13 +85,13 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val addressCreate = method == "POST" && path == "/account/withdraw-addresses" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ADDRESS-BOOK-LOCAL\",\"label\":\"Mock local label\",\"whitelisted\":false,\"totpCode\":\"123456\"}"
         val addressEdit = method == "PATCH" && path == "/account/withdraw-addresses/MOCK-ADDRESS-EDIT" && response != null && request.body.readUtf8() == "{\"label\":\"Mock edited label\",\"memo\":\"MEMO-LOCAL\",\"totpCode\":\"123456\"}"
         val addressDelete = method == "DELETE" && path == "/account/withdraw-addresses/MOCK-ADDRESS-DELETE" && key == "DELETE /account/withdraw-addresses/MOCK-ADDRESS-DELETE?totpCode=123456" && requestBody.isEmpty() && (response != null || declaredRouteBodies.contains("$key $requestBody"))
-        if (sensitive && !addressDelete && !withdrawCancel && !addressEdit && !addressCreate && !withdrawSubmit && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
+        if (sensitive && !addressDelete && !withdrawCancel && !addressEdit && !addressCreate && !withdrawSubmit && !declaredFailure && !rootAuth && !passkeyRegisterPath && !deletePasskey) {
             return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
         val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
         val algoCancelFailure = algoCancel && response?.httpCode() == 503
         val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !futuresTransferOut && !withdrawSubmit && !withdrawCancel && !addressCreate && !addressEdit && !addressDelete) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !rootAuth && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !futuresTransferOut && !withdrawSubmit && !withdrawCancel && !addressCreate && !addressEdit && !addressDelete) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }

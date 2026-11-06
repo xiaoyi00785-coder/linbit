@@ -95,6 +95,7 @@ internal class ProductionEvidenceHarness<A : androidx.activity.ComponentActivity
             c.name.startsWith("approot-transfer-") -> "Verified production AppRoot HOME -> Assets tab -> Transfer form -> true LbSheet review -> exact loopback futures transfer -> actual server ref/status and balance readback"
             c.name.startsWith("approot-algo-") -> "Verified production AppRoot HOME -> futures bottom tab -> visible clock touch -> History; real Modal Window; loopback TPSL cancel review/readback"
             c.name.startsWith("approot-") -> "Full production AppRoot: HOME -> ASSETS Tab -> actual feature click -> AssetFeatureHost (showSplash=false)"
+            c.name.startsWith("authsession-") -> "Full production AppRoot authenticated gate and real AuthFlow/Authentication lifecycle (showSplash=false)"
             c.name.startsWith("history-") -> "Production FuturesHistoryScreen direct Host; NOT yet a successful AppRoot click-through"
             c.name.startsWith("asset-") -> "Direct AssetFeatureHost (actual production Host, not an AppRoot click-through)"
             c.name.startsWith("convert-") -> "Production ConvertSubpage/quote/final-review LbSheet (direct Subpage; not an AppRoot click-through)"

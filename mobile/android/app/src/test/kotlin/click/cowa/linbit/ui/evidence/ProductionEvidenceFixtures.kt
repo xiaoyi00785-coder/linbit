@@ -8,7 +8,11 @@ import click.cowa.linbit.core.realtime.MarketSocket
 import click.cowa.linbit.data.MarketStore
 import click.cowa.linbit.feature.assets.AssetsViewModel
 import click.cowa.linbit.feature.auth.AuthViewModel
+import click.cowa.linbit.feature.profile.ProfileViewModel
+import click.cowa.linbit.feature.profile.SavedAccounts
 import click.cowa.linbit.feature.profile.SecurityFeatureViewModel
+import click.cowa.linbit.core.generated.ApiAccount
+import org.robolectric.RuntimeEnvironment
 import click.cowa.linbit.feature.profile.SecurityViewModel
 import click.cowa.linbit.ui.components.ToastCenter
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +36,25 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
     fun security(): SecurityViewModel = SecurityViewModel(retrofit, toast, tokens, passkeyRegistration())
     fun passkeyRegistration(bridge: click.cowa.linbit.feature.profile.PasskeyRegistrationBridge = click.cowa.linbit.feature.profile.PasskeyRegistrationBridge { _, _ -> error("Native passkey creation must be explicitly mocked") }) = click.cowa.linbit.feature.profile.PasskeyRegistrationService(retrofit, bridge)
     fun securityFeatures(): SecurityFeatureViewModel = SecurityFeatureViewModel(retrofit, toast)
+
+    /** Auth-root evidence must not eagerly instantiate logged-in Home/Market VM before its production gate. */
+    fun lazyRootHomeMarket(): click.cowa.linbit.app.RootHomeMarketFactory {
+        var cache: click.cowa.linbit.app.RootHomeMarketFactory? = null
+        fun get() = cache ?: rootHomeMarket().also { cache = it }
+        return click.cowa.linbit.app.RootHomeMarketFactory({ get().home() }, { get().markets() })
+    }
+
+    fun profile(): ProfileViewModel {
+        // Explicit test memory only: do not materialize the device's encrypted token store.
+        val store = object : click.cowa.linbit.feature.profile.AccountSecureStorage {
+            val values = mutableMapOf<String, String>()
+            override fun get(key: String): String? = values[key]
+            override fun set(key: String, value: String?) { if (value == null) values -= key else values[key] = value }
+        }
+        return ProfileViewModel(retrofit, SavedAccounts(store, tokens), tokens, toast).apply {
+            seedEvidenceProfile(ApiAccount(uid = "FAKE-PROFILE-1001", kycLevel = 0, twoFactorEnabled = false, createdAt = "2026-01-01T00:00:00Z", nickname = "Local Fake"))
+        }
+    }
 
     fun rootHomeMarket(): click.cowa.linbit.app.RootHomeMarketFactory {
         val socket = MarketSocket(http, "ws://127.0.0.1/", "evidence", scope, accessToken = { null })
@@ -68,8 +91,8 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
         }
     }
 
-    fun assets(): AssetsViewModel {
-        tokens.accessToken = "INVALID_LAYOUT_TOKEN"
+    fun assets(seedSession: Boolean = true): AssetsViewModel {
+        if (seedSession) tokens.accessToken = "INVALID_LAYOUT_TOKEN"
         val socket = MarketSocket(http, "ws://127.0.0.1/", "evidence", scope, accessToken = { null })
         return AssetsViewModel(retrofit, tokens, MarketStore(retrofit, socket, scope), toast)
     }

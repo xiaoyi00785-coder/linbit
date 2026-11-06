@@ -63,6 +63,8 @@ class AssetsNav {
     }
     fun clear() {
         _route.value = null
+        _pendingTab.value = false
+        _withdrawPrefill.value = null
         addressBookForWithdraw = false
     }
     fun consumeTab(): Boolean {

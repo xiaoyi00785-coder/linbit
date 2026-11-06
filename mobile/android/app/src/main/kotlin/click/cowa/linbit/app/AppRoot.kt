@@ -1,23 +1,24 @@
 package click.cowa.linbit.app
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import click.cowa.linbit.feature.auth.AuthFlow
@@ -45,8 +46,8 @@ import click.cowa.linbit.ui.theme.resolveDark
 class AssetRouteViewModels(val assets: click.cowa.linbit.feature.assets.AssetsViewModel, val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel, val tradFi: click.cowa.linbit.feature.more.TradFiViewModel, val paper: click.cowa.linbit.feature.assets.PaperAccountViewModel? = null, val priceAlerts: click.cowa.linbit.feature.alerts.PriceAlertViewModel? = null)
 data class RootHomeMarketFactory(val home: @Composable () -> click.cowa.linbit.feature.home.HomeViewModel, val markets: @Composable () -> click.cowa.linbit.feature.markets.MarketsViewModel)
 val LocalRootHomeMarketFactory = androidx.compose.runtime.staticCompositionLocalOf<RootHomeMarketFactory?> { null }
-@Composable private fun rootHome(): click.cowa.linbit.feature.home.HomeViewModel = LocalRootHomeMarketFactory.current?.home?.invoke() ?: hiltViewModel()
-@Composable private fun rootMarkets(): click.cowa.linbit.feature.markets.MarketsViewModel = LocalRootHomeMarketFactory.current?.markets?.invoke() ?: hiltViewModel()
+@Composable internal fun rootHome(): click.cowa.linbit.feature.home.HomeViewModel = LocalRootHomeMarketFactory.current?.home?.invoke() ?: hiltViewModel()
+@Composable internal fun rootMarkets(): click.cowa.linbit.feature.markets.MarketsViewModel = LocalRootHomeMarketFactory.current?.markets?.invoke() ?: hiltViewModel()
 @Composable
 fun rememberAssetRouteViewModels(): AssetRouteViewModels {
     val assets: click.cowa.linbit.feature.assets.AssetsViewModel = hiltViewModel()
@@ -57,142 +58,33 @@ fun rememberAssetRouteViewModels(): AssetRouteViewModels {
     return remember { AssetRouteViewModels(assets, spot, tradFi, paper, priceAlerts) }
 }
 
+val LocalRootProfileFactory = androidx.compose.runtime.staticCompositionLocalOf<@Composable () -> click.cowa.linbit.feature.profile.ProfileViewModel> { { hiltViewModel() } }
 val LocalTradeHistoryFactory = androidx.compose.runtime.staticCompositionLocalOf<@Composable () -> click.cowa.linbit.feature.trade.TradeHistoryViewModel> { { hiltViewModel() } }
 
 /** Root stays the sole owner of feature routing. Optional factory is DI, not a synthetic navigation path. */
 @Composable
 fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewModel = hiltViewModel(), routeVms: AssetRouteViewModels = rememberAssetRouteViewModels(), showSplash: Boolean = true, onDialogWindow: (android.view.Window?) -> Unit = {}) {
-    val mode by vm.themeMode.collectAsStateWithLifecycle()
+    // SecureTokenStore supplies its initial state synchronously in DI; never optimistically show Home.
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
-    val futuresSymbol by vm.tradeNav.futuresSymbol.collectAsStateWithLifecycle()
+    val authVm: click.cowa.linbit.feature.auth.AuthViewModel = hiltViewModel()
+    AppRootContent(vm, badgeVm, routeVms, loggedIn, showSplash, onDialogWindow, authVm)
+}
+
+@Composable
+internal fun AppRootContent(vm: AppViewModel, badgeVm: NotificationBadgeViewModel, routeVms: AssetRouteViewModels, loggedIn: Boolean, showSplash: Boolean, onDialogWindow: (android.view.Window?) -> Unit, authVm: click.cowa.linbit.feature.auth.AuthViewModel) {
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val mode by vm.themeMode.collectAsStateWithLifecycle()
     val dark = resolveDark(mode)
-    var tab by rememberSaveable { mutableStateOf(MainTab.HOME) }
-    var auth by rememberSaveable { mutableStateOf<String?>(null) } // null | "login" | "register"
-    var userCenter by rememberSaveable { mutableStateOf(false) }
-    var splash by rememberSaveable { mutableStateOf(showSplash) }
-    var historyKind by rememberSaveable { mutableStateOf<String?>(null) } // null | "spot" | "futures"
-    var morePage by rememberSaveable { mutableStateOf<MorePage?>(null) }
-    var assetFeature by rememberSaveable { mutableStateOf<String?>(null) }
-    var moreMenu by rememberSaveable { mutableStateOf(false) }
-    val unread by badgeVm.unread.collectAsStateWithLifecycle()
-    fun openFeature(title: String) {
-        val page = when (title) {
-            "福利中心" -> MorePage.WELFARE
-            "跟单" -> MorePage.COPY
-            "TradFi" -> MorePage.TRADFI
-            "价格预警" -> MorePage.PRICE_ALERTS
-            "卡券中心" -> MorePage.COUPONS
-            "合伙人计划" -> MorePage.PARTNER
-            else -> null
-        }
-        if (page != null) morePage = page else vm.toast.show("$title 即将开放")
-    }
-
-    LinbitTheme(dark) {
-        val view = LocalView.current
-        LaunchedEffect(dark) {
-            WindowCompat.getInsetsController((view.context as android.app.Activity).window, view).isAppearanceLightStatusBars = !dark
-        }
-        LaunchedEffect(Unit) {
-            vm.expired.collect { vm.toast.show("登录已过期，请重新登录"); userCenter = false; auth = "login" }
-        }
-        // 登录成功后自动收起
-        LaunchedEffect(loggedIn) { if (loggedIn) auth = null }
-
-        val p = LB.p
-        // 内容区底部留白 = TabBar 高 + 间距，滚动内容可滑到胶囊下方
-        val bottomInset = Metrics.tabBarH + 24.dp // 空态操作与悬浮栏安全间距（对照 ref）
-        Box(Modifier.fillMaxSize().background(p.bg)) {
-            Box(Modifier.fillMaxSize().statusBarsPadding()) {
-                when (tab) {
-                    MainTab.HOME -> HomeScreen(
-                        vm = rootHome(),
-                        bottomInset = bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "login" },
-                        onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { moreMenu = true },
-                        onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.assetsNav.openDeposit(switchTab = true) else auth = "login" },
-                        onFeature = ::openFeature,
-                        onNotifications = { morePage = MorePage.NOTIFICATIONS },
-                        onSupport = { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login" },
-                        unread = unread,
-                    )
-                    MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), onOpenTrade = { kind, sym ->
-                        if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
-                    })
-                    MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
-                        bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "futures" },
-                        onTrade = { futures, symbol ->
-                            if (futures) { vm.tradeNav.setFutures(symbol); /* 留在合约 Tab，由 FuturesRoot 切回「合约」 */ }
-                            else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
-                        },
-                        onCopy = { if (loggedIn) morePage = MorePage.COPY else auth = "login" },
-                        onPriceAlerts = { morePage = MorePage.PRICE_ALERTS },
-                    )
-                    MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
-                        bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" }
-                    )
-                    MainTab.ASSETS -> AssetsScreen(
-                        bottomInset,
-                        onLogin = { auth = "login" },
-                        assetsNav = vm.assetsNav,
-                        onOpenFutures = { tab = MainTab.FUTURES },
-                        onOpenSpot = { tab = MainTab.SPOT },
-                        onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
-                        onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
-                        vm = routeVms.assets,
-                    )
-                }
-            }
-            FloatingTabBar(tab, { tab = it }, Modifier.align(Alignment.BottomCenter))
-
-            // 首页/交易页打开充值或划转时切到资产 Tab
-            val assetsRoute by vm.assetsNav.route.collectAsStateWithLifecycle()
-            LaunchedEffect(assetsRoute) {
-                if (assetsRoute != null && vm.assetsNav.consumeTab()) tab = MainTab.ASSETS
-            }
-            if (assetsRoute != null) AssetsHost(vm.assetsNav, vm = routeVms.assets, onDialogWindow = onDialogWindow)
-
-            assetFeature?.let { feature -> AssetFeatureHost(feature,
-                onBack = { assetFeature = null },
-                onLogin = { assetFeature = null; auth = "login" },
-                onTrade = { futures, symbol ->
-                    if (futures) { vm.tradeNav.setFutures(symbol); tab = MainTab.FUTURES } else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
-                    assetFeature = null
-                }, spotVm = routeVms.spot, tradFiVm = routeVms.tradFi, paperVm = routeVms.paper, onDialogWindow = onDialogWindow,
-            ) }
-
-            if (userCenter && loggedIn) UserCenterHost(
-                mode, vm::setTheme,
-                onLogout = { vm.logout { userCenter = false } },
-                onClose = { userCenter = false },
-                onLoginOther = { userCenter = false; auth = "login" },
-                onFeature = { page -> userCenter = false; morePage = page },
-            )
-            if (moreMenu) MoreMenuScreen(onBack = { moreMenu = false }, onOpen = { moreMenu = false; morePage = it })
-            morePage?.let { page -> MoreHost(
-                page,
-                onClose = { morePage = null; badgeVm.refresh() },
-                onLogin = { morePage = null; auth = "login" },
-                onOpen = { morePage = it },
-                onTrade = { futures, symbol ->
-                    if (futures) { vm.tradeNav.setFutures(symbol); tab = MainTab.FUTURES }
-                    else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
-                    morePage = null
-                },
-                onProfile = { morePage = null; userCenter = true },
-                onDeposit = { morePage = null; vm.assetsNav.openDeposit(switchTab = true) },
-                alertVm = routeVms.priceAlerts ?: hiltViewModel(),
-                onDialogWindow = onDialogWindow,
-            ) }
-            when (historyKind) {
-                "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
-                "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol, vm = LocalTradeHistoryFactory.current.invoke(), onDialogWindow = onDialogWindow)
-            }
-            auth?.let { start -> AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
+    LaunchedEffect(loggedIn) { if (!loggedIn) vm.resetSessionNavigation() }
+    if (!loggedIn) {
+        LinbitTheme(dark) {
+            AuthFlow(startRegister = false, onClose = {
+                // Unauthenticated users must not dismiss the auth root to expose Home.
+                if (!vm.loggedIn.value) activity?.finish()
+            }, vm = authVm, onDialogWindow = onDialogWindow)
             ToastOverlay(vm.toast)
-            if (splash) SplashOverlay(reduceMotion = false, onFinish = { splash = false })
         }
+        return
     }
+    AuthenticatedAppContent(vm, badgeVm, routeVms, showSplash, onDialogWindow)
 }
