@@ -3,6 +3,7 @@ import SwiftUI
 /// 行情页（对照图 #7 自选空态推荐、#8/#9 市场-现货）
 struct MarketsView: View {
     @Environment(\.palette) private var p
+    @ObservedObject private var flags = AppFeatures.shared
     @StateObject private var store = MarketStore.shared
     @StateObject private var watch = Watchlist.shared
     @State private var top = 1          // 0 自选 1 市场 2 聊天室
@@ -18,7 +19,13 @@ struct MarketsView: View {
             switch top {
             case 0: WatchlistTab()
             case 1: marketTab
-            default: PlaceholderView(title: "聊天室", note: "聊天室后端暂未提供，敬请期待")
+            default:
+                // OpenAPI /chat/* 已就绪；勿再占位「后端暂未提供」
+                if flags.isOn("chat") {
+                    ChatRoomView(embedInTab: true)
+                } else {
+                    ComingSoonView(title: "聊天室", note: "功能开关 chat 未开启")
+                }
             }
         }
         .background(p.bg)

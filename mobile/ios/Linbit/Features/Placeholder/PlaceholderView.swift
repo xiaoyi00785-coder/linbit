@@ -22,7 +22,7 @@ struct AssetsPlaceholder: View {
     @EnvironmentObject private var theme: ThemeStore
     var body: some View {
         VStack(spacing: 20) {
-            PlaceholderView(title: "资产", note: "登录后查看资产（待接入 /auth 与 /assets）")
+            PlaceholderView(title: "资产", note: "占位预览（生产资产页见 AssetsView）")
             Picker("主题", selection: $theme.mode) {
                 ForEach(ThemeMode.allCases, id: \.self) { Text($0.title).tag($0) }
             }

@@ -15,6 +15,7 @@ struct SpotTradeView: View {
     @State private var showPairs = false
     @State private var showChart = false
     @State private var showFee = false
+    @State private var showMoreTools = false
     @State private var confirm: ConfirmRequest?
     @AppStorage("lb.spot.skipConfirm") private var skipConfirm = false
 
@@ -67,6 +68,20 @@ struct SpotTradeView: View {
             showConfirm = false; Task { _ = await m.place() }
         } onClose: { showConfirm = false } }
         .lbSheet($showFee) { SpotFeeSheet(m: m) { showFee = false } }
+        .lbSheet($showMoreTools) {
+            LBSheet(title: "更多", showClose: true, onClose: { showMoreTools = false }) {
+                VStack(spacing: 0) {
+                    SheetOptionRow(title: "手续费率", subtitle: "现货 maker/taker", selected: false) {
+                        showMoreTools = false
+                        showFee = true
+                    }
+                    SheetOptionRow(title: "订单历史", subtitle: "成交 / 委托记录", selected: false) {
+                        showMoreTools = false
+                        Router.shared.spotPath.append(SpotRoute.history)
+                    }
+                }.padding(.bottom, 12)
+            }
+        }
         .lbSheet($showPrecision) { PrecisionSheet(m: m) { showPrecision = false } }
         .lbSheet($showPairs) { PairPickerSheet(current: m.symbol) { s in showPairs = false; router.spotSymbol = s } onClose: { showPairs = false } }
         .lbConfirm($confirm)
@@ -99,7 +114,7 @@ struct SpotTradeView: View {
             HStack(spacing: 18) {
                 ThemeToggleButton()
                 Button { showChart.toggle() } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(showChart ? p.primary : p.textPrimary) }
-                Button { ToastCenter.shared.show("更多功能即将开放") } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
+                Button { showMoreTools = true } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
             }.font(.system(size: 17)).padding(.top, 4)
         }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
     }
