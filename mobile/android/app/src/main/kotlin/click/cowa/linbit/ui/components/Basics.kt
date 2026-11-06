@@ -9,6 +9,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -203,16 +205,25 @@ fun PrimaryTabs(
     size: TextUnit = FontSize.tabPrimary,
     underline: Boolean = false,
     spacing: Dp = 20.dp,
+    /** 窄屏或多项时横向滚动，避免顶栏截断。 */
+    scrollable: Boolean = false,
 ) {
     val p = LB.p
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(spacing)) {
+    val rowMod = if (scrollable) modifier.horizontalScroll(rememberScrollState()) else modifier
+    Row(rowMod, horizontalArrangement = Arrangement.spacedBy(spacing)) {
         items.forEachIndexed { i, t ->
             val sel = i == selected
             Column(
                 Modifier.pressable(scale = 1f) { onSelect(i) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(t, style = lb(size, if (sel) FontWeight.SemiBold else FontWeight.Normal), color = if (sel) p.textPrimary else p.textSecondary, maxLines = 1)
+                Text(
+                    t,
+                    style = lb(size, if (sel) FontWeight.SemiBold else FontWeight.Normal),
+                    color = if (sel) p.textPrimary else p.textSecondary,
+                    maxLines = 1,
+                    softWrap = false,
+                )
                 if (underline) {
                     Spacer(Modifier.height(6.dp))
                     Box(Modifier.size(16.dp, 3.dp).clip(CircleShape).background(if (sel) p.textPrimary else Color.Transparent))

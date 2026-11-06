@@ -208,10 +208,20 @@ interface LinbitApi {
     suspend fun createFuturesPlan(@Body body: ApiFuturesPlaceOrderRequest): ApiFuturesCreateTpslOrders200Response
 
     @GET("futures/plan-orders")
-    suspend fun futuresPlanOrders(@Query("status") status: String = "active", @Query("limit") limit: Int = 50): ApiFuturesListTpslOrders200Response
+    suspend fun futuresPlanOrders(
+        @Query("symbol") symbol: String? = null,
+        @Query("status") status: String = "active",
+        @Query("cursor") cursor: Long? = null,
+        @Query("limit") limit: Int = 50,
+    ): ApiFuturesListTpslOrders200Response
 
     @GET("futures/tpsl-orders")
-    suspend fun futuresTpslOrders(@Query("status") status: String = "active", @Query("limit") limit: Int = 50): ApiFuturesListTpslOrders200Response
+    suspend fun futuresTpslOrders(
+        @Query("symbol") symbol: String? = null,
+        @Query("status") status: String = "active",
+        @Query("cursor") cursor: Long? = null,
+        @Query("limit") limit: Int = 50,
+    ): ApiFuturesListTpslOrders200Response
 
     @DELETE("futures/plan-orders/{id}")
     suspend fun cancelFuturesPlan(@Path("id") id: Long): ApiFuturesAmendTpslOrder200Response
@@ -229,7 +239,13 @@ interface LinbitApi {
     suspend fun futuresBonus(): ApiFuturesBonus200Response
 
     @GET("futures/positions/history")
-    suspend fun futuresPositionHistory(@Query("symbol") symbol: String? = null, @Query("limit") limit: Int = 50): ApiFuturesPositionHistory200Response
+    suspend fun futuresPositionHistory(
+        @Query("symbol") symbol: String? = null,
+        @Query("startTime") startTime: Long? = null,
+        @Query("endTime") endTime: Long? = null,
+        @Query("cursor") cursor: Long? = null,
+        @Query("limit") limit: Int = 50,
+    ): ApiFuturesPositionHistory200Response
 
     @GET("futures/trades")
     suspend fun futuresMyTrades(@Query("symbol") symbol: String? = null, @Query("limit") limit: Int = 100): ApiFuturesMyTrades200Response
@@ -504,6 +520,22 @@ interface LinbitApi {
         @Query("page") page: Int = 1,
         @Query("pageSize") pageSize: Int = 100,
     ): ApiPartnerTeam
+
+    // ---- 事件合约 ----
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("event/products")
+    suspend fun eventProducts(): ApiEventProducts
+
+    @POST("event/orders")
+    suspend fun placeEventOrder(@Body body: ApiPlaceEventOrderRequest): ApiEventOrder
+
+    @GET("event/orders")
+    suspend fun eventOrders(
+        @Query("status") status: String? = null,
+        @Query("symbol") symbol: String? = null,
+        @Query("before") before: String? = null,
+        @Query("limit") limit: Int = 20,
+    ): ApiListEventOrders200Response
 
     // ---- TradFi（公开）----
     @Headers("${ApiHeaders.NO_AUTH}: 1")

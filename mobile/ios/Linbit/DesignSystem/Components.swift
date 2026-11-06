@@ -43,8 +43,9 @@ struct PrimaryTabs: View {
     @Binding var selected: Int
     var size: CGFloat = FontSize.tabPrimary
     var underline = false
+    var spacing: CGFloat = 20
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: spacing) {
             ForEach(items.indices, id: \.self) { i in
                 VStack(spacing: 6) {
                     Text(items[i])

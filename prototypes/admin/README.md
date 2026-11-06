@@ -41,6 +41,6 @@ npm ci && npm run dev   # /admin/v1 代理到 http://localhost:8088，可用 ADM
 
 已接入真实接口：登录 / 当前管理员、用户列表与冻结、用户资产、KYC 审核（含证件查看）、提现两级审核、资产流水、现货交易对、手续费与变更单、奖励补发、卡券、公告、站内信广播、合伙人、管理员、审计日志。
 
-同样接入 admin/v1（数据来自后台对共享库的只读查询或内部服务转发）：数据看板（`dashboard/summary`）、风险名单（`risk-users`）、充值记录（`deposits`）、钱包管理（`wallet/hot`、`wallet/sweeps`、`wallet/networks`）、现货订单（`spot/orders`）、合约持仓（`futures/positions`）、网格策略（`grids`）、强平与风险（`futures/liquidations`）、币种与网络（`wallet/networks`、`asset-settings`）、合约参数（`futures/contracts`、`futures/order-config`）、积分活动（`points/campaigns`）、积分兑换（`points/redemptions`）、跟单（`copy/traders`、`copy/applications`）、返佣（`rebate/commissions`）、系统设置（`security-settings`、`asset-settings`、`internal-transfer/config`、`app/features`）。
+同样接入 admin/v1（数据来自后台对共享库的只读查询或内部服务转发）：数据看板（`dashboard/summary`）、风险名单（`risk-users`）、充值记录（`deposits`）、钱包管理（`wallet/hot`、`wallet/sweeps`、`wallet/networks`）、现货订单（`spot/orders`）、合约持仓（`futures/positions`）、网格策略（`grids`）、强平与风险（`futures/liquidations`）、币种与网络（`wallet/networks`、`asset-settings`）、合约参数（`futures/contracts`、`futures/order-config`）、积分活动（`points/campaigns`）、积分兑换（`points/redemptions`）、跟单（`copy/traders`、`copy/applications`）、返佣（`rebate/commissions`）、系统设置（`security-settings`、`asset-settings`、`internal-transfer/config`、`app/features`）、社区链接（`site/social`，九个渠道，2FA + 原因 + 审计）。
 
 后台不包含任何演示/Mock 数据：`npm run build` 的 prebuild 与 `deploy/mainnet/preflight.sh` 都会运行 `scripts/check-admin-no-demo.sh`，发现 mock 文件、mock 导入、DemoBadge 或“演示数据”字样即失败。暂无后端接口的操作（现货强制撤单、强制减仓、强停网格、钱包手动归集/补充、人工调账、重置 2FA）已从界面移除。

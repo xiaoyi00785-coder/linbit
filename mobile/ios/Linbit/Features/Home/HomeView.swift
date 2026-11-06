@@ -15,6 +15,7 @@ struct HomeView: View {
     @State private var bannerPage = 0
     @State private var earnPage = 0
     @State private var moreSheet = false
+    @Environment(\.displayScale) private var displayScale
     var onOpenMarkets: () -> Void = {}
 
     var body: some View {
@@ -25,12 +26,12 @@ struct HomeView: View {
                     assetHeader.padding(.top, 14)
                     taskCard.padding(.top, 18)
                     redPacket.padding(.top, 12)
-                    grid.padding(.top, 22)
-                    sectionDivider
+                    grid.padding(.top, 17)
+                    hairline
                     cardPromo
-                    sectionDivider
+                    hairline
                     earnStrip
-                    sectionDivider
+                    hairline
                     ranking
                     sectionDivider
                     news
@@ -145,20 +146,20 @@ struct HomeView: View {
     private let gridItems: [(LBIcon, String)] = [(.gChat, "聊天室"), (.gGift, "福利中心"), (.gEarn, "理财"), (.gTradfi, "TradFi"),
                                                   (.gCopy, "跟单"), (.gBot, "策略交易"), (.gMore, "更多")]
     private var grid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 18) {
+        // 对照图 #1：4 列等分整屏宽（列距 97.5pt，无左右内边距），图标块 40pt，标签 11pt，两行图标块顶对顶 88pt
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 4), spacing: 27) {
             ForEach(gridItems, id: \.1) { icon, title in
-                VStack(spacing: 6) {
+                VStack(spacing: 7) {
                     IconView(icon: icon, size: Metrics.gridIconGlyph)
                         .frame(width: Metrics.gridIcon, height: Metrics.gridIcon)
                         .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.iconTileBg))
-                    Text(title).font(.lb(FontSize.caption)).foregroundColor(p.textPrimary)
+                    Text(title).font(.lb(11)).foregroundColor(p.textPrimary).frame(height: 14)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { Haptics.tap(); gridTap(title) }
             }
         }
-        .padding(.horizontal, Spacing.pageH)
-        .padding(.bottom, 20)
+        .padding(.bottom, 19)
     }
 
     private func gridTap(_ title: String) {
@@ -174,80 +175,102 @@ struct HomeView: View {
     }
 
     private var sectionDivider: some View { Rectangle().fill(p.fill).frame(height: 8) }
+    /// 对照图 #1 的分隔线：1 物理像素（@3x = 0.33pt）通栏浅灰线
+    private var hairline: some View { Rectangle().fill(p.border).frame(height: 1 / max(displayScale, 1)) }
 
     // MARK: 推广轮播（Linbit Card）
+    /// 对照图 #1：整块高 138pt；卡面在左（左距 24，顶距 32，76×70），文字列左缘 118pt（副标题 12 / 标题 14 / 「查看详情 →」12），页码「4/8」右下
     private var cardPromo: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                if let sub = currentBanner == nil ? "数字资产 · 全球消费" : currentBanner?.subtitle, !sub.isEmpty {
-                    Text(sub).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).lineLimit(1)
-                }
-                Text(currentBanner?.title ?? "Linbit Card").font(.lb(20, .bold)).foregroundColor(p.textPrimary)
-                    .lineLimit(bannerImageURL == nil && currentBanner != nil ? 2 : 1).minimumScaleFactor(0.85)
-                HStack(spacing: 2) {
-                    Text("查看详情").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
-                    IconView(icon: .arrowRight, size: 12, tint: p.textPrimary)
-                }
+        let showArt = bannerImageURL != nil || currentBanner == nil
+        return HStack(alignment: .top, spacing: 0) {
+            if showArt {
+                promoVisual.frame(width: 76, height: 70).padding(.leading, 24).padding(.top, 32).padding(.trailing, 18)
+            } else {
+                Spacer().frame(width: Spacing.pageH)
             }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(currentBanner == nil ? "数字资产 · 全球消费" : (currentBanner?.subtitle ?? ""))
+                    .font(.lb(12)).foregroundColor(p.textSecondary).lineLimit(1).frame(height: 17, alignment: .leading)
+                Text(currentBanner?.title ?? "Linbit Card").font(.lb(14, .medium)).foregroundColor(p.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.85).frame(height: 17, alignment: .leading).padding(.top, 5.5)
+                HStack(spacing: 6) {
+                    Text("查看详情").font(.lb(12)).foregroundColor(p.textPrimary)
+                    IconView(icon: .arrowRight, size: 16, tint: p.textPrimary)
+                }
+                .frame(height: 17, alignment: .leading).padding(.top, 39.5)
+            }
+            .padding(.top, 20)
             Spacer(minLength: 8)
-            promoVisual
         }
-        .overlay(Text("\(bannerPage + 1)/\(max(vm.banners.count, 1))").font(.lbNum(10)).foregroundColor(p.textTertiary), alignment: .bottomTrailing)
-        .padding(Spacing.pageH)
-        .frame(height: 104)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: 138)
+        .overlay(alignment: .bottomTrailing) { pager(bannerPage + 1, max(vm.banners.count, 1)).padding(.trailing, 23).padding(.bottom, 4) }
         .contentShape(Rectangle())
         .onTapGesture { HomeLink.open(currentBanner?.link, fallback: nil) }
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
             if vm.banners.count > 1 { withAnimation { bannerPage = (bannerPage + 1) % vm.banners.count } }
         }
     }
+    /// 页码「4/8」：当前页深色，总数灰色，12pt
+    private func pager(_ cur: Int, _ total: Int) -> some View {
+        (Text("\(cur)").foregroundColor(p.textPrimary) + Text("/\(total)").foregroundColor(p.textTertiary))
+            .font(.lbNum(12)).frame(height: 14)
+    }
     private var currentBanner: HomeBanner? { vm.banners[safe: bannerPage] }
     private var bannerImageURL: URL? {
         guard let s = currentBanner?.image?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
         return URL(string: s)
     }
-    /// 轮播右侧：有图片 URL 用远程图；运营位无图时为纯文字卡片（不套用无关本地配图）；无运营数据时展示默认 Linbit Card 卡面。
+    /// 轮播卡面（左侧 76×70）：有图片 URL 用远程图；运营位无图时为纯文字卡片（不套用无关本地配图）；无运营数据时展示默认 Linbit Card 卡面（绿卡在后、黑卡在前）。
     @ViewBuilder private var promoVisual: some View {
         if let url = bannerImageURL {
             AsyncImage(url: url) { img in img.resizable().scaledToFit() } placeholder: { RoundedRectangle(cornerRadius: 8).fill(p.fill) }
-                .frame(width: 110, height: 70).clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(width: 76, height: 70)
         } else if currentBanner == nil {
             ZStack {
-                RoundedRectangle(cornerRadius: 6).fill(p.brand).frame(width: 74, height: 46).rotationEffect(.degrees(-12)).offset(x: -10, y: 4)
-                RoundedRectangle(cornerRadius: 6).fill(p.primary).frame(width: 74, height: 46)
-                    .overlay(IconView(icon: .logo, size: 16, tint: p.bg).padding(6), alignment: .topLeading)
-                    .rotationEffect(.degrees(8)).offset(x: 8)
+                RoundedRectangle(cornerRadius: 4).fill(p.brand).frame(width: 54, height: 34)
+                    .rotationEffect(.degrees(-8)).position(x: 27, y: 19)
+                RoundedRectangle(cornerRadius: 4).fill(p.primary).frame(width: 62, height: 39)
+                    .overlay(IconView(icon: .logo, size: 10, tint: p.bg).padding(5), alignment: .topLeading)
+                    .position(x: 44.5, y: 41)
             }
-            .frame(width: 110, height: 70)
+            .frame(width: 76, height: 70)
         }
     }
 
     // MARK: 理财宝
+    /// 对照图 #1：整块高 87pt，两行（第 1 行「理财宝」11pt + 18pt 币图标，第 2 行 15pt 产品名与 APR），左距 16，顶距 24，页码「1/5」右下
     private var earnStrip: some View {
-        HStack(spacing: 8) {
-            Text("理财宝").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-            if let e = vm.earn[safe: earnPage] {
-                CoinIcon(base: e.asset ?? "USDT", size: 16)
-                Text("\(e.title ?? e.asset ?? "")，\(Fmt.percent(Dec.parse(e.aprMax ?? e.apr) * 100).trimmingCharacters(in: CharacterSet(charactersIn: "+")))APR")
-                    .font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).lineLimit(1)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Text("理财宝").font(.lb(11)).foregroundColor(p.textPrimary)
+                if let e = vm.earn[safe: earnPage] { CoinIcon(base: e.asset ?? "USDT", size: 18) }
             }
-            Spacer()
-            Text("\(earnPage + 1)/\(max(vm.earn.count, 1))").font(.lbNum(10)).foregroundColor(p.textTertiary)
+            .frame(height: 18)
+            Text(earnLine).font(.lb(FontSize.body)).foregroundColor(p.textPrimary).lineLimit(1).frame(height: 18, alignment: .leading)
         }
-        .padding(.horizontal, Spacing.pageH).frame(height: 48)
+        .padding(.top, 24).padding(.leading, Spacing.pageH)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: 87)
+        .overlay(alignment: .bottomTrailing) { pager(earnPage + 1, max(vm.earn.count, 1)).padding(.trailing, 23).padding(.bottom, 23.5) }
         .contentShape(Rectangle())
         .onTapGesture { Router.shared.openFeature(.earn) }
         .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
             if !vm.earn.isEmpty { earnPage = (earnPage + 1) % vm.earn.count }
         }
     }
+    private var earnLine: String {
+        guard let e = vm.earn[safe: earnPage] else { return "" }
+        return "\(e.title ?? e.asset ?? "")，\(Fmt.percent(Dec.parse(e.aprMax ?? e.apr) * 100).trimmingCharacters(in: CharacterSet(charactersIn: "+")))APR"
+    }
 
     // MARK: 榜单
     private var ranking: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16)
-                .padding(.horizontal, Spacing.pageH).padding(.top, 16)
-            ChipBar(items: ["现货", "合约"], selected: $rankKind).padding(.vertical, 12)
+            // 对照图 #2：分隔线到 Tab 文字顶 23pt；Tab 间距 18pt、选中项下 16×3 横线；横线到筛选块 19pt
+            PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16, underline: true, spacing: 17)
+                .padding(.horizontal, Spacing.pageH).padding(.top, 20)
+            ChipBar(items: ["现货", "合约"], selected: $rankKind).padding(.top, 19).padding(.bottom, 12)
             HStack {
                 Text("交易对"); Spacer(); Text("最新价")
                 Text("涨跌幅").frame(width: Metrics.changeBadgeW + 12, alignment: .trailing)

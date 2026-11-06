@@ -21,6 +21,7 @@ export type EarnProd = {
   bonusApr?: string;
   bonusQuota?: string;
   termDays?: number;
+  unlockDays?: number;
   minAmount?: string;
   perUserMax?: string;
   redeemRule?: string;
@@ -140,13 +141,17 @@ export function EarnSubscribeModal({
         </span>
         <h3>申购 · {title}</h3>
         <p className="xsub">
-          {fixed ? `锁仓 ${p.termDays ?? "--"} 天 · 参考年化 ${aprLabel(p)}` : `活期 · 参考年化 ${aprLabel(p)}`}
+          {fixed
+            ? `锁仓 ${p.termDays ?? "--"} 天 · 参考年化 ${aprLabel(p)}`
+            : p.kind === "onchain"
+              ? `链上质押${Number(p.unlockDays) > 0 ? ` · 赎回 ${p.unlockDays} 天解锁` : " · 随时赎回"} · 参考年化 ${aprLabel(p)}`
+              : `活期 · 参考年化 ${aprLabel(p)}`}
           {p.newcomer ? " · 新用户专享" : ""}
         </p>
         <div className="lrow">
           <span className="lg">赎回规则</span>
           <span className="sp" />
-          <b>{p.redeemRule || (fixed ? "到期自动返还" : "随时赎回")}</b>
+          <b>{p.redeemRule || (fixed ? "到期自动返还" : Number(p.unlockDays) > 0 ? `${p.unlockDays} 天解锁` : "随时赎回")}</b>
         </div>
         {p.perUserMax && (
           <div className="lrow">
