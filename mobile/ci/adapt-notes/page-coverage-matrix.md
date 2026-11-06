@@ -32,20 +32,25 @@
 | Auth.passkey | 通行密钥登录 | login-* 有入口 | ref2/3 | 本地接线待 push |
 | Auth.apple/google | 社交登录 | login-* |  | 无 OAuth 契约 |
 
-## screens 分母（务必分开，勿混用）
+## screens 分母（脚本精确值，勿心算）
 
-| 分母 | 当前值 | 含义 |
+> 权威脚本：`python3 mobile/ci/tests/test_ios_screens_matrix.py` → `adapt-notes/screens-matrix-counts.json`
+
+| 分母 | 精确值 | 含义 |
 |---|---|---|
-| screens.txt **行** | **172** | 配置行条目（含同 key 重复行） |
-| screens.txt **unique keys** | **160** | 去重后的 screen 键；其中重复 key 12 个：futures-algo-amend-plan, futures-algo-amend-tpsl, futures-amend, futures-kind, futures-leverage, futures-mode, futures-mode-hedge, futures-orders-plan, futures-orders-tpsl, futures-tools, futures-tpsl, futures-tpsl-partial |
-| screens.txt **展开张数估计** | **313** | 按行主题列：`both`→2，`light`/`dark`→1（CI 实际还可能再滤） |
-| screens-pr **行/键** | **33 / 33** | PR 冒烟清单 |
-| screens-pr **展开张数估计** | **36** | |
-| screens-adapt **行** | **8** | 手动 adapt 清单 |
-| adapt **已下载 PNG** | **5**（750×1334 / **仅 375pt**） | 缺清单内 deposit/withdraw/support-detail；见 `2026-11-05-adapt-device-evidence.md` |
-| PR 冒烟已下载 PNG（tip 2300fb6） | **28**（1179×2556） | 单机型非 xxxl，**不能**当多宽度适配 |
+| screens.txt **行** | **174** | 配置行（含重复 key 行） |
+| screens.txt **unique keys** | **162** | 去重 screen 键 |
+| screens.txt **expanded（key×appearance）** | **317** | both→light+dark；**不含**设备/字体 |
+| screens-pr **行 / unique** | **33 / 33** | PR 冒烟 |
+| screens-pr **expanded** | **36** | |
+| screens-adapt **行 / expanded** | **8 / 8** | 仅 key×appearance |
+| **\|full ∩ pr\|** | **33** | |
+| **\|full − pr\|** | **129** | txt 有、pr 无 |
+| **\|pr − full\|** | **0** | 曾为 assets-deposit/withdraw 缺口，已补进 screens.txt |
 
-历史口头「167 行 / 155 键」为加 `futures-guide` 等之前；**以本表当前值为准**。
+**错误心算纠正**：`unique_full − |full−pr|` = **\|∩\|**（曾算出 31），**不等于** `|screens-pr|`（33）。差 2 来自 pr 独有键曾缺失于 screens.txt，不是「未覆盖=129 ⇒ pr=31」。
+
+设备×字体档另见 `adapt-device-matrix.json`：ci_supported 三档 × adapt 8 light = **24** 槽；320pt `ci_supported=false`（Preview only）。
 
 
 ## 断链 / ComingSoon / 假 Toast（契约结论）
@@ -159,3 +164,7 @@
 account-switch, assets-account-transfer, assets-address-book, assets-internal-transfer, assets-withdraw-records, chat, copy-become, copy-become-error, copy-detail, copy-empty, copy-error, copy-follow, copy-follow-error, copy-follows, copy-follows-empty, coupon-active, coupon-confirm, coupon-empty, coupon-error, coupon-expired, coupon-fail, earn-subscribe, event, event-confirm, futures-algo-amend-plan, futures-algo-amend-tpsl, futures-algo-history, futures-amend, futures-funding, futures-history, futures-kind, futures-liq, futures-mode, futures-mode-hedge, futures-orders-plan, futures-orders-tpsl, futures-plan, futures-pnl, futures-pnl-empty, futures-pnl-error, futures-position-history, futures-tiers, futures-tools, futures-tpsl-partial, grid-confirm, grid-create, home-avatar, kyc-approved, kyc-error, kyc-form, kyc-form2, kyc-form2-full, kyc-pending, kyc-rejected, loan-borrow-error, loan-closed, loan-collateral, loan-error, loan-loans, loan-loans-empty, loan-quote, loan-repay, notif-empty, notif-error, notif-settings, notif-settings-error, partner-active, partner-apply, partner-apply-error, partner-empty, partner-error, partner-pending, partner-rejected, partner-team, password-change, password-reset, security-2fa-disable, security-2fa-disable-error, security-antiphishing, security-antiphishing-error, security-avatar, security-avatar-crop, security-avatar-error, security-avatar-uploading, security-devices, security-devices-empty, security-devices-error, security-email, security-email-error, security-error, security-fund, security-fund-error, security-fund-reset, security-passkeys, security-passkeys-add, security-passkeys-empty, security-phone, security-profile, security-profile-error, security-sessions, splash-end, splash-mid, splash-start, spot-fee, spot-history-amount, spot-history-conditional, spot-market-amount, spot-plan, strategy, sub-create, subaccounts, support-create, support-create-error, support-create-ratelimit, support-detail-closed, support-detail-conflict, support-detail-error, support-detail-ratelimit, support-detail-replied, support-list-empty, support-list-error, swap-picker, tradfi-disabled, tradfi-empty, tradfi-error, tradfi-metal, tradfi-restricted, tradfi-unavailable, welfare
 
 （完整键仍在 screens.txt / 需 workflow_dispatch 全量或补 pr 清单后才有 CI 视觉。）
+
+## 宽度证据边界（本批）
+- **已有下载图**：375pt@2x+xxxl（adapt 5 张 750×1334）；~393pt@3x+**medium**（PR 28 张 1179×2556）。
+- **不能**把上述组合表述为 320 或 430 已验；430/mid393 的 xxxl 需 `adapt_device_profile` 另跑后才有产物。

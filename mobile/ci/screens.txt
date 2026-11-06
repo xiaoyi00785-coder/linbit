@@ -163,6 +163,8 @@ security-2fa-disable-error
 # 资产模块（日间 + 夜间）
 assets-overview
 assets-networks
+assets-deposit
+assets-withdraw
 assets-account-transfer
 assets-internal-transfer
 assets-withdraw-records

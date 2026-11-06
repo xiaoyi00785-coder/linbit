@@ -1,16 +1,25 @@
-# iOS 适配 / Release 编译 CI 增补说明
+# iOS adapt 截图（layout / 动态字体 / 多宽度）
 
-**状态（#104）**：已将本说明对应改动写入 `.github/workflows/ios.yml`（同分支普通 push）。
-原 `ios-workflow-adapt.patch` 保留作历史对照；以仓库内实际 `ios.yml` 为准。
+## 触发
+- 仅 `workflow_dispatch` 且 `adapt_layout=true`（**不会**在每个 PR push 自动跑，避免取消正在进行的冒烟截图）。
+- 可选 `adapt_device_profile`：
+  - `se375_xxxl`（默认）：375pt SE 类 + xxxLarge
+  - `mid393_xxxl`：393pt（iPhone 16 类）+ xxxLarge
+  - `max430_xxxl`：430pt（Plus/Pro Max 类）+ xxxLarge
+  - `matrix_se_mid_max`：上述三档**同一 adapt job 顺序**拍摄；**一次** `generic/platform=iOS Simulator` Debug build
 
-## 行为
+## 清单与分母
+- 页面键：`mobile/ci/screens-adapt.txt`（只含 screen + light/dark/both）
+- 设备/字体档：`mobile/ci/adapt-device-matrix.json`
+- 精确计数：`python3 mobile/ci/tests/test_ios_screens_matrix.py`
 
-1. **主 job `build`**：Debug 模拟器构建与既有截图之后，增加 **Release compile check**（独立 `${DERIVED}-release`，无截图、无签名），校验 `#if DEBUG` / ShotGate 剥离后 Release 可编。
-2. **`workflow_dispatch` 输入** `adapt_layout`（boolean，默认 false）。
-3. **可选 job `adapt`**：仅 `workflow_dispatch && adapt_layout == true`；使用 `mobile/ci/screens-adapt.txt`；优先小屏 iPhone；`simctl ui content_size extra-extra-extra-large`；产物 `shots-adapt/`。
+## 已验证 vs 未验证（勿混）
+| 宽度 | 证据 | 状态 |
+|---|---|---|
+| 375pt @2x + xxxl | adapt 产物 750×1334 | 有（单档） |
+| ~393pt @3x + medium | PR 冒烟 1179×2556 | 有（**不是** xxxl，也**不是** 430） |
+| 320pt | 无 bootable CI runtime（见 matrix `w320_se1_preview_only`） | **未验**；DEBUG Preview only |
+| 430pt + xxxl | 无已下载产物 | **未验**（可选 profile） |
 
-## 安全边界
-
-- `permissions.contents: read`；无部署、无 TestFlight / App Store / 资金相关步骤。
-- `adapt` 默认不跑，避免每个 PR 重复全量截图。
-- 全栈部署冻结期：即使 CI 绿也不合 main（draft #104）。
+## 320pt
+Xcode 16.4 **可能**列出 `iPhone SE (1st generation)` device type，但 macos-15 / iOS 18.x 镜像通常不提供可启动的 320pt runtime（iOS 18.5 默认设备以 iPhone 16/16e 系为主）。**不伪造已实机/已 CI**；本地用 `LayoutSizeProbe` `#Preview("320 preview-only")`（`#if DEBUG`）。
