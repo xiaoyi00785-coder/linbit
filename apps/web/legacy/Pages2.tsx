@@ -44,19 +44,38 @@ export function ShareModal({onClose,title,hl,img=asset('/img/invite.webp'),gold}
 const TABS=[['','理财总览'],['bao','理财宝'],['simple','简单赚币'],['onchain','链上赚币'],['vip','VIP 尊享财富管理'],['loan','质押借币']]
 export function EarnTabs({cur}){return <div className="etabs">{TABS.map(([k,t])=><Link key={k} to={'/earn'+(k?'/'+k:'')} className={cur===k?'on':''}>{t}</Link>)}</div>}
 function Hero({cur,title,sub,img,stats,btns,extra}){return <div className="eh"><div className="ewrap"><EarnTabs cur={cur}/><div className="ehero"><div><h1>{title}{extra}</h1><p className="g">{sub}</p></div><img src={img} alt=""/></div>{stats&&<div className="ebar">{stats.map(([a,b])=><div key={a}><span className="g">{a}</span><b>{b}</b></div>)}<span className="sp"/>{btns}</div>}</div></div>}
-function Tog(){const[o,setO]=useState(false);return <span className={'sw'+(o?' on':'')} onClick={()=>setO(!o)}><i/></span>}
+function AutoTog({on,busy,onToggle,tid}){return <span role="switch" aria-checked={!!on} aria-busy={!!busy} data-testid={tid} className={'sw'+(on?' on':'')+(busy?' dis':'')} onClick={()=>{if(!busy)onToggle(!on)}}><i/></span>}
 export function EarnHub({base}){const {tab=''}=useParams();const cur=base??tab
  const prods=(useEarnProducts()??[]).filter(onSale)
  const BAO=prods.filter(p=>p.kind==='fixed')
  const SIMPLE=prods.filter(p=>p.kind==='simple'||p.kind==='flexible')
- const CHAIN=[] // 链上质押页暂用独立列表；产品目录中的 onchain 不混入简单赚币
+ const CHAIN=prods.filter(p=>p.kind==='onchain')
  const[sub,setSub]=useState(null)
  const openSub=p=>{if(p?.id)setSub(p)}
  const modal=sub&&<EarnSubscribeModal p={sub} onClose={()=>setSub(null)}/>
+ const authed=!!useAuthStore(x=>x.accessToken)
+ const pos=useRest(authed?'/earn/positions?kind=simple':null)
+ const autoMap={}
+ for(const it of (pos.data?.items||[])){if(it?.productId)autoMap[it.productId]=!!it.auto}
+ const[localAuto,setLocalAuto]=useState({})
+ const[busyId,setBusyId]=useState(null)
+ const isAuto=id=>id in localAuto?!!localAuto[id]:!!autoMap[id]
+ const anyAuto=SIMPLE.some(p=>p.id&&isAuto(p.id))
+ const toggleAuto=async(p,enabled)=>{
+  if(!p?.id||busyId)return
+  if(!authed)return goto('/login?redirect='+encodeURIComponent('/earn/simple'))
+  setBusyId(p.id)
+  const r=await rest('POST','/earn/products/'+encodeURIComponent(p.id)+'/auto',{enabled:!!enabled})
+  setBusyId(null)
+  if(!r.ok){toast(r.code==='AUTO_NOT_SUPPORTED'?'该产品不支持自动赚币':(r.error||'设置失败'),'err');return}
+  setLocalAuto(s=>({...s,[p.id]:!!enabled}))
+  toast(enabled?'已开启自动赚币':'已关闭自动赚币')
+  pos.reload?.(true)
+ }
  if(cur==='vip')return <Vip/>;if(cur==='loan')return <Loan/>
  if(cur==='bao')return <main><Hero cur="bao" title="理财宝 · 定期锁仓" sub="锁定期限，享受更高固定年化，到期本息自动返还" img={asset("/img/bao.webp")} stats={[['持仓估值(USDT) ▾','0'],['累计收益','0']]} btns={<><button className="pill white" onClick={()=>goto('/orders/earn')}>申购记录</button><button className="pill lime" onClick={()=>goto('/assets/earn-account')}>我的持仓</button></>}/><div className="light"><div className="ewrap"><h2 className="lh2">定期产品</h2><div className="g3 bao">{!BAO.length&&<Empty t="暂无定期产品"/>}{BAO.map(p=><div key={p.id} className="lcard bc" data-testid={"earn-bao-"+p.id}><div className="lrow l"><Ico c={cf(p.asset)} s={28}/><b>{p.asset}</b>{p.hot&&<em className="hot">热门</em>}{p.newcomer&&<em className="hot">新人</em>}</div><div className="apr">{aprLabel(p)} <small>参考年化</small></div><div className="lrow"><span className="lg">期限 {(p.termDays??'--')+' 天'}</span><button type="button" className="lb dark" data-testid={"earn-sub-"+p.id} onClick={()=>openSub(p)}>申购</button></div></div>)}</div><Faq items={[['理财宝和简单赚币有什么区别？','理财宝为定期产品，期间不可赎回；简单赚币可随时存取。'],['到期后资金如何返还？','本金与收益在到期后 1 小时内返还至资金账户。'],['可以提前赎回吗？']]}/></div><Footer light/></div>{modal}</main>
- if(cur==='simple')return <main><Hero cur="simple" title="灵活存取，日日计息" sub="随存随取，按日发放收益，闲置资产不再沉睡" img={asset("/img/spot.webp")} stats={[['累计收益(USDT) ▾','0'],['昨日收益','0']]} btns={<><button className="pill sq" onClick={()=>copyTxt(location.href,'链接已复制')}><G n="share" s={14}/></button><button className="pill white" onClick={()=>goto('/assets/earn-account')}>查看我的收益</button></>}/><div className="light"><div className="ewrap"><h2 className="lh2">全部产品</h2><div className="lrow"><span className="lsearch"><G n="search" s={14}/> 搜索币种</span><span className="auto"><G n="theme" s={14}/> 自动赚币 <small>未开启</small></span></div><div className="lth e4"><span>币种</span><span>参考年化</span><span>自动赚币</span><span className="r">操作</span></div>{!SIMPLE.length&&<Empty t="暂无活期产品"/>}{SIMPLE.map(p=><div className="ltr e4" key={p.id} data-testid={"earn-simple-"+p.id}><span><Ico c={cf(p.asset)} s={22}/> {p.asset}</span><span>{aprLabel(p)}</span><span><Tog/></span><span className="r"><button type="button" className="lb dark sm" data-testid={"earn-sub-"+p.id} onClick={()=>openSub(p)}>申购</button></span></div>)}<Faq items={[['什么是简单赚币？'],['自动赚币如何运作？','开启后，资金账户中的闲置资产将自动申购活期产品。'],['收益什么时候到账？']]}/></div><Footer light/></div>{modal}</main>
- if(cur==='onchain')return <main><Hero cur="onchain" title="链上赚币" sub="参与公链质押，透明链上收益，平台代为节点运维" img={asset("/img/hero.webp")} stats={[['质押估值(USDT) ▾','0'],['累计收益','0']]} btns={<button className="pill lime" onClick={()=>goto('/orders/earn')}>我的质押</button>}/><div className="light"><div className="ewrap"><h2 className="lh2">可质押资产</h2><div className="lth"><span>资产</span><span>项目</span><span>参考年化</span><span>赎回规则</span><span className="r">操作</span></div>{!CHAIN.length&&<Empty t="链上赚币即将上线"/>}{CHAIN.map(([s,p,r,u])=><div className="ltr e5" key={s}><span><Ico c={cf(s)} s={22}/> {s}</span><span>{p}</span><span className="up2">{r}</span><span className="lg">{u}</span><span className="r"><button className="lb dark sm" onClick={()=>goto('/earn')}>质押</button></span></div>)}<Faq items={[['链上赚币的收益来自哪里？','收益来自公链网络的质押奖励，按链上实际发放计算。'],['质押有风险吗？'],['解锁期内能交易吗？']]}/></div><Footer light/></div></main>
+ if(cur==='simple')return <main><Hero cur="simple" title="灵活存取，日日计息" sub="随存随取，按日发放收益，闲置资产不再沉睡" img={asset("/img/spot.webp")} stats={[['累计收益(USDT) ▾','0'],['昨日收益','0']]} btns={<><button className="pill sq" onClick={()=>copyTxt(location.href,'链接已复制')}><G n="share" s={14}/></button><button className="pill white" onClick={()=>goto('/assets/earn-account')}>查看我的收益</button></>}/><div className="light"><div className="ewrap"><h2 className="lh2">全部产品</h2><div className="lrow"><span className="lsearch"><G n="search" s={14}/> 搜索币种</span><span className="auto"><G n="theme" s={14}/> 自动赚币 <small>{anyAuto?'已开启':'未开启'}</small></span></div><div className="lth e4"><span>币种</span><span>参考年化</span><span>自动赚币</span><span className="r">操作</span></div>{!SIMPLE.length&&<Empty t="暂无活期产品"/>}{SIMPLE.map(p=><div className="ltr e4" key={p.id} data-testid={"earn-simple-"+p.id}><span><Ico c={cf(p.asset)} s={22}/> {p.asset}</span><span>{aprLabel(p)}</span><span><AutoTog tid={"earn-auto-"+p.id} on={isAuto(p.id)} busy={busyId===p.id} onToggle={en=>toggleAuto(p,en)}/></span><span className="r"><button type="button" className="lb dark sm" data-testid={"earn-sub-"+p.id} onClick={()=>openSub(p)}>申购</button></span></div>)}<Faq items={[['什么是简单赚币？'],['自动赚币如何运作？','开启后，现货账户中该币种的闲置余额会在每日结算时自动申购对应活期产品。'],['收益什么时候到账？']]}/></div><Footer light/></div>{modal}</main>
+ if(cur==='onchain')return <main><Hero cur="onchain" title="链上赚币" sub="参与公链质押，透明链上收益，平台代为节点运维" img={asset("/img/hero.webp")} stats={[['质押估值(USDT) ▾','0'],['累计收益','0']]} btns={<button className="pill lime" onClick={()=>goto('/orders/earn')}>我的质押</button>}/><div className="light"><div className="ewrap"><h2 className="lh2">可质押资产</h2><div className="lth"><span>资产</span><span>项目</span><span>参考年化</span><span>赎回规则</span><span className="r">操作</span></div>{!CHAIN.length&&<Empty t="暂无可质押产品"/>}{CHAIN.map(p=><div className="ltr e5" key={p.id} data-testid={"earn-onchain-"+p.id}><span><Ico c={cf(p.asset)} s={22}/> {p.asset}</span><span>{p.title||(p.asset+' 质押')}</span><span className="up2">{aprLabel(p)}</span><span className="lg">{p.redeemRule||(p.unlockDays>0?(p.unlockDays+' 天解锁'):'随时赎回')}</span><span className="r"><button type="button" className="lb dark sm" data-testid={"earn-sub-"+p.id} onClick={()=>openSub(p)}>质押</button></span></div>)}<Faq items={[['链上赚币的收益来自哪里？','收益来自公链网络的质押奖励，按链上实际发放计算。'],['质押有风险吗？','质押存在智能合约与网络风险，请按自身风险承受能力参与。'],['解锁期内能交易吗？','赎回进入解锁期后，本金在解锁完成前不可交易，期间不计息。']]}/></div><Footer light/></div>{modal}</main>
  return null}
 
 /* ---------- VIP ---------- */
