@@ -25,8 +25,9 @@ struct ChipBar: View {
                     Text(items[i])
                         .font(.lb(FontSize.chip, i == selected ? .medium : .regular))
                         .foregroundColor(i == selected ? p.textPrimary : p.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
                         .padding(.horizontal, 10)
-                        .frame(height: Metrics.chipH)
+                        .frame(minHeight: Metrics.chipH)
                         .background(RoundedRectangle(cornerRadius: Radius.sm).fill(i == selected ? p.fill : .clear))
                         .onTapGesture { selected = i }
                 }
@@ -51,14 +52,18 @@ struct PrimaryTabs: View {
                     Text(items[i])
                         .font(.lb(size, i == selected ? .semibold : .regular))
                         .foregroundColor(i == selected ? p.textPrimary : p.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: true, vertical: false)
                     if underline {
                         Capsule().fill(i == selected ? p.textPrimary : .clear).frame(width: 16, height: 3)
                     }
                 }
+                .fixedSize(horizontal: true, vertical: false)
                 .contentShape(Rectangle())
                 .onTapGesture { selected = i }
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -122,15 +127,16 @@ struct FloatingTabBar: View {
                 VStack(spacing: 3) {
                     IconView(icon: tab.icon, size: 20)
                     Text(tab.title).font(.lb(FontSize.tabBar, .medium)).foregroundColor(p.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
                 }
-                .frame(maxWidth: .infinity).frame(height: Metrics.tabBarH - 10)
+                .frame(maxWidth: .infinity).frame(minHeight: Metrics.tabBarH - 10)
                 .background(Capsule().fill(selected == tab ? p.tabBarSelected : .clear))
                 .contentShape(Rectangle())
                 .onTapGesture { selected = tab }
             }
         }
         .padding(5)
-        .frame(height: Metrics.tabBarH)
+        .frame(minHeight: Metrics.tabBarH)
         .background(Capsule().fill(.ultraThinMaterial))
         .background(Capsule().fill(p.tabBarBg))
         .overlay(Capsule().stroke(p.tabBarBorder, lineWidth: 0.5))

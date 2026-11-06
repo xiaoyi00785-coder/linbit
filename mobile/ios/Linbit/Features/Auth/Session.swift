@@ -74,4 +74,4 @@ final class Router: ObservableObject {
     }
 }
 
-enum AssetsRoute: Hashable { case deposit(String?), transfer, records, history, overview, accountTransfer, internalTransfer, withdrawRecords, addressBook, networks(String?) }
+enum AssetsRoute: Hashable { case deposit(String?), withdraw(String?), transfer, records, history, overview, accountTransfer, internalTransfer, withdrawRecords, addressBook, networks(String?) }

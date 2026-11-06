@@ -64,7 +64,7 @@ struct KycView: View {
                 .id(st.level * 10 + lv)
         } else {
             VStack(spacing: 0) {
-                NavBar(title: "身份认证", onBack: onBack)
+                NavBar(title: "KYC 验证", onBack: onBack)
                 switch data {
                 case .idle, .loading: Spacer(); ProgressView(); Spacer()
                 case let .failed(m): ErrorStateView(message: m) { Task { await load() } }
@@ -124,7 +124,7 @@ struct KycView: View {
             HStack {
                 Text("Lv.\(lv) \(title)").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
                 Spacer()
-                if passed { tag("已认证", p.up) } else if pendingHere { tag("审核中", p.brand) } else if locked { tag("需先完成基础认证", p.textTertiary) }
+                if passed { tag("已认证", p.up) } else if pendingHere { tag("审核中", p.brand) } else if locked { tag("待解锁", p.textTertiary) }
             }
             ForEach(perks, id: \.self) { t in
                 HStack(alignment: .top, spacing: 6) {
@@ -136,7 +136,9 @@ struct KycView: View {
             if let btn { LBButton(title: btn, height: 40) { form = lv } }
         }
         .padding(16)
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg).stroke(p.border, lineWidth: 1))
+        // 对照 ref2/12：未通过的基础认证卡浅绿底；锁定/已通过仍描边白底
+        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(lv == 1 && !passed && !locked ? p.brand.opacity(0.10) : p.bg))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).stroke(lv == 1 && !passed && !locked ? p.brand.opacity(0.35) : p.border, lineWidth: 1))
     }
 
     private func tag(_ t: String, _ c: Color) -> some View {
@@ -266,6 +268,10 @@ struct KycFormView: View {
     }
 
     private func upload(_ img: UIImage, _ side: APIKycDocument.APISide) async {
+        // DEBUG 截图夹具：只填视觉，永不实际上传证件
+        if KycShot.state != nil {
+            previews[side] = img; docs[side] = "shot-\(side.rawValue)"; return
+        }
         guard let jpeg = KycAPI.compress(img) else { error = ErrorText.map["FILE_TOO_LARGE"]; return }
         previews[side] = img; uploading = side; error = nil
         defer { uploading = nil }
@@ -274,6 +280,10 @@ struct KycFormView: View {
     }
 
     private func submit() async {
+        // DEBUG 截图夹具：永不真实提交 KYC
+        if KycShot.state != nil {
+            ToastCenter.shared.show("截图夹具不提交认证", .info); return
+        }
         loading = true; defer { loading = false }
         let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
         let body = KycAPI.Submit(firstName: first.trimmingCharacters(in: .whitespaces), lastName: last.trimmingCharacters(in: .whitespaces),

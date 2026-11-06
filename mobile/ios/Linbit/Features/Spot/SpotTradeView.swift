@@ -13,7 +13,9 @@ struct SpotTradeView: View {
     @State private var showConfirm = false
     @State private var showPrecision = false
     @State private var showPairs = false
+    @State private var showChart = false
     @State private var showFee = false
+    @State private var showMoreTools = false
     @State private var confirm: ConfirmRequest?
     @AppStorage("lb.spot.skipConfirm") private var skipConfirm = false
 
@@ -23,6 +25,10 @@ struct SpotTradeView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     pairHeader
+                    if showChart {
+                        SpotChartPanel(symbol: m.symbol, pricePrec: m.pricePrec)
+                            .padding(.horizontal, Spacing.pageH).padding(.top, 8)
+                    }
                     HStack(alignment: .top, spacing: 12) {
                         form.frame(maxWidth: .infinity)
                         OrderBookView(m: m, showPrecision: $showPrecision).frame(width: 138)
@@ -30,8 +36,9 @@ struct SpotTradeView: View {
                     .padding(.horizontal, Spacing.pageH).padding(.top, 8)
                     ordersSection.padding(.top, 20)
                 }
-                .padding(.bottom, 100)
+                .padding(.bottom, Metrics.tabBarH + 72)
             }
+            .scrollDismissesKeyboard(.interactively)
             .refreshable { await m.loadBook(); await m.refreshAccount() }
         }
         .background(p.bg.ignoresSafeArea())
@@ -41,9 +48,10 @@ struct SpotTradeView: View {
             case "spotMarketAmount": m.kind = .market; m.marketBuyByAmount = true; m.amountText = "100"
             case "spotFee": showFee = true
             case "spotConditional": bottomTab = 2
+            case "spotChart": showChart = true
             default: break
             }
-            if ["spotPlan", "spotMarketAmount", "spotFee", "spotConditional"].contains(router.shotSheet ?? "") { router.shotSheet = nil }
+            if ["spotPlan", "spotMarketAmount", "spotFee", "spotConditional", "spotChart"].contains(router.shotSheet ?? "") { router.shotSheet = nil }
             await m.start()
         }
         .onDisappear { m.stop() }
@@ -60,6 +68,20 @@ struct SpotTradeView: View {
             showConfirm = false; Task { _ = await m.place() }
         } onClose: { showConfirm = false } }
         .lbSheet($showFee) { SpotFeeSheet(m: m) { showFee = false } }
+        .lbSheet($showMoreTools) {
+            LBSheet(title: "更多", showClose: true, onClose: { showMoreTools = false }) {
+                VStack(spacing: 0) {
+                    SheetOptionRow(title: "手续费率", subtitle: "现货 maker/taker", selected: false) {
+                        showMoreTools = false
+                        showFee = true
+                    }
+                    SheetOptionRow(title: "订单历史", subtitle: "成交 / 委托记录", selected: false) {
+                        showMoreTools = false
+                        Router.shared.spotPath.append(SpotRoute.history)
+                    }
+                }.padding(.bottom, 12)
+            }
+        }
         .lbSheet($showPrecision) { PrecisionSheet(m: m) { showPrecision = false } }
         .lbSheet($showPairs) { PairPickerSheet(current: m.symbol) { s in showPairs = false; router.spotSymbol = s } onClose: { showPairs = false } }
         .lbConfirm($confirm)
@@ -67,12 +89,13 @@ struct SpotTradeView: View {
 
     // 一级 Tab：现货 / 策略 / 理财 / 闪兑
     private var topBar: some View {
-        HStack {
+        ScrollView(.horizontal, showsIndicators: false) {
             PrimaryTabs(items: ["现货", "策略", "理财", "闪兑"], selected: Binding(get: { topTab }, set: { i in
                 if i == 0 { topTab = 0 } else { Haptics.tap(); Router.shared.openFeature([FeaturePage.strategy, .strategy, .earn, .swap][i]) }
             }))
-            Spacer()
-        }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+            .padding(.horizontal, Spacing.pageH)
+        }
+        .frame(minHeight: 44)
     }
 
     private var pairHeader: some View {
@@ -90,8 +113,8 @@ struct SpotTradeView: View {
             Spacer()
             HStack(spacing: 18) {
                 ThemeToggleButton()
-                Button { ToastCenter.shared.show("K 线页即将开放") } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
-                Button { ToastCenter.shared.show("更多功能即将开放") } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
+                Button { showChart.toggle() } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(showChart ? p.primary : p.textPrimary) }
+                Button { showMoreTools = true } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
             }.font(.system(size: 17)).padding(.top, 4)
         }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
     }
@@ -143,7 +166,7 @@ struct SpotTradeView: View {
                 info(m.isBuy ? "可买" : "可卖", "\(Fmt.amount(m.isBuy ? m.maxQty : m.availBase * m.price, m.isBuy ? m.qtyPrec : 2)) \(m.isBuy ? m.base : m.quote)")
                 Button { showFee = true } label: {
                     HStack(spacing: 4) {
-                        Text("手续费率").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).underline(pattern: .dot)
+                        Text("预估手续费").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).underline(pattern: .dot)
                         Spacer()
                         Text("\(SpotCond.pct(m.feeRate)) ≈ \(Fmt.amount(m.fee, 4))").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
                     }
@@ -177,11 +200,15 @@ struct SpotTradeView: View {
     // 底部：委托(n) / 交易机器人(0)
     private var ordersSection: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 18) {
-                tabText("委托(\(m.openOrders.count))", 0, arrow: true)
-                tabText("条件单(\(m.conditional.count))", 2)
-                tabText("交易机器人(0)", 1)
-                Spacer()
+            HStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 18) {
+                        tabText("委托(\(m.openOrders.count))", 0, arrow: true)
+                        tabText("条件单(\(m.conditional.count))", 2)
+                        tabText("交易机器人(0)", 1)
+                    }
+                    .padding(.trailing, 8)
+                }
                 NavigationLink(value: SpotRoute.history) {
                     Image(systemName: "clock.fill").font(.system(size: 15)).foregroundColor(p.textSecondary)
                 }
@@ -221,7 +248,7 @@ struct SpotTradeView: View {
                             .foregroundColor(botTab == i ? p.textPrimary : p.textSecondary).onTapGesture { botTab = i }
                     }
                     Spacer()
-                    Button { ToastCenter.shared.show("交易机器人即将开放") } label: {
+                    Button { Router.shared.openFeature(.strategy) } label: {
                         Text("创建交易机器人").font(.lb(FontSize.small, .medium)).foregroundColor(p.textOnPrimary)
                             .padding(.horizontal, 10).frame(height: 26).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.primary))
                     }.buttonStyle(PressableStyle())
@@ -254,8 +281,10 @@ struct SpotTradeView: View {
     private func tabText(_ t: String, _ i: Int, arrow: Bool = false) -> some View {
         HStack(spacing: 3) {
             Text(t).font(.lb(FontSize.label, bottomTab == i ? .semibold : .regular))
+                .lineLimit(1).minimumScaleFactor(0.75)
             if arrow { Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)) }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .foregroundColor(bottomTab == i ? p.textPrimary : p.textSecondary)
         .onTapGesture { bottomTab = i }
     }
@@ -284,9 +313,10 @@ struct NumberBox: View {
             }
             Text(unit).font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
         }
-        .padding(.horizontal, 10).frame(height: 44)
+        .padding(.horizontal, 10).frame(minHeight: 44)
         .background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
         .overlay(RoundedRectangle(cornerRadius: Radius.sm).stroke(f ? p.textPrimary : .clear))
+        .lbKeyboardDone(focus: $f)
     }
 }
 

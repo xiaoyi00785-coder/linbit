@@ -26,6 +26,32 @@ final class MarketStore: ObservableObject {
     func load() async {
         loading = true
         defer { loading = false }
+        // ShotGate 行情列表夹具：MarketDemo.covers("markets") 已声明；地区拒绝时避免「暂无数据」空页。
+        if MarketDemo.on {
+            switch MarketDemo.mode {
+            case .error:
+                spot = []; futures = []; categories = []; error = MarketDemo.errorMessage
+            case .empty:
+                spot = []; futures = []; categories = MarketDemo.categories(); error = nil
+            case .ok:
+                let symbols = MarketDemo.symbols()
+                symbolMeta = Dictionary(symbols.map { ($0.symbol, $0) }, uniquingKeysWith: { a, _ in a })
+                let futT = MarketDemo.listFuturesTickers()
+                refPrice = Dictionary(futT.compactMap { t in t.symbol.map { ($0, t.effectivePrice()) } }, uniquingKeysWith: { a, _ in a })
+                spot = MarketDemo.spotTickers().map { var r = MarketRow(spot: $0, symbol: symbolMeta[$0.symbol]); if r.last == 0 { r.last = refPrice[r.symbol] ?? 0 }; return r }
+                let spotMap = Dictionary(spot.map { ($0.symbol, $0.last) }, uniquingKeysWith: { a, _ in a })
+                futures = futT.compactMap { t in
+                    guard var r = MarketRow(futures: t) else { return nil }
+                    if r.last == 0 { r.last = spotMap[r.symbol] ?? 0 }
+                    return r
+                }
+                categories = MarketDemo.categories()
+                error = nil
+            }
+            // 截图夹具不订 WS
+            subs.removeAll()
+            return
+        }
         async let symbolsR = try? MarketAPI.symbols()
         async let spotR = try? MarketAPI.spotTickers()
         async let futR = try? MarketAPI.futuresTickers()

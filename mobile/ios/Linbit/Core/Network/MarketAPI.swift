@@ -37,6 +37,11 @@ enum MarketAPI {
 
     static func categories() async throws -> [APIMarketCategory] { try await APIClient.shared.get("/market/categories") }
 
+    /// 现货 K 线：GET /market/klines（与安卓 SpotTradeViewModel / Web market.ts 同源）
+    static func klines(_ symbol: String, interval: String, limit: Int = 120) async throws -> [APIKline] {
+        try await APIClient.shared.get("/market/klines", query: ["symbol": symbol, "interval": interval, "limit": "\(limit)"])
+    }
+
     static func spotTickers() async throws -> [APITicker] {
         let r: APIGetTicker200Response = try await APIClient.shared.get("/market/ticker")
         switch r {

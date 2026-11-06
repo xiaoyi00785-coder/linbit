@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum ThemeMode: String, CaseIterable, Identifiable {
     case system, light, dark
@@ -35,9 +36,33 @@ struct ThemedRoot<Content: View>: View {
 }
 
 extension Font {
-    static func lb(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font { .system(size: size, weight: weight) }
-    /// 数字：等宽数字，保证行情跳动时不抖动。
+    /// 随系统动态字体缩放；上限 1.35× 设计字号，避免合约/盘口等密排在超大字体下溢出（配合 ScrollView / minHeight）。
+    private static let dynamicCap: CGFloat = 1.35
+    static func lb(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        let scaled = min(UIFontMetrics.default.scaledValue(for: size), size * dynamicCap)
+        return Font(UIFont.systemFont(ofSize: scaled, weight: weight.uiFontWeight))
+    }
+    /// 数字：等宽数字；同样缩放并封顶。
     static func lbNum(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight).monospacedDigit()
+        let scaled = min(UIFontMetrics.default.scaledValue(for: size), size * dynamicCap)
+        let base = UIFont.monospacedDigitSystemFont(ofSize: scaled, weight: weight.uiFontWeight)
+        return Font(base)
+    }
+}
+
+private extension Font.Weight {
+    var uiFontWeight: UIFont.Weight {
+        switch self {
+        case .ultraLight: return .ultraLight
+        case .thin: return .thin
+        case .light: return .light
+        case .regular: return .regular
+        case .medium: return .medium
+        case .semibold: return .semibold
+        case .bold: return .bold
+        case .heavy: return .heavy
+        case .black: return .black
+        default: return .regular
+        }
     }
 }

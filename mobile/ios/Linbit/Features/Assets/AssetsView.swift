@@ -17,7 +17,13 @@ struct AssetsView: View {
             VStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     PrimaryTabs(items: tabs, selected: Binding(get: { tab }, set: { i in
-                        if i >= 4 { ToastCenter.shared.show("\(tabs[i])即将开放") } else { tab = i }
+                        if i >= 4 {
+                            // 理财/策略/TradFi 有独立 FeaturePage + OpenAPI，勿假 Toast
+                            let map: [FeaturePage] = [.earn, .strategy, .tradfi]
+                            let j = i - 4
+                            if j < map.count { Router.shared.openFeature(map[j]) }
+                            else { ToastCenter.shared.show("\(tabs[i])即将开放") }
+                        } else { tab = i }
                     })).padding(.horizontal, Spacing.pageH)
                 }.frame(height: 44)
                 Divider().overlay(p.divider)
@@ -36,6 +42,7 @@ struct AssetsView: View {
             .navigationDestination(for: AssetsRoute.self) { r in
                 switch r {
                 case .deposit(let a): if let a { DepositView(asset: a) } else { CoinPickerView(mode: .deposit) }
+                case .withdraw(let a): if let a { WithdrawView(asset: a) } else { CoinPickerView(mode: .withdraw) }
                 case .transfer: TransferView()
                 case .records, .history: RecordsView()
                 case .overview: AssetOverviewView()
@@ -47,6 +54,7 @@ struct AssetsView: View {
                 }
             }
             .navigationDestination(for: DepositTarget.self) { DepositView(asset: $0.asset) }
+            .navigationDestination(for: WithdrawTarget.self) { WithdrawView(asset: $0.asset) }
         }
         .task(id: session.isLoggedIn) { await m.load() }
         .lbSheet($showWithdraw) { WithdrawSheet { showWithdraw = false } }
@@ -137,12 +145,12 @@ struct AssetsView: View {
     private var actions: some View {
         let items: [(String, String, () -> Void)] = {
             let dep = ("充值", "arrow.down.left.circle.fill", { router.open(.deposit(nil)) })
-            let buy = ("快捷买币", "creditcard.fill", { ToastCenter.shared.show("快捷买币即将开放") })
+            let buy = ("快捷买币", "creditcard.fill", { ToastCenter.shared.show("快捷买币无 OpenAPI（安卓同为即将开放）") })
             let wd = ("提现", "arrow.up.right.circle.fill", { showWithdraw = true })
             let tr = ("划转", "arrow.left.arrow.right.circle.fill", { router.open(.transfer) })
             let trade = ("去交易", "chart.line.uptrend.xyaxis.circle.fill", { router.tab = tab == 2 ? .futures : .spot })
             switch tab {
-            case 2: return [trade, tr, ("盈亏", "chart.pie.fill", { ToastCenter.shared.show("盈亏分析即将开放") })]
+            case 2: return [trade, tr, ("盈亏", "chart.pie.fill", { ToastCenter.shared.show("资产盈亏分析无独立接口；合约今日盈亏见交易页 /futures/pnl/today") })]
             case 3: return [trade, dep, buy, tr]
             default: return [dep, buy, wd, tr]
             }
@@ -161,7 +169,7 @@ struct AssetsView: View {
     }
 
     private var swapEntry: some View {
-        Button { ToastCenter.shared.show("现货兑换即将开放") } label: {
+        Button { Router.shared.openFeature(.swap) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.2.circlepath.circle").foregroundColor(p.textPrimary)
                 Text("现货兑换").font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
@@ -254,7 +262,7 @@ struct WithdrawSheet: View {
     private func card(_ icon: String, _ t: String, _ s: String, badge: String?) -> some View {
         Button {
             onClose()
-            if t == "内部转账" { Router.shared.open(.internalTransfer) } else { ToastCenter.shared.show("\(t)将在提现阶段开放") }
+            if t == "内部转账" { Router.shared.open(.internalTransfer) } else { Router.shared.open(.withdraw(nil)) }
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: icon).font(.system(size: 20)).foregroundColor(p.textPrimary)

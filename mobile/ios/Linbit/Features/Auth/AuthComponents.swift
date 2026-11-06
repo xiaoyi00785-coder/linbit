@@ -15,7 +15,13 @@ struct AuthTopBar: View {
                     .font(.system(size: 18, weight: .medium)).foregroundColor(p.textPrimary).frame(width: 44, height: 44, alignment: .leading)
             }.buttonStyle(PressableStyle())
             Spacer()
-            Button { ToastCenter.shared.show("在线客服即将开放") } label: {
+            Button {
+                if AppFeatures.shared.isOn("supportTickets") {
+                    Router.shared.openFeature(.support)
+                } else {
+                    ToastCenter.shared.show("在线客服即将开放")
+                }
+            } label: {
                 Image(systemName: "headphones").font(.system(size: 18)).foregroundColor(p.textPrimary).frame(width: 44, height: 44, alignment: .trailing)
             }.buttonStyle(PressableStyle())
         }
@@ -91,7 +97,7 @@ struct AccountField: View {
                     Button { raw = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(p.textTertiary) }
                 }
             }
-            .padding(.horizontal, 12).frame(height: 48)
+            .padding(.horizontal, 12).frame(minHeight: 48)
             .background(RoundedRectangle(cornerRadius: Radius.md).fill(error != nil ? p.bg : p.fill))
             .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(error != nil ? p.down : focused ? p.textPrimary : .clear, lineWidth: 1))
             if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }

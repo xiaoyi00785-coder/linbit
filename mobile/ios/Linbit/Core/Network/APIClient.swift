@@ -53,8 +53,8 @@ actor APIClient {
         try await send(path, method: "DELETE", query: query, body: Optional<Int>.none, auth: true)
     }
 
-    func post<T: Decodable, B: Encodable>(_ path: String, body: B?, auth: Bool = true) async throws -> T {
-        try await send(path, method: "POST", query: [:], body: body, auth: auth)
+    func post<T: Decodable, B: Encodable>(_ path: String, body: B?, auth: Bool = true, headers: [String: String] = [:]) async throws -> T {
+        try await send(path, method: "POST", query: [:], body: body, auth: auth, headers: headers)
     }
 
     /// 不在 401 时自动刷新令牌（用于退出登录：访问令牌过期时服务端凭请求体 refreshToken 识别用户）
@@ -74,7 +74,7 @@ actor APIClient {
         let _: EmptyResponse = try await send(path, method: "DELETE", query: [:], body: Optional<Int>.none, auth: true)
     }
 
-    private func makeRequest<B: Encodable>(_ path: String, _ method: String, _ query: [String: String?], _ body: B?, _ auth: Bool) throws -> URLRequest {
+    private func makeRequest<B: Encodable>(_ path: String, _ method: String, _ query: [String: String?], _ body: B?, _ auth: Bool, _ headers: [String: String] = [:]) throws -> URLRequest {
         var comps = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         let items = query.compactMap { k, v in v.map { URLQueryItem(name: k, value: $0) } }
         if !items.isEmpty { comps.queryItems = items }
@@ -85,6 +85,7 @@ actor APIClient {
         req.setValue(Keychain.deviceId, forHTTPHeaderField: "X-Device-Id")
         req.setValue(Locale.preferredLanguages.first ?? "zh-CN", forHTTPHeaderField: "Accept-Language")
         if auth, let t = tokens.accessToken { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try CodableHelper.jsonEncoder.encode(body)
@@ -92,13 +93,13 @@ actor APIClient {
         return req
     }
 
-    private func send<T: Decodable, B: Encodable>(_ path: String, method: String, query: [String: String?], body: B?, auth: Bool, retried: Bool = false) async throws -> T {
-        let req = try makeRequest(path, method, query, body, auth)
+    private func send<T: Decodable, B: Encodable>(_ path: String, method: String, query: [String: String?], body: B?, auth: Bool, headers: [String: String] = [:], retried: Bool = false) async throws -> T {
+        let req = try makeRequest(path, method, query, body, auth, headers)
         let data: Data, resp: URLResponse
         do { (data, resp) = try await session.data(for: req) } catch { throw APIFailure.transport(error) }
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401, auth, !retried, await refresh() {
-            return try await send(path, method: method, query: query, body: body, auth: auth, retried: true)
+            return try await send(path, method: method, query: query, body: body, auth: auth, headers: headers, retried: true)
         }
         guard (200..<300).contains(status) else {
             let ra = ((resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")).flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
@@ -178,6 +179,7 @@ actor APIClient {
 }
 
 struct EmptyResponse: Decodable {}
+struct EmptyJSON: Encodable {}
 
 extension Notification.Name {
     static let lbSessionExpired = Notification.Name("lb.sessionExpired")

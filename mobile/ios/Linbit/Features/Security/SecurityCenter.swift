@@ -7,11 +7,15 @@ enum SecPage: String, Identifiable {
     var id: String { rawValue }
 }
 
-/// 截图（CI 未登录）用：Router.shotSheet = "sec:<page>[:state]"，注入演示数据
+/// 截图（CI 未登录）用：Router.shotSheet = "sec:<page>[:state]"，注入演示数据。
+/// raw 经 ShotRaw 闸门：Release 恒为 nil，无法由 lb.shot / 启动参数注入。
 enum SecShot {
-    static var raw: String?   // 由截图路由写入（非 MainActor，供 @State 初始值读取）
+    static var raw: String? {
+        get { ShotRaw.value }
+        set { ShotRaw.value = newValue }
+    }
     static var parts: [String] { raw.map { $0.split(separator: ":").map(String.init) } ?? [] }
-    static var on: Bool { raw != nil }
+    static var on: Bool { ShotGate.enabled && raw != nil }
     static var page: SecPage? { parts.count > 1 ? SecPage(rawValue: parts[1]) : nil }
     static var state: String { parts.count > 2 ? parts[2] : "" }
 
@@ -608,6 +612,8 @@ struct DevicesSessionsView: View {
     private func askRemoveDevice(_ d: APIDevice) {
         confirm = .init(title: "移除设备", message: "将注销「\(d.name ?? "该设备")」上的所有登录会话。", confirmTitle: "移除", destructive: true) {
             Task {
+                // DEBUG 截图夹具：永不真实移除设备
+                if SecShot.on { ToastCenter.shared.show("截图夹具不移除设备", .info); return }
                 do { try await SecurityAPI.removeDevice(d.deviceId); ToastCenter.shared.show("已移除", .success); await load() }
                 catch { ToastCenter.shared.show(securityMessage(error), .error) }
             }
@@ -718,6 +724,8 @@ struct PasskeysView: View {
         do { data = .loaded(try await SecurityAPI.passkeys()) } catch { data = .failed(error.lbMessage) }
     }
     private func add() async {
+        // DEBUG 截图夹具：永不真实注册通行密钥
+        if SecShot.on { ToastCenter.shared.show("截图夹具不添加通行密钥", .info); return }
         busy = true; defer { busy = false }
         do {
             let c = try await SecurityAPI.beginPasskey(totp: twofa ? code : nil, code: twofa ? nil : code)
@@ -733,6 +741,8 @@ struct PasskeysView: View {
     private func askDelete(_ k: APIPasskey) {
         confirm = .init(title: "删除通行密钥", message: "删除后将无法使用「\(k.name ?? "该通行密钥")」登录。", confirmTitle: "删除", destructive: true) {
             Task {
+                // DEBUG 截图夹具：永不真实删除通行密钥
+                if SecShot.on { ToastCenter.shared.show("截图夹具不删除通行密钥", .info); return }
                 do { try await SecurityAPI.deletePasskey(k.id ?? ""); ToastCenter.shared.show("已删除", .success); await load() }
                 catch { ToastCenter.shared.show(securityMessage(error), .error) }
             }
@@ -772,6 +782,10 @@ struct DisableTotpView: View {
         }
     }
     private func submit() async {
+        // DEBUG 截图夹具：永不真实关闭 2FA
+        if SecShot.on {
+            ToastCenter.shared.show("截图夹具不关闭身份验证器", .info); return
+        }
         loading = true; defer { loading = false }
         do {
             try await SecurityAPI.disableTotp(code)

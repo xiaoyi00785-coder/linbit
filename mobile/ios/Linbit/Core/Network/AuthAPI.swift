@@ -60,6 +60,18 @@ enum LoginResult { case done, challenge(APILoginChallenge) }
 enum AuthAPI {
     static var api: APIClient { .shared }
 
+    /// OpenAPI POST /auth/passkey/login/begin|finish（可发现凭据，无需预先填账户）
+    static func beginPasskeyLogin() async throws -> APIPasskeyCeremony {
+        try await api.post("/auth/passkey/login/begin", body: EmptyJSON(), auth: false)
+    }
+    static func finishPasskeyLogin(session: String, credential: [String: Any]) async throws {
+        let body = APIFinishPasskeyLoginRequest(
+            sessionId: session, credential: AnyCodable(credential),
+            deviceId: Keychain.deviceId, deviceName: DeviceInfo.name)
+        let t: APIAuthTokens = try await api.post("/auth/passkey/login/finish", body: body, auth: false)
+        TokenStore.shared.save(t)
+    }
+
     static func login(_ id: AccountId, password: String) async throws -> LoginResult {
         let body = APILoginRequest(email: id.emailOrNil, phone: id.phoneOrNil, countryCode: id.ccOrNil, password: password,
                                    deviceId: Keychain.deviceId, deviceName: DeviceInfo.name)

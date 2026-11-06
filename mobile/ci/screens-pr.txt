@@ -8,6 +8,14 @@ markets light
 spot light
 futures
 assets light
+
+# 闪兑与本批新页提前：避免 cancel-in-progress 截断末尾
+swap light
+spot-chart light
+futures-calc light
+futures-mark-history light
+futures-insurance light
+futures-guide light
 login
 
 # 高价值交易
@@ -35,4 +43,8 @@ assets-networks light
 
 # 其他高流量入口
 earn light
-swap light
+
+# 充提表单 / 客服详情（fixture；仅 Debug ShotGate）
+assets-deposit light
+assets-withdraw light
+support-detail-open light

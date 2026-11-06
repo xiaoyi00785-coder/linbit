@@ -36,9 +36,10 @@ struct HomeView: View {
                     sectionDivider
                     news
                 }
-                .padding(.bottom, Metrics.tabBarH + 40)
+                .padding(.bottom, Metrics.tabBarH + Metrics.tabBarInset + 120)
             }
             .refreshable { await vm.load(); await store.load() }
+            .clipped()
         }
         .background(p.bg)
         .task { await NotifCenter.shared.refresh() }
@@ -103,20 +104,39 @@ struct HomeView: View {
     }
 
     private var taskCard: some View {
-        HStack(spacing: 4) {
-            (Text(newcomerLead).foregroundColor(p.textPrimary)
-             + Text("\(vm.newcomer?.total ?? "215") \(vm.newcomer?.asset ?? "USDT")").foregroundColor(p.brand).fontWeight(.semibold)
-             + Text(" 体验金").foregroundColor(p.textPrimary))
-                .font(.lb(FontSize.caption))
-            Spacer()
+        // 对照 ref/1：主文案 + 可选倒计时（仅当 API 提供 deadline；无则不伪造）
+        HStack(alignment: .center, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
+                (Text(newcomerLead).foregroundColor(p.textPrimary)
+                 + Text("\(vm.newcomer?.total ?? "215") \(vm.newcomer?.asset ?? "USDT")").foregroundColor(p.brand).fontWeight(.semibold)
+                 + Text(" 体验金").foregroundColor(p.textPrimary))
+                    .font(.lb(FontSize.caption))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                if let d = vm.newcomer?.deadline {
+                    Text(Self.newcomerCountdown(d))
+                        .font(.lbNum(FontSize.small))
+                        .foregroundColor(p.textTertiary)
+                }
+            }
+            Spacer(minLength: 4)
             IconView(icon: .chevronRight, size: 14, tint: p.textSecondary)
         }
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); Router.shared.openFeature(.welfare) }
         .padding(.horizontal, 12)
-        .frame(height: Metrics.taskCardH)
+        .padding(.vertical, vm.newcomer?.deadline == nil ? 0 : 6)
+        .frame(minHeight: Metrics.taskCardH)
         .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border, lineWidth: 1))
         .padding(.horizontal, Spacing.pageH)
+    }
+
+    /// 对照 ref/1「6D:23:46:26」形态；不足 1 天则 HH:MM:SS。
+    private static func newcomerCountdown(_ deadline: Date) -> String {
+        let s = max(0, Int(deadline.timeIntervalSinceNow))
+        let d = s / 86_400, h = (s % 86_400) / 3600, m = (s % 3600) / 60, sec = s % 60
+        if d > 0 { return String(format: "%dD:%02d:%02d:%02d", d, h, m, sec) }
+        return String(format: "%02d:%02d:%02d", h, m, sec)
     }
 
     private var newcomerLead: String {
@@ -129,13 +149,13 @@ struct HomeView: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(vm.promo?.title ?? "全员红包雨火爆来袭").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                Text(vm.promo?.subtitle ?? "惊喜好礼等你拿").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                Text(vm.promo?.subtitle ?? "每日登入领红包，各种福利领不停").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
             }
             Spacer()
             IconView(icon: .gGift, size: 40)
         }
         .padding(.horizontal, 14)
-        .frame(height: Metrics.bannerH)
+        .frame(minHeight: Metrics.bannerH)
         .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); HomeLink.open(vm.promo?.linkUrl, fallback: .welfare) }
@@ -153,7 +173,7 @@ struct HomeView: View {
                     IconView(icon: icon, size: Metrics.gridIconGlyph)
                         .frame(width: Metrics.gridIcon, height: Metrics.gridIcon)
                         .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.iconTileBg))
-                    Text(title).font(.lb(11)).foregroundColor(p.textPrimary).frame(height: 14)
+                    Text(title).font(.lb(11)).foregroundColor(p.textPrimary).lineLimit(1).minimumScaleFactor(0.8).frame(minHeight: 14)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { Haptics.tap(); gridTap(title) }
@@ -190,24 +210,26 @@ struct HomeView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(currentBanner == nil ? "数字资产 · 全球消费" : (currentBanner?.subtitle ?? ""))
-                    .font(.lb(12)).foregroundColor(p.textSecondary).lineLimit(1).frame(height: 17, alignment: .leading)
+                    .font(.lb(12)).foregroundColor(p.textSecondary).lineLimit(1).minimumScaleFactor(0.85).frame(minHeight: 17, alignment: .leading)
                 Text(currentBanner?.title ?? "Linbit Card").font(.lb(14, .medium)).foregroundColor(p.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.85).frame(height: 17, alignment: .leading).padding(.top, 5.5)
+                    .lineLimit(1).minimumScaleFactor(0.85).frame(minHeight: 17, alignment: .leading).padding(.top, 5.5)
                 HStack(spacing: 6) {
                     Text("查看详情").font(.lb(12)).foregroundColor(p.textPrimary)
                     IconView(icon: .arrowRight, size: 16, tint: p.textPrimary)
                 }
-                .frame(height: 17, alignment: .leading).padding(.top, 39.5)
+                .frame(minHeight: 17, alignment: .leading).padding(.top, 39.5)
             }
             .padding(.top, 20)
             Spacer(minLength: 8)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: 138)
+        .frame(minHeight: 138)
         .overlay(alignment: .bottomTrailing) { pager(bannerPage + 1, max(vm.banners.count, 1)).padding(.trailing, 23).padding(.bottom, 4) }
         .contentShape(Rectangle())
         .onTapGesture { HomeLink.open(currentBanner?.link, fallback: nil) }
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            // 证据：ios.yml 冒烟 sleep 4–7s，与 4s/5s 轮播重叠会拍到 withAnimation 中帧（home-bell 叠影）
+            guard ShotGate.launchShot == nil else { return }
             if vm.banners.count > 1 { withAnimation { bannerPage = (bannerPage + 1) % vm.banners.count } }
         }
     }
@@ -247,7 +269,7 @@ struct HomeView: View {
                 if let e = vm.earn[safe: earnPage] { CoinIcon(base: e.asset ?? "USDT", size: 18) }
             }
             .frame(height: 18)
-            Text(earnLine).font(.lb(FontSize.body)).foregroundColor(p.textPrimary).lineLimit(1).frame(height: 18, alignment: .leading)
+            Text(earnLine).font(.lb(FontSize.body)).foregroundColor(p.textPrimary).lineLimit(1).minimumScaleFactor(0.85).frame(minHeight: 18, alignment: .leading)
         }
         .padding(.top, 24).padding(.leading, Spacing.pageH)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -256,6 +278,7 @@ struct HomeView: View {
         .contentShape(Rectangle())
         .onTapGesture { Router.shared.openFeature(.earn) }
         .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
+            guard ShotGate.launchShot == nil else { return }
             if !vm.earn.isEmpty { earnPage = (earnPage + 1) % vm.earn.count }
         }
     }
@@ -268,8 +291,11 @@ struct HomeView: View {
     private var ranking: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 对照图 #2：分隔线到 Tab 文字顶 23pt；Tab 间距 18pt、选中项下 16×3 横线；横线到筛选块 19pt
-            PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16, underline: true, spacing: 17)
-                .padding(.horizontal, Spacing.pageH).padding(.top, 20)
+            ScrollView(.horizontal, showsIndicators: false) {
+                PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16, underline: true, spacing: 17)
+                    .padding(.horizontal, Spacing.pageH)
+            }
+            .padding(.top, 20)
             ChipBar(items: ["现货", "合约"], selected: $rankKind).padding(.top, 19).padding(.bottom, 12)
             HStack {
                 Text("交易对"); Spacer(); Text("最新价")
@@ -302,8 +328,10 @@ struct HomeView: View {
                     .padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
                     Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
                 }
+            } else if newsTab == 1 {
+                EmptyStateView(text: "快讯即将上线").frame(height: 140)
             } else {
-                EmptyStateView(text: newsTab == 1 ? "快讯即将上线" : "学院即将上线").frame(height: 140)
+                AcademyHomeSection()
             }
             moreLink {}
         }
@@ -372,13 +400,18 @@ struct HomeMoreSheet: View {
         ("banknote", "理财", .earn, nil), ("bubble.left.and.bubble.right", "聊天室", .chat, "chat"),
         ("person.2", "子账户", .subAccounts, "subAccounts"), ("gift", "福利中心", .welfare, nil), ("person.3.sequence", "合伙人", .partner, nil), ("banknote", "质押借币", .loans, nil),
         ("doc.on.doc", "跟单", .copyTrading, "copyTrading"), ("building.columns", "TradFi", .tradfi, "tokenizedStocks"),
+        ("bell.badge", "价格预警", .priceAlerts, "priceAlerts"),
+        ("rectangle.stack.person.crop", "模拟交易", .paperTrading, "paperTrading"),
         ("clock.arrow.circlepath", "事件合约", nil, "eventContracts"), ("person.3", "P2P", nil, "p2p"),
         ("creditcard", "快捷买币", nil, "fiatOnRamp"), ("function", "期权", nil, "options")]
     var body: some View {
         LBSheet(title: "全部功能", showClose: true, onClose: onClose) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 18) {
                 ForEach(items, id: \.1) { icon, title, page, flag in
-                    let on = flag.map { flags.isOn($0) } ?? true
+                    let on: Bool = {
+                        if flag == PaperTradingFeature.flagKey { return PaperTradingFeature.isFlagOn }
+                        return flag.map { flags.isOn($0) } ?? true
+                    }()
                     Button {
                         onClose()
                         if !on { ToastCenter.shared.show("\(title) 即将上线"); return }

@@ -145,6 +145,15 @@ enum HomeAPI {
     static func newcomer() async throws -> Newcomer {
         try await APIClient.shared.get("/home/newcomer", auth: TokenStore.shared.isLoggedIn)
     }
+    /// POST /rewards/newcomer/enroll（OpenAPI enrollNewcomer）
+    static func enrollNewcomer() async throws {
+        let _: EmptyResponse = try await APIClient.shared.post("/rewards/newcomer/enroll", body: EmptyJSON(), auth: true)
+    }
+    struct NewcomerClaimResult: Decodable { let task: String?; let couponId: Int64?; let title: String?; let kind: String?; let amount: String? }
+    /// POST /rewards/newcomer/tasks/{key}/claim
+    static func claimNewcomerTask(_ key: String) async throws -> NewcomerClaimResult {
+        try await APIClient.shared.post("/rewards/newcomer/tasks/\(key.urlPath)/claim", body: EmptyJSON(), auth: true)
+    }
 }
 
 enum FavoritesAPI {

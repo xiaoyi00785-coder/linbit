@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "notes": [
+    "profiles drive optional adapt job device selection; screens-adapt.txt only lists screen keys/themes",
+    "ci_supported=false means do NOT claim CI/simulator coverage; use DEBUG preview only",
+    "Current verified evidence: 375pt@2x xxxl (SE-class 750x1334) + 393pt@3x medium (1179x2556 PR smoke) — NOT 320/430"
+  ],
+  "profiles": {
+    "w320_se1_preview_only": {
+      "label": "320pt narrow (legacy)",
+      "device_prefer": ["iPhone SE (1st generation)"],
+      "points_w": 320,
+      "points_h": 568,
+      "scale": 2,
+      "pixels_w": 640,
+      "pixels_h": 1136,
+      "content_size": "extra-extra-extra-large",
+      "theme": "light",
+      "ci_supported": false,
+      "unsupported_reason": "Xcode 16.4 device TYPE may list iPhone SE (1st generation), but macos-15 / iOS 18.x GH images typically do not provide a bootable 320pt runtime; Codemagic Xcode 16.4 iOS 18.5 default devices are iPhone 16/16e/Plus/Pro/Pro Max only. Do not forge real-device/CI proof. Use DEBUG SwiftUI LayoutSizeProbe previews locally."
+    },
+    "se375_xxxl": {
+      "label": "375pt SE-class + xxxLarge",
+      "device_prefer": ["iPhone SE (3rd generation)", "iPhone SE (2nd generation)", "iPhone 8"],
+      "fallback_prefer": ["iPhone 16e", "iPhone 16", "iPhone 15"],
+      "points_w": 375,
+      "points_h": 667,
+      "scale": 2,
+      "pixels_w": 750,
+      "pixels_h": 1334,
+      "content_size": "extra-extra-extra-large",
+      "theme": "light",
+      "ci_supported": true,
+      "evidence": "ci-shots-*-adapt 5 png all 750x1334"
+    },
+    "mid393_xxxl": {
+      "label": "393pt mid (iPhone 16) + xxxLarge",
+      "device_prefer": ["iPhone 16", "iPhone 15", "iPhone 14"],
+      "points_w": 393,
+      "points_h": 852,
+      "scale": 3,
+      "pixels_w": 1179,
+      "pixels_h": 2556,
+      "content_size": "extra-extra-extra-large",
+      "theme": "light",
+      "ci_supported": true,
+      "evidence": "PR smoke used ~393@3x at medium font; xxxl on this width NOT yet in downloaded adapt artifacts"
+    },
+    "max430_xxxl": {
+      "label": "430pt large (iPhone 16 Plus) + xxxLarge",
+      "device_prefer": ["iPhone 16 Plus", "iPhone 15 Plus", "iPhone 16 Pro Max", "iPhone 15 Pro Max"],
+      "points_w": 430,
+      "points_h": 932,
+      "scale": 3,
+      "pixels_w": 1290,
+      "pixels_h": 2796,
+      "content_size": "extra-extra-extra-large",
+      "theme": "light",
+      "ci_supported": true,
+      "evidence": "no downloaded artifact yet — profile for optional adapt only"
+    }
+  },
+  "workflow_profiles": {
+    "se375_xxxl": ["se375_xxxl"],
+    "mid393_xxxl": ["mid393_xxxl"],
+    "max430_xxxl": ["max430_xxxl"],
+    "matrix_se_mid_max": ["se375_xxxl", "mid393_xxxl", "max430_xxxl"]
+  }
+}

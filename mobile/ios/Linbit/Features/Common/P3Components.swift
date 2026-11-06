@@ -146,7 +146,7 @@ struct Sparkline: View {
 
 /// 全屏二级功能页（从首页宫格、现货顶栏进入）
 enum FeaturePage: String, Identifiable {
-    case earn, strategy, gridCreate, swap, chat, subAccounts, welfare, copyTrading, tradfi, futuresHistory, futuresRiskTiers, futuresFunding, changePassword, security, kyc, notifications, coupons, partner, loans, support
+    case earn, strategy, gridCreate, swap, chat, subAccounts, welfare, copyTrading, tradfi, futuresHistory, futuresRiskTiers, futuresFunding, futuresMarkHistory, futuresInsurance, futuresGuide, changePassword, security, kyc, notifications, coupons, partner, loans, support, priceAlerts, paperTrading, paperHistory
     var id: String { rawValue }
 }
 
@@ -166,6 +166,9 @@ struct FeatureHost: View {
         case .futuresHistory: FuturesHistoryView(symbol: Router.shared.futuresSymbol)
         case .futuresRiskTiers: FuturesRiskTiersView(symbol: Router.shared.futuresSymbol)
         case .futuresFunding: FuturesFundingHistoryView(symbol: Router.shared.futuresSymbol)
+        case .futuresMarkHistory: FuturesMarkHistoryView(symbol: Router.shared.futuresSymbol)
+        case .futuresInsurance: FuturesInsuranceFundView()
+        case .futuresGuide: FuturesBeginnerGuideView()
         case .security: SecurityCenterView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .notifications: NotificationsView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .coupons: CouponsView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
@@ -175,6 +178,13 @@ struct FeatureHost: View {
         case .kyc: KycView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .changePassword: ChangePasswordView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .tradfi: TradFiView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
+        case .priceAlerts:
+            // 列表内区分 flag 关闭（准确文案）/ 登录 / 正式 API；不在此用 ComingSoon 冒充
+            PriceAlertsListView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
+        case .paperTrading:
+            PaperTradingView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
+        case .paperHistory:
+            PaperHistoryView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         }
     }
 }

@@ -104,6 +104,12 @@ final class SpotModel: ObservableObject {
     }
 
     func start() async {
+        // DEBUG ShotGate 行情夹具：跳过实盘 symbols/WS，仅注入 example book
+        if MarketDemo.on {
+            await loadBook()
+            await refreshAccount()
+            return
+        }
         async let s: [APISymbol]? = try? MarketAPI.symbols()
         if let list = await s { meta = list.first { $0.symbol == symbol } }
         if let row = MarketStore.shared.spot.first(where: { $0.symbol == symbol }) { last = row.last; changePct = row.changePct }
@@ -126,6 +132,22 @@ final class SpotModel: ObservableObject {
 
     func loadBook(silent: Bool = false) async {
         if !silent { bookState = .loading }
+        // DEBUG example fixture（APIDepth shape）；非生产写入
+        if MarketDemo.on {
+            switch MarketDemo.mode {
+            case .error:
+                book = OrderBook(); bookState = .failed(MarketDemo.errorMessage)
+            case .empty:
+                book = OrderBook(); bookState = .loaded(()); last = last > 0 ? last : Dec.parse("67250.50")
+            case .ok:
+                book = MarketDemo.orderBook(symbol: symbol)
+                if last == 0 { last = book.bestBid ?? book.bestAsk ?? 0 }
+                changePct = Dec.parse("0.66")
+                if priceText.isEmpty, last > 0 { priceText = Fmt.price(last, precision: pricePrec).replacingOccurrences(of: ",", with: "") }
+                bookState = .loaded(())
+            }
+            return
+        }
         do {
             book = try await SpotAPI.depth(symbol, limit: 20)
             if last == 0 { last = book.bestBid ?? book.bestAsk ?? 0 }
@@ -202,6 +224,7 @@ final class SpotModel: ObservableObject {
     }
 
     func place() async -> Bool {
+        if MarketDemo.on { ToastCenter.shared.show("截图夹具不下单", .info); return false }
         placing = true; defer { placing = false }
         let cid = "ios-\(UUID().uuidString.prefix(12))"
         let quoteQty = byAmount ? Self.fmt(Dec.parse(amountText), pricePrec) : nil

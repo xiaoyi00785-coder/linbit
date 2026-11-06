@@ -33,4 +33,12 @@ extension FuturesAPI {
         let r: APIFuturesBills200Response = try await api.get("/futures/bills", query: ["kind": kind, "limit": "\(limit)"], auth: true)
         return r.bills ?? []
     }
+    /// GET /futures/market/mark-history
+    static func markHistory(_ symbol: String, interval: String = "15m", limit: Int = 200) async throws -> APIFuturesMarkHistory200Response {
+        try await api.get("/futures/market/mark-history", query: ["symbol": symbol, "interval": interval, "limit": "\(limit)"])
+    }
+    /// GET /futures/market/insurance-fund
+    static func insuranceFund() async throws -> APIFuturesInsuranceFund200Response {
+        try await api.get("/futures/market/insurance-fund")
+    }
 }

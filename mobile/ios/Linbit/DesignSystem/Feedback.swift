@@ -197,7 +197,14 @@ enum ErrorText {
         "EXPOSURE_LIMIT": "当前方向敞口已满，请稍后再试",
         "SYMBOL_PAUSED": "该产品暂停交易",
         "INDEX_UNAVAILABLE": "指数价格暂不可用，请稍后再试",
+        "PAPER_RESET_LIMIT_EXCEEDED": "每 UTC 日仅可重置一次模拟账户",
+        "PAPER_ORDER_NOT_FOUND": "模拟订单不存在",
+
         "FEATURE_DISABLED": "该功能暂未开放",
+        "ALERT_NOT_FOUND": "价格预警不存在",
+        "REVISION_CONFLICT": "预警已被修改，请刷新后重试",
+        "SHOT_BLOCKED": "截图夹具已拦截写操作",
+
         "PAIR_NOT_SUPPORTED": "暂不支持该币对兑换",
         "AMOUNT_TOO_LARGE": "超过单笔兑换上限",
         "PRICE_UNAVAILABLE": "暂无可用报价，请稍后再试",
@@ -544,11 +551,14 @@ struct InlineBanner: View {
     @Environment(\.palette) private var p
     let text: String
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12))
-            Text(text).font(.lb(FontSize.small))
-            Spacer()
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12)).padding(.top, 2)
+            Text(text).font(.lb(FontSize.small)).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .foregroundColor(p.down).padding(.horizontal, Spacing.pageH).frame(height: 30).background(p.downTint)
+        .foregroundColor(p.down)
+        .padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
+        .frame(minHeight: 30)
+        .background(p.downTint)
     }
 }

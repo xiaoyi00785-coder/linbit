@@ -12,6 +12,27 @@ on:
   pull_request:
     paths: ["mobile/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
+    inputs:
+      adapt_layout:
+        description: "额外跑适配截图（screens-adapt.txt；复用本 workflow 的 adapt job，不跑完整 screens 套件）"
+        type: boolean
+        default: false
+      adapt_device_profile:
+        description: "adapt 设备档（仅 adapt_layout=true）：se375_xxxl | mid393_xxxl | max430_xxxl | matrix_se_mid_max（单 job 顺序拍摄，一次 Debug generic build）"
+        type: choice
+        options:
+          - se375_xxxl
+          - mid393_xxxl
+          - max430_xxxl
+          - matrix_se_mid_max
+        default: se375_xxxl
+      screen_list:
+        description: "build 截图清单（仅 workflow_dispatch；PR 仍固定 screens-pr）。screens-risk=高风险 DEBUG 页，同一次 Debug build，无额外部署权限"
+        type: choice
+        options:
+          - screens-pr
+          - screens-risk
+        default: screens-pr
 
 permissions:
   contents: read
@@ -138,6 +159,23 @@ jobs:
               -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build
           fi
 
+      - name: Release compile check (simulator, no screenshots)
+        working-directory: ${{ env.IOS_DIR }}
+        run: |
+          set -euo pipefail
+          DEST="platform=iOS Simulator,id=${SIM_UDID},OS=${SIM_OS}"
+          echo "Release compile (ShotGate / #if DEBUG 剥离校验): ${DEST}"
+          # 独立 derivedData，避免覆盖 Debug .app 影响后续截图
+          if command -v xcbeautify >/dev/null 2>&1; then
+            xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Release \
+              -destination "$DEST" \
+              -derivedDataPath "${DERIVED}-release" CODE_SIGNING_ALLOWED=NO build | xcbeautify
+          else
+            xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Release \
+              -destination "$DEST" \
+              -derivedDataPath "${DERIVED}-release" CODE_SIGNING_ALLOWED=NO build
+          fi
+
       - name: Launch & screenshot (light / dark)
         env:
           # pull_request / push：冒烟清单 + 短等待；workflow_dispatch：完整清单
@@ -154,15 +192,24 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
 
-          # pull_request / push：冒烟清单 + sleep 4；仅 workflow_dispatch 跑完整清单 + sleep 7
-          # （完整套件约 183 张，仍可能逼近 90 分钟上限，故不在 push/main 自动跑）
+          # pull_request / push：冒烟 screens-pr + sleep 4
+          # workflow_dispatch 默认完整 screens.txt + sleep 7；screen_list=screens-risk 仅高风险页（同一次 Debug build，无额外部署权限）
           SCREEN_LIST=mobile/ci/screens-pr.txt
           SLEEP_SECS=4
           RUN_SPLASH_VIDEO=0
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            SCREEN_LIST=mobile/ci/screens.txt
-            SLEEP_SECS=7
-            RUN_SPLASH_VIDEO=1
+            case "${{ inputs.screen_list }}" in
+              screens-risk)
+                SCREEN_LIST=mobile/ci/screens-risk.txt
+                SLEEP_SECS=4
+                RUN_SPLASH_VIDEO=0
+                ;;
+              *)
+                SCREEN_LIST=mobile/ci/screens.txt
+                SLEEP_SECS=7
+                RUN_SPLASH_VIDEO=1
+                ;;
+            esac
           fi
           echo "SCREEN_LIST=$SCREEN_LIST SLEEP_SECS=$SLEEP_SECS RUN_SPLASH_VIDEO=$RUN_SPLASH_VIDEO"
 
@@ -210,5 +257,106 @@ jobs:
         with:
           name: linbit-ios-${{ github.sha }}
           path: shots/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # 可选布局适配截图：仅手动 workflow_dispatch 且勾选 adapt_layout。
+  # screens-adapt.txt + adapt_device_profile（se375/mid393/max430/matrix）；单次 generic Debug build，按 profile 顺序截图。
+  # 320pt 不在 ci_supported 档；见 adapt-device-matrix.json。不扩大 permissions、不部署。
+  adapt:
+    if: github.event_name == 'workflow_dispatch' && inputs.adapt_layout == true
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - name: Install XcodeGen
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Generate AppIcon
+        run: python3 mobile/tools/gen_app_icon.py
+      - name: Generate project
+        working-directory: ${{ env.IOS_DIR }}
+        run: xcodegen generate
+      - name: Select adapt simulator profile(s)
+        env:
+          ADAPT_DEVICE_PROFILE: ${{ inputs.adapt_device_profile || 'se375_xxxl' }}
+          LINBIT_SIM_JSON: /tmp/linbit-simulators.json
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available --json > /tmp/linbit-simulators.json
+          echo "Available iPhone device types (for audit):"
+          xcrun simctl list devicetypes | grep -i iPhone || true
+          python3 mobile/ci/select_adapt_simulators.py
+      - name: Build Debug once (generic iOS Simulator — reuse across adapt profiles)
+        working-directory: ${{ env.IOS_DIR }}
+        run: |
+          set -euo pipefail
+          # 单次 Debug 构建，后续各 profile 只 boot/install/截图，避免 matrix 重复完整 build
+          xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build
+      - name: Adapt screenshots (per profile device + content_size)
+        run: |
+          set -euo pipefail
+          APP=$(find "$DERIVED/Build/Products" -name "Linbit.app" -maxdepth 3 | head -1)
+          echo "APP=$APP"
+          test -n "$APP"
+          mkdir -p shots-adapt
+          python3 - <<'PY'
+          import json, os, subprocess, time
+          from pathlib import Path
+          app = None
+          for p in Path(os.environ["DERIVED"], "Build", "Products").rglob("Linbit.app"):
+              app = p; break
+          assert app, "Linbit.app missing"
+          profiles = json.loads(Path(os.environ.get("ADAPT_PROFILES_FILE", "/tmp/adapt-profiles.json")).read_text())
+          screens = []
+          for raw in Path("mobile/ci/screens-adapt.txt").read_text().splitlines():
+              s = raw.strip()
+              if not s or s.startswith("#"): continue
+              parts = s.split()
+              key = parts[0]
+              theme = parts[1] if len(parts) > 1 else "both"
+              screens.append((key, theme))
+
+          def run(cmd):
+              print("+", " ".join(cmd), flush=True)
+              subprocess.run(cmd, check=False)
+
+          for prof in profiles:
+              udid = prof["udid"]
+              tag = prof["tag"]
+              cs = prof["content_size"]
+              print(f"=== profile {tag} device={prof['name']} os={prof['os']} "
+                    f"expect {prof['points_w']}pt@{prof['scale']}x "
+                    f"px {prof['pixels_w']}x{prof['pixels_h']} content_size={cs}", flush=True)
+              run(["xcrun", "simctl", "boot", udid])
+              run(["xcrun", "simctl", "bootstatus", udid, "-b"])
+              run(["xcrun", "simctl", "install", udid, str(app)])
+              run(["xcrun", "simctl", "ui", udid, "content_size", cs])
+              for key, theme in screens:
+                  modes = ["light", "dark"] if theme == "both" else [theme]
+                  for mode in modes:
+                      run(["xcrun", "simctl", "ui", udid, "appearance", mode])
+                      run(["xcrun", "simctl", "terminate", udid, "click.cowa.linbit"])
+                      run(["xcrun", "simctl", "spawn", udid, "defaults", "write", "click.cowa.linbit", "lb.theme", "system"])
+                      run(["xcrun", "simctl", "spawn", udid, "defaults", "write", "click.cowa.linbit", "lb.shot", key])
+                      run(["xcrun", "simctl", "launch", udid, "click.cowa.linbit"])
+                      time.sleep(4)
+                      # 文件名区分 key / appearance / content_size档 / 设备档
+                      out = f"shots-adapt/{key}-{mode}-{tag}.png"
+                      run(["xcrun", "simctl", "io", udid, "screenshot", out])
+              run(["xcrun", "simctl", "ui", udid, "content_size", "medium"])
+              run(["xcrun", "simctl", "shutdown", udid])
+          meta = {"profiles": profiles, "screens": screens}
+          Path("shots-adapt/adapt-run-meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+          print("wrote shots-adapt/adapt-run-meta.json", flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linbit-ios-adapt-${{ github.sha }}
+          path: shots-adapt/
           retention-days: 14
           if-no-files-found: warn

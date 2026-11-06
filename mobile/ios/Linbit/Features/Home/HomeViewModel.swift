@@ -13,7 +13,7 @@ final class HomeViewModel: ObservableObject {
 
     static let localBanners: [HomeBanner] = [
         .init(id: "card", title: "Linbit Card", subtitle: "数字资产 · 全球消费", image: nil, link: nil),
-        .init(id: "redpacket", title: "全员红包雨火爆来袭", subtitle: "惊喜好礼等你拿", image: nil, link: nil),
+        .init(id: "redpacket", title: "全员红包雨火爆来袭", subtitle: "每日登入领红包，各种福利领不停", image: nil, link: nil),
     ]
 
     /// 运营位：弹窗 / 搜索占位词（/home/placements 上线后生效）

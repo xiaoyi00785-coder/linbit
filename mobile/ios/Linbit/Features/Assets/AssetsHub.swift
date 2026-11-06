@@ -20,6 +20,13 @@ extension AssetsAPI {
         try await api.get("/wallet/withdraw/records", query: ["page": "\(page)", "pageSize": "20"], auth: true)
     }
     static func cancelWithdrawal(_ id: String) async throws -> APIWithdrawal { try await api.post("/wallet/withdraw/\(id)/cancel", body: Empty()) }
+    static func createWithdrawal(_ r: APIWithdrawRequest) async throws -> APIWithdrawal {
+        try await api.post("/wallet/withdraw", body: r)
+    }
+    /// 未开 2FA 时提现/内部转账前置验证码（purpose=withdraw）
+    static func sendWithdrawCode() async throws {
+        let _: APISendCodeResponse = try await api.post("/account/code/send", body: APISendCodeAuthedRequest(purpose: .withdraw))
+    }
     static func addresses() async throws -> [APIWithdrawAddress] {
         let r: APIWithdrawAddressList = try await api.get("/account/withdraw-addresses", auth: true)
         return r.items
@@ -587,7 +594,9 @@ struct InternalTransferView: View {
                     if let v = validation, !amount.isEmpty || !recipient.isEmpty { Text(v).font(.lb(FontSize.small)).foregroundColor(p.down) }
                     history
                 }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
-            }.refreshable { await load() }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .refreshable { await load() }
         }
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
         .task(id: "\(session.isLoggedIn)-\(asset)") { await load() }

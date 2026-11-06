@@ -4,6 +4,8 @@ import SwiftUI
 struct ChatRoomView: View {
     @Environment(\.palette) private var p
     @EnvironmentObject private var session: Session
+    /// 行情 Tab 内嵌时为 true：不再套 FeatureShell，避免双顶栏
+    var embedInTab: Bool = false
     @State private var rooms: [ChatRoom] = []
     @State private var rules: ChatRules?
     @State private var room = "general"
@@ -20,17 +22,11 @@ struct ChatRoomView: View {
     @State private var myIds: Set<Int64> = []
 
     var body: some View {
-        FeatureShell(title: "聊天室") {
-            if disabled { ComingSoonView(title: "聊天室") } else {
-                VStack(spacing: 0) {
-                    roomBar
-                    switch state {
-                    case .idle, .loading: SkeletonList(rows: 8)
-                    case let .failed(e): ErrorStateView(message: e) { Task { await loadRooms() } }
-                    case .loaded: list
-                    }
-                    inputBar
-                }
+        Group {
+            if embedInTab {
+                chatBody
+            } else {
+                FeatureShell(title: "聊天室") { chatBody }
             }
         }
         .task { await loadRooms() }
@@ -50,6 +46,22 @@ struct ChatRoomView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder private var chatBody: some View {
+        if disabled {
+            ComingSoonView(title: "聊天室", note: "功能开关 chat 未开启，或服务端返回 FEATURE_DISABLED")
+        } else {
+            VStack(spacing: 0) {
+                roomBar
+                switch state {
+                case .idle, .loading: SkeletonList(rows: 8)
+                case let .failed(e): ErrorStateView(message: e) { Task { await loadRooms() } }
+                case .loaded: list
+                }
+                inputBar
             }
         }
     }

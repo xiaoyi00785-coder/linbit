@@ -63,7 +63,8 @@ enum SecurityAPI {
     }
 }
 
-private extension String {
+extension String {
+    /// Path-segment percent-encoding shared by SecurityAPI / HomeAPI claim paths.
     var urlPath: String { addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? self }
 }
 
@@ -94,6 +95,12 @@ extension Data {
 final class PasskeyRegistrar: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     private var cont: CheckedContinuation<[String: Any], Error>?
 
+    private func resumeOnce(_ result: Result<[String: Any], Error>) {
+        guard let c = cont else { return }
+        cont = nil
+        c.resume(with: result)
+    }
+
     /// 读取 PublicKeyCredentialCreationOptions（可能包了一层 publicKey），调起系统通行密钥，返回 PublicKeyCredential.toJSON() 等价结构
     func register(options raw: [String: AnyCodable]) async throws -> [String: Any] {
         var o: [String: Any] = raw.mapValues { $0.value }
@@ -107,27 +114,80 @@ final class PasskeyRegistrar: NSObject, ASAuthorizationControllerDelegate, ASAut
         let req = provider.createCredentialRegistrationRequest(challenge: challenge, name: name, userID: uid)
         let c = ASAuthorizationController(authorizationRequests: [req])
         c.delegate = self; c.presentationContextProvider = self
-        return try await withCheckedThrowingContinuation { k in cont = k; c.performRequests() }
+        return try await withCheckedThrowingContinuation { k in
+            if let prev = cont { cont = nil; prev.resume(throwing: PasskeyError.cancelled) }
+            cont = k; c.performRequests()
+        }
+    }
+
+    /// 登录断言：对齐 Web `passkeyLogin` / PublicKeyCredentialRequestOptions
+    /// （challenge、rpId、allowCredentials、userVerification）
+    func assert(options raw: [String: AnyCodable]) async throws -> [String: Any] {
+        var o: [String: Any] = raw.mapValues { $0.value }
+        if let inner = o["publicKey"] as? [String: Any] { o = inner }
+        guard let ch = o["challenge"] as? String, let challenge = Data(base64url: ch) else { throw PasskeyError.badOptions }
+        let rpId = (o["rpId"] as? String) ?? ((o["rp"] as? [String: Any])?["id"] as? String)
+        guard let rpId else { throw PasskeyError.badOptions }
+        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpId)
+        let req = provider.createCredentialAssertionRequest(challenge: challenge)
+        if let list = o["allowCredentials"] as? [[String: Any]] {
+            var descs: [ASAuthorizationPlatformPublicKeyCredentialDescriptor] = []
+            for c in list {
+                guard let idS = c["id"] as? String, let id = Data(base64url: idS) else { continue }
+                descs.append(ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: id))
+            }
+            if !descs.isEmpty { req.allowedCredentials = descs }
+        }
+        if let uv = o["userVerification"] as? String {
+            switch uv {
+            case "required": req.userVerificationPreference = .required
+            case "preferred": req.userVerificationPreference = .preferred
+            case "discouraged": req.userVerificationPreference = .discouraged
+            default: break
+            }
+        }
+        let c = ASAuthorizationController(authorizationRequests: [req])
+        c.delegate = self; c.presentationContextProvider = self
+        return try await withCheckedThrowingContinuation { k in
+            if let prev = cont { cont = nil; prev.resume(throwing: PasskeyError.cancelled) }
+            cont = k; c.performRequests()
+        }
     }
 
     nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization a: ASAuthorization) {
         Task { @MainActor in
-            guard let r = a.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration, let att = r.rawAttestationObject else {
-                cont?.resume(throwing: PasskeyError.badOptions); cont = nil; return
+            if let r = a.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration, let att = r.rawAttestationObject {
+                let id = r.credentialID.base64url
+                resumeOnce(.success([
+                    "id": id, "rawId": id, "type": "public-key", "authenticatorAttachment": "platform",
+                    "response": ["clientDataJSON": r.rawClientDataJSON.base64url, "attestationObject": att.base64url, "transports": ["internal", "hybrid"]],
+                    "clientExtensionResults": [String: Any]()
+                ]))
+                return
             }
-            let id = r.credentialID.base64url
-            cont?.resume(returning: [
-                "id": id, "rawId": id, "type": "public-key", "authenticatorAttachment": "platform",
-                "response": ["clientDataJSON": r.rawClientDataJSON.base64url, "attestationObject": att.base64url, "transports": ["internal", "hybrid"]],
-                "clientExtensionResults": [String: Any]()
-            ])
-            cont = nil
+            if let r = a.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
+                let id = r.credentialID.base64url
+                var response: [String: Any] = [
+                    "clientDataJSON": r.rawClientDataJSON.base64url,
+                    "authenticatorData": r.rawAuthenticatorData.base64url,
+                    "signature": r.signature.base64url
+                ]
+                // 与 WebAuthn JSON 一致：无 userHandle 时省略字段，不塞 NSNull
+                if let uh = r.userID { response["userHandle"] = uh.base64url }
+                resumeOnce(.success([
+                    "id": id, "rawId": id, "type": "public-key", "authenticatorAttachment": "platform",
+                    "response": response,
+                    "clientExtensionResults": [String: Any]()
+                ]))
+                return
+            }
+            resumeOnce(.failure(PasskeyError.badOptions))
         }
     }
     nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         Task { @MainActor in
             let cancelled = (error as? ASAuthorizationError)?.code == .canceled
-            cont?.resume(throwing: cancelled ? PasskeyError.cancelled : error); cont = nil
+            resumeOnce(.failure(cancelled ? PasskeyError.cancelled : error))
         }
     }
     nonisolated func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {

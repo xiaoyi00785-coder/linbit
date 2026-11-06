@@ -64,7 +64,11 @@ struct RootTabView: View {
         }
         .background(p.bg.ignoresSafeArea())
         .overlay(alignment: .top) { ToastOverlay() }
-        .onAppear { applyScreenshotRoute() }
+        .onAppear {
+            #if DEBUG
+            applyScreenshotRoute()
+            #endif
+        }
         .task { await AppFeatures.shared.refresh(); await Watchlist.shared.sync() }
         .fullScreenCover(item: $router.feature) { page in
             ThemedRoot { FeatureHost(page: page) }
@@ -79,9 +83,10 @@ struct RootTabView: View {
         }
     }
 
-    /// CI 截图用：仅当模拟器写入 lb.shot 时切换页面，正常启动不改变界面。
+    /// CI 截图用：仅 Debug + 模拟器写入 lb.shot 时切换页面。Release 整段剥离，无法经 defaults/启动参数进入演示。
+    #if DEBUG
     private func applyScreenshotRoute() {
-        guard let shot = UserDefaults.standard.string(forKey: "lb.shot"), !shot.isEmpty else { return }
+        guard ShotGate.enabled, let shot = ShotGate.launchShot else { return }
         switch shot {
         case "markets": router.tab = .markets
         case "spot": router.tab = .spot
@@ -96,6 +101,10 @@ struct RootTabView: View {
         case "assets-account-transfer": router.tab = .assets; router.assetsPath.append(AssetsRoute.accountTransfer)
         case "assets-internal-transfer": router.tab = .assets; router.assetsPath.append(AssetsRoute.internalTransfer)
         case "assets-withdraw-records": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdrawRecords)
+        case "assets-deposit": router.tab = .assets; router.assetsPath.append(AssetsRoute.deposit("USDT"))
+        case "assets-withdraw": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdraw("USDT"))
+        case "assets-withdraw-ok": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdraw("USDT"))
+        case "assets-withdraw-paused": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdraw("USDT"))
         case "assets-address-book": router.tab = .assets; router.assetsPath.append(AssetsRoute.addressBook)
         case "futures": router.tab = .futures; router.futuresTop = 0
         case "futures-leverage": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "leverage"
@@ -117,6 +126,11 @@ struct RootTabView: View {
         case "futures-algo-history": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "algoHistory"; router.feature = .futuresHistory
         case "futures-tiers": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresRiskTiers
         case "futures-funding": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresFunding
+        case "futures-mark-history": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresMarkHistory
+        case "futures-insurance": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresInsurance
+        case "futures-guide": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresGuide
+        case "futures-calc": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "calc"
+        case "spot-chart": router.tab = .spot; router.shotSheet = "spotChart"
         case "event": router.tab = .futures; router.futuresTop = 1
         case "event-confirm": router.tab = .futures; router.futuresTop = 1; router.shotSheet = "eventConfirm"
         case "earn": router.feature = .earn
@@ -148,6 +162,14 @@ struct RootTabView: View {
         case "kyc-form2": SecShot.raw = "kyc:form2"; router.feature = .kyc
         case "kyc-form2-full": SecShot.raw = "kyc:form2full"; router.feature = .kyc
         case "kyc-error": SecShot.raw = "kyc:error"; router.feature = .kyc
+        case "price-alerts", "price-alerts-empty", "price-alerts-error", "price-alerts-disabled", "price-alerts-create", "price-alerts-edit", "price-alerts-delete":
+            router.feature = .priceAlerts
+        case "paper", "paper-empty", "paper-error", "paper-disabled", "paper-reset", "paper-place", "paper-place-ok", "paper-place-fail":
+            router.tab = .futures
+            router.futuresTop = 3
+            router.feature = .paperTrading
+        case "paper-orders", "paper-orders-empty", "paper-orders-error", "paper-trades", "paper-trades-empty", "paper-trades-error":
+            router.feature = .paperHistory
         case "notif-list": SecShot.raw = "notif:list"; router.feature = .notifications
         case "notif-empty": SecShot.raw = "notif:empty"; router.feature = .notifications
         case "notif-error": SecShot.raw = "notif:error"; router.feature = .notifications
@@ -229,4 +251,5 @@ struct RootTabView: View {
             router.tab = .home
         }
     }
+    #endif
 }

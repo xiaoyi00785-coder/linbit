@@ -206,6 +206,13 @@ final class FuturesModel: ObservableObject {
     }
 
     private func loadContract() async {
+        // DEBUG ShotGate 行情夹具：合成合约元数据，不打实盘 /futures/market/*
+        if MarketDemo.on || shotDemo {
+            contract = MarketDemo.contract(symbol: symbol)
+            maxLeverage = contract?.maxLeverage ?? 100
+            tiers = []
+            return
+        }
         if let list = try? await FuturesAPI.contracts() {
             contract = list.first { $0.symbol == symbol }
             maxLeverage = contract?.maxLeverage ?? 100
@@ -214,6 +221,21 @@ final class FuturesModel: ObservableObject {
     }
 
     func refreshMarket() async {
+        // DEBUG example fixture：注入 API-shape ticker/depth；Release/ShotGate 关闭时不走此支
+        if MarketDemo.on || shotDemo {
+            switch MarketDemo.mode {
+            case .error:
+                ticker = nil; book = OrderBook(); marketError = MarketDemo.errorMessage
+            case .empty:
+                ticker = MarketDemo.futuresTicker(symbol: symbol)
+                book = OrderBook(); marketError = nil
+            case .ok:
+                ticker = MarketDemo.futuresTicker(symbol: symbol)
+                book = MarketDemo.orderBook(symbol: symbol)
+                marketError = nil
+            }
+            return
+        }
         do {
             async let t = FuturesAPI.ticker(symbol)
             async let b = FuturesAPI.depth(symbol)
@@ -272,6 +294,8 @@ final class FuturesModel: ObservableObject {
     /// long=true：开多 / 平空（买）；false：开空 / 平多（卖）
     /// 分仓（HEDGE）：开多/平多 → LONG，开空/平空 → SHORT；平仓数量按对应方向仓位计算
     func place(long: Bool) async -> Bool {
+
+        if MarketDemo.on { ToastCenter.shared.show("截图夹具不下单", .info); return false }
         placing = true; defer { placing = false }
         let side: APIFuturesPlaceOrderRequest.APISide = long ? .buy : .sell
         var posSide: APIFuturesPlaceOrderRequest.APIPositionSide? = nil

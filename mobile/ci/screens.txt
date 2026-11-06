@@ -17,6 +17,11 @@ futures-position-history
 futures-algo-history
 futures-tiers
 futures-funding
+spot-chart
+futures-calc
+futures-mark-history
+futures-insurance
+futures-guide
 event
 earn
 strategy
@@ -158,6 +163,8 @@ security-2fa-disable-error
 # 资产模块（日间 + 夜间）
 assets-overview
 assets-networks
+assets-deposit
+assets-withdraw
 assets-account-transfer
 assets-internal-transfer
 assets-withdraw-records

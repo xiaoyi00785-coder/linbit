@@ -120,8 +120,14 @@ struct SupportStatusBadge: View {
 
 // MARK: - CI 截图演示数据（lb.shot = support-*）
 enum SupportShot {
-    static var raw: String?
-    static var on: Bool { raw != nil }
+
+    /// 经 ShotRaw.support 闸门：Release 恒 nil，无法由 lb.shot 注入
+    static var raw: String? {
+        get { ShotRaw.support }
+        set { ShotRaw.support = newValue }
+    }
+    static var on: Bool { ShotGate.enabled && raw != nil }
+
     static let now = Date(timeIntervalSince1970: 1_793_000_000)
     static func ticket(_ id: String, _ c: APISupportTicketCategory, _ s: APISupportTicketStatus, _ subject: String, unread: Bool = false, ago: Double, messages: [APISupportTicketMessage]? = nil) -> APISupportTicket {
         APISupportTicket(id: id, category: c, subject: subject, status: s, lastReplyBy: s == .replied ? .support : .user,
@@ -434,8 +440,11 @@ struct SupportCreateView: View {
                     LBButton(title: cooldown.active ? "\(cooldown.left)s 后可提交" : "提交", kind: .primary,
                              enabled: valid && !cooldown.active, loading: sending) { Task { await submit() } }
                 }
-                .padding(Spacing.pageH)
+
+                .padding(Spacing.pageH).padding(.bottom, 24)
             }
+            .scrollDismissesKeyboard(.interactively)
+
         }
         .background(p.bg.ignoresSafeArea())
         .onAppear { if SupportShot.raw == "create-ratelimit" { cooldown.start(58) } }
@@ -472,6 +481,7 @@ struct SupportTicketDetailView: View {
     @State private var confirm: ConfirmRequest?
     @State private var viewing: APISupportAttachment?
     @StateObject private var cooldown = RetryCountdown()
+    @FocusState private var composerFocus: Bool
 
     private var closed: Bool { closedByConflict || data.value?.status == .closed }
 
@@ -491,11 +501,16 @@ struct SupportTicketDetailView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         header(t)
                         ForEach(t.messages ?? [], id: \.id) { m in bubble(m) }
-                    }.padding(Spacing.pageH)
+
+                    }.padding(Spacing.pageH).padding(.bottom, 12)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if data.value != nil { composer }
         }
+        .lbKeyboardDone(focus: $composerFocus)
         .background(p.bg.ignoresSafeArea())
         .task { await load() }
         .lbConfirm($confirm)
@@ -542,6 +557,9 @@ struct SupportTicketDetailView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "lock.fill").font(.system(size: 12))
                     Text("工单已关闭，无法继续回复。如仍有问题，请重新提交工单。").font(.lb(FontSize.caption))
+
+                        .fixedSize(horizontal: false, vertical: true)
+
                 }.foregroundColor(p.textSecondary).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12).background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
             } else {
@@ -549,11 +567,14 @@ struct SupportTicketDetailView: View {
                 if let e = pickError { Text(e).font(.lb(FontSize.small)).foregroundColor(p.down) }
                 if cooldown.active { Text(cooldown.hint).font(.lb(FontSize.small)).foregroundColor(p.down) }
                 else if let e = error { Text(e).font(.lb(FontSize.small)).foregroundColor(p.down) }
-                HStack(spacing: 8) {
-                    TextField("输入回复内容", text: $text, axis: .vertical).lineLimit(1...4)
+
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField("输入回复内容", text: $text, axis: .vertical).lineLimit(1...5)
                         .font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
                         .padding(.horizontal, 12).padding(.vertical, 10)
+                        .frame(minHeight: 40)
                         .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                        .focused($composerFocus)
                         .disabled(cooldown.active)
                     LBButton(title: cooldown.active ? "\(cooldown.left)s" : "发送", kind: .primary, height: 40,
                              enabled: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.count <= 5000 && !cooldown.active,
@@ -562,7 +583,10 @@ struct SupportTicketDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, Spacing.pageH).padding(.vertical, 10)
+
+        .padding(.horizontal, Spacing.pageH).padding(.top, 10)
+        .padding(.bottom, 10)
+
         .background(p.bgElevated.overlay(Rectangle().fill(p.divider).frame(height: 0.5), alignment: .top))
     }
 
