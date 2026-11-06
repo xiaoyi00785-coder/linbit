@@ -68,6 +68,10 @@ object WsMessageParser {
     fun ticker(frame: WsInbound.Frame): WsTicker? = decode(frame, WsTicker.serializer())
     fun futuresTicker(frame: WsInbound.Frame): WsFuturesTicker? = decode(frame, WsFuturesTicker.serializer())
 
+    /** `event:orders` 私有频道：data 为 EventOrder（OpenAPI）。 */
+    fun eventOrder(frame: WsInbound.Frame): click.cowa.linbit.core.generated.ApiEventOrder? =
+        decode(frame, click.cowa.linbit.core.generated.ApiEventOrder.serializer())
+
     private fun <T> decode(frame: WsInbound.Frame, ser: kotlinx.serialization.KSerializer<T>): T? = try {
         json.decodeFromJsonElement(ser, frame.data)
     } catch (_: Exception) {
