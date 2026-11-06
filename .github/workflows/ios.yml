@@ -12,6 +12,11 @@ on:
   pull_request:
     paths: ["mobile/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
+    inputs:
+      adapt_layout:
+        description: "额外跑小屏/动态字体适配截图（screens-adapt.txt，不跑完整套件）"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -138,6 +143,23 @@ jobs:
               -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build
           fi
 
+      - name: Release compile check (simulator, no screenshots)
+        working-directory: ${{ env.IOS_DIR }}
+        run: |
+          set -euo pipefail
+          DEST="platform=iOS Simulator,id=${SIM_UDID},OS=${SIM_OS}"
+          echo "Release compile (ShotGate / #if DEBUG 剥离校验): ${DEST}"
+          # 独立 derivedData，避免覆盖 Debug .app 影响后续截图
+          if command -v xcbeautify >/dev/null 2>&1; then
+            xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Release \
+              -destination "$DEST" \
+              -derivedDataPath "${DERIVED}-release" CODE_SIGNING_ALLOWED=NO build | xcbeautify
+          else
+            xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Release \
+              -destination "$DEST" \
+              -derivedDataPath "${DERIVED}-release" CODE_SIGNING_ALLOWED=NO build
+          fi
+
       - name: Launch & screenshot (light / dark)
         env:
           # pull_request / push：冒烟清单 + 短等待；workflow_dispatch：完整清单
@@ -210,5 +232,103 @@ jobs:
         with:
           name: linbit-ios-${{ github.sha }}
           path: shots/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # 可选布局适配截图：仅手动 workflow_dispatch 且勾选 adapt_layout。
+  # 使用精简 screens-adapt.txt + 优先小屏 + xxxLarge 字体，避免重复全套截图。
+  adapt:
+    if: github.event_name == 'workflow_dispatch' && inputs.adapt_layout == true
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - name: Install XcodeGen
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Generate AppIcon
+        run: python3 mobile/tools/gen_app_icon.py
+      - name: Generate project
+        working-directory: ${{ env.IOS_DIR }}
+        run: xcodegen generate
+      - name: Select small iPhone simulator (SE preferred)
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available --json > /tmp/linbit-simulators.json
+          python3 <<'PY'
+          import json, os, re
+          devices_by_runtime = json.load(open('/tmp/linbit-simulators.json'))['devices']
+          prefer = ['iPhone SE (3rd generation)', 'iPhone SE (2nd generation)', 'iPhone 16e', 'iPhone 16', 'iPhone 15']
+          candidates = []
+          for runtime, devices in devices_by_runtime.items():
+              if 'iOS-' not in runtime and 'iOS ' not in runtime:
+                  continue
+              parts = runtime.split('iOS-')
+              sim_os = parts[-1].replace('-', '.') if len(parts) > 1 else 'latest'
+              ver = tuple(int(x) for x in re.findall(r'\d+', sim_os)[:3]) or (0,)
+              for device in devices:
+                  if device.get('isAvailable') is False:
+                      continue
+                  if device.get('availability') not in (None, '(available)'):
+                      continue
+                  name = device.get('name', '')
+                  udid = device.get('udid', '')
+                  if not udid or 'iPhone' not in name:
+                      continue
+                  rank = next((i for i, pref in enumerate(prefer) if pref in name), 99)
+                  candidates.append((rank, tuple(-v for v in ver), name, sim_os, udid))
+          if not candidates:
+              raise SystemExit('::error::没有找到可用的 iPhone 模拟器；请查看 simctl 设备列表。')
+          rank, _, name, sim_os, udid = min(candidates)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
+              f.write(f'SIM_NAME={name}\n')
+              f.write(f'SIM_OS={sim_os}\n')
+              f.write(f'SIM_UDID={udid}\n')
+          print(f'Selected adapt simulator: {name}, iOS {sim_os}, UDID {udid}')
+          PY
+      - name: Build Debug for adapt screenshots
+        working-directory: ${{ env.IOS_DIR }}
+        run: |
+          set -euo pipefail
+          DEST="platform=iOS Simulator,id=${SIM_UDID},OS=${SIM_OS}"
+          xcodebuild -project Linbit.xcodeproj -scheme Linbit -configuration Debug \
+            -destination "$DEST" \
+            -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build
+      - name: Adapt screenshots (xxxLarge + light)
+        run: |
+          set -euo pipefail
+          APP=$(find "$DERIVED/Build/Products" -name "Linbit.app" -maxdepth 3 | head -1)
+          UDID="$SIM_UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p shots-adapt
+          xcrun simctl ui "$UDID" content_size extra-extra-extra-large || true
+          shoot() {
+            local screen="$1" mode="$2"
+            xcrun simctl ui "$UDID" appearance "$mode"
+            xcrun simctl terminate "$UDID" click.cowa.linbit || true
+            xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.theme system
+            xcrun simctl spawn "$UDID" defaults write click.cowa.linbit lb.shot "$screen"
+            xcrun simctl launch "$UDID" click.cowa.linbit
+            sleep 4
+            xcrun simctl io "$UDID" screenshot "shots-adapt/${screen}-${mode}-xxxl.png" || true
+          }
+          while read -r screen mode _ <&3; do
+            case "$screen" in ""|\#*) continue ;; esac
+            case "${mode:-both}" in
+              light) shoot "$screen" light ;;
+              dark)  shoot "$screen" dark ;;
+              both)  shoot "$screen" light; shoot "$screen" dark ;;
+              *) echo "::error::未知模式 $screen $mode"; exit 1 ;;
+            esac
+          done 3< mobile/ci/screens-adapt.txt
+          xcrun simctl ui "$UDID" content_size medium || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linbit-ios-adapt-${{ github.sha }}
+          path: shots-adapt/
           retention-days: 14
           if-no-files-found: warn
