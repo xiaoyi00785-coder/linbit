@@ -21,8 +21,12 @@ public struct APIWalletNetwork: Codable, JSONEncodable, Hashable {
     public var depositEnabled: Bool?
     public var withdrawEnabled: Bool?
     public var estimatedArrivalMinutes: Int?
+    /** 网络选择器“推荐”角标（后台可配；默认 USDT/TRC20 为 true） */
+    public var recommended: Bool?
+    /** 同币种内的展示顺序，升序；列表已按 asset、sortOrder、network 排好 */
+    public var sortOrder: Int?
 
-    public init(asset: String? = nil, network: String? = nil, minDeposit: String? = nil, confirmations: Int? = nil, memoRequired: Bool? = nil, withdrawFee: String? = nil, withdrawFeeAsset: String? = nil, minWithdraw: String? = nil, maxWithdraw: String? = nil, depositEnabled: Bool? = nil, withdrawEnabled: Bool? = nil, estimatedArrivalMinutes: Int? = nil) {
+    public init(asset: String? = nil, network: String? = nil, minDeposit: String? = nil, confirmations: Int? = nil, memoRequired: Bool? = nil, withdrawFee: String? = nil, withdrawFeeAsset: String? = nil, minWithdraw: String? = nil, maxWithdraw: String? = nil, depositEnabled: Bool? = nil, withdrawEnabled: Bool? = nil, estimatedArrivalMinutes: Int? = nil, recommended: Bool? = nil, sortOrder: Int? = nil) {
         self.asset = asset
         self.network = network
         self.minDeposit = minDeposit
@@ -35,6 +39,8 @@ public struct APIWalletNetwork: Codable, JSONEncodable, Hashable {
         self.depositEnabled = depositEnabled
         self.withdrawEnabled = withdrawEnabled
         self.estimatedArrivalMinutes = estimatedArrivalMinutes
+        self.recommended = recommended
+        self.sortOrder = sortOrder
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -50,6 +56,8 @@ public struct APIWalletNetwork: Codable, JSONEncodable, Hashable {
         case depositEnabled
         case withdrawEnabled
         case estimatedArrivalMinutes
+        case recommended
+        case sortOrder
     }
 
     // Encodable protocol methods
@@ -68,6 +76,8 @@ public struct APIWalletNetwork: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(depositEnabled, forKey: .depositEnabled)
         try container.encodeIfPresent(withdrawEnabled, forKey: .withdrawEnabled)
         try container.encodeIfPresent(estimatedArrivalMinutes, forKey: .estimatedArrivalMinutes)
+        try container.encodeIfPresent(recommended, forKey: .recommended)
+        try container.encodeIfPresent(sortOrder, forKey: .sortOrder)
     }
 }
 

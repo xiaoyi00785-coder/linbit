@@ -14,13 +14,16 @@ public struct APIAssetsOverviewAccountBalancesInner: Codable, JSONEncodable, Has
     public var locked: String?
     public var total: String?
     public var valuationUsd: String?
+    /** 实时指数价（USDT 计价），用作单价；无价格时省略 */
+    public var priceUsd: String?
 
-    public init(asset: String? = nil, free: String? = nil, locked: String? = nil, total: String? = nil, valuationUsd: String? = nil) {
+    public init(asset: String? = nil, free: String? = nil, locked: String? = nil, total: String? = nil, valuationUsd: String? = nil, priceUsd: String? = nil) {
         self.asset = asset
         self.free = free
         self.locked = locked
         self.total = total
         self.valuationUsd = valuationUsd
+        self.priceUsd = priceUsd
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -29,6 +32,7 @@ public struct APIAssetsOverviewAccountBalancesInner: Codable, JSONEncodable, Has
         case locked
         case total
         case valuationUsd
+        case priceUsd
     }
 
     // Encodable protocol methods
@@ -40,6 +44,7 @@ public struct APIAssetsOverviewAccountBalancesInner: Codable, JSONEncodable, Has
         try container.encodeIfPresent(locked, forKey: .locked)
         try container.encodeIfPresent(total, forKey: .total)
         try container.encodeIfPresent(valuationUsd, forKey: .valuationUsd)
+        try container.encodeIfPresent(priceUsd, forKey: .priceUsd)
     }
 }
 

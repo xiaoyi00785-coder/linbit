@@ -8,6 +8,7 @@ struct HomeView: View {
     @StateObject private var watch = Watchlist.shared
     @ObservedObject private var session = Session.shared
     @State private var hideAssets = false
+    @ObservedObject private var notif = NotifCenter.shared
     @State private var rankTab = 1
     @State private var rankKind = 0
     @State private var newsTab = 0
@@ -40,6 +41,7 @@ struct HomeView: View {
             .refreshable { await vm.load(); await store.load() }
         }
         .background(p.bg)
+        .task { await NotifCenter.shared.refresh() }
         .task { await vm.load(); if store.spot.isEmpty { await store.load() } }
         .lbSheet($moreSheet) { HomeMoreSheet { moreSheet = false } }
     }
@@ -64,7 +66,10 @@ struct HomeView: View {
             .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
             IconView(icon: .scan, tint: p.textPrimary)
             IconView(icon: .headset, tint: p.textPrimary)
-            IconView(icon: .bell, tint: p.textPrimary)
+            Button { if session.isLoggedIn || NotifShot.state != nil { Router.shared.openFeature(.notifications) } else { session.showAuth = true } } label: {
+                IconView(icon: .bell, tint: p.textPrimary)
+                    .overlay(alignment: .topTrailing) { if notif.unread > 0 { Badge(n: notif.unread).offset(x: 8, y: -6) } }
+            }.buttonStyle(.plain).accessibilityLabel("消息通知")
         }
         .padding(.horizontal, Spacing.pageH)
         .frame(height: 44)
@@ -319,19 +324,40 @@ extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
-/// 运营位链接：linbit://feature/earn、/earn、/strategy、/swap、/chat、/rewards… → 功能页；http(s) → 浏览器
+/// 运营位链接：linbit://feature/earn、/earn、/strategy、/swap、/chat、/rewards/newcomer… → 功能页；其他 http(s) → 浏览器
+/// 只按路由第一段**精确**匹配（不再用 contains，避免 /partner-news、/copyright 之类误跳）。
 @MainActor
 enum HomeLink {
+    private static let routes: [String: FeaturePage] = [
+        "earn": .earn, "grid": .strategy, "strategy": .strategy, "swap": .swap, "convert": .swap,
+        "chat": .chat, "reward": .welfare, "rewards": .welfare, "newcomer": .welfare, "welfare": .welfare,
+        "sub-account": .subAccounts, "partner": .partner, "loans": .loans, "loan": .loans, "affiliate": .partner, "copy": .copyTrading, "tradfi": .tradfi,
+    ]
+    private static let webHosts: Set<String> = ["cowa.click", "www.cowa.click"]
+
+    /// 链接里的路由段：linbit://feature/earn → ["earn"]；/rewards/newcomer → ["rewards", "newcomer"]；其他域名的 http(s) → nil
+    private static func segments(_ link: String) -> [String]? {
+        var s = link.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s.hasPrefix("http://") || s.hasPrefix("https://") {
+            guard let c = URLComponents(string: s), let host = c.host, webHosts.contains(host) else { return nil }
+            s = c.path
+        } else {
+            if let i = s.firstIndex(where: { $0 == "?" || $0 == "#" }) { s = String(s[..<i]) }
+            for scheme in ["linbit://", "cowa://", "linbit:", "cowa:"] where s.hasPrefix(scheme) { s.removeFirst(scheme.count); break }
+        }
+        var segs = s.split(separator: "/").map(String.init)
+        if segs.first == "feature" { segs.removeFirst() }
+        return segs
+    }
+
     static func open(_ link: String?, fallback: FeaturePage?) {
         guard let link, !link.isEmpty else { if let f = fallback { Router.shared.openFeature(f) }; return }
-        let l = link.lowercased()
-        let map: [(String, FeaturePage)] = [("earn", .earn), ("grid", .strategy), ("strategy", .strategy), ("swap", .swap), ("convert", .swap),
-                                            ("chat", .chat), ("reward", .welfare), ("newcomer", .welfare), ("welfare", .welfare),
-                                            ("sub-account", .subAccounts), ("copy", .copyTrading), ("tradfi", .tradfi)]
-        if let hit = map.first(where: { l.contains($0.0) }) { Router.shared.openFeature(hit.1); return }
-        if l.contains("futures") { Router.shared.tab = .futures; return }
-        if l.contains("event") { Router.shared.futuresTop = 1; Router.shared.tab = .futures; return }
-        if l.hasPrefix("http"), let u = URL(string: link) { UIApplication.shared.open(u); return }
+        if let first = segments(link)?.first {
+            if let f = routes[first] { Router.shared.openFeature(f); return }
+            if first == "futures" { Router.shared.tab = .futures; return }
+            if first == "event" { Router.shared.futuresTop = 1; Router.shared.tab = .futures; return }
+        }
+        if link.lowercased().hasPrefix("http"), let u = URL(string: link) { UIApplication.shared.open(u); return }
         if let f = fallback { Router.shared.openFeature(f) }
     }
 }
@@ -344,7 +370,7 @@ struct HomeMoreSheet: View {
     private let items: [(String, String, FeaturePage?, String?)] = [
         ("arrow.left.arrow.right.circle", "闪兑", .swap, "convert"), ("chart.bar.xaxis", "策略交易", .strategy, nil),
         ("banknote", "理财", .earn, nil), ("bubble.left.and.bubble.right", "聊天室", .chat, "chat"),
-        ("person.2", "子账户", .subAccounts, "subAccounts"), ("gift", "福利中心", .welfare, nil),
+        ("person.2", "子账户", .subAccounts, "subAccounts"), ("gift", "福利中心", .welfare, nil), ("person.3.sequence", "合伙人", .partner, nil), ("banknote", "质押借币", .loans, nil),
         ("doc.on.doc", "跟单", .copyTrading, "copyTrading"), ("building.columns", "TradFi", .tradfi, "tokenizedStocks"),
         ("clock.arrow.circlepath", "事件合约", nil, "eventContracts"), ("person.3", "P2P", nil, "p2p"),
         ("creditcard", "快捷买币", nil, "fiatOnRamp"), ("function", "期权", nil, "options")]

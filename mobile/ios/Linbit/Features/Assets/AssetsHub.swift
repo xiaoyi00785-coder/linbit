@@ -89,6 +89,17 @@ struct StatusTag: View {
     }
 }
 
+/// 「推荐」角标：后端 WalletNetwork.recommended == true 时显示；品牌色小标签，日/夜主题均取 palette.brand
+struct RecommendedChip: View {
+    @Environment(\.palette) private var p
+    var body: some View {
+        Text("推荐").font(.lb(10, .semibold)).foregroundColor(p.brand)
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.brand.opacity(0.15)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.xs).stroke(p.brand.opacity(0.45), lineWidth: 0.5))
+    }
+}
+
 /// 选择框（左标签 + 值 + ▾）
 struct PickerField: View {
     @Environment(\.palette) private var p
@@ -244,7 +255,12 @@ struct AssetOverviewView: View {
                     let b = bs[j]
                     HStack(spacing: 8) {
                         CoinIcon(base: b.asset ?? "", size: 20)
-                        Text(b.asset ?? "--").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textPrimary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(b.asset ?? "--").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textPrimary)
+                            if let px = AssetsModel.unitPrice(asset: b.asset, priceUsd: b.priceUsd) {
+                                Text("$\(Fmt.amount(px, px < 1 ? 6 : 2))").font(.lbNum(11)).foregroundColor(p.textTertiary)
+                            }
+                        }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 1) {
                             Text(Fmt.amount(Dec.parse(b.total), 8)).font(.lbNum(FontSize.caption)).foregroundColor(p.textPrimary)
@@ -272,6 +288,7 @@ struct NetworkCard: View {
         AssetsCard {
             HStack(spacing: 6) {
                 Text(n.network ?? "--").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
+                if n.recommended == true { RecommendedChip() }
                 if n.memoRequired == true { StatusTag(text: "需 Memo", color: p.brand) }
                 Spacer()
                 StatusTag(text: n.depositEnabled == false ? "暂停充值" : "可充值", color: n.depositEnabled == false ? p.down : p.up)
@@ -862,6 +879,14 @@ struct AddAddressSheet: View {
         }
         .lbSheet($showAsset) { AssetPickSheet(current: asset) { asset = $0; network = nil; showAsset = false } onClose: { showAsset = false } }
         .lbSheet($showNet) { NetworkPickerSheet(asset: asset, selected: network?.network) { network = $0; showNet = false } onClose: { showNet = false } }
+        .task(id: asset) { await preselectRecommended() }
+    }
+    /// 未选择网络时，默认选中后端推荐且可提现的网络
+    private func preselectRecommended() async {
+        guard network == nil else { return }
+        let a = asset
+        guard let ns = try? await AssetsAPI.walletNetworks(asset: a), a == asset, network == nil else { return }
+        network = ns.first { $0.recommended == true && $0.withdrawEnabled != false }
     }
     private func save() async {
         guard let n = network?.network else { return }

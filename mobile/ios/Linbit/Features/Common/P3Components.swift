@@ -146,7 +146,7 @@ struct Sparkline: View {
 
 /// 全屏二级功能页（从首页宫格、现货顶栏进入）
 enum FeaturePage: String, Identifiable {
-    case earn, strategy, gridCreate, swap, chat, subAccounts, welfare, copyTrading, tradfi, futuresHistory, futuresRiskTiers, futuresFunding, changePassword, security, kyc
+    case earn, strategy, gridCreate, swap, chat, subAccounts, welfare, copyTrading, tradfi, futuresHistory, futuresRiskTiers, futuresFunding, changePassword, security, kyc, notifications, coupons, partner, loans
     var id: String { rawValue }
 }
 
@@ -162,14 +162,18 @@ struct FeatureHost: View {
         case .chat: if flags.isOn("chat") { ChatRoomView() } else { FeatureShell(title: "聊天室") { ComingSoonView(title: "聊天室") } }
         case .subAccounts: if flags.isOn("subAccounts") { SubAccountsView() } else { FeatureShell(title: "子账户") { ComingSoonView(title: "子账户") } }
         case .welfare: FeatureShell(title: "福利中心") { NewcomerView() }
-        case .copyTrading: FeatureShell(title: "跟单") { ComingSoonView(title: "跟单交易") }
+        case .copyTrading: CopyTradingView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .futuresHistory: FuturesHistoryView(symbol: Router.shared.futuresSymbol)
         case .futuresRiskTiers: FuturesRiskTiersView(symbol: Router.shared.futuresSymbol)
         case .futuresFunding: FuturesFundingHistoryView(symbol: Router.shared.futuresSymbol)
         case .security: SecurityCenterView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
+        case .notifications: NotificationsView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
+        case .coupons: CouponsView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
+        case .loans: LoansView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
+        case .partner: PartnerView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .kyc: KycView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .changePassword: ChangePasswordView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
-        case .tradfi: FeatureShell(title: "TradFi") { ComingSoonView(title: "TradFi", note: "股票、贵金属等传统金融资产交易即将上线") }
+        case .tradfi: TradFiView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         }
     }
 }
