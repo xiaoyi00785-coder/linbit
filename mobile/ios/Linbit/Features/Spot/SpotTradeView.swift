@@ -144,7 +144,7 @@ struct SpotTradeView: View {
                 info(m.isBuy ? "可买" : "可卖", "\(Fmt.amount(m.isBuy ? m.maxQty : m.availBase * m.price, m.isBuy ? m.qtyPrec : 2)) \(m.isBuy ? m.base : m.quote)")
                 Button { showFee = true } label: {
                     HStack(spacing: 4) {
-                        Text("手续费率").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).underline(pattern: .dot)
+                        Text("预估手续费").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).underline(pattern: .dot)
                         Spacer()
                         Text("\(SpotCond.pct(m.feeRate)) ≈ \(Fmt.amount(m.fee, 4))").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
                     }
@@ -178,11 +178,15 @@ struct SpotTradeView: View {
     // 底部：委托(n) / 交易机器人(0)
     private var ordersSection: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 18) {
-                tabText("委托(\(m.openOrders.count))", 0, arrow: true)
-                tabText("条件单(\(m.conditional.count))", 2)
-                tabText("交易机器人(0)", 1)
-                Spacer()
+            HStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 18) {
+                        tabText("委托(\(m.openOrders.count))", 0, arrow: true)
+                        tabText("条件单(\(m.conditional.count))", 2)
+                        tabText("交易机器人(0)", 1)
+                    }
+                    .padding(.trailing, 8)
+                }
                 NavigationLink(value: SpotRoute.history) {
                     Image(systemName: "clock.fill").font(.system(size: 15)).foregroundColor(p.textSecondary)
                 }
@@ -255,8 +259,10 @@ struct SpotTradeView: View {
     private func tabText(_ t: String, _ i: Int, arrow: Bool = false) -> some View {
         HStack(spacing: 3) {
             Text(t).font(.lb(FontSize.label, bottomTab == i ? .semibold : .regular))
+                .lineLimit(1).minimumScaleFactor(0.75)
             if arrow { Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)) }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .foregroundColor(bottomTab == i ? p.textPrimary : p.textSecondary)
         .onTapGesture { bottomTab = i }
     }

@@ -146,6 +146,9 @@ struct FuturesToolsSheet: View {
                         case "模拟交易": Router.shared.futuresTop = 3
                         case "仓位档位介绍": Router.shared.openFeature(.futuresRiskTiers)
                         case "历史资金费率": Router.shared.openFeature(.futuresFunding)
+                        case "价格预警":
+                            // OpenAPI 无独立价格预警 CRUD；依赖后端后补齐，避免假表单
+                            ToastCenter.shared.show("价格预警需后端告警接口，暂未开放")
                         case "添加自选": ToastCenter.shared.show("已添加到自选", .success)
                         default: ToastCenter.shared.show("\(title)即将开放")
                         }

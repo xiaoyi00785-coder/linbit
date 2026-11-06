@@ -51,15 +51,18 @@ struct PrimaryTabs: View {
                     Text(items[i])
                         .font(.lb(size, i == selected ? .semibold : .regular))
                         .foregroundColor(i == selected ? p.textPrimary : p.textSecondary)
-                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .fixedSize(horizontal: true, vertical: false)
                     if underline {
                         Capsule().fill(i == selected ? p.textPrimary : .clear).frame(width: 16, height: 3)
                     }
                 }
+                .fixedSize(horizontal: true, vertical: false)
                 .contentShape(Rectangle())
                 .onTapGesture { selected = i }
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
