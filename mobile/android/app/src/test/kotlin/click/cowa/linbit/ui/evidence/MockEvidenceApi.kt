@@ -45,6 +45,8 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
 
     var futuresTransferFailureGate: java.util.concurrent.CountDownLatch? = null
 
+    var withdrawSubmissionFailureGate: java.util.concurrent.CountDownLatch? = null
+
     override fun dispatch(request: RecordedRequest): MockResponse {
         val key = "${request.method} ${request.path.orEmpty()}"
         val path = request.path?.substringBefore('?').orEmpty()
@@ -54,9 +56,6 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val deletePasskey = method == "DELETE" && path.startsWith("/account/passkeys/")
         val sensitive = method != "GET" && (path.startsWith("/account/") || path.startsWith("/earn/") || path.startsWith("/strategy/") || path.contains("/wallet/") || path.endsWith("/convert/accept") || path.contains("/2fa/") || path.contains("/kyc/"))
         val passkeyRegisterPath = path in setOf("/account/passkeys/register/begin", "/account/passkeys/register/finish")
-        if (sensitive && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
-            return undeclared(request, "Sensitive mutation requires explicit loopback failure")
-        }
         val response = routes[key]?.removeFirstOrNull() ?: defaultFeatureFlags?.takeIf { key == "GET /app/features" }?.let { flags ->
             MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(flags)
         }
@@ -65,10 +64,14 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val alertWrite = path == "/price-alerts" || path.startsWith("/price-alerts/")
         val paperBuy = method == "POST" && path == "/paper/orders"
         val futuresTransfer = method == "POST" && path == "/futures/transfer" && response != null && request.body.readUtf8() == "{\"direction\":\"in\",\"amount\":\"10.00\"}"
+        val withdrawSubmit = method == "POST" && path == "/wallet/withdraw" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ONCHAIN-ADDRESS-NOT-FOR-TRANSFER\",\"amount\":\"10.00\",\"totpCode\":\"123456\"}"
+        if (sensitive && !withdrawSubmit && !futuresTransfer && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
+            return undeclared(request, "Sensitive mutation requires explicit loopback failure")
+        }
         val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
         val algoCancelFailure = algoCancel && response?.httpCode() == 503
         val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !withdrawSubmit) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }
@@ -88,6 +91,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (path == "/auth/passkey/login/finish") {
             check(passkeyFinishGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback finish latch timed out" }
         }
+        if (withdrawSubmit && response?.httpCode() == 503) { check(withdrawSubmissionFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback withdrawal failure latch timed out" } }
         if (futuresTransfer && response?.httpCode() == 503) {
             check(futuresTransferFailureGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback transfer failure latch timed out" }
         }

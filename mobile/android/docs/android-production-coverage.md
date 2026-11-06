@@ -58,7 +58,7 @@
 | 闪兑 | 兑出/兑入、报价有效期、暂停币对、接受报价结果 | `SpotSubpages.kt:722-845` | 正常/空/暂停 P；报价→最终币额 Sheet 可达，accept 未提交；独立离屏Window按manifest，PixelCopy/真机U，接受报价结果 U；保留 canAccept/quote revision 资金闸。 |
 | 资产 | 提现方式；资产筛选；搜索；快捷买币/盈亏入口 | `AssetsScreen.kt:72-82,138-167,245-265` | U；快捷买币/盈亏仍占位；理财/策略/TradFi 顶栏已接真实 Host，但这里没有把它们标为快捷入口或弹窗P。 |
 | 充值 | 网络；自动到账账户选择 | `DepositScreens.kt:141-175,287-301` | 正常/空/明确错误 P；正确地址是在线网络 mock 的无效演示值，不得转账。弹层及 AppRoot 点击 U，不拿合成预览代替。 |
-| 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；真实提交/最终成功 U。 |
+| 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；本批仅链上已开2FA的AppRoot两适配local pending闭环 P/W：取消0 POST、在途ViewModel防重、503保留安全Window/金额/地址/TOTP并重试，202/pending提交与同id记录/借记余额readback分别显示；不是链上到账。地址簿/站内/撤销U。 |
 | 资产划转 | 现货→合约最终复核/失败重试/成功结果 | `TransferScreen.kt:55-160`；`AssetsViewModel.kt:184-222` | AppRoot P/W：320dp fontScale1.3浅色、360dp暗色；fake token与127.0.0.1精确POST；取消0写；真机、反向和其他设备 V/C 仍U。 |
 | 地址簿 | 白名单验证；改白名单；新增选择币种/网络；撤销 pending 提现 | `AddressBookScreen.kt:70-187,289-300,372-419` | U。 |
 | More | 卡券激活确认；合伙人申请；跟单；跟单二次确认；成为带单员；停止跟单；关闭工单 | `CouponsScreen.kt:94-132`；`PartnerScreen.kt:262-277`；`CopyTradingScreen.kt:311-365`；`SupportTicketsScreen.kt:309-314` | U。 |
@@ -194,9 +194,19 @@ Evidence directories (outside the repository): `/workspace/android-verification/
 已实际Read八张最终图：320大字浅色、360暗色的左右页边距、账户方向卡及居中交换图标、标题/金额字重层次、按钮对齐、红错误与回执间距均可见可读，生产截图无合成inline替代。代码注释仅指向`#46 / iOS TransferView`，本工程未定位确切transfer参考图；因此为 **no-exact-reference，未宣称reference-identical或全V**。Canvas/Android真实生产Window离屏证据不替代用户真机PixelCopy；没有为APK添加人为前置。
 
 本组有限剩余清单（不是泛泛重审全部Android）：
-1. **提现结果闭环 U**：已有安全确认与空网络/错误表单P；需实际失败重试、最终成功/pending、余额和提现记录readback、会话/防重，以及320/360实际入口图。
+1. **提现剩余 U**：本批链上已开2FA的两适配local pending闭环已验；completed/processing/failed/canceled实体Root、非2FA发码（不发送真实验证码）、链上实际结算、spot后端配置分支与真机P未验。
 2. **地址簿闭环 U**：需独立最终复核（新增/编辑/删除或白名单变更）、失败保留重试、列表readback、会话/防重。不能把验证码表单当最终复核也不能用旧合成预览抵。
 3. **地址簿内 pending 撤销记录 U**：保留为同组原范围单独动作，当前未验，不用本批划转mock替代；需本组完成时核真实契约并做local final review/readback（若真实API行为不同则据实记录）。
 
 
-下一明确项是第1项提现的结果闭环；第2/3随后，不再扩散到其它资产/交易/安全范围。APK/真机由用户验收，不等iOS。顺序门通过：`:app:compileDebugKotlin`（一次误删使用中的import修后成功，如实留记录）→`:app:compileReleaseKotlin`→`:app:lintDebug`→`:app:testDebugUnitTest`。默认结果为347 tests / 0 failures / 0 errors / 122 skipped，其中本批Root四项为4 skipped，未计通过；`transfer-default-xml`已保存，独立`transfer-fixed-xml`才是本批passed依据。日志见`transfer-fixed-build.jsonl`与`/workspace/transfer-{debug-compile,release-compile,lint,default}.log`。
+该段次序此后已由下文withdraw-root fixed有界批次推进；提现剩余见第1项，地址簿/撤销仍U，不扩散到其它资产/交易/安全范围。APK/真机由用户验收，不等iOS。顺序门通过：`:app:compileDebugKotlin`（一次误删使用中的import修后成功，如实留记录）→`:app:compileReleaseKotlin`→`:app:lintDebug`→`:app:testDebugUnitTest`。默认结果为347 tests / 0 failures / 0 errors / 122 skipped，其中该批Root四项为4 skipped，未计通过；`transfer-default-xml`已保存，独立`transfer-fixed-xml`才是该批passed依据。日志见`transfer-fixed-build.jsonl`与`/workspace/transfer-{debug-compile,release-compile,lint,default}.log`。
+
+## 2026-11-06 118f withdraw-root fixed
+
+`ProductionWithdrawFlowEvidenceTest`的真实AppRoot路径为HOME→资产Tab→提现方式→链上提币→USDT币种→既有表单→独立安全Window。两次适配（320dp/fontScale1.3/light、360dp/dark）各执行取消零写和失败惰性POST保留后重试的pending/readback闭环。独立XML在`withdraw-fixed-xml`，四Root 4/0/0/0；默认Root skip不算passed。默认`352 tests / 0 failures / 0 errors / 126 skipped`（新增VM 1项0跳、Root 4项跳），最后生产变更后四Root再次独立4/0/0/0且顺序`:app:compileDebugKotlin`→`:app:compileReleaseKotlin`→`:app:lintDebug`→`:app:testDebugUnitTest`全BUILD SUCCESSFUL。默认XML在`withdraw-default-xml`；独立XML/8 PNG+manifest和Read/no-exact-reference结论分别保存。真实Root测试还断言local总计一个held POST（VM busy），后续仅再多一次精确POST，并禁止`POST /account/code/send`。body仅USDT/TRC20/无效演示地址/10.00/fake TOTP，未增加远端或任何安全/提醒/撤销写。
+
+原实装缺陷修复：重试等待态不再由粘滞的UI `submitting`把持；提交防重/取消/late old-session取消进入同一生产ViewModel。成功不是跳记录即完成：必须再次overview确定debit account，读取单一资金/现货余额与`page=1,pageSize=20`记录；同id记录和资产余额都存在才显示收据。提交HTTP202/pending、record pending、90.00 USDT读回分别显示；未证结算。readback不足时不会给completed，也不会允许再次POST。表单不再合并资金+现货作为提现可扣余额。`AssetsWithdrawFlowTest`验证在途重入false及旧session只允许一次POST/不发布旧receipt。
+
+实际Read八个图片/manifest（`withdraw-fixed-evidence`）：两适配表单/独立Window初始复核/503保留/结果。窗口报告真实`productionDialogWindow=true`、`dialogDecorViewMeasured=960x2532px/1080x2532px`；`pixelCopy=NOT_RUN`。320大字号表单可读并滚动到底部记录，360错误和pending暗夜对比清楚；manifest由`PENDING_HUMAN_READ`更新为已实际Read，PixelCopy/设备图仍NOT_RUN；它们是相同真实链不同滚动阶段的图，不是全V。ref中未找到可逐像素匹配的此精确提现参考，记**no-exact-reference**；不把图张数代替其余交易/资产/安全验收。
+
+Keep U：地址簿增删改/白名单final review/readback/session/reentrancy，pending提现撤销，反向`out`划转，站内转账，completed/processing/failed/canceled实体Root，非2FA发码/spot配置链和真机/真实资金。此批次未部署/未发真实验证码/未调用非loopback资金写。超过原10–15分钟预算，主要诊断是AppRoot的提现方式+币种两步选择、route队列队列次序及mock敏感写的前置拒绝；这些过程性失败XML未冒充passed，正式目录只保存最终4/0/0/0独立结果。

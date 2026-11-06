@@ -57,6 +57,9 @@ class AssetsViewModel @Inject constructor(
 ) : ViewModel() {
     private val _s = MutableStateFlow(AssetsUiState())
     val state: StateFlow<AssetsUiState> = _s.asStateFlow()
+    private var withdrawJob: kotlinx.coroutines.Job? = null
+    private val withdrawEpoch = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
     val loggedIn: StateFlow<Boolean> = tokens.loggedIn
     val sessionVersion: StateFlow<Long> = tokens.sessionVersion
     val marketState = market.state.stateIn(viewModelScope, SharingStarted.Eagerly, market.state.value)
@@ -133,6 +136,8 @@ class AssetsViewModel @Inject constructor(
         apiCall { api.depositAddress(asset, network) }
     }
 
+    suspend fun withdrawDebitAccount(): String = apiCall { api.assetsOverview() }.withdrawAccount?.value ?: "funding"
+
     // ---- 提现网络（min 来自后端 WALLET_NETWORKS_JSON）----
     /** 离屏证据夹具：本地示例网络，非生产。 */
     internal var evidenceWithdrawNets: List<ApiWithdrawNetwork>? = null
@@ -181,6 +186,38 @@ class AssetsViewModel @Inject constructor(
         apiCall { api.internalTransfer(req) }
     }
 
+    data class WithdrawReceipt(val submission: ApiWithdrawal, val readback: ApiWithdrawal, val account: String, val balance: BigDecimal)
+    var withdrawBusy by androidx.compose.runtime.mutableStateOf(false); private set
+    var withdrawError by androidx.compose.runtime.mutableStateOf<String?>(null); private set
+    var withdrawAwaitingReadback by androidx.compose.runtime.mutableStateOf(false); private set
+    var withdrawReceipt by androidx.compose.runtime.mutableStateOf<WithdrawReceipt?>(null); private set
+    private var withdrawTxGeneration = 0L
+    fun submitWithdrawConfirmed(req: ApiWithdrawRequest): Boolean {
+        if (withdrawBusy || withdrawAwaitingReadback || !tokens.loggedIn.value) return false
+        withdrawBusy = true; withdrawError = null; withdrawReceipt = null
+        val epoch=withdrawEpoch.value; val generation=++withdrawTxGeneration
+        withdrawJob=viewModelScope.launch {
+            try {
+                val submitted=apiCall{api.withdraw(req)}
+                withdrawAwaitingReadback = true
+                val account=apiCall{api.assetsOverview()}.withdrawAccount?.value?:"funding"
+                check(account=="funding"||account=="spot"){"未知提现账户"}
+                val balance=runCatching{apiCall{api.balances(account=account,pageSize=200)}}.getOrNull()
+                val records=runCatching{apiCall{api.withdrawRecords(page=1,pageSize=20)}}.getOrNull()
+                if(epoch!=withdrawEpoch.value||generation!=withdrawTxGeneration)return@launch
+                val free=balance?.items?.firstOrNull{it.asset.equals(req.asset,true)}?.free
+                val actual=records?.items?.firstOrNull{it.id==submitted.id}
+                if(free==null||actual==null){withdrawError="申请已返回，但余额/提现记录读回未完成，请稍后查看记录。";return@launch}
+                _s.value=_s.value.copy(spot=if(account=="spot")balance!!.items else _s.value.spot,funding=if(account=="funding")balance!!.items else _s.value.funding,loading=false,error=null)
+                withdrawReceipt=WithdrawReceipt(submitted,actual,account,Dec.parse(free)); withdrawAwaitingReadback=false
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(epoch==withdrawEpoch.value&&generation==withdrawTxGeneration)withdrawError=e.lbMessage()}
+            finally{if(epoch==withdrawEpoch.value&&generation==withdrawTxGeneration)withdrawBusy=false}
+        }
+        return true
+    }
+    fun clearWithdrawFeedback(){if(!withdrawBusy&&!withdrawAwaitingReadback){withdrawError=null;withdrawReceipt=null}}
+
     // ---- 划转：现货(资金) ↔ 合约，仅 USDT ----
     data class TransferReceipt(val ref: String?, val status: String, val balanceRefreshed: Boolean = false, val spotFree: String? = null, val futuresAvailable: String? = null)
     var transferBusy by androidx.compose.runtime.mutableStateOf(false); private set
@@ -190,6 +227,7 @@ class AssetsViewModel @Inject constructor(
     private var transferGeneration = 0L
     init { viewModelScope.launch { tokens.sessionVersion.collect {
         transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null
+        withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false
     } } }
     fun transferFutures(toFutures: Boolean, amount: String): Boolean {
         if (transferBusy || !tokens.loggedIn.value) return false
@@ -218,7 +256,7 @@ class AssetsViewModel @Inject constructor(
         if(spot!=null&&futures!=null)_s.value=_s.value.copy(spot=spot.items,futures=futures,loading=false,error=null)
     }
     fun clearTransferFeedback(){if(!transferBusy){transferError=null;transferReceipt=null}}
-    override fun onCleared(){transferGeneration++;transferJob?.cancel();super.onCleared()}
+    override fun onCleared(){transferGeneration++;transferJob?.cancel();withdrawEpoch.value++;withdrawJob?.cancel();super.onCleared()}
 
     // ---- 地址簿 ----
     /** 离屏证据：地址簿列表/白名单开关（非生产）。 */
