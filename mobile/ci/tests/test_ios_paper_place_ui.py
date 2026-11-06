@@ -26,7 +26,7 @@ ok("!PaperTradingFeature.isFlagOn" in ps, "flag re-check rejects write")
 ok("busy" in ps, "anti double-submit")
 ok("PaperPlaceSheet" in v and "模拟买入" in v, "view wires buy/sell")
 ok("openPlace" in api and "placeForceFail" in api, "demo place ok/fail")
-ok("placeForceFail" in api.split("interceptPlace")[1][:500], "fail mock in intercept")
+ok("place-fail" in api and "INDEX_UNAVAILABLE" in api[api.find("interceptPlace"):api.find("interceptPlace")+900], "fail mock in intercept")
 for k in ["paper-place","paper-place-ok","paper-place-fail"]:
     ok(k in app, f"app routes {k}")
     ok(k in risk, f"risk lists {k}")

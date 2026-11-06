@@ -44,7 +44,7 @@ struct PaperPlaceSheet: View {
         LBSheet(title: "模拟市价单", showClose: true, onClose: { onDone(false) }) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    InfoNote(text: "独立虚拟现货账户 · 仅 INDEX 市价全成或全拒（由服务端指数决定）。买单填成交金额（quoteOrderQty），卖单填数量（quantity）。不走真钱 /spot/orders。")
+                    InfoNote(text: "独立虚拟现货账户 · 仅 INDEX 市价全成或全拒（由服务端指数决定）。买单填成交金额（quoteOrderQty），卖单填数量（quantity）。不走真钱现货下单接口。")
 
                     if session.isRateLimited {
                         InlineBanner(text: "请 \(session.rateLimitRemainingSec) 秒后再试（Retry-After）")
