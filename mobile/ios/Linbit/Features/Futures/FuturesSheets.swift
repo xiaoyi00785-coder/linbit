@@ -154,8 +154,7 @@ struct FuturesToolsSheet: View {
                             // OpenAPI /account/preferences 仅 quoteCurrency，无交易偏好字段
                             ToastCenter.shared.show("交易偏好需独立接口；现有 /account/preferences 仅计价货币")
                         case "价格预警":
-                            // OpenAPI 无独立价格预警 CRUD；依赖后端后补齐，避免假表单
-                            ToastCenter.shared.show("价格预警需后端告警接口，暂未开放")
+                            Router.shared.openFeature(.priceAlerts)
                         case "添加自选": ToastCenter.shared.show("已添加到自选", .success)
                         case "新手教学": Router.shared.openFeature(.futuresGuide)
                         default: ToastCenter.shared.show("\(title)即将开放")

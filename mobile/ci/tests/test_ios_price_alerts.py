@@ -115,6 +115,27 @@ missing = [k for k in required if k not in swift and k != "Retry-After"]
 ok("retryAfter" in swift or "Retry-After" in swift, "retry after covered in Swift source")
 ok(not missing, f"required tokens in Swift (missing={missing})")
 
+
+# List vertical slice + production entries (source guards ≠ Swift UITest)
+lv = (ROOT / "mobile/ios/Linbit/Features/Alerts/PriceAlertsListView.swift").read_text()
+ok("struct PriceAlertsListView" in lv, "PriceAlertsListView present")
+ok("一次性" in lv or "INDEX" in lv, "limit copy mentions INDEX/once semantics")
+ok("loginRequired" in lv or "登录" in lv, "login gate in list")
+ok("loadMore" in lv or "加载更多" in lv, "pagination affordance")
+ok("PriceAlertDetailSheet" in lv, "read-only detail sheet")
+host = (ROOT / "mobile/ios/Linbit/Features/Common/P3Components.swift").read_text()
+ok("priceAlerts" in host and "PriceAlertsListView" in host, "FeatureHost wires priceAlerts")
+tools = (ROOT / "mobile/ios/Linbit/Features/Futures/FuturesSheets.swift").read_text()
+ok('openFeature(.priceAlerts)' in tools, "FuturesTools 价格预警 opens feature")
+home = (ROOT / "mobile/ios/Linbit/Features/Home/HomeView.swift").read_text()
+ok("价格预警" in home and "priceAlerts" in home, "HomeMore includes 价格预警")
+app = (ROOT / "mobile/ios/Linbit/App/LinbitApp.swift").read_text()
+ok("price-alerts" in app and "price-alerts-empty" in app and "price-alerts-error" in app, "shot keys registered")
+risk = (ROOT / "mobile/ci/screens-risk.txt").read_text()
+ok("price-alerts" in risk, "screens-risk lists price-alerts shots")
+demo = (ROOT / "mobile/ios/Linbit/Features/Alerts/PriceAlertsAPI.swift").read_text()
+ok("forceError" in demo and "price-alerts-disabled" in demo or "disabled" in demo, "DEBUG empty/error/disabled fixtures")
+
 if failures:
     print("FAIL", len(failures))
     for f in failures:

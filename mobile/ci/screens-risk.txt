@@ -30,3 +30,9 @@ loan-loans light
 assets-overview light
 assets-networks light
 support-detail-open light
+
+# 价格预警列表（DEBUG 夹具；无远端写）
+price-alerts light
+price-alerts-empty light
+price-alerts-error light
+price-alerts-disabled light

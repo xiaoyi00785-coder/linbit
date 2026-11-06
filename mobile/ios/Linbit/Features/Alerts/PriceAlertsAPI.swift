@@ -167,21 +167,45 @@ final class PriceAlertsSession: ObservableObject {
         featureDisabled = false
     }
 
+    private var listSymbol: String?
+    private var listStatus: PriceAlertStatusFilter?
+    private(set) var currentPage = 1
+    @Published private(set) var loadingMore = false
+
+    var canLoadMore: Bool {
+        guard case let .loaded(p) = page, let total = p.total else { return false }
+        return p.items.count < total
+    }
+
     func reload(symbol: String? = nil, status: PriceAlertStatusFilter? = nil, page pageNum: Int = 1) async {
-        // DEBUG 夹具：只填列表视觉，不打网
-        if let demo = PriceAlertDemo.page {
-            self.page = .loaded(demo)
+        listSymbol = symbol
+        listStatus = status
+        currentPage = pageNum
+        // DEBUG 夹具：只填列表视觉，不打网、不写生产
+        if PriceAlertDemo.on {
             featureDisabled = PriceAlertDemo.featureDisabled
+            if PriceAlertDemo.featureDisabled {
+                page = .failed(ErrorText.map["FEATURE_DISABLED"] ?? "该功能暂未开放")
+                return
+            }
+            if PriceAlertDemo.forceError {
+                page = .failed("网络连接失败，请检查网络")
+                return
+            }
+            if let demo = PriceAlertDemo.page {
+                page = .loaded(demo)
+            }
             return
         }
         reloadSeq &+= 1
         let seq = reloadSeq
-        if case .idle = page { page = .loading }
+        if pageNum <= 1 { page = .loading }
         do {
             let r = try await PriceAlertsAPI.list(symbol: symbol, status: status, page: pageNum)
             guard seq == reloadSeq else { return }
             featureDisabled = false
             page = .loaded(r)
+            currentPage = pageNum
         } catch {
             guard seq == reloadSeq else { return }
             if PriceAlertsFeature.isDisabledFailure(error) {
@@ -189,7 +213,40 @@ final class PriceAlertsSession: ObservableObject {
                 page = .failed(ErrorText.map["FEATURE_DISABLED"] ?? "该功能暂未开放")
                 return
             }
+            if let f = error as? APIFailure, f.status == 429 {
+                applyRateLimit(from: error)
+                page = .failed(error.lbMessage)
+                return
+            }
             page = .failed(error.lbMessage)
+        }
+    }
+
+    func loadMore() async {
+        guard canLoadMore, !loadingMore, !PriceAlertDemo.on else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        let next = currentPage + 1
+        reloadSeq &+= 1
+        let seq = reloadSeq
+        do {
+            let r = try await PriceAlertsAPI.list(symbol: listSymbol, status: listStatus, page: next)
+            guard seq == reloadSeq else { return }
+            if case let .loaded(cur) = page {
+                var merged = cur
+                merged.items.append(contentsOf: r.items)
+                merged.page = r.page ?? next
+                merged.total = r.total ?? cur.total
+                page = .loaded(merged)
+                currentPage = next
+            } else {
+                page = .loaded(r)
+                currentPage = next
+            }
+        } catch {
+            guard seq == reloadSeq else { return }
+            if let f = error as? APIFailure, f.status == 429 { applyRateLimit(from: error) }
+            ToastCenter.shared.show(error.lbMessage, .error)
         }
     }
 
@@ -262,9 +319,15 @@ enum PriceAlertDemo {
         return s.contains("disabled") || s.hasSuffix(":disabled")
     }
 
+    /// shot: price-alerts | price-alerts-empty | price-alerts-error | price-alerts-disabled
+    static var forceError: Bool {
+        guard let s = ShotGate.launchShot else { return false }
+        return s.contains("error") || s.hasSuffix(":error")
+    }
+
     static var page: PriceAlertsPage? {
         guard on else { return nil }
-        if featureDisabled { return nil }
+        if featureDisabled || forceError { return nil }
         if let s = ShotGate.launchShot, s.contains("empty") {
             return PriceAlertsPage(items: [], page: 1, pageSize: 20, total: 0)
         }
