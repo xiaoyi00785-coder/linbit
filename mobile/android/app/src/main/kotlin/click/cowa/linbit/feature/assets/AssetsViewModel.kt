@@ -270,6 +270,45 @@ class AssetsViewModel @Inject constructor(
     }
     fun clearWithdrawFeedback(){if(!withdrawBusy&&!withdrawAwaitingReadback){withdrawError=null;withdrawReceipt=null}}
 
+    data class WithdrawCancelReceipt(val readback: ApiWithdrawal, val account: String, val balance: BigDecimal)
+    var withdrawCancelBusy by androidx.compose.runtime.mutableStateOf(false); private set
+    var withdrawCancelError by androidx.compose.runtime.mutableStateOf<String?>(null); private set
+    var withdrawCancelConflict by androidx.compose.runtime.mutableStateOf<ApiWithdrawal?>(null); private set
+    var withdrawCancelReceipt by androidx.compose.runtime.mutableStateOf<WithdrawCancelReceipt?>(null); private set
+    private var withdrawCancelAccepted = false
+    private var withdrawCancelGeneration = 0L
+    private var withdrawCancelJob: kotlinx.coroutines.Job? = null
+    fun submitWithdrawCancelConfirmed(target: ApiWithdrawal): Boolean {
+        if(target.status!=ApiWithdrawal.Status.PENDING || withdrawCancelBusy || withdrawCancelAccepted || withdrawBusy || withdrawAwaitingReadback || !tokens.loggedIn.value) return false
+        withdrawCancelBusy=true;withdrawCancelError=null;withdrawCancelReceipt=null;withdrawCancelConflict=null
+        val generation=++withdrawCancelGeneration;val epoch=tokens.sessionVersion.value
+        withdrawCancelJob=viewModelScope.launch {
+            try {
+                val submitted=apiCall{api.cancelWithdraw(target.id)};withdrawCancelAccepted=true
+                check(submitted.id==target.id&&submitted.status==ApiWithdrawal.Status.CANCELED){"撤销已受理，但返回记录不是同 id 已撤销状态；请查看提现记录。"}
+                val account=apiCall{api.assetsOverview()}.withdrawAccount?.value?:"funding"
+                check(account=="funding"||account=="spot"){"未知提现原扣款账户"}
+                val balance=apiCall{api.balances(account=account,pageSize=200)}
+                val actual=apiCall{api.withdrawRecords(page=1,pageSize=20)}.items.firstOrNull{it.id==target.id}
+                val assetBalance=balance.items.firstOrNull{it.asset.equals(target.asset,true)}
+                if(epoch!=tokens.sessionVersion.value||generation!=withdrawCancelGeneration)return@launch
+                require(actual!=null&&actual.status==ApiWithdrawal.Status.CANCELED&&assetBalance!=null){"撤销已受理，但记录或原扣款账户余额读回未完成；不得重复撤销，请刷新查看。"}
+                _s.value=_s.value.copy(spot=if(account=="spot")balance.items else _s.value.spot,funding=if(account=="funding")balance.items else _s.value.funding)
+                withdrawCancelReceipt=WithdrawCancelReceipt(actual,account,Dec.parse(assetBalance.free))
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){
+                if(epoch!=tokens.sessionVersion.value||generation!=withdrawCancelGeneration)return@launch
+                withdrawCancelError=e.lbMessage()
+                if(!withdrawCancelAccepted && e is click.cowa.linbit.core.network.ApiFailure.Server && e.status==409){
+                    runCatching {
+                        val actual=apiCall{api.withdrawRecords(page=1,pageSize=20)}.items.firstOrNull{it.id==target.id}
+                        if(epoch==tokens.sessionVersion.value&&generation==withdrawCancelGeneration)withdrawCancelConflict=actual
+                    }
+                }
+            }finally{if(epoch==tokens.sessionVersion.value&&generation==withdrawCancelGeneration)withdrawCancelBusy=false}
+        };return true
+    }
+
     // ---- 划转：现货(资金) ↔ 合约，仅 USDT ----
     data class TransferReceipt(val ref: String?, val status: String, val balanceRefreshed: Boolean = false, val spotFree: String? = null, val futuresAvailable: String? = null)
     var transferBusy by androidx.compose.runtime.mutableStateOf(false); private set
@@ -279,7 +318,7 @@ class AssetsViewModel @Inject constructor(
     private var transferGeneration = 0L
     init { viewModelScope.launch { tokens.sessionVersion.collect {
         transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null
-        withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false; addressGeneration++; addressJob?.cancel(); addressBusy=false; addressError=null; addressReceipt=null; addressAccepted=false; addressEditAccepted=false; addressEditBusy=false; addressEditError=null; addressEditReceipt=null
+        withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false; withdrawCancelGeneration++;withdrawCancelJob?.cancel();withdrawCancelBusy=false;withdrawCancelError=null;withdrawCancelConflict=null;withdrawCancelReceipt=null;withdrawCancelAccepted=false; addressGeneration++; addressJob?.cancel(); addressBusy=false; addressError=null; addressReceipt=null; addressAccepted=false; addressEditAccepted=false; addressEditBusy=false; addressEditError=null; addressEditReceipt=null
     } } }
     fun transferFutures(toFutures: Boolean, amount: String): Boolean {
         if (transferBusy || !tokens.loggedIn.value) return false
@@ -308,7 +347,7 @@ class AssetsViewModel @Inject constructor(
         if(spot!=null&&futures!=null)_s.value=_s.value.copy(spot=spot.items,futures=futures,loading=false,error=null)
     }
     fun clearTransferFeedback(){if(!transferBusy){transferError=null;transferReceipt=null}}
-    override fun onCleared(){transferGeneration++;transferJob?.cancel();withdrawEpoch.value++;withdrawJob?.cancel();addressGeneration++;addressJob?.cancel();super.onCleared()}
+    override fun onCleared(){transferGeneration++;transferJob?.cancel();withdrawEpoch.value++;withdrawJob?.cancel();withdrawCancelGeneration++;withdrawCancelJob?.cancel();addressGeneration++;addressJob?.cancel();super.onCleared()}
 
     // ---- 地址簿 ----
     /** 离屏证据：地址簿列表/白名单开关（非生产）。 */

@@ -51,6 +51,8 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
 
     var withdrawSubmissionFailureGate: java.util.concurrent.CountDownLatch? = null
 
+    var withdrawCancelFailureGate: java.util.concurrent.CountDownLatch? = null
+
     override fun dispatch(request: RecordedRequest): MockResponse {
         val key = "${request.method} ${request.path.orEmpty()}"
         val path = request.path?.substringBefore('?').orEmpty()
@@ -69,15 +71,16 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val paperBuy = method == "POST" && path == "/paper/orders"
         val futuresTransfer = method == "POST" && path == "/futures/transfer" && response != null && request.body.readUtf8() == "{\"direction\":\"in\",\"amount\":\"10.00\"}"
         val withdrawSubmit = method == "POST" && path == "/wallet/withdraw" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ONCHAIN-ADDRESS-NOT-FOR-TRANSFER\",\"amount\":\"10.00\",\"totpCode\":\"123456\"}"
+        val withdrawCancel = method == "POST" && path == "/wallet/withdraw/MOCK-WD-CANCEL/cancel" && response != null && request.body.size == 0L
         val addressCreate = method == "POST" && path == "/account/withdraw-addresses" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ADDRESS-BOOK-LOCAL\",\"label\":\"Mock local label\",\"whitelisted\":false,\"totpCode\":\"123456\"}"
         val addressEdit = method == "PATCH" && path == "/account/withdraw-addresses/MOCK-ADDRESS-EDIT" && response != null && request.body.readUtf8() == "{\"label\":\"Mock edited label\",\"memo\":\"MEMO-LOCAL\",\"totpCode\":\"123456\"}"
-        if (sensitive && !addressEdit && !addressCreate && !withdrawSubmit && !futuresTransfer && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
+        if (sensitive && !withdrawCancel && !addressEdit && !addressCreate && !withdrawSubmit && !futuresTransfer && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
             return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
         val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
         val algoCancelFailure = algoCancel && response?.httpCode() == 503
         val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !withdrawSubmit && !addressCreate && !addressEdit) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !withdrawSubmit && !withdrawCancel && !addressCreate && !addressEdit) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }
@@ -99,6 +102,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         }
         if (addressEdit && response?.httpCode() == 503) { check(addressEditFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address PATCH latch timed out" } }
         if (addressCreate && response?.httpCode() == 503) { check(addressCreateFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address failure latch timed out" } }
+        if (withdrawCancel && response?.httpCode() == 503) { check(withdrawCancelFailureGate?.await(15,java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback withdraw cancel latch timed out" } }
         if (withdrawSubmit && response?.httpCode() == 503) { check(withdrawSubmissionFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback withdrawal failure latch timed out" } }
         if (futuresTransfer && response?.httpCode() == 503) {
             check(futuresTransferFailureGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback transfer failure latch timed out" }

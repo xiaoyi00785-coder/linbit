@@ -34,5 +34,38 @@ class AssetsWithdrawFlowTest {
         tokens.accessToken="OTHER_INVALID_SESSION";release.complete(Unit);withTimeout(5_000){while(vm.withdrawBusy)delay(10)}
         assertNull(vm.withdrawReceipt);assertNull(vm.withdrawError);assertEquals(1,server.requestCount)
     }
+    private val pending=ApiWithdrawal(id="MOCK-WD-CANCEL",asset="USDT",network="TRC20",address="INVALID-ONCHAIN-ADDRESS-NOT-FOR-TRANSFER",amount="10.00",fee="0.10",status=ApiWithdrawal.Status.PENDING,createdAt="2026-11-06T00:00:00Z")
+    private val pendingJson="""{"id":"MOCK-WD-CANCEL","asset":"USDT","network":"TRC20","address":"INVALID-ONCHAIN-ADDRESS-NOT-FOR-TRANSFER","amount":"10.00","fee":"0.10","status":"pending","createdAt":"2026-11-06T00:00:00Z"}"""
+    private val canceledJson=pendingJson.replace("pending","canceled")
+    @Test fun cancelHeldRejectsDuplicateAndOldSession()=runBlocking{
+        val arrived=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>()
+        server.dispatcher=object:Dispatcher(){override fun dispatch(req:RecordedRequest):MockResponse{
+            assertEquals("POST",req.method);assertEquals("/wallet/withdraw/MOCK-WD-CANCEL/cancel",req.path);assertEquals("",req.body.readUtf8());arrived.complete(Unit);runBlocking{withTimeout(5_000){release.await()}}
+            return MockResponse().setHeader("Content-Type","application/json").setBody(canceledJson)
+        }}
+        assertFalse(vm.submitWithdrawCancelConfirmed(pending.copy(status=ApiWithdrawal.Status.PROCESSING)));assertEquals(0,server.requestCount)
+        assertTrue(vm.submitWithdrawCancelConfirmed(pending));assertTrue(vm.withdrawCancelBusy);assertFalse(vm.submitWithdrawCancelConfirmed(pending));withTimeout(5_000){arrived.await()}
+        tokens.accessToken="OTHER_INVALID_SESSION";release.complete(Unit);withTimeout(5_000){while(vm.withdrawCancelBusy)delay(10)}
+        assertNull(vm.withdrawCancelReceipt);assertNull(vm.withdrawCancelError);assertEquals(1,server.requestCount)
+    }
+    @Test fun acceptedCancellationReadbackFailureCannotRepeatWrite()=runBlocking{
+        server.dispatcher=object:Dispatcher(){override fun dispatch(req:RecordedRequest):MockResponse = when(req.path?.substringBefore('?')){
+            "/wallet/withdraw/MOCK-WD-CANCEL/cancel"->{assertEquals("",req.body.readUtf8());MockResponse().setHeader("Content-Type","application/json").setBody(canceledJson)}
+            "/wallet/withdraw/records"->MockResponse().setResponseCode(503).setHeader("Content-Type","application/json").setBody("""{"code":"READBACK_FAIL","message":"readback failed"}""")
+            else->MockResponse().setResponseCode(404)
+        }}
+        assertTrue(vm.submitWithdrawCancelConfirmed(pending));withTimeout(5_000){while(vm.withdrawCancelBusy)delay(10)}
+        assertNull(vm.withdrawCancelReceipt);assertNotNull(vm.withdrawCancelError);assertEquals(2,server.requestCount);assertFalse(vm.submitWithdrawCancelConfirmed(pending));assertEquals(2,server.requestCount)
+    }
+    @Test fun cancelConflictReadsActualStateWithoutSuccessReceipt()=runBlocking{
+        val processing=pendingJson.replace("pending","processing")
+        server.dispatcher=object:Dispatcher(){override fun dispatch(req:RecordedRequest):MockResponse = when(req.path?.substringBefore('?')){
+            "/wallet/withdraw/MOCK-WD-CANCEL/cancel"->MockResponse().setResponseCode(409).setHeader("Content-Type","application/json").setBody("""{"code":"WITHDRAW_NOT_CANCELABLE","message":"processing"}""")
+            "/wallet/withdraw/records"->MockResponse().setHeader("Content-Type","application/json").setBody("""{"items":[$processing],"page":1,"pageSize":20,"total":1}""")
+            else->MockResponse().setResponseCode(404)
+        }}
+        assertTrue(vm.submitWithdrawCancelConfirmed(pending));withTimeout(5_000){while(vm.withdrawCancelBusy)delay(10)}
+        assertNull(vm.withdrawCancelReceipt);assertEquals(ApiWithdrawal.Status.PROCESSING,vm.withdrawCancelConflict?.status);assertEquals(2,server.requestCount)
+    }
     @After fun close(){runCatching{server.shutdown()};Dispatchers.resetMain()}
 }

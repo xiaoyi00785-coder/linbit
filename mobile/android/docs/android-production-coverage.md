@@ -58,9 +58,9 @@
 | 闪兑 | 兑出/兑入、报价有效期、暂停币对、接受报价结果 | `SpotSubpages.kt:722-845` | 正常/空/暂停 P；报价→最终币额 Sheet 可达，accept 未提交；独立离屏Window按manifest，PixelCopy/真机U，接受报价结果 U；保留 canAccept/quote revision 资金闸。 |
 | 资产 | 提现方式；资产筛选；搜索；快捷买币/盈亏入口 | `AssetsScreen.kt:72-82,138-167,245-265` | U；快捷买币/盈亏仍占位；理财/策略/TradFi 顶栏已接真实 Host，但这里没有把它们标为快捷入口或弹窗P。 |
 | 充值 | 网络；自动到账账户选择 | `DepositScreens.kt:141-175,287-301` | 正常/空/明确错误 P；正确地址是在线网络 mock 的无效演示值，不得转账。弹层及 AppRoot 点击 U，不拿合成预览代替。 |
-| 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；本批仅链上已开2FA的AppRoot两适配local pending闭环 P/W：取消0 POST、在途ViewModel防重、503保留安全Window/金额/地址/TOTP并重试，202/pending提交与同id记录/借记余额readback分别显示；不是链上到账。地址簿/站内/撤销U。 |
+| 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；链上已开2FA及pending撤销均有AppRoot两适配local闭环 P/W：见下方独立批次。pending不是链上到账，撤销不含completed/processing的成功断言。站内仍U。 |
 | 资产划转 | 现货→合约最终复核/失败重试/成功结果 | `TransferScreen.kt:55-160`；`AssetsViewModel.kt:184-222` | AppRoot P/W：320dp fontScale1.3浅色、360dp暗色；fake token与127.0.0.1精确POST；取消0写；真机、反向和其他设备 V/C 仍U。 |
-| 地址簿 | 新增label/网络；白名单验证/edit；删除；撤销 pending 提现 | `AddressBookScreen.kt`；`AssetsViewModel.kt` | 新增及本批label/memo编辑各两适配P/W见下文；单条名单PATCH、DELETE、全局开关、pending撤销U，不因共用生产PATCH/OpenAPI推定通过。 |
+| 地址簿 | 新增label/网络；白名单验证/edit；删除；撤销 pending 提现 | `AddressBookScreen.kt`；`AssetsViewModel.kt` | 新增/label-memo编辑及本批pending撤销各两适配P/W见独立XML；单条名单PATCH、DELETE、全局开关仍U，pending撤销不包含processing/completed可撤声明。 |
 | More | 卡券激活确认；合伙人申请；跟单；跟单二次确认；成为带单员；停止跟单；关闭工单 | `CouponsScreen.kt:94-132`；`PartnerScreen.kt:262-277`；`CopyTradingScreen.kt:311-365`；`SupportTicketsScreen.kt:309-314` | U。 |
 | Profile | 修改昵称；退出；移除本机账号；创建子账户；2FA 关闭确认 | `UserCenterScreens.kt:76-158,179-223`；`SubAccountsScreen.kt:42-88`；`SecurityScreens.kt:182-197` | U。 |
 | 安全（新） | 登录密码/防钓鱼/邮箱/手机/资金密码安全确认 | `SecurityFeatureScreens.kt`、`SecurityContactScreens.kt` | 表单 P；独立离屏Window按本批实际manifest，PixelCopy/真机U。契约按生成模型 loopback 测试，真机PixelCopy/V U，禁止 UI 自动发码/绑定。 |
@@ -232,3 +232,17 @@ OpenAPI `PATCH /account/withdraw-addresses/{id}` 同样支持 `whitelisted`，�
 **准确未验边界：** 单条 `whitelisted` PATCH、地址 `DELETE`、全局 `/account/withdraw-whitelist` 写及读，pending提现撤销，反向 `out` 划转，站内提现、资金/提醒/发码等不在本批。全部仅 `127.0.0.1` 精确route/body的fake token/TOTP；没有远端写、部署、真实发送验证码、iOS或我方真机APK前置。
 
 顺序Debug compile→Release compile→lintDebug→默认全测全部BUILD SUCCESSFUL，见 `address-edit-build.jsonl` 及 `/workspace/edit-{debug-compile,release-compile,lint,default}.log`；默认XML另存 `address-edit-default-xml`。默认实测 **364 tests / 0 failures / 0 errors / 134 skipped**。默认中4条Root Assume skip、`AssetsAddressFlowTest` 4条0 skip；skip不计Root通过，不沿用create旧358数字。
+
+## 2026-11-06 bounded pending withdrawal-cancel batch
+
+契约只使用实际存在的 `POST /wallet/withdraw/{id}/cancel`，id单段、无请求body；仅 `pending` 可申请撤销，200返回Withdrawal，409=该提现无法撤销（不存在或已进入处理）。没有发明2FA/短信/DELETE或其它接口。
+
+真实入口为 AppRoot HOME→资产→提现方式→提现记录→pending记录撤销申请→原有独立最终复核Window。转换生命周期scope为家庭AssetsViewModel中无request-body的精确取消事务：同步busy防连点，同会话generation隔离旧读写；processing前置0写；503保留Window目标可重试。200后必须再GET overview确定原debit account，读取该余额和提现列表，并核实列表同id为canceled及资产余额存在才发布receipt，原账户余额显示来自真实GET（不是本地金额加法）。accepted后即使读回失败/值不对也禁重复POST；409仅通过进一步记录GET显示实际processing等当前状态，不声称撤销。本批不是链上/站内/其它状态结算。
+
+独立Root `/workspace/android-verification/withdraw-cancel-xml`：320dp fontScale1.3 light、360dp dark各cancel0写+held503防重/保留重试/同id canceled记录/原账户余额readback，共 **4 / 0 / 0 / 0**。`withdraw-cancel-vm-xml`的 `AssetsWithdrawFlowTest` 合计原submit+新cancel **4 / 0 / 0 / 0**：非pending防重/held old-session隔离、accepted readback error禁止重发、409实际processing状态。独立XML先存，后默认套suite；enabled不是Root skip算pass。
+
+`withdraw-cancel-evidence`存两适配record、独立true Window review、503 retained retry、result共8张图及metadata。实际Read初始pending、取消手段、503和最终同id已撤销/账户/100.00 USDT且不再pending；320无截断矛盾卡，360颜色可读。最终记录同id server readback映射到卡内，撤写不拔除旧resume UI。没有精确对应参考：**no-exact-reference**，不是reference-identical、完整V或真机PixelCopy。全部仅127.0.0.1精确id/空body route，fake token，无真实资金/安全/提醒写，无发码/远端；没有iOS或真机APK前置。
+
+顺序compileDebug→compileRelease→lintDebug→default tests结果存 `withdraw-cancel-build.json`/日志与 `withdraw-cancel-default-xml`。默认Root四条为Assume skip，不算独立passed。边界U：地址删除、单条whitelisted PATCH、全局开关、反向`out`划转、processing/completed实际结算、非2FA发码和其它宽度/真机。本批有真实fixture队列诊断/最终图指出的stale pending卡而超出10–15分钟，均不以调试中图或失败XML冒充交付。
+
+最终同源码顺序门：Debug compile、Release compile、lintDebug、default tests 全部BUILD SUCCESSFUL；默认 **371 tests / 0 failures / 0 errors / 138 skipped**。其中本批Root四条default Assume skip，VM含原submit共4条默认0 skip。日志 `/workspace/cancel-{debug-compile,release-compile,lint,default}.log`；实际通过只认先存的enabled XML。
