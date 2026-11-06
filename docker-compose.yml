@@ -573,6 +573,8 @@ services:
       PRICE_ALERT_DELIVERY_MS: ${PRICE_ALERT_DELIVERY_MS:-1000}
       # Independent once-only cooldown; never read/write TradFi alertCooldownSec.
       USER_PRICE_ALERT_COOLDOWN_SECONDS: ${USER_PRICE_ALERT_COOLDOWN_SECONDS:-300}
+      PRICE_ALERT_WRITE_LIMIT: ${PRICE_ALERT_WRITE_LIMIT:-20}
+      PRICE_ALERT_WRITE_WINDOW_SECONDS: ${PRICE_ALERT_WRITE_WINDOW_SECONDS:-60}
     depends_on:
       postgres:
         condition: service_healthy

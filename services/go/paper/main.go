@@ -16,7 +16,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
-	common.RequireProduction("paper", common.ProblemIf(cfg.IndexMaxAge <= 0, "PAPER_INDEX_MAX_AGE_SECONDS must be positive"), "DATABASE_URL", "INTERNAL_TOKEN", "JWT_SECRET")
+	common.RequireProduction("paper", append(common.ProblemIf(cfg.IndexMaxAge <= 0, "PAPER_INDEX_MAX_AGE_SECONDS must be positive"), common.ProblemIf(cfg.AlertWriteLimit <= 0 || cfg.AlertWriteWindow <= 0, "PRICE_ALERT_WRITE_LIMIT and PRICE_ALERT_WRITE_WINDOW_SECONDS must be positive")...), "DATABASE_URL", "INTERNAL_TOKEN", "JWT_SECRET")
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("open db: %v", err)

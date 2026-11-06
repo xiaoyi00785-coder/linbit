@@ -126,7 +126,7 @@ func TestPaperIsolationReplayAndReset(t *testing.T) {
 	if len(oldGeneration["items"].([]PaperOrder)) != 1 {
 		t.Fatalf("first generation hidden: %#v", oldGeneration)
 	}
-	if first.OrderID != replay.OrderID || m.indexes.Load() != 1 {
+	if first.OrderID != replay.OrderID || m.indexes.Load() != 2 {
 		t.Fatalf("idempotency used fresh execution: %v %v calls=%d", first.OrderID, replay.OrderID, m.indexes.Load())
 	}
 	var realUSDT, realBTC string
@@ -221,4 +221,69 @@ func jsonEqual(v any, raw []byte) bool {
 	}
 	var a, c any
 	return json.Unmarshal(b, &a) == nil && json.Unmarshal(raw, &c) == nil && reflect.DeepEqual(a, c)
+}
+
+func TestPaperReplayRechecksMarketWithoutChangingBalances(t *testing.T) {
+	store := migratedStore(t)
+	ctx := context.Background()
+	m := testMarket("50000.00")
+	in := PlacePaperOrder{Symbol: "BTCUSDT", Side: "buy", Type: "market", Quantity: "0.100000", ClientOrderID: "replay-with-market-check"}
+	first, err := store.PlaceOrder(ctx, "80000001", in, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.err = apiErr(http.StatusServiceUnavailable, "PRICE_STALE", "stale")
+	if _, err := store.PlaceOrder(ctx, "80000001", in, m); apiCode(err) != "PRICE_STALE" {
+		t.Fatalf("stale replay bypassed market admission: %v", err)
+	}
+	m.err = nil
+	m.symbol.Status = "paused"
+	if _, err := store.PlaceOrder(ctx, "80000001", in, m); apiCode(err) != "SYMBOL_PAUSED" {
+		t.Fatalf("paused replay bypassed symbol admission: %v", err)
+	}
+	m.symbol.Status = "trading"
+	replay, err := store.PlaceOrder(ctx, "80000001", in, m)
+	if err != nil || first.OrderID != replay.OrderID || !first.CreatedAt.Equal(replay.CreatedAt) || first.ReferencePrice != replay.ReferencePrice {
+		t.Fatalf("recovered replay changed stored result: first=%#v replay=%#v err=%v", first, replay, err)
+	}
+	var orders, trades, ledger int
+	for table, dest := range map[string]*int{"paper_orders": &orders, "paper_trades": &trades, "paper_ledger_entries": &ledger} {
+		if err := store.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One USDT faucet + two fill ledger entries; no retry writes anything.
+	if orders != 1 || trades != 1 || ledger != 3 {
+		t.Fatalf("replay duplicated accounting: orders=%d trades=%d ledger=%d", orders, trades, ledger)
+	}
+	if _, err := store.PlaceOrder(ctx, "80000001", PlacePaperOrder{Symbol: "BTCUSDT", Side: "buy", Type: "market", Quantity: "0.200000", ClientOrderID: in.ClientOrderID}, m); apiCode(err) != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("same key different payload: %v", err)
+	}
+	if _, err := store.Reset(ctx, "80000001", "reset-after-replay", "RESET_PAPER_ACCOUNT"); err != nil {
+		t.Fatal(err)
+	}
+	afterReset, err := store.PlaceOrder(ctx, "80000001", in, m)
+	if err != nil || afterReset.OrderID != first.OrderID || afterReset.Generation != first.Generation {
+		t.Fatalf("historical replay after reset changed audit result: %#v %v", afterReset, err)
+	}
+	var ordersAfter int
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_orders`).Scan(&ordersAfter); err != nil || ordersAfter != 1 {
+		t.Fatalf("after-reset replay added fill: %d %v", ordersAfter, err)
+	}
+}
+
+func TestPaperUnpersistedRetryDoesNotBypassStaleIndex(t *testing.T) {
+	store := migratedStore(t)
+	m := testMarket("50000.00")
+	m.err = apiErr(http.StatusServiceUnavailable, "PRICE_STALE", "stale")
+	in := PlacePaperOrder{Symbol: "BTCUSDT", Side: "buy", Type: "market", Quantity: "0.100000", ClientOrderID: "retry-before-commit"}
+	for i := 0; i < 2; i++ {
+		if _, err := store.PlaceOrder(context.Background(), "80000001", in, m); apiCode(err) != "PRICE_STALE" {
+			t.Fatalf("unpersisted retry %d err=%v", i, err)
+		}
+	}
+	var order int
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_orders`).Scan(&order); err != nil || order != 0 {
+		t.Fatalf("rejected retries persisted orders=%d err=%v", order, err)
+	}
 }

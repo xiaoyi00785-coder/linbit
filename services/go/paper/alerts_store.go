@@ -69,6 +69,7 @@ func (s *Store) CreateAlert(ctx context.Context, userID string, in CreatePriceAl
 		return PriceAlert{}, err
 	}
 	hash := requestHash(in)
+	clock = clock.UTC()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return PriceAlert{}, err
@@ -117,7 +118,7 @@ func (s *Store) CreateAlert(ctx context.Context, userID string, in CreatePriceAl
 	if history >= 100 || (status == "active" && count >= 50) {
 		return PriceAlert{}, apiErr(http.StatusConflict, "ALERT_LIMIT_EXCEEDED", "每用户最多 50 条激活、100 条历史预警")
 	}
-	now := clock.UTC()
+	now := clock
 	a := PriceAlert{AlertID: randomID("al"), ClientAlertID: in.ClientAlertID, Market: "spot", Symbol: in.Symbol, Condition: in.Condition, Threshold: threshold.String(), PriceSource: "INDEX", TriggerMode: "once", Channels: []string{"in_app"}, Enabled: enabled, Status: status, Revision: 1, DeliveryStatus: "none", Note: in.Note, CreatedAt: now, UpdatedAt: now}
 	a.Limit.ActivePerUser = 50
 	_, err = tx.ExecContext(ctx, `INSERT INTO price_alerts (alert_id,user_id,client_alert_id,request_hash,market,symbol,condition,threshold,enabled,status,note,created_at,updated_at) VALUES ($1,$2,$3,$4,'spot',$5,$6,$7,$8,$9,$10,$11,$11)`, a.AlertID, userID, in.ClientAlertID, hash, in.Symbol, in.Condition, threshold.String(), enabled, status, in.Note, now)

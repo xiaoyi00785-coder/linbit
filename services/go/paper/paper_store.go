@@ -234,6 +234,22 @@ func (s *Store) PlaceOrder(ctx context.Context, userID string, in PlacePaperOrde
 	if err != nil {
 		return PaperOrder{}, err
 	}
+	symbol, err := market.TradingSymbol(ctx, in.Symbol)
+	if err != nil {
+		return PaperOrder{}, err
+	}
+	if symbol.Status != "trading" {
+		return PaperOrder{}, apiErr(http.StatusBadRequest, "SYMBOL_PAUSED", "交易对当前暂停")
+	}
+	q, err := market.Index(ctx, in.Symbol)
+	if err != nil {
+		return PaperOrder{}, err
+	}
+	// Admission is checked before both a new fill and an idempotent replay.
+	// A not-yet-persisted request cannot escape market checks by racing a retry.
+	// Once filled, a retry during stale/paused markets is rejected (never a new
+	// fill); after INDEX and symbol admission recover it returns the exact stored
+	// orderId/createdAt. The virtual ledger is unchanged on every replay path.
 	var oldBody []byte
 	var oldHash string
 	err = tx.QueryRowContext(ctx, `SELECT request_hash,response_json FROM paper_orders WHERE user_id=$1 AND client_order_id=$2`, userID, in.ClientOrderID).Scan(&oldHash, &oldBody)
@@ -242,20 +258,12 @@ func (s *Store) PlaceOrder(ctx context.Context, userID string, in PlacePaperOrde
 			return PaperOrder{}, apiErr(http.StatusConflict, "IDEMPOTENCY_CONFLICT", "相同 clientOrderId 的请求内容不同")
 		}
 		var out PaperOrder
-		if json.Unmarshal(oldBody, &out) != nil {
-			return PaperOrder{}, fmt.Errorf("stored order decode")
+		if err := json.Unmarshal(oldBody, &out); err != nil {
+			return PaperOrder{}, fmt.Errorf("stored order decode: %w", err)
 		}
 		return out, nil
 	}
 	if err != sql.ErrNoRows {
-		return PaperOrder{}, err
-	}
-	symbol, err := market.TradingSymbol(ctx, in.Symbol)
-	if err != nil {
-		return PaperOrder{}, err
-	}
-	q, err := market.Index(ctx, in.Symbol)
-	if err != nil {
 		return PaperOrder{}, err
 	}
 	px := q.Price.Round(int32(symbol.PricePrecision))

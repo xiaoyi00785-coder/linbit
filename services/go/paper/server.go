@@ -270,6 +270,9 @@ func (s *Server) handleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.admitAlertWrite(w, r, uid) {
+		return
+	}
 	var in CreatePriceAlert
 	if !decode(w, r, &in) {
 		return
@@ -280,6 +283,13 @@ func (s *Server) handleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusCreated, a)
+}
+func (s *Server) admitAlertWrite(w http.ResponseWriter, r *http.Request, uid string) bool {
+	if err := s.store.AdmitAlertWrite(r.Context(), uid, time.Now(), s.cfg.AlertWriteLimit, s.cfg.AlertWriteWindow); err != nil {
+		writeErr(w, err)
+		return false
+	}
+	return true
 }
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	uid, ok := s.feature(w, r, "priceAlerts")
@@ -304,6 +314,9 @@ func (s *Server) handleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.admitAlertWrite(w, r, uid) {
+		return
+	}
 	var in UpdatePriceAlert
 	if !decode(w, r, &in) {
 		return
@@ -318,6 +331,9 @@ func (s *Server) handleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteAlert(w http.ResponseWriter, r *http.Request) {
 	uid, ok := s.feature(w, r, "priceAlerts")
 	if !ok {
+		return
+	}
+	if !s.admitAlertWrite(w, r, uid) {
 		return
 	}
 	var revision *int64

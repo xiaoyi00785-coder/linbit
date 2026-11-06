@@ -8126,6 +8126,8 @@ paths:
           $ref: '#/components/responses/PaperFeatureDisabled'
         '409':
           $ref: '#/components/responses/PaperConflict'
+        '429':
+          $ref: '#/components/responses/PriceAlertRateLimited'
   /price-alerts/{alertId}:
     patch:
       tags:
@@ -8168,6 +8170,8 @@ paths:
                 message: 价格预警不存在
         '409':
           $ref: '#/components/responses/PaperConflict'
+        '429':
+          $ref: '#/components/responses/PriceAlertRateLimited'
     delete:
       tags:
       - Price Alerts
@@ -8191,6 +8195,16 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/PaperFeatureDisabled'
+        '404':
+          description: 不存在或属于其他用户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { code: ALERT_NOT_FOUND, message: 价格预警不存在 }
+        '409':
+          $ref: '#/components/responses/PaperConflict'
+        '429':
+          $ref: '#/components/responses/PriceAlertRateLimited'
 components:
   securitySchemes:
     bearerAuth:
@@ -8278,8 +8292,32 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    PriceAlertRateLimited:
+      description: |
+        同一主账户的价格预警创建、编辑、删除共享持久化固定窗口配额：默认每 60 秒最多 20 次，按用户隔离，跨服务实例/重启生效。
+        超限时返回 RATE_LIMITED；Retry-After 与 retryAfterSec 为建议等待秒数。该写限流独立于单条预警触发冷却。
+      headers:
+        Retry-After:
+          required: true
+          schema: { type: integer, minimum: 1 }
+          description: 距离当前限流窗口结束的秒数
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/PriceAlertRateLimitError' }
+          example: { code: RATE_LIMITED, message: 价格预警写操作过于频繁，请稍后再试, requestId: req_ratealert, retryAfterSec: 42 }
 
   schemas:
+    PriceAlertRateLimitError:
+      type: object
+      required: [code, message, retryAfterSec]
+      properties:
+        code: { type: string, enum: [RATE_LIMITED] }
+        message: { type: string }
+        requestId: { type: string, nullable: true }
+        retryAfterSec:
+          type: integer
+          minimum: 1
+          description: 建议等待秒数，与 Retry-After 响应头一致
     PaperAccount:
       type: object
       required: [accountId, mode, market, generation, quoteAsset, initialBalance, resetLimitPerUtcDay, resetsUsedToday, orderTypes, priceSource, feeModel, slippageModel, createdAt, updatedAt]

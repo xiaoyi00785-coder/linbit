@@ -17,6 +17,8 @@ type Config struct {
 	EvaluationInterval  time.Duration
 	DeliveryInterval    time.Duration
 	AlertCooldown       time.Duration
+	AlertWriteLimit     int
+	AlertWriteWindow    time.Duration
 	DevMode             bool
 	PaperTradingEnabled string
 	PriceAlertsEnabled  string
@@ -31,6 +33,8 @@ func LoadConfig() Config {
 		EvaluationInterval:  time.Duration(common.EnvInt("PRICE_ALERT_EVALUATION_MS", 2000)) * time.Millisecond,
 		DeliveryInterval:    time.Duration(common.EnvInt("PRICE_ALERT_DELIVERY_MS", 1000)) * time.Millisecond,
 		AlertCooldown:       time.Duration(common.EnvInt("USER_PRICE_ALERT_COOLDOWN_SECONDS", 300)) * time.Second,
+		AlertWriteLimit:     common.EnvInt("PRICE_ALERT_WRITE_LIMIT", 20),
+		AlertWriteWindow:    time.Duration(common.EnvInt("PRICE_ALERT_WRITE_WINDOW_SECONDS", 60)) * time.Second,
 		DevMode:             common.Env("DEV_MODE", "false") == "true",
 		PaperTradingEnabled: strings.TrimSpace(common.Env("PAPER_TRADING_ENABLED", "")),
 		PriceAlertsEnabled:  strings.TrimSpace(common.Env("PRICE_ALERTS_ENABLED", "")),

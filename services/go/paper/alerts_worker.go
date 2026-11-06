@@ -37,36 +37,42 @@ func (s *Server) evaluateSymbol(ctx context.Context, symbol string) error {
 		}
 		return err
 	}
-	// Claim this tick's candidates with advisory locks, not held row locks:
-	// other replicas then skip these ids instead of waiting for every row.
-	tx, err := s.store.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT alert_id,user_id,threshold::text,condition,last_observed_price::text FROM price_alerts WHERE symbol=$1 AND status='active' AND enabled=true ORDER BY alert_id LIMIT 500`, symbol)
-	if err != nil {
-		return err
-	}
-	var candidates []alertCandidate
-	for rows.Next() {
-		var c alertCandidate
-		if err := rows.Scan(&c.id, &c.uid, &c.threshold, &c.condition, &c.previous); err != nil {
-			rows.Close()
+	// Advance through a stable keyset until no active alerts remain. A single
+	// page is still bounded, but IDs after 500 are evaluated in this same round;
+	// the next round never restarts a symbol at only its first 500 records.
+	const pageSize = 500
+	after := ""
+	for {
+		rows, err := s.store.db.QueryContext(ctx, `SELECT alert_id,user_id,threshold::text,condition,last_observed_price::text FROM price_alerts WHERE symbol=$1 AND status='active' AND enabled=true AND alert_id>$2 ORDER BY alert_id LIMIT $3`, symbol, after, pageSize)
+		if err != nil {
 			return err
 		}
-		candidates = append(candidates, c)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, c := range candidates {
-		if err := s.evaluateOne(ctx, c.id, c.uid, c.threshold, c.condition, c.previous, quote); err != nil {
+		var candidates []alertCandidate
+		for rows.Next() {
+			var c alertCandidate
+			if err := rows.Scan(&c.id, &c.uid, &c.threshold, &c.condition, &c.previous); err != nil {
+				rows.Close()
+				return err
+			}
+			candidates = append(candidates, c)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
 			return err
 		}
+		if len(candidates) == 0 {
+			return nil
+		}
+		for _, c := range candidates {
+			if err := s.evaluateOne(ctx, c.id, c.uid, c.threshold, c.condition, c.previous, quote); err != nil {
+				return err
+			}
+		}
+		after = candidates[len(candidates)-1].id
+		if len(candidates) < pageSize {
+			return nil
+		}
 	}
-	return tx.Commit()
 }
 
 func (s *Server) evaluateOne(ctx context.Context, alertID, userID, thresholdText, condition string, old sql.NullString, quote Quote) error {
