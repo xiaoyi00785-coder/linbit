@@ -54,7 +54,7 @@ import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
 import click.cowa.linbit.ui.theme.lbNum
 
-private val Tabs = listOf("总览", "资金", "合约", "现货", "理财", "策略", "TradFi")
+private val Tabs = listOf("总览", "资金", "合约", "现货", "理财", "策略", "模拟", "TradFi")
 
 @Composable
 fun AssetsScreen(
@@ -83,7 +83,7 @@ fun AssetsScreen(
             if (i >= 4) {
                 // The old guest guard below suppressed every tab action. These
                 // destinations have real production login handling.
-                if (loggedIn) onOpenAssetFeature(listOf("earn", "strategy", "tradfi")[i - 4]) else onLogin()
+                if (loggedIn) onOpenAssetFeature(listOf("earn", "strategy", "paper", "tradfi")[i - 4]) else onLogin()
             } else vm.setTab(i)
         }, Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH), scrollable = true)
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))

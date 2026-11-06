@@ -42,7 +42,7 @@ import click.cowa.linbit.ui.theme.resolveDark
 
 /** Real production VM factory. Tests inject the same concrete VM types bound to loopback. */
 @androidx.compose.runtime.Stable
-class AssetRouteViewModels(val assets: click.cowa.linbit.feature.assets.AssetsViewModel, val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel, val tradFi: click.cowa.linbit.feature.more.TradFiViewModel)
+class AssetRouteViewModels(val assets: click.cowa.linbit.feature.assets.AssetsViewModel, val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel, val tradFi: click.cowa.linbit.feature.more.TradFiViewModel, val paper: click.cowa.linbit.feature.assets.PaperAccountViewModel? = null)
 data class RootHomeMarketFactory(val home: @Composable () -> click.cowa.linbit.feature.home.HomeViewModel, val markets: @Composable () -> click.cowa.linbit.feature.markets.MarketsViewModel)
 val LocalRootHomeMarketFactory = androidx.compose.runtime.staticCompositionLocalOf<RootHomeMarketFactory?> { null }
 @Composable private fun rootHome(): click.cowa.linbit.feature.home.HomeViewModel = LocalRootHomeMarketFactory.current?.home?.invoke() ?: hiltViewModel()
@@ -52,12 +52,13 @@ fun rememberAssetRouteViewModels(): AssetRouteViewModels {
     val assets: click.cowa.linbit.feature.assets.AssetsViewModel = hiltViewModel()
     val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel = hiltViewModel()
     val tradFi: click.cowa.linbit.feature.more.TradFiViewModel = hiltViewModel()
-    return remember { AssetRouteViewModels(assets, spot, tradFi) }
+    val paper: click.cowa.linbit.feature.assets.PaperAccountViewModel = hiltViewModel()
+    return remember { AssetRouteViewModels(assets, spot, tradFi, paper) }
 }
 
 /** Root stays the sole owner of feature routing. Optional factory is DI, not a synthetic navigation path. */
 @Composable
-fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewModel = hiltViewModel(), routeVms: AssetRouteViewModels = rememberAssetRouteViewModels(), showSplash: Boolean = true) {
+fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewModel = hiltViewModel(), routeVms: AssetRouteViewModels = rememberAssetRouteViewModels(), showSplash: Boolean = true, onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
@@ -154,7 +155,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewMo
                 onTrade = { futures, symbol ->
                     if (futures) { vm.tradeNav.setFutures(symbol); tab = MainTab.FUTURES } else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
                     assetFeature = null
-                }, spotVm = routeVms.spot, tradFiVm = routeVms.tradFi,
+                }, spotVm = routeVms.spot, tradFiVm = routeVms.tradFi, paperVm = routeVms.paper, onDialogWindow = onDialogWindow,
             ) }
 
             if (userCenter && loggedIn) UserCenterHost(

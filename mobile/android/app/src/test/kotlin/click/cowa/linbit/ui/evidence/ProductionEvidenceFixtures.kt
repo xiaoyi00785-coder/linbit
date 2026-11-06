@@ -12,6 +12,9 @@ import click.cowa.linbit.feature.profile.SecurityFeatureViewModel
 import click.cowa.linbit.feature.profile.SecurityViewModel
 import click.cowa.linbit.ui.components.ToastCenter
 import kotlinx.coroutines.CoroutineScope
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import okhttp3.MediaType.Companion.toMediaType
+import retrofit2.Retrofit
 
 internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, private val scope: CoroutineScope) {
     val tokens = InMemoryTokenStore()
@@ -47,6 +50,15 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
     }
 
     fun badge(): click.cowa.linbit.feature.more.NotificationBadgeViewModel = click.cowa.linbit.feature.more.NotificationBadgeViewModel(retrofit, tokens)
+
+    /** Same production ViewModel, with test-only loopback adapter. Never a LinbitApi/paper hybrid. */
+    fun paper(): click.cowa.linbit.feature.assets.PaperAccountViewModel {
+        val retrofit = Retrofit.Builder().baseUrl(api.baseUrl).client(http)
+            .addConverterFactory(NetworkFactory.json.asConverterFactory("application/json".toMediaType()))
+            .build().create(click.cowa.linbit.data.paper.PaperTradingApi::class.java)
+        return click.cowa.linbit.feature.assets.PaperAccountViewModel(
+            click.cowa.linbit.data.paper.PaperTradingClient(retrofit), tokens, toast)
+    }
 
     fun assets(): AssetsViewModel {
         tokens.accessToken = "INVALID_LAYOUT_TOKEN"

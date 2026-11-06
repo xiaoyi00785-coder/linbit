@@ -19,7 +19,8 @@ import retrofit2.http.Query
 
 /**
  * Stable main d7713500704fc8ce341f4cef6775941af39f566b, not obsolete PR head df276c7.
- * Deliberately unregistered in production: instantiate only with an isolated mock Retrofit.
+ * Production AppModule binds only an explicitly disabled fail-closed stub, never a cash/order adapter.
+ * Positive-path tests may instantiate only with an isolated mock or in-memory API.
  * Never blend this client with LinbitApi, real balances, or the real spot-order repository.
  */
 interface PaperTradingApi {
@@ -36,7 +37,7 @@ interface PaperTradingApi {
     @DELETE("price-alerts/{alertId}") suspend fun deleteAlert(@Path("alertId") id: String, @Query("revision") revision: Int? = null): Response<Unit>
 }
 
-class PaperTradingClient(private val api: PaperTradingApi) {
+class PaperTradingClient(private val api: PaperTradingApi, val enabled: Boolean = true) {
     suspend fun account(): PaperAccount = unwrapApiResponse(api.account()).also { PaperContractValidation.requireAccount(it) }
     suspend fun balances(page: Int = 1, pageSize: Int = 20): PaperBalances {
         requirePage(page, pageSize)
