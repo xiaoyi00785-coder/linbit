@@ -197,6 +197,9 @@ enum ErrorText {
         "EXPOSURE_LIMIT": "当前方向敞口已满，请稍后再试",
         "SYMBOL_PAUSED": "该产品暂停交易",
         "INDEX_UNAVAILABLE": "指数价格暂不可用，请稍后再试",
+        "PAPER_RESET_LIMIT_EXCEEDED": "每 UTC 日仅可重置一次模拟账户",
+        "PAPER_ORDER_NOT_FOUND": "模拟订单不存在",
+
         "FEATURE_DISABLED": "该功能暂未开放",
         "ALERT_NOT_FOUND": "价格预警不存在",
         "REVISION_CONFLICT": "预警已被修改，请刷新后重试",
