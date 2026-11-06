@@ -9,8 +9,12 @@ spot light
 futures
 assets light
 
-# 闪兑提前：避免 cancel-in-progress 截断 screens-pr 末尾导致缺 swap-light（9a70ed0 证据：27/28 仅缺末项）
+# 闪兑与本批新页提前：避免 cancel-in-progress 截断末尾
 swap light
+spot-chart light
+futures-calc light
+futures-mark-history light
+futures-insurance light
 login
 
 # 高价值交易

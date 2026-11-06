@@ -124,6 +124,10 @@ struct RootTabView: View {
         case "futures-algo-history": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "algoHistory"; router.feature = .futuresHistory
         case "futures-tiers": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresRiskTiers
         case "futures-funding": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresFunding
+        case "futures-mark-history": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresMarkHistory
+        case "futures-insurance": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresInsurance
+        case "futures-calc": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "calc"
+        case "spot-chart": router.tab = .spot; router.shotSheet = "spotChart"
         case "event": router.tab = .futures; router.futuresTop = 1
         case "event-confirm": router.tab = .futures; router.futuresTop = 1; router.shotSheet = "eventConfirm"
         case "earn": router.feature = .earn

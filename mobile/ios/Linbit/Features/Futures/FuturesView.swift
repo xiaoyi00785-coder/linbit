@@ -152,6 +152,7 @@ struct FuturesTradeView: View {
         case "kind": showKind = true
         case "tools": showTools = true
         case "chart": showChart = true
+        case "calc": showCalc = true
         case "plan": m.kind = .plan
         case "ordersTpsl": bottomTab = 1; orderFilter = 1; return
         case "ordersPlan": bottomTab = 1; orderFilter = 2; return

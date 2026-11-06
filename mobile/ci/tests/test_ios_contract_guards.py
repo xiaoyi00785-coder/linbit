@@ -94,6 +94,15 @@ ok('assets-deposit' in app and 'assets-withdraw' in app, 'shot routes for deposi
 
 pr = read('mobile/ci/screens-pr.txt')
 ok('swap light' in pr, 'swap still in screens-pr')
+
+# New shot routes for this tip's features (screens-pr + LinbitApp)
+app = read('mobile/ios/Linbit/App/LinbitApp.swift')
+ok('spot-chart' in app and 'futures-calc' in app, 'LinbitApp spot-chart + futures-calc routes')
+ok('futures-mark-history' in app and 'futures-insurance' in app, 'LinbitApp mark-history + insurance routes')
+ok('spot-chart light' in pr and 'futures-calc light' in pr, 'screens-pr includes new feature shots')
+ok('futures-mark-history light' in pr and 'futures-insurance light' in pr, 'screens-pr mark + insurance')
+ok('case "spotChart"' in spot or 'spotChart' in spot, 'SpotTradeView handles spotChart shot')
+ok('case "calc"' in read('mobile/ios/Linbit/Features/Futures/FuturesView.swift'), 'FuturesView handles calc shot')
 # swap should not be last before only new keys - check position
 lines=[ln.strip() for ln in pr.splitlines() if ln.strip() and not ln.strip().startswith('#')]
 screens=[ln.split()[0] for ln in lines]

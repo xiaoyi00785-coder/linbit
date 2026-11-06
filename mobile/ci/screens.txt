@@ -17,6 +17,10 @@ futures-position-history
 futures-algo-history
 futures-tiers
 futures-funding
+spot-chart
+futures-calc
+futures-mark-history
+futures-insurance
 event
 earn
 strategy

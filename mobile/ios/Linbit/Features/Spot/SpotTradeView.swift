@@ -47,9 +47,10 @@ struct SpotTradeView: View {
             case "spotMarketAmount": m.kind = .market; m.marketBuyByAmount = true; m.amountText = "100"
             case "spotFee": showFee = true
             case "spotConditional": bottomTab = 2
+            case "spotChart": showChart = true
             default: break
             }
-            if ["spotPlan", "spotMarketAmount", "spotFee", "spotConditional"].contains(router.shotSheet ?? "") { router.shotSheet = nil }
+            if ["spotPlan", "spotMarketAmount", "spotFee", "spotConditional", "spotChart"].contains(router.shotSheet ?? "") { router.shotSheet = nil }
             await m.start()
         }
         .onDisappear { m.stop() }
