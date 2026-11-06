@@ -104,20 +104,39 @@ struct HomeView: View {
     }
 
     private var taskCard: some View {
-        HStack(spacing: 4) {
-            (Text(newcomerLead).foregroundColor(p.textPrimary)
-             + Text("\(vm.newcomer?.total ?? "215") \(vm.newcomer?.asset ?? "USDT")").foregroundColor(p.brand).fontWeight(.semibold)
-             + Text(" 体验金").foregroundColor(p.textPrimary))
-                .font(.lb(FontSize.caption))
-            Spacer()
+        // 对照 ref/1：主文案 + 可选倒计时（仅当 API 提供 deadline；无则不伪造）
+        HStack(alignment: .center, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
+                (Text(newcomerLead).foregroundColor(p.textPrimary)
+                 + Text("\(vm.newcomer?.total ?? "215") \(vm.newcomer?.asset ?? "USDT")").foregroundColor(p.brand).fontWeight(.semibold)
+                 + Text(" 体验金").foregroundColor(p.textPrimary))
+                    .font(.lb(FontSize.caption))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                if let d = vm.newcomer?.deadline {
+                    Text(Self.newcomerCountdown(d))
+                        .font(.lbNum(FontSize.small))
+                        .foregroundColor(p.textTertiary)
+                }
+            }
+            Spacer(minLength: 4)
             IconView(icon: .chevronRight, size: 14, tint: p.textSecondary)
         }
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); Router.shared.openFeature(.welfare) }
         .padding(.horizontal, 12)
+        .padding(.vertical, vm.newcomer?.deadline == nil ? 0 : 6)
         .frame(minHeight: Metrics.taskCardH)
         .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border, lineWidth: 1))
         .padding(.horizontal, Spacing.pageH)
+    }
+
+    /// 对照 ref/1「6D:23:46:26」形态；不足 1 天则 HH:MM:SS。
+    private static func newcomerCountdown(_ deadline: Date) -> String {
+        let s = max(0, Int(deadline.timeIntervalSinceNow))
+        let d = s / 86_400, h = (s % 86_400) / 3600, m = (s % 3600) / 60, sec = s % 60
+        if d > 0 { return String(format: "%dD:%02d:%02d:%02d", d, h, m, sec) }
+        return String(format: "%02d:%02d:%02d", h, m, sec)
     }
 
     private var newcomerLead: String {
@@ -130,7 +149,7 @@ struct HomeView: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(vm.promo?.title ?? "全员红包雨火爆来袭").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                Text(vm.promo?.subtitle ?? "惊喜好礼等你拿").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                Text(vm.promo?.subtitle ?? "每日登入领红包，各种福利领不停").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
             }
             Spacer()
             IconView(icon: .gGift, size: 40)
