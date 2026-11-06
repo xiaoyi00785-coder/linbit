@@ -26,6 +26,7 @@ coupon-issued light
 partner-none light
 copy-list light
 loan-market light
+tradfi-list light
 
 # 资产子页
 assets-overview light

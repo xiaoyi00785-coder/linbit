@@ -116,6 +116,13 @@ loan-closed
 loan-repay
 loan-collateral
 loan-error
+tradfi-list
+tradfi-metal
+tradfi-empty
+tradfi-restricted
+tradfi-disabled
+tradfi-unavailable
+tradfi-error
 security-profile
 security-profile-error
 security-email
