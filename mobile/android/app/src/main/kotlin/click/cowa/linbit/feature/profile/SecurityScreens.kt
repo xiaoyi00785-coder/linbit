@@ -37,7 +37,7 @@ fun SecurityHost(onBack: () -> Unit, vm: SecurityViewModel = hiltViewModel(), fe
     DisposableEffect(page) { onDispose { vm.cancelPasskeyRegistration() } }
     BackHandler { if (page == SecurityPage.CENTER) onBack() else page = SecurityPage.CENTER }
     when (page) {
-        SecurityPage.PASSKEY -> PasskeySecurityScreen(vm, onBack = { page = SecurityPage.CENTER; vm.load() })
+        SecurityPage.PASSKEY -> PasskeySecurityScreen(vm, onBack = { page = SecurityPage.CENTER; vm.load() }, onDialogWindow = onDialogWindow)
         SecurityPage.CENTER -> SecurityCenterScreen(vm, onBack, onBind = { page = SecurityPage.BIND; vm.beginBinding() }, onDisable = { page = SecurityPage.DISABLE }, onPassword = { page = SecurityPage.PASSWORD }, onAntiPhishing = { page = SecurityPage.ANTI_PHISHING }, onContact = { phone -> page = if (phone) SecurityPage.PHONE else SecurityPage.EMAIL }, onFundPassword = { page = SecurityPage.FUND_PASSWORD }, onPasskey = { page = SecurityPage.PASSKEY })
         SecurityPage.BIND -> TotpSetupScreen(vm, onBack = { page = SecurityPage.CENTER })
         SecurityPage.DISABLE -> DisableTotpScreen(vm, onBack = { page = SecurityPage.CENTER })

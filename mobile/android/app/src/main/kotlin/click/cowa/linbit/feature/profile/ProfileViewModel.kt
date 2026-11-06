@@ -150,6 +150,37 @@ class SecurityViewModel @Inject constructor(
         )
     }
 
+    fun showDeletePasskey(item: ApiPasskey?) {
+        item?.id?.takeIf { it.isNotBlank() } ?: return
+        _s.value = _s.value.copy(passkeyDeleteTarget = if (deleteInFlight) _s.value.passkeyDeleteTarget else item, passkeysError = null)
+    }
+    fun cancelDeletePasskey() { if (!deleteInFlight) _s.value = _s.value.copy(passkeyDeleteTarget = null) }
+    fun confirmDeletePasskey() {
+        val item = _s.value.passkeyDeleteTarget ?: return
+        val id = item.id ?: return
+        if (deleteInFlight || passkeyInFlight || !tokens.loggedIn.value || passkeyEpoch != tokens.sessionVersion.value) return
+        val epoch = tokens.sessionVersion.value
+        val generation = ++passkeyGeneration
+        deleteInFlight = true
+        _s.value = _s.value.copy(passkeyDeleteBusy = true, passkeysError = null)
+        passkeyJob = viewModelScope.launch {
+            try {
+                val response = api.deletePasskey(id)
+                if (response.code() != 204) throw retrofit2.HttpException(response)
+                if (current(generation, epoch)) {
+                    val list = apiCall { api.listPasskeys() }
+                    if (current(generation, epoch)) {
+                        _s.value = _s.value.copy(passkeys = list.items.orEmpty(), passkeysEnabled = list.enabled == true, passkeyDeleteTarget = null)
+                        toast.show("通行密钥已删除")
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (current(generation, epoch)) _s.value = _s.value.copy(passkeysError = e.lbMessage()) }
+            finally { if (current(generation, epoch)) { deleteInFlight = false; _s.value = _s.value.copy(passkeyDeleteBusy = false) } }
+        }
+    }
+    private var deleteInFlight = false
+
     fun loadPasskeys() {
         viewModelScope.launch {
             _s.value = _s.value.copy(passkeysLoading = true, passkeysError = null)
@@ -204,8 +235,8 @@ class SecurityViewModel @Inject constructor(
         viewModelScope.launch { tokens.sessionVersion.collect { epoch ->
             if (passkeyEpoch != epoch) {
                 passkeyEpoch = epoch; passkeyGeneration++
-                passkeyJob?.cancel(); passkeyInFlight = false
-                _s.value = _s.value.copy(passkeys = emptyList(), passkeysEnabled = false, passkeyCode = "", passkeyBusy = false, passkeysError = null)
+                passkeyJob?.cancel(); passkeyInFlight = false; deleteInFlight = false
+                _s.value = _s.value.copy(passkeys = emptyList(), passkeysEnabled = false, passkeyCode = "", passkeyBusy = false, passkeysError = null, passkeyDeleteTarget = null, passkeyDeleteBusy = false)
             }
         } }
     }
@@ -271,6 +302,8 @@ data class SecurityUiState(
     val passkeyCode: String = "",
     val passkeyBusy: Boolean = false,
     val passkeysError: String? = null,
+    val passkeyDeleteTarget: ApiPasskey? = null,
+    val passkeyDeleteBusy: Boolean = false,
 )
 
 @HiltViewModel

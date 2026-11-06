@@ -136,3 +136,24 @@ round1启用项只为 `zh-rCN-w390dp-h844dp-xxhdpi` **浅色、fontScale=1**；�
 2. 验收资产->策略/TradFi点击，补真实正常持仓/产品列表与安全交互，不误把当前空/错状态覆盖当完成。
 3. Passkey 分开实现平台凭据流程，其他安全项补390外/错误/发送/提交结果；真实绑定全部留给用户自行验收。
 4. 对每个生产 Sheet/Dialog 补正常、空、错误、确认/最终反馈，以及 320/360/412dp、大字体、暗色；缺 OpenAPI 的功能保留明确阻断，不伪造。
+
+## 2026-11 current Passkey / remaining-work supersession
+
+The following current findings do not rewrite historical rounds above. They replace only stale current-state labels for paper, alerts, and Passkey. Historical `P/W/V/U` evidence labels remain historical and do not imply full-device acceptance.
+
+### Current delivered API wiring (not wholesale work remaining)
+
+- `9939015`: passkey login begin/finish, `androidx.credentials.CredentialManager.getCredential`, generation/session scoped token persistence; isolated wire, recovery, stale-result tests.
+- `0944b43`: passkey register begin/finish, `CredentialManager.createCredential`, real security-center entry and server list readback after finish; lifecycle, duplicate click, cancellation, recovery, stale finish tests and host screenshots.
+- This deletion batch: authenticated `DELETE /account/passkeys/{id}` behind a distinct final-review Sheet. It explicitly states that the deleted credential cannot then login to this account. Cancellation before request performs no DELETE. Failures retain the target for retry. Duplicate confirmation is blocked. After deletion, a current-session list GET is required before publishing success. Old session responses cannot read back or overwrite next-account list state.
+- The current public DELETE request has **no second-factor argument**. Its Sheet says it is frontend confirmation only and does not claim server 2FA validation. If product policy requires deletion-specific security proof, a backend contract addition and an authorization review are required; inventing such an endpoint is prohibited.
+- The public system native bridge remains available and compilable, but no system Credential Manager sheet, real authenticator, or RP/device ceremony was validated by these host tests. Missing RP assetlinks/final release-certificate association remains a real functional prerequisite; this batch makes no new probe and no deployment/config/signing modification. APK delivery is not conditional on my device ceremony.
+
+### Actual remaining Android work (current source / host / production evidence scope)
+
+- Final packaging/installable APK and release-signature owner metadata remain the Android-first delivery objective. Full-device presentation, OS Permission flows, full AppRoot click-path matrix, real third-party provider login and real sensitive submissions are not converted into success by local test totals.
+- Existing Apple/Google/social-auth, scanner and server-search helper routes need real app/provider flows and verification, not Toast stubs. Remove "complete" assumptions based merely on an API contract path. Search/QR/Card/PNL/quick-buy and margins/TP-SL advanced shortcuts still need either complete scoped host/docs flows or a named backend/UX dependency.
+- Existing in-app hosts (history/orders, earn/grid, copy-trader, notifications/settings, partner, coupon/support, KYC/subaccounts, address-book, transfers, withdraw) still need a case-by-case UI and API route/response/retry/readback audit. These are not declared absent wholesale; non-read-only money/KYC/binding writes remain explicitly outside my isolated implementation tests. Missing or partial flows must be reported individually before calling them delivered.
+- Asset feature Hosts, including paper account and price-alert CRUD, **are already implemented**, with explicit feature gates and preconditioned isolated tests from `software3f0a...` through `598525a` baseline (see `git log`). They must not be labelled "no formal CRUD / not wired". Their final device/installable package coverage, push/delivery scheduling and production release linkage remain to report independently; no live alerts/notifications/security/funds writes were performed.
+- Data/state regressions requiring additional app host/Dialog evidence include history filters, payout/withdrawal security results, grid stop/convert acceptance, support closure/conflicts/replies, KYC submit/reject, security send-code/results, and 320/360/412 dark/large-font complete V/C coverage. A PNG alone or an old 36/36 table is not full functionality sign-off.
+- Endpoint recovery/session guards now cover Passkey login, registration, and deletion with loopback tests and native fake bridges. Before deletion-specific challenge UI is offered, the actual contract must expose and validate it server-side; until then only the current logged-in authorization plus explicit frontend confirmation exists.

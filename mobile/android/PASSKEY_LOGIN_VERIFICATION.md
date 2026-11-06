@@ -93,3 +93,22 @@ The deployment template above applies to both login and registration through the
 actual release RP origin. Existing known-missing association documentation was not
 reprobed for this batch; the missing association remains a release usability
 prerequisite, not a reason to discard these implementation/test results.
+
+## Deletion slice (frontend final-review, not backend 2FA)
+
+`DELETE /account/passkeys/{id}` is exposed only from the real server-returned
+list. The final-review Sheet explicitly explains that the deleted credential will
+no longer login to this account. Cancellation before request makes no DELETE;
+in-flight requests disable duplicate calls and are not misleadingly called
+"cancelled". Errors retain the review target for retry. A 204 response is followed
+by a current-session list readback before the UI updates. A session change
+invalidates the response/readback, so a stale deletion cannot overwrite the new
+account's local list. The public DELETE request contains no second-factor field;
+the Sheet says this is frontend confirmation only. Deletion-specific backend
+2FA requires a separately reviewed API/policy contract, not a client invention.
+
+`PasskeyDeletionStateTest` covers cancellation, duplicate confirm, readback,
+failure/retry, and a held loopback DELETE crossing a session switch. The
+`passkey-delete-dialog-*.png` captures are independent production `LbSheet` window
+canvases through its real Window hook (not system credential windows or device
+screen captures). No remote real DELETE was sent.

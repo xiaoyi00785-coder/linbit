@@ -108,6 +108,9 @@ interface LinbitApi {
     @POST("account/passkeys/register/begin")
     suspend fun passkeyRegisterBegin(@Body body: ApiBeginPasskeyRegistrationRequest): ApiPasskeyCeremony
 
+    @DELETE("account/passkeys/{id}")
+    suspend fun deletePasskey(@Path("id") id: String): retrofit2.Response<Unit>
+
     @POST("account/passkeys/register/finish")
     suspend fun passkeyRegisterFinish(@Body body: ApiFinishPasskeyRegistrationRequest): ApiPasskey
 
