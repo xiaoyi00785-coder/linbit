@@ -86,7 +86,7 @@ internal class ProductionEvidenceHarness<A : androidx.activity.ComponentActivity
             c.name.startsWith("auth-") -> "AuthHost(AuthFlow,LocalLbSheetInlineEvidence=false)"
             c.name.startsWith("deposit-") || c.name.startsWith("withdraw-") -> "Production AssetsHost/AssetsNav (direct Host; not an AppRoot click-through)"
             c.name.startsWith("security-") -> "ProfileHost/SecurityHost/SecurityPage (real security Host)"
-            c.name.startsWith("approot-algo-") -> "UNVERIFIED production AppRoot HOME -> futures bottom tab -> clock history path"
+            c.name.startsWith("approot-algo-") -> "Verified production AppRoot HOME -> futures bottom tab -> visible clock touch -> History; real Modal Window; loopback TPSL cancel review/readback"
             c.name.startsWith("approot-") -> "Full production AppRoot: HOME -> ASSETS Tab -> actual feature click -> AssetFeatureHost (showSplash=false)"
             c.name.startsWith("history-") -> "Production FuturesHistoryScreen direct Host; NOT yet a successful AppRoot click-through"
             c.name.startsWith("asset-") -> "Direct AssetFeatureHost (actual production Host, not an AppRoot click-through)"

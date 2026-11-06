@@ -2,15 +2,18 @@ package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -291,12 +294,15 @@ fun FuturesTradeContent(
                 }
             }
             // 仓位 / 委托 / 跟单 / 卡券
-            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                listOf("仓位 (${vm.positions.size})", "委托 (${vm.openOrders.size + vm.planAlgos.size + vm.tpslAlgos.size})", "跟单 (0)", "卡券 (${vm.bonus.size})").forEachIndexed { i, t ->
-                    Text(t, Modifier.pressable(scale = 1f) { bottomTab = i }, style = lb(FontSize.label, if (bottomTab == i) FontWeight.Medium else FontWeight.Normal), color = if (bottomTab == i) p.textPrimary else p.textSecondary)
+            // Large fonts must not squeeze the history action into a zero-width tail.
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    listOf("仓位 (${vm.positions.size})", "委托 (${vm.openOrders.size + vm.planAlgos.size + vm.tpslAlgos.size})", "跟单 (0)", "卡券 (${vm.bonus.size})").forEachIndexed { i, t ->
+                        Text(t, Modifier.pressable(scale = 1f) { bottomTab = i }, style = lb(FontSize.label, if (bottomTab == i) FontWeight.Medium else FontWeight.Normal), color = if (bottomTab == i) p.textPrimary else p.textSecondary)
+                    }
                 }
-                Box(Modifier.weight(1f))
-                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" })
+                Spacer(Modifier.width(18.dp))
+                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.requiredSize(48.dp).pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" })
             }
             HorizontalDivider(color = p.divider)
             if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {

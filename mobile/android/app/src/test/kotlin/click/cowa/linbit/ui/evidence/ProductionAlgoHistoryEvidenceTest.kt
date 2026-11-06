@@ -21,7 +21,6 @@ class ProductionAlgoHistory360EvidenceTest: ProductionAlgoHistoryScenario("algo-
 
 @OptIn(ExperimentalCoroutinesApi::class)
 abstract class ProductionAlgoHistoryScenario(private val label:String,private val qualifier:String) {
-    private val dispatcher=UnconfinedTestDispatcher()
     @get:Rule val rule=createAndroidComposeRule<ComponentActivity>()
     private val harness by lazy{ProductionEvidenceHarness(rule)}
     private lateinit var api:MockEvidenceApi
@@ -55,21 +54,21 @@ abstract class ProductionAlgoHistoryScenario(private val label:String,private va
     private fun render(cancel:Boolean=false){
         // Keep root ViewModels stable; do not recreate a new owner on every composition snapshot.
 
-        MockEvidenceApi().use{server->api=server;base();tradingReads();api.route("GET","/futures/orders?status=open&limit=100","""{"orders":[]}""")
+        MockEvidenceApi().use{server->api=server;base();tradingReads();api.route("GET","/futures/orders?status=open&limit=100","""{"orders":[]}""");api.route("GET","/futures/orders?symbol=BTCUSDT&status=open&limit=100","""{"orders":[]}""");api.route("GET","/futures/orders?symbol=BTCUSDT&status=open","""{"orders":[]}""")
             val f=ProductionEvidenceFixtures(api,CoroutineScope(Dispatchers.Main));f.tokens.accessToken="INVALID_LAYOUT_TOKEN"
             val rootVm=f.root();val homeMarket=f.rootHomeMarket();val futures=futuresVm(f,rootVm.tradeNav)
             runBlocking{rootVm.setTheme(if(label.endsWith("dark"))click.cowa.linbit.core.storage.ThemeMode.DARK else click.cowa.linbit.core.storage.ThemeMode.LIGHT)}
             val scope=CoroutineScope(Dispatchers.Main);val market=click.cowa.linbit.data.MarketStore(f.retrofit,click.cowa.linbit.core.realtime.MarketSocket(OkHttpClient(),"ws://127.0.0.1/","fake",scope,accessToken={null}),scope)
             vm=click.cowa.linbit.feature.trade.TradeHistoryViewModel(f.retrofit,f.tokens,market)
-            api.route("GET","/futures/plan-orders?status=active&limit=50",orders("STALE",7));api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders())
-            if(cancel){api.route("DELETE","/futures/tpsl-orders/9001","""{"code":"EVIDENCE_FAILURE","message":"测试：TPSL撤单失败，可重试"}""",503);api.route("DELETE","/futures/tpsl-orders/9001","""{"acknowledged":true}""");api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders("AFTERREADBACK",9002))}
+            api.route("GET","/futures/plan-orders?status=active&limit=50",orders("STALE",7));api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders());api.route("GET","/futures/tpsl-orders?symbol=BTCUSDT&status=active&limit=50",orders());api.route("GET","/futures/tpsl-orders?symbol=BTCUSDT&status=history&limit=50",orders())
+            if(cancel){api.route("DELETE","/futures/tpsl-orders/9001","""{"code":"EVIDENCE_FAILURE","message":"测试：TPSL撤单失败，可重试"}""",503);api.route("DELETE","/futures/tpsl-orders/9001","""{"acknowledged":true}""");api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders("AFTERREADBACK",9002));api.route("GET","/futures/tpsl-orders?symbol=BTCUSDT&status=active&limit=50",orders("AFTERREADBACK",9002))}
             rule.setContent{androidx.compose.runtime.CompositionLocalProvider(click.cowa.linbit.app.LocalRootHomeMarketFactory provides homeMarket,click.cowa.linbit.app.LocalTradeHistoryFactory provides {vm},click.cowa.linbit.feature.trade.LocalFuturesTradeFactory provides {futures}){click.cowa.linbit.app.AppRoot(rootVm,f.badge(),click.cowa.linbit.app.AssetRouteViewModels(f.assets(),f.spot(),f.tradFi()),showSplash=false,onDialogWindow={window=it})}}
             await("首页")
             val before=api.requests.size
             rule.onNodeWithTag("main-tab-futures",useUnmergedTree=true).performClick()
             rule.waitUntil(5_000){api.requests.drop(before).any{it.startsWith("GET /futures/market/ticker") }}
-            rule.onNodeWithContentDescription("合约历史",useUnmergedTree=true).assertExists().assertHasClickAction().performClick();await("历史记录");rule.onNodeWithText("条件委托",useUnmergedTree=true).performScrollTo().performClick();await("止盈止损");rule.onNodeWithText("止盈止损",useUnmergedTree=true).performClick();await("BTCUSDT");rule.waitForIdle()
-            rule.waitUntil(5_000){api.requests.contains("GET /futures/tpsl-orders?status=active&limit=50")}
+            rule.onNodeWithContentDescription("合约历史",useUnmergedTree=true).performScrollTo().assertExists().assertHasClickAction().also{val n=it.fetchSemanticsNode();Assert.assertTrue("history action needs an accessible touch target",n.size.width>=144&&n.size.height>=144)}.performTouchInput{click(center)};await("历史记录");rule.onNodeWithText("条件委托",useUnmergedTree=true).performScrollTo().performClick();await("止盈止损");rule.onNodeWithText("止盈止损",useUnmergedTree=true).performClick();await("撤销");rule.waitForIdle()
+            rule.waitUntil(5_000){api.requests.contains("GET /futures/tpsl-orders?symbol=BTCUSDT&status=active&limit=50")}
             harness.app("approot-$label-tpsl")
             rule.onNodeWithText("撤销",useUnmergedTree=true).performScrollTo().performClick();await("撤销止盈止损？")
             rule.waitForIdle();rule.waitUntil(5_000){window!=null};harness.dialogWindow("approot-$label-tpsl-review",window)
@@ -77,7 +76,7 @@ abstract class ProductionAlgoHistoryScenario(private val label:String,private va
             if(cancel){rule.onNodeWithText("撤销",useUnmergedTree=true).performScrollTo().performClick();rule.onNodeWithTag("history.algo.cancel.confirm",useUnmergedTree=true).performClick();await("测试：TPSL撤单失败，可重试")
                 Assert.assertEquals(1,api.mutationRequests.size);Assert.assertNotNull(vm.actionError)
                 rule.onNodeWithTag("history.algo.cancel.confirm",useUnmergedTree=true).assertIsEnabled().performClick();await("AFTERREADBACK")
-                Assert.assertEquals(2,api.mutationRequests.size);Assert.assertEquals(2,api.requests.count{it=="GET /futures/tpsl-orders?status=active&limit=50"});api.mutationRequests.forEach{Assert.assertEquals("DELETE",it.method)};harness.app("approot-$label-tpsl-after-cancel")
+                Assert.assertEquals(2,api.mutationRequests.size);Assert.assertEquals(2,api.requests.count{it=="GET /futures/tpsl-orders?symbol=BTCUSDT&status=active&limit=50"});api.mutationRequests.forEach{Assert.assertEquals("DELETE",it.method)};harness.app("approot-$label-tpsl-after-cancel")
             }else api.assertNoWrites()
         }
     }
@@ -86,7 +85,7 @@ abstract class ProductionAlgoHistoryScenario(private val label:String,private va
             val f=ProductionEvidenceFixtures(api,CoroutineScope(Dispatchers.Main));f.tokens.accessToken="INVALID_LAYOUT_TOKEN"
             val market=click.cowa.linbit.data.MarketStore(f.retrofit,click.cowa.linbit.core.realtime.MarketSocket(OkHttpClient(),"ws://127.0.0.1/","fake",CoroutineScope(Dispatchers.Main),accessToken={null}),CoroutineScope(Dispatchers.Main))
             vm=click.cowa.linbit.feature.trade.TradeHistoryViewModel(f.retrofit,f.tokens,market)
-            api.route("GET","/futures/orders?status=open&limit=100","""{"orders":[]}""");api.route("GET","/futures/plan-orders?status=active&limit=50",orders("STALE",7));api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders())
+            api.route("GET","/futures/orders?status=open&limit=100","""{"orders":[]}""");api.route("GET","/futures/orders?symbol=BTCUSDT&status=open","""{"orders":[]}""");api.route("GET","/futures/plan-orders?status=active&limit=50",orders("STALE",7));api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders())
             rule.setContent { click.cowa.linbit.ui.theme.LinbitTheme(label.endsWith("dark")){click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose={},onLogin={},vm=vm,onDialogWindow={window=it})} }
             await("条件委托");rule.onNodeWithText("条件委托",useUnmergedTree=true).performScrollTo().performClick();await("止盈止损");rule.onNodeWithText("止盈止损",useUnmergedTree=true).performClick();await("BTCUSDT")
             harness.app("history-$label-tpsl")
@@ -101,14 +100,14 @@ abstract class ProductionAlgoHistoryScenario(private val label:String,private va
             val market=click.cowa.linbit.data.MarketStore(f.retrofit,click.cowa.linbit.core.realtime.MarketSocket(OkHttpClient(),"ws://127.0.0.1/","fake",CoroutineScope(Dispatchers.Main),accessToken={null}),CoroutineScope(Dispatchers.Main))
             vm=click.cowa.linbit.feature.trade.TradeHistoryViewModel(f.retrofit,f.tokens,market)
             api.route("GET","/futures/plan-orders?status=active&limit=50",orders("STALE",7));api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders())
-            api.route("DELETE","/futures/tpsl-orders/9001","""{"code":"EVIDENCE_FAILURE","message":"失败复核保留，可重试"}""",503);api.route("DELETE","/futures/tpsl-orders/9001","""{"acknowledged":true}""");api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders("AFTERREADBACK",9002))
+            api.route("DELETE","/futures/tpsl-orders/9001","""{"code":"EVIDENCE_FAILURE","message":"失败复核保留，可重试"}""",503);api.route("DELETE","/futures/tpsl-orders/9001","""{"acknowledged":true}""");api.route("GET","/futures/tpsl-orders?status=active&limit=50",orders("AFTERREADBACK",9002));api.route("GET","/futures/tpsl-orders?symbol=BTCUSDT&status=active&limit=50",orders("AFTERREADBACK",9002))
             rule.setContent{click.cowa.linbit.ui.theme.LinbitTheme(label.endsWith("dark")){click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose={},onLogin={},vm=vm,onDialogWindow={window=it})}}
             await("条件委托");rule.onNodeWithText("条件委托",useUnmergedTree=true).performScrollTo().performClick();rule.onNodeWithText("止盈止损",useUnmergedTree=true).performClick();await("BTCUSDT")
             rule.onNodeWithText("撤销",useUnmergedTree=true).performClick();await("撤销止盈止损？");rule.onNodeWithTag("history.algo.cancel.confirm",useUnmergedTree=true).performClick();await("失败复核保留，可重试")
             Assert.assertFalse(vm.actionBusy);Assert.assertEquals(1,api.mutationRequests.count{it.method=="DELETE"})
             harness.dialogWindow("history-$label-tpsl-failure",window)
             rule.onNodeWithTag("history.algo.cancel.confirm",useUnmergedTree=true).assertIsEnabled().performClick();await("AFTERREADBACK")
-            Assert.assertEquals(2,api.mutationRequests.count{it.method=="DELETE"});Assert.assertEquals(2,api.requests.count{it=="GET /futures/tpsl-orders?status=active&limit=50"});Assert.assertEquals("AFTERREADBACK",vm.futAlgos.single().symbol)
+            Assert.assertEquals(2,api.mutationRequests.count{it.method=="DELETE"});Assert.assertEquals(2,api.requests.count{it=="GET /futures/tpsl-orders?symbol=BTCUSDT&status=active&limit=50"});Assert.assertEquals("AFTERREADBACK",vm.futAlgos.single().symbol)
         }
     }
     @Test fun actualAppRootTpslIndependentReviewAndDismissZeroWrite(){render(false)}
