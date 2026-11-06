@@ -108,6 +108,20 @@ actor APIClient {
         do { return try CodableHelper.jsonDecoder.decode(T.self, from: data) } catch { throw APIFailure.decoding(error) }
     }
 
+    /// 带鉴权读取二进制（如工单图片附件），401 刷新重试一次
+    func getData(_ path: String, retried: Bool = false) async throws -> Data {
+        var req = try makeRequest(path, "GET", [:], Optional<Int>.none, true)
+        req.setValue("image/*", forHTTPHeaderField: "Accept")
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await session.data(for: req) } catch { throw APIFailure.transport(error) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401, !retried, await refresh() { return try await getData(path, retried: true) }
+        guard (200..<300).contains(status) else {
+            throw APIFailure.server(status: status, error: try? CodableHelper.jsonDecoder.decode(APIError.self, from: data))
+        }
+        return data
+    }
+
     /// multipart/form-data 上传（单文件），带 401 刷新重试
     func uploadMultipart<T: Decodable>(_ path: String, field: String, filename: String, mime: String, data file: Data, fields: [String: String] = [:], retried: Bool = false) async throws -> T {
         var req = try makeRequest(path, "POST", [:], Optional<String>.none, true)
@@ -128,7 +142,8 @@ actor APIClient {
             return try await uploadMultipart(path, field: field, filename: filename, mime: mime, data: file, fields: fields, retried: true)
         }
         guard (200..<300).contains(status) else {
-            throw APIFailure.server(status: status, error: try? CodableHelper.jsonDecoder.decode(APIError.self, from: data))
+            let ra = ((resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")).flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            throw APIFailure.server(status: status, error: try? CodableHelper.jsonDecoder.decode(APIError.self, from: data), retryAfter: ra)
         }
         do { return try CodableHelper.jsonDecoder.decode(T.self, from: data) } catch { throw APIFailure.decoding(error) }
     }

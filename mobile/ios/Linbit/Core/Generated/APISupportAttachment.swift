@@ -44,4 +44,3 @@ public struct APISupportAttachment: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(url, forKey: .url)
     }
 }
-

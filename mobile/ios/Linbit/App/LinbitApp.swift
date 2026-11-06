@@ -143,6 +143,7 @@ struct RootTabView: View {
         case "futures-pnl-empty": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "pnlEmpty"
         case "password-register": router.tab = .home; router.shotSheet = "pwdRegister"; session.present(.register)
         case "password-reset": router.tab = .home; router.shotSheet = "pwdReset"; session.present(.login)
+        case let s where s.hasPrefix("support-"): SupportShot.raw = String(s.dropFirst("support-".count)); router.feature = .support
         case "security": router.shotSheet = "sec:"; SecShot.raw = "sec:"; router.feature = .security
         case "kyc-none": SecShot.raw = "kyc:none"; router.feature = .kyc
         case "kyc-pending": SecShot.raw = "kyc:pending"; router.feature = .kyc

@@ -26,4 +26,3 @@ public struct APIAdminSupportAssignees200Response: Codable, JSONEncodable, Hasha
         try container.encodeIfPresent(items, forKey: .items)
     }
 }
-
