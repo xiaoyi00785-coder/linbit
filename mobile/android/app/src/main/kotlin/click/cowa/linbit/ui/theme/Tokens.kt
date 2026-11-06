@@ -61,7 +61,7 @@ val LightPalette = Palette(
 )
 
 val DarkPalette = Palette(
-    bg = Color(0xFF070808),
+    bg = Color(0xFF0B0B0C),
     bgElevated = Color(0xFF161618),
     fill = Color(0xFF1E1E20),
     fillStrong = Color(0xFF2A2A2D),
@@ -70,7 +70,7 @@ val DarkPalette = Palette(
     textPrimary = Color(0xFFF5F5F5),
     textSecondary = Color(0xFF8C8C8F),
     textTertiary = Color(0xFF5E5E62),
-    textOnPrimary = Color(0xFF070808),
+    textOnPrimary = Color(0xFF0B0B0C),
     primary = Color(0xFFF5F5F5),
     brand = Color(0xFFABE127),
     up = Color(0xFF5FB971),
