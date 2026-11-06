@@ -75,6 +75,13 @@ services:
       MM_SEED_AMOUNT: "0"
       MM_SEED_BASE_USDT: ""
       MM_SEED_BASE_ASSETS: ""
+  paper:
+    environment:
+      <<: *mainnet
+      DEV_MODE: "false"
+      # Explicit direct flags are false regardless of app feature DB overrides.
+      PAPER_TRADING_ENABLED: "false"
+      PRICE_ALERTS_ENABLED: "false"
   gateway:
     environment:
       <<: *mainnet

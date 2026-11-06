@@ -59,6 +59,7 @@ var (
 	adminPort    = envOr("DEVSTACK_ADMIN_PORT", "8088")
 	futuresPort  = envOr("DEVSTACK_FUTURES_PORT", "8089")
 	mmPort       = envOr("DEVSTACK_MM_PORT", "8093")
+	paperPort    = envOr("DEVSTACK_PAPER_PORT", "8094")
 	// Fake Telegram API for alert smokes (smoke-mm listens here); real tokens are never used.
 	tgAPI = envOr("DEVSTACK_TELEGRAM_API_URL", "http://127.0.0.1:18099")
 )
@@ -139,7 +140,7 @@ func run(root, execCmd string) int {
 	}
 	defer os.RemoveAll(binDir)
 
-	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth", "earn", "marketmaker"}
+	services := []string{"account", "asset", "gateway", "order", "market-data", "wallet", "kyc", "admin", "futures", "strategy", "growth", "earn", "marketmaker", "paper"}
 	bins := map[string]string{}
 	for _, name := range services {
 		bin := filepath.Join(binDir, name)
@@ -371,6 +372,11 @@ func run(root, execCmd string) int {
 			// Dev mode exposes the clock-advance endpoint.
 			"DEV_MODE=true",
 		},
+		"paper": {
+			"PORT=" + paperPort, "DATABASE_URL=" + databaseURL, "INTERNAL_TOKEN=" + internalTok,
+			"JWT_SECRET=" + jwtSecret, "REDIS_URL=" + redisURL, "DEV_MODE=true",
+			"MARKET_URL=http://localhost:" + marketPort, "ACCOUNT_INTERNAL_URL=http://localhost:" + accountPort,
+		},
 		"gateway": {
 			"PORT=" + gatewayPort,
 			"JWT_SECRET=" + jwtSecret,
@@ -387,6 +393,7 @@ func run(root, execCmd string) int {
 			"STRATEGY_URL=http://localhost:" + strategyPort,
 			"GROWTH_URL=http://localhost:" + growthPort,
 			"EARN_URL=http://localhost:" + earnPort,
+			"PAPER_URL=http://localhost:" + paperPort,
 			"REDIS_URL=" + redisURL,
 		},
 	}
@@ -413,6 +420,7 @@ func run(root, execCmd string) int {
 		{"growth", "http://localhost:" + growthPort + "/healthz"},
 		{"earn", "http://localhost:" + earnPort + "/healthz"},
 		{"marketmaker", "http://localhost:" + mmPort + "/healthz"},
+		{"paper", "http://localhost:" + paperPort + "/healthz"},
 		{"gateway", "http://localhost:" + gatewayPort + "/healthz"},
 	}
 
@@ -474,6 +482,7 @@ func run(root, execCmd string) int {
 		"STRATEGY_URL=http://localhost:" + strategyPort,
 		"GROWTH_URL=http://localhost:" + growthPort,
 		"EARN_URL=http://localhost:" + earnPort,
+		"PAPER_URL=http://localhost:" + paperPort,
 		"DEVSTACK_TELEGRAM_API_URL=" + tgAPI,
 	}
 	// Bootstrap super-admin credentials go only to exec'd commands (smokes),

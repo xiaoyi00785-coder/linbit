@@ -540,6 +540,27 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, res)
 }
 
+// handleInternalIndex is the execution/evaluation source for paper and price
+// alerts. Unlike the public display endpoint, it never falls back to a local
+// last trade when INDEX_FEED=off; missing/stale external data fails closed.
+func (s *Server) handleInternalIndex(w http.ResponseWriter, r *http.Request) {
+	sym := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("symbol")))
+	if sym == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "symbol 为必填")
+		return
+	}
+	res, ok := s.feed.IndexNoLocal(sym)
+	if !ok {
+		common.WriteError(w, http.StatusServiceUnavailable, "INDEX_UNAVAILABLE", "新鲜外部指数不可用")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, struct {
+		IndexResult
+		Source   string `json:"source"`
+		Provider string `json:"provider"`
+	}{IndexResult: res, Source: "INDEX", Provider: res.Source})
+}
+
 // handleDevIndex (DEV_MODE): POST /internal/dev/index {symbol, price} pins an
 // index ("0" clears); {outage:true|false} simulates a feed outage.
 func (s *Server) handleDevIndex(w http.ResponseWriter, r *http.Request) {

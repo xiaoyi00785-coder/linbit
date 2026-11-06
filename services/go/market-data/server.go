@@ -53,6 +53,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /ws", s.hub.ServeHTTP)
 	mux.HandleFunc("POST /internal/ws/push", s.internal(s.hWSPush))
+	mux.HandleFunc("GET /internal/index", s.internal(s.handleInternalIndex))
 	mux.HandleFunc("POST /internal/ws/broadcast", s.internal(s.hWSBroadcast))
 	mux.HandleFunc("POST /internal/events", s.ingest.Handler())
 	if s.cfg.DevMode {
@@ -96,6 +97,8 @@ func (s *Server) handleSymbols(w http.ResponseWriter, r *http.Request) {
 		}
 		mq := si.MinQuantity.String()
 		d.MinQuantity = &mq
+		mn := si.MinNotional.String()
+		d.MinNotional = &mn
 		out = append(out, d)
 	}
 	common.WriteJSON(w, http.StatusOK, out)

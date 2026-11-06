@@ -34,6 +34,8 @@ var featureDefaults = map[string]bool{
 	"fiatOnRamp":      false,
 	"options":         false,
 	"supportTickets":  true,
+	"paperTrading":    false,
+	"priceAlerts":     false,
 }
 
 // mainnetDefaults: owner decision for the mainnet launch — every shipped

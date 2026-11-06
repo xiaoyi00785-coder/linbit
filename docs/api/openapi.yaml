@@ -86,6 +86,22 @@ paths:
               phone: "13800138000"
               countryCode: "86"
       responses:
+  PaperFeatureDisabled:
+    description: 功能未开放
+    content:
+      application/json:
+        schema: { $ref: "#/components/schemas/Error" }
+        example: { code: FEATURE_DISABLED, message: 功能未开放 }
+  PaperBadRequest:
+    description: 模拟盘或预警参数、精度、余额错误
+    content:
+      application/json:
+        schema: { $ref: "#/components/schemas/Error" }
+  PaperConflict:
+    description: 幂等键冲突或 revision 冲突
+    content:
+      application/json:
+        schema: { $ref: "#/components/schemas/Error" }
         "200":
           description: 已发送（reset_password 对不存在账号也返回 200）
           content:
@@ -7832,6 +7848,349 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /paper/account:
+    get:
+      tags:
+      - Paper Trading
+      summary: 懒创建并获取独立虚拟现货账户
+      operationId: paperGetAccount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperAccount'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+  /paper/account/reset:
+    post:
+      tags:
+      - Paper Trading
+      summary: 每 UTC 日一次模拟账户重置，永不涉及真实余额
+      operationId: paperResetAccount
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaperResetRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperReset'
+        '400':
+          $ref: '#/components/responses/PaperBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+        '409':
+          $ref: '#/components/responses/PaperConflict'
+        '429':
+          description: 每 UTC 日一次；重试返回原幂等响应
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PAPER_RESET_LIMIT_EXCEEDED
+                message: 每 UTC 日仅可重置一次
+  /paper/balances:
+    get:
+      tags:
+      - Paper Trading
+      summary: 列当前虚拟现货余额；不写真实 ledger
+      operationId: paperListBalances
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperBalances'
+        '400':
+          $ref: '#/components/responses/PaperBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+  /paper/orders:
+    get:
+      tags:
+      - Paper Trading
+      summary: 列当前 generation 模拟订单；显式 generation 可查旧归档
+      operationId: paperListOrders
+      parameters:
+      - name: symbol
+        in: query
+        schema:
+          type: string
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - filled
+      - name: generation
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperOrders'
+        '400':
+          $ref: '#/components/responses/PaperBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+    post:
+      tags:
+      - Paper Trading
+      summary: 仅新鲜 INDEX 价格的现货 market 全成或全拒
+      operationId: paperPlaceOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaperPlaceOrderRequest'
+      responses:
+        '201':
+          description: 已全成；同 clientOrderId 同请求返回原记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperOrder'
+        '400':
+          $ref: '#/components/responses/PaperBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+        '409':
+          $ref: '#/components/responses/PaperConflict'
+        '503':
+          description: INDEX 缺失或陈旧，不持久化订单
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INDEX_UNAVAILABLE
+                message: 新鲜外部指数不可用
+  /paper/orders/{orderId}:
+    get:
+      tags:
+      - Paper Trading
+      summary: 查询自己的模拟订单及虚拟成交
+      operationId: paperGetOrder
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+        '404':
+          description: 不存在或不属于该用户
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PAPER_ORDER_NOT_FOUND
+                message: 模拟订单不存在
+  /paper/trades:
+    get:
+      tags:
+      - Paper Trading
+      summary: 列当前 generation 模拟成交；费用为零
+      operationId: paperListTrades
+      parameters:
+      - name: symbol
+        in: query
+        schema:
+          type: string
+      - name: generation
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperTrades'
+        '400':
+          $ref: '#/components/responses/PaperBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+  /price-alerts:
+    get:
+      tags:
+      - Price Alerts
+      summary: 列出自己的价格预警（deleted 默认不返回）
+      operationId: listPriceAlerts
+      parameters:
+      - name: symbol
+        in: query
+        schema:
+          type: string
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - active
+          - triggered
+          - disabled
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceAlerts'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+    post:
+      tags:
+      - Price Alerts
+      summary: 创建一次性 INDEX 跨价预警；只发站内信
+      operationId: createPriceAlert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePriceAlertRequest'
+      responses:
+        '201':
+          description: 已创建；同 clientAlertId 同 payload 重放返回原记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceAlert'
+        '400':
+          $ref: '#/components/responses/PaperBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+        '409':
+          $ref: '#/components/responses/PaperConflict'
+  /price-alerts/{alertId}:
+    patch:
+      tags:
+      - Price Alerts
+      summary: revision 乐观锁编辑或重新启用，重置 evaluation epoch
+      operationId: updatePriceAlert
+      parameters:
+      - name: alertId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePriceAlertRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceAlert'
+        '400':
+          $ref: '#/components/responses/PaperBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
+        '404':
+          description: 不存在或属于其他用户
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: ALERT_NOT_FOUND
+                message: 价格预警不存在
+        '409':
+          $ref: '#/components/responses/PaperConflict'
+    delete:
+      tags:
+      - Price Alerts
+      summary: 软删除；支持 revision 乐观锁，重复删除幂等 204
+      operationId: deletePriceAlert
+      parameters:
+      - name: alertId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: revision
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+      responses:
+        '204':
+          description: 已删除，无响应体
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/PaperFeatureDisabled'
 components:
   securitySchemes:
     bearerAuth:
@@ -7903,8 +8262,206 @@ components:
             code: NOT_FOUND
             message: 资源不存在
             requestId: req_404demo
+    PaperFeatureDisabled:
+      description: 功能未开放
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { code: FEATURE_DISABLED, message: 功能未开放 }
+    PaperBadRequest:
+      description: 模拟盘或预警参数、精度、余额错误
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PaperConflict:
+      description: 幂等键冲突或 revision 冲突
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    PaperAccount:
+      type: object
+      required: [accountId, mode, market, generation, quoteAsset, initialBalance, resetLimitPerUtcDay, resetsUsedToday, orderTypes, priceSource, feeModel, slippageModel, createdAt, updatedAt]
+      properties:
+        accountId: { type: string, example: pa_01J }
+        mode: { type: string, enum: [paper] }
+        market: { type: string, enum: [spot] }
+        generation: { type: integer, format: int64, example: 1 }
+        quoteAsset: { type: string, enum: [USDT] }
+        initialBalance: { type: string, example: "10000.00000000" }
+        resetLimitPerUtcDay: { type: integer, enum: [1] }
+        resetsUsedToday: { type: integer, example: 0 }
+        nextResetAt: { type: string, format: date-time, nullable: true }
+        orderTypes: { type: array, items: { type: string, enum: [market] } }
+        priceSource: { type: string, enum: [INDEX] }
+        feeModel: { type: string, enum: [none] }
+        slippageModel: { type: string, enum: [none] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaperBalance:
+      type: object
+      required: [asset, free, locked, total]
+      properties:
+        asset: { type: string, example: USDT }
+        free: { type: string, example: "10000.00000000" }
+        locked: { type: string, enum: ["0"] }
+        total: { type: string, example: "10000.00000000" }
+        valuationUsd: { type: string, nullable: true, example: "10000.00", description: 显示估值，不参与真盘 }
+        priceUsd: { type: string, nullable: true, example: "1", description: USDT 计价外部指数展示价；缺失时不伪造 }
+    PaperResetRequest:
+      type: object
+      required: [confirmation]
+      additionalProperties: false
+      properties: { confirmation: { type: string, enum: [RESET_PAPER_ACCOUNT] } }
+    PaperReset:
+      type: object
+      required: [accountId, mode, generation, balances, resetAt]
+      properties:
+        accountId: { type: string }
+        mode: { type: string, enum: [paper] }
+        generation: { type: integer, format: int64 }
+        balances: { type: array, items: { $ref: "#/components/schemas/PaperBalance" } }
+        resetAt: { type: string, format: date-time }
+    PaperBalances:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items, account, mode, generation]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/PaperBalance" } }
+            account: { type: string, enum: [paper], description: 仅限 paper API，不改变现有 assets 枚举 }
+            mode: { type: string, enum: [paper] }
+            generation: { type: integer, format: int64 }
+    PaperPlaceOrderRequest:
+      type: object
+      required: [symbol, side, type, clientOrderId]
+      additionalProperties: false
+      description: market sell 必填 quantity；buy 的 quantity/quoteOrderQty 二选一。
+      properties:
+        symbol: { type: string, example: BTCUSDT }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        type: { type: string, enum: [market] }
+        quantity: { type: string, default: "", description: 空串或缺省代表未提供；卖单必须为正且符合数量精度, example: "0.010000" }
+        quoteOrderQty: { type: string, default: "", description: 仅市价买单；空串或缺省代表未提供, example: "100.00" }
+        clientOrderId: { type: string, pattern: "^[A-Za-z0-9_.:-]{1,64}$" }
+    PaperOrder:
+      type: object
+      required: [orderId, clientOrderId, mode, accountId, generation, symbol, side, type, price, quantity, filledQuantity, status, priceSource, referencePrice, marketObservedAt, fee, feeAsset, createdAt, executedAt]
+      properties:
+        orderId: { type: string, example: po_01J }
+        clientOrderId: { type: string }
+        mode: { type: string, enum: [paper] }
+        accountId: { type: string }
+        generation: { type: integer, format: int64 }
+        symbol: { type: string }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        type: { type: string, enum: [market] }
+        price: { type: string, nullable: true, description: market 固定 null }
+        quantity: { type: string, description: 十进制字符串，数量精度 }
+        quoteOrderQty: { type: string, description: 十进制字符串，实际全成名义额 }
+        filledQuantity: { type: string, description: 与 quantity 相同 }
+        status: { type: string, enum: [filled] }
+        priceSource: { type: string, enum: [INDEX] }
+        referencePrice: { type: string, example: "81000.04" }
+        marketObservedAt: { type: string, format: date-time }
+        fee: { type: string, enum: ["0"] }
+        feeAsset: { type: string, example: USDT }
+        createdAt: { type: string, format: date-time }
+        executedAt: { type: string, format: date-time }
+        trades: { type: array, items: { $ref: "#/components/schemas/PaperTrade" }, description: 单订单详情返回 }
+    PaperOrders:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items, generation]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/PaperOrder" } }
+            generation: { type: integer, format: int64 }
+    PaperTrade:
+      type: object
+      required: [tradeId, orderId, mode, symbol, side, price, quantity, fee, feeAsset, role, priceSource, marketObservedAt, createdAt]
+      properties:
+        tradeId: { type: string, example: pt_01J }
+        orderId: { type: string, example: po_01J }
+        mode: { type: string, enum: [paper] }
+        symbol: { type: string }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        price: { type: string }
+        quantity: { type: string }
+        fee: { type: string, enum: ["0"] }
+        feeAsset: { type: string }
+        role: { type: string, enum: [taker] }
+        priceSource: { type: string, enum: [INDEX] }
+        marketObservedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    PaperTrades:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items, generation]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/PaperTrade" } }
+            generation: { type: integer, format: int64, description: 无筛选且历史为空时可能为 0 }
+    CreatePriceAlertRequest:
+      type: object
+      required: [clientAlertId, market, symbol, condition, threshold, priceSource, triggerMode, channels]
+      additionalProperties: false
+      properties:
+        clientAlertId: { type: string, pattern: "^[A-Za-z0-9_.:-]{1,64}$" }
+        market: { type: string, enum: [spot], default: spot }
+        symbol: { type: string, example: BTCUSDT }
+        condition: { type: string, enum: [gte, lte] }
+        threshold: { type: string, example: "80000.00" }
+        priceSource: { type: string, enum: [INDEX], default: INDEX }
+        triggerMode: { type: string, enum: [once], default: once }
+        channels: { type: array, minItems: 1, maxItems: 1, items: { type: string, enum: [in_app] }, default: [in_app] }
+        enabled: { type: boolean, default: true }
+        note: { type: string, maxLength: 120, default: "" }
+    UpdatePriceAlertRequest:
+      type: object
+      required: [revision]
+      additionalProperties: false
+      properties:
+        revision: { type: integer, format: int64, minimum: 1 }
+        threshold: { type: string }
+        condition: { type: string, enum: [gte, lte] }
+        enabled: { type: boolean }
+        channels: { type: array, minItems: 1, maxItems: 1, items: { type: string, enum: [in_app] } }
+        note: { type: string, maxLength: 120 }
+    PriceAlert:
+      type: object
+      required: [alertId, clientAlertId, market, symbol, condition, threshold, priceSource, triggerMode, channels, enabled, status, revision, limit, lastObservedPrice, lastEvaluatedAt, triggeredPrice, triggeredAt, notificationId, deliveryStatus, createdAt, updatedAt]
+      properties:
+        alertId: { type: string, example: al_01J }
+        clientAlertId: { type: string }
+        market: { type: string, enum: [spot] }
+        symbol: { type: string }
+        condition: { type: string, enum: [gte, lte] }
+        threshold: { type: string }
+        priceSource: { type: string, enum: [INDEX] }
+        triggerMode: { type: string, enum: [once] }
+        channels: { type: array, items: { type: string, enum: [in_app] } }
+        enabled: { type: boolean }
+        status: { type: string, enum: [active, triggered, disabled], description: 持久化短暂的 triggering 不对外操作；deleted 不在列表 }
+        revision: { type: integer, format: int64 }
+        limit: { type: object, properties: { activePerUser: { type: integer, enum: [50] } } }
+        lastObservedPrice: { type: string, nullable: true }
+        lastEvaluatedAt: { type: string, format: date-time, nullable: true }
+        triggeredPrice: { type: string, nullable: true }
+        triggeredAt: { type: string, format: date-time, nullable: true }
+        notificationId: { type: string, nullable: true }
+        deliveryStatus: { type: string, enum: [none, pending, delivered_in_app, failed, unsupported] }
+        cooldownUntil: { type: string, format: date-time, nullable: true }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PriceAlerts:
+      allOf:
+        - $ref: "#/components/schemas/Pagination"
+        - type: object
+          required: [items]
+          properties: { items: { type: array, items: { $ref: "#/components/schemas/PriceAlert" } } }
     MMBaseline:
       type: object
       properties:

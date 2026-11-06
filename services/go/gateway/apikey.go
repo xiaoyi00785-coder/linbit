@@ -32,7 +32,9 @@ func alwaysDeniedForSub(p string) bool {
 	return hasPrefixSeg(p, "/wallet") ||
 		hasPrefixSeg(p, "/account/withdraw-whitelist") ||
 		hasPrefixSeg(p, "/account/withdraw-addresses") ||
-		hasPrefixSeg(p, "/sub-accounts")
+		hasPrefixSeg(p, "/sub-accounts") ||
+		hasPrefixSeg(p, "/paper") ||
+		hasPrefixSeg(p, "/price-alerts")
 }
 
 func subSecurityChange(method, p string) bool {
@@ -61,7 +63,7 @@ func subSessionAllowed(method, raw string) bool {
 	if method == http.MethodPost && p == "/sub-accounts/transfer" {
 		return true
 	}
-	if p == "/2fa/totp/disable" || hasPrefixSeg(p, "/kyc") {
+	if p == "/2fa/totp/disable" || hasPrefixSeg(p, "/kyc") || hasPrefixSeg(p, "/paper") || hasPrefixSeg(p, "/price-alerts") {
 		return false
 	}
 	// Security settings are managed by the parent only: a sub session may read

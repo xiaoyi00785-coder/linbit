@@ -68,6 +68,7 @@ type symbolDTO struct {
 	PricePrecision    int      `json:"pricePrecision"`
 	QuantityPrecision int      `json:"quantityPrecision"`
 	MinQuantity       *string  `json:"minQuantity,omitempty"`
+	MinNotional       *string  `json:"minNotional,omitempty"`
 	Status            string   `json:"status"`
 	Tags              []string `json:"tags"` // market_categories ids containing this symbol
 }

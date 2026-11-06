@@ -18,6 +18,7 @@ type SymbolInfo struct {
 	PricePrecision    int
 	QuantityPrecision int
 	MinQuantity       decimal.Decimal
+	MinNotional       decimal.Decimal
 	Status            string
 }
 
@@ -36,7 +37,7 @@ func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 func (s *Store) Symbols(ctx context.Context) ([]SymbolInfo, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT symbol, base, quote, price_precision, quantity_precision,
-		        min_quantity::text, status
+		        min_quantity::text, min_notional::text, status
 		 FROM symbols ORDER BY symbol`)
 	if err != nil {
 		return nil, err
@@ -45,12 +46,13 @@ func (s *Store) Symbols(ctx context.Context) ([]SymbolInfo, error) {
 	var out []SymbolInfo
 	for rows.Next() {
 		var si SymbolInfo
-		var minQty string
+		var minQty, minNotional string
 		if err := rows.Scan(&si.Symbol, &si.Base, &si.Quote, &si.PricePrecision,
-			&si.QuantityPrecision, &minQty, &si.Status); err != nil {
+			&si.QuantityPrecision, &minQty, &minNotional, &si.Status); err != nil {
 			return nil, err
 		}
 		si.MinQuantity = decimal.RequireFromString(minQty)
+		si.MinNotional = decimal.RequireFromString(minNotional)
 		out = append(out, si)
 	}
 	return out, rows.Err()

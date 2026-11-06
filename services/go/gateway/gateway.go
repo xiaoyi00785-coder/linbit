@@ -128,6 +128,17 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		r.Header.Del("X-Admin-Token")
 	}
 
+	paper, err := url.Parse(cfg.PaperURL)
+	if err != nil {
+		return nil, err
+	}
+	// Default matches the production service port while keeping zero-value test
+	// Config structs pointing at their existing echo upstream.
+	if cfg.PaperURL == "" {
+		paper = asset
+	}
+	paperProxy := newProxy(paper)
+
 	if _, err := parseCIDRs(cfg.TrustedProxyCIDRs); err != nil {
 		return nil, err
 	}
@@ -168,6 +179,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/earn", proxy: earnProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
+			{prefix: "/paper", proxy: paperProxy},
+			{prefix: "/price-alerts", proxy: paperProxy},
 			// market-data only serves GET /ws; /ws/* is not a route.
 			{prefix: "/ws", exact: true, proxy: marketProxy},
 			{prefix: "/home/newcomer", proxy: growthProxy},              // newcomer task bar (growth)
