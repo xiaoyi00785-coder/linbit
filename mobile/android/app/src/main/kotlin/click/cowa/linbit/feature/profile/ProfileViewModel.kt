@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -118,6 +119,8 @@ class ProfileViewModel @Inject constructor(
 class SecurityViewModel @Inject constructor(
     private val api: LinbitApi,
     val toast: ToastCenter,
+    private val tokens: TokenStore,
+    private val passkeys: PasskeyRegistrationService,
 ) : ViewModel() {
     private val _s = MutableStateFlow(SecurityUiState())
     val state: StateFlow<SecurityUiState> = _s.asStateFlow()
@@ -145,6 +148,66 @@ class SecurityViewModel @Inject constructor(
             code = code,
             error = error,
         )
+    }
+
+    fun loadPasskeys() {
+        viewModelScope.launch {
+            _s.value = _s.value.copy(passkeysLoading = true, passkeysError = null)
+            try {
+                val response = apiCall { api.listPasskeys() }
+                if (passkeyEpoch == tokens.sessionVersion.value) {
+                    _s.value = _s.value.copy(passkeysLoading = false, passkeysEnabled = response.enabled == true, passkeys = response.items.orEmpty())
+                }
+            } catch (e: Exception) {
+                if (passkeyEpoch == tokens.sessionVersion.value) _s.value = _s.value.copy(passkeysLoading = false, passkeysError = e.lbMessage())
+            }
+        }
+    }
+    fun registerPasskey(activity: android.app.Activity, name: String) {
+        val code = _s.value.passkeyCode
+        if (passkeyInFlight || !tokens.loggedIn.value || activity.isFinishing || activity.isDestroyed) return
+        if (code.length !in 6..8 || code.any { !it.isDigit() }) {
+            _s.value = _s.value.copy(passkeysError = if (_s.value.security?.twoFactor?.enabled == true) "请输入身份验证器 6 位动态码" else "请输入安全验证码"); return
+        }
+        val epoch = tokens.sessionVersion.value
+        val generation = ++passkeyGeneration
+        passkeyInFlight = true
+        _s.value = _s.value.copy(passkeyBusy = true, passkeysError = null)
+        passkeyJob = viewModelScope.launch {
+            try {
+                passkeys.register(activity, code, _s.value.security?.twoFactor?.enabled == true, name.trim().ifEmpty { "Passkey" })
+                if (current(generation, epoch)) {
+                    val response = apiCall { api.listPasskeys() }
+                    if (current(generation, epoch)) {
+                        _s.value = _s.value.copy(passkeys = response.items.orEmpty(), passkeysEnabled = response.enabled == true, passkeyCode = "")
+                        toast.show("通行密钥已绑定")
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (current(generation, epoch)) _s.value = _s.value.copy(passkeysError = e.lbMessage()) }
+            finally { if (current(generation, epoch)) { passkeyInFlight = false; _s.value = _s.value.copy(passkeyBusy = false) } }
+        }
+    }
+    private var passkeyInFlight = false
+    private var passkeyGeneration = 0L
+    private var passkeyEpoch = tokens.sessionVersion.value
+    private var passkeyJob: Job? = null
+    private fun current(generation: Long, epoch: Long) = generation == passkeyGeneration && epoch == passkeyEpoch && epoch == tokens.sessionVersion.value && tokens.loggedIn.value
+    fun passkeyCode(value: String) { if (!passkeyInFlight) _s.value = _s.value.copy(passkeyCode = value.filter(Char::isDigit).take(8), passkeysError = null) }
+    fun cancelPasskeyRegistration() {
+        if (!passkeyInFlight) return
+        passkeyGeneration++; passkeyJob?.cancel(); passkeyInFlight = false
+        _s.value = _s.value.copy(passkeyBusy = false, passkeysError = "已取消通行密钥注册，可重新验证后重试")
+    }
+    override fun onCleared() { passkeyGeneration++; passkeyJob?.cancel(); super.onCleared() }
+    init {
+        viewModelScope.launch { tokens.sessionVersion.collect { epoch ->
+            if (passkeyEpoch != epoch) {
+                passkeyEpoch = epoch; passkeyGeneration++
+                passkeyJob?.cancel(); passkeyInFlight = false
+                _s.value = _s.value.copy(passkeys = emptyList(), passkeysEnabled = false, passkeyCode = "", passkeyBusy = false, passkeysError = null)
+            }
+        } }
     }
 
     fun load() {
@@ -202,6 +265,12 @@ data class SecurityUiState(
     val security: ApiSecurityOverview? = null,
     val binding: ApiTotpBinding? = null,
     val code: String = "",
+    val passkeysLoading: Boolean = false,
+    val passkeysEnabled: Boolean = false,
+    val passkeys: List<click.cowa.linbit.core.generated.ApiPasskey> = emptyList(),
+    val passkeyCode: String = "",
+    val passkeyBusy: Boolean = false,
+    val passkeysError: String? = null,
 )
 
 @HiltViewModel

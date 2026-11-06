@@ -1041,7 +1041,7 @@ class OffscreenVisualEvidenceTest {
 
     @Test fun securityCenterSeeded() {
         enabled()
-        val vm = SecurityViewModel(api, toast)
+        val vm = SecurityViewModel(api, toast, tokens, click.cowa.linbit.feature.profile.PasskeyRegistrationService(api, click.cowa.linbit.feature.profile.PasskeyRegistrationBridge { _, _ -> throw click.cowa.linbit.feature.auth.PasskeyLoginFailure.Unsupported }))
         // 2FA 未开启；不 beginBinding、不写入密钥
         vm.seedEvidenceSecurity(evidenceSecurityOverview())
         rule.setContent {
@@ -1106,7 +1106,7 @@ class OffscreenVisualEvidenceTest {
     @Test fun securityOfflineError() {
         enabled()
         // 无 seed → 503 → 错误态；不绑 2FA
-        val vm = SecurityViewModel(api, toast)
+        val vm = SecurityViewModel(api, toast, tokens, click.cowa.linbit.feature.profile.PasskeyRegistrationService(api, click.cowa.linbit.feature.profile.PasskeyRegistrationBridge { _, _ -> throw click.cowa.linbit.feature.auth.PasskeyLoginFailure.Unsupported }))
         rule.setContent {
             LinbitTheme(false) {
                 Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
@@ -1283,7 +1283,7 @@ class OffscreenVisualEvidenceTest {
 
     @Test fun totpSetupPlaceholder() {
         enabled()
-        val vm = SecurityViewModel(api, toast)
+        val vm = SecurityViewModel(api, toast, tokens, click.cowa.linbit.feature.profile.PasskeyRegistrationService(api, click.cowa.linbit.feature.profile.PasskeyRegistrationBridge { _, _ -> throw click.cowa.linbit.feature.auth.PasskeyLoginFailure.Unsupported }))
         vm.seedEvidenceTotpSetupUi()
         rule.setContent {
             LinbitTheme(false) {
@@ -1303,7 +1303,7 @@ class OffscreenVisualEvidenceTest {
 
     @Test fun totpSetupValidationError() {
         enabled()
-        val vm = SecurityViewModel(api, toast)
+        val vm = SecurityViewModel(api, toast, tokens, click.cowa.linbit.feature.profile.PasskeyRegistrationService(api, click.cowa.linbit.feature.profile.PasskeyRegistrationBridge { _, _ -> throw click.cowa.linbit.feature.auth.PasskeyLoginFailure.Unsupported }))
         vm.seedEvidenceTotpSetupUi(error = "验证码错误（测试占位，未提交）", code = "000000")
         rule.setContent {
             LinbitTheme(false) {
@@ -1537,7 +1537,7 @@ class OffscreenVisualEvidenceTest {
 
     @Test fun disableTotpForm() {
         enabled()
-        val vm = SecurityViewModel(api, toast)
+        val vm = SecurityViewModel(api, toast, tokens, click.cowa.linbit.feature.profile.PasskeyRegistrationService(api, click.cowa.linbit.feature.profile.PasskeyRegistrationBridge { _, _ -> throw click.cowa.linbit.feature.auth.PasskeyLoginFailure.Unsupported }))
         // 仅表单/说明；holdEvidence 阻止真实 disable
         vm.holdEvidence = true
         vm.seedEvidenceSecurity(evidenceSecurityOverview().copy(

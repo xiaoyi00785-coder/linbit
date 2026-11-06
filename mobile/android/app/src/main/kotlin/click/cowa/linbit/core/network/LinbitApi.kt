@@ -102,6 +102,15 @@ interface LinbitApi {
     @POST("auth/passkey/login/finish")
     suspend fun passkeyLoginFinish(@Body body: ApiFinishPasskeyLoginRequest): ApiAuthTokens
 
+    @GET("account/passkeys")
+    suspend fun listPasskeys(): ApiListPasskeys200Response
+
+    @POST("account/passkeys/register/begin")
+    suspend fun passkeyRegisterBegin(@Body body: ApiBeginPasskeyRegistrationRequest): ApiPasskeyCeremony
+
+    @POST("account/passkeys/register/finish")
+    suspend fun passkeyRegisterFinish(@Body body: ApiFinishPasskeyRegistrationRequest): ApiPasskey
+
     // ---- Market（公开）----
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("market/symbols")

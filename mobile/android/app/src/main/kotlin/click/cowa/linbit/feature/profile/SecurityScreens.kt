@@ -28,15 +28,17 @@ import click.cowa.linbit.ui.components.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import click.cowa.linbit.ui.theme.*
 
-private enum class SecurityPage { CENTER, BIND, DISABLE, PASSWORD, ANTI_PHISHING, EMAIL, PHONE, FUND_PASSWORD }
+private enum class SecurityPage { CENTER, BIND, DISABLE, PASSWORD, ANTI_PHISHING, EMAIL, PHONE, FUND_PASSWORD, PASSKEY }
 
 @Composable
 fun SecurityHost(onBack: () -> Unit, vm: SecurityViewModel = hiltViewModel(), featureVm: SecurityFeatureViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     var page by remember { mutableStateOf(SecurityPage.CENTER) }
     LaunchedEffect(Unit) { vm.load() }
+    DisposableEffect(page) { onDispose { vm.cancelPasskeyRegistration() } }
     BackHandler { if (page == SecurityPage.CENTER) onBack() else page = SecurityPage.CENTER }
     when (page) {
-        SecurityPage.CENTER -> SecurityCenterScreen(vm, onBack, onBind = { page = SecurityPage.BIND; vm.beginBinding() }, onDisable = { page = SecurityPage.DISABLE }, onPassword = { page = SecurityPage.PASSWORD }, onAntiPhishing = { page = SecurityPage.ANTI_PHISHING }, onContact = { phone -> page = if (phone) SecurityPage.PHONE else SecurityPage.EMAIL }, onFundPassword = { page = SecurityPage.FUND_PASSWORD })
+        SecurityPage.PASSKEY -> PasskeySecurityScreen(vm, onBack = { page = SecurityPage.CENTER; vm.load() })
+        SecurityPage.CENTER -> SecurityCenterScreen(vm, onBack, onBind = { page = SecurityPage.BIND; vm.beginBinding() }, onDisable = { page = SecurityPage.DISABLE }, onPassword = { page = SecurityPage.PASSWORD }, onAntiPhishing = { page = SecurityPage.ANTI_PHISHING }, onContact = { phone -> page = if (phone) SecurityPage.PHONE else SecurityPage.EMAIL }, onFundPassword = { page = SecurityPage.FUND_PASSWORD }, onPasskey = { page = SecurityPage.PASSKEY })
         SecurityPage.BIND -> TotpSetupScreen(vm, onBack = { page = SecurityPage.CENTER })
         SecurityPage.DISABLE -> DisableTotpScreen(vm, onBack = { page = SecurityPage.CENTER })
         SecurityPage.PASSWORD -> ChangePasswordScreen(vm.state.collectAsStateWithLifecycle().value.security, featureVm, onBack = { page = SecurityPage.CENTER; vm.load() }, onDialogWindow = onDialogWindow)
@@ -48,7 +50,7 @@ fun SecurityHost(onBack: () -> Unit, vm: SecurityViewModel = hiltViewModel(), fe
 }
 
 @Composable
-private fun SecurityCenterScreen(vm: SecurityViewModel, onBack: () -> Unit, onBind: () -> Unit, onDisable: () -> Unit, onPassword: () -> Unit, onAntiPhishing: () -> Unit, onContact: (Boolean) -> Unit, onFundPassword: () -> Unit) {
+private fun SecurityCenterScreen(vm: SecurityViewModel, onBack: () -> Unit, onBind: () -> Unit, onDisable: () -> Unit, onPassword: () -> Unit, onAntiPhishing: () -> Unit, onContact: (Boolean) -> Unit, onFundPassword: () -> Unit, onPasskey: () -> Unit = {}) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
     val security = s.security
@@ -70,7 +72,7 @@ private fun SecurityCenterScreen(vm: SecurityViewModel, onBack: () -> Unit, onBi
                 ProfileRow("手机", security?.phone ?: "未绑定") { onContact(true) }
                 Text("登录验证", Modifier.padding(horizontal = Spacing.pageH).padding(top = 18.dp, bottom = 4.dp), style = lb(FontSize.caption), color = p.textSecondary)
                 ProfileRow("身份验证器", if (enabled) "已开启" else "未开启") { if (enabled) onDisable() else onBind() }
-                ProfileRow("通行密钥", if ((security?.passkeysCount ?: 0) > 0) "${security?.passkeysCount} 个" else "未添加") { vm.toast.show("通行密钥将在后续安全批次接入") }
+                ProfileRow("通行密钥", if ((security?.passkeysCount ?: 0) > 0) "${security?.passkeysCount} 个" else "未添加") { onPasskey() }
                 ProfileRow("登录密码", "修改") { onPassword() }
                 Text("资金安全", Modifier.padding(horizontal = Spacing.pageH).padding(top = 18.dp, bottom = 4.dp), style = lb(FontSize.caption), color = p.textSecondary)
                 ProfileRow("资金密码", if (security?.fundPasswordSet == true) "已设置" else "未设置") { onFundPassword() }

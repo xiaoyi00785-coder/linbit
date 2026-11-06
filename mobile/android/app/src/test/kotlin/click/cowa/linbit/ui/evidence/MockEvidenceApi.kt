@@ -16,6 +16,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     var defaultFeatureFlags: String? = null
     /** Test-only loopback response hold; it cannot call or configure any production host. */
     var passkeyFinishGate: java.util.concurrent.CountDownLatch? = null
+    var passkeyRegistrationFinishGate: java.util.concurrent.CountDownLatch? = null
 
     init { server.dispatcher = this; server.start() }
 
@@ -46,17 +47,19 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (method != "GET") mutationRequests += request
         val declaredFailure = expectedFailureKeys.remove(key)
         val sensitive = method != "GET" && (path.startsWith("/account/") || path.startsWith("/earn/") || path.startsWith("/strategy/") || path.contains("/wallet/") || path.endsWith("/convert/accept") || path.contains("/2fa/") || path.contains("/kyc/"))
-        if (sensitive && !declaredFailure) {
+        val passkeyRegisterPath = path in setOf("/account/passkeys/register/begin", "/account/passkeys/register/finish")
+        if (sensitive && !declaredFailure && !passkeyRegisterPath) {
             return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
         val response = routes[key]?.removeFirstOrNull() ?: defaultFeatureFlags?.takeIf { key == "GET /app/features" }?.let { flags ->
             MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(flags)
         }
         val passkeyLogin = path in setOf("/auth/passkey/login/begin", "/auth/passkey/login/finish")
+        val passkeyRegister = path in setOf("/account/passkeys/register/begin", "/account/passkeys/register/finish")
         val alertWrite = path == "/price-alerts" || path.startsWith("/price-alerts/")
         val paperBuy = method == "POST" && path == "/paper/orders"
         val expected = declaredFailure && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         requests += "$key${if (method != "GET") " [${if (declaredFailure) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}"
@@ -66,6 +69,9 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
             val data = org.json.JSONObject(request.body.clone().readUtf8()).getString("clientOrderId")
             val fulfilled = payload.replace("MOCK_CLIENT_ID", data.replace("\\", "\\\\").replace("\"", "\\\""))
             return response.clone().setBody(fulfilled)
+        }
+        if (path == "/account/passkeys/register/finish") {
+            check(passkeyRegistrationFinishGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback register finish latch timed out" }
         }
         if (path == "/auth/passkey/login/finish") {
             check(passkeyFinishGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback finish latch timed out" }

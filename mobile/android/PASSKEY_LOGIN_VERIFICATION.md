@@ -67,3 +67,29 @@ The signing-certificate owner must confirm the release fingerprint from the
 allowable public certificate value. Do not read, print, export or replace a private
 signing key. Current native compilation and mock tests do NOT validate this RP
 association or a real authenticator.
+
+
+## Registration and security-center slice
+
+`SecurityHost` now opens `PasskeySecurityScreen` instead of a placeholder Toast.
+Production registration uses `CreatePublicKeyCredentialRequest`,
+`CredentialManager.createCredential`, and validates the public creation response
+shape. The authenticated begin sends exactly one of `totpCode` (enabled TOTP) or
+`code` (other security-verification method). After finish, the client requires an
+actual `GET /account/passkeys` readback before updating the host list and showing
+registration success. `DELETE /account/passkeys/{id}` is not exposed in this batch.
+
+`PasskeyRegistrationStateTest` and `PasskeyRegistrationVisualTest` use only
+`http://127.0.0.1` with fake short-lived session/token strings and explicit native
+fakes. They test precise TOTP security-code requests, duplicate clicks, cancelled
+and failed creation (zero finish), activity disposal/session generations, a delayed
+finish after a session change, and list readback. The two PNGs prefixed
+`passkey-register-` in `app/build/reports/passkey-shots/` are actual application
+`SecurityHost` pixels, not system-sheet or device ceremony evidence. They cover
+320dp/large font/light and 360dp/dark host recovery layouts. The app's error labels
+never claim that Android validated a real new credential.
+
+The deployment template above applies to both login and registration through the
+actual release RP origin. Existing known-missing association documentation was not
+reprobed for this batch; the missing association remains a release usability
+prerequisite, not a reason to discard these implementation/test results.

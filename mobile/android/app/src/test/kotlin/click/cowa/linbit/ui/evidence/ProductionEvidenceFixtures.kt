@@ -29,7 +29,8 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
         return AuthViewModel(repo, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(retrofit, fakeBridge, { "evidence-invalid-device" }, { "Robolectric" }))
     }
 
-    fun security(): SecurityViewModel = SecurityViewModel(retrofit, toast)
+    fun security(): SecurityViewModel = SecurityViewModel(retrofit, toast, tokens, passkeyRegistration())
+    fun passkeyRegistration(bridge: click.cowa.linbit.feature.profile.PasskeyRegistrationBridge = click.cowa.linbit.feature.profile.PasskeyRegistrationBridge { _, _ -> error("Native passkey creation must be explicitly mocked") }) = click.cowa.linbit.feature.profile.PasskeyRegistrationService(retrofit, bridge)
     fun securityFeatures(): SecurityFeatureViewModel = SecurityFeatureViewModel(retrofit, toast)
 
     fun rootHomeMarket(): click.cowa.linbit.app.RootHomeMarketFactory {

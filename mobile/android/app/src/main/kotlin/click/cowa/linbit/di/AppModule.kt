@@ -72,6 +72,9 @@ object AppModule {
     fun api(client: OkHttpClient): LinbitApi = NetworkFactory.api(client, baseUrl())
 
     @Provides @Singleton
+    fun passkeyRegistration(api: LinbitApi) = click.cowa.linbit.feature.profile.PasskeyRegistrationService(api, click.cowa.linbit.feature.profile.AndroidPasskeyRegistrationBridge())
+
+    @Provides @Singleton
     fun paperFeatureGate(api: LinbitApi) = click.cowa.linbit.data.paper.PaperFeatureGate(click.cowa.linbit.data.paper.PublicFeatureFlags { api.appFeatures() })
 
     @Provides @Singleton
