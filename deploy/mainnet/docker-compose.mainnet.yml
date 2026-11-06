@@ -79,9 +79,15 @@ services:
     environment:
       <<: *mainnet
       DEV_MODE: "false"
-      # Explicit direct flags are false regardless of app feature DB overrides.
-      PAPER_TRADING_ENABLED: "false"
-      PRICE_ALERTS_ENABLED: "false"
+      # Production default ON (Mike approved 2026-11-06). These kill switches
+      # sit after any server override and would wipe a live true back to false
+      # on the next git-tree deploy if left as literal "false". Default true
+      # keeps prod aligned; set PAPER_TRADING_ENABLED / PRICE_ALERTS_ENABLED=false
+      # in .env.mainnet (or flip app_features) to kill without editing compose.
+      # Still require app_features / FEATURE_DEFAULTS / DB rows to expose the
+      # public /app/features flags — env alone does not open the product UI.
+      PAPER_TRADING_ENABLED: ${PAPER_TRADING_ENABLED:-true}
+      PRICE_ALERTS_ENABLED: ${PRICE_ALERTS_ENABLED:-true}
   gateway:
     environment:
       <<: *mainnet

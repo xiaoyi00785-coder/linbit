@@ -13,7 +13,7 @@
 ## Migration / release prerequisites
 
 服务 `migrations/00001_paper_price_alerts.sql` 只创建新的 paper/alert 表；account 的 `migrations/00013_notification_dedup.sql` 增加 notification 幂等键。**必须在打开 feature 之前同时部署这两个 migration**（paper auto-migrates its schema；paper 自身使用独立 `goose_paper_version`）。
-生产 compose 保留 `PAPER_TRADING_ENABLED:"false"` 与 `PRICE_ALERTS_ENABLED:"false"` 直接 kill switches。应由 ops 先跑 migration，再经 app features（或显式替换 kill switch）开启；当前 PR 不部署、不启用、不合 main。
+生产 mainnet compose 默认 `${PAPER_TRADING_ENABLED:-true}` / `${PRICE_ALERTS_ENABLED:-true}`（与线上已开状态对齐，避免换树部署冲回 false）。kill switch 仍可在 `.env.mainnet` 设为 `false`，或关掉 `app_features`；公开 `/app/features` 仍以 DB / FEATURE_DEFAULTS 为准。部署前须先跑 migration。
 
 ## Local checks
 
