@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -181,10 +182,11 @@ fun FuturesTradeContent(
         shownBook.asks.map { BookLevel(it.price, it.qty.multiply(it.price)) },
     )
 
+    val pageH = LayoutAdapt.pageH(LocalConfiguration.current.screenWidthDp)
     Column(modifier.fillMaxSize().background(p.bg)) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+        Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState())) {
             // 交易对头：BTCUSDT ▾ •  /  永续 +0.66%
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.pressable(scale = 1f) { sheet = "pairs" }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(vm.symbol, style = lb(18.sp, FontWeight.SemiBold), color = p.textPrimary)
@@ -204,7 +206,7 @@ fun FuturesTradeContent(
                 }
             }
             // 全仓 / 合仓 · 100x · 100x · 资金费率
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     ChipButton("${if (vm.cross) "全仓" else "逐仓"} / ${if (vm.hedge) "分仓" else "合仓"}", Modifier.height(24.dp)) { sheet = "mode" }
                     ChipButton("${vm.leverage}x", Modifier.height(24.dp), color = p.up, bg = p.upTint) { sheet = "leverage" }
@@ -216,7 +218,7 @@ fun FuturesTradeContent(
                     Text("${Fmt.amount(vm.fundingRate, 4)}% / ${vm.fundingCountdown}", style = lbNum(10.sp).copy(lineHeight = 12.sp), color = p.textPrimary, maxLines = 1)
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // 左：表单
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     PillSegment(
@@ -281,7 +283,7 @@ fun FuturesTradeContent(
                 }
             }
             // 仓位 / 委托 / 跟单 / 卡券
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 listOf("仓位 (${vm.positions.size})", "委托 (${vm.openOrders.size + vm.planAlgos.size + vm.tpslAlgos.size})", "跟单 (0)", "卡券 (${vm.bonus.size})").forEachIndexed { i, t ->
                     Text(t, Modifier.pressable(scale = 1f) { bottomTab = i }, style = lb(FontSize.label, if (bottomTab == i) FontWeight.Medium else FontWeight.Normal), color = if (bottomTab == i) p.textPrimary else p.textSecondary)
                 }
@@ -289,7 +291,7 @@ fun FuturesTradeContent(
                 ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.pressable(scale = 1f, onClick = onHistory))
             }
             HorizontalDivider(color = p.divider)
-            if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 CheckRow(vm.onlyCurrent, "只看当前") { vm.onlyCurrent = it }
                 Box(Modifier.weight(1f))
                 if (bottomTab == 0) ChipButton("一键平仓", Modifier.height(28.dp).width(80.dp), color = p.textPrimary) { if (vm.shownPositions.isNotEmpty()) closeAllAsk = true }
@@ -300,7 +302,7 @@ fun FuturesTradeContent(
                     LaunchedEffect(Unit) { vm.loadTodayPnl() }
                     TodayPnlCard(vm)
                     if (vm.shownPositions.isEmpty()) EmptyState("可用余额：${Fmt.amount(vm.available, 2)} ${vm.quote}\n划转资金到合约账户开始交易，或尝试0风险模拟交易") {
-                        Row(Modifier.padding(horizontal = Spacing.pageH), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.padding(horizontal = pageH), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ChipButton("充值", Modifier.weight(1f).height(36.dp), onClick = onDeposit)
                             ChipButton("模拟盘", Modifier.weight(1f).height(36.dp), onClick = onSim)
                             ChipButton("跟单交易", Modifier.weight(1f).height(36.dp), onClick = onCopy)

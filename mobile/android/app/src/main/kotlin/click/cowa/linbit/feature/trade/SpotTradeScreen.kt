@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +61,7 @@ import click.cowa.linbit.ui.components.ThemedIcon
 import click.cowa.linbit.ui.components.pressable
 import click.cowa.linbit.ui.theme.FontSize
 import click.cowa.linbit.ui.theme.LB
+import click.cowa.linbit.ui.theme.LayoutAdapt
 import click.cowa.linbit.ui.theme.Radius
 import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
@@ -109,9 +112,10 @@ fun SpotTradeContent(
     var chartOpen by remember { mutableStateOf(false) }
     val step = vm.bookPrecision ?: BigDecimal.ONE.movePointLeft(vm.pricePrec)
     val grouped = remember(vm.book, step) { vm.book.grouped(step) }
+    val pageH = LayoutAdapt.pageH(LocalConfiguration.current.screenWidthDp)
 
     Column(modifier.fillMaxSize().background(p.bg)) {
-        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = pageH), verticalAlignment = Alignment.CenterVertically) {
             PrimaryTabs(listOf("现货", "策略", "理财", "闪兑"), topTab, { topTab = it }, size = 16.sp)
         }
         HorizontalDivider(color = p.divider)
@@ -119,9 +123,9 @@ fun SpotTradeContent(
             1 -> StrategySubpage(bottomInset, onLogin)
             2 -> EarnSubpage(bottomInset, onLogin)
             3 -> ConvertSubpage(bottomInset, onLogin)
-            else -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = bottomInset)) {
+            else -> Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset)) {
             // 交易对头
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.pressable(scale = 1f) { sheet = "pairs" }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${vm.base}/${vm.quote}", style = lb(18.sp, FontWeight.SemiBold), color = p.textPrimary)
@@ -137,7 +141,7 @@ fun SpotTradeContent(
                     LbIcon(R.drawable.ic_more, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { vm.toast.show("更多功能即将开放") })
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // 左：表单
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillSegment(listOf("买入", "卖出"), if (vm.isBuy) 0 else 1, { vm.isBuy = it == 0; vm.applyPercent(0f) })

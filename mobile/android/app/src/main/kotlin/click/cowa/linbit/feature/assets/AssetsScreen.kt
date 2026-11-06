@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -79,7 +80,7 @@ fun AssetsScreen(
         Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             PrimaryTabs(Tabs, s.tab, onSelect = { i ->
                 if (i >= 4) vm.toast.show("${Tabs[i]}即将开放") else vm.setTab(i)
-            }, Modifier.padding(horizontal = Spacing.pageH))
+            }, Modifier.padding(horizontal = Spacing.pageH), scrollable = true)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))
 
@@ -110,7 +111,7 @@ fun AssetsScreen(
         val total = vm.totalUsdt()
         val emptyOverview = s.tab == 0 && total.signum() == 0
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
                 LbIcon(R.drawable.ic_avatar, 22.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onOpenProfile))
             }

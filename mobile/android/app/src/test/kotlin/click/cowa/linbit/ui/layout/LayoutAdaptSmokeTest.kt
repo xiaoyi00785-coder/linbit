@@ -244,6 +244,9 @@ class LayoutAdaptSmokeTest {
         rule.onNodeWithTag("event-more").assertIsDisplayed()
     }
 
+
+
+
     private fun applyViewport(width: Int, height: Int, fontScale: Float) {
         RuntimeEnvironment.setQualifiers("zh-rCN-w${width}dp-h${height}dp-xxhdpi")
         rule.activity.resources.configuration.fontScale = fontScale
