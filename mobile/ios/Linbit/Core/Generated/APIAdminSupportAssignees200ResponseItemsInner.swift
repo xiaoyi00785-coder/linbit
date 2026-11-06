@@ -30,4 +30,3 @@ public struct APIAdminSupportAssignees200ResponseItemsInner: Codable, JSONEncoda
         try container.encodeIfPresent(username, forKey: .username)
     }
 }
-

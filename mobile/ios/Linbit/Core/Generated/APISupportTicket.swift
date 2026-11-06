@@ -95,4 +95,3 @@ public struct APISupportTicket: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(messages, forKey: .messages)
     }
 }
-

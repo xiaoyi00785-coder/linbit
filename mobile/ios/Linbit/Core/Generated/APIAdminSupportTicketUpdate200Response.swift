@@ -30,4 +30,3 @@ public struct APIAdminSupportTicketUpdate200Response: Codable, JSONEncodable, Ha
         try container.encodeIfPresent(before, forKey: .before)
     }
 }
-

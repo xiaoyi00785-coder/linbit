@@ -42,4 +42,3 @@ public struct APISupportTicketList: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(categories, forKey: .categories)
     }
 }
-
