@@ -26,6 +26,22 @@ class StrategyGridLogicTest {
         assertTrue(StrategyGridLogic.isStopping(ApiGridBot.Status.STOPPING))
     }
 
+    @Test fun fullGridFormIsValidatedAndPreviewBoundToEveryInput() {
+        val config = click.cowa.linbit.core.generated.ApiStrategyConfig200Response(minGrids = 4, maxGrids = 20, minInvestment = "10")
+        val form = StrategyGridLogic.GridForm("BTCUSDT", click.cowa.linbit.core.generated.ApiGridCreateRequest.Mode.ARITHMETIC, "60000", "70000", 10, "100", true)
+        val preview = StrategyGridLogic.GridPreview("BTCUSDT", form.mode, "65000", listOf("60000", "70000"), "0.001", 5, 5, "65", "0.1", "0.2", form)
+        assertNull(StrategyGridLogic.validateForm(form, config))
+        assertTrue(StrategyGridLogic.previewMatches(preview, form))
+        assertFalse(StrategyGridLogic.previewMatches(preview, form.copy(sellBaseOnStop = false)))
+        assertFalse(StrategyGridLogic.previewMatches(preview, form.copy(investment = "101")))
+        assertFalse(StrategyGridLogic.previewMatches(preview, form.copy(grids = 11)))
+        assertFalse(StrategyGridLogic.previewMatches(preview, form.copy(mode = click.cowa.linbit.core.generated.ApiGridCreateRequest.Mode.GEOMETRIC)))
+        assertTrue(StrategyGridLogic.validateForm(form.copy(lower = "70000", upper = "60000"), config)!!.contains("上限"))
+        assertTrue(StrategyGridLogic.validateForm(form.copy(grids = 3), config)!!.contains("网格数"))
+        assertTrue(StrategyGridLogic.validateForm(form.copy(grids = 21), config)!!.contains("网格数"))
+        assertTrue(StrategyGridLogic.validateForm(form.copy(investment = ""), config)!!.contains("投资"))
+    }
+
     @Test fun investmentMinAndPositive() {
         assertEquals("请输入投资额", StrategyGridLogic.validateInvestment("", null))
         assertEquals("请输入投资额", StrategyGridLogic.validateInvestment("0", "10"))

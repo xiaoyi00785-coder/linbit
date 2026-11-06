@@ -105,7 +105,7 @@ private fun SecurityFundVerification(overview: ApiSecurityOverview?, vm: Securit
     val twoFa = overview?.twoFactor?.enabled == true; val scope = rememberCoroutineScope()
     LbSheet("确认资金密码", { if (!submitting && !sending) onClose() }, showClose = !submitting && !sending, onWindowReady = onDialogWindow) {
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            InfoNote(if (twoFa) "输入身份验证器动态码后确认。" else "向现有联系方式发送 purpose=security 验证码后确认。", warning = true)
+            InfoNote(if (twoFa) "输入身份验证器动态码后确认。" else "请输入发送至现有联系方式的安全验证码，完成后确认。", warning = true)
             if (twoFa) LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "6 位身份验证器动态码", keyboardType = KeyboardType.NumberPassword)
             else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { LbTextField(code, { code = it.filter(Char::isDigit).take(8) }, "现有联系方式验证码", Modifier.weight(1f), keyboardType = KeyboardType.NumberPassword); LbButton("发送", Modifier.width(86.dp), enabled = !submitting && !sending, loading = sending, onClick = { if (!submitting && !sending) scope.launch { sending = true; error = null; try { vm.sendSecurityCode() } catch (e: Exception) { error = e.lbMessage() } finally { sending = false } } }) }
             error?.let { Text(it, color = LB.p.down, style = lb(FontSize.body)) }

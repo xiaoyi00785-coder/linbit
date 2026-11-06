@@ -53,7 +53,7 @@ class ProductionFeatureEvidenceTest {
         api.route("GET", "/strategy/grid/square?page=1&pageSize=20", """{"items":[],"page":1,"pageSize":200,"total":0}""")
         api.route("GET", "/strategy/grid", """{"items":[],"page":1,"pageSize":200,"total":0}""")
         renderFeatureHost("strategy")
-        wait("策略广场"); harness.app("asset-strategy-empty", 1170, 2364)
+        wait("暂无公开策略"); harness.app("asset-strategy-empty", 1170, 2364)
     }
 
     @Test fun tradFiExplicitErrorAndAssetRouteNoTrading() {

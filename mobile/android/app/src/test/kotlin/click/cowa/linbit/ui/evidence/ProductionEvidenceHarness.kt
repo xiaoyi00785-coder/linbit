@@ -86,7 +86,8 @@ internal class ProductionEvidenceHarness<A : androidx.activity.ComponentActivity
             c.name.startsWith("auth-") -> "AuthHost(AuthFlow,LocalLbSheetInlineEvidence=false)"
             c.name.startsWith("deposit-") || c.name.startsWith("withdraw-") -> "Production AssetsHost/AssetsNav (direct Host; not an AppRoot click-through)"
             c.name.startsWith("security-") -> "ProfileHost/SecurityHost/SecurityPage (real security Host)"
-            c.name.startsWith("asset-") -> "AppRoot AssetFeatureHost (actual production earn/strategy/TradFi Host)"
+            c.name.startsWith("approot-") -> "Full production AppRoot: HOME -> ASSETS Tab -> actual feature click -> AssetFeatureHost (showSplash=false)"
+            c.name.startsWith("asset-") -> "Direct AssetFeatureHost (actual production Host, not an AppRoot click-through)"
             c.name.startsWith("convert-") -> "Production ConvertSubpage/quote/final-review LbSheet (direct Subpage; not an AppRoot click-through)"
             else -> "UNMAPPED"
         }

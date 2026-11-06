@@ -3,6 +3,8 @@ package click.cowa.linbit.feature.trade
 import click.cowa.linbit.core.generated.ApiConvertPairsPairsInner
 import click.cowa.linbit.core.generated.ApiConvertQuote
 import click.cowa.linbit.core.generated.ApiGridBot
+import click.cowa.linbit.core.generated.ApiGridCreateRequest
+import click.cowa.linbit.core.generated.ApiStrategyConfig200Response
 import click.cowa.linbit.core.util.Dec
 import java.math.BigDecimal
 
@@ -32,6 +34,23 @@ object StrategyGridLogic {
         if (min.signum() > 0 && v < min) return "不低于最小投资额 $minInvestment"
         return null
     }
+
+    /** Validate both preview and final confirmation with one immutable form. */
+    data class GridForm(val symbol: String, val mode: ApiGridCreateRequest.Mode, val lower: String, val upper: String, val grids: Int, val investment: String, val sellBaseOnStop: Boolean)
+
+    fun validateForm(form: GridForm, config: ApiStrategyConfig200Response?): String? = when {
+        validateInvestment(form.investment, config?.minInvestment) != null -> validateInvestment(form.investment, config?.minInvestment)
+        form.symbol.trim().length !in 6..20 -> "请输入有效交易对"
+        Dec.parse(form.lower) <= BigDecimal.ZERO || Dec.parse(form.upper) <= Dec.parse(form.lower) -> "上限价必须大于下限价"
+        form.grids < (config?.minGrids ?: 2) || form.grids > (config?.maxGrids ?: 100) -> "网格数不在允许区间"
+        else -> null
+    }
+    data class GridPreview (
+        val symbol: String, val mode: ApiGridCreateRequest.Mode, val currentPrice: String?, val levels: List<String>?, val qtyPerGrid: String?,
+        val buyOrders: Int?, val sellOrders: Int?, val initialBuyQuote: String?, val profitPerGridMin: String?, val profitPerGridMax: String?, val form: GridForm,
+    )
+    fun previewMatches(preview: GridPreview?, form: GridForm): Boolean = preview?.form == form
+
 }
 
 object ConvertQuoteLogic {

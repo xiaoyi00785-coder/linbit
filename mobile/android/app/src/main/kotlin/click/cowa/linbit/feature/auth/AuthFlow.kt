@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -369,7 +370,7 @@ val LocalLbSheetInlineEvidence = staticCompositionLocalOf { false }
 fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, onWindowReady: (android.view.Window?) -> Unit = {}, content: @Composable () -> Unit) {
     val p = LB.p
     val sheetBody: @Composable () -> Unit = {
-        Column(Modifier.navigationBarsPadding().imePadding().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 680.dp).navigationBarsPadding().imePadding().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
             if (title != null) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
                 if (showClose) LbIcon(R.drawable.ic_close, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onClose))

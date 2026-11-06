@@ -17,7 +17,7 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], application = Application::class, qualifiers = "zh-rCN-w390dp-h844dp-xxhdpi")
-class ProductionContactEvidenceTest {
+open class ProductionContactEvidenceTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
     private val harness by lazy { ProductionEvidenceHarness(rule) }
     private lateinit var api: MockEvidenceApi

@@ -40,9 +40,24 @@ import click.cowa.linbit.ui.theme.LinbitTheme
 import click.cowa.linbit.ui.theme.Metrics
 import click.cowa.linbit.ui.theme.resolveDark
 
-/** 根：主题 → 5 个 Tab（悬浮胶囊 TabBar）→ 全屏覆盖层（登录/注册、个人中心）→ Toast → 启动动画。 */
+/** Real production VM factory. Tests inject the same concrete VM types bound to loopback. */
+@androidx.compose.runtime.Stable
+class AssetRouteViewModels(val assets: click.cowa.linbit.feature.assets.AssetsViewModel, val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel, val tradFi: click.cowa.linbit.feature.more.TradFiViewModel)
+data class RootHomeMarketFactory(val home: @Composable () -> click.cowa.linbit.feature.home.HomeViewModel, val markets: @Composable () -> click.cowa.linbit.feature.markets.MarketsViewModel)
+val LocalRootHomeMarketFactory = androidx.compose.runtime.staticCompositionLocalOf<RootHomeMarketFactory?> { null }
+@Composable private fun rootHome(): click.cowa.linbit.feature.home.HomeViewModel = LocalRootHomeMarketFactory.current?.home?.invoke() ?: hiltViewModel()
+@Composable private fun rootMarkets(): click.cowa.linbit.feature.markets.MarketsViewModel = LocalRootHomeMarketFactory.current?.markets?.invoke() ?: hiltViewModel()
 @Composable
-fun AppRoot(vm: AppViewModel = hiltViewModel()) {
+fun rememberAssetRouteViewModels(): AssetRouteViewModels {
+    val assets: click.cowa.linbit.feature.assets.AssetsViewModel = hiltViewModel()
+    val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel = hiltViewModel()
+    val tradFi: click.cowa.linbit.feature.more.TradFiViewModel = hiltViewModel()
+    return remember { AssetRouteViewModels(assets, spot, tradFi) }
+}
+
+/** Root stays the sole owner of feature routing. Optional factory is DI, not a synthetic navigation path. */
+@Composable
+fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewModel = hiltViewModel(), routeVms: AssetRouteViewModels = rememberAssetRouteViewModels(), showSplash: Boolean = true) {
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
@@ -51,12 +66,11 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
     var tab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var auth by rememberSaveable { mutableStateOf<String?>(null) } // null | "login" | "register"
     var userCenter by rememberSaveable { mutableStateOf(false) }
-    var splash by rememberSaveable { mutableStateOf(true) }
+    var splash by rememberSaveable { mutableStateOf(showSplash) }
     var historyKind by rememberSaveable { mutableStateOf<String?>(null) } // null | "spot" | "futures"
     var morePage by rememberSaveable { mutableStateOf<MorePage?>(null) }
     var assetFeature by rememberSaveable { mutableStateOf<String?>(null) }
     var moreMenu by rememberSaveable { mutableStateOf(false) }
-    val badgeVm: NotificationBadgeViewModel = hiltViewModel()
     val unread by badgeVm.unread.collectAsStateWithLifecycle()
     fun openFeature(title: String) {
         val page = when (title) {
@@ -88,7 +102,8 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
             Box(Modifier.fillMaxSize().statusBarsPadding()) {
                 when (tab) {
                     MainTab.HOME -> HomeScreen(
-                        bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "login" },
+                        vm = rootHome(),
+                        bottomInset = bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "login" },
                         onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { moreMenu = true },
                         onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.assetsNav.openDeposit(switchTab = true) else auth = "login" },
                         onFeature = ::openFeature,
@@ -96,7 +111,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                         onSupport = { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login" },
                         unread = unread,
                     )
-                    MainTab.MARKETS -> MarketsScreen(bottomInset, onOpenTrade = { kind, sym ->
+                    MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), onOpenTrade = { kind, sym ->
                         if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
                     })
                     MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
@@ -120,6 +135,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                         onOpenSpot = { tab = MainTab.SPOT },
                         onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
                         onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
+                        vm = routeVms.assets,
                     )
                 }
             }
@@ -138,7 +154,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                 onTrade = { futures, symbol ->
                     if (futures) { vm.tradeNav.setFutures(symbol); tab = MainTab.FUTURES } else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
                     assetFeature = null
-                },
+                }, spotVm = routeVms.spot, tradFiVm = routeVms.tradFi,
             ) }
 
             if (userCenter && loggedIn) UserCenterHost(

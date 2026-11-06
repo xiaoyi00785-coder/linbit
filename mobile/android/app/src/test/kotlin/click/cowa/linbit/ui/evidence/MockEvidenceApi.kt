@@ -10,6 +10,9 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     val server = MockWebServer()
     private val routes = linkedMapOf<String, MutableList<MockResponse>>()
     val requests = mutableListOf<String>()
+    val mutationRequests = mutableListOf<RecordedRequest>()
+    private val mutationStatuses = mutableListOf<Int>()
+    private val expectedFailureKeys = mutableSetOf<String>()
 
     init { server.dispatcher = this; server.start() }
 
@@ -17,10 +20,17 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         check(it.startsWith("http://127.0.0.1:")) { "Evidence API must be loopback, got $it" }
     }
 
-    fun route(method: String, pathAndQuery: String, body: String, code: Int = 200) {
+    fun route(method: String, pathAndQuery: String, body: String, code: Int = 200) = queue(method, pathAndQuery, body, code, failure = false)
+    fun explicitFailure(method: String, pathAndQuery: String, message: String) = queue(method, pathAndQuery, """{"code":"EVIDENCE_FAILURE","message":"$message"}""", 503, failure = true)
+
+    private fun queue(method: String, pathAndQuery: String, body: String, code: Int = 200, failure: Boolean = false) {
+        val key = "$method $pathAndQuery"
+        check(!failure || (method != "GET" && code >= 400)) { "Only explicit mutation failures can bypass no-write evidence routes" }
+        if (failure) expectedFailureKeys += key
         routes.getOrPut("$method $pathAndQuery") { mutableListOf() }.add(
             MockResponse().setResponseCode(code)
                 .setHeader("Content-Type", "application/json")
+                .setHeader("X-Evidence-Failure", failure.toString())
                 .setBody(body),
         )
     }
@@ -29,16 +39,42 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val key = "${request.method} ${request.path.orEmpty()}"
         val path = request.path?.substringBefore('?').orEmpty()
         val method = request.method.orEmpty()
-        if (path.startsWith("/account/email") || path.startsWith("/account/phone") || path.startsWith("/account/fund-password") || path.startsWith("/account/contact/code") || path.startsWith("/account/code/send") || path.startsWith("/account/passkeys") || path.startsWith("/earn/") && method != "GET" || path.startsWith("/strategy/") && method != "GET" || path.endsWith("/wallet/withdraw") || path.endsWith("/wallet/internal/transfer") || path.endsWith("/convert/accept") || path.endsWith("/2fa/verify") || path.endsWith("/2fa/enable") || path.endsWith("/2fa/disable") || (path.contains("/kyc/") && method != "GET")) {
-            throw AssertionError("Sensitive mutation must remain unconfirmed: $key")
+        if (method != "GET") mutationRequests += request
+        val declaredFailure = expectedFailureKeys.remove(key)
+        val sensitive = method != "GET" && (path.startsWith("/account/") || path.startsWith("/earn/") || path.startsWith("/strategy/") || path.contains("/wallet/") || path.endsWith("/convert/accept") || path.contains("/2fa/") || path.contains("/kyc/"))
+        if (sensitive && !declaredFailure) {
+            return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
-        requests += key
-        return routes[key]?.removeFirstOrNull() ?: throw AssertionError("Evidence route must be declared explicitly: $key")
+        val response = routes[key]?.removeFirstOrNull()
+        val expected = declaredFailure && response?.httpCode() == 503
+        if (method != "GET" && !expected) {
+            return undeclared(request, "Only one explicit loopback failure is allowed")
+        }
+        requests += "$key${if (method != "GET") " [EXPECTED_LOOPBACK_FAILURE=503]" else ""}"
+        if (method != "GET") mutationStatuses += response?.httpCode() ?: 599
+        return response ?: undeclared(request, "Evidence route must be declared explicitly")
     }
+
+    private fun undeclared(request: RecordedRequest, reason: String): MockResponse {
+        synchronized(requests) { requests += "${request.method} ${request.path} [REJECTED:$reason]" }
+        return MockResponse().setResponseCode(599).setHeader("Content-Type", "application/json").setHeader("Connection", "close").setBody("""{"code":"EVIDENCE_ROUTE_REJECTED","message":"${request.method} ${request.path}"}""")
+    }
+
+    private fun MockResponse.httpCode(): Int = status.removePrefix("HTTP/1.1 ").substringBefore(' ').toInt()
+
 
     fun dumpRequests(): String = requests.joinToString("\n")
 
     fun toManifest(): Map<String, String> = mapOf("mock.baseUrl" to baseUrl, "mock.requestedRoutes" to requests.joinToString(";"))
+
+    fun assertOnlyExpectedFailures() {
+        check(mutationStatuses.isNotEmpty()) { "Expected an explicitly failed loopback mutation" }
+        val accepted = mutationStatuses.all { it == 503 }
+        check(accepted && requests.none { it.contains("[REJECTED]") || it.contains("[REJECTED:") }) { "Only declared failures allowed: requests=$requests statuses=$mutationStatuses" }
+        check(expectedFailureKeys.isEmpty()) { "Declared failure routes not consumed: $expectedFailureKeys" }
+    }
+
+    fun lastMutationBody(): String = mutationRequests.last().body.clone().readUtf8()
 
     fun assertNoWrites() {
         check(requests.none { it.split(" ").first() in setOf("POST", "PUT", "PATCH", "DELETE") }) {
