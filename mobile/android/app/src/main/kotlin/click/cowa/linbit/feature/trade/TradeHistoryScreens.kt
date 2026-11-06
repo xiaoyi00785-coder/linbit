@@ -1,6 +1,7 @@
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +39,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import click.cowa.linbit.R
+import click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest
 import click.cowa.linbit.core.generated.ApiFuturesAlgoOrder
 import click.cowa.linbit.core.generated.ApiFuturesBills200ResponseBillsInner
 import click.cowa.linbit.core.generated.ApiFuturesMyTrades200ResponseTradesInner
@@ -50,6 +53,12 @@ import click.cowa.linbit.core.network.apiCall
 import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.ui.components.ChipButton
+import click.cowa.linbit.ui.theme.Radius
+import click.cowa.linbit.ui.components.NumberBox
+import click.cowa.linbit.ui.components.LbButton
+import click.cowa.linbit.ui.components.KvRow
+import click.cowa.linbit.ui.components.ButtonKind
+import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.ui.components.EmptyState
 import click.cowa.linbit.ui.components.LbIcon
 import click.cowa.linbit.ui.components.PrimaryTabs
@@ -204,6 +213,26 @@ class TradeHistoryViewModel @Inject constructor(
             } catch (e: Throwable) { actionError = e.lbMessage() }
         }
     }
+
+    /** 条件委托改单：PUT /futures/plan-orders/{id} 或 /futures/tpsl-orders/{id}。 */
+    fun amendAlgo(
+        id: Long,
+        plan: Boolean,
+        body: ApiFuturesAlgoAmendRequest,
+        onDone: (Boolean, String?) -> Unit,
+    ) {
+        viewModelScope.launch {
+            try {
+                if (plan) apiCall { api.amendFuturesPlan(id, body) } else apiCall { api.amendFuturesTpsl(id, body) }
+                actionError = null
+                onDone(true, null)
+            } catch (e: Throwable) {
+                val msg = e.lbMessage()
+                actionError = msg
+                onDone(false, msg)
+            }
+        }
+    }
 }
 
 @Composable
@@ -247,6 +276,7 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
     var billKind by remember { mutableStateOf<String?>(null) }
     var algoPlan by remember { mutableStateOf(true) }
     var algoHistory by remember { mutableStateOf(false) }
+    var amendAlgoTarget by remember { mutableStateOf<ApiFuturesAlgoOrder?>(null) }
     val tabs = listOf("当前委托", "历史委托", "历史仓位", "成交明细", "资金流水", "条件委托")
     fun reload() {
         if (loggedIn) vm.loadFutures(tab, symbol, timeFilter, billKind, algoPlan, algoHistory)
@@ -308,7 +338,12 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
             tab == 4 -> vm.futBills.forEach { BillRow(it) }
             else -> {
                 vm.futAlgos.forEach { a ->
-                    AlgoHistRow(a, canCancel = !algoHistory) {
+                    AlgoHistRow(
+                        a,
+                        canCancel = !algoHistory,
+                        canAmend = !algoHistory,
+                        onAmend = { amendAlgoTarget = a },
+                    ) {
                         a.algoId?.let { id -> vm.cancelAlgo(id, algoPlan) { reload() } }
                     }
                 }
@@ -318,6 +353,12 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
                     }
                 }
             }
+        }
+    }
+    amendAlgoTarget?.let { a ->
+        AmendAlgoSheet(vm, a, plan = algoPlan) {
+            amendAlgoTarget = null
+            reload()
         }
     }
 }
@@ -487,13 +528,22 @@ private fun BillRow(b: ApiFuturesBills200ResponseBillsInner) {
 }
 
 @Composable
-private fun AlgoHistRow(a: ApiFuturesAlgoOrder, canCancel: Boolean, onCancel: () -> Unit) {
+private fun AlgoHistRow(
+    a: ApiFuturesAlgoOrder,
+    canCancel: Boolean,
+    canAmend: Boolean = false,
+    onAmend: (() -> Unit)? = null,
+    onCancel: () -> Unit,
+) {
     val p = LB.p
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(a.symbol ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
             Text(" ${a.algoType?.value ?: ""}", style = lb(FontSize.small), color = p.textSecondary)
             Box(Modifier.weight(1f))
+            if (canAmend && onAmend != null) {
+                ChipButton("改单", Modifier.height(24.dp).padding(end = 6.dp), onClick = onAmend)
+            }
             if (canCancel) ChipButton("撤销", Modifier.height(24.dp), onClick = onCancel)
             else Text(a.status?.value ?: "", style = lb(FontSize.small), color = p.textSecondary)
         }
@@ -507,4 +557,77 @@ private fun AlgoHistRow(a: ApiFuturesAlgoOrder, canCancel: Boolean, onCancel: ()
         }
     }
     HorizontalDivider(color = p.divider)
+}
+
+/** 条件委托改单 sheet（真实 PUT plan/tpsl amend 契约）。 */
+@Composable
+private fun AmendAlgoSheet(vm: TradeHistoryViewModel, order: ApiFuturesAlgoOrder, plan: Boolean, onClose: () -> Unit) {
+    val p = LB.p
+    val oldMarket = order.orderType == ApiFuturesAlgoOrder.OrderType.MARKET || order.price.isNullOrBlank()
+    var trigger by remember { mutableStateOf(order.triggerPrice ?: "") }
+    var price by remember { mutableStateOf(order.price ?: "") }
+    var qty by remember { mutableStateOf(order.qty ?: "") }
+    var market by remember { mutableStateOf(oldMarket) }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun fmt(v: java.math.BigDecimal): String = v.stripTrailingZeros().toPlainString()
+    LbSheet(if (plan) "改条件单" else "改止盈止损", onClose, showClose = true) {
+        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("${order.symbol ?: "--"} · ${order.side ?: "--"}", style = lb(FontSize.small), color = p.textSecondary)
+            Row {
+                KVCell("原触发价", apiAmount(order.triggerPrice), Modifier.weight(1f))
+                KVCell("原委托价", apiAmount(order.price, "市价"), Modifier.weight(1f), TextAlign.Center)
+                KVCell("原数量", apiAmount(order.qty, "整仓"), Modifier.weight(1f), TextAlign.End)
+            }
+            NumberBox("新触发价", "USDT", trigger, { trigger = it; error = null })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("触发后委托", style = lb(FontSize.small), color = p.textSecondary)
+                FilterChip("限价", !market) { market = false }
+                FilterChip("市价", market) { market = true; price = "" }
+            }
+            if (!market) NumberBox("新委托价", "USDT", price, { price = it; error = null })
+            NumberBox("新数量", order.symbol?.removeSuffix("USDT") ?: "币", qty, { qty = it; error = null })
+            error?.let {
+                Text(
+                    it,
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(p.fill).padding(10.dp),
+                    style = lb(FontSize.small),
+                    color = p.down,
+                )
+            }
+            LbButton("确认修改", kind = ButtonKind.PRIMARY, loading = saving) {
+                val prepared = AmendAlgoLogic.prepare(
+                    newTrigger = trigger,
+                    newPrice = price,
+                    newQty = qty,
+                    market = market,
+                    oldTrigger = order.triggerPrice,
+                    oldPrice = order.price,
+                    oldQty = order.qty,
+                    oldMarket = oldMarket,
+                    formatPrice = ::fmt,
+                    formatQty = ::fmt,
+                )
+                val err = prepared.error
+                if (err != null) error = err else {
+                    val id = order.algoId
+                    if (id == null) error = "无效条件单" else {
+                        saving = true
+                        vm.amendAlgo(
+                            id, plan,
+                            ApiFuturesAlgoAmendRequest(
+                                triggerPrice = prepared.triggerPrice,
+                                price = prepared.price,
+                                qty = prepared.qty,
+                                orderType = prepared.orderType,
+                            ),
+                        ) { ok, msg ->
+                            saving = false
+                            if (ok) onClose() else error = msg
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
