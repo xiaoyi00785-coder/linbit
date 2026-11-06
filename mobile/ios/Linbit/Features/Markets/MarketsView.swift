@@ -53,7 +53,7 @@ struct MarketsView: View {
             .padding(.horizontal, Spacing.pageH).padding(.top, 10)
             Divider().overlay(p.divider)
             if kind == 2 {
-                PlaceholderView(title: "TradFi", note: "TradFi 后端暂未提供")
+                TradFiView()
             } else {
                 ChipBar(items: chipItems, selected: $category).padding(.vertical, 10)
                 MarketListHeader(field: $field, dir: $dir)

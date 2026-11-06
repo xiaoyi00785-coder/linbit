@@ -78,7 +78,7 @@ export function PairPicker({ cur, list, pick, fut }: { cur: PairMeta; list: Pair
               <CoinIcon s={x.base} size={18} /> {fut ? x.symbol : `${x.base}/${x.quote}`}
             </div>
           ))}
-          {!list.length ? <div className="tk-opt g">加载中…</div> : !hits.length && <div className="tk-opt g tk-none">未找到匹配“{q.trim()}”的交易对</div>}
+          {!list.length ? <div className="tk-opt g">加载中…</div> : !hits.length && <div className="tk-opt g tk-none">{`未找到匹配“${q.trim()}”的交易对`}</div>}
         </div>
       )}
     </span>
@@ -479,7 +479,7 @@ function LevModal({ lev, max, onClose, onOk }: { lev: number; max: number; onClo
       {err && <div className="tk-ferr" role="alert">{err}</div>}
       <input className="tk-range" type="range" min={1} max={max} step={1} value={v} onChange={(e) => setRaw(e.target.value)} aria-label="杠杆" />
       <div className="tk-presets">{presets.map((p) => <span key={p} {...btnProps(() => setRaw(String(p)))} className={v === p && !err ? "on" : ""} onClick={() => setRaw(String(p))}>{p}x</span>)}</div>
-      <p className="tk-txt">最大杠杆 {max}x。杠杆越高，强平风险越大，请谨慎设置。</p>
+      <p className="tk-txt">{`最大杠杆 ${max}x。杠杆越高，强平风险越大，请谨慎设置。`}</p>
       {v >= 50 && <p className="tk-txt down">当前杠杆较高，价格小幅波动即可能触发强平。</p>}
     </Modal>
   );
@@ -503,7 +503,7 @@ function CalcModal({ pair, lev: l0, max, onClose }: { pair: PairMeta; lev: numbe
   return (
     <Modal title="计算器" onClose={onClose}>
       <div className="pt sm" role="tablist">{["收益", "目标价格", "强平价格"].map((t, i) => <b key={t} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{t}</b>)}</div>
-      <div className="seg" role="tablist">{(["long", "short"] as const).map((k) => <b key={k} {...tabProps(side === k, () => setSide(k))} className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "long" ? "做多" : "做空"}</b>)}</div>
+      <div className="seg tk-dir" role="tablist" aria-label="方向">{(["long", "short"] as const).map((k) => <b key={k} {...tabProps(side === k, () => setSide(k))} className={(side === k ? "on " : "") + k} onClick={() => setSide(k)}>{k === "long" ? "做多" : "做空"}</b>)}</div>
       <div className="kv2"><span>杠杆</span><span><input className="tk-levsm" value={lev} onChange={(ev) => setLev(Math.max(1, Math.min(max, +ev.target.value.replace(/\D/g, "") || 1)))} />x</span></div>
       {n("开仓价格", entry, setEntry)}
       {tab === 0 && <>{n("平仓价格", exit, setExit)}{n("数量", qty, setQty, pair.base)}</>}

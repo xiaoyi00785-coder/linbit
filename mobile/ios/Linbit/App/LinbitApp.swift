@@ -148,6 +148,54 @@ struct RootTabView: View {
         case "kyc-form2": SecShot.raw = "kyc:form2"; router.feature = .kyc
         case "kyc-form2-full": SecShot.raw = "kyc:form2full"; router.feature = .kyc
         case "kyc-error": SecShot.raw = "kyc:error"; router.feature = .kyc
+        case "notif-list": SecShot.raw = "notif:list"; router.feature = .notifications
+        case "notif-empty": SecShot.raw = "notif:empty"; router.feature = .notifications
+        case "notif-error": SecShot.raw = "notif:error"; router.feature = .notifications
+        case "notif-settings": SecShot.raw = "notif:settings"; router.feature = .notifications
+        case "notif-settings-error": SecShot.raw = "notif:settings-error"; router.feature = .notifications
+        case "home-bell": SecShot.raw = "notif:list"; router.tab = .home
+        case "coupon-issued": SecShot.raw = "coupon:issued"; router.feature = .coupons
+        case "coupon-active": SecShot.raw = "coupon:active"; router.feature = .coupons
+        case "coupon-expired": SecShot.raw = "coupon:expired"; router.feature = .coupons
+        case "coupon-empty": SecShot.raw = "coupon:empty"; router.feature = .coupons
+        case "coupon-error": SecShot.raw = "coupon:error"; router.feature = .coupons
+        case "coupon-confirm": SecShot.raw = "coupon:confirm"; router.feature = .coupons
+        case "coupon-fail": SecShot.raw = "coupon:fail"; router.feature = .coupons
+        case "partner-none": SecShot.raw = "partner:none"; router.feature = .partner
+        case "partner-apply": SecShot.raw = "partner:apply"; router.feature = .partner
+        case "partner-apply-error": SecShot.raw = "partner:apply-error"; router.feature = .partner
+        case "partner-pending": SecShot.raw = "partner:pending"; router.feature = .partner
+        case "partner-rejected": SecShot.raw = "partner:rejected"; router.feature = .partner
+        case "partner-active": SecShot.raw = "partner:active"; router.feature = .partner
+        case "partner-team": SecShot.raw = "partner:team"; router.feature = .partner
+        case "partner-empty": SecShot.raw = "partner:empty"; router.feature = .partner
+        case "partner-error": SecShot.raw = "partner:error"; router.feature = .partner
+        case "copy-list": SecShot.raw = "copy:list"; router.feature = .copyTrading
+        case "copy-empty": SecShot.raw = "copy:empty"; router.feature = .copyTrading
+        case "copy-error": SecShot.raw = "copy:error"; router.feature = .copyTrading
+        case "copy-detail": SecShot.raw = "copy:detail"; router.feature = .copyTrading
+        case "copy-follow": SecShot.raw = "copy:follow"; router.feature = .copyTrading
+        case "copy-follow-error": SecShot.raw = "copy:follow-error"; router.feature = .copyTrading
+        case "copy-follows": SecShot.raw = "copy:follows"; router.feature = .copyTrading
+        case "copy-follows-empty": SecShot.raw = "copy:follows-empty"; router.feature = .copyTrading
+        case "copy-become": SecShot.raw = "copy:become"; router.feature = .copyTrading
+        case "copy-become-error": SecShot.raw = "copy:become-error"; router.feature = .copyTrading
+        case "loan-market": SecShot.raw = "loan:market"; router.feature = .loans
+        case "loan-quote": SecShot.raw = "loan:quote"; router.feature = .loans
+        case "loan-borrow-error": SecShot.raw = "loan:borrow-error"; router.feature = .loans
+        case "loan-loans": SecShot.raw = "loan:loans"; router.feature = .loans
+        case "loan-loans-empty": SecShot.raw = "loan:loans-empty"; router.feature = .loans
+        case "loan-closed": SecShot.raw = "loan:closed"; router.feature = .loans
+        case "loan-repay": SecShot.raw = "loan:repay"; router.feature = .loans
+        case "loan-collateral": SecShot.raw = "loan:collateral"; router.feature = .loans
+        case "loan-error": SecShot.raw = "loan:error"; router.feature = .loans
+        case "tradfi-list": SecShot.raw = "tradfi:list"; router.feature = .tradfi
+        case "tradfi-metal": SecShot.raw = "tradfi:metal"; router.feature = .tradfi
+        case "tradfi-empty": SecShot.raw = "tradfi:empty"; router.feature = .tradfi
+        case "tradfi-restricted": SecShot.raw = "tradfi:restricted"; router.feature = .tradfi
+        case "tradfi-disabled": SecShot.raw = "tradfi:disabled"; router.feature = .tradfi
+        case "tradfi-unavailable": SecShot.raw = "tradfi:unavailable"; router.feature = .tradfi
+        case "tradfi-error": SecShot.raw = "tradfi:error"; router.feature = .tradfi
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
         case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security

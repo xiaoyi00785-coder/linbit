@@ -1,0 +1,183 @@
+# iOS CI 完整截图清单（workflow_dispatch / 全量回归用）：每行一个界面（lb.shot 的值）。
+# PR 与 push 冒烟清单见同目录 screens-pr.txt。
+# 格式：<screen> [light|dark|both]，省略第二列表示 both（日间 + 夜间各一张）。
+# 以 # 开头的行和空行会被忽略。新增界面请在对应分组末尾追加新的一行。
+
+# 主页面（日间 + 夜间）
+home
+markets
+spot
+assets
+login
+futures
+futures-chart
+futures-plan
+futures-history
+futures-position-history
+futures-algo-history
+futures-tiers
+futures-funding
+event
+earn
+strategy
+swap
+chat
+subaccounts
+welfare
+spot-plan
+spot-market-amount
+spot-fee
+spot-conditional
+spot-history-conditional
+futures-liq
+spot-history-amount
+futures-pnl
+futures-pnl-empty
+futures-pnl-error
+password-register
+password-reset
+password-change
+
+# 弹窗（仅日间）
+futures-leverage light
+futures-mode light
+futures-tpsl light
+futures-kind light
+futures-tools light
+event-confirm light
+futures-orders-tpsl light
+futures-orders-plan light
+futures-amend light
+futures-algo-amend-plan light
+futures-algo-amend-tpsl light
+futures-mode-hedge light
+futures-tpsl-partial light
+earn-subscribe light
+grid-create light
+grid-confirm light
+swap-picker light
+sub-create light
+account-switch light
+
+# 账户安全 / KYC（日间 + 夜间）
+home-avatar
+security-avatar
+security-avatar-crop
+security-avatar-uploading
+security-avatar-error
+security
+security-error
+kyc-none
+kyc-pending
+kyc-rejected
+kyc-approved
+kyc-form
+kyc-form2
+kyc-form2-full
+kyc-error
+notif-list
+notif-empty
+notif-error
+notif-settings
+notif-settings-error
+home-bell
+coupon-issued
+coupon-active
+coupon-expired
+coupon-empty
+coupon-error
+coupon-confirm
+coupon-fail
+partner-none
+partner-pending
+partner-rejected
+partner-active
+partner-empty
+partner-error
+partner-apply
+partner-apply-error
+partner-team
+copy-list
+copy-empty
+copy-error
+copy-detail
+copy-follow
+copy-follow-error
+copy-follows
+copy-follows-empty
+copy-become
+copy-become-error
+loan-market
+loan-quote
+loan-borrow-error
+loan-loans
+loan-loans-empty
+loan-closed
+loan-repay
+loan-collateral
+loan-error
+support-list
+support-list-empty
+support-list-error
+support-create
+support-create-ratelimit
+support-create-error
+support-detail-open
+support-detail-replied
+support-detail-closed
+support-detail-conflict
+support-detail-ratelimit
+support-detail-error
+tradfi-list
+tradfi-metal
+tradfi-empty
+tradfi-restricted
+tradfi-disabled
+tradfi-unavailable
+tradfi-error
+security-profile
+security-profile-error
+security-email
+security-email-error
+security-phone
+security-fund
+security-fund-error
+security-fund-reset
+security-antiphishing
+security-antiphishing-error
+security-devices
+security-sessions
+security-devices-error
+security-devices-empty
+security-passkeys
+security-passkeys-empty
+security-passkeys-add
+security-2fa-disable
+security-2fa-disable-error
+
+# 资产模块（日间 + 夜间）
+assets-overview
+assets-networks
+assets-account-transfer
+assets-internal-transfer
+assets-withdraw-records
+assets-address-book
+
+# 启动动画静帧（日间 + 夜间）
+splash-start
+splash-mid
+splash-end
+
+# 合约弹窗夜间版（仅夜间）
+futures-orders-tpsl dark
+futures-orders-plan dark
+futures-amend dark
+futures-algo-amend-plan dark
+futures-algo-amend-tpsl dark
+futures-mode-hedge dark
+futures-tpsl-partial dark
+futures-tpsl dark
+futures-mode dark
+futures-leverage dark
+futures-kind dark
+futures-tools dark

@@ -15,6 +15,7 @@ final class Session: ObservableObject {
             Task { @MainActor in
                 guard let self, self.isLoggedIn, !TokenStore.shared.loggingOut else { return }
                 self.isLoggedIn = false; self.account = nil
+                await NotifCenter.shared.refresh()
                 ToastCenter.shared.show("登录已过期，请重新登录", .error)
                 self.showAuth = true
             }
@@ -32,6 +33,7 @@ final class Session: ObservableObject {
         showAuth = false
         await reloadAccount()
         Task { await Watchlist.shared.sync() }
+        Task { await NotifCenter.shared.refresh() }
         ToastCenter.shared.show("登录成功", .success)
         let p = pending; pending = nil
         p?()
@@ -40,6 +42,7 @@ final class Session: ObservableObject {
 
     func logout() async {
         isLoggedIn = false; account = nil
+        await NotifCenter.shared.refresh()
         await AuthAPI.logout()
         ToastCenter.shared.show("已退出登录")
     }
