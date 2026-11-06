@@ -46,18 +46,18 @@ class PaperAccountStateTest {
     private fun ready(configure: MemoryApi.() -> Unit = {}): Pair<PaperAccountViewModel, MemoryApi> {
         tokens.accessToken = "test-paper-only"
         val api = MemoryApi(account).apply(configure).also { it.accountReply.complete(account) }
-        val vm = vm(PaperTradingClient(api))
+        val vm = vm(PaperTradingClient(api, PaperFeatureGate(PublicFeatureFlags { Response.success(click.cowa.linbit.core.generated.ApiAppFeatures(features = mapOf("paperTrading" to true))) })))
         return vm to api
     }
     @Test fun productionHiltClientIsFailClosedAndGuestHasNoRequest() {
-        val closed = AppModule.paperClient(); val disabled = vm(closed)
+        val closed = AppModule.paperClient(click.cowa.linbit.core.network.NetworkFactory.paperApi(click.cowa.linbit.core.network.NetworkFactory.bareClient(), "http://127.0.0.1:1/"), AppModule.paperFeatureGate(click.cowa.linbit.core.network.NetworkFactory.api(click.cowa.linbit.core.network.NetworkFactory.bareClient(), "http://127.0.0.1:1/"))); val disabled = vm(closed)
         assertFalse(closed.enabled); assertFalse(disabled.available); assertNull(disabled.account)
-        tokens.accessToken = "test-only"; vm(closed).load()
-        val api = MemoryApi(account); val guest = vm(PaperTradingClient(api)); guest.load()
+        /* Provider construction default-closed is asserted separately on loopback; no connection refused is used. */
+        val api = MemoryApi(account); val guest = vm(PaperTradingClient(api, PaperFeatureGate(PublicFeatureFlags { Response.success(click.cowa.linbit.core.generated.ApiAppFeatures(features = mapOf("paperTrading" to true))) }))); guest.load()
         assertNull(guest.account); assertNull(guest.failure); assertFalse(api.accountReply.isCompleted)
     }
     @Test fun paperGenerationLoadsAndSessionChangeClearsBeforeOldResponseCanBeCommitted() = runTest {
-        tokens.accessToken = "test-paper-only"; val api = MemoryApi(account); val vm = vm(PaperTradingClient(api))
+        tokens.accessToken = "test-paper-only"; val api = MemoryApi(account); val vm = vm(PaperTradingClient(api, PaperFeatureGate(PublicFeatureFlags { Response.success(click.cowa.linbit.core.generated.ApiAppFeatures(features = mapOf("paperTrading" to true))) })))
         assertTrue(vm.loading); tokens.accessToken = null
         api.accountReply.complete(account); advanceUntilIdle()
         assertNull(vm.account); assertNull(vm.balances); assertNull(vm.failure); assertFalse(vm.loading)

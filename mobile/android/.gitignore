@@ -28,3 +28,5 @@ app/shots.gradle.kts
 !app/src/test/kotlin/click/cowa/linbit/data/paper/PaperTradingContractTest.kt
 !app/src/test/kotlin/click/cowa/linbit/feature/assets/
 !app/src/test/kotlin/click/cowa/linbit/feature/assets/PaperAccountStateTest.kt
+
+!app/src/test/kotlin/click/cowa/linbit/data/paper/PaperFeatureGateTest.kt

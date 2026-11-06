@@ -53,11 +53,17 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
 
     /** Same production ViewModel, with test-only loopback adapter. Never a LinbitApi/paper hybrid. */
     fun paper(): click.cowa.linbit.feature.assets.PaperAccountViewModel {
-        val retrofit = Retrofit.Builder().baseUrl(api.baseUrl).client(http)
-            .addConverterFactory(NetworkFactory.json.asConverterFactory("application/json".toMediaType()))
-            .build().create(click.cowa.linbit.data.paper.PaperTradingApi::class.java)
         return click.cowa.linbit.feature.assets.PaperAccountViewModel(
-            click.cowa.linbit.data.paper.PaperTradingClient(retrofit), tokens, toast)
+            paperClient(true), tokens, toast)
+    }
+
+    fun paperClient(enabled: Boolean): click.cowa.linbit.data.paper.PaperTradingClient {
+        val paper = NetworkFactory.paperApi(http, api.baseUrl)
+        val gate = click.cowa.linbit.di.AppModule.paperFeatureGate(NetworkFactory.api(http, api.baseUrl))
+        return click.cowa.linbit.di.AppModule.paperClient(paper, gate).also {
+            api.route("GET", "/app/features", """{"features":{"paperTrading":$enabled,"priceAlerts":false}}""")
+            kotlinx.coroutines.runBlocking { it.refreshFeature() }
+        }
     }
 
     fun assets(): AssetsViewModel {

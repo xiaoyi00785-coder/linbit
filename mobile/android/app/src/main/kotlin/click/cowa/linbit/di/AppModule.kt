@@ -72,8 +72,14 @@ object AppModule {
     fun api(client: OkHttpClient): LinbitApi = NetworkFactory.api(client, baseUrl())
 
     @Provides @Singleton
-    fun paperClient(): click.cowa.linbit.data.paper.PaperTradingClient =
-        click.cowa.linbit.data.paper.PaperTradingClient(UnavailableProductionPaperApi, enabled = false)
+    fun paperFeatureGate(api: LinbitApi) = click.cowa.linbit.data.paper.PaperFeatureGate(click.cowa.linbit.data.paper.PublicFeatureFlags { api.appFeatures() })
+
+    @Provides @Singleton
+    fun paperApi(client: OkHttpClient): click.cowa.linbit.data.paper.PaperTradingApi = NetworkFactory.paperApi(client, baseUrl())
+
+    @Provides @Singleton
+    fun paperClient(api: click.cowa.linbit.data.paper.PaperTradingApi, gate: click.cowa.linbit.data.paper.PaperFeatureGate) =
+        click.cowa.linbit.data.paper.PaperTradingClient(api, gate)
 
     @Provides @Singleton
     fun socket(client: OkHttpClient, tokens: TokenStore, @ApplicationScope scope: CoroutineScope) = MarketSocket(
@@ -99,22 +105,4 @@ object AppModule {
     @Provides @Singleton
     fun auth(api: LinbitApi, tokens: TokenStore, store: SecureStore, @ApplicationScope scope: CoroutineScope) =
         AuthRepository(api, tokens, { store.deviceId }, { Build.MODEL ?: "Android" }, scope)
-}
-
-
-// Fail closed until the production feature is explicitly certified and wired by a later change.
-// No real-money API is exposed through this interface; methods are never called by the disabled host.
-private object UnavailableProductionPaperApi : click.cowa.linbit.data.paper.PaperTradingApi {
-    private fun <T> unavailable(): retrofit2.Response<T> = retrofit2.Response.error(403, okhttp3.ResponseBody.create(null, """{"code":"FEATURE_DISABLED","message":"模拟功能尚未开放"}"""))
-    override suspend fun account(): retrofit2.Response<click.cowa.linbit.data.paper.PaperAccount> = unavailable()
-    override suspend fun reset(key: String, request: click.cowa.linbit.data.paper.PaperResetRequest): retrofit2.Response<click.cowa.linbit.data.paper.PaperReset> = unavailable()
-    override suspend fun balances(page: Int, pageSize: Int): retrofit2.Response<click.cowa.linbit.data.paper.PaperBalances> = unavailable()
-    override suspend fun placeOrder(request: click.cowa.linbit.data.paper.PaperOrderRequest): retrofit2.Response<click.cowa.linbit.data.paper.PaperOrder> = unavailable()
-    override suspend fun orders(symbol: String?, status: String?, generation: Long?, page: Int, pageSize: Int): retrofit2.Response<click.cowa.linbit.data.paper.PaperOrders> = unavailable()
-    override suspend fun order(id: String): retrofit2.Response<click.cowa.linbit.data.paper.PaperOrder> = unavailable()
-    override suspend fun trades(symbol: String?, generation: Long?, page: Int, pageSize: Int): retrofit2.Response<click.cowa.linbit.data.paper.PaperTrades> = unavailable()
-    override suspend fun alerts(symbol: String?, status: String?, page: Int, pageSize: Int): retrofit2.Response<click.cowa.linbit.data.paper.PriceAlerts> = unavailable()
-    override suspend fun createAlert(request: click.cowa.linbit.data.paper.CreatePriceAlertRequest): retrofit2.Response<click.cowa.linbit.data.paper.PriceAlert> = unavailable()
-    override suspend fun updateAlert(id: String, request: click.cowa.linbit.data.paper.UpdatePriceAlertRequest): retrofit2.Response<click.cowa.linbit.data.paper.PriceAlert> = unavailable()
-    override suspend fun deleteAlert(id: String, revision: Int?): retrofit2.Response<Unit> = unavailable()
 }

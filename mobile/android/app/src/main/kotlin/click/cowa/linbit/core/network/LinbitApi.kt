@@ -41,6 +41,10 @@ import okhttp3.MultipartBody
  */
 interface LinbitApi {
 
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("app/features")
+    suspend fun appFeatures(): retrofit2.Response<ApiAppFeatures>
+
     /** Exact existing /account/contact/code and /account/email|phone contract. */
     @POST("account/contact/code")
     suspend fun sendContactCode(@Body body: ApiSendContactCodeRequest): ApiSendContactCode200Response

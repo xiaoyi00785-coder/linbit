@@ -30,7 +30,7 @@ class PaperTradingContractTest {
                 }
             }
             server.start()
-            client = PaperTradingClient(Retrofit.Builder().baseUrl(server.url("/")).client(OkHttpClient()).addConverterFactory(NetworkFactory.json.asConverterFactory("application/json".toMediaType())).build().create(PaperTradingApi::class.java))
+            client = PaperTradingClient(Retrofit.Builder().baseUrl(server.url("/")).client(OkHttpClient()).addConverterFactory(NetworkFactory.json.asConverterFactory("application/json".toMediaType())).build().create(PaperTradingApi::class.java), PaperFeatureGate(PublicFeatureFlags { retrofit2.Response.success(click.cowa.linbit.core.generated.ApiAppFeatures(features = mapOf("paperTrading" to true))) })).also { it.refreshFeature() }
             block(client, server)
         }
     }
@@ -117,7 +117,7 @@ class PaperTradingContractTest {
         val create = serverFailure { client.createAlert(newAlert()) }
         assertEquals(429, create.status); assertEquals("RATE_LIMITED", create.error?.code); assertEquals(17, create.retryAfter); assertEquals("mock-req-429", create.error?.requestId)
         assertEquals(17, serverFailure { client.updateAlert("mock-alert", UpdatePriceAlertRequest(1, threshold = "81000")) }.retryAfter)
-        val delete = serverFailure { client.deleteAlert("mock-alert") }; assertEquals("RATE_LIMITED", delete.code)
+        val delete = serverFailure { client.deleteAlert("mock-alert", null) }; assertEquals("RATE_LIMITED", delete.code)
     }
     @Test fun alert429MustNotAcceptAnAbsentOrContradictoryRetryInstruction() = fixture { client, _ ->
         route("POST", "/price-alerts", priceAlertRateLimit, 429)

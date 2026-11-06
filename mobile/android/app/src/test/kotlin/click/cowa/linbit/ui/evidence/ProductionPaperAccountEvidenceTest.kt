@@ -66,7 +66,7 @@ abstract class ProductionPaperAccountScenario(private val label: String, private
             api.explicitFailure("POST", "/paper/account/reset", "测试：虚拟重置未执行，稍后重试")
             val f = ProductionEvidenceFixtures(api, CoroutineScope(Dispatchers.Main))
             // A second Paper init verifies AppRoot separately installed test loopback; no real-money paper call exists.
-            val closed = click.cowa.linbit.di.AppModule.paperClient()
+            val closed = ProductionEvidenceFixtures(api, CoroutineScope(Dispatchers.IO)).paperClient(false)
             Assert.assertFalse(closed.enabled)
             f.tokens.accessToken = "INVALID_LAYOUT_TOKEN"
             pendingWindow = PendingWindow()

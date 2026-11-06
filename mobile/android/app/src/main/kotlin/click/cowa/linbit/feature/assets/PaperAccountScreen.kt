@@ -33,7 +33,7 @@ class PaperAccountViewModel @Inject constructor(
     val tokens: TokenStore,
     private val toast: ToastCenter,
 ) : androidx.lifecycle.ViewModel() {
-    var available by mutableStateOf(client.enabled)
+    val available: Boolean get() = client.enabled
     var loading by mutableStateOf(false); private set
     var account by mutableStateOf<PaperAccount?>(null); private set
     var balances by mutableStateOf<PaperBalances?>(null); private set
@@ -54,10 +54,15 @@ class PaperAccountViewModel @Inject constructor(
         }
     }
     fun load() {
-        if (!client.enabled || !tokens.loggedIn.value) { loading = false; failure = null; return }
+        if (!tokens.loggedIn.value) { loading = false; failure = null; return }
         val version = epoch
         loading = true; failure = null
         viewModelScope.launch {
+            client.refreshFeature()
+            if (!client.enabled || version != epoch || !tokens.loggedIn.value) {
+                if (version == epoch) { account = null; balances = null; loading = false; failure = client.featureFailure }
+                return@launch
+            }
             runCatching {
                 val act = client.account()
                 require(tokens.loggedIn.value && version == epoch) { "Session changed" }

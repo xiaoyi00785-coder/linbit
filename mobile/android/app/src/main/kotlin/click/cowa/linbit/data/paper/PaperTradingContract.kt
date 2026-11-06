@@ -19,7 +19,8 @@ import retrofit2.http.Query
 
 /**
  * Stable main d7713500704fc8ce341f4cef6775941af39f566b, not obsolete PR head df276c7.
- * Production AppModule binds only an explicitly disabled fail-closed stub, never a cash/order adapter.
+ * Production Hilt binds this separate service with the public /app/features paperTrading gate.
+ * Disabled, missing or failed feature reads deny every Paper operation.
  * Positive-path tests may instantiate only with an isolated mock or in-memory API.
  * Never blend this client with LinbitApi, real balances, or the real spot-order repository.
  */
@@ -37,34 +38,40 @@ interface PaperTradingApi {
     @DELETE("price-alerts/{alertId}") suspend fun deleteAlert(@Path("alertId") id: String, @Query("revision") revision: Int? = null): Response<Unit>
 }
 
-class PaperTradingClient(private val api: PaperTradingApi, val enabled: Boolean = true) {
-    suspend fun account(): PaperAccount = unwrapApiResponse(api.account()).also { PaperContractValidation.requireAccount(it) }
+class PaperTradingClient(private val api: PaperTradingApi, private val gate: PaperFeatureGate) {
+    val enabled: Boolean get() = gate.enabled
+    val featureFailure: String? get() = gate.snapshot.value.failure
+    suspend fun refreshFeature(): Boolean = gate.refresh()
+    private fun requireEnabled() = require(enabled) { "Paper trading is disabled or unset" }
+    suspend fun account(): PaperAccount {
+        requireEnabled()
+        return unwrapApiResponse(api.account()).also { PaperContractValidation.requireAccount(it) }
+    }
     suspend fun balances(page: Int = 1, pageSize: Int = 20): PaperBalances {
-        requirePage(page, pageSize)
+        requireEnabled(); requirePage(page, pageSize)
         return unwrapApiResponse(api.balances(page, pageSize)).also { PaperContractValidation.requireBalances(it) }
     }
     suspend fun reset(idempotencyKey: String): PaperReset {
-        require(idempotencyKey.length in 1..128) { "Reset requires a bounded Idempotency-Key" }
-        return unwrapApiResponse(api.reset(idempotencyKey, PaperResetRequest())).also {
-            require(it.mode == "paper" && it.generation > 0) { "Response is not an isolated paper reset" }
-        }
+        requireEnabled(); require(idempotencyKey.length in 1..128) { "Reset requires a bounded Idempotency-Key" }
+        return unwrapApiResponse(api.reset(idempotencyKey, PaperResetRequest())).also { require(it.mode == "paper" && it.generation > 0) { "Response is not isolated paper reset" } }
     }
     suspend fun placeOrder(request: PaperOrderRequest): PaperOrder {
+        requireEnabled()
         PaperContractValidation.requireOrderRequest(request)
         return unwrapApiResponse(api.placeOrder(request)).also { PaperContractValidation.requirePaperOrder(it) }
     }
     suspend fun order(id: String): PaperOrder {
-        require(id.isNotBlank())
+        requireEnabled(); require(id.isNotBlank())
         return unwrapApiResponse(api.order(id)).also { PaperContractValidation.requirePaperOrder(it) }
     }
     suspend fun orders(symbol: String? = null, status: String? = null, generation: Long? = null, page: Int = 1, pageSize: Int = 20): PaperOrders {
-        requirePage(page, pageSize); require(status in setOf(null, "filled"))
+        requireEnabled(); requirePage(page, pageSize); require(status in setOf(null, "filled"))
         return unwrapPage(api.orders(symbol = symbol, status = status, generation = generation?.also { require(it >= 1) }, page = page, pageSize = pageSize)) { orders ->
             require(orders.generation >= 0); orders.items.forEach(PaperContractValidation::requirePaperOrder); orders.items.forEach { require(it.generation == orders.generation) }
         }
     }
     suspend fun trades(symbol: String? = null, generation: Long? = null, page: Int = 1, pageSize: Int = 20): PaperTrades {
-        requirePage(page, pageSize)
+        requireEnabled(); requirePage(page, pageSize)
         return unwrapPage(api.trades(symbol = symbol, generation = generation?.also { require(it >= 1) }, page = page, pageSize = pageSize)) { trades ->
             require(trades.generation >= 0); trades.items.forEach { require(it.mode == "paper" && it.priceSource == "INDEX") }
         }
@@ -86,6 +93,7 @@ class PaperTradingClient(private val api: PaperTradingApi, val enabled: Boolean 
         unwrapApiResponse(api.deleteAlert(id, revision))
     }
 }
+
 
 private fun <T : Any> unwrapPage(response: Response<T>, validate: (T) -> Unit): T {
     val body = unwrapApiResponse(response)
