@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { supportChannels } from "@/lib/support";
-import { socialLinks } from "@/lib/social";
+import { socialLinks, useSocialLinks } from "@/lib/social";
 import { listAnnouncements, type Announcement } from "@/lib/services";
 import { isOn } from "@/lib/features";
 
@@ -10,6 +10,7 @@ const FAQ: [string, string][] = [["账户与安全", "忘记密码、绑定谷�
 
 /** 右下角客服入口 + 面板。遮罩用 .xmask：Esc 关闭、焦点陷阱、背景滚动锁定由 OverlayManager 统一处理。 */
 export function SupportPanel() {
+  useSocialLinks();
   const [o, setO] = useState(false);
   const [ann, setAnn] = useState<Announcement[] | null>(null);
   const btn = useRef<HTMLButtonElement>(null);

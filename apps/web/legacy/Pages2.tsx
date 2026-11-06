@@ -15,7 +15,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useGrowthConfig, useEarnProducts, pct } from '@/lib/growth'
 import { onSale } from '@/lib/earn'
 import { EarnSubscribeModal, aprLabel } from '@/features/EarnSubscribe'
-import { socialItem } from '@/lib/social'
+import { socialItem, useSocialLinks } from '@/lib/social'
 const pctApr=v=>v==null||v===''?'--':(Number(v)*100).toFixed(2).replace(/\.?0+$/,'')+'%'
 const aprOf=p=>{const b=Number(p.bonusApr),a=Number(p.apr);return b>a?pctApr(p.apr)+' ~ '+pctApr(p.bonusApr):pctApr(p.apr)} // bonusApr 为首段额度（bonusQuota）内的阶梯利率，非叠加；与 /earn/products 的 aprMax 一致
 const Empty=({t})=><div className="lg" style={{padding:'32px 0',textAlign:'center'}}>{t}</div>
@@ -111,6 +111,7 @@ const parseDocHash=h=>{const raw=(h||'').trim();if(!raw)return {top:DOC_TOPS[0],
 // hash 形如 #公共/快速入门
 const normalizeDocHash=h=>h.replace(/^\//,'')
 export function ApiDocs(){
+ useSocialLinks()
  const init=parseDocHash(normalizeDocHash(docHash()))
  const[k,setK]=useState(init.sec)
  const[top,setTop]=useState(init.top)

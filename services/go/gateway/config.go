@@ -16,7 +16,7 @@ type Config struct {
 	StrategyURL string
 	GrowthURL   string
 	EarnURL     string
-	// AdminURL is used ONLY for the public read-only GET /announcements.
+	// AdminURL is used ONLY for the public read-only announcements and /site/social.
 	AdminURL string
 	RedisURL string
 	// InternalToken authenticates the gateway to account /internal/api-keys/verify and

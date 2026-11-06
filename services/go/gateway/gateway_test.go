@@ -281,7 +281,7 @@ func TestUnknownRoute(t *testing.T) {
 	}
 }
 
-// adminRecorder records full request details for the announcements proxy.
+// adminRecorder records full request details for the anonymous public admin proxy.
 type adminRecorder struct {
 	server             *httptest.Server
 	hits               int
@@ -331,6 +331,44 @@ func TestPublicAnnouncementsProxied(t *testing.T) {
 	}
 	if adm.hits != 1 {
 		t.Fatal("write method reached admin service")
+	}
+}
+
+func TestPublicSocialProxied(t *testing.T) {
+	adm := newAdminRecorder()
+	defer adm.server.Close()
+	other := newUpstream()
+	defer other.server.Close()
+	h := newTestGatewayCfg(t, Config{AccountURL: other.server.URL, AssetURL: other.server.URL, AdminURL: adm.server.URL})
+
+	req := httptest.NewRequest("GET", "/site/social", nil) // no token
+	req.Header.Set("Authorization", "Bearer garbage")
+	req.Header.Set("X-User-Id", "spoof")
+	req.Header.Set("X-Internal-Token", "spoof")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || adm.hits != 1 || adm.lastPath != "/site/social" {
+		t.Fatalf("status=%d hits=%d path=%q", w.Code, adm.hits, adm.lastPath)
+	}
+	if adm.lastAuth != "" || adm.lastUID != "" || adm.lastTok != "" {
+		t.Fatal("credentials forwarded to admin service")
+	}
+	for _, m := range []string{"POST", "PUT", "PATCH", "DELETE"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(m, "/site/social", nil))
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s status=%d, want 405", m, w.Code)
+		}
+	}
+	for _, p := range []string{"/site", "/site/", "/site/social/", "/site/social/extra"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", p, nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("GET %s status=%d, want 404", p, w.Code)
+		}
+	}
+	if adm.hits != 1 {
+		t.Fatal("non-public method or path reached admin service")
 	}
 }
 
