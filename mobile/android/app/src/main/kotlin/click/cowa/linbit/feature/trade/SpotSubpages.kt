@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -35,6 +36,7 @@ import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.core.network.ApiEarnSubscribeRequest
 import click.cowa.linbit.core.generated.ApiStrategyStopGridRequest
+import click.cowa.linbit.core.generated.ApiStrategyConfig200Response
 import click.cowa.linbit.core.generated.ApiStrategyCopyRequest
 import click.cowa.linbit.core.generated.ApiEarnRedeemRequest
 import click.cowa.linbit.core.generated.ApiConvertPairs
@@ -47,6 +49,7 @@ import click.cowa.linbit.core.generated.ApiGridSquareItem
 import click.cowa.linbit.core.network.LinbitApi
 import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.network.apiCall
+import click.cowa.linbit.core.network.ApiFailure
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.ui.components.ButtonKind
@@ -81,15 +84,29 @@ class SpotSubpagesViewModel @Inject constructor(
     var square by mutableStateOf<List<ApiGridSquareItem>>(emptyList()); private set
     var myGrids by mutableStateOf<List<ApiGridBot>>(emptyList()); private set
     var convertPairs by mutableStateOf<ApiConvertPairs?>(null); private set
+    var strategyConfig by mutableStateOf<ApiStrategyConfig200Response?>(null); private set
     var quote by mutableStateOf<ApiConvertQuote?>(null); private set
+    /** 表单修订号：from/to/amount 变更递增，防旧报价异步覆盖。 */
+    var convertFormRev by mutableStateOf(0L); private set
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     var quoting by mutableStateOf(false); private set
+    var accepting by mutableStateOf(false); private set
     var acting by mutableStateOf(false); private set
 
     fun clearAccountData() {
         earnSummary = null
         myGrids = emptyList()
+        quote = null
+    }
+
+    fun clearConvertQuote() {
+        quote = null
+    }
+
+    /** 兑出/兑入/数量变更：作废本地报价并抬升 revision。 */
+    fun bumpConvertForm() {
+        convertFormRev += 1
         quote = null
     }
 
@@ -109,6 +126,7 @@ class SpotSubpagesViewModel @Inject constructor(
             loading = true; error = null
             try {
                 square = apiCall { api.strategySquare() }.items ?: emptyList()
+                strategyConfig = runCatching { apiCall { api.strategyConfig() } }.getOrNull()
                 if (tokens.loggedIn.value) myGrids = apiCall { api.strategyGrids() }.items ?: emptyList()
             } catch (e: Throwable) { error = e.message ?: "加载失败" }
             finally { loading = false }
@@ -126,37 +144,82 @@ class SpotSubpagesViewModel @Inject constructor(
 
     fun requestQuote(from: String, to: String, amount: String, onDone: (Boolean) -> Unit = {}) {
         if (!tokens.loggedIn.value) { toast.show("请先登录"); onDone(false); return }
+        if (quoting || accepting) return
+        val form = ConvertQuoteLogic.Form(from, to, amount)
+        if (Dec.parse(form.amount).signum() <= 0) { toast.show("请输入数量", ToastCenter.Kind.ERROR); onDone(false); return }
+        val pair = ConvertQuoteLogic.findPair(convertPairs?.pairs, from, to)
+        if (pair == null) { toast.show("该币对不可闪兑", ToastCenter.Kind.ERROR); onDone(false); return }
+        if (ConvertQuoteLogic.isPairPaused(pair)) {
+            toast.show(ConvertQuoteLogic.pauseHint(pair) ?: "该币对已暂停", ToastCenter.Kind.ERROR)
+            onDone(false); return
+        }
+        val rev = convertFormRev
         quoting = true
         viewModelScope.launch {
             try {
-                quote = apiCall { api.convertQuote(ApiConvertQuoteRequest(from = from, to = to, fromAmount = amount)) }
-                onDone(true)
-            } catch (e: Throwable) { toast.error(e); onDone(false) }
-            finally { quoting = false }
+                val q = apiCall { api.convertQuote(ApiConvertQuoteRequest(from = from, to = to, fromAmount = amount.trim())) }
+                if (ConvertQuoteLogic.shouldApplyQuote(q, requestRev = rev, currentRev = convertFormRev, form = form)) {
+                    quote = q
+                    onDone(true)
+                } else {
+                    // 表单已变或响应与请求不一致：丢弃，不覆盖新输入
+                    onDone(false)
+                }
+            } catch (e: Throwable) {
+                val code = (e as? ApiFailure)?.code
+                if (ConvertQuoteLogic.shouldClearQuoteOnError(code)) quote = null
+                toast.error(e); onDone(false)
+            } finally { quoting = false }
         }
     }
 
-    fun acceptQuote(onDone: (Boolean) -> Unit = {}) {
-        val q = quote ?: return
-        val id = q.quoteId ?: run { toast.show("报价无效"); return }
-        quoting = true
+    fun acceptQuote(from: String, to: String, amount: String, onDone: (Boolean) -> Unit = {}) {
+        if (!tokens.loggedIn.value) { toast.show("请先登录"); onDone(false); return }
+        if (quoting || accepting) return
+        val form = ConvertQuoteLogic.Form(from, to, amount)
+        val q = quote
+        if (!ConvertQuoteLogic.canAccept(q, form)) {
+            if (ConvertQuoteLogic.isExpired(q)) {
+                quote = null
+                toast.show("报价已过期，请重新询价", ToastCenter.Kind.ERROR)
+            } else {
+                toast.show("报价与当前表单不一致，请重新询价", ToastCenter.Kind.ERROR)
+                quote = null
+            }
+            onDone(false); return
+        }
+        val id = q!!.quoteId!!
+        accepting = true
         viewModelScope.launch {
             try {
                 apiCall { api.acceptConvertQuote(ApiAcceptConvertQuoteRequest(quoteId = id)) }
-                toast.show("闪兑成功", ToastCenter.Kind.SUCCESS); quote = null; onDone(true)
-            } catch (e: Throwable) { toast.error(e); onDone(false) }
-            finally { quoting = false }
+                toast.show("闪兑成功", ToastCenter.Kind.SUCCESS)
+                quote = null
+                onDone(true)
+            } catch (e: Throwable) {
+                val code = (e as? ApiFailure)?.code
+                if (ConvertQuoteLogic.shouldClearQuoteOnError(code)) {
+                    quote = null
+                    toast.show(e.lbMessage(), ToastCenter.Kind.ERROR)
+                } else {
+                    toast.error(e)
+                }
+                onDone(false)
+            } finally { accepting = false }
         }
     }
 
     /** POST /strategy/grid/square/{id}/copy */
     fun copyStrategy(id: String, investment: String, onDone: (Boolean) -> Unit = {}) {
-        val inv = investment.trim()
-        if (Dec.parse(inv).signum() <= 0) { toast.show("请输入投资额", ToastCenter.Kind.ERROR); onDone(false); return }
+        if (!tokens.loggedIn.value) { toast.show("请先登录"); onDone(false); return }
+        if (id.isBlank()) { toast.show("无效策略", ToastCenter.Kind.ERROR); onDone(false); return }
+        if (acting) return
+        val err = StrategyGridLogic.validateInvestment(investment, strategyConfig?.minInvestment)
+        if (err != null) { toast.show(err, ToastCenter.Kind.ERROR); onDone(false); return }
         acting = true
         viewModelScope.launch {
             try {
-                apiCall { api.strategyCopy(id, ApiStrategyCopyRequest(investment = inv)) }
+                apiCall { api.strategyCopy(id, ApiStrategyCopyRequest(investment = investment.trim())) }
                 toast.show("策略已复制", ToastCenter.Kind.SUCCESS)
                 loadStrategy(); onDone(true)
             } catch (e: Throwable) { toast.show(e.lbMessage(), ToastCenter.Kind.ERROR); onDone(false) }
@@ -164,13 +227,24 @@ class SpotSubpagesViewModel @Inject constructor(
         }
     }
 
-    /** POST /strategy/grid/{id}/stop */
-    fun stopGrid(id: String, onDone: (Boolean) -> Unit = {}) {
+    /**
+     * POST /strategy/grid/{id}/stop
+     * sellBase 必须由确认层显式传入（撤销挂单 + 可选市价卖底仓）。
+     */
+    fun stopGrid(id: String, sellBase: Boolean, onDone: (Boolean) -> Unit = {}) {
+        if (!tokens.loggedIn.value) { toast.show("请先登录"); onDone(false); return }
+        if (id.isBlank()) { toast.show("无效网格", ToastCenter.Kind.ERROR); onDone(false); return }
+        if (acting) return
+        val bot = myGrids.firstOrNull { it.id == id }
+        if (bot != null && !StrategyGridLogic.canStop(bot.status)) {
+            toast.show(if (StrategyGridLogic.isStopping(bot.status)) "停止处理中" else "当前状态不可停止", ToastCenter.Kind.ERROR)
+            onDone(false); return
+        }
         acting = true
         viewModelScope.launch {
             try {
-                apiCall { api.strategyStopGrid(id, ApiStrategyStopGridRequest()) }
-                toast.show("已停止网格", ToastCenter.Kind.SUCCESS)
+                apiCall { api.strategyStopGrid(id, ApiStrategyStopGridRequest(sellBase = sellBase)) }
+                toast.show("停止请求已提交", ToastCenter.Kind.SUCCESS)
                 loadStrategy(); onDone(true)
             } catch (e: Throwable) { toast.show(e.lbMessage(), ToastCenter.Kind.ERROR); onDone(false) }
             finally { acting = false }
@@ -220,8 +294,9 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     var copyTarget by remember { mutableStateOf<ApiGridSquareItem?>(null) }
+    var stopTarget by remember { mutableStateOf<ApiGridBot?>(null) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadStrategy() }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Text("策略广场", Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         when {
             vm.loading && vm.square.isEmpty() -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -252,10 +327,19 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
             if (vm.myGrids.isEmpty()) Text("暂无运行中的网格", Modifier.padding(Spacing.pageH), style = lb(FontSize.small), color = p.textSecondary)
             else vm.myGrids.forEach { g ->
                 Column(Modifier.padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("${g.symbol ?: "--"} · ${g.mode ?: ""}", style = lb(FontSize.body), color = p.textPrimary)
+                    Text("${g.symbol ?: "--"} · ${g.mode ?: ""} · ${g.status?.value ?: ""}", style = lb(FontSize.body), color = p.textPrimary)
                     KvRow("总收益", g.totalProfit ?: "--")
-                    g.id?.let { id ->
-                        ChipButton("停止", Modifier.height(28.dp)) { vm.stopGrid(id) }
+                    KvRow("计价币", g.quoteAsset ?: StrategyGridLogic.quoteAssetFromSymbol(g.symbol) ?: "--")
+                    when {
+                        StrategyGridLogic.isStopping(g.status) -> {
+                            Text("停止处理中…", style = lb(FontSize.small), color = p.textTertiary)
+                        }
+                        StrategyGridLogic.canStop(g.status) && !vm.acting -> {
+                            ChipButton("停止", Modifier.height(28.dp)) { stopTarget = g }
+                        }
+                        StrategyGridLogic.canStop(g.status) && vm.acting -> {
+                            Text("提交中…", style = lb(FontSize.small), color = p.textTertiary)
+                        }
                     }
                 }
             }
@@ -263,16 +347,69 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
     }
     copyTarget?.let { item ->
         var inv by remember { mutableStateOf("") }
+        val quoteLabel = StrategyGridLogic.quoteAssetFromSymbol(item.symbol)
         LbSheet("复制策略", { copyTarget = null }, showClose = true) {
             Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 KvRow("标的", item.symbol ?: "--")
                 KvRow("区间", "${item.lowerPrice ?: "--"} – ${item.upperPrice ?: "--"}")
-                NumberBox("投资额", "USDT", inv, { inv = it })
-                LbButton("确认复制", kind = ButtonKind.PRIMARY, loading = vm.acting) {
+                if (quoteLabel == null) {
+                    Text("无法确认该标的计价币，暂不可复制（广场项无 quoteAsset，symbol 无法推断）", style = lb(FontSize.small), color = p.down)
+                } else {
+                    NumberBox("投资额", quoteLabel, inv, { inv = it })
+                    vm.strategyConfig?.minInvestment?.let { min ->
+                        Text("最小投资额 $min $quoteLabel", style = lb(FontSize.small), color = p.textSecondary)
+                    }
+                }
+                LbButton(
+                    "确认复制",
+                    kind = ButtonKind.PRIMARY,
+                    loading = vm.acting,
+                    enabled = quoteLabel != null && !vm.acting,
+                ) {
                     val id = item.id
                     if (id == null) vm.toast.show("无效策略", ToastCenter.Kind.ERROR)
                     else vm.copyStrategy(id, inv) { ok -> if (ok) copyTarget = null }
                 }
+            }
+        }
+    }
+    stopTarget?.let { g ->
+        val defaultSell = g.sellBaseOnStop ?: vm.strategyConfig?.sellBaseOnStop ?: true
+        var sellBase by remember(g.id) { mutableStateOf(defaultSell) }
+        LbSheet("确认停止网格", { if (!vm.acting) stopTarget = null }, showClose = !vm.acting) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                KvRow("标的", g.symbol ?: "--")
+                KvRow("状态", g.status?.value ?: "--")
+                KvRow("底仓策略默认", if (defaultSell) "停止时市价卖出底仓" else "停止时保留底仓")
+                Text(
+                    "停止将撤销该网格全部挂单。若选择市价卖出底仓，会按市价卖出当前持有的基础币。",
+                    style = lb(FontSize.small),
+                    color = p.textSecondary,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!vm.acting) {
+                        ChipButton(
+                            if (sellBase) "✓ 市价卖出底仓" else "市价卖出底仓",
+                            Modifier.height(32.dp),
+                            color = if (sellBase) p.textPrimary else p.textSecondary,
+                        ) { sellBase = true }
+                        ChipButton(
+                            if (!sellBase) "✓ 保留底仓" else "保留底仓",
+                            Modifier.height(32.dp),
+                            color = if (!sellBase) p.textPrimary else p.textSecondary,
+                        ) { sellBase = false }
+                    }
+                }
+                if (sellBase) {
+                    Text("将市价卖出底仓（sellBase=true）", style = lb(FontSize.small), color = p.down)
+                } else {
+                    Text("将保留底仓，仅撤单（sellBase=false）", style = lb(FontSize.small), color = p.textSecondary)
+                }
+                LbButton("确认停止", kind = ButtonKind.SELL, loading = vm.acting, enabled = !vm.acting) {
+                    val id = g.id ?: return@LbButton
+                    vm.stopGrid(id, sellBase = sellBase) { ok -> if (ok) stopTarget = null }
+                }
+                LbButton("取消", kind = ButtonKind.OUTLINE, enabled = !vm.acting) { stopTarget = null }
             }
         }
     }
@@ -285,7 +422,7 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     var earnAction by remember { mutableStateOf<EarnAction?>(null) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadEarn() }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Text("理财", Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         vm.earnSummary?.let { s ->
             Column(
@@ -367,37 +504,116 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
     var amount by remember { mutableStateOf("") }
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadConvert() }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = bottomInset + 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // 报价过期本地倒计时：到期清 quote 并禁止 accept
+    LaunchedEffect(vm.quote?.quoteId, vm.quote?.expiresAt) {
+        val q = vm.quote ?: return@LaunchedEffect
+        val exp = ConvertQuoteLogic.normalizeExpiresAtMs(q.expiresAt) ?: return@LaunchedEffect
+        val wait = (exp - System.currentTimeMillis()).coerceAtLeast(0L)
+        kotlinx.coroutines.delay(wait)
+        if (vm.quote?.quoteId == q.quoteId && ConvertQuoteLogic.isExpired(vm.quote)) {
+            vm.clearConvertQuote()
+            vm.toast.show("报价已过期，请重新询价", ToastCenter.Kind.ERROR)
+        }
+    }
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = bottomInset + 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("闪兑", Modifier.padding(vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         when {
             vm.loading && vm.convertPairs == null -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             vm.error != null && vm.convertPairs == null -> EmptyState(vm.error ?: "") { ChipButton("重试", Modifier.height(32.dp)) { vm.loadConvert() } }
             else -> {
-                val assets = vm.convertPairs?.assets?.mapNotNull { it.asset } ?: listOf("USDT", "BTC", "ETH")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    assets.take(6).forEach { a ->
-                        ChipButton(a, Modifier.height(28.dp), color = if (from == a) p.textPrimary else p.textSecondary) { from = a; if (to == a) to = assets.firstOrNull { it != a } ?: to }
+                val pairs = vm.convertPairs?.pairs
+                val fromAssets = ConvertQuoteLogic.fromAssets(pairs)
+                LaunchedEffect(fromAssets, from, to) {
+                    if (fromAssets.isEmpty()) return@LaunchedEffect
+                    if (from !in fromAssets) {
+                        from = fromAssets.first()
+                        val tos = ConvertQuoteLogic.toAssets(pairs, from)
+                        to = tos.firstOrNull { it != from } ?: tos.firstOrNull() ?: to
+                        vm.bumpConvertForm()
+                        return@LaunchedEffect
+                    }
+                    val tos = ConvertQuoteLogic.toAssets(pairs, from)
+                    if (tos.isNotEmpty() && to !in tos) {
+                        to = tos.first()
+                        vm.bumpConvertForm()
                     }
                 }
-                Text("兑出 $from", style = lb(FontSize.small), color = p.textSecondary)
-                NumberBox("数量", from, amount, { amount = it })
-                Text("兑入 $to", style = lb(FontSize.small), color = p.textSecondary)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    assets.filter { it != from }.take(6).forEach { a ->
-                        ChipButton(a, Modifier.height(28.dp), color = if (to == a) p.textPrimary else p.textSecondary) { to = a }
+                if (fromAssets.isEmpty()) {
+                    EmptyState("暂无可交易闪兑币对")
+                } else {
+                    val toAssets = ConvertQuoteLogic.toAssets(pairs, from)
+                    val pair = ConvertQuoteLogic.findPair(pairs, from, to)
+                    val paused = ConvertQuoteLogic.isPairPaused(pair)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        fromAssets.take(8).forEach { a ->
+                            ChipButton(a, Modifier.height(28.dp), color = if (from == a) p.textPrimary else p.textSecondary) {
+                                if (from != a) {
+                                    from = a
+                                    val nextTo = ConvertQuoteLogic.toAssets(pairs, a).firstOrNull { it != a } ?: to
+                                    to = nextTo
+                                    amount = amount // keep text but invalidate quote
+                                    vm.bumpConvertForm()
+                                }
+                            }
+                        }
                     }
-                }
-                vm.quote?.let { q ->
-                    KvRow("报价", "1 $from ≈ ${q.rate ?: "--"} $to")
-                    KvRow("预计到账", "${q.toAmount ?: "--"} $to")
-                    KvRow("有效期", q.expiresAt?.let { java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(if (it < 1_000_000_000_000L) it * 1000 else it)) } ?: "--")
-                }
-                if (!loggedIn) LbButton("登录后闪兑") { onLogin() }
-                else {
-                    LbButton("获取报价", loading = vm.quoting, enabled = Dec.parse(amount).signum() > 0) {
-                        vm.requestQuote(from, to, amount)
+                    Text("兑出 $from", style = lb(FontSize.small), color = p.textSecondary)
+                    NumberBox("数量", from, amount, {
+                        if (amount != it) {
+                            amount = it
+                            vm.bumpConvertForm()
+                        }
+                    })
+                    Text("兑入 $to", style = lb(FontSize.small), color = p.textSecondary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        toAssets.take(8).forEach { a ->
+                            ChipButton(a, Modifier.height(28.dp), color = if (to == a) p.textPrimary else p.textSecondary) {
+                                if (to != a) {
+                                    to = a
+                                    vm.bumpConvertForm()
+                                }
+                            }
+                        }
                     }
-                    if (vm.quote != null) LbButton("确认闪兑", kind = ButtonKind.BUY, loading = vm.quoting) { vm.acceptQuote() }
+                    if (pair == null) {
+                        Text("所选币对不在可交易列表中", style = lb(FontSize.small), color = p.down)
+                    } else if (paused) {
+                        Text(ConvertQuoteLogic.pauseHint(pair) ?: "该币对已暂停", style = lb(FontSize.small), color = p.down)
+                    }
+                    val form = ConvertQuoteLogic.Form(from, to, amount)
+                    val q = vm.quote
+                    val quoteOk = ConvertQuoteLogic.canAccept(q, form)
+                    q?.takeIf { ConvertQuoteLogic.matchesForm(it, form) }?.let { matched ->
+                        KvRow("报价", "1 ${matched.from} ≈ ${matched.rate ?: "--"} ${matched.to}")
+                        KvRow("兑出", "${matched.fromAmount ?: "--"} ${matched.from}")
+                        KvRow("预计到账", "${matched.toAmount ?: "--"} ${matched.to}")
+                        val expMs = ConvertQuoteLogic.normalizeExpiresAtMs(matched.expiresAt)
+                        KvRow(
+                            "有效至",
+                            expMs?.let {
+                                java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(it))
+                            } ?: "--",
+                        )
+                        if (ConvertQuoteLogic.isExpired(matched)) {
+                            Text("报价已过期", style = lb(FontSize.small), color = p.down)
+                        }
+                    }
+                    if (!loggedIn) LbButton("登录后闪兑") { onLogin() }
+                    else {
+                        LbButton(
+                            "获取报价",
+                            loading = vm.quoting,
+                            enabled = Dec.parse(amount).signum() > 0 && pair != null && !paused && !vm.quoting && !vm.accepting,
+                        ) { vm.requestQuote(from, to, amount) }
+                        if (q != null) {
+                            LbButton(
+                                "确认闪兑",
+                                kind = ButtonKind.BUY,
+                                loading = vm.accepting,
+                                enabled = quoteOk && !vm.quoting && !vm.accepting,
+                            ) { vm.acceptQuote(from, to, amount) }
+                        }
+                    }
                 }
             }
         }
