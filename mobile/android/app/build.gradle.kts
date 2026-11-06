@@ -57,6 +57,9 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.maxHeapSize = "2g"
+        }
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -97,7 +100,13 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
+
 
 // 本地截图对照（不入库）：存在 shots.gradle.kts 时加载 Robolectric / Compose 测试依赖
 file("shots.gradle.kts").takeIf { it.exists() }?.let { apply(from = it) }
