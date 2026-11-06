@@ -57,10 +57,18 @@ class PartnerViewModel @Inject constructor(
     val state: StateFlow<PartnerState> = _state
     val loggedIn get() = tokens.loggedIn
     var listTab = 0; var kind: String? = null
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：合伙人规则落地页。 */
+    internal fun seedEvidencePartner(rules: ApiPartnerRules, me: ApiPartnerMe? = null) {
+        holdEvidence = true
+        _state.value = PartnerState(rules = rules, me = me, loading = false)
+    }
 
     init { viewModelScope.launch { tokens.sessionVersion.collect { _state.value = PartnerState() } } }
 
     fun load() {
+        if (holdEvidence) return
         _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
             val rules = async { runCatching { apiCall { api.partnerRules() } }.getOrNull() }

@@ -186,12 +186,18 @@ class AssetsViewModel @Inject constructor(
     }
 
     // ---- 地址簿 ----
-    suspend fun addresses(): Result<List<ApiWithdrawAddress>> = runCatching {
-        apiCall { api.withdrawAddresses() }.items
+    /** 离屏证据：地址簿列表/白名单开关（非生产）。 */
+    internal var evidenceAddresses: List<ApiWithdrawAddress>? = null
+    internal var evidenceWhitelist: Boolean? = null
+
+    suspend fun addresses(): Result<List<ApiWithdrawAddress>> {
+        evidenceAddresses?.let { return Result.success(it) }
+        return runCatching { apiCall { api.withdrawAddresses() }.items }
     }
 
-    suspend fun whitelist(): Result<Boolean> = runCatching {
-        apiCall { api.withdrawWhitelist() }.enabled
+    suspend fun whitelist(): Result<Boolean> {
+        evidenceWhitelist?.let { return Result.success(it) }
+        return runCatching { apiCall { api.withdrawWhitelist() }.enabled }
     }
 
     suspend fun setWhitelist(enabled: Boolean, totp: String): Result<Boolean> = runCatching {

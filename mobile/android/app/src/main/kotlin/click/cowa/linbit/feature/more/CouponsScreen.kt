@@ -48,10 +48,18 @@ class CouponViewModel @Inject constructor(private val api: LinbitApi, private va
     val loggedIn get() = tokens.loggedIn
     var status = "issued"
         private set
+    internal var holdEvidence: Boolean = false
 
-    init { viewModelScope.launch { tokens.sessionVersion.collect { _state.value = CouponState() } } }
+    init { viewModelScope.launch { tokens.sessionVersion.collect { if (!holdEvidence) _state.value = CouponState() } } }
+
+    /** 离屏证据：卡券列表示例。 */
+    internal fun seedEvidenceCoupons(items: List<ApiCoupon>, summary: ApiCouponSummary? = null) {
+        holdEvidence = true
+        _state.value = CouponState(items = items, summary = summary, loading = false)
+    }
 
     fun load(newStatus: String = status) {
+        if (holdEvidence) return
         status = newStatus
         _state.value = _state.value.copy(loading = true, error = null, actionError = null)
         viewModelScope.launch {

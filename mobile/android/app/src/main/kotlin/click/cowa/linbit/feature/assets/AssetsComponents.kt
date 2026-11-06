@@ -47,7 +47,7 @@ fun AssetsNavBar(title: String, onBack: (() -> Unit)? = null, trailing: (@Compos
 @Composable
 fun WarnBanner(text: String, modifier: Modifier = Modifier) {
     val bg = androidx.compose.ui.graphics.Color(0xFFFFF1E5)
-    val fg = androidx.compose.ui.graphics.Color(0xFFD97706)
+    val fg = LB.p.warning
     Row(
         modifier.fillMaxWidth().background(bg, RoundedCornerShape(Radius.md)).padding(10.dp),
         verticalAlignment = Alignment.Top,

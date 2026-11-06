@@ -80,7 +80,7 @@ private fun SecurityLevelCard(level: ApiSecurityLevel) {
     val p = LB.p
     val color = when (level.level) {
         ApiSecurityLevel.Level.HIGH -> p.up
-        ApiSecurityLevel.Level.MEDIUM -> androidx.compose.ui.graphics.Color(0xFFD97706)
+        ApiSecurityLevel.Level.MEDIUM -> p.warning
         else -> p.down
     }
     val text = when (level.level) {
@@ -116,7 +116,7 @@ private fun SecurityLevelCard(level: ApiSecurityLevel) {
 }
 
 @Composable
-private fun TotpSetupScreen(vm: SecurityViewModel, onBack: () -> Unit) {
+internal fun TotpSetupScreen(vm: SecurityViewModel, onBack: () -> Unit) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
@@ -131,6 +131,16 @@ private fun TotpSetupScreen(vm: SecurityViewModel, onBack: () -> Unit) {
             when {
                 s.bindingLoading -> Box(Modifier.fillMaxWidth().height(210.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.brand) }
                 s.binding == null -> ProfileError(s.error ?: "暂时无法获取绑定信息") { vm.beginBinding() }
+                vm.evidenceTotpUiPlaceholder -> Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // 测试占位：不渲染可用 otpauth/密钥，避免证据图含可扫密钥
+                    Box(Modifier.size(150.dp).background(p.fill, RoundedCornerShape(Radius.lg)), contentAlignment = Alignment.Center) {
+                        Text("二维码不可用\n（测试占位）", style = lb(FontSize.small), color = p.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                    Row(Modifier.border(1.dp, p.border, RoundedCornerShape(Radius.md)).padding(horizontal = 12.dp).height(38.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("••••••••••••••••（非真实密钥）", style = lbNum(FontSize.label, FontWeight.Medium), color = p.textTertiary)
+                    }
+                    Text("离屏证据占位，不可用于绑定", style = lb(FontSize.small), color = p.warning)
+                }
                 else -> Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     QrImage(s.binding!!.otpauthUri, size = 150.dp)
                     Row(Modifier.border(1.dp, p.border, RoundedCornerShape(Radius.md)).pressable(scale = 1f) {
@@ -166,7 +176,7 @@ private fun TotpStep(number: Int, title: String, subtitle: String? = null) {
 }
 
 @Composable
-private fun DisableTotpScreen(vm: SecurityViewModel, onBack: () -> Unit) {
+internal fun DisableTotpScreen(vm: SecurityViewModel, onBack: () -> Unit) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf(false) }

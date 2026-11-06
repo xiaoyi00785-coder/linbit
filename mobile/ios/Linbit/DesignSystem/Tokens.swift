@@ -4,7 +4,7 @@ import SwiftUI
 struct Palette {
     let bg, bgElevated, fill, fillStrong, border, divider: Color
     let textPrimary, textSecondary, textTertiary, textOnPrimary: Color
-    let primary, brand, up, down, upTint, downTint, onChange: Color
+    let primary, brand, up, down, upTint, downTint, warning, onChange: Color
     let tabBarBg, tabBarSelected, tabBarBorder, iconTileBg, badgeDot, mask: Color
 
     static let light = Palette(
@@ -12,7 +12,7 @@ struct Palette {
         border: .hex(0xEDEDED), divider: .hex(0xF2F2F2),
         textPrimary: .hex(0x080808), textSecondary: .hex(0x7F7F7F), textTertiary: .hex(0xA3A3A3), textOnPrimary: .hex(0xFFFFFF),
         primary: .hex(0x111111), brand: .hex(0x9BCB2A), up: .hex(0x5FB971), down: .hex(0xDD5754),
-        upTint: .hex(0xEFFAF1), downTint: .hex(0xFDEEEE), onChange: .hex(0xFFFFFF),
+        upTint: .hex(0xEFFAF1), downTint: .hex(0xFDEEEE), warning: .hex(0xD97706), onChange: .hex(0xFFFFFF),
         tabBarBg: .hex(0xFCFCFE, 0.90), tabBarSelected: .hex(0xE9E9EB), tabBarBorder: .hex(0xE4E4E6),
         iconTileBg: .hex(0xF3F3F3), badgeDot: .hex(0x9BCB2A), mask: .hex(0x000000, 0.4))
 
@@ -21,7 +21,7 @@ struct Palette {
         border: .hex(0x2A2A2D), divider: .hex(0x1C1C1E),
         textPrimary: .hex(0xF5F5F5), textSecondary: .hex(0x8C8C8F), textTertiary: .hex(0x5E5E62), textOnPrimary: .hex(0x0B0B0C),
         primary: .hex(0xF5F5F5), brand: .hex(0xABE127), up: .hex(0x5FB971), down: .hex(0xDD5754),
-        upTint: .hex(0x14261A), downTint: .hex(0x2C1616), onChange: .hex(0xFFFFFF),
+        upTint: .hex(0x14261A), downTint: .hex(0x2C1616), warning: .hex(0xF0A03A), onChange: .hex(0xFFFFFF),
         tabBarBg: .hex(0x1C1C1E, 0.90), tabBarSelected: .hex(0x2E2E31), tabBarBorder: .hex(0x2A2A2D),
         iconTileBg: .hex(0x1E1E20), badgeDot: .hex(0xABE127), mask: .hex(0x000000, 0.63))
 }

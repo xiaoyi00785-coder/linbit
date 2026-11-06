@@ -122,11 +122,29 @@ class SecurityViewModel @Inject constructor(
     private val _s = MutableStateFlow(SecurityUiState())
     val state: StateFlow<SecurityUiState> = _s.asStateFlow()
     internal var holdEvidence: Boolean = false
+    /** 离屏证据：2FA 设置页使用不可用占位，不暴露可扫密钥。 */
+    internal var evidenceTotpUiPlaceholder: Boolean = false
 
     /** 离屏证据：安全概览示例；不写入真实 2FA 密钥。 */
     internal fun seedEvidenceSecurity(overview: ApiSecurityOverview) {
         holdEvidence = true
         _s.value = SecurityUiState(loading = false, security = overview)
+    }
+
+    /** 离屏证据：2FA 设置 UI（说明/表单/校验错误）；密钥与 QR 为明确不可用占位，不发起绑定。 */
+    internal fun seedEvidenceTotpSetupUi(error: String? = null, code: String = "") {
+        holdEvidence = true
+        evidenceTotpUiPlaceholder = true
+        _s.value = SecurityUiState(
+            loading = false,
+            bindingLoading = false,
+            binding = ApiTotpBinding(
+                secret = "PLACEHOLDER-NOT-A-TOTP-SECRET",
+                otpauthUri = "linbit-test://totp-unavailable",
+            ),
+            code = code,
+            error = error,
+        )
     }
 
     fun load() {
@@ -139,6 +157,7 @@ class SecurityViewModel @Inject constructor(
     }
 
     fun beginBinding() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(bindingLoading = true, error = null, binding = null, code = "")
             try { _s.value = _s.value.copy(bindingLoading = false, binding = apiCall { api.bindTotp() }) }
@@ -149,6 +168,7 @@ class SecurityViewModel @Inject constructor(
     fun code(raw: String) { _s.value = _s.value.copy(code = raw.filter(Char::isDigit).take(6), error = null) }
 
     fun verify(onDone: () -> Unit) {
+        if (holdEvidence) return // 证据态不提交真实绑定
         viewModelScope.launch {
             _s.value = _s.value.copy(submitting = true, error = null)
             try {
@@ -161,6 +181,7 @@ class SecurityViewModel @Inject constructor(
     }
 
     fun disable(onDone: () -> Unit) {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(submitting = true, error = null)
             try {
@@ -269,8 +290,16 @@ class SubAccountsViewModel @Inject constructor(
 ) : ViewModel() {
     private val _s = MutableStateFlow(SubAccountsUiState())
     val state: StateFlow<SubAccountsUiState> = _s.asStateFlow()
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：子账户列表示例（非生产会话）。 */
+    internal fun seedEvidenceSubAccounts(items: List<ApiSubAccount>) {
+        holdEvidence = true
+        _s.value = SubAccountsUiState(loading = false, items = items)
+    }
 
     fun load() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(loading = true, error = null)
             try { _s.value = _s.value.copy(loading = false, items = apiCall { api.subAccounts() }.items.orEmpty()) }
@@ -279,6 +308,7 @@ class SubAccountsViewModel @Inject constructor(
     }
 
     fun create(username: String, nickname: String, note: String, onDone: () -> Unit) {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(submitting = true, error = null)
             try {

@@ -59,12 +59,20 @@ class SupportViewModel @Inject constructor(private val api: LinbitApi, private v
     val state: StateFlow<SupportState> = _state
     val loggedIn get() = tokens.loggedIn
     var status: String? = null
+    internal var holdEvidence: Boolean = false
 
-    init { viewModelScope.launch { tokens.sessionVersion.collect { _state.value = SupportState() } } }
+    init { viewModelScope.launch { tokens.sessionVersion.collect { if (!holdEvidence) _state.value = SupportState() } } }
+
+    /** 离屏证据：工单列表示例。 */
+    internal fun seedEvidenceSupport(items: List<ApiSupportTicket>) {
+        holdEvidence = true
+        _state.value = SupportState(items = items, loading = false)
+    }
 
     suspend fun downloadAttachment(id: String) = api.supportAttachment(id)
 
     fun loadList(newStatus: String? = status) {
+        if (holdEvidence) return
         status = newStatus
         _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {

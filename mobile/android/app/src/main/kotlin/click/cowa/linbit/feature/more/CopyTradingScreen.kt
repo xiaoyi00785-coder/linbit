@@ -60,10 +60,18 @@ class CopyViewModel @Inject constructor(
     val state: StateFlow<CopyState> = _state
     val loggedIn get() = tokens.loggedIn
     var sort = "composite"; var days = 30
+    internal var holdEvidence: Boolean = false
 
-    init { viewModelScope.launch { tokens.sessionVersion.collect { _state.value = CopyState() } } }
+    init { viewModelScope.launch { tokens.sessionVersion.collect { if (!holdEvidence) _state.value = CopyState() } } }
+
+    /** 离屏证据：带单员榜示例（JsonObject 合成，非生产）。 */
+    internal fun seedEvidenceCopy(traders: List<kotlinx.serialization.json.JsonObject>, summary: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap())) {
+        holdEvidence = true
+        _state.value = CopyState(summary = summary, traders = traders, loading = false)
+    }
 
     fun loadTraders(newSort: String = sort, newDays: Int = days) {
+        if (holdEvidence) return
         sort = newSort; days = newDays
         _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {

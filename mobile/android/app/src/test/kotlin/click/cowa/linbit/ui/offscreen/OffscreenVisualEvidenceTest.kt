@@ -32,6 +32,33 @@ import click.cowa.linbit.core.generated.ApiSecurityLevelItemsInner
 import click.cowa.linbit.core.generated.ApiSecurityOverview
 import click.cowa.linbit.core.generated.ApiSecurityOverviewTwoFactor
 import click.cowa.linbit.core.generated.ApiBalance
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import click.cowa.linbit.feature.profile.TotpSetupScreen
+import click.cowa.linbit.feature.profile.SubAccountsViewModel
+import click.cowa.linbit.feature.profile.SubAccountsScreen
+import click.cowa.linbit.feature.markets.MarketsContent
+import click.cowa.linbit.feature.assets.AddAddressScreen
+import click.cowa.linbit.feature.assets.AddressBookScreen
+import click.cowa.linbit.feature.profile.DisableTotpScreen
+import click.cowa.linbit.data.assets.AssetsRoute
+import click.cowa.linbit.feature.assets.CoinPickerScreen
+import click.cowa.linbit.data.MarketKind
+import click.cowa.linbit.core.generated.ApiTotpBinding
+import click.cowa.linbit.core.generated.ApiWithdrawAddress
+import click.cowa.linbit.core.generated.ApiSupportTicketStatus
+import click.cowa.linbit.core.generated.ApiSupportTicketCategory
+import click.cowa.linbit.core.generated.ApiSupportTicket
+import click.cowa.linbit.core.generated.ApiSubAccount
+import click.cowa.linbit.core.generated.ApiPartnerTier
+import click.cowa.linbit.core.generated.ApiPartnerRules
+import click.cowa.linbit.core.generated.ApiNotification
+import click.cowa.linbit.core.generated.ApiMarketCategory
+import click.cowa.linbit.core.generated.ApiCouponSummary
+import click.cowa.linbit.core.generated.ApiCoupon
 import click.cowa.linbit.core.generated.ApiEarnProduct
 import click.cowa.linbit.core.generated.ApiConvertPairs
 import click.cowa.linbit.core.generated.ApiConvertPairsPairsInner
@@ -1088,6 +1115,445 @@ class OffscreenVisualEvidenceTest {
             rule.onAllNodesWithText("重试", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
         capture("Security-offline")
+    }
+
+
+    @Test fun marketsSpotList() {
+        enabled()
+        val state = MarketState(
+            spot = listOf(
+                MarketRow("BTCUSDT", "BTC", "USDT", BigDecimal("67234.5"), BigDecimal("1.24"), BigDecimal("1200000000"), 2),
+                MarketRow("ETHUSDT", "ETH", "USDT", BigDecimal("3456.78"), BigDecimal("-0.55"), BigDecimal("800000000"), 2),
+                MarketRow("SOLUSDT", "SOL", "USDT", BigDecimal("178.12"), BigDecimal("3.01"), BigDecimal("250000000"), 3),
+            ),
+            futures = listOf(
+                MarketRow("BTCUSDT", "BTC", "USDT", BigDecimal("67240.0"), BigDecimal("1.20"), BigDecimal("900000000"), 2),
+            ),
+            categories = listOf(ApiMarketCategory(id = "majors", name = "主流", symbols = listOf("BTCUSDT", "ETHUSDT"))),
+            loading = false,
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    MarketsContent(
+                        state = state,
+                        watch = listOf("BTCUSDT"),
+                        bottomInset = 85.dp,
+                        onRefresh = {},
+                        onAddWatch = {},
+                    )
+                    FloatingTabBar(MainTab.MARKETS, {}, Modifier.align(Alignment.BottomCenter).padding(bottom = 15.dp))
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("市场", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("BTC", useUnmergedTree = true).assertIsDisplayed()
+        capture("Markets-spot")
+    }
+
+    @Test fun addressBookSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = AssetsViewModel(api, tokens, store, toast)
+        vm.evidenceWhitelist = true
+        vm.evidenceAddresses = listOf(
+            ApiWithdrawAddress(
+                id = "addr_1", asset = "USDT", network = "TRC20",
+                address = "TEvidenceAddr000000000000000000001", whitelisted = true,
+                createdAt = "2026-11-01T00:00:00Z", label = "证据TRC",
+            ),
+            ApiWithdrawAddress(
+                id = "addr_2", asset = "USDT", network = "ERC20",
+                address = "0xEvidenceAddr00000000000000000002", whitelisted = false,
+                createdAt = "2026-11-02T00:00:00Z", label = "证据ERC",
+            ),
+        )
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    AddressBookScreen(vm, onBack = {}, onAdd = {}, onPickForWithdraw = {})
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("地址簿", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithText("提现白名单", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("证据TRC", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("白名单", useUnmergedTree = true).assertIsDisplayed()
+        check(rule.onAllNodesWithText("使用", useUnmergedTree = true).fetchSemanticsNodes().size >= 1)
+        capture("AddressBook-list")
+        // 白名单筛选空态
+        rule.onNodeWithText("白名单地址", useUnmergedTree = true).performClick()
+        rule.waitForIdle()
+        // filter shows only whitelisted — still has 证据TRC
+        rule.onNodeWithText("证据TRC", useUnmergedTree = true).assertIsDisplayed()
+        capture("AddressBook-whitelist-filter")
+    }
+
+    @Test fun addressBookEmpty() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = AssetsViewModel(api, tokens, store, toast)
+        vm.evidenceWhitelist = false
+        vm.evidenceAddresses = emptyList()
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    AddressBookScreen(vm, onBack = {}, onAdd = {})
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("暂无地址", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        capture("AddressBook-empty")
+    }
+
+    @Test fun addAddressForm() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = AssetsViewModel(api, tokens, store, toast)
+        vm.evidenceWalletNets = listOf(
+            ApiWalletNetwork(asset = "USDT", network = "TRC20", recommended = true, estimatedArrivalMinutes = 3, withdrawEnabled = true),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    AddAddressScreen(assetInit = "USDT", vm = vm, onBack = {}, onDone = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("新增地址", useUnmergedTree = true).assertIsDisplayed()
+        capture("AddressBook-add-form")
+        // 不填真实地址、不提交
+    }
+
+    @Test fun subAccountsSeeded() {
+        enabled()
+        val vm = SubAccountsViewModel(api, toast)
+        vm.seedEvidenceSubAccounts(
+            listOf(
+                ApiSubAccount(
+                    uid = "sub_evidence_1", username = "grid_bot", nickname = "网格子账户",
+                    loginEmail = "sub1@example.invalid", status = ApiSubAccount.Status.ACTIVE,
+                    loginEnabled = true, note = "fixture-only",
+                ),
+                ApiSubAccount(
+                    uid = "sub_evidence_2", username = "frozen_sub", nickname = "已冻结示例",
+                    loginEmail = "sub2@example.invalid", status = ApiSubAccount.Status.FROZEN,
+                    loginEnabled = false,
+                ),
+            ),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    SubAccountsScreen(onBack = {}, onSwitch = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("子账户", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("网格子账户", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("已冻结", useUnmergedTree = true).assertIsDisplayed()
+        capture("SubAccounts-list")
+    }
+
+    @Test fun subAccountsEmpty() {
+        enabled()
+        val vm = SubAccountsViewModel(api, toast)
+        vm.seedEvidenceSubAccounts(emptyList())
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    SubAccountsScreen(onBack = {}, onSwitch = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("暂无子账户，可用于隔离策略与资金", useUnmergedTree = true).assertIsDisplayed()
+        capture("SubAccounts-empty")
+    }
+
+    @Test fun totpSetupPlaceholder() {
+        enabled()
+        val vm = SecurityViewModel(api, toast)
+        vm.seedEvidenceTotpSetupUi()
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    TotpSetupScreen(vm, onBack = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("设置身份验证器", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("下载身份验证器", useUnmergedTree = true).assertIsDisplayed()
+        check(rule.onAllNodesWithText("测试占位", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        // 不得出现可复制的真实密钥明文（占位串除外）
+        check(rule.onAllNodesWithText("PLACEHOLDER-NOT-A-TOTP-SECRET", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+        capture("Totp-setup-placeholder")
+    }
+
+    @Test fun totpSetupValidationError() {
+        enabled()
+        val vm = SecurityViewModel(api, toast)
+        vm.seedEvidenceTotpSetupUi(error = "验证码错误（测试占位，未提交）", code = "000000")
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    TotpSetupScreen(vm, onBack = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("验证码错误（测试占位，未提交）", useUnmergedTree = true).assertIsDisplayed()
+        capture("Totp-setup-validation-error")
+        // 不点确认，不发起绑定
+    }
+
+    @Test fun couponsLoggedInSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = CouponViewModel(api, tokens, toast)
+        vm.seedEvidenceCoupons(
+            items = listOf(
+                ApiCoupon(
+                    id = 1001L, kind = ApiCoupon.Kind.TRIAL, amount = "50", asset = "USDT",
+                    title = "证据体验金", status = ApiCoupon.Status.ISSUED,
+                    activateBy = 1_799_000_000_000L, validDays = 7, createdAt = 1_700_000_000_000L,
+                ),
+                ApiCoupon(
+                    id = 1002L, kind = ApiCoupon.Kind.DEDUCTION, amount = "10", asset = "USDT",
+                    title = "证据抵扣券", status = ApiCoupon.Status.ISSUED,
+                    activateBy = 1_799_000_000_000L, validDays = 30,
+                ),
+            ),
+            summary = ApiCouponSummary(available = 2, active = 0),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    CouponsScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("证据体验金", useUnmergedTree = true).assertIsDisplayed()
+        capture("Coupons-logged-in")
+    }
+
+    @Test fun notificationsLoggedInSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = NotificationViewModel(api, tokens, toast)
+        vm.seedEvidenceNotifications(
+            items = listOf(
+                ApiNotification(
+                    id = "n1", kind = ApiNotification.Kind.SYSTEM, title = "系统维护通知（证据）",
+                    body = "fixture-only body", time = 1_700_000_000_000L, read = false,
+                ),
+                ApiNotification(
+                    id = "n2", kind = ApiNotification.Kind.TRADE, title = "成交提醒（证据）",
+                    body = "fixture", time = 1_700_000_100_000L, read = true,
+                ),
+            ),
+            unread = 1,
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    NotificationsScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("系统维护通知（证据）", useUnmergedTree = true).assertIsDisplayed()
+        capture("Notifications-logged-in")
+    }
+
+    @Test fun copyTradersSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = CopyViewModel(api, tokens, toast)
+        val trader = buildJsonObject {
+            put("traderId", "trader_evidence_1")
+            put("nickname", "证据带单员")
+            put("followers", 12)
+            put("maxFollowers", 100)
+            put("days", 90)
+            put("roi", "0.152")
+            put("pnl", "3200")
+            put("winRate", "0.61")
+            put("maxDrawdown", "0.08")
+            put("profitShare", "0.1")
+            put("status", "active")
+            put("curve", kotlinx.serialization.json.JsonArray(listOf(
+                buildJsonObject { put("cumPnl", "0") },
+                buildJsonObject { put("cumPnl", "100") },
+                buildJsonObject { put("cumPnl", "250") },
+            )))
+        }
+        val summary = buildJsonObject {
+            put("traders", 3)
+            put("totalFollowers", 120)
+            put("followerProfit", "5600")
+        }
+        vm.seedEvidenceCopy(traders = listOf(trader), summary = summary)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    CopyTradingScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("证据带单员", useUnmergedTree = true).assertIsDisplayed()
+        capture("Copy-traders-seeded")
+    }
+
+    @Test fun partnerLandingWithRules() {
+        enabled()
+        tokens.accessToken = null
+        val vm = PartnerViewModel(api, tokens, toast)
+        vm.seedEvidencePartner(
+            rules = ApiPartnerRules(
+                tiers = listOf(
+                    ApiPartnerTier(key = "t1", name = "L1", minVolume30d = "0", futuresRate = "0.20", spotRate = "0.10"),
+                    ApiPartnerTier(key = "t2", name = "L2", minVolume30d = "100000", futuresRate = "0.30", spotRate = "0.15"),
+                ),
+                payoutAsset = "USDT",
+            ),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    PartnerScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("成为 Linbit 合伙人", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithText("返佣等级", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("L1", useUnmergedTree = true).assertIsDisplayed()
+        capture("Partner-landing-rules")
+    }
+
+    @Test fun supportLoggedInSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = SupportViewModel(api, tokens, toast)
+        vm.seedEvidenceSupport(
+            listOf(
+                ApiSupportTicket(
+                    id = "tkt_evidence_1",
+                    category = ApiSupportTicketCategory.ACCOUNT,
+                    subject = "证据工单：账户咨询",
+                    status = ApiSupportTicketStatus.OPEN,
+                    lastReplyBy = ApiSupportTicket.LastReplyBy.USER,
+                    lastReplyAt = "2026-11-05T12:00:00Z",
+                    unread = false,
+                    messageCount = 1,
+                    createdAt = "2026-11-05T10:00:00Z",
+                    updatedAt = "2026-11-05T12:00:00Z",
+                ),
+            ),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    SupportTicketsScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("证据工单：账户咨询", useUnmergedTree = true).assertIsDisplayed()
+        capture("Support-logged-in")
+    }
+
+    @Test fun welfareLoggedInSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = WelfareViewModel(api, tokens, toast)
+        vm.seedEvidenceWelfare(
+            newcomer = ApiHomeNewcomer(
+                available = true,
+                loggedIn = true,
+                enrolled = true,
+                total = "50",
+                asset = "USDT",
+                days = 14,
+                completed = 1,
+                claimable = "0",
+                cta = ApiHomeNewcomer.Cta.CONTINUE,
+                tasks = emptyList(),
+            ),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    WelfareScreen(
+                        onBack = {}, onLogin = {}, onOpen = {}, onTrade = { _, _ -> },
+                        onProfile = {}, onDeposit = {}, vm = vm,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("新人专享", useUnmergedTree = true).assertIsDisplayed()
+        capture("Welfare-logged-in")
+    }
+
+
+    @Test fun coinPickerDeposit() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val vm = AssetsViewModel(api, tokens, store, toast)
+        // 行情空时 coinUniverse 仍含默认 USDT/BTC/ETH…
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    CoinPickerScreen(
+                        mode = AssetsRoute.CoinPicker.Mode.Deposit,
+                        vm = vm,
+                        onBack = {},
+                        onPick = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("选择币种", useUnmergedTree = true).assertIsDisplayed()
+        check(rule.onAllNodesWithText("USDT", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        capture("CoinPicker-deposit")
+    }
+
+    @Test fun disableTotpForm() {
+        enabled()
+        val vm = SecurityViewModel(api, toast)
+        // 仅表单/说明；holdEvidence 阻止真实 disable
+        vm.holdEvidence = true
+        vm.seedEvidenceSecurity(evidenceSecurityOverview().copy(
+            twoFactor = ApiSecurityOverviewTwoFactor(enabled = true, method = ApiSecurityOverviewTwoFactor.Method.TOTP),
+        ))
+        // seedEvidenceSecurity resets hold - re-set
+        vm.holdEvidence = true
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    DisableTotpScreen(vm, onBack = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        check(rule.onAllNodesWithText("关闭身份验证器", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        rule.onNodeWithText("身份验证器已开启", useUnmergedTree = true).assertIsDisplayed()
+        capture("Totp-disable-form")
+        // 不点关闭、不提交
     }
 
     private fun capture(name: String) {

@@ -53,6 +53,13 @@ class NotificationViewModel @Inject constructor(
     val loggedIn get() = tokens.loggedIn
     var kind: String? = null
         private set
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：消息列表示例。 */
+    internal fun seedEvidenceNotifications(items: List<ApiNotification>, unread: Int = 0) {
+        holdEvidence = true
+        _state.value = NotificationState(items = items, total = items.size, unread = unread, loading = false)
+    }
 
     private fun isCurrent(session: Long) = session == tokens.sessionVersion.value
     private var loadSequence = 0L
@@ -72,6 +79,7 @@ class NotificationViewModel @Inject constructor(
     }
 
     fun load(tab: String? = kind, append: Boolean = false) {
+        if (holdEvidence) return
         kind = tab
         val session = tokens.sessionVersion.value
         val readAll = markAllVersion
