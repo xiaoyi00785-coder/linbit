@@ -32,4 +32,3 @@ public struct APISupportReplyTicketRequest: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(attachments, forKey: .attachments)
     }
 }
-

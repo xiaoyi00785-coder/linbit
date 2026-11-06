@@ -52,4 +52,3 @@ public struct APISupportTicketMessage: Codable, JSONEncodable, Hashable {
         try container.encode(createdAt, forKey: .createdAt)
     }
 }
-

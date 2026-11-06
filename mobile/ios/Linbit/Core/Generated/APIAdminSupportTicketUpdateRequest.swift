@@ -30,4 +30,3 @@ public struct APIAdminSupportTicketUpdateRequest: Codable, JSONEncodable, Hashab
         try container.encodeIfPresent(assigneeId, forKey: .assigneeId)
     }
 }
-

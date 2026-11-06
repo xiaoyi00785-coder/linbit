@@ -167,23 +167,47 @@ struct SupportTicketsView: View {
         default: return .list
         }
     }()
+    /// 详情返回 / 新建成功后递增，驱使列表重新拉取（未读、状态与后端同步）
+    @State private var listEpoch = 0
+
     var body: some View {
         switch route {
-        case .list: SupportTicketListView(onBack: onBack, open: { route = .detail($0) }, create: { route = .create })
-        case .create: SupportCreateView(onBack: { route = .list }, created: { route = .detail($0) })
-        case let .detail(id): SupportTicketDetailView(id: id, onBack: { route = .list })
+        case .list:
+            SupportTicketListView(
+                onBack: onBack,
+                open: { route = .detail($0) },
+                create: { Session.shared.requireLogin { route = .create } },
+                epoch: listEpoch
+            )
+        case .create:
+            SupportCreateView(onBack: { route = .list }, created: { id in
+                listEpoch += 1
+                route = .detail(id)
+            })
+        case let .detail(id):
+            SupportTicketDetailView(id: id, onBack: {
+                listEpoch += 1
+                route = .list
+            })
         }
     }
 }
 
 struct SupportTicketListView: View {
     @Environment(\.palette) private var p
+    @ObservedObject private var session = Session.shared
     let onBack: () -> Void
     let open: (String) -> Void
     let create: () -> Void
+    var epoch: Int = 0
     @State private var tab = 0
     @State private var data: Loadable<[APISupportTicket]> = .idle
+    @State private var page = 1
+    @State private var total = 0
+    @State private var loadingMore = false
+    @State private var listReq = 0
     private static let filters: [APISupportTicketStatus?] = [nil, ._open, .replied, .closed]
+    private static let pageSize = 20
 
     var body: some View {
         VStack(spacing: 0) {
@@ -193,20 +217,25 @@ struct SupportTicketListView: View {
             PrimaryTabs(items: ["全部", "待处理", "已回复", "已关闭"], selected: $tab, size: FontSize.label, underline: true)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Spacing.pageH)
             ScrollView {
-                LoadableView(state: data, emptyText: "暂无工单", isEmpty: { $0.isEmpty }, retry: { Task { await load() } }) { list in
+                LoadableView(state: data, emptyText: "暂无工单", isEmpty: { $0.isEmpty }, retry: { Task { await load(reset: true) } }) { list in
                     LazyVStack(spacing: 0) {
                         ForEach(list, id: \.id) { t in
                             Button { open(t.id) } label: { row(t) }.buttonStyle(RowPressStyle())
                         }
+                        if list.count < total {
+                            ProgressView().frame(height: 44).onAppear { Task { await more() } }
+                        }
                     }
                 }
-                if case .loaded(let l) = data, l.isEmpty {
+                if case .loaded(let l) = data, l.isEmpty, session.isLoggedIn || SupportShot.on {
                     LBButton(title: "提交工单", kind: .primary, height: 40, action: create).frame(width: 160)
                 }
             }
+            .refreshable { await load(reset: true) }
         }
         .background(p.bg.ignoresSafeArea())
-        .task(id: tab) { await load() }
+        .task(id: "\(tab)-\(epoch)") { await load(reset: true) }
+        .onChange(of: session.isLoggedIn) { ok in if ok { Task { await load(reset: true) } } }
     }
 
     private func row(_ t: APISupportTicket) -> some View {
@@ -227,19 +256,54 @@ struct SupportTicketListView: View {
         .padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
     }
 
-    private func load() async {
+    private func load(reset: Bool) async {
         let st = Self.filters[tab]
         if let s = SupportShot.raw {
             switch s {
-            case "list-empty": data = .loaded([])
+            case "list-empty": data = .loaded([]); total = 0
             case "list-error": data = .failed("网络异常，请稍后重试")
             case "list-loading": data = .loading
-            default: data = .loaded(SupportShot.list.filter { st == nil || $0.status == st })
+            default:
+                let items = SupportShot.list.filter { st == nil || $0.status == st }
+                total = items.count; data = .loaded(items)
             }
             return
         }
-        if data.value == nil { data = .loading }
-        do { data = .loaded(try await SupportAPI.list(status: st).items) } catch { data = .failed(error.lbMessage) }
+        guard session.isLoggedIn else {
+            data = .failed(ErrorText.loginRequired); total = 0; return
+        }
+        if reset {
+            page = 1
+            if data.value == nil { data = .loading }
+        }
+        listReq += 1
+        let req = listReq
+        do {
+            let r = try await SupportAPI.list(status: st, page: page)
+            guard req == listReq else { return }
+            total = r.total
+            if reset {
+                data = .loaded(r.items)
+            } else {
+                let cur = data.value ?? []
+                let seen = Set(cur.map(\.id))
+                data = .loaded(cur + r.items.filter { !seen.contains($0.id) })
+            }
+        } catch {
+            guard req == listReq else { return }
+            if data.value == nil { data = .failed(error.lbMessage) }
+            else { ToastCenter.shared.show(error.lbMessage, .error) }
+        }
+    }
+
+    private func more() async {
+        guard SupportShot.raw == nil, session.isLoggedIn else { return }
+        guard !loadingMore, let cur = data.value, cur.count < total else { return }
+        loadingMore = true; defer { loadingMore = false }
+        page += 1
+        await load(reset: false)
+        // 若本次失败且未追加，回退页码以免跳页
+        if let now = data.value, now.count == cur.count { page = max(1, page - 1) }
     }
 }
 
