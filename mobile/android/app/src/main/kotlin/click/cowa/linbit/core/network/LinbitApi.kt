@@ -338,6 +338,21 @@ interface LinbitApi {
     @GET("earn/positions")
     suspend fun earnPositions(): ApiEarnPositions200Response
 
+    @POST("earn/products/{id}/subscribe")
+    suspend fun earnSubscribe(@Path("id") id: String, @Body body: ApiEarnSubscribeRequest): ApiEarnSubscribe200Response
+
+    @POST("earn/products/{id}/redeem")
+    suspend fun earnRedeem(@Path("id") id: String, @Body body: ApiEarnRedeemRequest): ApiEarnRedeem200Response
+
+    @POST("strategy/grid/square/{id}/copy")
+    suspend fun strategyCopy(@Path("id") id: String, @Body body: ApiStrategyCopyRequest): ApiGridBot
+
+    @POST("strategy/grid/{id}/stop")
+    suspend fun strategyStopGrid(
+        @Path("id") id: String,
+        @Body body: ApiStrategyStopGridRequest = ApiStrategyStopGridRequest(),
+    ): ApiGridBot
+
     // ---- 自选 ----
     @GET("account/favorites")
     suspend fun favorites(@Query("market") market: String = "spot"): JsonElement
