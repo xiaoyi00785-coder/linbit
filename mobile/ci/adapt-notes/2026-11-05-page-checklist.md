@@ -66,3 +66,23 @@ screens-pr / screens-adapt 外：home 日夜、markets、充提表单页、客�
 ## tip `790d6f5`+
 
 含现货底栏横滑、预估手续费、PrimaryTabs fixedSize、预警/模拟盘依赖文案；以及本段 home/futures 底栏留白。新 CI：iOS `42155738788` 等。旧图不冒充该 tip 验收。
+
+
+## tip `9a70ed0` 构建证据（不等截图收束）
+
+- PR #104 head = `9a70ed02ed65a2fee3f767cd56d16669fd375807`（已与 origin 同步）。
+- run `42155896870`（pull_request）：openapi 契约比对 **success**；Debug simulator build **success**；**Release compile check success**（真实编译证据）。
+- 同 run「Launch & screenshot」收束时仍 in_progress → **本 tip 冒烟/adapt 新图未下载、未视觉验收**；不以 cec3a5b xxxl 或 4e326fc 冒烟图顶替 `9a70ed0`。
+- `790d6f5` iOS/Android 显示 failure 且 jobs 空：属 concurrency `cancel-in-progress` 被后续 tip 取消，**非编译错误**（ios.yml paths `mobile/**` 会使安卓 PR 也触发 iOS）。
+- 手动 adapt dispatch `42154944871` 同被 cancel，无新 xxxl。
+
+### 生产流程缺口审计（代码只读，本批）
+
+| 流程 | 现状 | 缺口 |
+|------|------|------|
+| 链上充值 | DepositView + 地址分享 | 待新图验小屏/键盘 |
+| 链上提现 | WithdrawView 实装 + 吸底/2FA | 待新图验；无真资金操作 |
+| 客服 | 列表 CI 已看（4e326fc）；详情 composer 键盘 Done 已推 | 详情页无本 tip 新图 |
+| 模拟交易 | ComingSoon；OpenAPI 无 paper path | **阻塞后端**，不造假盘 |
+| 价格预警 | Toast 标明需后端 | **阻塞后端**，不造假表单 |
+| 交易机器人 | Toast 即将开放 | 独立，非本批 |
