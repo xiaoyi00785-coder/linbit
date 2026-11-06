@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -67,6 +68,7 @@ import click.cowa.linbit.ui.components.UpArrow
 import click.cowa.linbit.ui.components.pressable
 import click.cowa.linbit.ui.theme.FontSize
 import click.cowa.linbit.ui.theme.LB
+import click.cowa.linbit.ui.theme.LayoutAdapt
 import click.cowa.linbit.ui.theme.Radius
 import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
@@ -97,9 +99,15 @@ fun FuturesRootScreen(
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
     DisposableEffect(nav, top) { if (top == 0 && autoStart) vm.start(); onDispose { vm.stop() } }
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    val pageH = LayoutAdapt.pageH(widthDp)
+    val tabSpace = LayoutAdapt.tabSpacing(widthDp)
     Column(modifier.fillMaxSize().background(p.bg)) {
-        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
-            PrimaryTabs(listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { top = it }, size = 16.sp, spacing = 16.dp)
+        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = pageH), verticalAlignment = Alignment.CenterVertically) {
+            PrimaryTabs(
+                listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { top = it },
+                size = 16.sp, spacing = tabSpace, scrollable = LayoutAdapt.tabsScrollable(widthDp, 4),
+            )
         }
         HorizontalDivider(color = p.divider)
         when (top) {
@@ -107,7 +115,7 @@ fun FuturesRootScreen(
                 vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
                 onSim = { top = 3 }, onCopy = onCopy, modifier = Modifier.weight(1f),
             )
-            1 -> ComingSoon("事件合约", "猜涨跌，到期按指数价结算，敬请期待", bottomInset)
+            1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin)
             2 -> TradFiScreen(
                 onBack = {},
                 onTrade = { futures, symbol ->
@@ -117,7 +125,8 @@ fun FuturesRootScreen(
                 embedded = true,
                 bottomInset = bottomInset,
             )
-            else -> ComingSoon("模拟交易", "使用模拟资金体验合约交易，即将上线", bottomInset)
+            // OpenAPI 暂无模拟/纸交易端点，不编造余额与成交
+            else -> ComingSoon("模拟交易", "后端尚未提供模拟交易契约（OpenAPI 无 paper/sim 端点），上线后按契约接入", bottomInset)
         }
     }
 }
