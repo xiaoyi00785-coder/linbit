@@ -111,7 +111,8 @@ function walk(root: Node, lang: Lang) {
           if (cur == null) continue;
           const rec = origAttr.get(el) ?? {};
           let src = rec[a];
-          if (src === undefined || (cur !== src && cur !== tr(src, lang))) { src = cur; rec[a] = src; origAttr.set(el, rec); }
+          // 与文本节点相同：已是任一语言译文时保留原文缓存，避免跨语言切换把译文写进 origAttr
+          if (src === undefined || (cur !== src && !isTranslatedForm(src, cur, lang))) { src = cur; rec[a] = src; origAttr.set(el, rec); }
           const out = tr(src, lang);
           if (out !== cur) el.setAttribute(a, out);
         }
