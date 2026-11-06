@@ -59,6 +59,16 @@ def main() -> int:
         if 'UserDefaults.standard.string(forKey: "lb.shot")' in text:
             errors.append(f"{rel} 直接读取 lb.shot（应使用 ShotGate.launchShot）")
 
+
+    support_path = ROOT / "Features/Support/SupportTickets.swift"
+    if support_path.exists():
+        sec = support_path.read_text(encoding="utf-8")  # reuse name carefully
+        st = sec
+        if "ShotRaw.support" not in st:
+            errors.append("SupportShot.raw 未接到 ShotRaw.support")
+        if "ShotGate.enabled" not in st:
+            errors.append("SupportShot.on 未结合 ShotGate.enabled")
+
     if errors:
         print("FAIL ios_shot_gate_check:")
         for e in errors:

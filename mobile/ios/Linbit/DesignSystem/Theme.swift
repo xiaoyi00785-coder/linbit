@@ -36,14 +36,17 @@ struct ThemedRoot<Content: View>: View {
 }
 
 extension Font {
-    /// 随系统动态字体缩放（UIFontMetrics）；大字号下配合 ScrollView / minHeight 避免裁切。
+    /// 随系统动态字体缩放；上限 1.35× 设计字号，避免合约/盘口等密排在超大字体下溢出（配合 ScrollView / minHeight）。
+    private static let dynamicCap: CGFloat = 1.35
     static func lb(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        Font(UIFontMetrics.default.scaledFont(for: .systemFont(ofSize: size, weight: weight.uiFontWeight)))
+        let scaled = min(UIFontMetrics.default.scaledValue(for: size), size * dynamicCap)
+        return Font(UIFont.systemFont(ofSize: scaled, weight: weight.uiFontWeight))
     }
-    /// 数字：等宽数字，保证行情跳动时不抖动；同样参与动态字体缩放。
+    /// 数字：等宽数字；同样缩放并封顶。
     static func lbNum(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        let base = UIFont.monospacedDigitSystemFont(ofSize: size, weight: weight.uiFontWeight)
-        return Font(UIFontMetrics.default.scaledFont(for: base))
+        let scaled = min(UIFontMetrics.default.scaledValue(for: size), size * dynamicCap)
+        let base = UIFont.monospacedDigitSystemFont(ofSize: scaled, weight: weight.uiFontWeight)
+        return Font(base)
     }
 }
 

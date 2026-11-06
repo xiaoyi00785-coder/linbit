@@ -587,7 +587,9 @@ struct InternalTransferView: View {
                     if let v = validation, !amount.isEmpty || !recipient.isEmpty { Text(v).font(.lb(FontSize.small)).foregroundColor(p.down) }
                     history
                 }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
-            }.refreshable { await load() }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .refreshable { await load() }
         }
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
         .task(id: "\(session.isLoggedIn)-\(asset)") { await load() }

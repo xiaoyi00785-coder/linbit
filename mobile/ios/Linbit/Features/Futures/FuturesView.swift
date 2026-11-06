@@ -65,6 +65,7 @@ struct FuturesTradeView: View {
             }
             .padding(.bottom, Metrics.tabBarH + 60)
         }
+        .scrollDismissesKeyboard(.interactively)
         .task {
             // 截图：把 K 线 / 委托区滚动到画面内
             let target: String? = router.shotSheet == "chart" ? "lb.chart" : (["ordersTpsl", "ordersPlan", "pnl", "pnlError", "pnlEmpty", "liq"].contains(router.shotSheet ?? "") ? "lb.bottom" : nil)
@@ -213,7 +214,7 @@ struct FuturesTradeView: View {
                     Text(m.kind.title).font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary)
                     Spacer()
                     Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
-                }.padding(.horizontal, 10).frame(height: 34).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
+                }.padding(.horizontal, 10).frame(minHeight: 34).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
             }.buttonStyle(PressableStyle(scale: 1))
             if m.kind == .plan {
                 NumberBox(label: "触发价", unit: m.quote, text: $m.triggerText, onEdit: {})
@@ -230,7 +231,7 @@ struct FuturesTradeView: View {
             }
             if m.kind == .market || (m.kind == .plan && m.planMarket) {
                 Text("市价").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
-                    .frame(maxWidth: .infinity).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
+                    .frame(maxWidth: .infinity).frame(minHeight: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
             } else {
                 NumberBox(label: "价格", unit: m.quote, text: $m.priceText, onEdit: {})
             }
@@ -267,8 +268,15 @@ struct FuturesTradeView: View {
             if m.kind == .postOnly {
                 Text("只做 Maker：若委托会立即成交则整单撤销").font(.lb(10)).foregroundColor(p.textTertiary)
             }
-            sideButton(long: true)
-            sideButton(long: false)
+            // 未登录只显示一颗登录按钮（CI futures-light 曾出现双「登录/注册」叠放）
+            if session.isLoggedIn {
+                sideButton(long: true)
+                sideButton(long: false)
+            } else {
+                LBButton(title: "登录 / 注册", kind: .primary, height: 40) {
+                    session.present(.login)
+                }
+            }
         }
     }
 
@@ -278,8 +286,8 @@ struct FuturesTradeView: View {
                 KVRow(k: "预估强平价", v: m.orderPrice > 0 ? Fmt.price(m.liqPrice(long: long), precision: m.pricePrec) : "--")
                 KVRow(k: "成本", v: "\(Fmt.amount(m.cost, 2)) \(m.quote)")
             }
-            LBButton(title: session.isLoggedIn ? (m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")) : "登录 / 注册",
-                     kind: session.isLoggedIn ? (long ? .buy : .sell) : .primary, height: 40, loading: m.placing) {
+            LBButton(title: m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多"),
+                     kind: long ? .buy : .sell, height: 40, loading: m.placing) {
                 session.requireLogin {
                     if let e = m.validation { ToastCenter.shared.show(e, .error); return }
                     let dir = m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")
@@ -298,7 +306,7 @@ struct FuturesTradeView: View {
                     Text("\(m.symbol) 图表").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
                     Spacer()
                     Image(systemName: showChart ? "chevron.up" : "chevron.down").font(.system(size: 11)).foregroundColor(p.textSecondary)
-                }.padding(.horizontal, Spacing.pageH).frame(height: 36)
+                }.padding(.horizontal, Spacing.pageH).frame(minHeight: 36)
             }
             if showChart {
                 VStack(alignment: .leading, spacing: 8) {

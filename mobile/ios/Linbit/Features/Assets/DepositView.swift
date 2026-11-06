@@ -97,7 +97,7 @@ struct DepositView: View {
                             CoinIcon(base: asset, size: 22)
                             Text(asset).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
                             Spacer(); Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
-                        }.padding(.horizontal, 12).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                        }.padding(.horizontal, 12).frame(minHeight: 44).background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
                     }.buttonStyle(PressableStyle(scale: 1))
                     qr
                     infoCard
@@ -114,6 +114,7 @@ struct DepositView: View {
             }
             LBButton(title: "保存并分享地址", enabled: addr.value != nil) { share() }.padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
         .task { await loadNets() }
         .lbSheet($showNets) { NetworkSheet(asset: asset, nets: nets.value ?? [], selected: net?.network, recommended: recommended) { n in showNets = false; net = n; Task { await loadAddr() } } onClose: { showNets = false } }

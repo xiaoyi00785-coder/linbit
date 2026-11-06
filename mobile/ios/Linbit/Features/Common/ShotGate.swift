@@ -27,12 +27,23 @@ enum ShotGate {
 enum ShotRaw {
     #if DEBUG
     private static var storage: String?
+    private static var supportStorage: String?
+    /// SecShot / DemoShot / NotifShot / CouponShot 等共用前缀串
     static var value: String? {
         get { storage }
         set { storage = newValue }
     }
+    /// 客服 SupportShot 独立通道（与 SecShot 互不覆盖）
+    static var support: String? {
+        get { supportStorage }
+        set { supportStorage = newValue }
+    }
     #else
     static var value: String? {
+        get { nil }
+        set { _ = newValue }
+    }
+    static var support: String? {
         get { nil }
         set { _ = newValue }
     }
