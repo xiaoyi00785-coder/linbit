@@ -56,6 +56,7 @@ fun LbTextField(
     leading: (@Composable () -> Unit)? = null,
     onFocusChange: (Boolean) -> Unit = {},
     testTag: String? = null,
+    enabled: Boolean = true,
 ) {
     val p = LB.p
     var focused by remember { mutableStateOf(false) }
@@ -80,7 +81,8 @@ fun LbTextField(
                 if (value.isEmpty()) Text(placeholder, style = lbNum(FontSize.body), color = p.textTertiary, maxLines = 1)
                 BasicTextField(
                     value = value,
-                    onValueChange = onValueChange,
+                    onValueChange = if (enabled) onValueChange else { _ -> },
+                    enabled = enabled,
                     singleLine = true,
                     textStyle = lbNum(FontSize.body).copy(color = p.textPrimary),
                     cursorBrush = SolidColor(p.textPrimary),

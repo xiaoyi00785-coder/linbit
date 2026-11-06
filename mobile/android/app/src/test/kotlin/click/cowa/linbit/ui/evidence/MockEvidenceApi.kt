@@ -50,12 +50,13 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val response = routes[key]?.removeFirstOrNull() ?: defaultFeatureFlags?.takeIf { key == "GET /app/features" }?.let { flags ->
             MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(flags)
         }
+        val alertWrite = path == "/price-alerts" || path.startsWith("/price-alerts/")
         val paperBuy = method == "POST" && path == "/paper/orders"
         val expected = declaredFailure && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy) {
-            return undeclared(request, "Only a declared Paper order or explicit loopback failure is allowed")
+        if (method != "GET" && !expected && !paperBuy && !alertWrite) {
+            return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
-        requests += "$key${if (method != "GET") " [${if (declaredFailure) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_PAPER_ORDER"}]" else ""}"
+        requests += "$key${if (method != "GET") " [${if (declaredFailure) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}"
         if (method != "GET") mutationStatuses += response?.httpCode() ?: 599
         if (paperBuy && response != null) {
             val payload = response.getBody()?.clone()?.readUtf8() ?: throw AssertionError("Paper response required")

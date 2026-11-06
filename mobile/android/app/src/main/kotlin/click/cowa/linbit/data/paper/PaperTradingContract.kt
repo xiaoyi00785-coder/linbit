@@ -85,7 +85,7 @@ class PaperTradingClient(private val api: PaperTradingApi, private val gate: Pap
         return unwrapApiResponse(api.createAlert(request)).also(PaperContractValidation::requireAlert)
     }
     suspend fun updateAlert(id: String, request: UpdatePriceAlertRequest): PriceAlert {
-        require(id.isNotBlank() && request.revision >= 1 && request.condition in setOf(null, "gte", "lte") && (request.note?.length ?: 0) <= 120 && request.channels in setOf(null, listOf("in_app")))
+        require(id.isNotBlank() && request.revision >= 1 && request.condition in setOf(null, "gte", "lte") && (request.threshold == null || validPositiveDecimal(request.threshold)) && (request.note?.length ?: 0) <= 120 && request.channels in setOf(null, listOf("in_app")))
         return unwrapApiResponse(api.updateAlert(id, request)).also(PaperContractValidation::requireAlert)
     }
     suspend fun deleteAlert(id: String, revision: Int? = null) {
@@ -125,6 +125,8 @@ private fun <T> unwrapApiResponse(response: Response<T>): T {
     throw ApiFailure.Server(response.code(), ErrorEnvelope.parse(raw), response.headers()["Retry-After"]?.toIntOrNull())
 }
 
+fun validPositiveDecimal(value: String): Boolean = value.matches(Regex("[0-9]+(?:\\.[0-9]+)?")) && value.toBigDecimalOrNull()?.signum() == 1
+
 object PaperContractValidation {
     private val id = Regex("^[A-Za-z0-9_.:-]{1,64}$")
     fun requireAccount(account: PaperAccount) = require(account.mode == "paper" && account.market == "spot" && account.quoteAsset == "USDT" && account.generation >= 1) { "Paper spot account/generation mismatch" }
@@ -135,8 +137,8 @@ object PaperContractValidation {
         require(if (request.side == "buy") request.quantity.isNotBlank().xor(request.quoteOrderQty.isNotBlank()) else request.quantity.isNotBlank() && request.quoteOrderQty.isBlank()) { "Market buy needs exactly one quantity/quoteOrderQty; sell needs only quantity" }
     }
     fun requirePaperOrder(it: PaperOrder) = require(it.mode == "paper" && it.accountId.isNotBlank() && it.generation >= 1 && it.type == "market" && it.priceSource == "INDEX" && it.fee == "0" && it.marketObservedAt.isNotBlank()) { "Invalid simulated market-only INDEX order" }
-    fun requireNewAlert(it: CreatePriceAlertRequest) = require(id.matches(it.clientAlertId) && it.market == "spot" && it.symbol.isNotBlank() && it.condition in setOf("gte", "lte") && it.threshold.isNotBlank() && it.priceSource == "INDEX" && it.triggerMode == "once" && it.channels == listOf("in_app") && it.note.length <= 120)
-    fun requireAlert(it: PriceAlert) = require(it.status in setOf("active", "triggered", "disabled") && it.limit.activePerUser == 50 && it.market == "spot" && it.revision >= 1 && it.priceSource == "INDEX" && it.triggerMode == "once" && it.channels == listOf("in_app")) { "Price alert must remain isolated from order execution" }
+    fun requireNewAlert(it: CreatePriceAlertRequest) = require(id.matches(it.clientAlertId) && it.market == "spot" && validPositiveDecimal(it.threshold) && it.symbol.isNotBlank() && it.condition in setOf("gte", "lte") && it.priceSource == "INDEX" && it.triggerMode == "once" && it.channels == listOf("in_app") && it.note.length <= 120)
+    fun requireAlert(it: PriceAlert) = require(it.status in setOf("active", "triggered", "disabled") && it.condition in setOf("gte", "lte") && validPositiveDecimal(it.threshold.trim()) && it.deliveryStatus in setOf("none", "pending", "delivered_in_app", "failed", "unsupported") && it.limit.activePerUser == 50 && it.market == "spot" && it.revision >= 1 && it.priceSource == "INDEX" && it.triggerMode == "once" && it.channels == listOf("in_app")) { "Price alert must remain isolated from order execution" }
 }
 
 @Serializable data class PaperAccount(val accountId: String, val mode: String, val market: String, val generation: Long, val quoteAsset: String, val initialBalance: String, val resetLimitPerUtcDay: Int, val resetsUsedToday: Int, val nextResetAt: String? = null, val orderTypes: List<String>, val priceSource: String, val feeModel: String, val slippageModel: String, val createdAt: String, val updatedAt: String)
