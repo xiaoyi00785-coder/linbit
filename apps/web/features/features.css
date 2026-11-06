@@ -35,6 +35,8 @@
 .fx-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .fx-modal{position:fixed;inset:0;background:var(--lb-mask);display:flex;align-items:center;justify-content:center;z-index:100}
 .fx-modal>div{background:var(--lb-white);color:var(--lb-card);border-radius:16px;padding:24px;width:420px;max-width:92vw}
+/* 交易弹窗（模式/杠杆/计算器）保持深色，避免被上面的浅色 .fx-modal>div 盖掉 */
+.fx-modal>.tk-modal{background:var(--lb-card-2,#1d1d1d);color:var(--lb-text,#fff);border:1px solid var(--lb-border,#28292a)}
 .fx-pin{font-size:12px;background:var(--lb-primary);color:var(--lb-on-primary);border-radius:4px;padding:1px 6px;margin-right:6px}
 .vfee{max-width:900px;margin:0 auto 40px;border:1px solid var(--lb-border);border-radius:16px;padding:28px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
 .vfee b{font-size:28px}
@@ -68,8 +70,25 @@
 .tk-chip:hover{border-color:#555}.tk-chip.long{color:#abe127}.tk-chip.short{color:#f43f5e}.tk-chip.ic{flex:0 0 32px;display:flex;align-items:center;justify-content:center}
 .tk-btns{display:flex;gap:8px}.tk-btns .lbtn{flex:1}
 .tk-long{background:#abe127!important;color:#111!important}.tk-short{background:#f43f5e!important;color:#fff!important}
-.tk-modal{background:#1b1d22;color:#eee;border-radius:14px;padding:20px;width:440px;max-width:92vw}
-.tk-mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:16px}.tk-x{cursor:pointer;color:#888}
+.tk-modal{background:var(--lb-card-2,#1d1d1d);color:var(--lb-text,#fff);border-radius:14px;padding:20px;width:440px;max-width:92vw}
+.tk-mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:16px;color:var(--lb-text,#fff)}.tk-x{cursor:pointer;color:var(--lb-text-3,#8d9093)}
+/* 交易页 / 计算器：深色分段控件（覆盖资产页浅色 .seg） */
+.of .seg,.tk-modal .seg{display:grid;grid-template-columns:1fr 1fr;width:100%;background:var(--lb-bg,#070808);border-radius:6px;padding:2px;margin-bottom:8px}
+.of .seg b,.tk-modal .seg b{text-align:center;padding:8px 6px;border-radius:5px;color:var(--lb-text-2,#a8aaad);cursor:pointer;font-size:13px;font-weight:600;background:transparent}
+.of .seg b.on{background:var(--lb-border-2,#37393a);color:var(--lb-white,#fff)}
+/* 计算器做多/做空：与下单按钮 tk-long / tk-short 同色 */
+.tk-modal .seg.tk-dir b.on.long{background:var(--lb-up,#abe127);color:var(--lb-on-primary,#101112)}
+.tk-modal .seg.tk-dir b.on.short{background:var(--lb-down,#f43f5e);color:var(--lb-white,#fff)}
+.tk-modal .pt.sm{gap:20px;padding:0 0 8px;margin-bottom:4px;border-bottom:1px solid var(--lb-border,#28292a)}
+.tk-modal .pt.sm b{color:var(--lb-text-2,#a8aaad);font-weight:600;cursor:pointer;padding-bottom:8px;border-bottom:2px solid transparent}
+.tk-modal .pt.sm b.on{color:var(--lb-text,#fff);border-bottom-color:var(--lb-primary,#abe127)}
+.tk-modal .kv2{color:var(--lb-text,#fff)}.tk-modal .kv2 span{color:var(--lb-text-2,#a8aaad);font-size:12px}
+.tk-modal .kv2 b:not(.up):not(.down){color:var(--lb-text,#fff);font-weight:600}
+.tk-modal .inp{background:var(--lb-bg,#070808);border:1px solid var(--lb-border,#28292a)}
+.tk-modal .inp small,.tk-modal .inp em{color:var(--lb-text-3,#8d9093)}
+.tk-modal .inp input{color:var(--lb-text,#fff)}
+.tk-res{background:var(--lb-bg,#070808);border:1px solid var(--lb-border,#28292a);border-radius:8px;padding:10px;margin-top:10px}
+.tk-res .kv2 span{color:var(--lb-text-2,#a8aaad)}
 .tk-mf{display:flex;gap:10px;margin-top:16px}.tk-mf button{flex:1;padding:10px;border-radius:8px;border:0;cursor:pointer;font-weight:600}
 .tk-b1{background:#abe127;color:#111}.tk-b2{background:#2a2d34;color:#ddd}
 .tk-lbl{font-size:13px;color:#aaa;margin:10px 0 6px}
@@ -85,8 +104,7 @@
 .tk-presets{display:flex;flex-wrap:wrap;gap:6px}
 .tk-presets span{padding:4px 10px;border:1px solid #2f323a;border-radius:6px;font-size:12px;cursor:pointer}
 .tk-presets span.on{border-color:#abe127;color:#abe127}
-.tk-levsm{width:48px;background:#0f1013;border:1px solid #2f323a;color:#fff;border-radius:4px;text-align:center}
-.tk-res{background:#0f1013;border-radius:8px;padding:10px;margin-top:10px}
+.tk-levsm{width:48px;background:var(--lb-bg,#070808);border:1px solid var(--lb-border,#28292a);color:var(--lb-text,#fff);border-radius:4px;text-align:center;padding:4px 0}
 .tk-ref{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;font-size:12px;line-height:16px;color:#8c8c8c;background:#1c1c1c;cursor:help;vertical-align:middle}
 .kit-dd{position:relative;cursor:pointer;user-select:none}
 .kit-menu{position:absolute;top:calc(100% + 4px);left:0;min-width:100%;background:#1b1d22;border:1px solid #2f323a;border-radius:8px;padding:4px;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,.4);color:#ddd}

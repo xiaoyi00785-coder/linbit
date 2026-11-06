@@ -503,7 +503,7 @@ function CalcModal({ pair, lev: l0, max, onClose }: { pair: PairMeta; lev: numbe
   return (
     <Modal title="计算器" onClose={onClose}>
       <div className="pt sm" role="tablist">{["收益", "目标价格", "强平价格"].map((t, i) => <b key={t} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{t}</b>)}</div>
-      <div className="seg" role="tablist">{(["long", "short"] as const).map((k) => <b key={k} {...tabProps(side === k, () => setSide(k))} className={side === k ? "on" : ""} onClick={() => setSide(k)}>{k === "long" ? "做多" : "做空"}</b>)}</div>
+      <div className="seg tk-dir" role="tablist" aria-label="方向">{(["long", "short"] as const).map((k) => <b key={k} {...tabProps(side === k, () => setSide(k))} className={(side === k ? "on " : "") + k} onClick={() => setSide(k)}>{k === "long" ? "做多" : "做空"}</b>)}</div>
       <div className="kv2"><span>杠杆</span><span><input className="tk-levsm" value={lev} onChange={(ev) => setLev(Math.max(1, Math.min(max, +ev.target.value.replace(/\D/g, "") || 1)))} />x</span></div>
       {n("开仓价格", entry, setEntry)}
       {tab === 0 && <>{n("平仓价格", exit, setExit)}{n("数量", qty, setQty, pair.base)}</>}
