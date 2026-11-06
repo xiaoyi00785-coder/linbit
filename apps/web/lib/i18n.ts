@@ -1,12 +1,19 @@
 "use client";
-/** 轻量 i18n：zh-CN 为源文案；zh-TW 逐字转繁（opencc 生成），en 按词典精确替换。
+/** 轻量 i18n：zh-CN 为源文案；zh-TW 逐字转繁（opencc 生成），en/ko 按词典精确替换。
  *  以 MutationObserver 翻译文本节点与 placeholder/title/aria-label，WeakMap 保存原文以便切回。语言存 localStorage lb_lang。 */
 import { EN } from "./i18n-en";
 import { EN_T, EN_P } from "./i18n-en2";
+import { KO } from "./i18n-ko";
+import { KO_T, KO_P } from "./i18n-ko2";
 import { TW_PAIRS, TW_PHRASES, TW_P } from "./i18n-tw";
 
-export type Lang = "zh-CN" | "zh-TW" | "en";
-export const LANGS: { k: Lang; label: string }[] = [{ k: "zh-CN", label: "简体中文" }, { k: "zh-TW", label: "繁體中文" }, { k: "en", label: "English" }];
+export type Lang = "zh-CN" | "zh-TW" | "en" | "ko";
+export const LANGS: { k: Lang; label: string }[] = [
+  { k: "zh-CN", label: "简体中文" },
+  { k: "zh-TW", label: "繁體中文" },
+  { k: "en", label: "English" },
+  { k: "ko", label: "한국어" },
+];
 const KEY = "lb_lang";
 const TW = new Map<string, string>();
 for (let i = 0; i + 1 < TW_PAIRS.length; i += 2) TW.set(TW_PAIRS[i], TW_PAIRS[i + 1]);
@@ -14,7 +21,7 @@ for (let i = 0; i + 1 < TW_PAIRS.length; i += 2) TW.set(TW_PAIRS[i], TW_PAIRS[i 
 export function getLang(): Lang {
   if (typeof window === "undefined") return "zh-CN";
   const v = localStorage.getItem(KEY);
-  return v === "zh-TW" || v === "en" ? v : "zh-CN";
+  return v === "zh-TW" || v === "en" || v === "ko" ? v : "zh-CN";
 }
 const TW_PATS = TW_P.map(([k, v]) => [new RegExp("^" + k.split("{}").map((x) => x.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("(.+?)") + "$"), v] as const);
 function toTW(s: string) {
@@ -26,31 +33,44 @@ function toTW(s: string) {
   }
   return s.replace(/[\u4e00-\u9fff]/g, (c) => TW.get(c) ?? c);
 }
+
+const DICT: Record<"en" | "ko", Record<string, string>> = { en: EN, ko: KO };
+const TPL: Record<"en" | "ko", Record<string, string>> = { en: EN_T, ko: KO_T };
+const PATS: Record<"en" | "ko", ReadonlyArray<readonly [RegExp, string]>> = {
+  en: EN_P.map(([k, v]) => [new RegExp("^" + k.split("{}").map((x) => x.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("(.+?)") + "$"), v] as const),
+  ko: KO_P.map(([k, v]) => [new RegExp("^" + k.split("{}").map((x) => x.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("(.+?)") + "$"), v] as const),
+};
+
 export function tr(s: string, lang: Lang = getLang()): string {
   if (lang === "zh-CN") return s;
   if (!/[\u4e00-\u9fff]/.test(s)) {
-    // 无汉字但含全角括号的网络展示名（如「Tron（TRC20）」）：英文下仅按 EN 精确项换成半角写法，其他无汉字文本原样返回
-    if (lang === "en" && /[（）]/.test(s)) { const t = s.trim(); const hit = EN[t]; if (hit) return s.replace(t, hit); }
+    // 无汉字但含全角括号的网络展示名（如「Tron（TRC20）」）：en/ko 下仅按词典精确项换成半角写法
+    if ((lang === "en" || lang === "ko") && /[（）]/.test(s)) {
+      const t = s.trim();
+      const hit = DICT[lang][t];
+      if (hit) return s.replace(t, hit);
+    }
     return s;
   }
   if (lang === "zh-TW") return toTW(s);
+  const dict = DICT[lang];
   const t = s.trim();
-  const hit = EN[t] ?? tpl(t) ?? pat(t);
-  return hit ? s.replace(t, hit) : s.replace(/[\u4e00-\u9fff][^\x00-\x7f]*[\u4e00-\u9fff]|[\u4e00-\u9fff]/g, (r) => EN[r] ?? tpl(r) ?? r);
+  const hit = dict[t] ?? tpl(t, lang) ?? pat(t, lang);
+  return hit ? s.replace(t, hit) : s.replace(/[\u4e00-\u9fff][^\x00-\x7f]*[\u4e00-\u9fff]|[\u4e00-\u9fff]/g, (r) => dict[r] ?? tpl(r, lang) ?? r);
 }
 /** 整句占位匹配：{} 捕获的片段（币种、网络名、金额等）各自再翻译后回填 */
-const PATS = EN_P.map(([k, v]) => [new RegExp("^" + k.split("{}").map((x) => x.replace(/[.*+?^$()|[\]\\]/g, "\\$&")).join("(.+?)") + "$"), v] as const);
-function pat(t: string): string | undefined {
-  for (const [re, v] of PATS) {
+function pat(t: string, lang: "en" | "ko"): string | undefined {
+  const dict = DICT[lang];
+  for (const [re, v] of PATS[lang]) {
     const m = t.match(re);
-    if (m) { let i = 1; return v.replace(/\{\}/g, () => { const x = m[i++] ?? ""; return EN[x.trim()] ?? tr(x, "en"); }); }
+    if (m) { let i = 1; return v.replace(/\{\}/g, () => { const x = m[i++] ?? ""; return dict[x.trim()] ?? tr(x, lang); }); }
   }
   return undefined;
 }
 /** 模板匹配：数字归一为 #，命中后按顺序回填原数字 */
 const NUM = /\d+(?:[.,]\d+)*/g;
-function tpl(t: string): string | undefined {
-  const v = EN_T[t.replace(NUM, "#")];
+function tpl(t: string, lang: "en" | "ko"): string | undefined {
+  const v = TPL[lang][t.replace(NUM, "#")];
   if (!v) return undefined;
   const nums = t.match(NUM) ?? [];
   let i = 0;
@@ -61,6 +81,13 @@ const orig = new WeakMap<Node, string>();
 const origAttr = new WeakMap<Element, Record<string, string>>();
 const ATTRS = ["placeholder", "title", "aria-label"];
 let busy = false;
+function isTranslatedForm(src: string, cur: string, lang: Lang) {
+  if (cur === tr(src, lang)) return true;
+  if (cur === tr(src, "zh-TW")) return true;
+  if (cur === tr(src, "en")) return true;
+  if (cur === tr(src, "ko")) return true;
+  return false;
+}
 function walk(root: Node, lang: Lang) {
   busy = true;
   try {
@@ -73,7 +100,7 @@ function walk(root: Node, lang: Lang) {
           const cur = n.nodeValue ?? "";
           let src = orig.get(n);
           // 节点内容被 React 改写过 ⇒ 以新内容为原文
-          if (src === undefined || (cur !== src && cur !== tr(src, lang) && cur !== tr(src, "zh-TW") && cur !== tr(src, "en"))) { src = cur; orig.set(n, src); }
+          if (src === undefined || (cur !== src && !isTranslatedForm(src, cur, lang))) { src = cur; orig.set(n, src); }
           const out = tr(src, lang);
           if (out !== cur) n.nodeValue = out;
         }
@@ -97,7 +124,7 @@ function walk(root: Node, lang: Lang) {
 let obs: MutationObserver | null = null;
 export function applyLang(lang: Lang = getLang()) {
   if (typeof document === "undefined") return;
-  document.documentElement.lang = lang;
+  document.documentElement.lang = lang === "ko" ? "ko" : lang;
   walk(document.body, lang);
   if (!obs) {
     obs = new MutationObserver((ms) => {
