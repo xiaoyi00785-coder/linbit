@@ -48,6 +48,7 @@ import click.cowa.linbit.core.generated.ApiFuturesPositionHistory
 import click.cowa.linbit.core.generated.ApiOrder
 import click.cowa.linbit.core.generated.ApiTrade
 import click.cowa.linbit.core.network.LinbitApi
+import click.cowa.linbit.data.MarketStore
 import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.network.apiCall
 import click.cowa.linbit.core.network.lbMessage
@@ -77,9 +78,11 @@ import javax.inject.Inject
 class TradeHistoryViewModel @Inject constructor(
     private val api: LinbitApi,
     private val tokens: TokenStore,
+    private val market: MarketStore,
 ) : ViewModel() {
     val loggedIn get() = tokens.loggedIn
     val sessionVersion get() = tokens.sessionVersion
+    val marketState get() = market.state
 
     var spotOpen by mutableStateOf<List<ApiOrder>>(emptyList()); private set
     var spotHistory by mutableStateOf<List<ApiOrder>>(emptyList()); private set
@@ -240,28 +243,44 @@ fun SpotHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: String? 
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
+    val market by vm.marketState.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
-    LaunchedEffect(tab, sessionVersion) {
+    var filterSymbol by remember { mutableStateOf(symbol) }
+    var pickPair by remember { mutableStateOf(false) }
+    fun reload() { if (loggedIn) vm.loadSpot(tab, filterSymbol) }
+    LaunchedEffect(tab, sessionVersion, filterSymbol) {
         vm.clear()
-        if (loggedIn) vm.loadSpot(tab, symbol)
+        reload()
     }
     HistoryShell("历史记录", onClose) {
         PrimaryTabs(listOf("当前委托", "历史委托", "成交明细"), tab, { tab = it }, size = FontSize.label, scrollable = true)
-        HorizontalDivider(Modifier.padding(top = 8.dp), color = p.divider)
+        HistorySymbolChip(filterSymbol, spot = true) { pickPair = true }
+        HorizontalDivider(Modifier.padding(top = 4.dp), color = p.divider)
         vm.actionError?.let { Text(it, Modifier.padding(vertical = 6.dp), style = lb(FontSize.small), color = p.down) }
         when {
             !loggedIn -> EmptyState("登录后查看历史记录") { ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin) }
             vm.loading && listForSpot(vm, tab).isEmpty() -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            vm.error != null && listForSpot(vm, tab).isEmpty() -> EmptyState(vm.error ?: "加载失败") { ChipButton("重试", Modifier.height(32.dp)) { vm.loadSpot(tab, symbol) } }
+            vm.error != null && listForSpot(vm, tab).isEmpty() -> EmptyState(vm.error ?: "加载失败") { ChipButton("重试", Modifier.height(32.dp)) { reload() } }
             listForSpot(vm, tab).isEmpty() -> EmptyState("暂无数据")
             tab == 0 -> vm.spotOpen.forEach { o ->
                 HistOrderRow(o.symbol, o.side.value, o.price, o.quantity, o.filledQuantity, o.status.value) {
-                    vm.cancelSpot(o.orderId) { vm.loadSpot(0, symbol) }
+                    vm.cancelSpot(o.orderId) { reload() }
                 }
             }
             tab == 1 -> vm.spotHistory.forEach { o -> HistOrderRow(o.symbol, o.side.value, o.price, o.quantity, o.filledQuantity, o.status.value, showCancel = false) }
             else -> vm.spotTrades.forEach { t -> HistTradeRow(t.symbol, t.side.value, t.price, t.quantity, t.createdAt) }
         }
+    }
+    if (pickPair) {
+        PairPickerSheet(
+            rows = market.spot,
+            current = filterSymbol.orEmpty(),
+            spot = true,
+            onPick = { filterSymbol = it; pickPair = false },
+            onClose = { pickPair = false },
+            allowAll = true,
+            onPickAll = { filterSymbol = null },
+        )
     }
 }
 
@@ -277,11 +296,14 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
     var algoPlan by remember { mutableStateOf(true) }
     var algoHistory by remember { mutableStateOf(false) }
     var amendAlgoTarget by remember { mutableStateOf<ApiFuturesAlgoOrder?>(null) }
+    var filterSymbol by remember { mutableStateOf(symbol) }
+    var pickPair by remember { mutableStateOf(false) }
+    val market by vm.marketState.collectAsStateWithLifecycle()
     val tabs = listOf("当前委托", "历史委托", "历史仓位", "成交明细", "资金流水", "条件委托")
     fun reload() {
-        if (loggedIn) vm.loadFutures(tab, symbol, timeFilter, billKind, algoPlan, algoHistory)
+        if (loggedIn) vm.loadFutures(tab, filterSymbol, timeFilter, billKind, algoPlan, algoHistory)
     }
-    LaunchedEffect(tab, sessionVersion, timeFilter, billKind, algoPlan, algoHistory) {
+    LaunchedEffect(tab, sessionVersion, timeFilter, billKind, algoPlan, algoHistory, filterSymbol) {
         vm.clear()
         reload()
     }
@@ -297,6 +319,7 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
                 }
             }
         }
+        HistorySymbolChip(filterSymbol, spot = false) { pickPair = true }
         HistoryFilterBar(
             tab = tab,
             typeFilter = typeFilter,
@@ -330,7 +353,7 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
                 vm.futPositions.forEach { PosHistRow(it) }
                 if (vm.posCursor != null) {
                     ChipButton(if (vm.loadingMore) "加载中…" else "加载更多", Modifier.fillMaxWidth().height(40.dp).padding(vertical = 8.dp)) {
-                        if (!vm.loadingMore) vm.loadMorePositions(symbol, timeFilter)
+                        if (!vm.loadingMore) vm.loadMorePositions(filterSymbol, timeFilter)
                     }
                 }
             }
@@ -349,7 +372,7 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
                 }
                 if (vm.algoCursor != null) {
                     ChipButton(if (vm.loadingMore) "加载中…" else "加载更多", Modifier.fillMaxWidth().height(40.dp).padding(vertical = 8.dp)) {
-                        if (!vm.loadingMore) vm.loadMoreAlgos(symbol, algoPlan, algoHistory)
+                        if (!vm.loadingMore) vm.loadMoreAlgos(filterSymbol, algoPlan, algoHistory)
                     }
                 }
             }
@@ -360,6 +383,29 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
             amendAlgoTarget = null
             reload()
         }
+    }
+}
+
+@Composable
+private fun HistorySymbolChip(symbol: String?, spot: Boolean, onClick: () -> Unit) {
+    val p = LB.p
+    val label = when {
+        symbol.isNullOrBlank() -> "币对"
+        spot -> symbol.replace("USDT", "/USDT")
+        else -> symbol
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp).pressable(scale = 1f, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            Modifier.background(p.fill, RoundedCornerShape(4.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+            style = lb(FontSize.small, FontWeight.Medium),
+            color = p.textPrimary,
+            maxLines = 1,
+        )
+        Text(" ▾", style = lb(FontSize.small), color = p.textSecondary)
     }
 }
 

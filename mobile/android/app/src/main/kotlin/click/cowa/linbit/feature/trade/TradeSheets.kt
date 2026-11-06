@@ -64,12 +64,30 @@ fun PrecisionSheet(pricePrec: Int, current: java.math.BigDecimal?, onPick: (java
 
 /** 搜索 + 币对列表（现货 / 合约共用）。 */
 @Composable
-fun PairPickerSheet(rows: List<MarketRow>, current: String, spot: Boolean, onPick: (String) -> Unit, onClose: () -> Unit) {
+fun PairPickerSheet(
+    rows: List<MarketRow>,
+    current: String,
+    spot: Boolean,
+    onPick: (String) -> Unit,
+    onClose: () -> Unit,
+    /** 历史筛选：可选「全部」回传空串，表示不限 symbol。 */
+    allowAll: Boolean = false,
+    onPickAll: (() -> Unit)? = null,
+) {
     val p = LB.p
     var q by remember { mutableStateOf("") }
     val list = rows.filter { q.isBlank() || it.symbol.contains(q.trim(), ignoreCase = true) }
     LbSheet(null, onClose) {
         LbTextField(q, { q = it }, "搜索币种", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), height = 34.dp)
+        if (allowAll && onPickAll != null) {
+            Text(
+                "全部币对",
+                Modifier.fillMaxWidth().height(44.dp).pressable(scale = 1f) { onPickAll(); onClose() }
+                    .padding(horizontal = Spacing.pageH),
+                style = lb(FontSize.body, if (current.isEmpty()) FontWeight.SemiBold else FontWeight.Normal),
+                color = if (current.isEmpty()) p.brand else p.textPrimary,
+            )
+        }
         if (list.isEmpty()) EmptyState("暂无相关币种", Modifier.height(240.dp))
         LazyColumn(Modifier.height(420.dp)) {
             items(list, key = { it.symbol }) { r ->
