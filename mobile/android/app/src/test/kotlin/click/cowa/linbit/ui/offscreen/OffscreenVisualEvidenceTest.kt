@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +26,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import click.cowa.linbit.core.auth.AuthRepository
 import click.cowa.linbit.core.generated.ApiEarnProduct
+import click.cowa.linbit.core.generated.ApiConvertPairs
+import click.cowa.linbit.core.generated.ApiConvertPairsPairsInner
+import click.cowa.linbit.core.generated.ApiConvertQuote
+import click.cowa.linbit.core.generated.ApiFuturesAlgoOrder
+import click.cowa.linbit.core.generated.ApiGridBot
+import click.cowa.linbit.core.generated.ApiGridSquareItem
+import click.cowa.linbit.core.generated.ApiStrategyConfig200Response
+import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiFuturesContract
 import click.cowa.linbit.core.generated.ApiFuturesTicker
 import click.cowa.linbit.core.generated.ApiHomeNewcomer
@@ -53,6 +63,19 @@ import click.cowa.linbit.feature.trade.FuturesRootScreen
 import click.cowa.linbit.feature.trade.FuturesTradeViewModel
 import click.cowa.linbit.feature.trade.SpotTradeContent
 import click.cowa.linbit.feature.trade.SpotTradeViewModel
+import click.cowa.linbit.data.MarketRow
+import click.cowa.linbit.feature.assets.DepositNetworkSheet
+import click.cowa.linbit.feature.auth.LocalLbSheetInlineEvidence
+import click.cowa.linbit.feature.assets.WithdrawScreen
+import click.cowa.linbit.feature.trade.AmendAlgoSheet
+import click.cowa.linbit.feature.trade.ConvertSubpage
+import click.cowa.linbit.feature.trade.EarnSubpage
+import click.cowa.linbit.feature.trade.SpotSubpagesViewModel
+import click.cowa.linbit.feature.trade.StrategySubpage
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasSetTextAction
 import click.cowa.linbit.feature.trade.SpotHistoryScreen
 import click.cowa.linbit.feature.trade.FuturesHistoryScreen
 import click.cowa.linbit.feature.trade.TradeHistoryViewModel
@@ -113,6 +136,16 @@ class OffscreenVisualEvidenceTest {
         )
     }
 
+    /** 离屏：sheet 同窗内联，content 位图能拍到弹层。 */
+    private fun evidenceSetContent(content: @Composable () -> Unit) {
+        rule.setContent {
+            CompositionLocalProvider(LocalLbSheetInlineEvidence provides true) {
+                content()
+            }
+        }
+    }
+
+
     private fun bd(v: String) = BigDecimal(v)
     private fun book(mid: String): OrderBook {
         val m = bd(mid)
@@ -135,7 +168,14 @@ class OffscreenVisualEvidenceTest {
                                 newcomer = ApiHomeNewcomer(total = "215", asset = "USDT", available = true, deadline = deadline),
                                 earn = listOf(ApiEarnProduct(asset = "TRX", title = "TRX定期理财", apr = "0.059")),
                             ),
-                            MarketState(), emptyList(), true, 85.dp,
+                            MarketState(
+                                spot = listOf(
+                                    MarketRow("BTCUSDT", "BTC", "USDT", bd("81076.24"), bd("0.51"), bd("1.2E8"), 2),
+                                    MarketRow("ETHUSDT", "ETH", "USDT", bd("2800.1"), bd("-1.2"), bd("8.1E7"), 2),
+                                ),
+                                cnyRate = bd("7.15"),
+                            ),
+                            emptyList(), true, 100.dp,
                             {}, {}, {}, {}, {},
                             onRefresh = {},
                         )
@@ -294,6 +334,238 @@ class OffscreenVisualEvidenceTest {
         }
         rule.waitForIdle()
         capture("Futures-history")
+    }
+
+
+    @Test fun strategyCreateSheet() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = SpotSubpagesViewModel(api, tokens, toast)
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    StrategySubpage(85.dp, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        // LaunchedEffect 会 clearAccountData；示例数据在其后注入（非生产）
+        rule.runOnIdle {
+            vm.seedEvidenceStrategy(
+                squareItems = listOf(ApiGridSquareItem(id = "sq1", symbol = "BTCUSDT", mode = "arithmetic", lowerPrice = "60000", upperPrice = "90000", gridCount = 10, profitRate = "0.12")),
+                config = ApiStrategyConfig200Response(minInvestment = "100", sellBaseOnStop = true),
+            )
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("创建网格", useUnmergedTree = true).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("确认创建", useUnmergedTree = true).assertIsDisplayed()
+        capture("Strategy-create-sheet")
+    }
+
+    @Test fun strategyStopConfirmSheet() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = SpotSubpagesViewModel(api, tokens, toast)
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    StrategySubpage(85.dp, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.runOnIdle {
+            vm.seedEvidenceStrategy(
+                grids = listOf(
+                    ApiGridBot(
+                        id = "g1", symbol = "BTCUSDT", mode = "arithmetic", status = ApiGridBot.Status.RUNNING,
+                        sellBaseOnStop = true, quoteAsset = "USDT", totalProfit = "12.5",
+                    ),
+                ),
+                config = ApiStrategyConfig200Response(sellBaseOnStop = true),
+            )
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("停止", useUnmergedTree = true).performScrollTo().performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("确认停止网格", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("确认停止", useUnmergedTree = true).assertIsDisplayed()
+        capture("Strategy-stop-confirm")
+    }
+
+    @Test fun earnSubscribeSheet() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = SpotSubpagesViewModel(api, tokens, toast)
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    EarnSubpage(85.dp, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.runOnIdle { vm.seedEvidenceEarn(listOf(ApiEarnProduct(id = "usdt-flex", asset = "USDT", title = "USDT活期", apr = "0.05"))) }
+        rule.waitForIdle()
+        rule.onNodeWithText("申购", useUnmergedTree = true).performScrollTo().performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("确认申购", useUnmergedTree = true).assertIsDisplayed()
+        capture("Earn-subscribe-sheet")
+    }
+
+    @Test fun earnRedeemSheet() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = SpotSubpagesViewModel(api, tokens, toast)
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    EarnSubpage(85.dp, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.runOnIdle { vm.seedEvidenceEarn(listOf(ApiEarnProduct(id = "usdt-flex", asset = "USDT", title = "USDT活期", apr = "0.05"))) }
+        rule.waitForIdle()
+        rule.onNodeWithText("赎回", useUnmergedTree = true).performScrollTo().performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("确认赎回", useUnmergedTree = true).assertIsDisplayed()
+        capture("Earn-redeem-sheet")
+    }
+
+    @Test fun depositNetworkSheet() {
+        enabled()
+        val nets = listOf(
+            ApiWalletNetwork(asset = "USDT", network = "TRC20", recommended = true, estimatedArrivalMinutes = 3),
+            ApiWalletNetwork(asset = "USDT", network = "ERC20", recommended = false, estimatedArrivalMinutes = 15),
+        )
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    DepositNetworkSheet(nets, selected = "TRC20", onPick = {}, onClose = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("选择网络", useUnmergedTree = true).assertIsDisplayed()
+        capture("Deposit-network-sheet")
+    }
+
+    @Test fun withdrawPageShell() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = AssetsViewModel(api, tokens, store, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    WithdrawScreen(assetInit = "USDT", vm = vm, assetsNav = AssetsNav(), onBack = {}, onChangeAsset = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        // 标题至少可见（网络请求被拦截，属空载/错误友好态）
+        check(rule.onAllNodesWithText("提现", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        capture("Withdraw-shell")
+    }
+
+    @Test fun amendAlgoSheet() {
+        enabled()
+        tokens.accessToken = "t"
+        val hist = TradeHistoryViewModel(api, tokens, store)
+        val order = ApiFuturesAlgoOrder(
+            algoId = 99L, symbol = "BTCUSDT", side = "BUY",
+            triggerPrice = "80000", price = "79900", qty = "0.01",
+            orderType = ApiFuturesAlgoOrder.OrderType.LIMIT,
+        )
+        evidenceSetContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    AmendAlgoSheet(hist, order, plan = true, onClose = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("改条件单", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("确认修改", useUnmergedTree = true).assertIsDisplayed()
+        capture("History-amend-algo")
+    }
+
+    @Test fun convertExpiredQuoteUi() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = SpotSubpagesViewModel(api, tokens, toast)
+        vm.holdExpiredQuoteForEvidence = true
+        val pairs = ApiConvertPairs(
+            pairs = listOf(
+                ApiConvertPairsPairsInner(from = "USDT", to = "BTC"),
+                ApiConvertPairsPairsInner(from = "BTC", to = "USDT"),
+            ),
+        )
+        val expired = ApiConvertQuote(
+            quoteId = "q-exp", from = "USDT", to = "BTC", fromAmount = "100", toAmount = "0.001",
+            rate = "0.00001", expiresAt = System.currentTimeMillis() - 5_000L,
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    ConvertSubpage(85.dp, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        // 先填数量（会 bump 清 quote），再注入过期示例报价；本地示例非生产
+        rule.runOnIdle { vm.seedEvidenceConvert(pairs, null) }
+        rule.waitForIdle()
+        rule.onAllNodes(hasSetTextAction(), useUnmergedTree = true).fetchSemanticsNodes().let { nodes ->
+            if (nodes.isNotEmpty()) {
+                rule.onAllNodes(hasSetTextAction(), useUnmergedTree = true)[0].performTextInput("100")
+            }
+        }
+        rule.waitForIdle()
+        rule.runOnIdle { vm.seedEvidenceConvert(pairs, expired) }
+        rule.waitForIdle()
+        rule.onNodeWithText("报价已过期", useUnmergedTree = true).assertIsDisplayed()
+        check(rule.onAllNodesWithText("确认闪兑", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        capture("Convert-expired")
+    }
+
+    @Test fun convertPausedPairUi() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = SpotSubpagesViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    ConvertSubpage(85.dp, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.runOnIdle {
+            vm.seedEvidenceConvert(
+                ApiConvertPairs(
+                    pairs = listOf(
+                        ApiConvertPairsPairsInner(
+                            from = "USDC", to = "USDT", paused = true,
+                            pauseReason = ApiConvertPairsPairsInner.PauseReason.DEPEG,
+                        ),
+                        ApiConvertPairsPairsInner(from = "USDT", to = "BTC"),
+                    ),
+                ),
+            )
+        }
+        rule.waitForIdle()
+        // 选暂停币对（本地示例）
+        if (rule.onAllNodesWithText("USDC", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
+            rule.onAllNodesWithText("USDC", useUnmergedTree = true)[0].performClick()
+            rule.waitForIdle()
+        }
+        check(
+            rule.onAllNodesWithText("该币对因脱锚保护已暂停", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() ||
+                rule.onAllNodesWithText("该币对已暂停", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty(),
+        )
+        capture("Convert-pairs")
     }
 
     private fun capture(name: String) {

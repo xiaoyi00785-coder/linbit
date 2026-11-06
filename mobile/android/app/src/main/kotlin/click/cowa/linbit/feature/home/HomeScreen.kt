@@ -125,7 +125,13 @@ fun HomeContent(
     Column(modifier.fillMaxSize().background(p.bg)) {
         TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread)
         PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 40.dp)) {
+            Column(
+            Modifier
+                .fillMaxSize()
+                .padding(bottom = bottomInset) // 视口底部让出悬浮底栏，避免榜单 Tab 叠层
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 24.dp),
+        ) {
                 AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
                 TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
                 RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }

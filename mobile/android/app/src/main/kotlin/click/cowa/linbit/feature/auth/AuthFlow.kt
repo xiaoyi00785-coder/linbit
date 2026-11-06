@@ -23,6 +23,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -359,16 +360,14 @@ internal fun ForgotScreen(vm: AuthViewModel, onBack: () -> Unit, onNext: () -> U
 }
 
 // ───────────── 底部弹层 ─────────────
+/** 离屏证据：同窗内联渲染 sheet，便于 content 位图捕获（生产默认 false）。 */
+val LocalLbSheetInlineEvidence = staticCompositionLocalOf { false }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, content: @Composable () -> Unit) {
     val p = LB.p
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = p.bgElevated,
-        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
-    ) {
+    val sheetBody: @Composable () -> Unit = {
         Column(Modifier.navigationBarsPadding()) {
             if (title != null) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
@@ -376,6 +375,23 @@ fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, con
             }
             content()
         }
+    }
+    if (LocalLbSheetInlineEvidence.current) {
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(p.bgElevated, RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet)),
+            ) { sheetBody() }
+        }
+    } else {
+        ModalBottomSheet(
+            onDismissRequest = onClose,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = p.bgElevated,
+            shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        ) { sheetBody() }
     }
 }
 

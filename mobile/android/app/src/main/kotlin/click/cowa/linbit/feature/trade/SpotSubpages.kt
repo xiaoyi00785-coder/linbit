@@ -118,6 +118,39 @@ class SpotSubpagesViewModel @Inject constructor(
         quote = null
     }
 
+    /** 仅离屏证据：保留已过期 quote 以便拍摄「报价已过期」文案；不改变 canAccept/accept 资金闸。 */
+    internal var holdExpiredQuoteForEvidence: Boolean = false
+
+    /**
+     * 离屏证据夹具：注入策略/理财/闪兑示例状态。
+     * 仅测试可见；数字为本地示例，非生产行情/余额。
+     */
+    internal fun seedEvidenceStrategy(
+        squareItems: List<ApiGridSquareItem> = emptyList(),
+        grids: List<ApiGridBot> = emptyList(),
+        config: ApiStrategyConfig200Response? = null,
+    ) {
+        square = squareItems
+        myGrids = grids
+        strategyConfig = config
+        loading = false
+        error = null
+    }
+
+    internal fun seedEvidenceEarn(products: List<ApiEarnProduct>) {
+        earnProducts = products
+        loading = false
+        error = null
+    }
+
+    internal fun seedEvidenceConvert(pairs: ApiConvertPairs, q: ApiConvertQuote? = null) {
+        convertPairs = pairs
+        quote = q
+        loading = false
+        error = null
+    }
+
+
     /** 兑出/兑入/数量变更：作废本地报价并抬升 revision。 */
     fun bumpConvertForm() {
         convertFormRev += 1
@@ -504,9 +537,9 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
                     }
                 }
                 if (sellBase) {
-                    Text("将市价卖出底仓（sellBase=true）", style = lb(FontSize.small), color = p.down)
+                    Text("将市价卖出底仓", style = lb(FontSize.small), color = p.down)
                 } else {
-                    Text("将保留底仓，仅撤单（sellBase=false）", style = lb(FontSize.small), color = p.textSecondary)
+                    Text("将保留底仓，仅撤单", style = lb(FontSize.small), color = p.textSecondary)
                 }
                 LbButton("确认停止", kind = ButtonKind.SELL, loading = vm.acting, enabled = !vm.acting) {
                     val id = g.id ?: return@LbButton
@@ -700,6 +733,7 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
         val exp = ConvertQuoteLogic.normalizeExpiresAtMs(q.expiresAt) ?: return@LaunchedEffect
         val wait = (exp - System.currentTimeMillis()).coerceAtLeast(0L)
         kotlinx.coroutines.delay(wait)
+        if (vm.holdExpiredQuoteForEvidence) return@LaunchedEffect
         if (vm.quote?.quoteId == q.quoteId && ConvertQuoteLogic.isExpired(vm.quote)) {
             vm.clearConvertQuote()
             vm.toast.show("报价已过期，请重新询价", ToastCenter.Kind.ERROR)

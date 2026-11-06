@@ -607,7 +607,7 @@ private fun AlgoHistRow(
 
 /** 条件委托改单 sheet（真实 PUT plan/tpsl amend 契约）。 */
 @Composable
-private fun AmendAlgoSheet(vm: TradeHistoryViewModel, order: ApiFuturesAlgoOrder, plan: Boolean, onClose: () -> Unit) {
+internal fun AmendAlgoSheet(vm: TradeHistoryViewModel, order: ApiFuturesAlgoOrder, plan: Boolean, onClose: () -> Unit) {
     val p = LB.p
     val oldMarket = order.orderType == ApiFuturesAlgoOrder.OrderType.MARKET || order.price.isNullOrBlank()
     var trigger by remember { mutableStateOf(order.triggerPrice ?: "") }
