@@ -44,6 +44,13 @@ class ProfileViewModel @Inject constructor(
 
     init { restoreInterruptedSwitch() }
 
+    /** 离屏证据：本地示例账号资料，非真实个人/生产会话。 */
+    internal var holdEvidence: Boolean = false
+    internal fun seedEvidenceProfile(account: ApiAccount, kyc: ApiKycStatus? = null, security: ApiSecurityOverview? = null, saved: List<SavedAccount> = emptyList()) {
+        holdEvidence = true
+        _s.value = ProfileUiState(loading = false, error = null, account = account, kyc = kyc, security = security, saved = saved.ifEmpty { listOf(SavedAccount(account.uid, ProfileLogic.displayName(account), ProfileLogic.contact(account))) })
+    }
+
     fun addAccount(onDone: () -> Unit) {
         val uid = _s.value.account?.uid ?: return
         accounts.beginAddAccount(uid)
@@ -52,6 +59,7 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun load(silent: Boolean = false) {
+        if (holdEvidence) return
         viewModelScope.launch {
             if (!silent) _s.value = _s.value.copy(loading = true, error = null)
             try {
@@ -113,8 +121,16 @@ class SecurityViewModel @Inject constructor(
 ) : ViewModel() {
     private val _s = MutableStateFlow(SecurityUiState())
     val state: StateFlow<SecurityUiState> = _s.asStateFlow()
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：安全概览示例；不写入真实 2FA 密钥。 */
+    internal fun seedEvidenceSecurity(overview: ApiSecurityOverview) {
+        holdEvidence = true
+        _s.value = SecurityUiState(loading = false, security = overview)
+    }
 
     fun load() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(loading = true, error = null)
             try { _s.value = _s.value.copy(loading = false, security = apiCall { api.securityOverview() }) }
@@ -175,8 +191,16 @@ class KycViewModel @Inject constructor(
 ) : ViewModel() {
     private val _s = MutableStateFlow(KycUiState())
     val state: StateFlow<KycUiState> = _s.asStateFlow()
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：KYC 状态示例；默认非 APPROVED，不提交真实证件。 */
+    internal fun seedEvidenceKyc(status: ApiKycStatus) {
+        holdEvidence = true
+        _s.value = KycUiState(loading = false, status = status)
+    }
 
     fun load() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(loading = true, error = null)
             try { _s.value = _s.value.copy(loading = false, status = apiCall { api.kycStatus() }) }

@@ -25,6 +25,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import click.cowa.linbit.core.auth.AuthRepository
+import click.cowa.linbit.core.generated.ApiAccount
+import click.cowa.linbit.core.generated.ApiKycStatus
+import click.cowa.linbit.core.generated.ApiSecurityLevel
+import click.cowa.linbit.core.generated.ApiSecurityLevelItemsInner
+import click.cowa.linbit.core.generated.ApiSecurityOverview
+import click.cowa.linbit.core.generated.ApiSecurityOverviewTwoFactor
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiEarnProduct
 import click.cowa.linbit.core.generated.ApiConvertPairs
@@ -58,6 +64,32 @@ import click.cowa.linbit.feature.assets.AssetsViewModel
 import click.cowa.linbit.feature.assets.TransferScreen
 import click.cowa.linbit.feature.auth.AuthViewModel
 import click.cowa.linbit.feature.auth.LoginAccountScreen
+import click.cowa.linbit.feature.more.MoreMenuScreen
+import click.cowa.linbit.feature.more.CouponsScreen
+import click.cowa.linbit.feature.more.CouponViewModel
+import click.cowa.linbit.feature.more.NotificationsScreen
+import click.cowa.linbit.feature.more.NotificationViewModel
+import click.cowa.linbit.feature.more.CopyTradingScreen
+import click.cowa.linbit.feature.more.CopyViewModel
+import click.cowa.linbit.feature.more.PartnerScreen
+import click.cowa.linbit.feature.more.PartnerViewModel
+import click.cowa.linbit.feature.more.SupportTicketsScreen
+import click.cowa.linbit.feature.more.SupportViewModel
+import click.cowa.linbit.feature.more.TradFiScreen
+import click.cowa.linbit.feature.more.TradFiViewModel
+import click.cowa.linbit.feature.more.WelfareScreen
+import click.cowa.linbit.feature.more.WelfareViewModel
+import click.cowa.linbit.feature.more.MorePage
+import click.cowa.linbit.feature.profile.AccountSecureStorage
+import click.cowa.linbit.feature.profile.SavedAccount
+import click.cowa.linbit.feature.profile.SavedAccounts
+import click.cowa.linbit.feature.profile.ProfileViewModel
+import click.cowa.linbit.feature.profile.UserCenterScreen
+import click.cowa.linbit.feature.profile.AccountSwitchScreen
+import click.cowa.linbit.feature.profile.SecurityHost
+import click.cowa.linbit.feature.profile.SecurityViewModel
+import click.cowa.linbit.feature.profile.KycHost
+import click.cowa.linbit.feature.profile.KycViewModel
 import click.cowa.linbit.feature.home.HomeContent
 import click.cowa.linbit.feature.home.HomeState
 import click.cowa.linbit.feature.trade.EventContractScreen
@@ -701,6 +733,361 @@ class OffscreenVisualEvidenceTest {
                 rule.onAllNodesWithText("该币对已暂停", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty(),
         )
         capture("Convert-pairs")
+    }
+
+
+    private fun memAccountStore(): AccountSecureStorage = object : AccountSecureStorage {
+        private val m = mutableMapOf<String, String?>()
+        override fun get(key: String) = m[key]
+        override fun set(key: String, value: String?) { if (value == null) m.remove(key) else m[key] = value }
+    }
+
+    /** 测试专用示例账号：非真实个人资料，不入库凭据。 */
+
+    private fun evidenceSecurityOverview() = ApiSecurityOverview(
+        securityLevel = ApiSecurityLevel(
+            score = 1,
+            max = 5,
+            level = ApiSecurityLevel.Level.MEDIUM,
+            missing = listOf(
+                ApiSecurityLevel.Missing.PHONE_VERIFIED,
+                ApiSecurityLevel.Missing.TWO_FACTOR,
+                ApiSecurityLevel.Missing.FUND_PASSWORD,
+                ApiSecurityLevel.Missing.ANTI_PHISHING,
+            ),
+            items = listOf(
+                ApiSecurityLevelItemsInner(ApiSecurityLevelItemsInner.Key.EMAIL_VERIFIED, true),
+                ApiSecurityLevelItemsInner(ApiSecurityLevelItemsInner.Key.PHONE_VERIFIED, false),
+                ApiSecurityLevelItemsInner(ApiSecurityLevelItemsInner.Key.TWO_FACTOR, false),
+                ApiSecurityLevelItemsInner(ApiSecurityLevelItemsInner.Key.FUND_PASSWORD, false),
+                ApiSecurityLevelItemsInner(ApiSecurityLevelItemsInner.Key.ANTI_PHISHING, false),
+            ),
+        ),
+        twoFactor = ApiSecurityOverviewTwoFactor(enabled = false),
+        email = "evi***@example.invalid",
+        emailVerified = true,
+        phone = null,
+        phoneVerified = false,
+        fundPasswordSet = false,
+        antiPhishingSet = false,
+        passkeysCount = 0,
+    )
+
+    private fun evidenceAccount() = ApiAccount(
+        uid = "evidence_uid_1001",
+        kycLevel = 0,
+        twoFactorEnabled = false,
+        createdAt = "2026-01-01T00:00:00Z",
+        email = "evidence@example.invalid",
+        nickname = "证据账号",
+        emailVerified = true,
+        phoneVerified = false,
+    )
+
+    @Test fun moreMenu() {
+        enabled()
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    MoreMenuScreen(onBack = {}, onOpen = {})
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("全部功能", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("福利中心", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("跟单交易", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("消息通知", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("卡券中心", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("合伙人计划", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("TradFi", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("我的工单", useUnmergedTree = true).assertIsDisplayed()
+        capture("More-menu")
+    }
+
+    @Test fun couponsLoggedOut() {
+        enabled()
+        tokens.accessToken = null
+        val vm = CouponViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    CouponsScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("登录后查看卡券", useUnmergedTree = true).assertIsDisplayed()
+        capture("Coupons-logged-out")
+    }
+
+    @Test fun notificationsLoggedOut() {
+        enabled()
+        tokens.accessToken = null
+        val vm = NotificationViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    NotificationsScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("登录后查看消息通知", useUnmergedTree = true).assertIsDisplayed()
+        capture("Notifications-logged-out")
+    }
+
+    @Test fun supportLoggedOut() {
+        enabled()
+        tokens.accessToken = null
+        val vm = SupportViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    SupportTicketsScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("登录后查看和提交工单", useUnmergedTree = true).assertIsDisplayed()
+        capture("Support-logged-out")
+    }
+
+    @Test fun copyMyFollowsLoggedOut() {
+        enabled()
+        tokens.accessToken = null
+        val vm = CopyViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    CopyTradingScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("我的跟单", useUnmergedTree = true).performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("登录后查看我的跟单", useUnmergedTree = true).assertIsDisplayed()
+        capture("Copy-my-follows-logged-out")
+    }
+
+    @Test fun copyTradersOfflineError() {
+        enabled()
+        tokens.accessToken = null
+        val vm = CopyViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    CopyTradingScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("重试", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() ||
+                rule.onAllNodesWithText("暂无带单员", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        capture("Copy-traders-offline")
+    }
+
+    @Test fun partnerLandingLoggedOut() {
+        enabled()
+        tokens.accessToken = null
+        val vm = PartnerViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    PartnerScreen(onBack = {}, onLogin = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("成为 Linbit 合伙人", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithText("立即申请", useUnmergedTree = true).assertIsDisplayed()
+        // 离线无规则时不应出现误导性「0%」
+        check(rule.onAllNodesWithText("0%", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+        capture("Partner-landing-logged-out")
+    }
+
+    @Test fun tradFiOfflineError() {
+        enabled()
+        val vm = TradFiViewModel(api)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    TradFiScreen(onBack = {}, onTrade = { _, _ -> }, vm = vm)
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("重试", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() ||
+                rule.onAllNodesWithText("暂无可交易资产", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        capture("TradFi-offline")
+    }
+
+    @Test fun welfareOfflineError() {
+        enabled()
+        tokens.accessToken = null
+        val vm = WelfareViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    WelfareScreen(
+                        onBack = {}, onLogin = {}, onOpen = {}, onTrade = { _, _ -> },
+                        onProfile = {}, onDeposit = {}, vm = vm,
+                    )
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("重试", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        capture("Welfare-offline")
+    }
+
+    @Test fun userCenterSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val accounts = SavedAccounts(memAccountStore(), tokens)
+        val vm = ProfileViewModel(api, accounts, tokens, toast)
+        vm.seedEvidenceProfile(
+            account = evidenceAccount(),
+            kyc = ApiKycStatus(level = 0, status = ApiKycStatus.Status.NONE),
+            security = evidenceSecurityOverview(),
+            saved = listOf(
+                SavedAccount("evidence_uid_1001", "证据账号", "evi***@example.invalid"),
+                SavedAccount("evidence_uid_1002", "证据账号B", "pho****0000"),
+            ),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    UserCenterScreen(
+                        themeMode = ThemeMode.LIGHT,
+                        onTheme = {},
+                        onLogout = {},
+                        onClose = {},
+                        onOpen = {},
+                        onFeature = {},
+                        vm = vm,
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("用户中心", useUnmergedTree = true).assertIsDisplayed()
+        check(rule.onAllNodesWithText("证据账号", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        rule.onNodeWithText("去认证", useUnmergedTree = true).assertIsDisplayed()
+        capture("UserCenter-hub")
+    }
+
+    @Test fun accountSwitchSeeded() {
+        enabled()
+        tokens.accessToken = "evidence-token-not-real"
+        val accounts = SavedAccounts(memAccountStore(), tokens)
+        val vm = ProfileViewModel(api, accounts, tokens, toast)
+        vm.seedEvidenceProfile(
+            account = evidenceAccount(),
+            saved = listOf(
+                SavedAccount("evidence_uid_1001", "证据账号", "evi***@example.invalid"),
+                SavedAccount("evidence_uid_1002", "证据账号B", "pho****0000"),
+            ),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    AccountSwitchScreen(onBack = {}, onAdd = {}, onLogout = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("账号切换", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("证据账号", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("证据账号B", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("+ 添加账号", useUnmergedTree = true).assertIsDisplayed()
+        capture("Account-switch")
+    }
+
+    @Test fun securityCenterSeeded() {
+        enabled()
+        val vm = SecurityViewModel(api, toast)
+        // 2FA 未开启；不 beginBinding、不写入密钥
+        vm.seedEvidenceSecurity(evidenceSecurityOverview())
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    SecurityHost(onBack = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("账户安全", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("身份验证器", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("未开启", useUnmergedTree = true).assertIsDisplayed()
+        capture("Security-center")
+    }
+
+    @Test fun kycStatusNoneSeeded() {
+        enabled()
+        val ctx = RuntimeEnvironment.getApplication()
+        val vm = KycViewModel(api, ctx, toast)
+        // 默认 NONE，非 APPROVED；不打开表单、不提交
+        vm.seedEvidenceKyc(ApiKycStatus(level = 0, status = ApiKycStatus.Status.NONE))
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    KycHost(onBack = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("身份认证", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("未认证", useUnmergedTree = true).assertIsDisplayed()
+        // 卡片标题为 "Lv.1 基础认证"
+        rule.onNodeWithText("Lv.1 基础认证", useUnmergedTree = true).assertIsDisplayed()
+        capture("Kyc-status-none")
+    }
+
+    @Test fun kycStatusRejectedSeeded() {
+        enabled()
+        val ctx = RuntimeEnvironment.getApplication()
+        val vm = KycViewModel(api, ctx, toast)
+        vm.seedEvidenceKyc(
+            ApiKycStatus(
+                level = 1,
+                status = ApiKycStatus.Status.REJECTED,
+                submittedAt = "2026-11-01T00:00:00Z",
+                reason = "fixture-only sample rejection",
+            ),
+        )
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    KycHost(onBack = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("原因：fixture-only sample rejection", useUnmergedTree = true).assertIsDisplayed()
+        capture("Kyc-status-rejected")
+    }
+
+    @Test fun securityOfflineError() {
+        enabled()
+        // 无 seed → 503 → 错误态；不绑 2FA
+        val vm = SecurityViewModel(api, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    SecurityHost(onBack = {}, vm = vm)
+                }
+            }
+        }
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("重试", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        capture("Security-offline")
     }
 
     private fun capture(name: String) {
