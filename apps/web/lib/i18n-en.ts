@@ -12,7 +12,7 @@ export const EN: Record<string, string> = {
   "分享全新交易体验":"Share a new way to trade","功能介绍":"Features","卡券中心":"Coupons","即将上线":"Coming Soon","即时开奖":"Instant Draw","合约交易":"Futures Trading","合约价格指数历史":"Futures Index History",
   "合约数据":"Futures Data","合约订单":"Futures Orders","合约账户":"Futures Account","合约跟单":"Futures Copy Trading","多样产品助力资产增长":"Products to grow your assets","多种支付方式，快速入金":"Multiple payment methods, fast deposits",
   "学习区块链与数字资产知识":"Learn blockchain and crypto","学院":"Academy","完成任务领取奖励":"Complete tasks to earn rewards","定期理财":"Fixed Savings","币价":"Prices","币种":"Coin","带单专家":"Lead Traders",
-  "帮助":"Help","帮助中心":"Help Center","常见问题":"FAQ","幸运转盘，好运不断":"Lucky wheel, endless luck","开发者文档与接口支持":"Developer docs and API support","快速了解仓位档位规则":"Learn position tier rules",
+  "帮助":"Help","帮助中心":"Help Center","常见问题":"FAQ","合作伙伴":"Partners","幸运转盘，好运不断":"Lucky wheel, endless luck","开发者文档与接口支持":"Developer docs and API support","快速了解仓位档位规则":"Learn position tier rules",
   "扫码下载 App":"Scan to download the app","指数价格":"Index Price","按充值金额领取奖励":"Rewards based on deposit amount",
   "探索":"Explore","探索我们的产品":"Explore our products","推荐活动":"Featured Events","新人礼包":"Welcome Pack","新人福利":"New User Perks","最新价":"Last Price","服务":"Services","服务条款":"Terms of Service",
   "未登录":"Not logged in","机构":"Institutional","查看帮助文档":"View help docs","查看平台重要公告":"View important announcements","查看标记价格历史走势":"View mark price history",
