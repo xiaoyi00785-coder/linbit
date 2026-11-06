@@ -353,6 +353,37 @@ interface LinbitApi {
         @Body body: ApiStrategyStopGridRequest = ApiStrategyStopGridRequest(),
     ): ApiGridBot
 
+    @GET("earn/orders")
+    suspend fun earnOrders(@Query("status") status: String? = null): ApiEarnOrders200Response
+
+    @GET("earn/records")
+    suspend fun earnRecords(@Query("type") type: String? = null): ApiEarnRecords200Response
+
+    @POST("earn/products/{id}/auto")
+    suspend fun earnAuto(@Path("id") id: String, @Body body: ApiEarnAutoRequest): ApiEarnAuto200Response
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("strategy/grid/preview")
+    suspend fun strategyPreview(
+        @Query("symbol") symbol: String,
+        @Query("mode") mode: String,
+        @Query("lowerPrice") lowerPrice: String,
+        @Query("upperPrice") upperPrice: String,
+        @Query("gridCount") gridCount: Int,
+        @Query("investment") investment: String,
+        @Query("stopLossPrice") stopLossPrice: String? = null,
+        @Query("takeProfitPrice") takeProfitPrice: String? = null,
+    ): ApiStrategyPreview200Response
+
+    @POST("strategy/grid")
+    suspend fun strategyCreateGrid(@Body body: ApiGridCreateRequest): ApiGridBot
+
+    @GET("strategy/grid/{id}/orders")
+    suspend fun strategyGridOrders(
+        @Path("id") id: String,
+        @Query("status") status: String? = null,
+    ): ApiStrategyGridOrders200Response
+
     // ---- 自选 ----
     @GET("account/favorites")
     suspend fun favorites(@Query("market") market: String = "spot"): JsonElement
