@@ -90,6 +90,15 @@ func (s *Store) InsertNotification(ctx context.Context, userID int64, kind, titl
 		VALUES ($1,$2,$3,$4,$5) RETURNING id`, userID, kind, title, body, emailStatus).Scan(&id)
 	return id, err
 }
+func (s *Store) InsertNotificationDedup(ctx context.Context, userID int64, kind, title, body, dedupKey string) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO notifications AS n (user_id,kind,title,body,email_status,dedup_key)
+		VALUES ($1,$2,$3,$4,'none',$5)
+		ON CONFLICT (user_id,dedup_key) WHERE dedup_key IS NOT NULL
+		DO UPDATE SET title=n.title RETURNING n.id`, userID, kind, title, body, dedupKey).Scan(&id)
+	return id, err
+}
 
 func (s *Store) SetNotificationEmailStatus(ctx context.Context, id int64, status string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE notifications SET email_status=$2 WHERE id=$1`, id, status)
@@ -411,12 +420,27 @@ func (s *Server) handleInternalNotify(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "通知参数无效")
 		return
 	}
-	u, err := s.store.UserByUID(r.Context(), n.UID)
-	if err != nil {
-		common.WriteError(w, http.StatusNotFound, "USER_NOT_FOUND", "用户不存在")
+	if len(n.DedupKey) > 160 {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "通知去重键过长")
 		return
 	}
-	id, err := s.notify(r.Context(), u, n.Kind, strings.TrimSpace(n.Title), strings.TrimSpace(n.Body), n.Email)
+	var id int64
+	var err error
+	if n.DedupKey != "" {
+		uid, lookupErr := s.store.UserIDByUID(r.Context(), n.UID)
+		if lookupErr != nil {
+			common.WriteError(w, http.StatusNotFound, "USER_NOT_FOUND", "用户不存在或未激活")
+			return
+		}
+		id, err = s.store.InsertNotificationDedup(r.Context(), uid, n.Kind, strings.TrimSpace(n.Title), strings.TrimSpace(n.Body), n.DedupKey)
+	} else {
+		u, lookupErr := s.store.UserByUID(r.Context(), n.UID)
+		if lookupErr != nil {
+			common.WriteError(w, http.StatusNotFound, "USER_NOT_FOUND", "用户不存在")
+			return
+		}
+		id, err = s.notify(r.Context(), u, n.Kind, strings.TrimSpace(n.Title), strings.TrimSpace(n.Body), n.Email)
+	}
 	if err != nil {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return

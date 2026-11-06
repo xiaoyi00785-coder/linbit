@@ -555,6 +555,34 @@ services:
       market-data:
         condition: service_started
 
+  paper:
+    build:
+      context: .
+      dockerfile: services/go/paper/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8094"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
+      MARKET_URL: http://market-data:8085
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      PAPER_INDEX_MAX_AGE_SECONDS: ${PAPER_INDEX_MAX_AGE_SECONDS:-10}
+      PRICE_ALERT_EVALUATION_MS: ${PRICE_ALERT_EVALUATION_MS:-2000}
+      PRICE_ALERT_DELIVERY_MS: ${PRICE_ALERT_DELIVERY_MS:-1000}
+      # Independent once-only cooldown; never read/write TradFi alertCooldownSec.
+      USER_PRICE_ALERT_COOLDOWN_SECONDS: ${USER_PRICE_ALERT_COOLDOWN_SECONDS:-300}
+      PRICE_ALERT_WRITE_LIMIT: ${PRICE_ALERT_WRITE_LIMIT:-20}
+      PRICE_ALERT_WRITE_WINDOW_SECONDS: ${PRICE_ALERT_WRITE_WINDOW_SECONDS:-60}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      market-data:
+        condition: service_started
+      account:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -574,6 +602,7 @@ services:
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
+      PAPER_URL: http://paper:8094
       ADMIN_URL: http://admin:8088
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
@@ -610,6 +639,8 @@ services:
       growth:
         condition: service_started
       earn:
+        condition: service_started
+      paper:
         condition: service_started
 
 secrets:

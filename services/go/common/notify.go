@@ -29,6 +29,9 @@ type Notice struct {
 	// Email forces (true) or suppresses (false) the email channel; nil uses the
 	// user's preferences.
 	Email *bool `json:"email,omitempty"`
+	// DedupKey is an optional end-to-end idempotency key for account's durable
+	// inbox. It is required for outbox-based producers such as price alerts.
+	DedupKey string `json:"dedupKey,omitempty"`
 }
 
 var notifyClient = &http.Client{Timeout: 5 * time.Second}

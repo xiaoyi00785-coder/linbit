@@ -109,6 +109,12 @@ func (s *Store) UserByPhone(ctx context.Context, phone string) (*User, error) {
 }
 
 // UserByUID looks up a user by public uid.
+func (s *Store) UserIDByUID(ctx context.Context, uid string) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE uid=$1 AND status='active'`, uid).Scan(&id)
+	return id, err
+}
+
 func (s *Store) UserByUID(ctx context.Context, uid string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx, userSelectByUID, uid))
 }
