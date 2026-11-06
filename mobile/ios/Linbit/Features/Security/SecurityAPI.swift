@@ -113,7 +113,10 @@ final class PasskeyRegistrar: NSObject, ASAuthorizationControllerDelegate, ASAut
         let req = provider.createCredentialRegistrationRequest(challenge: challenge, name: name, userID: uid)
         let c = ASAuthorizationController(authorizationRequests: [req])
         c.delegate = self; c.presentationContextProvider = self
-        return try await withCheckedThrowingContinuation { k in cont = k; c.performRequests() }
+        return try await withCheckedThrowingContinuation { k in
+            if let prev = cont { cont = nil; prev.resume(throwing: PasskeyError.cancelled) }
+            cont = k; c.performRequests()
+        }
     }
 
     /// 登录断言：对齐 Web `passkeyLogin` / PublicKeyCredentialRequestOptions
@@ -144,7 +147,10 @@ final class PasskeyRegistrar: NSObject, ASAuthorizationControllerDelegate, ASAut
         }
         let c = ASAuthorizationController(authorizationRequests: [req])
         c.delegate = self; c.presentationContextProvider = self
-        return try await withCheckedThrowingContinuation { k in cont = k; c.performRequests() }
+        return try await withCheckedThrowingContinuation { k in
+            if let prev = cont { cont = nil; prev.resume(throwing: PasskeyError.cancelled) }
+            cont = k; c.performRequests()
+        }
     }
 
     nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization a: ASAuthorization) {

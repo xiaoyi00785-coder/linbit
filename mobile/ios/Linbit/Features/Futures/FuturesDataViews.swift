@@ -77,7 +77,8 @@ struct FuturesChartPanel: View {
     private func loadCandles() async {
         candleSeq &+= 1
         let seq = candleSeq, sym = symbol, iv = interval
-        if candles.value == nil { candles = .loading }
+        // 切交易对/周期时立即离开旧图，避免旧响应覆盖前短暂展示错币种
+        candles = .loading
         do {
             let list = try await FuturesAPI.klines(sym, interval: iv)
             guard seq == candleSeq, sym == symbol, iv == interval else { return }
@@ -90,7 +91,7 @@ struct FuturesChartPanel: View {
     private func loadTrades() async {
         tradeSeq &+= 1
         let seq = tradeSeq, sym = symbol
-        if trades.value == nil { trades = .loading }
+        trades = .loading
         do {
             let list = try await FuturesAPI.marketTrades(sym)
             guard seq == tradeSeq, sym == symbol else { return }
@@ -345,7 +346,7 @@ struct SpotChartPanel: View {
     private func load() async {
         loadSeq &+= 1
         let seq = loadSeq, sym = symbol, iv = interval
-        if candles.value == nil { candles = .loading }
+        candles = .loading
         do {
             let list = try await MarketAPI.klines(sym, interval: iv)
             guard seq == loadSeq, sym == symbol, iv == interval else { return }
@@ -388,11 +389,16 @@ struct FuturesMarkHistoryView: View {
         .task(id: symbol) { await load() }
     }
     private func load() async {
-        if state.value == nil { state = .loading }
+        state = .loading
+        let sym = symbol
         do {
-            let r = try await FuturesAPI.markHistory(symbol)
+            let r = try await FuturesAPI.markHistory(sym)
+            guard sym == symbol else { return }
             state = .loaded(r.history ?? [])
-        } catch { state = .failed(error.lbMessage) }
+        } catch {
+            guard sym == symbol else { return }
+            state = .failed(error.lbMessage)
+        }
     }
     private func fmt(_ ms: Int64?) -> String {
         guard let ms else { return "--" }

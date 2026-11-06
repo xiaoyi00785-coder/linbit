@@ -23,6 +23,7 @@ struct WithdrawView: View {
     @State private var showNet = false
     @State private var showBook = false
     @State private var submitting = false
+    @State private var reloadSeq = 0
     @State private var sendingCode = false
     @State private var codeLeft = 0
     @State private var loadError: String?
@@ -242,13 +243,17 @@ struct WithdrawView: View {
             return
         }
 
+        reloadSeq &+= 1
+        let seq = reloadSeq
+        let assetAtStart = asset
         loadError = nil
         if resetAddress { address = ""; memo = ""; network = nil }
         do {
-            async let nets = AssetsAPI.networks(asset: asset)
+            async let nets = AssetsAPI.networks(asset: assetAtStart)
             async let book = try? AssetsAPI.addresses()
             async let _ = assets.load(silent: true)
             let n = try await nets
+            guard seq == reloadSeq, asset == assetAtStart else { return }
             networks = n.filter { $0.withdrawEnabled }
             saved = (await book) ?? []
             if network == nil {
@@ -258,6 +263,7 @@ struct WithdrawView: View {
             }
             await session.reloadAccount()
         } catch {
+            guard seq == reloadSeq, asset == assetAtStart else { return }
             loadError = error.lbMessage
             networks = []
         }
@@ -303,6 +309,7 @@ struct WithdrawView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         if let v = validation { fieldError = v; return }
         guard let net = network?.network else { return }
+        guard !submitting else { return }
         submitting = true; defer { submitting = false }
         do {
             let req = APIWithdrawRequest(
