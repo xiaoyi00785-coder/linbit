@@ -160,6 +160,15 @@ struct RootTabView: View {
         case "coupon-error": SecShot.raw = "coupon:error"; router.feature = .coupons
         case "coupon-confirm": SecShot.raw = "coupon:confirm"; router.feature = .coupons
         case "coupon-fail": SecShot.raw = "coupon:fail"; router.feature = .coupons
+        case "partner-none": SecShot.raw = "partner:none"; router.feature = .partner
+        case "partner-apply": SecShot.raw = "partner:apply"; router.feature = .partner
+        case "partner-apply-error": SecShot.raw = "partner:apply-error"; router.feature = .partner
+        case "partner-pending": SecShot.raw = "partner:pending"; router.feature = .partner
+        case "partner-rejected": SecShot.raw = "partner:rejected"; router.feature = .partner
+        case "partner-active": SecShot.raw = "partner:active"; router.feature = .partner
+        case "partner-team": SecShot.raw = "partner:team"; router.feature = .partner
+        case "partner-empty": SecShot.raw = "partner:empty"; router.feature = .partner
+        case "partner-error": SecShot.raw = "partner:error"; router.feature = .partner
         case "security-error": router.shotSheet = "sec::error"; SecShot.raw = "sec::error"; router.feature = .security
         case "security-profile": router.shotSheet = "sec:profile"; SecShot.raw = "sec:profile"; router.feature = .security
         case "security-profile-error": router.shotSheet = "sec:profile:error"; SecShot.raw = "sec:profile:error"; router.feature = .security
