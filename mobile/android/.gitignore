@@ -16,3 +16,4 @@ keystore.properties
 
 # 仓库根 .gitignore 有 `data/`（忽略数据目录），这里的 data 是 Kotlin 包（行情仓库），需要显式放行
 !app/src/main/kotlin/click/cowa/linbit/data/
+app/shots.gradle.kts

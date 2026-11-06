@@ -77,11 +77,9 @@ fun AssetsScreen(
     LaunchedEffect(sessionVersion) { vm.load() }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            PrimaryTabs(Tabs, s.tab, onSelect = { i ->
-                if (i >= 4) vm.toast.show("${Tabs[i]}即将开放") else vm.setTab(i)
-            }, Modifier.padding(horizontal = Spacing.pageH), scrollable = true)
-        }
+        PrimaryTabs(Tabs, s.tab, onSelect = { i ->
+            if (i >= 4) vm.toast.show("${Tabs[i]}即将开放") else vm.setTab(i)
+        }, Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH), scrollable = true)
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))
 
         if (!loggedIn) {
