@@ -306,8 +306,10 @@ struct HomeView: View {
                     .padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
                     Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
                 }
+            } else if newsTab == 1 {
+                EmptyStateView(text: "快讯即将上线").frame(height: 140)
             } else {
-                EmptyStateView(text: newsTab == 1 ? "快讯即将上线" : "学院即将上线").frame(height: 140)
+                AcademyHomeSection()
             }
             moreLink {}
         }

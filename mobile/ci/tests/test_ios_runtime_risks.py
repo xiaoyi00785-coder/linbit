@@ -197,15 +197,18 @@ class NewcomerUI:
         self.action_busy = False
         self.logged_in = True
         self.toasts = []
+        # OpenAPI enum: locked|in_progress|claimable|claimed|expired（无 completed/done）
         self.tasks = [
             {'key': 't1', 'status': 'claimed'},
             {'key': 't2', 'status': 'claimable'},
-            {'key': 't3', 'status': 'done'},
+            {'key': 't3', 'status': 'in_progress'},
+            {'key': 't4', 'status': 'locked'},
+            {'key': 't5', 'status': 'expired'},
         ]
 
     def claimable_key(self):
         for t in self.tasks:
-            if t['status'] in ('claimable', 'completed') and t.get('key'):
+            if t['status'] == 'claimable' and t.get('key'):
                 return t['key']
         return None
 
@@ -245,7 +248,7 @@ class NewcomerUI:
 
 api = MockNewcomerAPI()
 ui = NewcomerUI(api)
-ok(ui.claimable_key() == 't2', 'mock picks claimable not claimed/done')
+ok(ui.claimable_key() == 't2', 'mock picks claimable not claimed/in_progress/locked/expired')
 ok(ui.run('claim') == 'ok' and api.claim_calls == ['t2'], 'mock claim once on claimable key')
 ui.action_busy = True
 ok(ui.run('claim') == 'busy' and api.claim_calls == ['t2'], 'actionBusy blocks second claim (no double reward)')
@@ -254,8 +257,18 @@ ui.logged_in = False
 ok(ui.run('enroll') == 'login' and api.enroll_calls == 0, 'logged-out enroll does not call API')
 ui.logged_in = True
 ok(ui.run('enroll') == 'ok' and api.enroll_calls == 1, 'mock enroll once')
-ui.tasks = [{'key': 'x', 'status': 'done'}, {'key': 'y', 'status': 'claimed'}]
-ok(ui.claimable_key() is None and ui.run('claim') == 'none', 'done/claimed not claimable')
+ui.tasks = [{'key': 'x', 'status': 'in_progress'}, {'key': 'y', 'status': 'claimed'}, {'key': 'z', 'status': 'locked'}, {'key': 'w', 'status': 'expired'}]
+ok(ui.claimable_key() is None and ui.run('claim') == 'none', 'non-claimable statuses rejected')
+# session switch mid-busy
+ui.tasks = [{'key': 's1', 'status': 'claimable'}]
+ui.action_busy = False
+ui.logged_in = True
+ui.action_busy = True  # simulate in-flight
+ui.logged_in = False
+ok(ui.run('claim') == 'busy', 'busy blocks even after logout race')
+ui.action_busy = False
+ok(ui.run('claim') == 'login' and 's1' not in api.claim_calls, 'logged-out after busy clear does not claim')
+ui.logged_in = True
 api.fail_next = 'claim'
 ui.tasks = [{'key': 'z', 'status': 'claimable'}]
 ok(ui.run('claim') == 'err' and any(t.startswith('err:') for t in ui.toasts), 'claim error surfaces toast (mock)')
@@ -266,7 +279,9 @@ ok('enrollNewcomer' in api_src and 'claimNewcomerTask' in api_src, 'HomeAPI enro
 ok('enrollNewcomer' in nv and 'claimNewcomerTask' in nv, 'NewcomerView calls enroll/claim')
 ok('奖励领取即将开放' not in nv, 'false claim toast removed')
 ok('actionBusy' in nv and 'guard !actionBusy' in nv, 'NewcomerView actionBusy anti-double')
-ok('claimable' in nv and 'completed' in nv, 'claim status filter present')
+ok('$0.status == "claimable"' in nv or 'status == "claimable"' in nv, 'claim status filter claimable-only')
+ok('completed' not in nv.split('case "claim"')[1].split('default:')[0], 'claim block does not treat completed as claimable')
+ok('locked|in_progress|claimable|claimed|expired' in nv, 'OpenAPI status enum documented in comment')
 ok('session.isLoggedIn' in nv, 'session guard on reward actions')
 
 # ---------- 6) Futures beginner guide: static source mapping ----------
@@ -274,12 +289,18 @@ guide = read('mobile/ios/Linbit/Features/Futures/FuturesBeginnerGuideView.swift'
 pagedata = read('apps/web/legacy/pagedata.ts')
 ok('apps/web/legacy/pagedata.ts' in guide, 'guide documents pagedata source')
 ok('仓位档位' in pagedata and '标记价格' in guide, 'guide mirrors mark-price topic')
-ok('资金费每 8 小时' in guide and '00:00 / 08:00 / 16:00 UTC' in guide, 'funding schedule from pagedata')
+ok('fundingIntervalHours' in guide and '不保证所有品种均为固定 8 小时' in guide, 'funding interval not absolutized')
+ok('合约指南' in guide and '不是' in guide.split('合约指南')[0]+guide.split('合约指南')[1][:80], 'page labeled 合约指南 not full academy')
+ok('FeatureShell(title: "合约指南")' in guide, 'shell title 合约指南')
 ok('全部保证金损失' in guide and '全部保证金损失' in pagedata, 'risk disclaimer from 服务条款')
 ok('futuresGuide' in read('mobile/ios/Linbit/Features/Common/P3Components.swift'), 'FeaturePage.futuresGuide')
 ok('Router.shared.openFeature(.futuresGuide)' in read('mobile/ios/Linbit/Features/Futures/FuturesSheets.swift'), 'tools 新手教学 wired')
 ok('case "futures-guide"' in read('mobile/ios/Linbit/App/LinbitApp.swift'), 'shot route futures-guide')
 ok('futures-guide' in read('mobile/ci/screens-pr.txt'), 'screens-pr includes futures-guide')
+ok('intervalHours' in read('mobile/ios/Linbit/Features/Futures/FuturesDataViews.swift') and 'fundingIntervalHours' in read('mobile/ios/Linbit/Features/Futures/FuturesDataViews.swift'), 'funding history shows per-symbol interval')
+ac = read('mobile/ios/Linbit/Features/Home/AcademyHomeSection.swift')
+ok('linbit 学院' in ac and '合约指南' in ac and 'AcademyHomeSection()' in read('mobile/ios/Linbit/Features/Home/HomeView.swift'), 'home 学院目录 from pagedata')
+ok('学院即将上线' not in read('mobile/ios/Linbit/Features/Home/HomeView.swift'), 'academy placeholder removed')
 
 if failures:
     print('FAIL', len(failures))

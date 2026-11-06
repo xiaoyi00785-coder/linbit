@@ -211,10 +211,18 @@ struct FuturesFundingHistoryView: View {
     @State private var more = false
     @State private var moreError: String?
     @State private var picking = false
+    /// 来自 funding-history 的 fundingIntervalHours（按品种，非全局固定）
+    @State private var intervalHours: Int?
     var body: some View {
         FeatureShell(title: "历史资金费率") {
             VStack(spacing: 0) {
-                HStack { ChipButton(title: symbol) { picking = true }; Spacer() }
+                HStack {
+                    ChipButton(title: symbol) { picking = true }
+                    Spacer()
+                    if let h = intervalHours {
+                        Text("结算周期 \(h) 小时").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    }
+                }
                     .padding(.horizontal, Spacing.pageH).padding(.vertical, 10)
                 HStack {
                     Text("时间").frame(maxWidth: .infinity, alignment: .leading)
@@ -258,6 +266,7 @@ struct FuturesFundingHistoryView: View {
             let items = r.history ?? []
             state = .loaded(reset ? items : (state.value ?? []) + items)
             next = r.nextEndTime
+            if reset { intervalHours = r.fundingIntervalHours }
         } catch {
             if reset { state = .failed(error.lbMessage) } else { moreError = error.lbMessage }
         }

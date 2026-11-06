@@ -76,8 +76,8 @@ struct NewcomerView: View {
             }
         case "claim":
             guard session.isLoggedIn else { session.present(.login); return }
-            // 仅 claimable/completed 可领；claimed/done 不自动领取，避免误触发真实奖励发放
-            let key = (n.tasks ?? []).first(where: { ($0.status == "claimable" || $0.status == "completed") && !($0.key ?? "").isEmpty })?.key
+            // OpenAPI NewcomerTask.status: locked|in_progress|claimable|claimed|expired — 仅 claimable 可领
+            let key = (n.tasks ?? []).first(where: { $0.status == "claimable" && !($0.key ?? "").isEmpty })?.key
             guard let key else {
                 ToastCenter.shared.show("暂无可领取任务", .error); return
             }
@@ -110,7 +110,8 @@ struct NewcomerView: View {
 
     private func row(_ t: Newcomer.Task) -> some View {
         let target = t.target?.value ?? 0, prog = t.progress?.value ?? 0
-        let done = t.status == "done" || t.status == "completed" || t.status == "claimed"
+        // 任务完成展示：仅 claimed（cta 的 done 是活动级，不是 task.status）
+        let done = t.status == "claimed"
         return HStack(spacing: 10) {
             Image(systemName: done ? "checkmark.circle.fill" : "gift").font(.system(size: 20)).foregroundColor(done ? p.up : p.brand)
             VStack(alignment: .leading, spacing: 4) {

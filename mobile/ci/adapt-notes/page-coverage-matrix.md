@@ -123,3 +123,9 @@
 
 ### Tests
 - `python3 mobile/ci/tests/test_ios_runtime_risks.py` = **Python 仿真 / 源码守卫**，≠ Swift XCTest；**不发起真实 enroll/claim/提现**。
+
+### 审校修正（本批本地，相对 7633820）
+- 资金费：去掉「固定 8h UTC」绝对表述；以 `fundingIntervalHours` / `nextFundingTime` / 历史资金费率页为准；历史页展示品种结算周期。
+- 新人 task.status 严格 OpenAPI：`locked|in_progress|claimable|claimed|expired`，**仅 claimable 可领**（不再用 completed/done）。
+- 首页「学院」：`AcademyHomeSection` 展示 pagedata「linbit 学院」分类目录；合约细则标「合约指南」，不伪称完整学院。
+- 现货：无独立现货指南页（无同源独立 DOCS）；仅学院新手入门收录「现货与合约区别」摘要。
