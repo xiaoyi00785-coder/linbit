@@ -26,6 +26,13 @@ on:
           - max430_xxxl
           - matrix_se_mid_max
         default: se375_xxxl
+      screen_list:
+        description: "build 截图清单（仅 workflow_dispatch；PR 仍固定 screens-pr）。screens-risk=高风险 DEBUG 页，同一次 Debug build，无额外部署权限"
+        type: choice
+        options:
+          - screens-pr
+          - screens-risk
+        default: screens-pr
 
 permissions:
   contents: read
@@ -185,15 +192,24 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
 
-          # pull_request / push：冒烟清单 + sleep 4；仅 workflow_dispatch 跑完整清单 + sleep 7
-          # （完整套件约 183 张，仍可能逼近 90 分钟上限，故不在 push/main 自动跑）
+          # pull_request / push：冒烟 screens-pr + sleep 4
+          # workflow_dispatch 默认完整 screens.txt + sleep 7；screen_list=screens-risk 仅高风险页（同一次 Debug build，无额外部署权限）
           SCREEN_LIST=mobile/ci/screens-pr.txt
           SLEEP_SECS=4
           RUN_SPLASH_VIDEO=0
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            SCREEN_LIST=mobile/ci/screens.txt
-            SLEEP_SECS=7
-            RUN_SPLASH_VIDEO=1
+            case "${{ inputs.screen_list }}" in
+              screens-risk)
+                SCREEN_LIST=mobile/ci/screens-risk.txt
+                SLEEP_SECS=4
+                RUN_SPLASH_VIDEO=0
+                ;;
+              *)
+                SCREEN_LIST=mobile/ci/screens.txt
+                SLEEP_SECS=7
+                RUN_SPLASH_VIDEO=1
+                ;;
+            esac
           fi
           echo "SCREEN_LIST=$SCREEN_LIST SLEEP_SECS=$SLEEP_SECS RUN_SPLASH_VIDEO=$RUN_SPLASH_VIDEO"
 

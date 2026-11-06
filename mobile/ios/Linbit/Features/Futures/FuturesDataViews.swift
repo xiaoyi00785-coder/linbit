@@ -79,6 +79,13 @@ struct FuturesChartPanel: View {
         let seq = candleSeq, sym = symbol, iv = interval
         // 切交易对/周期时立即离开旧图，避免旧响应覆盖前短暂展示错币种
         candles = .loading
+        // DEBUG ShotGate：合成 K 线 example；Release 闸门关闭
+        if MarketDemo.on {
+            guard seq == candleSeq, sym == symbol, iv == interval else { return }
+            if MarketDemo.mode == .error { candles = .failed(MarketDemo.errorMessage) }
+            else { candles = .loaded(MarketDemo.futuresKlines(symbol: sym, interval: iv)) }
+            return
+        }
         do {
             let list = try await FuturesAPI.klines(sym, interval: iv)
             guard seq == candleSeq, sym == symbol, iv == interval else { return }
@@ -92,6 +99,12 @@ struct FuturesChartPanel: View {
         tradeSeq &+= 1
         let seq = tradeSeq, sym = symbol
         trades = .loading
+        if MarketDemo.on {
+            guard seq == tradeSeq, sym == symbol else { return }
+            if MarketDemo.mode == .error { trades = .failed(MarketDemo.errorMessage) }
+            else { trades = .loaded(MarketDemo.futuresTrades(symbol: sym)) }
+            return
+        }
         do {
             let list = try await FuturesAPI.marketTrades(sym)
             guard seq == tradeSeq, sym == symbol else { return }
@@ -356,6 +369,13 @@ struct SpotChartPanel: View {
         loadSeq &+= 1
         let seq = loadSeq, sym = symbol, iv = interval
         candles = .loading
+        // DEBUG ShotGate：现货 K 线 example fixture
+        if MarketDemo.on {
+            guard seq == loadSeq, sym == symbol, iv == interval else { return }
+            if MarketDemo.mode == .error { candles = .failed(MarketDemo.errorMessage) }
+            else { candles = .loaded(MarketDemo.spotKlines(symbol: sym, interval: iv)) }
+            return
+        }
         do {
             let list = try await MarketAPI.klines(sym, interval: iv)
             guard seq == loadSeq, sym == symbol, iv == interval else { return }

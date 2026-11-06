@@ -339,14 +339,30 @@ copy = (ROOT / "mobile/ios/Linbit/Features/Growth/CopyTradingView.swift").read_t
 ok("if CopyDemo.state != nil { return }" in copy and "CopyAPI.follow" in copy, "copy follow blocked under CopyDemo")
 
 
+
 # Passkey cancel + newcomer claimable-only already covered; assert OpenAPI status enum once more
 nv = read("mobile/ios/Linbit/Features/Home/NewcomerView.swift")
 ok("locked|in_progress|claimable|claimed|expired" in nv, "newcomer OpenAPI status comment present")
 ok("guard !actionBusy" in nv, "newcomer anti-double present")
+
+# MarketDemo：DEBUG/ShotGate 行情 example fixture（API shape）；Release 不可启用
+md = (ROOT / "mobile/ios/Linbit/Features/Common/MarketDemo.swift").read_text()
+ok("enum MarketDemo" in md and "ShotGate.enabled" in md, "MarketDemo gated on ShotGate.enabled")
+ok("APIDepth" in md and "APIFuturesTicker" in md and "APIKline" in md, "MarketDemo uses real API shapes")
+ok("不是" in md or "example" in md.lower() or "非" in md, "MarketDemo documents non-production")
+fm = (ROOT / "mobile/ios/Linbit/Features/Futures/FuturesModel.swift").read_text()
+ok("if MarketDemo.on || shotDemo" in fm and "refreshMarket" in fm, "FuturesModel.refreshMarket uses MarketDemo")
+ok("截图夹具不下单" in fm, "Futures place blocked under MarketDemo")
+sm = (ROOT / "mobile/ios/Linbit/Features/Spot/SpotModel.swift").read_text()
+ok("if MarketDemo.on" in sm and "loadBook" in sm, "SpotModel.loadBook uses MarketDemo")
+ok("截图夹具不下单" in sm, "Spot place blocked under MarketDemo")
+dv = (ROOT / "mobile/ios/Linbit/Features/Futures/FuturesDataViews.swift").read_text()
+ok(dv.count("if MarketDemo.on") >= 2, "Futures+Spot chart panels use MarketDemo")
+sg = (ROOT / "mobile/ios/Linbit/Features/Common/ShotGate.swift").read_text()
+ok("#if DEBUG" in sg and "false" in sg, "ShotGate Release compile-time false")
 
 if failures:
     print('FAIL', len(failures))
     for f in failures: print(' -', f)
     sys.exit(1)
 print('ALL PASSED (Python simulation ≠ Swift XCTest; no real fund/reward network)')
-
