@@ -101,12 +101,13 @@ class TradeHistoryViewModel @Inject constructor(
     var actionBusy by mutableStateOf(false); private set
     private var requestGeneration = 0L
     private var requestJob: kotlinx.coroutines.Job? = null
+    private var moreJob: kotlinx.coroutines.Job? = null
     private var actionJob: kotlinx.coroutines.Job? = null
     private var actionGeneration = 0L
     private data class AlgoQuery(val tab: Int, val symbol: String?, val time: Int, val billKind: String?, val plan: Boolean, val history: Boolean, val epoch: Long)
 
     init { viewModelScope.launch { tokens.sessionVersion.collect { version ->
-        requestGeneration++; requestJob?.cancel(); actionGeneration++; actionJob?.cancel()
+        requestGeneration++; requestJob?.cancel(); moreJob?.cancel(); actionGeneration++; actionJob?.cancel()
         clear()
     } } }
     fun clear() {
@@ -119,6 +120,7 @@ class TradeHistoryViewModel @Inject constructor(
     private fun valid(generation: Long, epoch: Long) = generation == requestGeneration && epoch == tokens.sessionVersion.value
     /** Load only the selected contract. No global breadth-first request may race the user-selected filter. */
     private fun queryFutures(selected: AlgoQuery): kotlinx.coroutines.Job {
+        moreJob?.cancel(); loadingMore = false
         val generation = ++requestGeneration; val epoch = selected.epoch
         clearCursors()
         requestJob?.cancel()
@@ -148,16 +150,36 @@ class TradeHistoryViewModel @Inject constructor(
         queryFutures(AlgoQuery(tab, symbol, timeFilter, billKind, algoPlan, algoHistory, tokens.sessionVersion.value))
     }
     fun loadMorePositions(symbol: String?, timeFilter: Int) {
-        val c = posCursor ?: return; if (loadingMore) return
-        viewModelScope.launch { loadingMore = true; try { futPositions += apiCall { api.futuresPositionHistory(symbol = symbol, startTime = TradeHistoryLogic.positionStartTimeMs(timeFilter), cursor = c, limit = 50) }.also { posCursor = it.nextCursor }.positions.orEmpty() } catch (e: Throwable) { actionError = e.lbMessage() } finally { loadingMore = false } }
+        val cursor = posCursor ?: return; if (loadingMore || !tokens.loggedIn.value) return
+        val generation=requestGeneration;val epoch=tokens.sessionVersion.value
+        moreJob = viewModelScope.launch {
+            loadingMore = true
+            try {
+                val r = apiCall { api.futuresPositionHistory(symbol=symbol,startTime=TradeHistoryLogic.positionStartTimeMs(timeFilter),cursor=cursor,limit=50) }
+                if (valid(generation,epoch)) { futPositions += r.positions.orEmpty();posCursor=r.nextCursor }
+            } catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(valid(generation,epoch))actionError=e.lbMessage()}
+            finally{if(valid(generation,epoch))loadingMore=false}
+        }
     }
     fun loadMoreAlgos(symbol: String?, algoPlan: Boolean, algoHistory: Boolean) {
-        val c = algoCursor ?: return; if (loadingMore) return
-        viewModelScope.launch { loadingMore = true; try { val status = TradeHistoryLogic.algoStatusParam(algoHistory); futAlgos += (if (algoPlan) apiCall { api.futuresPlanOrders(symbol = symbol, status = status, cursor = c) } else apiCall { api.futuresTpslOrders(symbol = symbol, status = status, cursor = c) }).also { algoCursor = it.nextCursor }.orders.orEmpty() } catch (e: Throwable) { actionError = e.lbMessage() } finally { loadingMore = false } }
+        val cursor=algoCursor ?: return;if(loadingMore || !tokens.loggedIn.value)return
+        val generation=requestGeneration;val epoch=tokens.sessionVersion.value
+        moreJob=viewModelScope.launch {
+            loadingMore = true
+            try {
+                val status=TradeHistoryLogic.algoStatusParam(algoHistory)
+                val r=if(algoPlan)apiCall{api.futuresPlanOrders(symbol=symbol,status=status,cursor=cursor)}else apiCall{api.futuresTpslOrders(symbol=symbol,status=status,cursor=cursor)}
+                if(valid(generation,epoch)){futAlgos += r.orders.orEmpty();algoCursor=r.nextCursor}
+            } catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(valid(generation,epoch))actionError=e.lbMessage()}
+            finally{if(valid(generation,epoch))loadingMore=false}
+        }
     }
     fun loadSpot(tab: Int, symbol: String?) {
         if (!tokens.loggedIn.value) return
         val generation = ++requestGeneration; val epoch = tokens.sessionVersion.value
+        moreJob?.cancel();loadingMore=false
         requestJob?.cancel()
         requestJob = viewModelScope.launch { loading = true; error = null; try { when (tab) {
             0 -> apiCall { api.spotOpenOrders(symbol) }.items.also { if (valid(generation, epoch)) spotOpen = it }
@@ -194,7 +216,7 @@ class TradeHistoryViewModel @Inject constructor(
         catch (e: Throwable) { if (actionGeneration == generation && tokens.sessionVersion.value == epoch) { actionError = e.lbMessage(); onDone(false, actionError) } }
         finally { if (actionGeneration == generation && tokens.sessionVersion.value == epoch) actionBusy = false } }
     }
-    override fun onCleared() { requestGeneration++; actionGeneration++; requestJob?.cancel(); actionJob?.cancel(); super.onCleared() }
+    override fun onCleared() { requestGeneration++; actionGeneration++; requestJob?.cancel();moreJob?.cancel(); actionJob?.cancel(); super.onCleared() }
 }
 
 @Composable

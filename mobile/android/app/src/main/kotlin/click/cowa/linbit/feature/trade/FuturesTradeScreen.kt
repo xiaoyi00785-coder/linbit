@@ -80,6 +80,9 @@ import click.cowa.linbit.ui.theme.lbNum
 import java.math.BigDecimal
 
 /** 合约 Tab 根（对照图 ref/11）：合约 / 事件合约 / TradFi / 模拟交易。 */
+/** Testable production owner injection; default remains Hilt and never puts a host in the history route. */
+val LocalFuturesTradeFactory = androidx.compose.runtime.staticCompositionLocalOf<@Composable () -> FuturesTradeViewModel> { { hiltViewModel() } }
+
 @Composable
 fun FuturesRootScreen(
     bottomInset: Dp,
@@ -96,7 +99,7 @@ fun FuturesRootScreen(
     modifier: Modifier = Modifier,
     initialTop: Int = 0,
     autoStart: Boolean = true,
-    vm: FuturesTradeViewModel = hiltViewModel(),
+    vm: FuturesTradeViewModel = LocalFuturesTradeFactory.current.invoke(),
 ) {
     val p = LB.p
     var top by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
