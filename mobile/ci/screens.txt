@@ -21,6 +21,7 @@ spot-chart
 futures-calc
 futures-mark-history
 futures-insurance
+futures-guide
 event
 earn
 strategy

@@ -15,6 +15,7 @@ spot-chart light
 futures-calc light
 futures-mark-history light
 futures-insurance light
+futures-guide light
 login
 
 # 高价值交易

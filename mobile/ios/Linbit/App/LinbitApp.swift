@@ -126,6 +126,7 @@ struct RootTabView: View {
         case "futures-funding": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresFunding
         case "futures-mark-history": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresMarkHistory
         case "futures-insurance": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresInsurance
+        case "futures-guide": router.tab = .futures; router.futuresTop = 0; router.feature = .futuresGuide
         case "futures-calc": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "calc"
         case "spot-chart": router.tab = .spot; router.shotSheet = "spotChart"
         case "event": router.tab = .futures; router.futuresTop = 1
