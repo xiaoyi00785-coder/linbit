@@ -7,3 +7,8 @@ password-register light
 spot light
 futures light
 assets light
+
+# 充提/客服详情（fixture）
+assets-deposit light
+assets-withdraw light
+support-detail-open light

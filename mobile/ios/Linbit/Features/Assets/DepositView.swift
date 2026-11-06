@@ -186,6 +186,13 @@ struct DepositView: View {
     private func copy(_ s: String?) { guard let s else { return }; UIPasteboard.general.string = s; Haptics.success(); ToastCenter.shared.show("已复制", .success) }
 
     private func loadNets() async {
+        // CI / Debug 截图 fixture：假地址，非真实链上资料
+        if ShotGate.launchShot == "assets-deposit" {
+            let n = APIWithdrawNetwork(network: "TRC20", minWithdraw: "1", maxWithdraw: "20000", gasFeeEstimate: "1", gasFeeAsset: "USDT", confirmations: 20, estimatedArrivalMinutes: 5, withdrawEnabled: true, memoRequired: false)
+            nets = .loaded([n]); net = n; recommended = ["TRC20"]
+            addr = .loaded(APIDepositAddress(asset: asset, network: "TRC20", address: "TXfixtureDemoAddressDoNotDeposit0001", memo: nil, minDeposit: "1", memoRequired: false, confirmations: 20))
+            return
+        }
         nets = .loading
         do {
             // 充值网络按币种取 GET /wallet/networks?asset=（含 minDeposit / 充值开关）

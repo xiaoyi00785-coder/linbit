@@ -36,7 +36,7 @@ struct HomeView: View {
                     sectionDivider
                     news
                 }
-                .padding(.bottom, Metrics.tabBarH + 72)
+                .padding(.bottom, Metrics.tabBarH + 100)
             }
             .refreshable { await vm.load(); await store.load() }
         }
@@ -208,6 +208,8 @@ struct HomeView: View {
         .contentShape(Rectangle())
         .onTapGesture { HomeLink.open(currentBanner?.link, fallback: nil) }
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            // 证据：ios.yml 冒烟 sleep 4–7s，与 4s/5s 轮播重叠会拍到 withAnimation 中帧（home-bell 叠影）
+            guard ShotGate.launchShot == nil else { return }
             if vm.banners.count > 1 { withAnimation { bannerPage = (bannerPage + 1) % vm.banners.count } }
         }
     }
@@ -256,6 +258,7 @@ struct HomeView: View {
         .contentShape(Rectangle())
         .onTapGesture { Router.shared.openFeature(.earn) }
         .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
+            guard ShotGate.launchShot == nil else { return }
             if !vm.earn.isEmpty { earnPage = (earnPage + 1) % vm.earn.count }
         }
     }

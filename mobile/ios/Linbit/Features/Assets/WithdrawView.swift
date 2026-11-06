@@ -228,6 +228,18 @@ struct WithdrawView: View {
     }
 
     private func reload(resetAddress: Bool = false) async {
+        if ShotGate.launchShot == "assets-withdraw" {
+            // 仅填充表单视觉；不调用 createWithdrawal
+            let n = APIWithdrawNetwork(network: "TRC20", minWithdraw: "10", maxWithdraw: "20000", gasFeeEstimate: "1", gasFeeAsset: "USDT", confirmations: 20, estimatedArrivalMinutes: 5, withdrawEnabled: true, memoRequired: false)
+            networks = [n]; network = n
+            address = "TXfixtureDemoAddressDoNotWithdraw0001"
+            amount = "10"
+            totp = "123456"
+            useTotp = true
+            loadError = nil
+            return
+        }
+
         loadError = nil
         if resetAddress { address = ""; memo = ""; network = nil }
         do {

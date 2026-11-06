@@ -8,6 +8,9 @@ markets light
 spot light
 futures
 assets light
+
+# 闪兑提前：避免 cancel-in-progress 截断 screens-pr 末尾导致缺 swap-light（9a70ed0 证据：27/28 仅缺末项）
+swap light
 login
 
 # 高价值交易
@@ -35,4 +38,8 @@ assets-networks light
 
 # 其他高流量入口
 earn light
-swap light
+
+# 充提表单 / 客服详情（fixture；仅 Debug ShotGate）
+assets-deposit light
+assets-withdraw light
+support-detail-open light
