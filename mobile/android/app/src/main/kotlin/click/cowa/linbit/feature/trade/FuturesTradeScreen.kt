@@ -215,7 +215,7 @@ fun FuturesTradeContent(
                 // 费率与保证金模式同一行，不能占用盘口上方的额外 40dp。
                 Column(Modifier.width(138.dp).height(24.dp), horizontalAlignment = Alignment.End) {
                     Text("资金费率(8H) / 倒计时", style = lb(10.sp).copy(lineHeight = 12.sp), color = p.textTertiary, maxLines = 1)
-                    Text("${Fmt.amount(vm.fundingRate, 4)}% / ${vm.fundingCountdown}", style = lbNum(10.sp).copy(lineHeight = 12.sp), color = p.textPrimary, maxLines = 1)
+                    Text("${Fmt.amount(vm.fundingRate, 4)}% / ${vm.fundingCountdown.also { vm.nowMs }}", style = lbNum(10.sp).copy(lineHeight = 12.sp), color = p.textPrimary, maxLines = 1)
                 }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

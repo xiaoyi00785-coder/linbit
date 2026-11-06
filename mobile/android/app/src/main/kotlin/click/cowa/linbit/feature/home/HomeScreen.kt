@@ -66,8 +66,6 @@ import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
 import click.cowa.linbit.ui.theme.lbNum
 import kotlinx.coroutines.delay
-import java.time.Duration
-import java.time.Instant
 
 private data class GridItem(val light: Int, val dark: Int, val title: String)
 
@@ -222,10 +220,12 @@ private fun AssetHeader(hide: Boolean, onToggle: () -> Unit, total: java.math.Bi
 private fun TaskCard(n: click.cowa.linbit.core.generated.ApiHomeNewcomer?, modifier: Modifier, onClick: () -> Unit) {
     val p = LB.p
     val lead = if (n?.available == true && (n.completed ?: 0) > 0 && (n.tasks?.size ?: 0) > 0) "新手任务 ${n.completed}/${n.tasks!!.size}，可获得 " else "完成新手任务，可获得 "
-    val left = remember(n?.deadline) { countdown(n?.deadline) }
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(n?.deadline) { while (n?.deadline != null) { delay(1_000); tick++ } }
-    val text = remember(tick, n?.deadline) { left() }
+    LaunchedEffect(n?.deadline) {
+        if (CountdownLogic.parseDeadlineInstant(n?.deadline) == null) return@LaunchedEffect
+        while (true) { delay(1_000); tick++ }
+    }
+    val text = remember(tick, n?.deadline) { CountdownLogic.newcomerText(n?.deadline) }
     Row(
         modifier.padding(horizontal = Spacing.pageH).fillMaxWidth().height(Metrics.taskCardH + 1.dp)
             .border(0.5.dp, p.border, RoundedCornerShape(Radius.md)).clip(RoundedCornerShape(Radius.md))
@@ -247,14 +247,6 @@ private fun TaskCard(n: click.cowa.linbit.core.generated.ApiHomeNewcomer?, modif
     }
 }
 
-/** 截止时间倒计时 "6D:23:46:26"（无 deadline 时不显示）。 */
-private fun countdown(deadline: String?): () -> String? = {
-    val d = deadline?.let { runCatching { Instant.parse(it) }.getOrNull() }
-    if (d == null) null else {
-        val dur = Duration.between(Instant.now(), d).coerceAtLeast(Duration.ZERO)
-        "%dD:%02d:%02d:%02d".format(dur.toDays(), dur.toHours() % 24, dur.toMinutes() % 60, dur.seconds % 60)
-    }
-}
 
 // ── 红包横幅 ──
 @Composable

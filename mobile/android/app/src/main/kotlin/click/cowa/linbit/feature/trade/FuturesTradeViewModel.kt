@@ -28,6 +28,7 @@ import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.network.apiCall
 import click.cowa.linbit.core.realtime.MarketSocket
 import click.cowa.linbit.core.util.Dec
+import click.cowa.linbit.feature.home.CountdownLogic
 import click.cowa.linbit.data.MarketStore
 import click.cowa.linbit.data.trade.OrderBook
 import click.cowa.linbit.data.trade.TradeNav
@@ -194,9 +195,8 @@ class FuturesTradeViewModel @Inject constructor(
 
     val fundingCountdown: String
         get() {
-            val t = wsFunding[symbol]?.second ?: ticker?.nextFundingTime ?: return "--:--:--"
-            val s = maxOf(0L, t / 1000 - nowMs / 1000)
-            return "%02d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60)
+            val raw = wsFunding[symbol]?.second ?: ticker?.nextFundingTime
+            return CountdownLogic.fundingText(raw, nowMs) ?: "--:--:--"
         }
 
     fun fmt(d: BigDecimal, prec: Int) = Dec.plain(d, prec)
