@@ -81,7 +81,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
 
         val p = LB.p
         // 内容区底部留白 = TabBar 高 + 间距，滚动内容可滑到胶囊下方
-        val bottomInset = Metrics.tabBarH + 12.dp
+        val bottomInset = Metrics.tabBarH + 24.dp // 空态操作与悬浮栏安全间距（对照 ref）
         Box(Modifier.fillMaxSize().background(p.bg)) {
             Box(Modifier.fillMaxSize().statusBarsPadding()) {
                 when (tab) {

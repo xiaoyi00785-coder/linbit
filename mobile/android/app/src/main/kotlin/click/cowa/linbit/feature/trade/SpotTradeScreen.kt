@@ -291,13 +291,15 @@ internal fun String.trimZeros(): String =
 @Composable
 private fun NoOrders(loggedIn: Boolean, onDeposit: () -> Unit, onTransfer: () -> Unit, onLogin: () -> Unit) {
     val p = LB.p
-    // 空态上边距 24px，图示 168px：操作区与悬浮导航保留参考图中的安全间距。
-    EmptyState(if (loggedIn) "划转资金，开始现货交易" else "登录后查看委托", iconSize = 56.dp, verticalPadding = 8.dp) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (loggedIn) {
-                ChipButton("充值", Modifier.width(90.dp).height(32.dp), onClick = onDeposit)
-                ChipButton("划转", Modifier.width(90.dp).height(32.dp), onClick = onTransfer)
-            } else ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin)
+    // 空态操作与悬浮 Tab 至少保留约 24dp 视觉间距（bottomInset 由 AppRoot 注入）。
+    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        EmptyState(if (loggedIn) "划转资金，开始现货交易" else "登录后查看委托", iconSize = 56.dp, verticalPadding = 8.dp) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (loggedIn) {
+                    ChipButton("充值", Modifier.width(90.dp).height(32.dp), onClick = onDeposit)
+                    ChipButton("划转", Modifier.width(90.dp).height(32.dp), onClick = onTransfer)
+                } else ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin)
+            }
         }
     }
 }
