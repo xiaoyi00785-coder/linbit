@@ -39,7 +39,9 @@ struct WithdrawView: View {
         return Dec.parse(s)
     }
     private var gas: Decimal { Dec.parse(network?.gasFeeEstimate) }
-    private var useTotp: Bool { session.account?.twoFactorEnabled == true }
+    /// 截图夹具可强制展示 TOTP 栏（useTotp 本身是计算属性不可写）
+    @State private var shotForceTotp = false
+    private var useTotp: Bool { shotForceTotp || session.account?.twoFactorEnabled == true }
 
     private var validation: String? {
         if network == nil { return "请选择网络" }
@@ -235,7 +237,7 @@ struct WithdrawView: View {
             address = "TXfixtureDemoAddressDoNotWithdraw0001"
             amount = "10"
             totp = "123456"
-            useTotp = true
+            shotForceTotp = true
             loadError = nil
             return
         }

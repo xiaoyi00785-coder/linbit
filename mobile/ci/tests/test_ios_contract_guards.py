@@ -73,6 +73,7 @@ ok('createWithdrawal' not in dep, 'deposit file never withdraws')
 wd = read('mobile/ios/Linbit/Features/Assets/WithdrawView.swift')
 ok('ShotGate.launchShot == "assets-withdraw"' in wd, 'withdraw fixture gated')
 ok('TXfixtureDemo' in wd and '不调用 createWithdrawal' in wd, 'withdraw fixture does not submit')
+ok('shotForceTotp' in wd and 'useTotp = true' not in wd, 'withdraw fixture does not assign get-only useTotp')
 # fixture return before network
 # fixture block must return before any live createWithdrawal call site
 import re as _re

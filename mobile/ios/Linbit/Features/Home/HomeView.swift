@@ -36,9 +36,10 @@ struct HomeView: View {
                     sectionDivider
                     news
                 }
-                .padding(.bottom, Metrics.tabBarH + 100)
+                .padding(.bottom, Metrics.tabBarH + Metrics.tabBarInset + 120)
             }
             .refreshable { await vm.load(); await store.load() }
+            .clipped()
         }
         .background(p.bg)
         .task { await NotifCenter.shared.refresh() }
