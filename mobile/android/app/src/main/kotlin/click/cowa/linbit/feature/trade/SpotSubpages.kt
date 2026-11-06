@@ -31,6 +31,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import click.cowa.linbit.core.generated.ApiAcceptConvertQuoteRequest
+import click.cowa.linbit.feature.auth.LbSheet
+import click.cowa.linbit.core.network.lbMessage
+import click.cowa.linbit.core.network.ApiEarnSubscribeRequest
+import click.cowa.linbit.core.generated.ApiStrategyStopGridRequest
+import click.cowa.linbit.core.generated.ApiStrategyCopyRequest
+import click.cowa.linbit.core.generated.ApiEarnRedeemRequest
 import click.cowa.linbit.core.generated.ApiConvertPairs
 import click.cowa.linbit.core.generated.ApiConvertQuote
 import click.cowa.linbit.core.generated.ApiConvertQuoteRequest
@@ -79,6 +85,7 @@ class SpotSubpagesViewModel @Inject constructor(
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     var quoting by mutableStateOf(false); private set
+    var acting by mutableStateOf(false); private set
 
     fun clearAccountData() {
         earnSummary = null
@@ -141,6 +148,70 @@ class SpotSubpagesViewModel @Inject constructor(
             finally { quoting = false }
         }
     }
+
+    /** POST /strategy/grid/square/{id}/copy */
+    fun copyStrategy(id: String, investment: String, onDone: (Boolean) -> Unit = {}) {
+        val inv = investment.trim()
+        if (Dec.parse(inv).signum() <= 0) { toast.show("请输入投资额", ToastCenter.Kind.ERROR); onDone(false); return }
+        acting = true
+        viewModelScope.launch {
+            try {
+                apiCall { api.strategyCopy(id, ApiStrategyCopyRequest(investment = inv)) }
+                toast.show("策略已复制", ToastCenter.Kind.SUCCESS)
+                loadStrategy(); onDone(true)
+            } catch (e: Throwable) { toast.show(e.lbMessage(), ToastCenter.Kind.ERROR); onDone(false) }
+            finally { acting = false }
+        }
+    }
+
+    /** POST /strategy/grid/{id}/stop */
+    fun stopGrid(id: String, onDone: (Boolean) -> Unit = {}) {
+        acting = true
+        viewModelScope.launch {
+            try {
+                apiCall { api.strategyStopGrid(id, ApiStrategyStopGridRequest()) }
+                toast.show("已停止网格", ToastCenter.Kind.SUCCESS)
+                loadStrategy(); onDone(true)
+            } catch (e: Throwable) { toast.show(e.lbMessage(), ToastCenter.Kind.ERROR); onDone(false) }
+            finally { acting = false }
+        }
+    }
+
+    /** POST /earn/products/{id}/subscribe */
+    fun subscribeEarn(id: String, amount: String, onDone: (Boolean) -> Unit = {}) {
+        val a = amount.trim()
+        if (Dec.parse(a).signum() <= 0) { toast.show("请输入申购金额", ToastCenter.Kind.ERROR); onDone(false); return }
+        acting = true
+        viewModelScope.launch {
+            try {
+                apiCall { api.earnSubscribe(id, ApiEarnSubscribeRequest(amount = a)) }
+                toast.show("申购成功", ToastCenter.Kind.SUCCESS)
+                loadEarn(); onDone(true)
+            } catch (e: Throwable) { toast.show(e.lbMessage(), ToastCenter.Kind.ERROR); onDone(false) }
+            finally { acting = false }
+        }
+    }
+
+    /** POST /earn/products/{id}/redeem */
+    fun redeemEarn(id: String, amount: String?, all: Boolean, onDone: (Boolean) -> Unit = {}) {
+        if (!all && Dec.parse(amount).signum() <= 0) {
+            toast.show("请输入赎回金额", ToastCenter.Kind.ERROR); onDone(false); return
+        }
+        acting = true
+        viewModelScope.launch {
+            try {
+                apiCall {
+                    api.earnRedeem(
+                        id,
+                        ApiEarnRedeemRequest(amount = if (all) null else amount?.trim(), all = if (all) true else null),
+                    )
+                }
+                toast.show("赎回已提交", ToastCenter.Kind.SUCCESS)
+                loadEarn(); onDone(true)
+            } catch (e: Throwable) { toast.show(e.lbMessage(), ToastCenter.Kind.ERROR); onDone(false) }
+            finally { acting = false }
+        }
+    }
 }
 
 @Composable
@@ -148,6 +219,7 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
+    var copyTarget by remember { mutableStateOf<ApiGridSquareItem?>(null) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadStrategy() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Text("策略广场", Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
@@ -170,7 +242,7 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
                     KvRow("价格区间", "${item.lowerPrice ?: "--"} – ${item.upperPrice ?: "--"}")
                     KvRow("网格数", "${item.gridCount ?: 0}")
                     ChipButton("复制策略", Modifier.height(32.dp)) {
-                        if (!loggedIn) onLogin() else vm.toast.show("复制策略即将在后续版本开放完整表单")
+                        if (!loggedIn) onLogin() else copyTarget = item
                     }
                 }
             }
@@ -179,9 +251,27 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
             Text("我的策略", Modifier.padding(horizontal = Spacing.pageH).padding(top = 8.dp), style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
             if (vm.myGrids.isEmpty()) Text("暂无运行中的网格", Modifier.padding(Spacing.pageH), style = lb(FontSize.small), color = p.textSecondary)
             else vm.myGrids.forEach { g ->
-                Column(Modifier.padding(horizontal = Spacing.pageH, vertical = 8.dp)) {
+                Column(Modifier.padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("${g.symbol ?: "--"} · ${g.mode ?: ""}", style = lb(FontSize.body), color = p.textPrimary)
                     KvRow("总收益", g.totalProfit ?: "--")
+                    g.id?.let { id ->
+                        ChipButton("停止", Modifier.height(28.dp)) { vm.stopGrid(id) }
+                    }
+                }
+            }
+        }
+    }
+    copyTarget?.let { item ->
+        var inv by remember { mutableStateOf("") }
+        LbSheet("复制策略", { copyTarget = null }, showClose = true) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                KvRow("标的", item.symbol ?: "--")
+                KvRow("区间", "${item.lowerPrice ?: "--"} – ${item.upperPrice ?: "--"}")
+                NumberBox("投资额", "USDT", inv, { inv = it })
+                LbButton("确认复制", kind = ButtonKind.PRIMARY, loading = vm.acting) {
+                    val id = item.id
+                    if (id == null) vm.toast.show("无效策略", ToastCenter.Kind.ERROR)
+                    else vm.copyStrategy(id, inv) { ok -> if (ok) copyTarget = null }
                 }
             }
         }
@@ -193,6 +283,7 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
+    var earnAction by remember { mutableStateOf<EarnAction?>(null) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadEarn() }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
         Text("理财", Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
@@ -214,25 +305,58 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
             vm.error != null && vm.earnProducts.isEmpty() -> EmptyState(vm.error ?: "") { ChipButton("重试", Modifier.height(32.dp)) { vm.loadEarn() } }
             vm.earnProducts.isEmpty() -> EmptyState("暂无理财产品")
             else -> vm.earnProducts.forEach { prod ->
-                Row(
+                Column(
                     Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(bottom = 8.dp)
                         .border(1.dp, p.border, RoundedCornerShape(Radius.md)).padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(prod.title ?: prod.asset ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-                        Text(prod.kind?.value ?: "", style = lb(FontSize.small), color = p.textSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(prod.title ?: prod.asset ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                            Text(prod.kind?.value ?: "", style = lb(FontSize.small), color = p.textSecondary)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("${Fmt.amount(Dec.parse(prod.apr).multiply(BigDecimal(100)), 2)}%", style = lbNum(FontSize.body, FontWeight.SemiBold), color = p.up)
+                            Text("年化", style = lb(FontSize.small), color = p.textTertiary)
+                        }
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("${Fmt.amount(Dec.parse(prod.apr).multiply(BigDecimal(100)), 2)}%", style = lbNum(FontSize.body, FontWeight.SemiBold), color = p.up)
-                        Text("年化", style = lb(FontSize.small), color = p.textTertiary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ChipButton("申购", Modifier.height(28.dp)) {
+                            if (!loggedIn) onLogin() else earnAction = EarnAction(prod, subscribe = true)
+                        }
+                        ChipButton("赎回", Modifier.height(28.dp)) {
+                            if (!loggedIn) onLogin() else earnAction = EarnAction(prod, subscribe = false)
+                        }
                     }
                 }
             }
         }
-        Text("申购 / 赎回完整流程将在资产模块完善；当前可浏览产品与持仓摘要。", Modifier.padding(Spacing.pageH), style = lb(FontSize.small), color = p.textTertiary)
+    }
+    earnAction?.let { act ->
+        var amount by remember { mutableStateOf("") }
+        val title = if (act.subscribe) "申购 ${act.product.title ?: act.product.asset ?: ""}" else "赎回 ${act.product.title ?: act.product.asset ?: ""}"
+        LbSheet(title, { earnAction = null }, showClose = true) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                NumberBox("金额", act.product.asset ?: "USDT", amount, { amount = it })
+                if (!act.subscribe) {
+                    LbButton("全部赎回", kind = ButtonKind.SECONDARY, loading = vm.acting) {
+                        val id = act.product.id
+                        if (id == null) vm.toast.show("无效产品", ToastCenter.Kind.ERROR)
+                        else vm.redeemEarn(id, null, all = true) { ok -> if (ok) earnAction = null }
+                    }
+                }
+                LbButton(if (act.subscribe) "确认申购" else "确认赎回", kind = ButtonKind.PRIMARY, loading = vm.acting) {
+                    val id = act.product.id
+                    if (id == null) vm.toast.show("无效产品", ToastCenter.Kind.ERROR)
+                    else if (act.subscribe) vm.subscribeEarn(id, amount) { ok -> if (ok) earnAction = null }
+                    else vm.redeemEarn(id, amount, all = false) { ok -> if (ok) earnAction = null }
+                }
+            }
+        }
     }
 }
+
+private data class EarnAction(val product: ApiEarnProduct, val subscribe: Boolean)
 
 @Composable
 fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel()) {

@@ -372,7 +372,7 @@ fun FuturesTradeContent(
         "tools" -> ToolsSheet(vm.toast::show, { sheet = null }) { tool ->
             when (tool) {
                 "计算器" -> showCalculator = true
-                "价格预警" -> vm.toast.show("价格预警即将开放")
+                "价格预警" -> vm.toast.show("价格预警暂不可用：OpenAPI 无用户侧 alert CRUD 端点（仅有管理配置 cooldown），待后端契约")
                 "模拟交易" -> onSim()
             }
         }
