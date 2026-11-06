@@ -326,6 +326,19 @@ ok("assets-withdraw-ok" in app and "assets-withdraw-paused" in app, "shot routes
 risk = read("mobile/ci/screens-risk.txt")
 ok("assets-withdraw-ok" in risk and "kyc-form" in risk and "copy-detail" in risk, "screens-risk covers withdraw+KYC+copy")
 
+# screens-risk 破坏性动作在 SecShot/KycShot/LoanDemo/CopyDemo 下不得打真实 API（源文本守卫 ≠ XCTest）
+kyc = (ROOT / "mobile/ios/Linbit/Features/Security/KycView.swift").read_text()
+ok("截图夹具不提交认证" in kyc and "KycShot.state != nil" in kyc, "KYC submit blocked under KycShot")
+ok("shot-" in kyc and "KycAPI.upload" in kyc, "KYC upload shot-local only under KycShot")
+sec = (ROOT / "mobile/ios/Linbit/Features/Security/SecurityCenter.swift").read_text()
+ok("截图夹具不删除通行密钥" in sec and "截图夹具不移除设备" in sec, "passkey/device delete blocked under SecShot")
+ok("截图夹具不关闭身份验证器" in sec and "截图夹具不添加通行密钥" in sec, "2FA disable + passkey add blocked under SecShot")
+loan = (ROOT / "mobile/ios/Linbit/Features/Growth/LoansView.swift").read_text()
+ok("if LoanDemo.state != nil { return }" in loan and "LoanAPI.borrow" in loan, "loan borrow blocked under LoanDemo")
+copy = (ROOT / "mobile/ios/Linbit/Features/Growth/CopyTradingView.swift").read_text()
+ok("if CopyDemo.state != nil { return }" in copy and "CopyAPI.follow" in copy, "copy follow blocked under CopyDemo")
+
+
 # Passkey cancel + newcomer claimable-only already covered; assert OpenAPI status enum once more
 nv = read("mobile/ios/Linbit/Features/Home/NewcomerView.swift")
 ok("locked|in_progress|claimable|claimed|expired" in nv, "newcomer OpenAPI status comment present")

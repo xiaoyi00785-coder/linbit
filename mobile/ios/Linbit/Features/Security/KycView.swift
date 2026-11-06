@@ -266,6 +266,10 @@ struct KycFormView: View {
     }
 
     private func upload(_ img: UIImage, _ side: APIKycDocument.APISide) async {
+        // DEBUG 截图夹具：只填视觉，永不实际上传证件
+        if KycShot.state != nil {
+            previews[side] = img; docs[side] = "shot-\(side.rawValue)"; return
+        }
         guard let jpeg = KycAPI.compress(img) else { error = ErrorText.map["FILE_TOO_LARGE"]; return }
         previews[side] = img; uploading = side; error = nil
         defer { uploading = nil }
@@ -274,6 +278,10 @@ struct KycFormView: View {
     }
 
     private func submit() async {
+        // DEBUG 截图夹具：永不真实提交 KYC
+        if KycShot.state != nil {
+            ToastCenter.shared.show("截图夹具不提交认证", .info); return
+        }
         loading = true; defer { loading = false }
         let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
         let body = KycAPI.Submit(firstName: first.trimmingCharacters(in: .whitespaces), lastName: last.trimmingCharacters(in: .whitespaces),
