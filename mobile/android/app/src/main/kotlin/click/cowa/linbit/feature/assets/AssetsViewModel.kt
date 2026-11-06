@@ -316,18 +316,23 @@ class AssetsViewModel @Inject constructor(
     var transferReceipt by androidx.compose.runtime.mutableStateOf<TransferReceipt?>(null); private set
     private var transferJob: kotlinx.coroutines.Job? = null
     private var transferGeneration = 0L
+    private var transferDirection: Boolean? = null
+    var transferAccepted by androidx.compose.runtime.mutableStateOf(false); private set
     init { viewModelScope.launch { tokens.sessionVersion.collect {
-        transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null
+        transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null; transferAccepted=false;transferDirection=null
         withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false; withdrawCancelGeneration++;withdrawCancelJob?.cancel();withdrawCancelBusy=false;withdrawCancelError=null;withdrawCancelConflict=null;withdrawCancelReceipt=null;withdrawCancelAccepted=false; addressGeneration++; addressJob?.cancel(); addressBusy=false; addressError=null; addressReceipt=null; addressAccepted=false; addressEditAccepted=false; addressEditBusy=false; addressEditError=null; addressEditReceipt=null
     } } }
     fun transferFutures(toFutures: Boolean, amount: String): Boolean {
-        if (transferBusy || !tokens.loggedIn.value) return false
+        if (transferBusy || transferAccepted || !tokens.loggedIn.value) return false
+        if(transferDirection==null)transferDirection=toFutures
+        if(transferDirection!=toFutures)return false
         transferBusy=true;transferError=null
         val generation=++transferGeneration;val epoch=tokens.sessionVersion.value
         transferJob = viewModelScope.launch {
             try {
                 val dir = if (toFutures) ApiFuturesTransferRequest.Direction.IN else ApiFuturesTransferRequest.Direction.OUT
                 val r=apiCall { api.futuresTransfer(ApiFuturesTransferRequest(dir, amount)) }
+                transferAccepted=true
                 if (transferGeneration==generation && tokens.sessionVersion.value==epoch) {
                     transferReceipt=TransferReceipt(r.ref,r.status?:"pending")
                     refreshBalances(epoch,generation)
@@ -346,7 +351,18 @@ class AssetsViewModel @Inject constructor(
         transferReceipt=current.copy(balanceRefreshed=spot!=null&&futures!=null,spotFree=spot?.items?.firstOrNull{it.asset.equals("USDT",true)}?.free,futuresAvailable=futures?.availableBalance)
         if(spot!=null&&futures!=null)_s.value=_s.value.copy(spot=spot.items,futures=futures,loading=false,error=null)
     }
-    fun clearTransferFeedback(){if(!transferBusy){transferError=null;transferReceipt=null}}
+    /** Accepted transfers can only read balances again; never recreate a mutation. */
+    fun refreshAcceptedTransferBalances():Boolean {
+        if(!transferAccepted||transferBusy)return false
+        transferBusy=true
+        val generation=transferGeneration;val epoch=tokens.sessionVersion.value
+        transferJob=viewModelScope.launch {
+            try{refreshBalances(epoch,generation)}
+            finally{if(transferGeneration==generation&&tokens.sessionVersion.value==epoch)transferBusy=false}
+        }
+        return true
+    }
+    fun clearTransferFeedback(){if(!transferBusy&&!transferAccepted){transferError=null;transferReceipt=null;transferDirection=null}}
     override fun onCleared(){transferGeneration++;transferJob?.cancel();withdrawEpoch.value++;withdrawJob?.cancel();withdrawCancelGeneration++;withdrawCancelJob?.cancel();addressGeneration++;addressJob?.cancel();super.onCleared()}
 
     // ---- 地址簿 ----

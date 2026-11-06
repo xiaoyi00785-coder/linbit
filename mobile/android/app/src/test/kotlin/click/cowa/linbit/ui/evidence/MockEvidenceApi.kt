@@ -14,6 +14,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     val requests = java.util.Collections.synchronizedList(mutableListOf<String>())
     val mutationRequests = java.util.Collections.synchronizedList(mutableListOf<MutationEvidence>())
     private val mutationStatuses = mutableListOf<Int>()
+    private val declaredRouteBodies = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val expectedFailureKeys = mutableSetOf<String>()
     var defaultFeatureFlags: String? = null
     /** Test-only loopback response hold; it cannot call or configure any production host. */
@@ -34,6 +35,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val key = "$method $pathAndQuery"
         check(!failure || (method != "GET" && code >= 400)) { "Only explicit mutation failures can bypass no-write evidence routes" }
         if (failure) expectedFailureKeys += key
+        if(method!="GET") declaredRouteBodies.add("$method $pathAndQuery $body")
         routes.getOrPut("$method $pathAndQuery") { mutableListOf() }.add(
             MockResponse().setResponseCode(code)
                 .setHeader("Content-Type", "application/json")
@@ -57,7 +59,8 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val key = "${request.method} ${request.path.orEmpty()}"
         val path = request.path?.substringBefore('?').orEmpty()
         val method = request.method.orEmpty()
-        if (method != "GET") mutationRequests += MutationEvidence(request.method,request.path,request.body.clone())
+        val requestBody = request.body.clone().readUtf8()
+        if (method != "GET") mutationRequests += MutationEvidence(request.method,request.path,okio.Buffer().writeUtf8(requestBody))
         val declaredFailure = expectedFailureKeys.remove(key)
         val deletePasskey = method == "DELETE" && path.startsWith("/account/passkeys/")
         val sensitive = method != "GET" && (path.startsWith("/account/") || path.startsWith("/earn/") || path.startsWith("/strategy/") || path.contains("/wallet/") || path.endsWith("/convert/accept") || path.contains("/2fa/") || path.contains("/kyc/"))
@@ -69,18 +72,20 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val passkeyRegister = path in setOf("/account/passkeys/register/begin", "/account/passkeys/register/finish")
         val alertWrite = path == "/price-alerts" || path.startsWith("/price-alerts/")
         val paperBuy = method == "POST" && path == "/paper/orders"
-        val futuresTransfer = method == "POST" && path == "/futures/transfer" && response != null && request.body.readUtf8() == "{\"direction\":\"in\",\"amount\":\"10.00\"}"
+        val transferRegistered = declaredRouteBodies.contains("$key $requestBody")
+        val futuresTransfer = method == "POST" && path == "/futures/transfer" && (response != null || transferRegistered) && requestBody == "{\"direction\":\"in\",\"amount\":\"10.00\"}"
+        val futuresTransferOut = method == "POST" && path == "/futures/transfer" && (response != null || transferRegistered) && requestBody == "{\"direction\":\"out\",\"amount\":\"10.00\"}"
         val withdrawSubmit = method == "POST" && path == "/wallet/withdraw" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ONCHAIN-ADDRESS-NOT-FOR-TRANSFER\",\"amount\":\"10.00\",\"totpCode\":\"123456\"}"
         val withdrawCancel = method == "POST" && path == "/wallet/withdraw/MOCK-WD-CANCEL/cancel" && response != null && request.body.size == 0L
         val addressCreate = method == "POST" && path == "/account/withdraw-addresses" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ADDRESS-BOOK-LOCAL\",\"label\":\"Mock local label\",\"whitelisted\":false,\"totpCode\":\"123456\"}"
         val addressEdit = method == "PATCH" && path == "/account/withdraw-addresses/MOCK-ADDRESS-EDIT" && response != null && request.body.readUtf8() == "{\"label\":\"Mock edited label\",\"memo\":\"MEMO-LOCAL\",\"totpCode\":\"123456\"}"
-        if (sensitive && !withdrawCancel && !addressEdit && !addressCreate && !withdrawSubmit && !futuresTransfer && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
+        if (sensitive && !withdrawCancel && !addressEdit && !addressCreate && !withdrawSubmit && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
             return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
         val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
         val algoCancelFailure = algoCancel && response?.httpCode() == 503
         val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !withdrawSubmit && !withdrawCancel && !addressCreate && !addressEdit) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !futuresTransferOut && !withdrawSubmit && !withdrawCancel && !addressCreate && !addressEdit) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }
@@ -104,7 +109,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (addressCreate && response?.httpCode() == 503) { check(addressCreateFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address failure latch timed out" } }
         if (withdrawCancel && response?.httpCode() == 503) { check(withdrawCancelFailureGate?.await(15,java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback withdraw cancel latch timed out" } }
         if (withdrawSubmit && response?.httpCode() == 503) { check(withdrawSubmissionFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback withdrawal failure latch timed out" } }
-        if (futuresTransfer && response?.httpCode() == 503) {
+        if ((futuresTransfer || futuresTransferOut) && response?.httpCode() == 503) {
             check(futuresTransferFailureGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback transfer failure latch timed out" }
         }
         return response ?: undeclared(request, "Evidence route must be declared explicitly")
@@ -138,7 +143,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     fun lastMutationBody(): String = synchronized(mutationRequests) { mutationRequests.last().body.clone().readUtf8() }
 
     fun assertNoWrites() {
-        check(requests.none { it.split(" ").first() in setOf("POST", "PUT", "PATCH", "DELETE") }) {
+        check(synchronized(requests) { requests.toList() }.none { it.split(" ").first() in setOf("POST", "PUT", "PATCH", "DELETE") }) {
             "Evidence scenario must stop before a state-changing operation: $requests"
         }
     }

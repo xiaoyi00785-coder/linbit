@@ -42,5 +42,28 @@ class AssetsTransferFlowTest {
         withTimeout(5_000){while(vm.transferBusy)delay(10)}
         assertNull(vm.transferReceipt);assertNull(vm.transferError);assertEquals(1,server.requestCount)
     }
+    @Test fun outgoingAcceptedReadbackFailureAndRedirectCannotPostAgain()=runBlocking{
+        val readsAfterAccepted=java.util.concurrent.atomic.AtomicInteger();val secondReadbackArrived=java.util.concurrent.CountDownLatch(1);val releaseReadback=java.util.concurrent.CountDownLatch(1)
+        server.dispatcher=object:Dispatcher(){override fun dispatch(req:RecordedRequest):MockResponse=when(req.path?.substringBefore('?')){
+            "/futures/transfer"->{assertEquals("""{"direction":"out","amount":"10.00"}""",req.body.readUtf8());r("OUT-AFTERREADBACK","completed")}
+            "/assets/balances"->{if(readsAfterAccepted.getAndIncrement()==2){secondReadbackArrived.countDown();releaseReadback.await(5,java.util.concurrent.TimeUnit.SECONDS)};MockResponse().setResponseCode(503).setHeader("Content-Type","application/json").setBody("""{"code":"OUT_BALANCE_READBACK","message":"balance readback unavailable"}""")}
+            "/futures/account"->MockResponse().setHeader("Content-Type","application/json").setBody("""{"availableBalance":"10.00","marginBalance":"20.00"}""")
+            else->{fail("Undeclared ${req.method} ${req.path}");MockResponse().setResponseCode(599)}
+        }}
+        assertTrue(vm.transferFutures(false,"10.00"));withTimeout(5_000){while(vm.transferBusy)delay(10)}
+        assertTrue(vm.transferAccepted);assertEquals(false,vm.transferReceipt?.balanceRefreshed);assertEquals(3,server.requestCount);assertFalse(vm.transferFutures(false,"10.00"));assertFalse(vm.transferFutures(true,"10.00"));assertEquals(3,server.requestCount)
+        assertTrue(vm.refreshAcceptedTransferBalances());assertFalse(vm.refreshAcceptedTransferBalances());assertFalse(vm.transferFutures(false,"10.00"));assertFalse(vm.transferFutures(true,"10.00"));secondReadbackArrived.await(5,java.util.concurrent.TimeUnit.SECONDS);releaseReadback.countDown()
+        withTimeout(5_000){while(vm.transferBusy)delay(10)}
+        assertTrue(vm.transferAccepted);assertEquals(false,vm.transferReceipt?.balanceRefreshed);assertEquals(5,server.requestCount)
+        assertFalse(vm.transferFutures(false,"10.00"));assertFalse(vm.transferFutures(true,"10.00"));assertEquals(5,server.requestCount)
+    }
+    @Test fun outgoingHeldAndOldSessionCannotPublish()=runBlocking{
+        val arrived=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>()
+        server.dispatcher=object:Dispatcher(){override fun dispatch(req:RecordedRequest):MockResponse{
+            assertEquals("/futures/transfer",req.path);assertEquals("""{"direction":"out","amount":"10.00"}""",req.body.readUtf8());arrived.complete(Unit);runBlocking{withTimeout(5_000){release.await()}}
+            return r("OLD-OUT","completed")
+        }}
+        assertTrue(vm.transferFutures(false,"10.00"));assertTrue(vm.transferBusy);assertFalse(vm.transferFutures(false,"10.00"));withTimeout(5_000){arrived.await()};tokens.accessToken="OTHER_INVALID_SESSION";release.complete(Unit);withTimeout(5_000){while(vm.transferBusy)delay(10)};assertNull(vm.transferReceipt);assertFalse(vm.transferAccepted);assertEquals(1,server.requestCount)
+    }
     @After fun close(){runCatching{server.shutdown()};Dispatchers.resetMain()}
 }

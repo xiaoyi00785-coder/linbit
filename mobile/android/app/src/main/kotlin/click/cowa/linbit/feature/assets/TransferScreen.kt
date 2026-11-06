@@ -53,7 +53,7 @@ fun TransferScreen(vm: AssetsViewModel, onBack: () -> Unit, onDialogWindow: (and
     BackHandler(onBack = onBack)
     val p = LB.p
     val session by vm.sessionVersion.collectAsStateWithLifecycle()
-    var toFutures by remember { mutableStateOf(true) }
+    var toFutures by remember(session) { mutableStateOf(true) }
     var amount by remember { mutableStateOf("") }
     var review by remember(session) { mutableStateOf(false) }
     var submitting by remember(session) { mutableStateOf(false) }
@@ -62,6 +62,7 @@ fun TransferScreen(vm: AssetsViewModel, onBack: () -> Unit, onDialogWindow: (and
         if (vm.transferReceipt != null && vm.transferError == null) { review = false;submitting = false }
         if (vm.transferError != null) submitting = false
     }
+    val accountState by vm.state.collectAsStateWithLifecycle()
     val avail = if (toFutures) vm.spotAvailUsdt() else vm.futuresAvail()
     val raw = amount.trim()
     val value = runCatching { Dec.parse(raw) }.getOrDefault(java.math.BigDecimal.ZERO)
@@ -77,15 +78,13 @@ fun TransferScreen(vm: AssetsViewModel, onBack: () -> Unit, onDialogWindow: (and
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(top = 8.dp).padding(bottom = 16.dp)) {
             Box {
                 Column {
-                    AccountCard("从", if (toFutures) "资金账户" else "合约账户")
+                    AccountCard("从", if (toFutures) "现货账户" else "合约账户")
                     Spacer(Modifier.height(8.dp))
-                    AccountCard("到", if (toFutures) "合约账户" else "资金账户")
+                    AccountCard("到", if (toFutures) "合约账户" else "现货账户")
                 }
-                Box(
-                    Modifier.align(Alignment.Center).size(30.dp).background(p.bg, CircleShape).border(1.dp, p.border, CircleShape)
-                        .pressable(enabled = !(vm.transferBusy || submitting), scale = 1f) { toFutures = !toFutures; vm.clearTransferFeedback() },
-                    contentAlignment = Alignment.Center,
-                ) { Text("⇅", style = lb(FontSize.small, FontWeight.SemiBold), color = p.textPrimary) }
+                LbButton("⇅", Modifier.align(Alignment.Center).width(72.dp), kind=ButtonKind.OUTLINE, height=44.dp, enabled=!(vm.transferBusy||submitting)&&!review, testTag="transfer.switch") {
+                    toFutures=!toFutures;vm.clearTransferFeedback()
+                }
             }
             Text("币种", Modifier.padding(top = 10.dp), style = lb(FontSize.caption), color = p.textPrimary)
             Row(
@@ -115,7 +114,7 @@ fun TransferScreen(vm: AssetsViewModel, onBack: () -> Unit, onDialogWindow: (and
             }
             Row(Modifier.padding(top = 8.dp)) {
                 Text("可用", style = lbNum(FontSize.small), color = p.textSecondary)
-                Spacer(Modifier.weight(1f)); Text("${Fmt.amount(avail, 2)} USDT", style = lbNum(FontSize.small), color = p.textPrimary)
+                Spacer(Modifier.weight(1f)); Text("${Fmt.amount(avail, 2)} USDT", Modifier.testTag("transfer.availability"), style = lbNum(FontSize.small), color = p.textPrimary)
             }
             vm.transferReceipt?.let { r ->
                 Column(Modifier.fillMaxWidth().padding(top=16.dp).background(p.bgElevated,RoundedCornerShape(Radius.md)).padding(12.dp)) {
@@ -126,23 +125,25 @@ fun TransferScreen(vm: AssetsViewModel, onBack: () -> Unit, onDialogWindow: (and
                     if (r.balanceRefreshed) {
                         Text("读回现货可用：${Fmt.amount(Dec.parse(r.spotFree), 2)} USDT",Modifier.padding(top=4.dp),style=lbNum(FontSize.small),color=p.textPrimary)
                         Text("读回合约可用：${Fmt.amount(Dec.parse(r.futuresAvailable), 2)} USDT",Modifier.padding(top=4.dp),style=lbNum(FontSize.small),color=p.textPrimary)
+                    } else {
+                        LbButton("仅重新读取余额",Modifier.padding(top=8.dp),enabled=!vm.transferBusy,loading=vm.transferBusy,testTag="transfer.refresh-balances") { vm.refreshAcceptedTransferBalances() }
                     }
                 }
             }
         }
         LbButton(rejectAmount() ?: if(toFutures)"复核现货→合约划转" else "复核合约→现货划转",
             Modifier.padding(horizontal=Spacing.pageH).padding(bottom=8.dp),
-            enabled=rejectAmount()==null&&!(vm.transferBusy || submitting),testTag="transfer.review"){review=true;vm.clearTransferFeedback()}
+            enabled=rejectAmount()==null&&!(vm.transferBusy || submitting) && !vm.transferAccepted,testTag="transfer.review"){review=true;vm.clearTransferFeedback()}
     }
     if(review) {
         LbSheet("确认划转",onClose={if(!(vm.transferBusy || submitting))review=false},showClose=!(vm.transferBusy || submitting),onWindowReady=onDialogWindow) {
             Column(Modifier.fillMaxWidth().padding(horizontal=Spacing.pageH).padding(bottom=24.dp)) {
-                Text("从 ${if(toFutures)"资金账户" else "合约账户"} 到 ${if(toFutures)"合约账户" else "资金账户"}",style=lb(FontSize.label,FontWeight.Medium),color=p.textPrimary)
+                Text("从 ${if(toFutures)"现货账户" else "合约账户"} 到 ${if(toFutures)"合约账户" else "现货账户"}",style=lb(FontSize.label,FontWeight.Medium),color=p.textPrimary)
                 Text("$amount USDT",Modifier.padding(top=8.dp).testTag("transfer.review.amount"),style=lbNum(FontSize.title),color=p.textPrimary,)
                 Text("提交后将按服务端最终状态更新余额；重复确认不会创建并发请求。",Modifier.padding(top=8.dp),style=lb(FontSize.small),color=p.textSecondary)
                 vm.transferError?.let { Text(it,Modifier.padding(top=10.dp),style=lb(FontSize.label),color=p.down) }
-                LbButton(if(vm.transferBusy || submitting)"等待服务端结果…"else "确认划转",Modifier.padding(top=18.dp),enabled=!(vm.transferBusy || submitting),loading=vm.transferBusy || submitting,testTag="transfer.confirm") {
-                    if(vm.transferFutures(toFutures,amount)) submitting=true
+                LbButton(if(vm.transferBusy || submitting)"等待服务端结果…"else "确认划转",Modifier.padding(top=18.dp),enabled=!(vm.transferBusy || submitting) && !vm.transferAccepted,loading=vm.transferBusy || submitting,testTag="transfer.confirm") {
+                    if(rejectAmount()==null && vm.transferFutures(toFutures,amount)) submitting=true
                 }
                 LbButton("取消",kind=ButtonKind.SECONDARY,enabled=!(vm.transferBusy || submitting),testTag="transfer.dismiss"){review=false}
             }

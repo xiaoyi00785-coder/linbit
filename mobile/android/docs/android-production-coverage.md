@@ -59,7 +59,7 @@
 | 资产 | 提现方式；资产筛选；搜索；快捷买币/盈亏入口 | `AssetsScreen.kt:72-82,138-167,245-265` | U；快捷买币/盈亏仍占位；理财/策略/TradFi 顶栏已接真实 Host，但这里没有把它们标为快捷入口或弹窗P。 |
 | 充值 | 网络；自动到账账户选择 | `DepositScreens.kt:141-175,287-301` | 正常/空/明确错误 P；正确地址是在线网络 mock 的无效演示值，不得转账。弹层及 AppRoot 点击 U，不拿合成预览代替。 |
 | 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；链上已开2FA及pending撤销均有AppRoot两适配local闭环 P/W：见下方独立批次。pending不是链上到账，撤销不含completed/processing的成功断言。站内仍U。 |
-| 资产划转 | 现货→合约最终复核/失败重试/成功结果 | `TransferScreen.kt:55-160`；`AssetsViewModel.kt:184-222` | AppRoot P/W：320dp fontScale1.3浅色、360dp暗色；fake token与127.0.0.1精确POST；取消0写；真机、反向和其他设备 V/C 仍U。 |
+| 资产划转 | 现货→合约最终复核/失败重试/成功结果 | `TransferScreen.kt`；`AssetsViewModel.kt` `transferFutures` / `refreshAcceptedTransferBalances` | AppRoot P/W：正向in及反向out（合约→现货）各有320dp fontScale1.3浅色、360dp暗色；fake token与127.0.0.1精确route/body POST；独立Window、取消0写、503重试、防重/会话隔离、spot/futures读回见下方独立批次；真机和其他设备V/C仍U，不混算funding。 |
 | 地址簿 | 新增label/网络；白名单验证/edit；删除；撤销 pending 提现 | `AddressBookScreen.kt`；`AssetsViewModel.kt` | 新增/label-memo编辑及本批pending撤销各两适配P/W见独立XML；单条名单PATCH、DELETE、全局开关仍U，pending撤销不包含processing/completed可撤声明。 |
 | More | 卡券激活确认；合伙人申请；跟单；跟单二次确认；成为带单员；停止跟单；关闭工单 | `CouponsScreen.kt:94-132`；`PartnerScreen.kt:262-277`；`CopyTradingScreen.kt:311-365`；`SupportTicketsScreen.kt:309-314` | U。 |
 | Profile | 修改昵称；退出；移除本机账号；创建子账户；2FA 关闭确认 | `UserCenterScreens.kt:76-158,179-223`；`SubAccountsScreen.kt:42-88`；`SecurityScreens.kt:182-197` | U。 |
@@ -209,7 +209,7 @@ Evidence directories (outside the repository): `/workspace/android-verification/
 
 实际Read八个图片/manifest（`withdraw-fixed-evidence`）：两适配表单/独立Window初始复核/503保留/结果。窗口报告真实`productionDialogWindow=true`、`dialogDecorViewMeasured=960x2532px/1080x2532px`；`pixelCopy=NOT_RUN`。320大字号表单可读并滚动到底部记录，360错误和pending暗夜对比清楚；manifest由`PENDING_HUMAN_READ`更新为已实际Read，PixelCopy/设备图仍NOT_RUN；它们是相同真实链不同滚动阶段的图，不是全V。ref中未找到可逐像素匹配的此精确提现参考，记**no-exact-reference**；不把图张数代替其余交易/资产/安全验收。
 
-Keep U：地址簿增删改/白名单final review/readback/session/reentrancy，pending提现撤销，反向`out`划转，站内转账，completed/processing/failed/canceled实体Root，非2FA发码/spot配置链和真机/真实资金。此批次未部署/未发真实验证码/未调用非loopback资金写。超过原10–15分钟预算，主要诊断是AppRoot的提现方式+币种两步选择、route队列队列次序及mock敏感写的前置拒绝；这些过程性失败XML未冒充passed，正式目录只保存最终4/0/0/0独立结果。
+Keep U：地址簿单条白名单/DELETE/总开关（create和label/memo edit已由后续批次完成），pending提现撤销，站内转账，completed/processing/failed/canceled实体Root，非2FA发码/spot配置链和真机/真实资金。此批次未部署/未发真实验证码/未调用非loopback资金写。超过原10–15分钟预算，主要诊断是AppRoot的提现方式+币种两步选择、route队列队列次序及mock敏感写的前置拒绝；这些过程性失败XML未冒充passed，正式目录只保存最终4/0/0/0独立结果。
 
 ## 2026-11-06 1250 bounded address-create batch
 
@@ -219,7 +219,7 @@ OpenAPI支持本批create和仍未验的PATCH/del三种实际写，不能把接�
 
 发现并修正复核内容在现有纵向Sheet里再套verticalScroll造成真独立Window 0x0/黑图：复用现有容器滚动，Root断言Window非零，并保存新的可Read窗口图片。期间早期匹配到表单自身label的假列表结果未沿用；正式断言同一生产Root已回AddressBook、真实list label/address、GET≥3且无REJECTED。无精确新增UI reference，明确no-exact-reference；8 PNG/manifest已Read，不是整本地址簿、编辑删除、设备PixelCopy或全V。
 
-独立XML `address-create-xml`；图片/元数据 `address-create-evidence`。独立Root **4 tests / 0 failures / 0 errors / 0 skipped**；VM 2项0 skipped。默认实测 **358 tests / 0 failures / 0 errors / 130 skipped**（本批Root 4项默认Assume skipped）；顺序Debug compile→Release compile→lintDebug→默认全测全部BUILD SUCCESSFUL。默认XML `address-default-xml`。保持U：pending提现撤销、反向out划转、提现其他状态、站内、地址白名单/PATCH/DELETE与非2FA/真机。本批超出预算，真实诊断包括资产币种资料、同font输入tag、嵌套滚动窗口归零及网络回调整合，不把中间错误XML当passed。
+独立XML `address-create-xml`；图片/元数据 `address-create-evidence`。独立Root **4 tests / 0 failures / 0 errors / 0 skipped**；VM 2项0 skipped。默认实测 **358 tests / 0 failures / 0 errors / 130 skipped**（本批Root 4项默认Assume skipped）；顺序Debug compile→Release compile→lintDebug→默认全测全部BUILD SUCCESSFUL。默认XML `address-default-xml`。保持U：pending提现撤销、提现其他状态、站内、地址白名单/PATCH/DELETE与非2FA/真机。本批超出预算，真实诊断包括资产币种资料、同font输入tag、嵌套滚动窗口归零及网络回调整合，不把中间错误XML当passed。
 
 ## 2026-11-06 address label/memo PATCH limited batch
 
@@ -229,7 +229,7 @@ OpenAPI `PATCH /account/withdraw-addresses/{id}` 同样支持 `whitelisted`，�
 
 8张最终图已实际Read：表单与独立确认窗口能读清原/新label、memo、地址及验证输入；503保留已填数据与可重试按钮；结果窗口已离开编辑回到真实列表，显示新值和“已从服务端列表读回修改”。320大字的编辑按钮与滚动表单位置可读，360暗色文本/错误可见；真实Window manifest非零960×2532px/1080×2532px，非inline替代、非instrumentation PixelCopy。此精确编辑界面未定位精确参考：**no-exact-reference**，不宣称reference-identical或全V。真机/其它宽度/IME等仍U。
 
-**准确未验边界：** 单条 `whitelisted` PATCH、地址 `DELETE`、全局 `/account/withdraw-whitelist` 写及读，pending提现撤销，反向 `out` 划转，站内提现、资金/提醒/发码等不在本批。全部仅 `127.0.0.1` 精确route/body的fake token/TOTP；没有远端写、部署、真实发送验证码、iOS或我方真机APK前置。
+**准确未验边界：** 单条 `whitelisted` PATCH、地址 `DELETE`、全局 `/account/withdraw-whitelist` 写及读，pending提现撤销，站内提现、资金/提醒/发码等不在本批。全部仅 `127.0.0.1` 精确route/body的fake token/TOTP；没有远端写、部署、真实发送验证码、iOS或我方真机APK前置。
 
 顺序Debug compile→Release compile→lintDebug→默认全测全部BUILD SUCCESSFUL，见 `address-edit-build.jsonl` 及 `/workspace/edit-{debug-compile,release-compile,lint,default}.log`；默认XML另存 `address-edit-default-xml`。默认实测 **364 tests / 0 failures / 0 errors / 134 skipped**。默认中4条Root Assume skip、`AssetsAddressFlowTest` 4条0 skip；skip不计Root通过，不沿用create旧358数字。
 
@@ -246,3 +246,15 @@ OpenAPI `PATCH /account/withdraw-addresses/{id}` 同样支持 `whitelisted`，�
 顺序compileDebug→compileRelease→lintDebug→default tests结果存 `withdraw-cancel-build.json`/日志与 `withdraw-cancel-default-xml`。默认Root四条为Assume skip，不算独立passed。边界U：地址删除、单条whitelisted PATCH、全局开关、反向`out`划转、processing/completed实际结算、非2FA发码和其它宽度/真机。本批有真实fixture队列诊断/最终图指出的stale pending卡而超出10–15分钟，均不以调试中图或失败XML冒充交付。
 
 最终同源码顺序门：Debug compile、Release compile、lintDebug、default tests 全部BUILD SUCCESSFUL；默认 **371 tests / 0 failures / 0 errors / 138 skipped**。其中本批Root四条default Assume skip，VM含原submit共4条默认0 skip。日志 `/workspace/cancel-{debug-compile,release-compile,lint,default}.log`；实际通过只认先存的enabled XML。
+
+## 有界批次：反向 out 合约→现货（独立Root/Window证据）
+
+继续既有`TransferScreen→transferFutures(false, amount)→POST /futures/transfer`，不造另一个划转API。真实ROOT由首页→资产→划转→点击切向，不变更方向初始in。确认前/在途方向锁定、VM session+generation隔离late response；200只置accepted，再分别读`account=spot`和`/futures/account`，不将funding当spot。503仍可独立复核重试；readback失败仅会GET，新增`refreshAcceptedTransferBalances()`的只读防重入口，不允许重发同向或反向POST。
+
+独立Root两条×两适配：取消零写、503 gate保留单次POST/按钮禁用→completed/ref→spot 100→110/futures20→10；精确允许body只有既有in及`{"direction":"out","amount":"10.00"}`和127.0.0.1登记的包。Mock登记200入队移除期间的`response=null`不能提前放行：必须是该精确method/path/body已登记，并仍有该route有效返回，任意新route/body仍拒绝；没有远端资金/安全/提醒写。fixture中funding 999只用于明确隔离。
+
+**结果以最终XML目录为准：** Root `transfer-out-xml` **4 tests / 0 failures / 0 errors / 0 skipped**；VM `transfer-out-vm-xml`三项0跳（既有in会话隔离、out accepted仅重读不再POST及反向拒、out held/session late）；默认另行核实Root至少四项Assume skip。Root图8张实际Read：320浅色font1.3/360暗色的表单、独立复核、503保留、成功两账户读回。明确**no-exact-reference**，不是整个App或全V通过，也不是instrumentationdevice截图。
+
+默认 XML `transfer-out-default-xml` 为 **377 tests / 0 failures / 0 errors / 142 skipped**（新增4 Root按Assume跳过，其他skip按原覆盖范围）。最终顺序门日志 `transfer-out-{debug,release,lint,default}.log`，enabled日志 `transfer-out-enabled.log`；每项Read为非精确参考的可读性检查，非V总分。
+
+**本有限组剩余U**：地址DELETE、单条whitelisted PATCH、总withdraw-whitelist开关。这只是原地址组继续收口项，不是整个Android剩余清单；站内提现、地址其他写外的交易/安全/全页横切、其它宽度、真机PixelCopy等仍照原总表U。iOS未被扩展或等待，我方真机APK没有新增前置。顺序Debug compile→Release→lint→默认全测，不用根测试跳过冒充通过。
