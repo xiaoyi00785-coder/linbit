@@ -3,7 +3,7 @@ import UIKit
 
 /// 选择币种（对照图 #38 / ref2 #17）：搜索、热门币种、A-Z 分组 + 右侧索引
 struct CoinPickerView: View {
-    enum Mode { case deposit }
+    enum Mode { case deposit, withdraw }
     @Environment(\.palette) private var p
     let mode: Mode
     @State private var q = ""
@@ -19,7 +19,7 @@ struct CoinPickerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavBar(title: "选择币种") { EmptyView() }
+            NavBar(title: mode == .withdraw ? "选择提现币种" : "选择币种") { EmptyView() }
             SearchField(text: $q, placeholder: "搜索币种").padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
             let filtered = all.filter { q.isEmpty || $0.localizedCaseInsensitiveContains(q) || (names[$0] ?? "").localizedCaseInsensitiveContains(q) }
             if filtered.isEmpty { EmptyStateView(text: "暂无相关币种").frame(maxHeight: .infinity) } else {
@@ -52,23 +52,31 @@ struct CoinPickerView: View {
             .padding(.horizontal, Spacing.pageH).padding(.top, 14).padding(.bottom, 4)
     }
     private func row(_ a: String) -> some View {
-        NavigationLink(value: DepositTarget(asset: a)) {
-            HStack(spacing: 12) {
-                CoinIcon(base: a, size: 28)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(a).font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary)
-                    Text(names[a] ?? a).font(.lb(11)).foregroundColor(p.textTertiary)
-                }
-                Spacer()
-                if let b = assets.list.first(where: { $0.asset == a }) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(b.total).font(.lbNum(FontSize.label)).foregroundColor(p.textPrimary)
-                        Text("≈ " + Fmt.fiat(assets.usd(b), rate: AppConfig.usdtCny)).font(.lbNum(11)).foregroundColor(p.textTertiary)
-                    }
-                }
-            }.padding(.leading, Spacing.pageH).padding(.trailing, 28).frame(height: 54).contentShape(Rectangle())
+        Group {
+            if mode == .withdraw {
+                NavigationLink(value: WithdrawTarget(asset: a)) { rowBody(a) }
+            } else {
+                NavigationLink(value: DepositTarget(asset: a)) { rowBody(a) }
+            }
         }.buttonStyle(RowPressStyle())
     }
+    private func rowBody(_ a: String) -> some View {
+        HStack(spacing: 12) {
+            CoinIcon(base: a, size: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(a).font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary)
+                Text(names[a] ?? a).font(.lb(11)).foregroundColor(p.textTertiary)
+            }
+            Spacer()
+            if let b = assets.list.first(where: { $0.asset == a }) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(b.total).font(.lbNum(FontSize.label)).foregroundColor(p.textPrimary)
+                    Text("≈ " + Fmt.fiat(assets.usd(b), rate: AppConfig.usdtCny)).font(.lbNum(11)).foregroundColor(p.textTertiary)
+                }
+            }
+        }.padding(.leading, Spacing.pageH).padding(.trailing, 28).frame(minHeight: 54).contentShape(Rectangle())
+    }
+
 }
 
 /// 充值（对照图 #37）：币种、二维码、网络（ref2 #18 风格 Sheet）、地址 + 复制、最小充值 / 到账确认、保存并分享地址

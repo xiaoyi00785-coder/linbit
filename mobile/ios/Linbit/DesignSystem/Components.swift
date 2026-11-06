@@ -51,6 +51,7 @@ struct PrimaryTabs: View {
                     Text(items[i])
                         .font(.lb(size, i == selected ? .semibold : .regular))
                         .foregroundColor(i == selected ? p.textPrimary : p.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                     if underline {
                         Capsule().fill(i == selected ? p.textPrimary : .clear).frame(width: 16, height: 3)
                     }
@@ -122,6 +123,7 @@ struct FloatingTabBar: View {
                 VStack(spacing: 3) {
                     IconView(icon: tab.icon, size: 20)
                     Text(tab.title).font(.lb(FontSize.tabBar, .medium)).foregroundColor(p.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
                 }
                 .frame(maxWidth: .infinity).frame(height: Metrics.tabBarH - 10)
                 .background(Capsule().fill(selected == tab ? p.tabBarSelected : .clear))

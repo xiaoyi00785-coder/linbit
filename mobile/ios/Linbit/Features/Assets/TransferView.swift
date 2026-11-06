@@ -114,7 +114,7 @@ struct RecordsView: View {
         VStack(spacing: 0) {
             NavBar(title: "资金记录") { EmptyView() }
             PrimaryTabs(items: ["充值", "提现", "划转"], selected: Binding(get: { tab }, set: { i in
-                if i == 1 { ToastCenter.shared.show("提现记录将在提现阶段开放") } else { tab = i }
+                if i == 1 { Router.shared.open(.withdrawRecords) } else { tab = i }
             }), size: FontSize.tabSecondary, underline: true).padding(.horizontal, Spacing.pageH).frame(maxWidth: .infinity, alignment: .leading)
             Divider().overlay(p.divider)
             Group {

@@ -544,11 +544,14 @@ struct InlineBanner: View {
     @Environment(\.palette) private var p
     let text: String
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12))
-            Text(text).font(.lb(FontSize.small))
-            Spacer()
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12)).padding(.top, 2)
+            Text(text).font(.lb(FontSize.small)).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .foregroundColor(p.down).padding(.horizontal, Spacing.pageH).frame(height: 30).background(p.downTint)
+        .foregroundColor(p.down)
+        .padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
+        .frame(minHeight: 30)
+        .background(p.downTint)
     }
 }

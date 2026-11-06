@@ -7,10 +7,10 @@ struct FuturesRootView: View {
     @ObservedObject private var flags = AppFeatures.shared
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                PrimaryTabs(items: ["合约", "事件合约", "TradFi", "模拟交易"], selected: $router.futuresTop)
-                Spacer()
-            }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+            ScrollView(.horizontal, showsIndicators: false) {
+                PrimaryTabs(items: ["合约", "事件合约", "TradFi", "模拟交易"], selected: $router.futuresTop, spacing: 16)
+                    .padding(.horizontal, Spacing.pageH)
+            }.frame(minHeight: 44)
             switch router.futuresTop {
             case 0: FuturesTradeView()
             case 1:
