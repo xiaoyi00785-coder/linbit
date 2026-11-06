@@ -162,7 +162,7 @@ struct RootTabView: View {
         case "kyc-form2": SecShot.raw = "kyc:form2"; router.feature = .kyc
         case "kyc-form2-full": SecShot.raw = "kyc:form2full"; router.feature = .kyc
         case "kyc-error": SecShot.raw = "kyc:error"; router.feature = .kyc
-        case "price-alerts", "price-alerts-empty", "price-alerts-error", "price-alerts-disabled":
+        case "price-alerts", "price-alerts-empty", "price-alerts-error", "price-alerts-disabled", "price-alerts-create", "price-alerts-edit", "price-alerts-delete":
             router.feature = .priceAlerts
         case "notif-list": SecShot.raw = "notif:list"; router.feature = .notifications
         case "notif-empty": SecShot.raw = "notif:empty"; router.feature = .notifications

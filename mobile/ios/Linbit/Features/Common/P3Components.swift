@@ -179,11 +179,8 @@ struct FeatureHost: View {
         case .changePassword: ChangePasswordView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .tradfi: TradFiView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         case .priceAlerts:
-            if flags.isOn("priceAlerts") || PriceAlertDemo.on {
-                PriceAlertsListView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
-            } else {
-                FeatureShell(title: "价格预警") { ComingSoonView(title: "价格预警") }
-            }
+            // 列表内区分 flag 关闭（准确文案）/ 登录 / 正式 API；不在此用 ComingSoon 冒充
+            PriceAlertsListView(onBack: { Task { @MainActor in Router.shared.feature = nil } })
         }
     }
 }

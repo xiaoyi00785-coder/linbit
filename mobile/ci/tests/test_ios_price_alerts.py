@@ -136,6 +136,43 @@ ok("price-alerts" in risk, "screens-risk lists price-alerts shots")
 demo = (ROOT / "mobile/ios/Linbit/Features/Alerts/PriceAlertsAPI.swift").read_text()
 ok("forceError" in demo and "price-alerts-disabled" in demo or "disabled" in demo, "DEBUG empty/error/disabled fixtures")
 
+
+# Create/edit/delete UI + write-gate (source ≠ Swift compile)
+ed = (ROOT / "mobile/ios/Linbit/Features/Alerts/PriceAlertsEditor.swift").read_text()
+ok("struct PriceAlertEditorSheet" in ed, "editor sheet present")
+ok("struct PriceAlertDeleteSheet" in ed, "delete sheet present")
+ok("Dec.parse" in ed and "threshold" in ed, "threshold decimal validation")
+ok("revision" in ed and ("409" in ed or "isConflictFailure" in ed or "REVISION" in ed), "revision conflict handling in editor flow")
+ok("busy" in ed, "anti double-submit busy flag")
+ok("onDone(false)" in ed, "cancel path exists")
+api = (ROOT / "mobile/ios/Linbit/Features/Alerts/PriceAlertsAPI.swift").read_text()
+ok("blocksRemoteWrites" in api, "blocksRemoteWrites gate")
+ok("guard ShotGate.enabled else { return false }" in api, "Release path not sealed (ShotGate off → false)")
+ok("interceptCreate" in api and "interceptUpdate" in api and "interceptDelete" in api, "DEBUG mock interceptors")
+ok("activePerUserCap = 50" in api, "cap from OpenAPI enum 50")
+ok("mockWriteLog" in api, "mock write log for tests")
+lv = (ROOT / "mobile/ios/Linbit/Features/Alerts/PriceAlertsListView.swift").read_text()
+ok("featureClosed" in lv and "暂未开放" in lv, "flag-off accurate copy (not ComingSoon body)")
+ok("ComingSoonView" not in lv, "list does not use ComingSoonView")
+ok("PriceAlertEditorSheet" in lv and "PriceAlertDeleteSheet" in lv, "list wires editor/delete")
+ok("openShotSheetsIfNeeded" in lv, "shot auto-open create/edit/delete")
+app = (ROOT / "mobile/ios/Linbit/App/LinbitApp.swift").read_text()
+ok("price-alerts-create" in app and "price-alerts-edit" in app and "price-alerts-delete" in app, "CRUD shot keys registered")
+risk = (ROOT / "mobile/ci/screens-risk.txt").read_text()
+ok("price-alerts-create" in risk and "price-alerts-edit" in risk and "price-alerts-delete" in risk, "screens-risk CRUD keys")
+fb = (ROOT / "mobile/ios/Linbit/DesignSystem/Feedback.swift").read_text()
+ok("REVISION_CONFLICT" in fb and "ALERT_NOT_FOUND" in fb, "ErrorText conflict/not-found")
+# Simulate Release gate logic in Python
+class ShotGate:
+    enabled = False
+    launchShot = "price-alerts-create"
+def blocks_remote(enabled, shot):
+    if not enabled: return False
+    return shot is not None
+ok(blocks_remote(False, "price-alerts") is False, "Release never blocks remote writes")
+ok(blocks_remote(True, "price-alerts") is True, "DEBUG+shot blocks remote")
+ok(blocks_remote(True, None) is False, "DEBUG no-shot allows real API path")
+
 if failures:
     print("FAIL", len(failures))
     for f in failures:

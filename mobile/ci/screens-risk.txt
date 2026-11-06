@@ -36,3 +36,6 @@ price-alerts light
 price-alerts-empty light
 price-alerts-error light
 price-alerts-disabled light
+price-alerts-create light
+price-alerts-edit light
+price-alerts-delete light

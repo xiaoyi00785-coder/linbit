@@ -1,24 +1,51 @@
 import SwiftUI
 
-/// 价格预警列表垂直切片（正式 FeaturePage；入口：合约工具「价格预警」、首页更多）。
-/// 创建/编辑/删除 UI 下批；本页动作在 DEBUG/ShotGate 下不远端写。
+/// 价格预警列表 + 创建/编辑/删除入口（正式 FeaturePage）。
+/// DEBUG+lb.shot 写走本地 mock；Release 走正式 API（ShotGate 关闭，夹具不误封）。
 struct PriceAlertsListView: View {
     @Environment(\.palette) private var p
     @ObservedObject private var session = Session.shared
     @ObservedObject private var flags = AppFeatures.shared
     @StateObject private var model = PriceAlertsSession()
     @State private var detail: PriceAlert?
+    @State private var editor: PriceAlertEditorSheet.Mode? = nil
+    @State private var deleting: PriceAlert? = nil
     var onBack: (() -> Void)? = nil
 
-    /// 契约限制文案（OpenAPI：once + INDEX + in_app；activePerUser=50）
-    private let limitNote = "仅支持现货 INDEX 一次性跨价预警，触发后只发站内信；每账户最多 50 条有效预警。编辑/删除使用 revision 乐观锁。"
+    /// 契约文案：once + INDEX + in_app；上限取 OpenAPI enum=50（若列表项带回 limit 则用之）
+    private var activeCap: Int {
+        if case let .loaded(pg) = model.page, let c = pg.items.compactMap(\.limit?.activePerUser).first {
+            return c
+        }
+        return PriceAlertsFeature.activePerUserCap
+    }
+
+    private var limitNote: String {
+        "仅支持现货 INDEX 一次性跨价预警，触发后只发站内信；每账户最多 \(activeCap) 条有效预警（契约 activePerUser）。编辑/删除使用 revision 乐观锁。"
+    }
+
+    private var loadedActiveCount: Int {
+        guard case let .loaded(pg) = model.page else { return 0 }
+        return pg.items.filter { $0.status == "active" || ($0.enabled && $0.status != "triggered") }.count
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            NavBar(title: "价格预警", onBack: onBack)
+            NavBar(title: "价格预警", onBack: onBack) {
+                if flags.isOn(PriceAlertsFeature.flagKey) || PriceAlertDemo.on {
+                    if session.isLoggedIn || PriceAlertDemo.on {
+                        Button {
+                            editor = .create
+                        } label: {
+                            Image(systemName: "plus").font(.system(size: 18, weight: .medium)).foregroundColor(p.textPrimary)
+                                .frame(width: 44, height: 44, alignment: .trailing)
+                        }
+                        .buttonStyle(PressableStyle())
+                    }
+                }
+            }
             if !flags.isOn(PriceAlertsFeature.flagKey) && !PriceAlertDemo.on {
-                // flag 关闭时仍展示 ComingSoon；不能把它当唯一安全闸——列表加载仍可能 403
-                ComingSoonView(title: "价格预警")
+                featureClosed
             } else if !session.isLoggedIn && !PriceAlertDemo.on {
                 Spacer()
                 EmptyStateView(text: ErrorText.loginRequired)
@@ -36,13 +63,55 @@ struct PriceAlertsListView: View {
             }
         }
         .background(p.bg.ignoresSafeArea())
-        .task { await model.reload() }
+        .task { await model.reload(); openShotSheetsIfNeeded() }
         .onChange(of: session.isLoggedIn) { _ in
             model.invalidate()
             Task { await model.reload() }
         }
         .lbSheet(Binding(get: { detail != nil }, set: { if !$0 { detail = nil } })) {
-            if let a = detail { PriceAlertDetailSheet(alert: a, onClose: { detail = nil }) }
+            if let a = detail {
+                PriceAlertDetailSheet(
+                    alert: a,
+                    onEdit: { detail = nil; editor = .edit(a) },
+                    onDelete: { detail = nil; deleting = a },
+                    onClose: { detail = nil }
+                )
+            }
+        }
+        .lbSheet(Binding(get: { editor != nil }, set: { if !$0 { editor = nil } })) {
+            if let mode = editor {
+                PriceAlertEditorSheet(
+                    mode: mode,
+                    session: model,
+                    loadedActiveCount: loadedActiveCount,
+                    activeCap: activeCap
+                ) { ok in
+                    editor = nil
+                    if ok { Task { await model.reload() } }
+                }
+            }
+        }
+        .lbSheet(Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            if let a = deleting {
+                PriceAlertDeleteSheet(alert: a, session: model) { ok in
+                    deleting = nil
+                    if ok { Task { await model.reload() } }
+                }
+            }
+        }
+    }
+
+    /// flag 关闭：准确说明，不冒充 ComingSoon / 不假装已实现
+    private var featureClosed: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: "bell.slash").font(.system(size: 36)).foregroundColor(p.textTertiary)
+            Text("价格预警暂未开放").font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+            Text("客户端功能开关 priceAlerts 已关闭，或服务端返回 FEATURE_DISABLED。开通后可创建现货 INDEX 一次性站内预警（每账户最多 \(PriceAlertsFeature.activePerUserCap) 条有效）。")
+                .font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.pageH)
+            Spacer()
         }
     }
 
@@ -50,43 +119,56 @@ struct PriceAlertsListView: View {
         InfoNote(text: limitNote).padding(.horizontal, Spacing.pageH).padding(.top, 8)
         if model.isRateLimited {
             InlineBanner(text: "操作过于频繁，请 \(model.rateLimitRemainingSec) 秒后再试")
-                .padding(.horizontal, Spacing.pageH).padding(.top, 8)
         }
-        switch model.page {
-        case .idle, .loading:
-            Spacer(); ProgressView(); Spacer()
-        case let .failed(m):
-            ErrorStateView(message: m) {
-                Task { await model.reload() }
+        if model.featureDisabled {
+            VStack(spacing: 8) {
+                Spacer()
+                Text("价格预警暂不可用").font(.lb(FontSize.title, .medium)).foregroundColor(p.textPrimary)
+                Text(ErrorText.map["FEATURE_DISABLED"] ?? "该功能暂未开放")
+                    .font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                Button("重试") { Task { await model.reload() } }
+                    .font(.lb(FontSize.label, .medium)).foregroundColor(p.brand)
+                Spacer()
             }
-        case let .loaded(pg) where pg.items.isEmpty:
-            Spacer()
-            EmptyStateView(text: "暂无价格预警")
-            Text("可在行情到达目标价时收到站内提醒")
-                .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
-                .padding(.top, 6)
-            Spacer()
-        case let .loaded(pg):
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(pg.items) { a in
-                        row(a).onTapGesture { detail = a }
-                        Divider().overlay(p.border)
-                    }
-                    if model.canLoadMore {
-                        HStack {
-                            if model.loadingMore { ProgressView().scaleEffect(0.8) }
-                            Text(model.loadingMore ? "加载中…" : "加载更多")
-                                .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity).frame(height: 44)
-                        .onAppear { Task { await model.loadMore() } }
-                    } else if (pg.total ?? pg.items.count) > 0 {
-                        Text("没有更多了").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
-                            .frame(maxWidth: .infinity).frame(height: 44)
-                    }
+        } else {
+            switch model.page {
+            case .idle, .loading:
+                Spacer(); ProgressView(); Spacer()
+            case let .failed(m):
+                ErrorStateView(message: m) {
+                    Task { await model.reload() }
                 }
-                .padding(.horizontal, Spacing.pageH)
+            case let .loaded(pg) where pg.items.isEmpty:
+                Spacer()
+                EmptyStateView(text: "暂无价格预警")
+                Text("可在行情到达目标价时收到站内提醒")
+                    .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                    .padding(.top, 6)
+                LBButton(title: "创建预警", enabled: loadedActiveCount < activeCap) { editor = .create }
+                    .padding(.horizontal, Spacing.pageH).padding(.top, 16)
+                Spacer()
+            case let .loaded(pg):
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(pg.items) { a in
+                            row(a).onTapGesture { detail = a }
+                            Divider().overlay(p.border)
+                        }
+                        if model.canLoadMore {
+                            HStack {
+                                if model.loadingMore { ProgressView().scaleEffect(0.8) }
+                                Text(model.loadingMore ? "加载中…" : "加载更多")
+                                    .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                            }
+                            .frame(maxWidth: .infinity).frame(height: 44)
+                            .onAppear { Task { await model.loadMore() } }
+                        } else if (pg.total ?? pg.items.count) > 0 {
+                            Text("没有更多了").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                                .frame(maxWidth: .infinity).frame(height: 44)
+                        }
+                    }
+                    .padding(.horizontal, Spacing.pageH)
+                }
             }
         }
     }
@@ -135,12 +217,20 @@ struct PriceAlertsListView: View {
             .padding(.horizontal, 6).frame(height: 18)
             .background(RoundedRectangle(cornerRadius: 4).fill(c.opacity(0.12)))
     }
+
+    private func openShotSheetsIfNeeded() {
+        guard PriceAlertDemo.on else { return }
+        if PriceAlertDemo.openCreate { editor = .create }
+        else if PriceAlertDemo.openEdit { editor = .edit(PriceAlertDemo.example(active: true)) }
+        else if PriceAlertDemo.openDelete { deleting = PriceAlertDemo.example(active: true) }
+    }
 }
 
-/// 只读详情（创建/编辑/删除 UI 下批；本页无写按钮）
 struct PriceAlertDetailSheet: View {
     @Environment(\.palette) private var p
     let alert: PriceAlert
+    var onEdit: (() -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
     let onClose: () -> Void
     var body: some View {
         LBSheet(title: "预警详情", showClose: true, onClose: onClose) {
@@ -156,9 +246,15 @@ struct PriceAlertDetailSheet: View {
                 if let o = alert.lastObservedPrice { kv("最近观测价", o) }
                 if let t = alert.triggeredPrice { kv("触发价", t) }
                 if let n = alert.note, !n.isEmpty { kv("备注", n) }
-                Text("本页只读。创建 / 编辑 / 删除下一批实现；DEBUG 夹具下不会请求写接口。")
-                    .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
-                    .padding(.top, 8)
+                HStack(spacing: 10) {
+                    if let onEdit {
+                        LBButton(title: "编辑", kind: .secondary) { onEdit() }
+                    }
+                    if let onDelete {
+                        LBButton(title: "删除", kind: .sell) { onDelete() }
+                    }
+                }
+                .padding(.top, 8)
             }
             .padding(.horizontal, Spacing.pageH)
             .padding(.bottom, 24)

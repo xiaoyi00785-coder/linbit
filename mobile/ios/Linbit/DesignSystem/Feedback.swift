@@ -198,6 +198,10 @@ enum ErrorText {
         "SYMBOL_PAUSED": "该产品暂停交易",
         "INDEX_UNAVAILABLE": "指数价格暂不可用，请稍后再试",
         "FEATURE_DISABLED": "该功能暂未开放",
+        "ALERT_NOT_FOUND": "价格预警不存在",
+        "REVISION_CONFLICT": "预警已被修改，请刷新后重试",
+        "SHOT_BLOCKED": "截图夹具已拦截写操作",
+
         "PAIR_NOT_SUPPORTED": "暂不支持该币对兑换",
         "AMOUNT_TOO_LARGE": "超过单笔兑换上限",
         "PRICE_UNAVAILABLE": "暂无可用报价，请稍后再试",
