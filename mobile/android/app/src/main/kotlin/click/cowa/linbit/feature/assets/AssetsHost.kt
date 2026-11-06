@@ -22,7 +22,7 @@ fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel(), onDi
     val p = LB.p
     Box(Modifier.fillMaxSize().background(p.bg).statusBarsPadding()) {
         when (r) {
-            is AssetsRoute.Transfer -> TransferScreen(vm, onBack = assetsNav::clear)
+            is AssetsRoute.Transfer -> TransferScreen(vm, onBack = assetsNav::clear, onDialogWindow = onDialogWindow)
             is AssetsRoute.CoinPicker -> CoinPickerScreen(
                 mode = r.mode,
                 vm = vm,

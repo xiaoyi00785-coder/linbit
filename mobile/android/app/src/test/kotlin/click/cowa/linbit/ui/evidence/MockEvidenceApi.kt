@@ -5,12 +5,14 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 
+internal data class MutationEvidence(val method: String?, val path: String?, val body: okio.Buffer)
+
 /** Explicit, loopback-only mock responses. No production network or credential is allowed. */
 internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     val server = MockWebServer()
     private val routes = linkedMapOf<String, MutableList<MockResponse>>()
-    val requests = mutableListOf<String>()
-    val mutationRequests = mutableListOf<RecordedRequest>()
+    val requests = java.util.Collections.synchronizedList(mutableListOf<String>())
+    val mutationRequests = java.util.Collections.synchronizedList(mutableListOf<MutationEvidence>())
     private val mutationStatuses = mutableListOf<Int>()
     private val expectedFailureKeys = mutableSetOf<String>()
     var defaultFeatureFlags: String? = null
@@ -41,11 +43,13 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         )
     }
 
+    var futuresTransferFailureGate: java.util.concurrent.CountDownLatch? = null
+
     override fun dispatch(request: RecordedRequest): MockResponse {
         val key = "${request.method} ${request.path.orEmpty()}"
         val path = request.path?.substringBefore('?').orEmpty()
         val method = request.method.orEmpty()
-        if (method != "GET") mutationRequests += request
+        if (method != "GET") mutationRequests += MutationEvidence(request.method,request.path,request.body.clone())
         val declaredFailure = expectedFailureKeys.remove(key)
         val deletePasskey = method == "DELETE" && path.startsWith("/account/passkeys/")
         val sensitive = method != "GET" && (path.startsWith("/account/") || path.startsWith("/earn/") || path.startsWith("/strategy/") || path.contains("/wallet/") || path.endsWith("/convert/accept") || path.contains("/2fa/") || path.contains("/kyc/"))
@@ -60,10 +64,11 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val passkeyRegister = path in setOf("/account/passkeys/register/begin", "/account/passkeys/register/finish")
         val alertWrite = path == "/price-alerts" || path.startsWith("/price-alerts/")
         val paperBuy = method == "POST" && path == "/paper/orders"
+        val futuresTransfer = method == "POST" && path == "/futures/transfer" && response != null && request.body.readUtf8() == "{\"direction\":\"in\",\"amount\":\"10.00\"}"
         val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
         val algoCancelFailure = algoCancel && response?.httpCode() == 503
         val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }
@@ -83,6 +88,9 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (path == "/auth/passkey/login/finish") {
             check(passkeyFinishGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback finish latch timed out" }
         }
+        if (futuresTransfer && response?.httpCode() == 503) {
+            check(futuresTransferFailureGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback transfer failure latch timed out" }
+        }
         return response ?: undeclared(request, "Evidence route must be declared explicitly")
     }
 
@@ -94,9 +102,9 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     private fun MockResponse.httpCode(): Int = status.removePrefix("HTTP/1.1 ").substringBefore(' ').toInt()
 
 
-    fun dumpRequests(): String = requests.joinToString("\n")
+    fun dumpRequests(): String = synchronized(requests) { requests.toList() }.joinToString("\n")
 
-    fun toManifest(): Map<String, String> = mapOf("mock.baseUrl" to baseUrl, "mock.requestedRoutes" to requests.joinToString(";"))
+    fun toManifest(): Map<String, String> = mapOf("mock.baseUrl" to baseUrl, "mock.requestedRoutes" to synchronized(requests) { requests.toList() }.joinToString(";"))
 
     fun assertOnlyExpectedFailures() {
         check(mutationStatuses.isNotEmpty()) { "Expected an explicitly failed loopback mutation" }
@@ -111,7 +119,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         check(expectedFailureKeys.isEmpty()) { "Unexpected declared failure routes: $expectedFailureKeys" }
     }
 
-    fun lastMutationBody(): String = mutationRequests.last().body.clone().readUtf8()
+    fun lastMutationBody(): String = synchronized(mutationRequests) { mutationRequests.last().body.clone().readUtf8() }
 
     fun assertNoWrites() {
         check(requests.none { it.split(" ").first() in setOf("POST", "PUT", "PATCH", "DELETE") }) {

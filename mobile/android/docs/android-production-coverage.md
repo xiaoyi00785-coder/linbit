@@ -33,7 +33,7 @@
 | 分区 | 页面/子路由 | 生产依据 | 当前状态 |
 |---|---|---|---|
 | Auth 9 | LOGIN；PASSWORD；VERIFY_LOGIN；REGISTER；VERIFY_REGISTER；SET_PASSWORD；FORGOT；VERIFY_RESET；RESET | `feature/auth/AuthFlow.kt:63-73,83-119` | 生产共有 9 个声明目的，其中 LOGIN/REGISTER 为两个入口；登录三步、注册三步、找回三步；九个 destination 各自保留，不隐藏。注册/找回的 P 不含实际开通账户；仅到最终表单，不提交。 |
-| AssetsRoute 7 | Transfer；CoinPicker(Deposit/Withdraw 两 mode)；Deposit；Withdraw；AddressBook；AddAddress；WithdrawRecords | `data/assets/AssetsNav.kt:8-17`；`feature/assets/AssetsHost.kt:24-77` | Deposit 正常/空/错误 P；Withdraw 空网络/错误 P，正常安全确认可达但独立离屏Window按manifest，PixelCopy/真机U。其余 U，直到对应 P/V。CoinPicker 两个 mode 不合并。 |
+| AssetsRoute 7 | Transfer；CoinPicker(Deposit/Withdraw 两 mode)；Deposit；Withdraw；AddressBook；AddAddress；WithdrawRecords | `data/assets/AssetsNav.kt:8-17`；`feature/assets/AssetsHost.kt:24-77` | Deposit 正常/空/错误 P；Withdraw 空网络/错误 P，正常安全确认可达但独立离屏Window按manifest，PixelCopy/真机U。Transfer 已有 AppRoot 320大字/360暗色 P/W 的确认、失败重试、readback 证据（见文末）；**其他子路由仍 U**。CoinPicker 两个 mode 不合并。 |
 | Security 8 | CENTER；BIND；DISABLE；PASSWORD；ANTI_PHISHING；EMAIL；PHONE；FUND_PASSWORD | `feature/profile/SecurityScreens.kt:30-52` | 密码/防钓鱼/邮箱/手机/资金密码已实现 OpenAPI 与生产复核，表单 P；离屏独立Window实测，PixelCopy/真机 U。Passkey仍占位；BIND 的 QR 只能采用明确无效测试数据作布局，不可称真实绑定通过。 |
 | KYC 2 | 状态；基础/高级表单（包括 Lv1/Lv2、提交错误/成功） | `feature/profile/KycScreens.kt:45-55,115-175` | U；表单必须独立，不能只看状态卡。 |
 | Copy 2 | 带单员详情；我的跟单列表/停止流 | `feature/more/CopyTradingScreen.kt:142-187,243-307` | U；列表截屏不能代替详情和停止确认。 |
@@ -59,6 +59,7 @@
 | 资产 | 提现方式；资产筛选；搜索；快捷买币/盈亏入口 | `AssetsScreen.kt:72-82,138-167,245-265` | U；快捷买币/盈亏仍占位；理财/策略/TradFi 顶栏已接真实 Host，但这里没有把它们标为快捷入口或弹窗P。 |
 | 充值 | 网络；自动到账账户选择 | `DepositScreens.kt:141-175,287-301` | 正常/空/明确错误 P；正确地址是在线网络 mock 的无效演示值，不得转账。弹层及 AppRoot 点击 U，不拿合成预览代替。 |
 | 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；真实提交/最终成功 U。 |
+| 资产划转 | 现货→合约最终复核/失败重试/成功结果 | `TransferScreen.kt:55-160`；`AssetsViewModel.kt:184-222` | AppRoot P/W：320dp fontScale1.3浅色、360dp暗色；fake token与127.0.0.1精确POST；取消0写；真机、反向和其他设备 V/C 仍U。 |
 | 地址簿 | 白名单验证；改白名单；新增选择币种/网络；撤销 pending 提现 | `AddressBookScreen.kt:70-187,289-300,372-419` | U。 |
 | More | 卡券激活确认；合伙人申请；跟单；跟单二次确认；成为带单员；停止跟单；关闭工单 | `CouponsScreen.kt:94-132`；`PartnerScreen.kt:262-277`；`CopyTradingScreen.kt:311-365`；`SupportTicketsScreen.kt:309-314` | U。 |
 | Profile | 修改昵称；退出；移除本机账号；创建子账户；2FA 关闭确认 | `UserCenterScreens.kt:76-158,179-223`；`SubAccountsScreen.kt:42-88`；`SecurityScreens.kt:182-197` | U。 |
@@ -181,3 +182,21 @@ This is a narrowly scoped Android continuation, not a declaration that all Andro
 **Still not verified / remaining:** The actual `AppRoot` bottom-futures-tab -> history-clock click reaches the production history host only when its real `FuturesTradeViewModel` and history owner are provided through the new production factories (defaults remain Hilt). Before that fix, the uninjectable test Hilt owner caused composition rollback. No page or overlay is substituted. The final independent `tpsl-root-v2-state` XML is authoritative for the two chains in each configuration; all four are explicitly failed, never skipped, if even one stage fails. A screenshot in `tpsl-root-v2-evidence` alone proves only its manifest stage and real configuration, not a completed cancellation/readback chain. A cancelled diag screenshot and earlier failure trees are not evidence. Four deterministic loopback state tests now execute (none is skipped): late obsolete-filter rejection, one duplicate-click in-flight DELETE with a retained failure and exactly one retried success callback, stale pagination rejection across a changed filter, and rejection across a new session. `loadMorePositions`/`loadMoreAlgos` now share the filter-generation and session-epoch checks; a new query cancels their job; final state is not allowed to publish after invalidation. Test `Held(response)` latches, rather than sleeps, sequence actual responses and verify Retrofit/OpenAPI query argument order. This does not claim device UI acceptance for all state races. Spot history and TPSL amend were not promoted to completed acceptance merely because shared helpers are used; no real funds/order security write was made. No exact matching history/TPSL reference exists in inspected ref18 pairs (leverage/withdraw-network); visual Read is real, not reference pixel acceptance.
 
 Evidence directories (outside the repository): `/workspace/android-verification/tpsl-history-evidence/` and `/workspace/android-verification/tpsl-history-state/`. No exact-reference comparison was claimed, no real system Credential Manager ceremony or RP assetlinks problem was solved, and no installable APK was delivered by this batch.
+
+## 2026-11-06 USDT现货→合约划转限定批次
+
+本批在生产已有 OpenAPI `POST /futures/transfer` 上补前端确认、同步防重和结果承载，不声称此前功能全缺。实际缺口是原按钮直接提交、无独立最终复核、无会话间事务保护，也没有可持久读的服务端结果。生产 `AppRoot` 现在把同一个 `AssetsViewModel` 和 window callback 传给原 `AssetsHost/TransferScreen`。表单通过后才打开真实生产 `LbSheet`；取消不发请求。`AssetsViewModel.transferFutures` 提交前同步置忙，另在按钮按下端立刻显示忙碌，避免Compose回调后的竞态重复。session/generation切换取消旧事务并拒绝旧结果。
+
+503时原复核Window、金额和错误保留并允许重试；成功按真实 `status/ref` 展示，不能缺省假造completed。独立后续现货/合约GET均成功，才显示“余额已按服务端读回更新”及90/30；读回失败显示暂未更新，不伪造。反向`out`沿用实现但**未在本批验证**，不推断通过。
+
+**独立先存证据：** `/workspace/android-verification/transfer-fixed-xml/` = 5 tests / 0 failures / 0 errors / 0 skipped。其中真正`AppRoot`两条取消0写+两条在途防重/503重试/成功/readback为4条（两适配各两条），VM重复调用与旧会话迟到结果隔离另1条，不能把两个总数混算单个Root总数。PNG及manifest在同层 `transfer-fixed-evidence/`，共8张表单/独立Window复核/失败重试/成功结果。每个尺寸的两条测试实际完成所有阶段才计入；中间旧失败XML与图没有计为通过。
+
+已实际Read八张最终图：320大字浅色、360暗色的左右页边距、账户方向卡及居中交换图标、标题/金额字重层次、按钮对齐、红错误与回执间距均可见可读，生产截图无合成inline替代。代码注释仅指向`#46 / iOS TransferView`，本工程未定位确切transfer参考图；因此为 **no-exact-reference，未宣称reference-identical或全V**。Canvas/Android真实生产Window离屏证据不替代用户真机PixelCopy；没有为APK添加人为前置。
+
+本组有限剩余清单（不是泛泛重审全部Android）：
+1. **提现结果闭环 U**：已有安全确认与空网络/错误表单P；需实际失败重试、最终成功/pending、余额和提现记录readback、会话/防重，以及320/360实际入口图。
+2. **地址簿闭环 U**：需独立最终复核（新增/编辑/删除或白名单变更）、失败保留重试、列表readback、会话/防重。不能把验证码表单当最终复核也不能用旧合成预览抵。
+3. **地址簿内 pending 撤销记录 U**：保留为同组原范围单独动作，当前未验，不用本批划转mock替代；需本组完成时核真实契约并做local final review/readback（若真实API行为不同则据实记录）。
+
+
+下一明确项是第1项提现的结果闭环；第2/3随后，不再扩散到其它资产/交易/安全范围。APK/真机由用户验收，不等iOS。顺序门通过：`:app:compileDebugKotlin`（一次误删使用中的import修后成功，如实留记录）→`:app:compileReleaseKotlin`→`:app:lintDebug`→`:app:testDebugUnitTest`。默认结果为347 tests / 0 failures / 0 errors / 122 skipped，其中本批Root四项为4 skipped，未计通过；`transfer-default-xml`已保存，独立`transfer-fixed-xml`才是本批passed依据。日志见`transfer-fixed-build.jsonl`与`/workspace/transfer-{debug-compile,release-compile,lint,default}.log`。

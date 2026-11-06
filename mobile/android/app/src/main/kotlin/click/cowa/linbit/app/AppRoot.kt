@@ -152,7 +152,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewMo
             LaunchedEffect(assetsRoute) {
                 if (assetsRoute != null && vm.assetsNav.consumeTab()) tab = MainTab.ASSETS
             }
-            if (assetsRoute != null) AssetsHost(vm.assetsNav)
+            if (assetsRoute != null) AssetsHost(vm.assetsNav, vm = routeVms.assets, onDialogWindow = onDialogWindow)
 
             assetFeature?.let { feature -> AssetFeatureHost(feature,
                 onBack = { assetFeature = null },

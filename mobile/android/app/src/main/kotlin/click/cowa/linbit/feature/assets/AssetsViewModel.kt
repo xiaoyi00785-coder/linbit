@@ -1,6 +1,8 @@
 package click.cowa.linbit.feature.assets
 
 import androidx.lifecycle.ViewModel
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewModelScope
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiCreateWithdrawAddressRequest
@@ -180,10 +182,43 @@ class AssetsViewModel @Inject constructor(
     }
 
     // ---- 划转：现货(资金) ↔ 合约，仅 USDT ----
-    suspend fun transferFutures(toFutures: Boolean, amount: String): Result<*> = runCatching {
-        val dir = if (toFutures) ApiFuturesTransferRequest.Direction.IN else ApiFuturesTransferRequest.Direction.OUT
-        apiCall { api.futuresTransfer(ApiFuturesTransferRequest(dir, amount)) }
+    data class TransferReceipt(val ref: String?, val status: String, val balanceRefreshed: Boolean = false, val spotFree: String? = null, val futuresAvailable: String? = null)
+    var transferBusy by androidx.compose.runtime.mutableStateOf(false); private set
+    var transferError by androidx.compose.runtime.mutableStateOf<String?>(null); private set
+    var transferReceipt by androidx.compose.runtime.mutableStateOf<TransferReceipt?>(null); private set
+    private var transferJob: kotlinx.coroutines.Job? = null
+    private var transferGeneration = 0L
+    init { viewModelScope.launch { tokens.sessionVersion.collect {
+        transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null
+    } } }
+    fun transferFutures(toFutures: Boolean, amount: String): Boolean {
+        if (transferBusy || !tokens.loggedIn.value) return false
+        transferBusy=true;transferError=null
+        val generation=++transferGeneration;val epoch=tokens.sessionVersion.value
+        transferJob = viewModelScope.launch {
+            try {
+                val dir = if (toFutures) ApiFuturesTransferRequest.Direction.IN else ApiFuturesTransferRequest.Direction.OUT
+                val r=apiCall { api.futuresTransfer(ApiFuturesTransferRequest(dir, amount)) }
+                if (transferGeneration==generation && tokens.sessionVersion.value==epoch) {
+                    transferReceipt=TransferReceipt(r.ref,r.status?:"pending")
+                    refreshBalances(epoch,generation)
+                }
+            } catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(transferGeneration==generation&&tokens.sessionVersion.value==epoch)transferError=e.lbMessage()}
+            finally{if(transferGeneration==generation&&tokens.sessionVersion.value==epoch)transferBusy=false}
+        }
+        return true
     }
+    private suspend fun refreshBalances(epoch:Long,generation:Long) {
+        val spot=runCatching{apiCall{api.balances(account="spot",pageSize=200)}}.getOrNull()
+        val futures=runCatching{apiCall{api.futuresAccount()}}.getOrNull()
+        if (transferGeneration!=generation || tokens.sessionVersion.value!=epoch) return
+        val current=transferReceipt ?: return
+        transferReceipt=current.copy(balanceRefreshed=spot!=null&&futures!=null,spotFree=spot?.items?.firstOrNull{it.asset.equals("USDT",true)}?.free,futuresAvailable=futures?.availableBalance)
+        if(spot!=null&&futures!=null)_s.value=_s.value.copy(spot=spot.items,futures=futures,loading=false,error=null)
+    }
+    fun clearTransferFeedback(){if(!transferBusy){transferError=null;transferReceipt=null}}
+    override fun onCleared(){transferGeneration++;transferJob?.cancel();super.onCleared()}
 
     // ---- 地址簿 ----
     /** 离屏证据：地址簿列表/白名单开关（非生产）。 */
