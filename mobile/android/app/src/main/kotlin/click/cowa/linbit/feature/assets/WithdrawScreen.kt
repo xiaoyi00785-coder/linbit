@@ -36,6 +36,7 @@ import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.data.assets.AssetsNav
+import click.cowa.linbit.data.assets.AssetsRoute
 import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.ui.components.CoinIcon
 import click.cowa.linbit.ui.components.EmptyState
@@ -79,9 +80,25 @@ fun WithdrawScreen(
     var amount by remember { mutableStateOf("") }
     var to by remember { mutableStateOf("") }
     var totp by remember { mutableStateOf("") }
+    var smsCode by remember { mutableStateOf("") }
     var fundPw by remember { mutableStateOf("") }
     var showConfirm by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
+    var twoFa by remember { mutableStateOf(true) }
+    var sendingCode by remember { mutableStateOf(false) }
+    var pendingNetwork by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        assetsNav.consumeWithdrawPrefill()?.let { pref ->
+            asset = pref.asset
+            addr = pref.address
+            memo = pref.memo.orEmpty()
+            pendingNetwork = pref.network
+        }
+    }
+    LaunchedEffect(showConfirm) {
+        if (showConfirm) twoFa = runCatching { vm.twoFactorEnabled() }.getOrDefault(true)
+    }
 
     LaunchedEffect(asset) {
         nets = emptyList(); net = null; walletNets = emptyList(); walletNet = null
@@ -109,6 +126,13 @@ fun WithdrawScreen(
                 }
                 net = nets.firstOrNull()
             }
+            pendingNetwork?.let { pn ->
+                nets.firstOrNull { it.network.equals(pn, true) }?.let { n ->
+                    net = n
+                    walletNet = walletNets.firstOrNull { it.network.equals(pn, true) }
+                }
+                pendingNetwork = null
+            }
         }
         vm.load(silent = true)
     }
@@ -125,19 +149,18 @@ fun WithdrawScreen(
     val value = Dec.parse(amount)
     val receive = AssetsLogic.receiveAmount(amount, net?.gasFeeEstimate)
 
-    fun amtError(): String? {
-        if (amount.isBlank()) return null
-        if (value.signum() <= 0) return "请输入提现数量"
-        if (value > free) return "可用余额不足"
-        minS?.let { if (value < Dec.parse(it)) return "最小提现数量 $it $asset" }
-        maxS?.let { if (value > Dec.parse(it)) return "单笔最大提现 $it $asset" }
-        feeS?.let { if (value <= Dec.parse(it)) return "提现数量需大于链上网络费（Gas） $it $asset" }
-        return null
-    }
+    fun amtError(): String? = AssetsLogic.chainAmountError(
+        amount = amount,
+        free = free,
+        minWithdraw = net?.minWithdraw,
+        maxWithdraw = net?.maxWithdraw,
+        gasFee = net?.gasFeeEstimate,
+        asset = asset,
+    )
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         AssetsNavBar("提现", onBack = onBack) {
-            Text("地址簿", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook() }, style = lb(FontSize.small), color = p.textSecondary)
+            Text("地址簿", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook(forWithdraw = true) }, style = lb(FontSize.small), color = p.textSecondary)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(top = 8.dp)) {
             WarnBanner("为保障账户安全，修改密码或绑定/解绑身份验证器会触发提现保护期。")
@@ -190,7 +213,7 @@ fun WithdrawScreen(
                 Row {
                     Text("提现地址", style = lb(FontSize.caption), color = p.textSecondary)
                     Spacer(Modifier.weight(1f))
-                    Text("地址簿 ›", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook() }, style = lb(FontSize.small), color = p.brand)
+                    Text("地址簿 ›", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook(forWithdraw = true) }, style = lb(FontSize.small), color = p.brand)
                 }
                 LbTextField(addr, { addr = it.trim() }, "输入或粘贴地址", Modifier.padding(top = 4.dp))
                 Spacer(Modifier.height(8.dp))
@@ -268,7 +291,7 @@ fun WithdrawScreen(
         )
     }
     if (showConfirm) {
-        LbSheet("安全验证", onClose = { if (!submitting) showConfirm = false }, showClose = true) {
+        LbSheet("安全验证", onClose = { if (!submitting) showConfirm = false }, showClose = !submitting) {
             Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
                 Text(
                     if (tab == 0) "提现 $amount $asset（${AssetsLogic.displayNetwork(net?.network)}），扣除 Gas ${feeS ?: "--"}，到账 ${receive ?: "--"}"
@@ -277,13 +300,41 @@ fun WithdrawScreen(
                     color = p.textSecondary,
                 )
                 Spacer(Modifier.height(12.dp))
-                LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "谷歌验证器动态码", keyboardType = KeyboardType.Number)
+                if (twoFa) {
+                    LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "谷歌验证器动态码", keyboardType = KeyboardType.Number)
+                } else {
+                    Text("未开启 2FA：发送 purpose=withdraw 验证码到绑定邮箱/手机", style = lb(FontSize.small), color = p.textSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LbTextField(
+                            smsCode,
+                            { smsCode = it.filter(Char::isDigit).take(8) },
+                            "邮箱/手机验证码",
+                            Modifier.weight(1f),
+                            keyboardType = KeyboardType.Number,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        LbButton("发送", Modifier.width(88.dp), loading = sendingCode, enabled = !sendingCode && !submitting) {
+                            scope.launch {
+                                sendingCode = true
+                                vm.sendWithdrawCode().fold(
+                                    onSuccess = { vm.toast.show("验证码已发送") },
+                                    onFailure = { e -> vm.toast.show(e.lbMessage()) },
+                                )
+                                sendingCode = false
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 LbTextField(fundPw, { fundPw = it.filter(Char::isDigit).take(6) }, "资金密码（若已设置）", secure = true, keyboardType = KeyboardType.NumberPassword)
                 Spacer(Modifier.height(12.dp))
-                LbButton("确认提交", loading = submitting, enabled = totp.length == 6) {
+                val verifyOk = AssetsLogic.withdrawVerifyReady(twoFa, totp, smsCode)
+                LbButton("确认提交", loading = submitting, enabled = verifyOk && !submitting) {
+                    if (submitting) return@LbButton
                     scope.launch {
                         submitting = true
+                        val auth = AssetsLogic.withdrawAuthCodes(twoFa, totp, smsCode)
                         val result = if (tab == 0) {
                             vm.submitWithdraw(
                                 ApiWithdrawRequest(
@@ -292,7 +343,8 @@ fun WithdrawScreen(
                                     address = addr,
                                     amount = amount,
                                     memo = memo.ifBlank { null },
-                                    totpCode = totp,
+                                    totpCode = auth.totpCode,
+                                    code = auth.code,
                                     fundPassword = fundPw.ifBlank { null },
                                 ),
                             )
@@ -303,7 +355,8 @@ fun WithdrawScreen(
                                     clientId = AssetsLogic.newClientId(),
                                     asset = asset,
                                     amount = amount,
-                                    totpCode = totp,
+                                    totpCode = auth.totpCode ?: "",
+                                    code = auth.code,
                                     toUid = if (isEmail) null else to,
                                     toEmail = if (isEmail) to else null,
                                     fundPassword = fundPw.ifBlank { null },
@@ -314,10 +367,11 @@ fun WithdrawScreen(
                             onSuccess = {
                                 vm.toast.show(if (tab == 0) "提现申请已提交" else "转账成功")
                                 showConfirm = false
-                                amount = ""; addr = ""; memo = ""; totp = ""; fundPw = ""
+                                amount = ""; addr = ""; memo = ""; totp = ""; smsCode = ""; fundPw = ""
                                 vm.load(silent = true)
+                                assetsNav.open(AssetsRoute.WithdrawRecords)
                             },
-                            onFailure = { vm.toast.show(it.lbMessage()) },
+                            onFailure = { e -> vm.toast.show(e.lbMessage()) },
                         )
                         submitting = false
                     }
@@ -325,6 +379,7 @@ fun WithdrawScreen(
             }
         }
     }
+
 }
 
 /** 提现网络：显示手续费 + 预计到账；推荐来自 /wallet/networks。不标「最低」以免与充值规则混淆时可按产品再加。 */

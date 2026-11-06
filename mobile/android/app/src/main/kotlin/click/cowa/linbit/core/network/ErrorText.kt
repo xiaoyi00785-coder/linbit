@@ -69,6 +69,8 @@ object ErrorText {
         "CHAT_CONTACT_BLOCKED" to "不允许发送联系方式",
         "CHAT_WORD_BLOCKED" to "消息包含敏感词",
         "CHAT_UNAVAILABLE" to "聊天室暂不可用",
+        "ADDRESS_NOT_WHITELISTED" to "该地址不在提现白名单内",
+        "NOT_WHITELISTED" to "该地址不在提现白名单内",
         "KYC_REQUIRED" to "请先完成身份认证",
         "UNDERAGE" to "未满 18 周岁，无法完成身份认证",
         "KYC_LEVEL_REQUIRED" to "请先完成基础认证",

@@ -13,6 +13,7 @@ import click.cowa.linbit.core.generated.ApiMarketCategory
 import click.cowa.linbit.core.generated.ApiPasswordResetRequest
 import click.cowa.linbit.core.generated.ApiRegisterRequest
 import click.cowa.linbit.core.generated.ApiSendCodeRequest
+import click.cowa.linbit.core.generated.ApiSendCodeAuthedRequest
 import click.cowa.linbit.core.generated.ApiSendCodeResponse
 import click.cowa.linbit.core.generated.ApiSymbol
 import click.cowa.linbit.core.generated.ApiVerifyResetCodeRequest
@@ -438,6 +439,9 @@ interface LinbitApi {
     suspend fun setWithdrawWhitelist(@Body body: ApiSetWhitelistRequest): ApiWhitelistStatus
 
     // ---- 个人中心 / 安全 / KYC / 子账户 ----
+    @POST("account/code/send")
+    suspend fun sendAccountCode(@Body body: ApiSendCodeAuthedRequest): ApiSendCodeResponse
+
     @GET("account")
     suspend fun account(): ApiAccount
 

@@ -52,7 +52,12 @@ import click.cowa.linbit.ui.theme.lbNum
 import kotlinx.coroutines.launch
 
 @Composable
-fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) -> Unit) {
+fun AddressBookScreen(
+    vm: AssetsViewModel,
+    onBack: () -> Unit,
+    onAdd: (String?) -> Unit,
+    onPickForWithdraw: ((ApiWithdrawAddress) -> Unit)? = null,
+) {
     BackHandler(onBack = onBack)
     val p = LB.p
     val ctx = LocalContext.current
@@ -142,6 +147,17 @@ fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) 
                             Spacer(Modifier.height(8.dp))
                             Row {
                                 Spacer(Modifier.weight(1f))
+                                if (onPickForWithdraw != null) {
+                                    Text(
+                                        "使用",
+                                        Modifier.pressable(scale = 1f) { onPickForWithdraw(a) }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            .background(p.brand.copy(alpha = 0.15f), RoundedCornerShape(Radius.sm)),
+                                        style = lb(FontSize.small),
+                                        color = p.brand,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
                                 Text("复制", Modifier.pressable(scale = 1f) { copyText(ctx, a.address); vm.toast.show("已复制地址") }.padding(horizontal = 10.dp, vertical = 4.dp).background(p.fill, RoundedCornerShape(Radius.sm)), style = lb(FontSize.small), color = p.textPrimary)
                                 Spacer(Modifier.width(8.dp))
                                 Text(if (a.whitelisted) "移出白名单" else "加入白名单", Modifier.pressable(scale = 1f) {

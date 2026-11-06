@@ -25,6 +25,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import click.cowa.linbit.core.auth.AuthRepository
+import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiEarnProduct
 import click.cowa.linbit.core.generated.ApiConvertPairs
 import click.cowa.linbit.core.generated.ApiConvertPairsPairsInner
@@ -34,10 +35,12 @@ import click.cowa.linbit.core.generated.ApiGridBot
 import click.cowa.linbit.core.generated.ApiGridSquareItem
 import click.cowa.linbit.core.generated.ApiStrategyConfig200Response
 import click.cowa.linbit.core.generated.ApiWalletNetwork
+import click.cowa.linbit.core.generated.ApiWithdrawNetwork
 import click.cowa.linbit.core.generated.ApiFuturesContract
 import click.cowa.linbit.core.generated.ApiFuturesTicker
 import click.cowa.linbit.core.generated.ApiHomeNewcomer
 import click.cowa.linbit.core.generated.ApiSymbol
+import click.cowa.linbit.core.network.ErrorText
 import click.cowa.linbit.core.network.InMemoryTokenStore
 import click.cowa.linbit.core.network.NetworkFactory
 import click.cowa.linbit.core.realtime.MarketSocket
@@ -75,6 +78,7 @@ import click.cowa.linbit.feature.trade.StrategySubpage
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.hasSetTextAction
 import click.cowa.linbit.feature.trade.SpotHistoryScreen
 import click.cowa.linbit.feature.trade.FuturesHistoryScreen
@@ -456,7 +460,28 @@ class OffscreenVisualEvidenceTest {
         enabled()
         tokens.accessToken = "t"
         val vm = AssetsViewModel(api, tokens, store, toast)
-        rule.setContent {
+        // 本地示例网络/余额非生产；不发起真实提现
+        vm.evidenceWithdrawNets = listOf(
+            ApiWithdrawNetwork(
+                network = "TRC20", withdrawEnabled = true, memoRequired = false,
+                minWithdraw = "10", maxWithdraw = "50000", gasFeeEstimate = "1", gasFeeAsset = "USDT",
+                estimatedArrivalMinutes = 3,
+            ),
+            ApiWithdrawNetwork(
+                network = "ERC20", withdrawEnabled = true, memoRequired = false,
+                minWithdraw = "20", gasFeeEstimate = "5", gasFeeAsset = "USDT",
+                estimatedArrivalMinutes = 15,
+            ),
+        )
+        vm.evidenceWalletNets = listOf(
+            ApiWalletNetwork(asset = "USDT", network = "TRC20", recommended = true, estimatedArrivalMinutes = 3, withdrawEnabled = true),
+            ApiWalletNetwork(asset = "USDT", network = "ERC20", recommended = false, estimatedArrivalMinutes = 15, withdrawEnabled = true),
+        )
+        vm.evidenceTwoFactor = true
+        vm.seedEvidenceBalances(
+            funding = listOf(ApiBalance(asset = "USDT", free = "1000", locked = "0", total = "1000", valuationUsd = "1000")),
+        )
+        evidenceSetContent {
             LinbitTheme(false) {
                 Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
                     WithdrawScreen(assetInit = "USDT", vm = vm, assetsNav = AssetsNav(), onBack = {}, onChangeAsset = {})
@@ -464,9 +489,43 @@ class OffscreenVisualEvidenceTest {
             }
         }
         rule.waitForIdle()
-        // 标题至少可见（网络请求被拦截，属空载/错误友好态）
         check(rule.onAllNodesWithText("提现", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        check(rule.onAllNodesWithText("链上提现", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         capture("Withdraw-shell")
+        // 填地址/数量后打开安全验证 sheet（mock，不 submit）
+        rule.onAllNodes(hasSetTextAction(), useUnmergedTree = true).fetchSemanticsNodes().let { nodes ->
+            // 地址、memo、数量 — 取可编辑节点依次写入
+            val editors = rule.onAllNodes(hasSetTextAction(), useUnmergedTree = true)
+            val count = editors.fetchSemanticsNodes().size
+            if (count >= 1) editors[0].performTextReplacement("TXy1Z9DemoAddr000000000000000000000")
+            if (count >= 3) editors[count - 1].performTextReplacement("100")
+            else if (count >= 2) editors[1].performTextReplacement("100")
+        }
+        rule.waitForIdle()
+        if (rule.onAllNodesWithText("提现", useUnmergedTree = true).fetchSemanticsNodes().size >= 1) {
+            // 底部主按钮「提现」
+            val btns = rule.onAllNodesWithText("提现", useUnmergedTree = true)
+            val n = btns.fetchSemanticsNodes().size
+            btns[n - 1].performClick()
+            rule.waitForIdle()
+        }
+        if (rule.onAllNodesWithText("安全验证", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
+            rule.onNodeWithText("安全验证", useUnmergedTree = true).assertIsDisplayed()
+            capture("Withdraw-confirm-sheet")
+        }
+    }
+
+    @Test fun inlineSheetEvidenceFlagDefaultsOffInProductionPath() {
+        enabled()
+        // 生产路径不提供 LocalLbSheetInlineEvidence=true；默认 false，走 ModalBottomSheet
+        var flag = true
+        rule.setContent {
+            flag = LocalLbSheetInlineEvidence.current
+            LinbitTheme(false) { Box(Modifier.requiredSize(10.dp, 10.dp)) }
+        }
+        rule.waitForIdle()
+        check(!flag) { "LocalLbSheetInlineEvidence must default false outside evidenceSetContent" }
+        capture("Inline-flag-default-off")
     }
 
     @Test fun amendAlgoSheet() {
@@ -528,6 +587,43 @@ class OffscreenVisualEvidenceTest {
         rule.onNodeWithText("报价已过期", useUnmergedTree = true).assertIsDisplayed()
         check(rule.onAllNodesWithText("确认闪兑", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
         capture("Convert-expired")
+    }
+
+    @Test fun convertQuoteFailCodeUi() {
+        enabled()
+        tokens.accessToken = "t"
+        val vm = SpotSubpagesViewModel(api, tokens, toast)
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {
+                    ConvertSubpage(85.dp, onLogin = {}, vm = vm)
+                    androidx.compose.foundation.layout.Column(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)
+                            .background(Color(0xFFFFEBEE)),
+                    ) {
+                        androidx.compose.material3.Text(
+                            "QUOTE_EXPIRED → " + ErrorText.map.getValue("QUOTE_EXPIRED"),
+                            Modifier.padding(10.dp),
+                            color = Color(0xFFB00020),
+                        )
+                        androidx.compose.material3.Text(
+                            "QUOTE_NOT_FOUND → " + ErrorText.map.getValue("QUOTE_NOT_FOUND"),
+                            Modifier.padding(10.dp),
+                            color = Color(0xFFB00020),
+                        )
+                    }
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.runOnIdle {
+            vm.seedEvidenceConvert(
+                ApiConvertPairs(pairs = listOf(ApiConvertPairsPairsInner(from = "USDT", to = "BTC"))),
+            )
+        }
+        rule.waitForIdle()
+        rule.onNodeWithText("报价已过期，请重新询价", substring = true, useUnmergedTree = true).assertIsDisplayed()
+        capture("Convert-quote-fail")
     }
 
     @Test fun convertPausedPairUi() {

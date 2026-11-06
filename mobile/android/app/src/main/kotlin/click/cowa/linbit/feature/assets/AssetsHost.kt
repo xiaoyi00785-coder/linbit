@@ -11,6 +11,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import click.cowa.linbit.data.assets.AssetsNav
 import click.cowa.linbit.data.assets.AssetsRoute
+import click.cowa.linbit.data.assets.WithdrawAddressPrefill
 import click.cowa.linbit.ui.theme.LB
 
 /** 资产子页全屏覆盖层（充值 / 提现 / 划转 / 地址簿）。 */
@@ -48,8 +49,23 @@ fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel()) {
             )
             is AssetsRoute.AddressBook -> AddressBookScreen(
                 vm = vm,
-                onBack = assetsNav::clear,
+                onBack = {
+                    if (assetsNav.addressBookForWithdraw) {
+                        assetsNav.addressBookForWithdraw = false
+                        assetsNav.openWithdraw()
+                    } else assetsNav.clear()
+                },
                 onAdd = { assetsNav.openAddAddress(it) },
+                onPickForWithdraw = if (assetsNav.addressBookForWithdraw) { { a ->
+                    assetsNav.pickWithdrawAddress(
+                        WithdrawAddressPrefill(
+                            asset = a.asset,
+                            network = a.network,
+                            address = a.address,
+                            memo = a.memo,
+                        ),
+                    )
+                } } else null,
             )
             is AssetsRoute.AddAddress -> AddAddressScreen(
                 assetInit = r.asset,

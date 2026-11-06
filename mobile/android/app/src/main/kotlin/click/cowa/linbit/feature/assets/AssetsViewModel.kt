@@ -14,6 +14,7 @@ import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawAddress
 import click.cowa.linbit.core.generated.ApiWithdrawNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawRequest
+import click.cowa.linbit.core.generated.ApiSendCodeAuthedRequest
 import click.cowa.linbit.core.generated.ApiWithdrawal
 import click.cowa.linbit.core.network.LinbitApi
 import click.cowa.linbit.core.network.TokenStore
@@ -131,15 +132,45 @@ class AssetsViewModel @Inject constructor(
     }
 
     // ---- 提现网络（min 来自后端 WALLET_NETWORKS_JSON）----
-    suspend fun loadWithdrawNetworks(asset: String): Result<List<ApiWithdrawNetwork>> = runCatching {
-        AssetsLogic.withdrawEnabledNetworks(apiCall { api.withdrawNetworks(asset) }.networks)
+    /** 离屏证据夹具：本地示例网络，非生产。 */
+    internal var evidenceWithdrawNets: List<ApiWithdrawNetwork>? = null
+    internal var evidenceWalletNets: List<ApiWalletNetwork>? = null
+    internal var evidenceTwoFactor: Boolean? = null
+
+    /** 离屏证据：写入示例余额（非生产）。 */
+    internal fun seedEvidenceBalances(funding: List<ApiBalance> = emptyList(), spot: List<ApiBalance> = emptyList()) {
+        _s.value = _s.value.copy(funding = funding, spot = spot, loading = false, error = null)
     }
 
-    suspend fun loadWalletNetworksForWithdraw(asset: String): Result<List<ApiWalletNetwork>> = runCatching {
-        AssetsLogic.withdrawEnabledNetworks(apiCall { api.walletNetworks(asset) }.networks)
+    suspend fun loadWithdrawNetworks(asset: String): Result<List<ApiWithdrawNetwork>> {
+        evidenceWithdrawNets?.let { return Result.success(AssetsLogic.withdrawEnabledNetworks(it)) }
+        return runCatching {
+            AssetsLogic.withdrawEnabledNetworks(apiCall { api.withdrawNetworks(asset) }.networks)
+        }
     }
 
-    /** 提交链上提现。调用方负责二次确认；单测不得调用。 */
+    suspend fun loadWalletNetworksForWithdraw(asset: String): Result<List<ApiWalletNetwork>> {
+        evidenceWalletNets?.let { return Result.success(AssetsLogic.withdrawEnabledNetworks(it)) }
+        return runCatching {
+            AssetsLogic.withdrawEnabledNetworks(apiCall { api.walletNetworks(asset) }.networks)
+        }
+    }
+
+
+    /** 未开 2FA 时向本人发 purpose=withdraw 验证码（对照 OpenAPI /account/code/send）。 */
+    suspend fun sendWithdrawCode(): Result<*> = runCatching {
+        apiCall { api.sendAccountCode(ApiSendCodeAuthedRequest(purpose = ApiSendCodeAuthedRequest.Purpose.WITHDRAW)) }
+    }
+
+    /** 是否已启用谷歌验证器（决定 totpCode vs code）。 */
+    suspend fun twoFactorEnabled(): Boolean {
+        evidenceTwoFactor?.let { return it }
+        return runCatching {
+            apiCall { api.securityOverview() }.twoFactor?.enabled == true
+        }.getOrDefault(false)
+    }
+
+    /** 提交链上提现。调用方负责二次确认；单测不得调用真实资金。 */
     suspend fun submitWithdraw(req: ApiWithdrawRequest): Result<ApiWithdrawal> = runCatching {
         apiCall { api.withdraw(req) }
     }
