@@ -39,3 +39,8 @@ price-alerts-disabled light
 price-alerts-create light
 price-alerts-edit light
 price-alerts-delete light
+paper light
+paper-empty light
+paper-error light
+paper-disabled light
+paper-reset light

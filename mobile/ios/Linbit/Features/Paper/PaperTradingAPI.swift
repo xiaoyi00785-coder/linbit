@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-/// Paper Trading 客户端（仅 model / API / gate / session；**无 UI**）。
+/// Paper Trading 客户端（model / API / gate / session；UI 见 PaperTradingView）。
 /// 契约对齐 origin/main OpenAPI：`/paper/*`（account · reset · balances · orders · trades）。
 ///
 /// 安全边界：
@@ -269,6 +269,13 @@ final class PaperTradingSession: ObservableObject {
 
     private var reloadSeq: UInt64 = 0
     private var writeGen: UInt64 = 0
+    private var balPage = 1
+    @Published private(set) var loadingMoreBalances = false
+
+    var canLoadMoreBalances: Bool {
+        guard case let .loaded(p) = balances, let total = p.total else { return false }
+        return p.items.count < total
+    }
 
     var isRateLimited: Bool {
         if let t = rateLimitUntil { return t > Date() }
@@ -324,6 +331,7 @@ final class PaperTradingSession: ObservableObject {
     }
 
     func reloadBalances(page: Int = 1) async {
+        balPage = page
         if PaperTradingDemo.on {
             if let b = PaperTradingDemo.balancesPage { balances = .loaded(b) }
             return
@@ -343,6 +351,34 @@ final class PaperTradingSession: ObservableObject {
                 return
             }
             balances = .failed(error.lbMessage)
+        }
+    }
+
+    func loadMoreBalances() async {
+        guard canLoadMoreBalances, !loadingMoreBalances, !PaperTradingDemo.on else { return }
+        loadingMoreBalances = true
+        defer { loadingMoreBalances = false }
+        let next = balPage + 1
+        reloadSeq &+= 1
+        let seq = reloadSeq
+        do {
+            let r = try await PaperTradingAPI.balances(page: next)
+            guard seq == reloadSeq else { return }
+            if case let .loaded(cur) = balances {
+                var merged = cur
+                merged.items.append(contentsOf: r.items)
+                merged.page = r.page ?? next
+                merged.total = r.total ?? cur.total
+                balances = .loaded(merged)
+                balPage = next
+            } else {
+                balances = .loaded(r)
+                balPage = next
+            }
+        } catch {
+            guard seq == reloadSeq else { return }
+            if let f = error as? APIFailure, f.status == 429 { applyRateLimit(from: error) }
+            ToastCenter.shared.show(error.lbMessage, .error)
         }
     }
 
@@ -442,6 +478,11 @@ enum PaperTradingDemo {
         return s.contains("error") || s.hasSuffix(":error")
     }
 
+    static var openReset: Bool {
+        guard let s = ShotGate.launchShot else { return false }
+        return s == "paper-reset" || s.hasSuffix(":reset") || s.contains("-reset")
+    }
+
     static var mockWriteLog: [(op: String, id: String)] = []
     static func resetMockLog() { mockWriteLog.removeAll() }
 
@@ -452,6 +493,9 @@ enum PaperTradingDemo {
 
     static var balancesPage: PaperBalancesPage? {
         guard on, !featureDisabled, !forceError else { return nil }
+        if let s = ShotGate.launchShot, s.contains("empty") {
+            return PaperBalancesPage(items: [], page: 1, pageSize: 20, total: 0, account: "paper", mode: "paper", generation: 1)
+        }
         return PaperBalancesPage(
             items: [exampleBalance()],
             page: 1, pageSize: 20, total: 1,

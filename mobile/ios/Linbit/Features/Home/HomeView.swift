@@ -401,13 +401,17 @@ struct HomeMoreSheet: View {
         ("person.2", "子账户", .subAccounts, "subAccounts"), ("gift", "福利中心", .welfare, nil), ("person.3.sequence", "合伙人", .partner, nil), ("banknote", "质押借币", .loans, nil),
         ("doc.on.doc", "跟单", .copyTrading, "copyTrading"), ("building.columns", "TradFi", .tradfi, "tokenizedStocks"),
         ("bell.badge", "价格预警", .priceAlerts, "priceAlerts"),
+        ("rectangle.stack.person.crop", "模拟交易", .paperTrading, "paperTrading"),
         ("clock.arrow.circlepath", "事件合约", nil, "eventContracts"), ("person.3", "P2P", nil, "p2p"),
         ("creditcard", "快捷买币", nil, "fiatOnRamp"), ("function", "期权", nil, "options")]
     var body: some View {
         LBSheet(title: "全部功能", showClose: true, onClose: onClose) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 18) {
                 ForEach(items, id: \.1) { icon, title, page, flag in
-                    let on = flag.map { flags.isOn($0) } ?? true
+                    let on: Bool = {
+                        if flag == PaperTradingFeature.flagKey { return PaperTradingFeature.isFlagOn }
+                        return flag.map { flags.isOn($0) } ?? true
+                    }()
                     Button {
                         onClose()
                         if !on { ToastCenter.shared.show("\(title) 即将上线"); return }

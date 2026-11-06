@@ -16,7 +16,8 @@ struct FuturesRootView: View {
             case 1:
                 if flags.isOn("eventContracts") { EventContractView() } else { ComingSoonView(title: "事件合约", note: "猜涨跌，到期按指数价结算，敬请期待") }
             case 2: TradFiView()
-            default: ComingSoonView(title: "模拟交易", note: "使用模拟资金体验合约交易；OpenAPI 暂无独立模拟盘接口，待后端就绪后接入")
+            case 3: PaperTradingView(onBack: nil)
+            default: PaperTradingView(onBack: nil)
             }
         }
         .background(p.bg.ignoresSafeArea())
