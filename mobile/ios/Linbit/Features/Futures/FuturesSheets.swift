@@ -133,6 +133,7 @@ struct FuturesKindSheet: View {
 struct FuturesToolsSheet: View {
     @Environment(\.palette) private var p
     let onClose: () -> Void
+    var onCalculator: (() -> Void)? = nil
     private let items: [(String, String)] = [("gearshape.fill", "交易偏好"), ("plusminus", "计算器"), ("bell.badge.fill", "价格预警"), ("rectangle.stack.person.crop.fill", "模拟交易"),
                                              ("chart.bar.fill", "仓位档位介绍"), ("percent", "历史资金费率"), ("chart.xyaxis.line", "历史标记价格"), ("dollarsign.circle.fill", "风险准备金"),
                                              ("star.fill", "添加自选"), ("safari.fill", "新手教学")]
@@ -146,10 +147,17 @@ struct FuturesToolsSheet: View {
                         case "模拟交易": Router.shared.futuresTop = 3
                         case "仓位档位介绍": Router.shared.openFeature(.futuresRiskTiers)
                         case "历史资金费率": Router.shared.openFeature(.futuresFunding)
+                        case "历史标记价格": Router.shared.openFeature(.futuresMarkHistory)
+                        case "风险准备金": Router.shared.openFeature(.futuresInsurance)
+                        case "计算器": onCalculator?()
+                        case "交易偏好":
+                            // OpenAPI /account/preferences 仅 quoteCurrency，无交易偏好字段
+                            ToastCenter.shared.show("交易偏好需独立接口；现有 /account/preferences 仅计价货币")
                         case "价格预警":
                             // OpenAPI 无独立价格预警 CRUD；依赖后端后补齐，避免假表单
                             ToastCenter.shared.show("价格预警需后端告警接口，暂未开放")
                         case "添加自选": ToastCenter.shared.show("已添加到自选", .success)
+                        case "新手教学": ToastCenter.shared.show("新手教学即将开放")
                         default: ToastCenter.shared.show("\(title)即将开放")
                         }
                     } label: {

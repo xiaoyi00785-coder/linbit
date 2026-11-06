@@ -13,6 +13,7 @@ struct SpotTradeView: View {
     @State private var showConfirm = false
     @State private var showPrecision = false
     @State private var showPairs = false
+    @State private var showChart = false
     @State private var showFee = false
     @State private var confirm: ConfirmRequest?
     @AppStorage("lb.spot.skipConfirm") private var skipConfirm = false
@@ -23,6 +24,10 @@ struct SpotTradeView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     pairHeader
+                    if showChart {
+                        SpotChartPanel(symbol: m.symbol, pricePrec: m.pricePrec)
+                            .padding(.horizontal, Spacing.pageH).padding(.top, 8)
+                    }
                     HStack(alignment: .top, spacing: 12) {
                         form.frame(maxWidth: .infinity)
                         OrderBookView(m: m, showPrecision: $showPrecision).frame(width: 138)
@@ -91,7 +96,7 @@ struct SpotTradeView: View {
             Spacer()
             HStack(spacing: 18) {
                 ThemeToggleButton()
-                Button { ToastCenter.shared.show("K 线页即将开放") } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
+                Button { showChart.toggle() } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(showChart ? p.primary : p.textPrimary) }
                 Button { ToastCenter.shared.show("更多功能即将开放") } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
             }.font(.system(size: 17)).padding(.top, 4)
         }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
@@ -226,7 +231,7 @@ struct SpotTradeView: View {
                             .foregroundColor(botTab == i ? p.textPrimary : p.textSecondary).onTapGesture { botTab = i }
                     }
                     Spacer()
-                    Button { ToastCenter.shared.show("交易机器人即将开放") } label: {
+                    Button { Router.shared.openFeature(.strategy) } label: {
                         Text("创建交易机器人").font(.lb(FontSize.small, .medium)).foregroundColor(p.textOnPrimary)
                             .padding(.horizontal, 10).frame(height: 26).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.primary))
                     }.buttonStyle(PressableStyle())

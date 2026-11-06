@@ -11,6 +11,8 @@ struct FuturesChartPanel: View {
     @State private var interval = "15m"
     @State private var candles: Loadable<[APIFuturesKlinesKlinesInner]> = .idle
     @State private var trades: Loadable<[APIFuturesPublicTrade]> = .idle
+    @State private var candleSeq = 0
+    @State private var tradeSeq = 0
     private let intervals: [(String, String)] = [("15m", "15分"), ("1h", "1小时"), ("4h", "4小时"), ("1d", "1天"), ("1w", "1周")]
 
     var body: some View {
@@ -73,20 +75,51 @@ struct FuturesChartPanel: View {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "HH:mm:ss"; return f.string(from: d)
     }
     private func loadCandles() async {
+        candleSeq &+= 1
+        let seq = candleSeq, sym = symbol, iv = interval
         if candles.value == nil { candles = .loading }
-        do { candles = .loaded(try await FuturesAPI.klines(symbol, interval: interval)) } catch { candles = .failed(error.lbMessage) }
+        do {
+            let list = try await FuturesAPI.klines(sym, interval: iv)
+            guard seq == candleSeq, sym == symbol, iv == interval else { return }
+            candles = .loaded(list)
+        } catch {
+            guard seq == candleSeq, sym == symbol, iv == interval else { return }
+            candles = .failed(error.lbMessage)
+        }
     }
     private func loadTrades() async {
+        tradeSeq &+= 1
+        let seq = tradeSeq, sym = symbol
         if trades.value == nil { trades = .loading }
-        do { trades = .loaded(try await FuturesAPI.marketTrades(symbol)) } catch { trades = .failed(error.lbMessage) }
+        do {
+            let list = try await FuturesAPI.marketTrades(sym)
+            guard seq == tradeSeq, sym == symbol else { return }
+            trades = .loaded(list)
+        } catch {
+            guard seq == tradeSeq, sym == symbol else { return }
+            trades = .failed(error.lbMessage)
+        }
     }
+}
+
+/// 统一蜡烛数据（现货 APIKline / 合约 FuturesKline 共用绘制）
+struct CandlePoint: Hashable {
+    var open: String, high: String, low: String, close: String
+    init(open: String, high: String, low: String, close: String) {
+        self.open = open; self.high = high; self.low = low; self.close = close
+    }
+    init(_ c: APIFuturesKlinesKlinesInner) { self.init(open: c._open ?? "0", high: c.high ?? "0", low: c.low ?? "0", close: c.close ?? "0") }
+    init(_ c: APIKline) { self.init(open: c._open, high: c.high, low: c.low, close: c.close) }
 }
 
 /// 蜡烛图：价格以 Decimal 解析，仅在绘制坐标时转 Double
 struct CandleChart: View {
     @Environment(\.palette) private var p
-    let candles: [APIFuturesKlinesKlinesInner]
+    let candles: [CandlePoint]
     let pricePrec: Int
+    init(candles: [CandlePoint], pricePrec: Int) { self.candles = candles; self.pricePrec = pricePrec }
+    init(candles: [APIFuturesKlinesKlinesInner], pricePrec: Int) { self.init(candles: candles.map(CandlePoint.init), pricePrec: pricePrec) }
+    init(spot candles: [APIKline], pricePrec: Int) { self.init(candles: candles.map(CandlePoint.init), pricePrec: pricePrec) }
     var body: some View {
         let hi = candles.map { Dec.parse($0.high) }.max() ?? 0
         let lo = candles.map { Dec.parse($0.low) }.min() ?? 0
@@ -101,7 +134,7 @@ struct CandleChart: View {
                     ctx.stroke(path, with: .color(p.divider), lineWidth: 0.5)
                 }
                 for (i, c) in candles.enumerated() {
-                    let o = Dec.parse(c._open), cl = Dec.parse(c.close), h = Dec.parse(c.high), l = Dec.parse(c.low)
+                    let o = Dec.parse(c.open), cl = Dec.parse(c.close), h = Dec.parse(c.high), l = Dec.parse(c.low)
                     let color = cl >= o ? p.up : p.down
                     let x = step * (CGFloat(i) + 0.5)
                     var wick = Path(); wick.move(to: CGPoint(x: x, y: y(h))); wick.addLine(to: CGPoint(x: x, y: y(l)))
@@ -274,5 +307,210 @@ struct FuturesSymbolFilterSheet: View {
                 if s == selected { Image(systemName: "checkmark.circle.fill").foregroundColor(p.textPrimary) }
             }.padding(.horizontal, Spacing.pageH).frame(height: 46)
         }.buttonStyle(RowPressStyle())
+    }
+}
+
+
+// MARK: - 现货 K 线（GET /market/klines，对齐安卓 SpotTradeViewModel）
+struct SpotChartPanel: View {
+    @Environment(\.palette) private var p
+    let symbol: String
+    let pricePrec: Int
+    @State private var interval = "15m"
+    @State private var candles: Loadable<[APIKline]> = .idle
+    @State private var loadSeq = 0
+    private let intervals: [(String, String)] = [("15m", "15分"), ("1h", "1小时"), ("4h", "4小时"), ("1d", "1天"), ("1w", "1周")]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("K线").font(.lb(FontSize.label, .semibold)).foregroundColor(p.textPrimary)
+            HStack(spacing: 14) {
+                ForEach(intervals, id: \.0) { k, title in
+                    Text(title).font(.lb(FontSize.small, interval == k ? .semibold : .regular))
+                        .foregroundColor(interval == k ? p.textPrimary : p.textSecondary)
+                        .onTapGesture { interval = k; Task { await load() } }
+                }
+                Spacer()
+            }
+            switch candles {
+            case .idle, .loading: RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill).frame(height: 180).overlay(ProgressView())
+            case let .failed(msg): ErrorStateView(message: msg) { Task { await load() } }.frame(height: 180)
+            case let .loaded(list):
+                if list.isEmpty { EmptyStateView(text: "暂无 K 线数据").frame(height: 180) }
+                else { CandleChart(spot: list, pricePrec: pricePrec).frame(height: 180) }
+            }
+        }
+        .task(id: symbol) { await load() }
+    }
+    private func load() async {
+        loadSeq &+= 1
+        let seq = loadSeq, sym = symbol, iv = interval
+        if candles.value == nil { candles = .loading }
+        do {
+            let list = try await MarketAPI.klines(sym, interval: iv)
+            guard seq == loadSeq, sym == symbol, iv == interval else { return }
+            candles = .loaded(list)
+        } catch {
+            guard seq == loadSeq, sym == symbol, iv == interval else { return }
+            candles = .failed(error.lbMessage)
+        }
+    }
+}
+
+// MARK: - 历史标记价格（GET /futures/market/mark-history）
+struct FuturesMarkHistoryView: View {
+    @Environment(\.palette) private var p
+    let symbol: String
+    @State private var state: Loadable<[APIFuturesMarkHistory200ResponseHistoryInner]> = .idle
+    var body: some View {
+        FeatureShell(title: "历史标记价格") {
+            LoadableView(state: state, emptyText: "暂无标记价历史", isEmpty: { $0.isEmpty }, retry: { Task { await load() } }) { rows in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        HStack {
+                            Text("时间").frame(maxWidth: .infinity, alignment: .leading)
+                            Text("标记价").frame(maxWidth: .infinity, alignment: .trailing)
+                            Text("指数价").frame(maxWidth: .infinity, alignment: .trailing)
+                        }.font(.lb(FontSize.small)).foregroundColor(p.textTertiary).padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
+                        ForEach(Array(rows.prefix(100).enumerated()), id: \.offset) { _, r in
+                            HStack {
+                                Text(fmt(r.openTime ?? r.time)).frame(maxWidth: .infinity, alignment: .leading)
+                                Text(Fmt.priceAuto(Dec.parse(r.close ?? r.markPrice))).frame(maxWidth: .infinity, alignment: .trailing)
+                                Text(Fmt.priceAuto(Dec.parse(r.indexClose ?? r.indexPrice))).frame(maxWidth: .infinity, alignment: .trailing)
+                            }.font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                            .padding(.horizontal, Spacing.pageH).padding(.vertical, 10)
+                            Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: symbol) { await load() }
+    }
+    private func load() async {
+        if state.value == nil { state = .loading }
+        do {
+            let r = try await FuturesAPI.markHistory(symbol)
+            state = .loaded(r.history ?? [])
+        } catch { state = .failed(error.lbMessage) }
+    }
+    private func fmt(_ ms: Int64?) -> String {
+        guard let ms else { return "--" }
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "MM-dd HH:mm"
+        return f.string(from: Date(timeIntervalSince1970: TimeInterval(ms) / 1000))
+    }
+}
+
+// MARK: - 风险准备金（GET /futures/market/insurance-fund）
+struct FuturesInsuranceFundView: View {
+    @Environment(\.palette) private var p
+    @State private var state: Loadable<APIFuturesInsuranceFund200Response> = .idle
+    var body: some View {
+        FeatureShell(title: "风险准备金") {
+            LoadableView(state: state, retry: { Task { await load() } }) { v in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        KVRow(k: "资产", v: v.asset ?? "USDT")
+                        KVRow(k: "余额", v: Fmt.amount(Dec.parse(v.balance), 4))
+                        KVRow(k: "权益", v: Fmt.amount(Dec.parse(v.equity), 4))
+                        Text("最近强平").font(.lb(FontSize.label, .semibold)).foregroundColor(p.textPrimary).padding(.top, 8)
+                        let liqs = v.recentLiquidations ?? []
+                        if liqs.isEmpty { Text("暂无记录").font(.lb(FontSize.small)).foregroundColor(p.textSecondary) }
+                        else {
+                            ForEach(Array(liqs.prefix(20).enumerated()), id: \.offset) { _, x in
+                                HStack {
+                                    Text(x.symbol ?? "--")
+                                    Spacer()
+                                    Text(x.qty ?? "--")
+                                    Text(Fmt.priceAuto(Dec.parse(x.markPrice))).foregroundColor(p.textSecondary)
+                                }.font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                            }
+                        }
+                    }.padding(Spacing.pageH)
+                }
+            }
+        }
+        .task { await load() }
+    }
+    private func load() async {
+        if state.value == nil { state = .loading }
+        do { state = .loaded(try await FuturesAPI.insuranceFund()) } catch { state = .failed(error.lbMessage) }
+    }
+}
+
+// MARK: - 合约计算器（本地推算，对齐安卓 TradeCalculator；不调用资金接口）
+struct FuturesCalculatorSheet: View {
+    @Environment(\.palette) private var p
+    let entryHint: String
+    let base: String
+    let leverage: Int
+    let mmr: Decimal
+    let onClose: () -> Void
+    @State private var long = true
+    @State private var entry = ""
+    @State private var qty = ""
+    @State private var exitP = ""
+    @State private var target = ""
+    var body: some View {
+        LBSheet(title: "计算器", onClose: onClose) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        chip("开多", long) { long = true }
+                        chip("开空", !long) { long = false }
+                    }
+                    NumberBox(label: "开仓价", unit: "USDT", text: $entry, onEdit: {})
+                    NumberBox(label: "数量", unit: base, text: $qty, onEdit: {})
+                    NumberBox(label: "平仓价（可选）", unit: "USDT", text: $exitP, onEdit: {})
+                    NumberBox(label: "目标盈亏 USDT（可选）", unit: "USDT", text: $target, onEdit: {})
+                    let e = TradeCalculator.parseInput(entry.isEmpty ? entryHint : entry)
+                    let q = TradeCalculator.parseInput(qty)
+                    let lev = max(leverage, 1)
+                    let cost = TradeCalculator.cost(qty: q, price: e, leverage: lev)
+                    let liq = TradeCalculator.liqPrice(entry: e, leverage: lev, long: long, mmr: mmr)
+                    KVRow(k: "开仓成本", v: (e > 0 && q > 0) ? Fmt.amount(cost, 4) + " USDT" : "--")
+                    KVRow(k: "预估强平价", v: e > 0 && lev > 0 ? Fmt.priceAuto(liq) : "--")
+                    if TradeCalculator.parseInput(exitP) > 0, q > 0, e > 0 {
+                        KVRow(k: "预估盈亏", v: Fmt.amount(TradeCalculator.pnl(entry: e, exit: TradeCalculator.parseInput(exitP), qty: q, long: long), 4) + " USDT")
+                    }
+                    if TradeCalculator.parseInput(target) != 0, q > 0, e > 0 {
+                        KVRow(k: "目标价", v: Fmt.priceAuto(TradeCalculator.targetPrice(entry: e, qty: q, targetPnl: TradeCalculator.parseInput(target), long: long)))
+                    }
+                    Text("结果为本地估算，未含手续费与资金费率，不构成下单依据。").font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 20)
+            }
+            .onAppear { if entry.isEmpty { entry = entryHint } }
+        }
+    }
+    private func chip(_ t: String, _ on: Bool, _ act: @escaping () -> Void) -> some View {
+        Text(t).font(.lb(FontSize.label, on ? .semibold : .regular)).foregroundColor(on ? p.textOnPrimary : p.textPrimary)
+            .padding(.horizontal, 14).frame(height: 32)
+            .background(RoundedRectangle(cornerRadius: Radius.sm).fill(on ? p.primary : p.fill))
+            .onTapGesture(perform: act)
+    }
+}
+
+enum TradeCalculator {
+    /// 剥千分位后按 en_US_POSIX 解析；空/非法 → 0
+    static func parseInput(_ s: String) -> Decimal {
+        Dec.parse(s.replacingOccurrences(of: ",", with: ""))
+    }
+    static func cost(qty: Decimal, price: Decimal, leverage: Int) -> Decimal {
+        guard price > 0, leverage > 0, qty != 0 else { return 0 }
+        return abs(qty) * price / Decimal(leverage)
+    }
+    static func liqPrice(entry: Decimal, leverage: Int, long: Bool, mmr: Decimal) -> Decimal {
+        guard entry > 0, leverage > 0 else { return 0 }
+        let inv = Decimal(1) / Decimal(leverage)
+        return long ? entry * (1 - inv + mmr) : entry * (1 + inv - mmr)
+    }
+    static func pnl(entry: Decimal, exit: Decimal, qty: Decimal, long: Bool) -> Decimal {
+        let q = abs(qty)
+        return long ? (exit - entry) * q : (entry - exit) * q
+    }
+    static func targetPrice(entry: Decimal, qty: Decimal, targetPnl: Decimal, long: Bool) -> Decimal {
+        guard qty != 0 else { return 0 }
+        let delta = targetPnl / abs(qty)
+        return long ? entry + delta : entry - delta
     }
 }

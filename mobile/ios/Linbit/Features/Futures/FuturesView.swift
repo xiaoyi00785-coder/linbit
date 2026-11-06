@@ -36,6 +36,7 @@ struct FuturesTradeView: View {
     @State private var showMode = false
     @State private var showLev = false
     @State private var showKind = false
+    @State private var showCalc = false
     @State private var showTools = false
     @State private var showPairs = false
     @State private var showChart = false
@@ -89,7 +90,8 @@ struct FuturesTradeView: View {
             m.kind = k
             showKind = false
         } onClose: { showKind = false } }
-        .lbSheet($showTools) { FuturesToolsSheet { showTools = false } }
+        .lbSheet($showTools) { FuturesToolsSheet(onClose: { showTools = false }, onCalculator: { showCalc = true }) }
+        .lbSheet($showCalc) { FuturesCalculatorSheet(entryHint: Fmt.priceAuto(m.mark), base: m.base, leverage: m.leverage, mmr: m.mmr) { showCalc = false } }
         .lbSheet($showPairs) { FuturesPairSheet(current: m.symbol) { s in showPairs = false; router.futuresSymbol = s } onClose: { showPairs = false } }
         .lbSheet($showTpslForm) { TpslSheet(m: m, position: tpslTarget) { showTpslForm = false } }
         .lbSheet(Binding(get: { marginTarget != nil }, set: { if !$0 { marginTarget = nil } })) {
