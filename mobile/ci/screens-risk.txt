@@ -47,3 +47,9 @@ paper-reset light
 paper-place light
 paper-place-ok light
 paper-place-fail light
+paper-orders light
+paper-orders-empty light
+paper-orders-error light
+paper-trades light
+paper-trades-empty light
+paper-trades-error light

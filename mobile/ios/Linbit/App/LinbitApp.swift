@@ -168,6 +168,8 @@ struct RootTabView: View {
             router.tab = .futures
             router.futuresTop = 3
             router.feature = .paperTrading
+        case "paper-orders", "paper-orders-empty", "paper-orders-error", "paper-trades", "paper-trades-empty", "paper-trades-error":
+            router.feature = .paperHistory
         case "notif-list": SecShot.raw = "notif:list"; router.feature = .notifications
         case "notif-empty": SecShot.raw = "notif:empty"; router.feature = .notifications
         case "notif-error": SecShot.raw = "notif:error"; router.feature = .notifications

@@ -264,13 +264,25 @@ final class PaperTradingSession: ObservableObject {
     @Published private(set) var account: Loadable<PaperAccount> = .idle
     @Published private(set) var balances: Loadable<PaperBalancesPage> = .idle
     @Published private(set) var orders: Loadable<PaperOrdersPage> = .idle
+    @Published private(set) var trades: Loadable<PaperTradesPage> = .idle
+    /// 分页/刷新失败时保留已加载列表，仅挂错误文案供同页重试
+    @Published var ordersError: String? = nil
+    @Published var tradesError: String? = nil
     @Published private(set) var featureDisabled = false
     @Published private(set) var rateLimitUntil: Date?
 
     private var reloadSeq: UInt64 = 0
     private var writeGen: UInt64 = 0
     private var balPage = 1
+    private var ordersPageNum = 1
+    private var tradesPageNum = 1
+    private var ordersSymbol: String? = nil
+    private var ordersGeneration: Int64? = nil
+    private var tradesSymbol: String? = nil
+    private var tradesGeneration: Int64? = nil
     @Published private(set) var loadingMoreBalances = false
+    @Published private(set) var loadingMoreOrders = false
+    @Published private(set) var loadingMoreTrades = false
 
     var canLoadMoreBalances: Bool {
         guard case let .loaded(p) = balances, let total = p.total else { return false }
@@ -293,8 +305,13 @@ final class PaperTradingSession: ObservableObject {
         account = .idle
         balances = .idle
         orders = .idle
+        trades = .idle
+        ordersError = nil
+        tradesError = nil
         featureDisabled = false
         rateLimitUntil = nil
+        ordersPageNum = 1
+        tradesPageNum = 1
     }
 
     func reloadAccount() async {
@@ -382,21 +399,153 @@ final class PaperTradingSession: ObservableObject {
         }
     }
 
+    var canLoadMoreOrders: Bool {
+        guard case let .loaded(p) = orders, let total = p.total else { return false }
+        return p.items.count < total
+    }
+
+    var canLoadMoreTrades: Bool {
+        guard case let .loaded(p) = trades, let total = p.total else { return false }
+        return p.items.count < total
+    }
+
     func reloadOrders(symbol: String? = nil, generation: Int64? = nil, page: Int = 1) async {
+        ordersSymbol = symbol
+        ordersGeneration = generation
+        ordersPageNum = page
+        ordersError = nil
         if PaperTradingDemo.on {
-            if let o = PaperTradingDemo.ordersPage { orders = .loaded(o) }
+            if PaperTradingDemo.forceError && PaperTradingDemo.historyKind == .orders {
+                if case .loaded = orders { ordersError = "网络连接失败，请检查网络" }
+                else { orders = .failed("网络连接失败，请检查网络") }
+                return
+            }
+            if let o = PaperTradingDemo.ordersPage(page: page) { orders = .loaded(o) }
             return
         }
         reloadSeq &+= 1
         let seq = reloadSeq
-        orders = .loading
+        let keep = orders.value != nil
+        if !keep { orders = .loading }
         do {
             let r = try await PaperTradingAPI.orders(symbol: symbol, generation: generation, page: page)
             guard seq == reloadSeq else { return }
             orders = .loaded(r)
+            ordersError = nil
         } catch {
             guard seq == reloadSeq else { return }
-            orders = .failed(error.lbMessage)
+            if let f = error as? APIFailure, f.status == 429 { applyRateLimit(from: error) }
+            if keep {
+                ordersError = error.lbMessage // 保留原列表，同页可重试
+            } else {
+                orders = .failed(error.lbMessage)
+            }
+        }
+    }
+
+    func loadMoreOrders() async {
+        guard canLoadMoreOrders, !loadingMoreOrders else { return }
+        loadingMoreOrders = true
+        defer { loadingMoreOrders = false }
+        let next = ordersPageNum + 1
+        if PaperTradingDemo.on {
+            guard let more = PaperTradingDemo.ordersPage(page: next), case let .loaded(cur) = orders else { return }
+            var merged = cur
+            merged.items.append(contentsOf: more.items)
+            merged.page = more.page ?? next
+            merged.total = more.total ?? cur.total
+            orders = .loaded(merged)
+            ordersPageNum = next
+            return
+        }
+        reloadSeq &+= 1
+        let seq = reloadSeq
+        do {
+            let r = try await PaperTradingAPI.orders(symbol: ordersSymbol, generation: ordersGeneration, page: next)
+            guard seq == reloadSeq else { return }
+            if case let .loaded(cur) = orders {
+                var merged = cur
+                merged.items.append(contentsOf: r.items)
+                merged.page = r.page ?? next
+                merged.total = r.total ?? cur.total
+                orders = .loaded(merged)
+                ordersPageNum = next
+            }
+        } catch {
+            guard seq == reloadSeq else { return }
+            if let f = error as? APIFailure, f.status == 429 { applyRateLimit(from: error) }
+            ordersError = error.lbMessage
+            ToastCenter.shared.show(error.lbMessage, .error)
+        }
+    }
+
+    func reloadTrades(symbol: String? = nil, generation: Int64? = nil, page: Int = 1) async {
+        tradesSymbol = symbol
+        tradesGeneration = generation
+        tradesPageNum = page
+        tradesError = nil
+        if PaperTradingDemo.on {
+            if PaperTradingDemo.forceError && PaperTradingDemo.historyKind == .trades {
+                if case .loaded = trades { tradesError = "网络连接失败，请检查网络" }
+                else { trades = .failed("网络连接失败，请检查网络") }
+                return
+            }
+            if let o = PaperTradingDemo.tradesPage(page: page) { trades = .loaded(o) }
+            return
+        }
+        reloadSeq &+= 1
+        let seq = reloadSeq
+        let keep = trades.value != nil
+        if !keep { trades = .loading }
+        do {
+            let r = try await PaperTradingAPI.trades(symbol: symbol, generation: generation, page: page)
+            guard seq == reloadSeq else { return }
+            trades = .loaded(r)
+            tradesError = nil
+        } catch {
+            guard seq == reloadSeq else { return }
+            if let f = error as? APIFailure, f.status == 429 { applyRateLimit(from: error) }
+            if keep {
+                tradesError = error.lbMessage
+            } else {
+                trades = .failed(error.lbMessage)
+            }
+        }
+    }
+
+    func loadMoreTrades() async {
+        guard canLoadMoreTrades, !loadingMoreTrades else { return }
+        loadingMoreTrades = true
+        defer { loadingMoreTrades = false }
+        let next = tradesPageNum + 1
+        if PaperTradingDemo.on {
+            guard let more = PaperTradingDemo.tradesPage(page: next), case let .loaded(cur) = trades else { return }
+            var merged = cur
+            merged.items.append(contentsOf: more.items)
+            merged.page = more.page ?? next
+            merged.total = more.total ?? cur.total
+            trades = .loaded(merged)
+            tradesPageNum = next
+            return
+        }
+        reloadSeq &+= 1
+        let seq = reloadSeq
+        do {
+            let r = try await PaperTradingAPI.trades(symbol: tradesSymbol, generation: tradesGeneration, page: next)
+            guard seq == reloadSeq else { return }
+            if case let .loaded(cur) = trades {
+                var merged = cur
+                merged.items.append(contentsOf: r.items)
+                merged.page = r.page ?? next
+                merged.total = r.total ?? cur.total
+                trades = .loaded(merged)
+                tradesPageNum = next
+            }
+        } catch {
+            guard seq == reloadSeq else { return }
+            if let f = error as? APIFailure, f.status == 429 { applyRateLimit(from: error) }
+            tradesError = error.lbMessage
+            ToastCenter.shared.show(error.lbMessage, .error)
         }
     }
 
@@ -519,12 +668,58 @@ enum PaperTradingDemo {
         )
     }
 
-    static var ordersPage: PaperOrdersPage? {
-        guard on, !featureDisabled, !forceError else { return nil }
+    enum HistoryKind { case none, orders, trades }
+    static var historyKind: HistoryKind {
+        guard let s = ShotGate.launchShot else { return .none }
+        if s.contains("trades") { return .trades }
+        if s.contains("orders") { return .orders }
+        return .none
+    }
+
+    static var openHistory: Bool { historyKind != .none }
+
+    static func ordersPage(page: Int = 1) -> PaperOrdersPage? {
+        guard on, !featureDisabled else { return nil }
+        if forceError && historyKind == .orders { return nil }
         if let s = ShotGate.launchShot, s.contains("empty") {
-            return PaperOrdersPage(items: [], page: 1, pageSize: 20, total: 0, generation: 1)
+            return PaperOrdersPage(items: [], page: 1, pageSize: 3, total: 0, generation: 1)
         }
-        return PaperOrdersPage(items: [exampleOrder(side: "buy")], page: 1, pageSize: 20, total: 1, generation: 1)
+        let all: [PaperOrder] = [
+            exampleOrder(side: "buy", id: "po_demo_1"),
+            exampleOrder(side: "sell", id: "po_demo_2"),
+            exampleOrder(side: "buy", id: "po_demo_3"),
+            exampleOrder(side: "sell", id: "po_demo_4"),
+            exampleOrder(side: "buy", id: "po_demo_5"),
+        ]
+        let pageSize = 3
+        let start = (page - 1) * pageSize
+        guard start < all.count else {
+            return PaperOrdersPage(items: [], page: page, pageSize: pageSize, total: all.count, generation: 1)
+        }
+        let slice = Array(all[start..<min(start + pageSize, all.count)])
+        return PaperOrdersPage(items: slice, page: page, pageSize: pageSize, total: all.count, generation: 1)
+    }
+
+    static func tradesPage(page: Int = 1) -> PaperTradesPage? {
+        guard on, !featureDisabled else { return nil }
+        if forceError && historyKind == .trades { return nil }
+        if let s = ShotGate.launchShot, s.contains("empty") {
+            return PaperTradesPage(items: [], page: 1, pageSize: 3, total: 0, generation: 1)
+        }
+        let all: [PaperTrade] = [
+            exampleTrade(id: "pt_demo_1", side: "buy"),
+            exampleTrade(id: "pt_demo_2", side: "sell"),
+            exampleTrade(id: "pt_demo_3", side: "buy"),
+            exampleTrade(id: "pt_demo_4", side: "sell"),
+            exampleTrade(id: "pt_demo_5", side: "buy"),
+        ]
+        let pageSize = 3
+        let start = (page - 1) * pageSize
+        guard start < all.count else {
+            return PaperTradesPage(items: [], page: page, pageSize: pageSize, total: all.count, generation: 1)
+        }
+        let slice = Array(all[start..<min(start + pageSize, all.count)])
+        return PaperTradesPage(items: slice, page: page, pageSize: pageSize, total: all.count, generation: 1)
     }
 
     static func interceptPlace(_ body: PaperPlaceOrderRequest) throws -> PaperOrder? {
@@ -592,9 +787,9 @@ enum PaperTradingDemo {
         )
     }
 
-    static func exampleOrder(side: String) -> PaperOrder {
+    static func exampleOrder(side: String, id: String = "po_demo_1") -> PaperOrder {
         PaperOrder(
-            orderId: "po_demo_1",
+            orderId: id,
             clientOrderId: "demo.client.1",
             mode: "paper",
             accountId: "pa_demo_1",
@@ -615,6 +810,24 @@ enum PaperTradingDemo {
             createdAt: nil,
             executedAt: nil,
             trades: nil
+        )
+    }
+
+    static func exampleTrade(id: String, side: String) -> PaperTrade {
+        PaperTrade(
+            tradeId: id,
+            orderId: "po_demo_1",
+            mode: "paper",
+            symbol: "BTCUSDT",
+            side: side,
+            price: "81000.04",
+            quantity: "0.010000",
+            fee: "0",
+            feeAsset: "USDT",
+            role: "taker",
+            priceSource: "INDEX",
+            marketObservedAt: nil,
+            createdAt: nil
         )
     }
 }

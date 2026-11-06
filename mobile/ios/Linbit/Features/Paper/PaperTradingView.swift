@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 模拟交易垂直切片：独立虚拟现货账户 / 余额 / 重置 / 市价买卖（历史下批）。
+/// 模拟交易垂直切片：独立虚拟现货账户 / 余额 / 重置 / 市价买卖 / 历史。
 /// 契约：paper · spot · INDEX market-only；与合约真钱账户隔离；非完整合约模拟盘。
 struct PaperTradingView: View {
     @Environment(\.palette) private var p
@@ -44,6 +44,7 @@ struct PaperTradingView: View {
             await reloadAll()
             if PaperTradingDemo.openReset { showReset = true }
             if PaperTradingDemo.openPlace { showPlace = true }
+            if PaperTradingDemo.openHistory { Router.shared.openFeature(.paperHistory) }
         }
         .onChange(of: session.isLoggedIn) { _ in
             model.invalidate()
@@ -145,7 +146,12 @@ struct PaperTradingView: View {
                     .padding(.horizontal, Spacing.pageH)
                     .padding(.top, 8)
 
-                    Text("成交历史下一批接入。DEBUG 截图夹具仅 mock，不写生产 / 不走真钱下单。")
+                    LBButton(title: "模拟订单 / 成交历史", kind: .secondary) {
+                        Router.shared.openFeature(.paperHistory)
+                    }
+                    .padding(.horizontal, Spacing.pageH)
+
+                    Text("DEBUG 截图夹具仅 mock，不写生产 / 不走真钱下单。")
                         .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
                         .padding(.horizontal, Spacing.pageH)
                         .padding(.bottom, 28)
