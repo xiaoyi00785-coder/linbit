@@ -90,6 +90,7 @@ fun FuturesRootScreen(
     /** TradFi 资产点击：futures=true 切合约交易对，false 切现货 Tab。 */
     onTrade: (Boolean, String) -> Unit = { _, _ -> },
     onCopy: () -> Unit = {},
+    onPriceAlerts: () -> Unit = {},
     modifier: Modifier = Modifier,
     initialTop: Int = 0,
     autoStart: Boolean = true,
@@ -115,7 +116,7 @@ fun FuturesRootScreen(
         when (top) {
             0 -> FuturesTradeContent(
                 vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
-                onSim = { top = 3 }, onCopy = onCopy, modifier = Modifier.weight(1f),
+                onSim = { top = 3 }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f),
             )
             1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin)
             2 -> TradFiScreen(
@@ -155,6 +156,7 @@ fun FuturesTradeContent(
     onHistory: () -> Unit,
     onSim: () -> Unit = {},
     onCopy: () -> Unit = {},
+    onPriceAlerts: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val p = LB.p
@@ -375,7 +377,7 @@ fun FuturesTradeContent(
         "tools" -> ToolsSheet(vm.toast::show, { sheet = null }) { tool ->
             when (tool) {
                 "计算器" -> showCalculator = true
-                "价格预警" -> vm.toast.show("价格预警暂不可用：OpenAPI 无用户侧 alert CRUD 端点（仅有管理配置 cooldown），待后端契约")
+                "价格预警" -> { sheet = null; onPriceAlerts() }
                 "模拟交易" -> onSim()
             }
         }

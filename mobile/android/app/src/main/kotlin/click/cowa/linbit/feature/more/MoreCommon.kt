@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import click.cowa.linbit.R
+import androidx.hilt.navigation.compose.hiltViewModel
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.feature.assets.AssetsNavBar
@@ -37,6 +38,7 @@ import java.time.format.DateTimeFormatter
 /** 首页宫格 / 个人中心可打开的功能页。 */
 enum class MorePage(val title: String) {
     WELFARE("福利中心"), COPY("跟单交易"), NOTIFICATIONS("消息通知"),
+    PRICE_ALERTS("价格预警"),
     COUPONS("卡券中心"), PARTNER("合伙人计划"), TRADFI("TradFi"), SUPPORT("我的工单"),
 }
 
@@ -50,10 +52,13 @@ fun MoreHost(
     onProfile: () -> Unit,
     onDeposit: () -> Unit,
     modifier: Modifier = Modifier,
+    alertVm: click.cowa.linbit.feature.alerts.PriceAlertViewModel = hiltViewModel(),
+    onDialogWindow: (android.view.Window?) -> Unit = {},
 ) {
     BackHandler(onBack = onClose)
     Box(modifier.fillMaxSize().background(LB.p.bg).statusBarsPadding().navigationBarsPadding()) {
         when (initial) {
+            MorePage.PRICE_ALERTS -> click.cowa.linbit.feature.alerts.PriceAlertScreen(onClose, onLogin, alertVm, onDialogWindow)
             MorePage.WELFARE -> WelfareScreen(onClose, onLogin, onOpen, onTrade, onProfile, onDeposit)
             MorePage.COPY -> CopyTradingScreen(onClose, onLogin)
             MorePage.NOTIFICATIONS -> NotificationsScreen(onClose, onLogin)
@@ -73,6 +78,7 @@ fun MoreMenuScreen(onBack: () -> Unit, onOpen: (MorePage) -> Unit) {
             MorePage.entries.forEach { page ->
                 Row(Modifier.fillMaxWidth().background(LB.p.fill, RoundedCornerShape(Radius.lg)).pressable(scale = 1f) { onOpen(page) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     LbIcon(when (page) {
+                        MorePage.PRICE_ALERTS -> R.drawable.ic_bell
                         MorePage.WELFARE, MorePage.COUPONS -> R.drawable.ic_g_gift_light
                         MorePage.COPY -> R.drawable.ic_g_copy_light
                         MorePage.NOTIFICATIONS -> R.drawable.ic_bell

@@ -93,6 +93,17 @@ class PaperTradingContractTest {
         assertEquals("INDEX", client.trades(symbol = "BTCUSDT", generation = 3).items.single().priceSource)
         assertEquals(3L, client.order("po_mock").generation)
     }
+    @Test fun readonlyAlertContractUsesExactLimitAndRejectsForeignState() = fixture { client, server ->
+        route("GET", "/price-alerts?page=1&pageSize=2", """{"page":1,"pageSize":2,"total":1,"items":[${alert()}]}""")
+        val read = client.alerts(page = 1, pageSize = 2)
+        assertEquals(50, read.items.single().limit.activePerUser)
+        assertEquals("in_app", read.items.single().channels.single())
+        val bad = alert().replace("active", "other")
+        route("GET", "/price-alerts?page=2&pageSize=2", """{"page":2,"pageSize":2,"total":1,"items":[$bad]}""")
+        invalid { client.alerts(page = 2, pageSize = 2) }
+        assertEquals("GET", server.takeRequest().method)
+    }
+
     @Test fun alertsUseOneShotIndexAndInAppOnlyAndRevisionPaths() = fixture { client, server ->
         route("GET", "/price-alerts?symbol=BTCUSDT&status=active&page=1&pageSize=20", """{"page":1,"pageSize":20,"total":1,"items":[${alert()}]}""")
         route("POST", "/price-alerts", alert(), 201)

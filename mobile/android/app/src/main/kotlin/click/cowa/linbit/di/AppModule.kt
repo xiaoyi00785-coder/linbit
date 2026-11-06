@@ -78,6 +78,12 @@ object AppModule {
     fun paperApi(client: OkHttpClient): click.cowa.linbit.data.paper.PaperTradingApi = NetworkFactory.paperApi(client, baseUrl())
 
     @Provides @Singleton
+    fun priceAlertFeatureGate(api: LinbitApi) = click.cowa.linbit.data.paper.PriceAlertFeatureGate(click.cowa.linbit.data.paper.PublicFeatureFlags { api.appFeatures() })
+
+    @Provides @Singleton
+    fun priceAlertClient(api: click.cowa.linbit.data.paper.PaperTradingApi, gate: click.cowa.linbit.data.paper.PriceAlertFeatureGate) = click.cowa.linbit.data.paper.PriceAlertApiClient(api, gate)
+
+    @Provides @Singleton
     fun paperClient(api: click.cowa.linbit.data.paper.PaperTradingApi, gate: click.cowa.linbit.data.paper.PaperFeatureGate) =
         click.cowa.linbit.data.paper.PaperTradingClient(api, gate)
 

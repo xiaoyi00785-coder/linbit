@@ -42,7 +42,7 @@ import click.cowa.linbit.ui.theme.resolveDark
 
 /** Real production VM factory. Tests inject the same concrete VM types bound to loopback. */
 @androidx.compose.runtime.Stable
-class AssetRouteViewModels(val assets: click.cowa.linbit.feature.assets.AssetsViewModel, val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel, val tradFi: click.cowa.linbit.feature.more.TradFiViewModel, val paper: click.cowa.linbit.feature.assets.PaperAccountViewModel? = null)
+class AssetRouteViewModels(val assets: click.cowa.linbit.feature.assets.AssetsViewModel, val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel, val tradFi: click.cowa.linbit.feature.more.TradFiViewModel, val paper: click.cowa.linbit.feature.assets.PaperAccountViewModel? = null, val priceAlerts: click.cowa.linbit.feature.alerts.PriceAlertViewModel? = null)
 data class RootHomeMarketFactory(val home: @Composable () -> click.cowa.linbit.feature.home.HomeViewModel, val markets: @Composable () -> click.cowa.linbit.feature.markets.MarketsViewModel)
 val LocalRootHomeMarketFactory = androidx.compose.runtime.staticCompositionLocalOf<RootHomeMarketFactory?> { null }
 @Composable private fun rootHome(): click.cowa.linbit.feature.home.HomeViewModel = LocalRootHomeMarketFactory.current?.home?.invoke() ?: hiltViewModel()
@@ -53,7 +53,8 @@ fun rememberAssetRouteViewModels(): AssetRouteViewModels {
     val spot: click.cowa.linbit.feature.trade.SpotSubpagesViewModel = hiltViewModel()
     val tradFi: click.cowa.linbit.feature.more.TradFiViewModel = hiltViewModel()
     val paper: click.cowa.linbit.feature.assets.PaperAccountViewModel = hiltViewModel()
-    return remember { AssetRouteViewModels(assets, spot, tradFi, paper) }
+    val priceAlerts: click.cowa.linbit.feature.alerts.PriceAlertViewModel = hiltViewModel()
+    return remember { AssetRouteViewModels(assets, spot, tradFi, paper, priceAlerts) }
 }
 
 /** Root stays the sole owner of feature routing. Optional factory is DI, not a synthetic navigation path. */
@@ -78,6 +79,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewMo
             "福利中心" -> MorePage.WELFARE
             "跟单" -> MorePage.COPY
             "TradFi" -> MorePage.TRADFI
+            "价格预警" -> MorePage.PRICE_ALERTS
             "卡券中心" -> MorePage.COUPONS
             "合伙人计划" -> MorePage.PARTNER
             else -> null
@@ -123,6 +125,7 @@ fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewMo
                             else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
                         },
                         onCopy = { if (loggedIn) morePage = MorePage.COPY else auth = "login" },
+                        onPriceAlerts = { morePage = MorePage.PRICE_ALERTS },
                     )
                     MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
@@ -178,6 +181,8 @@ fun AppRoot(vm: AppViewModel = hiltViewModel(), badgeVm: NotificationBadgeViewMo
                 },
                 onProfile = { morePage = null; userCenter = true },
                 onDeposit = { morePage = null; vm.assetsNav.openDeposit(switchTab = true) },
+                alertVm = routeVms.priceAlerts ?: hiltViewModel(),
+                onDialogWindow = onDialogWindow,
             ) }
             when (historyKind) {
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)

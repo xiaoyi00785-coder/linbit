@@ -21,16 +21,17 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         check(it.startsWith("http://127.0.0.1:")) { "Evidence API must be loopback, got $it" }
     }
 
-    fun route(method: String, pathAndQuery: String, body: String, code: Int = 200) = queue(method, pathAndQuery, body, code, failure = false)
+    fun route(method: String, pathAndQuery: String, body: String, code: Int = 200, retryAfter: Int? = null) = queue(method, pathAndQuery, body, code, failure = false, retryAfter = retryAfter)
     fun explicitFailure(method: String, pathAndQuery: String, message: String) = queue(method, pathAndQuery, """{"code":"EVIDENCE_FAILURE","message":"$message"}""", 503, failure = true)
 
-    private fun queue(method: String, pathAndQuery: String, body: String, code: Int = 200, failure: Boolean = false) {
+    private fun queue(method: String, pathAndQuery: String, body: String, code: Int = 200, failure: Boolean = false, retryAfter: Int? = null) {
         val key = "$method $pathAndQuery"
         check(!failure || (method != "GET" && code >= 400)) { "Only explicit mutation failures can bypass no-write evidence routes" }
         if (failure) expectedFailureKeys += key
         routes.getOrPut("$method $pathAndQuery") { mutableListOf() }.add(
             MockResponse().setResponseCode(code)
                 .setHeader("Content-Type", "application/json")
+                .apply { if (retryAfter != null) setHeader("Retry-After", retryAfter) }
                 .setHeader("X-Evidence-Failure", failure.toString())
                 .setBody(body),
         )
