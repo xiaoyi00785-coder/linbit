@@ -30,8 +30,11 @@ struct WithdrawView: View {
     @State private var fieldError: String?
     @FocusState private var focus: Bool
 
+    /// DEBUG 截图夹具可用余额；非截图走 AssetsModel
+    @State private var shotAvail: Decimal? = nil
     private var avail: Decimal {
-        Dec.parse(assets.list.first { $0.asset == asset }?.free)
+        if let shotAvail { return shotAvail }
+        return Dec.parse(assets.list.first { $0.asset == asset }?.free)
     }
     private var amountDec: Decimal { Dec.parse(amount) }
     private var minW: Decimal { Dec.parse(network?.minWithdraw) }
@@ -231,15 +234,29 @@ struct WithdrawView: View {
     }
 
     private func reload(resetAddress: Bool = false) async {
-        if ShotGate.launchShot == "assets-withdraw" {
-            // 仅填充表单视觉；不调用 createWithdrawal
-            let n = APIWithdrawNetwork(network: "TRC20", minWithdraw: "10", maxWithdraw: "20000", gasFeeEstimate: "1", gasFeeAsset: "USDT", confirmations: 20, estimatedArrivalMinutes: 5, withdrawEnabled: true, memoRequired: false)
+        // DEBUG 截图夹具：只填表单视觉，永不 createWithdrawal
+        if let shot = ShotGate.launchShot, shot.hasPrefix("assets-withdraw") {
+            let n = APIWithdrawNetwork(network: "TRC20", minWithdraw: "10", maxWithdraw: "20000", gasFeeEstimate: "1", gasFeeAsset: "USDT", confirmations: 20, estimatedArrivalMinutes: 5, withdrawEnabled: shot != "assets-withdraw-paused", memoRequired: false)
             networks = [n]; network = n
             address = "TXfixtureDemoAddressDoNotWithdraw0001"
-            amount = "10"
             totp = "123456"
             shotForceTotp = true
             loadError = nil
+            switch shot {
+            case "assets-withdraw-ok":
+                // 可提交表单态（按钮应 enabled）；仍禁止真实资金提交
+                shotAvail = Decimal(string: "1000")
+                amount = "10"
+            case "assets-withdraw-paused":
+                shotAvail = Decimal(string: "1000")
+                amount = "10"
+            case "assets-withdraw":
+                // 余额不足错误态（历史 tip 6e96d41 产物）；不可当作有余额验收
+                fallthrough
+            default:
+                shotAvail = 0
+                amount = "10"
+            }
             return
         }
 
@@ -307,6 +324,11 @@ struct WithdrawView: View {
     private func submit() async {
         focus = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        // 截图夹具 / DEBUG shot：绝不打真实提现
+        if let shot = ShotGate.launchShot, shot.hasPrefix("assets-withdraw") {
+            ToastCenter.shared.show("截图夹具不提交提现", .error)
+            return
+        }
         if let v = validation { fieldError = v; return }
         guard let net = network?.network else { return }
         guard !submitting else { return }

@@ -1,0 +1,32 @@
+# 高风险且已有 UI 的补拍清单（DEBUG ShotGate）。不进 screens-pr 以免无关推送打断当前 CI。
+# 覆盖矩阵 |full−pr| 中优先：KYC/安全/跟单/借贷/充提历史；提现可提交/错误态。
+# 格式同 screens-pr：<screen> [light|dark|both]
+
+# 提现夹具态（无真实资金）
+assets-withdraw light
+assets-withdraw-ok light
+assets-withdraw-paused light
+assets-deposit light
+assets-withdraw-records light
+
+# KYC / 安全
+kyc-none light
+kyc-form light
+kyc-pending light
+security light
+security-passkeys light
+security-2fa-disable light
+security-devices light
+
+# 跟单 / 借贷
+copy-list light
+copy-detail light
+copy-follow light
+loan-market light
+loan-quote light
+loan-loans light
+
+# 充值/资产历史
+assets-overview light
+assets-networks light
+support-detail-open light

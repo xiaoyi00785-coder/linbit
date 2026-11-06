@@ -103,6 +103,8 @@ struct RootTabView: View {
         case "assets-withdraw-records": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdrawRecords)
         case "assets-deposit": router.tab = .assets; router.assetsPath.append(AssetsRoute.deposit("USDT"))
         case "assets-withdraw": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdraw("USDT"))
+        case "assets-withdraw-ok": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdraw("USDT"))
+        case "assets-withdraw-paused": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdraw("USDT"))
         case "assets-address-book": router.tab = .assets; router.assetsPath.append(AssetsRoute.addressBook)
         case "futures": router.tab = .futures; router.futuresTop = 0
         case "futures-leverage": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "leverage"

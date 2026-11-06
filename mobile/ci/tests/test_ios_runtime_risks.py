@@ -315,6 +315,22 @@ ok('ScrollView(.horizontal' in home and '涨幅榜' in home, 'home rank tabs hor
 spot = read('mobile/ios/Linbit/Features/Spot/SpotTradeView.swift')
 ok('ScrollView(.horizontal' in spot.split('private var topBar')[1].split('private var pairHeader')[0], 'spot top tabs scrollable')
 
+
+# ---------- 8) Withdraw shot fixtures (no real fund) ----------
+wd = read("mobile/ios/Linbit/Features/Assets/WithdrawView.swift")
+ok("assets-withdraw-ok" in wd and "shotAvail" in wd, "withdraw-ok fixture injects shotAvail")
+ok("截图夹具不提交提现" in wd, "ShotGate withdraw never createWithdrawal")
+ok("shot.hasPrefix(\"assets-withdraw\")" in wd or 'shot.hasPrefix("assets-withdraw")' in wd, "all withdraw-* shots use fixture path")
+app = read("mobile/ios/Linbit/App/LinbitApp.swift")
+ok("assets-withdraw-ok" in app and "assets-withdraw-paused" in app, "shot routes for withdraw ok/paused")
+risk = read("mobile/ci/screens-risk.txt")
+ok("assets-withdraw-ok" in risk and "kyc-form" in risk and "copy-detail" in risk, "screens-risk covers withdraw+KYC+copy")
+
+# Passkey cancel + newcomer claimable-only already covered; assert OpenAPI status enum once more
+nv = read("mobile/ios/Linbit/Features/Home/NewcomerView.swift")
+ok("locked|in_progress|claimable|claimed|expired" in nv, "newcomer OpenAPI status comment present")
+ok("guard !actionBusy" in nv, "newcomer anti-double present")
+
 if failures:
     print('FAIL', len(failures))
     for f in failures: print(' -', f)
