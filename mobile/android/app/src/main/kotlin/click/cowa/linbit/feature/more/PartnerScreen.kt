@@ -57,10 +57,18 @@ class PartnerViewModel @Inject constructor(
     val state: StateFlow<PartnerState> = _state
     val loggedIn get() = tokens.loggedIn
     var listTab = 0; var kind: String? = null
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：合伙人规则落地页。 */
+    internal fun seedEvidencePartner(rules: ApiPartnerRules, me: ApiPartnerMe? = null) {
+        holdEvidence = true
+        _state.value = PartnerState(rules = rules, me = me, loading = false)
+    }
 
     init { viewModelScope.launch { tokens.sessionVersion.collect { _state.value = PartnerState() } } }
 
     fun load() {
+        if (holdEvidence) return
         _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
             val rules = async { runCatching { apiCall { api.partnerRules() } }.getOrNull() }
@@ -130,22 +138,30 @@ fun PartnerScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: PartnerViewModel 
 @Composable
 private fun PartnerLanding(s: PartnerState, loggedIn: Boolean, onLogin: () -> Unit, onApply: () -> Unit) {
     val status = s.me?.partner?.status ?: s.me?.status?.value ?: "none"
+    val tiers = s.rules?.tiers.orEmpty()
     Column(Modifier.verticalScroll(rememberScrollState()).padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("成为 Linbit 合伙人", style = lb(22.sp, FontWeight.Bold), color = LB.p.textPrimary)
-        val max = s.rules?.tiers.orEmpty().maxOfOrNull { Dec.parse(it.futuresRate) } ?: BigDecimal.ZERO
-        Text("邀请好友交易，最高享 ${Fmt.price(max.multiply(BigDecimal(100)), 0)}% 手续费返佣，每日结算", style = lb(FontSize.body), color = LB.p.textSecondary)
+        // 规则未下发时不展示「0%」，避免离线/缺口被读成真实返佣
+        val max = tiers.maxOfOrNull { Dec.parse(it.futuresRate) }
+        Text(
+            if (max == null) "邀请好友交易，享手续费返佣，每日结算（比例以服务端规则为准）"
+            else "邀请好友交易，最高享 ${Fmt.price(max.multiply(BigDecimal(100)), 0)}% 手续费返佣，每日结算",
+            style = lb(FontSize.body), color = LB.p.textSecondary,
+        )
         when (status) {
             "pending" -> InfoNote("申请审核中，预计 1-3 个工作日内完成审核")
             "rejected" -> InfoNote("申请未通过：${s.me?.partner?.reviewNote ?: "请完善资料后重新申请"}", warning = true)
             "disabled" -> InfoNote("合伙人资格已停用，如有疑问请联系客服", warning = true)
         }
-        Text("返佣等级", style = lb(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
-        MoreCard {
-            s.rules?.tiers.orEmpty().forEach { tier ->
-                Row(Modifier.height(36.dp)) {
-                    Text(tier.name ?: "--", Modifier.weight(1f), style = lb(FontSize.small, FontWeight.Medium), color = LB.p.textPrimary)
-                    Text("≥ ${Fmt.amount(Dec.parse(tier.minVolume30d), 0)}", Modifier.weight(1f), style = lbNum(FontSize.small), color = LB.p.textSecondary)
-                    Text("${Fmt.amount(Dec.parse(tier.futuresRate).multiply(BigDecimal(100)), 0)}% / ${Fmt.amount(Dec.parse(tier.spotRate).multiply(BigDecimal(100)), 0)}%", style = lbNum(FontSize.small), color = LB.p.up)
+        if (tiers.isNotEmpty()) {
+            Text("返佣等级", style = lb(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
+            MoreCard {
+                tiers.forEach { tier ->
+                    Row(Modifier.height(36.dp)) {
+                        Text(tier.name ?: "--", Modifier.weight(1f), style = lb(FontSize.small, FontWeight.Medium), color = LB.p.textPrimary)
+                        Text("≥ ${Fmt.amount(Dec.parse(tier.minVolume30d), 0)}", Modifier.weight(1f), style = lbNum(FontSize.small), color = LB.p.textSecondary)
+                        Text("${Fmt.amount(Dec.parse(tier.futuresRate).multiply(BigDecimal(100)), 0)}% / ${Fmt.amount(Dec.parse(tier.spotRate).multiply(BigDecimal(100)), 0)}%", style = lbNum(FontSize.small), color = LB.p.up)
+                    }
                 }
             }
         }

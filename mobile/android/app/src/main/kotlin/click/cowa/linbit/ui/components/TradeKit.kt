@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
@@ -111,6 +113,7 @@ fun NumberBox(
     height: Dp = 38.dp,
     readOnly: Boolean = false,
     onUnitClick: (() -> Unit)? = null,
+    testTag: String? = null,
 ) {
     val p = LB.p
     Row(
@@ -127,6 +130,7 @@ fun NumberBox(
                     decorationBox = { inner ->
                         Box { if (value.isEmpty()) Text(label, style = lb(FontSize.body), color = p.textSecondary, maxLines = 1); inner() }
                     },
+                    modifier = Modifier.then(if (testTag == null) Modifier else Modifier.testTag(testTag)),
                 )
             }
         }
@@ -219,9 +223,9 @@ fun KvRow(k: String, v: String, modifier: Modifier = Modifier, trailing: (@Compo
 
 /** 灰底圆角小按钮（「全仓/合仓」「100x」「全部撤销」）。 */
 @Composable
-fun ChipButton(title: String, modifier: Modifier = Modifier, color: Color = LB.p.textPrimary, bg: Color = LB.p.fill, onClick: () -> Unit) {
+fun ChipButton(title: String, modifier: Modifier = Modifier, color: Color = LB.p.textPrimary, bg: Color = LB.p.fill, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
-        modifier.height(24.dp).clip(RoundedCornerShape(Radius.sm)).background(bg).pressable(scale = 1f, onClick = onClick).padding(horizontal = 10.dp),
+        modifier.height(24.dp).clip(RoundedCornerShape(Radius.sm)).background(bg).alpha(if (enabled) 1f else 0.45f).pressable(enabled = enabled, scale = 1f, onClick = onClick).padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) { Text(title, style = lb(FontSize.caption), color = color, maxLines = 1) }
 }

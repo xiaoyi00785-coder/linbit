@@ -88,8 +88,8 @@ fun ProfileError(message: String, onRetry: () -> Unit) {
 @Composable
 fun InfoNote(text: String, warning: Boolean = false) {
     val p = LB.p
-    val bg = if (warning) Color(0xFFFFF1E5) else p.fill
-    val fg = if (warning) Color(0xFFD97706) else p.textSecondary
+    val bg = if (warning) p.warning.copy(alpha = 0.12f) else p.fill
+    val fg = if (warning) p.warning else p.textSecondary
     Row(Modifier.fillMaxWidth().background(bg, RoundedCornerShape(Radius.md)).padding(12.dp)) {
         Text(if (warning) "!" else "i", style = lb(FontSize.small, FontWeight.Bold), color = fg)
         Spacer(Modifier.width(8.dp))

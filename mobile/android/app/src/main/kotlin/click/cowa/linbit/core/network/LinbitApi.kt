@@ -13,6 +13,7 @@ import click.cowa.linbit.core.generated.ApiMarketCategory
 import click.cowa.linbit.core.generated.ApiPasswordResetRequest
 import click.cowa.linbit.core.generated.ApiRegisterRequest
 import click.cowa.linbit.core.generated.ApiSendCodeRequest
+import click.cowa.linbit.core.generated.ApiSendCodeAuthedRequest
 import click.cowa.linbit.core.generated.ApiSendCodeResponse
 import click.cowa.linbit.core.generated.ApiSymbol
 import click.cowa.linbit.core.generated.ApiVerifyResetCodeRequest
@@ -24,6 +25,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.PATCH
@@ -39,6 +41,26 @@ import okhttp3.MultipartBody
  * oneOf 响应（login / ticker / futures ticker）以 JsonElement 返回，由 [OneOfResponses] 判别解码。
  */
 interface LinbitApi {
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("app/features")
+    suspend fun appFeatures(): retrofit2.Response<ApiAppFeatures>
+
+    /** Exact existing /account/contact/code and /account/email|phone contract. */
+    @POST("account/contact/code")
+    suspend fun sendContactCode(@Body body: ApiSendContactCodeRequest): ApiSendContactCode200Response
+
+    @PUT("account/email")
+    suspend fun changeEmail(@Body body: ApiChangeContactRequest): ApiOkResponse
+
+    @PUT("account/phone")
+    suspend fun changePhone(@Body body: ApiChangeContactRequest): ApiOkResponse
+
+    @POST("account/fund-password")
+    suspend fun setFundPassword(@Body body: ApiFundPasswordRequest): ApiOkResponse
+
+    @PUT("account/fund-password")
+    suspend fun changeFundPassword(@Body body: ApiFundPasswordRequest): ApiOkResponse
     // ---- Auth（公开）----
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @POST("auth/login")
@@ -72,6 +94,26 @@ interface LinbitApi {
     @Headers("${ApiHeaders.NO_REFRESH}: 1")
     @POST("auth/logout")
     suspend fun logout(@Body body: ApiLogoutRequest)
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @POST("auth/passkey/login/begin")
+    suspend fun passkeyLoginBegin(): ApiPasskeyCeremony
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @POST("auth/passkey/login/finish")
+    suspend fun passkeyLoginFinish(@Body body: ApiFinishPasskeyLoginRequest): ApiAuthTokens
+
+    @GET("account/passkeys")
+    suspend fun listPasskeys(): ApiListPasskeys200Response
+
+    @POST("account/passkeys/register/begin")
+    suspend fun passkeyRegisterBegin(@Body body: ApiBeginPasskeyRegistrationRequest): ApiPasskeyCeremony
+
+    @DELETE("account/passkeys/{id}")
+    suspend fun deletePasskey(@Path("id") id: String): retrofit2.Response<Unit>
+
+    @POST("account/passkeys/register/finish")
+    suspend fun passkeyRegisterFinish(@Body body: ApiFinishPasskeyRegistrationRequest): ApiPasskey
 
     // ---- Market（公开）----
     @Headers("${ApiHeaders.NO_AUTH}: 1")
@@ -338,6 +380,52 @@ interface LinbitApi {
     @GET("earn/positions")
     suspend fun earnPositions(): ApiEarnPositions200Response
 
+    @POST("earn/products/{id}/subscribe")
+    suspend fun earnSubscribe(@Path("id") id: String, @Body body: ApiEarnSubscribeRequest): ApiEarnSubscribe200Response
+
+    @POST("earn/products/{id}/redeem")
+    suspend fun earnRedeem(@Path("id") id: String, @Body body: ApiEarnRedeemRequest): ApiEarnRedeem200Response
+
+    @POST("strategy/grid/square/{id}/copy")
+    suspend fun strategyCopy(@Path("id") id: String, @Body body: ApiStrategyCopyRequest): ApiGridBot
+
+    @POST("strategy/grid/{id}/stop")
+    suspend fun strategyStopGrid(
+        @Path("id") id: String,
+        @Body body: ApiStrategyStopGridRequest = ApiStrategyStopGridRequest(),
+    ): ApiGridBot
+
+    @GET("earn/orders")
+    suspend fun earnOrders(@Query("status") status: String? = null): ApiEarnOrders200Response
+
+    @GET("earn/records")
+    suspend fun earnRecords(@Query("type") type: String? = null): ApiEarnRecords200Response
+
+    @POST("earn/products/{id}/auto")
+    suspend fun earnAuto(@Path("id") id: String, @Body body: ApiEarnAutoRequest): ApiEarnAuto200Response
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("strategy/grid/preview")
+    suspend fun strategyPreview(
+        @Query("symbol") symbol: String,
+        @Query("mode") mode: String,
+        @Query("lowerPrice") lowerPrice: String,
+        @Query("upperPrice") upperPrice: String,
+        @Query("gridCount") gridCount: Int,
+        @Query("investment") investment: String,
+        @Query("stopLossPrice") stopLossPrice: String? = null,
+        @Query("takeProfitPrice") takeProfitPrice: String? = null,
+    ): ApiStrategyPreview200Response
+
+    @POST("strategy/grid")
+    suspend fun strategyCreateGrid(@Body body: ApiGridCreateRequest): ApiGridBot
+
+    @GET("strategy/grid/{id}/orders")
+    suspend fun strategyGridOrders(
+        @Path("id") id: String,
+        @Query("status") status: String? = null,
+    ): ApiStrategyGridOrders200Response
+
     // ---- 自选 ----
     @GET("account/favorites")
     suspend fun favorites(@Query("market") market: String = "spot"): JsonElement
@@ -385,6 +473,9 @@ interface LinbitApi {
     @PATCH("account/withdraw-addresses/{id}")
     suspend fun updateWithdrawAddress(@Path("id") id: String, @Body body: ApiUpdateWithdrawAddressRequest): ApiWithdrawAddress
 
+    @HTTP(method = "DELETE", path = "account/withdraw-addresses/{id}", hasBody = false)
+    suspend fun deleteWithdrawAddress(@Path("id") id: String, @Query("code") code: String? = null, @Query("totpCode") totpCode: String? = null): retrofit2.Response<Unit>
+
     @GET("account/withdraw-whitelist")
     suspend fun withdrawWhitelist(): ApiWhitelistStatus
 
@@ -392,6 +483,9 @@ interface LinbitApi {
     suspend fun setWithdrawWhitelist(@Body body: ApiSetWhitelistRequest): ApiWhitelistStatus
 
     // ---- 个人中心 / 安全 / KYC / 子账户 ----
+    @POST("account/code/send")
+    suspend fun sendAccountCode(@Body body: ApiSendCodeAuthedRequest): ApiSendCodeResponse
+
     @GET("account")
     suspend fun account(): ApiAccount
 
@@ -400,6 +494,12 @@ interface LinbitApi {
 
     @GET("account/security")
     suspend fun securityOverview(): ApiSecurityOverview
+
+    @POST("account/password/change")
+    suspend fun changePassword(@Body body: click.cowa.linbit.feature.profile.SecurityChangePasswordRequest): ApiChangePassword200Response
+
+    @PUT("account/anti-phishing")
+    suspend fun setAntiPhishing(@Body body: ApiSetAntiPhishingRequest): ApiOkResponse
 
     @POST("2fa/totp/bind")
     suspend fun bindTotp(): ApiTotpBinding

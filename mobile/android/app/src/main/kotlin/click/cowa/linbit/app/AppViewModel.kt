@@ -34,6 +34,11 @@ class AppViewModel @Inject constructor(
 
     fun setTheme(m: ThemeMode) { viewModelScope.launch { prefs.setThemeMode(m) } }
 
+    /** Clear every root-level private overlay before the unauthenticated AuthFlow takes ownership. */
+    fun resetSessionNavigation() {
+        assetsNav.clear()
+    }
+
     fun logout(onDone: () -> Unit) {
         viewModelScope.launch {
             try { auth.logout() } finally { onDone() }

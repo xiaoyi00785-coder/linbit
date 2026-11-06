@@ -53,12 +53,20 @@ class WelfareViewModel @Inject constructor(
     private val _state = kotlinx.coroutines.flow.MutableStateFlow(WelfareState())
     val state: kotlinx.coroutines.flow.StateFlow<WelfareState> = _state
     val loggedIn get() = tokens.loggedIn
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：福利中心示例。 */
+    internal fun seedEvidenceWelfare(newcomer: ApiHomeNewcomer?, bonus: ApiFuturesBonus200Response? = null) {
+        holdEvidence = true
+        _state.value = WelfareState(newcomer = newcomer, bonus = bonus, loading = false)
+    }
 
     init {
         viewModelScope.launch { tokens.sessionVersion.collect { _state.value = WelfareState() } }
     }
 
     fun load() {
+        if (holdEvidence) return
         val session = tokens.sessionVersion.value
         _state.value = _state.value.copy(loading = _state.value.newcomer == null, error = null)
         viewModelScope.launch {

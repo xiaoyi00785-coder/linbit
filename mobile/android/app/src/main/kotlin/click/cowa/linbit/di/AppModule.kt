@@ -72,6 +72,25 @@ object AppModule {
     fun api(client: OkHttpClient): LinbitApi = NetworkFactory.api(client, baseUrl())
 
     @Provides @Singleton
+    fun passkeyRegistration(api: LinbitApi) = click.cowa.linbit.feature.profile.PasskeyRegistrationService(api, click.cowa.linbit.feature.profile.AndroidPasskeyRegistrationBridge())
+
+    @Provides @Singleton
+    fun paperFeatureGate(api: LinbitApi) = click.cowa.linbit.data.paper.PaperFeatureGate(click.cowa.linbit.data.paper.PublicFeatureFlags { api.appFeatures() })
+
+    @Provides @Singleton
+    fun paperApi(client: OkHttpClient): click.cowa.linbit.data.paper.PaperTradingApi = NetworkFactory.paperApi(client, baseUrl())
+
+    @Provides @Singleton
+    fun priceAlertFeatureGate(api: LinbitApi) = click.cowa.linbit.data.paper.PriceAlertFeatureGate(click.cowa.linbit.data.paper.PublicFeatureFlags { api.appFeatures() })
+
+    @Provides @Singleton
+    fun priceAlertClient(api: click.cowa.linbit.data.paper.PaperTradingApi, gate: click.cowa.linbit.data.paper.PriceAlertFeatureGate) = click.cowa.linbit.data.paper.PriceAlertApiClient(api, gate)
+
+    @Provides @Singleton
+    fun paperClient(api: click.cowa.linbit.data.paper.PaperTradingApi, gate: click.cowa.linbit.data.paper.PaperFeatureGate) =
+        click.cowa.linbit.data.paper.PaperTradingClient(api, gate)
+
+    @Provides @Singleton
     fun socket(client: OkHttpClient, tokens: TokenStore, @ApplicationScope scope: CoroutineScope) = MarketSocket(
         client = client.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build(),
         url = BuildConfig.WS_URL,
@@ -91,6 +110,10 @@ object AppModule {
 
     @Provides @Singleton
     fun savedAccounts(store: SecureStore, tokens: TokenStore) = click.cowa.linbit.feature.profile.SavedAccounts(store, tokens)
+
+    @Provides @Singleton
+    fun passkeyLoginService(api: LinbitApi, store: SecureStore): click.cowa.linbit.feature.auth.PasskeyLoginService =
+        click.cowa.linbit.feature.auth.PasskeyLoginService(api, click.cowa.linbit.feature.auth.AndroidPasskeyCredentialBridge(), { store.deviceId }, { Build.MODEL ?: "Android" })
 
     @Provides @Singleton
     fun auth(api: LinbitApi, tokens: TokenStore, store: SecureStore, @ApplicationScope scope: CoroutineScope) =

@@ -2,6 +2,7 @@ package click.cowa.linbit.feature.assets
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -33,10 +36,12 @@ import click.cowa.linbit.R
 import click.cowa.linbit.core.generated.ApiCreateWithdrawAddressRequest
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawAddress
+import click.cowa.linbit.core.generated.ApiWithdrawal
 import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.ui.components.CoinIcon
 import click.cowa.linbit.ui.components.EmptyState
+import click.cowa.linbit.ui.components.ButtonKind
 import click.cowa.linbit.ui.components.LbButton
 import click.cowa.linbit.ui.components.LbIcon
 import click.cowa.linbit.ui.components.LbTextField
@@ -52,7 +57,13 @@ import click.cowa.linbit.ui.theme.lbNum
 import kotlinx.coroutines.launch
 
 @Composable
-fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) -> Unit) {
+fun AddressBookScreen(
+    vm: AssetsViewModel,
+    onBack: () -> Unit,
+    onAdd: (String?) -> Unit,
+    onDialogWindow: (android.view.Window?) -> Unit = {},
+    onPickForWithdraw: ((ApiWithdrawAddress) -> Unit)? = null,
+) {
     BackHandler(onBack = onBack)
     val p = LB.p
     val ctx = LocalContext.current
@@ -62,6 +73,20 @@ fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) 
     var whitelist by remember { mutableStateOf<Boolean?>(null) }
     var filter by remember { mutableStateOf(0) }
     var verify by remember { mutableStateOf<Pair<String, (String) -> Unit>?>(null) }
+    var editTarget by remember { mutableStateOf<ApiWithdrawAddress?>(null) }
+    var editPhase by remember { mutableStateOf(0) }
+    var editLabel by remember { mutableStateOf("") }
+    var editMemo by remember { mutableStateOf("") }
+    var editTotp by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<ApiWithdrawAddress?>(null) }
+    var deleteTotp by remember { mutableStateOf("") }
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+    LaunchedEffect(vm.addressEditReceipt?.readback?.id) {
+        if (vm.addressEditReceipt != null) {
+            editTarget = null; list = null
+            scope.launch { vm.addresses().fold(onSuccess={list=it},onFailure={err=it.lbMessage();list=emptyList()}) }
+        }
+    }
 
     fun reload() {
         scope.launch {
@@ -70,7 +95,8 @@ fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) 
             vm.whitelist().onSuccess { whitelist = it }
         }
     }
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(session) { editTarget = null; deleteTarget = null; deleteTotp = ""; list = null; whitelist = null; reload() }
+    LaunchedEffect(vm.addressDeleteReceipt) { if(vm.addressDeleteReceipt!=null){deleteTarget=null;list=null;reload()} }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         AssetsNavBar("地址簿", onBack = onBack) {
@@ -115,6 +141,8 @@ fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) 
                 err != null && list!!.isEmpty() -> EmptyState(err ?: "加载失败")
                 else -> {
                     val shown = if (filter == 1) list!!.filter { it.whitelisted } else list!!
+                    list!!.firstOrNull { it.id == vm.addressEditReceipt?.readback?.id }?.let { Text("已从服务端列表读回修改", Modifier.testTag("address.edit.readback"), style = lb(FontSize.small), color = p.brand) }
+                    vm.addressDeleteReceipt?.takeIf{receipt->list!!.none{it.id==receipt.id}}?.let{Text("已从服务端地址列表确认删除：${it.label}",Modifier.testTag("address.delete.readback"),style=lb(FontSize.small),color=p.brand)}
                     if (shown.isEmpty()) {
                         EmptyState(if (filter == 1) "暂无白名单地址" else "暂无地址")
                         Spacer(Modifier.height(12.dp))
@@ -140,8 +168,24 @@ fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) 
                                 Spacer(Modifier.height(4.dp)); AssetKv("Memo", a.memo!!)
                             }
                             Spacer(Modifier.height(8.dp))
+                            LbButton("编辑", kind = ButtonKind.OUTLINE, height = 32.dp, testTag = "address.edit.open") {
+                                editTarget = a; editPhase = 0; editLabel = a.label.orEmpty(); editMemo = a.memo.orEmpty(); editTotp = ""
+                            }
                             Row {
                                 Spacer(Modifier.weight(1f))
+                                if (onPickForWithdraw != null) {
+                                    Text(
+                                        "使用",
+                                        Modifier.pressable(scale = 1f) { onPickForWithdraw(a) }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            .background(p.brand.copy(alpha = 0.15f), RoundedCornerShape(Radius.sm)),
+                                        style = lb(FontSize.small),
+                                        color = p.brand,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text("删除", Modifier.pressable(enabled = !vm.addressDeleteBusy, scale = 1f) { deleteTarget = a; deleteTotp = "" }.padding(horizontal = 10.dp, vertical = 4.dp).background(p.fill, RoundedCornerShape(Radius.sm)), style = lb(FontSize.small), color = p.down)
+                                Spacer(Modifier.width(8.dp))
                                 Text("复制", Modifier.pressable(scale = 1f) { copyText(ctx, a.address); vm.toast.show("已复制地址") }.padding(horizontal = 10.dp, vertical = 4.dp).background(p.fill, RoundedCornerShape(Radius.sm)), style = lb(FontSize.small), color = p.textPrimary)
                                 Spacer(Modifier.width(8.dp))
                                 Text(if (a.whitelisted) "移出白名单" else "加入白名单", Modifier.pressable(scale = 1f) {
@@ -161,6 +205,56 @@ fun AddressBookScreen(vm: AssetsViewModel, onBack: () -> Unit, onAdd: (String?) 
             }
         }
         LbButton("添加地址", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), onClick = { onAdd(null) })
+    }
+
+    editTarget?.let { target ->
+        val busy = vm.addressEditBusy
+        LbSheet(if (editPhase == 0) "编辑提现地址" else "确认修改提现地址", onClose = { if (!busy) editTarget = null }, showClose = !busy, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
+                AssetKv("币种 / 网络", "${target.asset} / ${AssetsLogic.displayNetwork(target.network)}")
+                AssetKv("地址", target.address)
+                Spacer(Modifier.height(10.dp))
+                if (editPhase == 0) {
+                    LbTextField(editLabel, { if (!busy) editLabel = it }, "标签", testTag = "address.edit.label")
+                    Spacer(Modifier.height(10.dp))
+                    LbTextField(editMemo, { if (!busy) editMemo = it }, "Memo", testTag = "address.edit.memo")
+                    Spacer(Modifier.height(12.dp))
+                    LbButton("复核修改", enabled = !busy, testTag = "address.edit.review") { if (editPhase == 0) editPhase = 1 }
+                } else {
+                    AssetKv("修改后标签", editLabel); AssetKv("修改后 Memo", editMemo)
+                    Text("仅修改标签/Memo；服务端列表必须读回同 id 才算列表更新。", Modifier.padding(top=8.dp), style = lb(FontSize.small), color = p.textSecondary)
+                    Spacer(Modifier.height(10.dp))
+                    LbTextField(editTotp, { if (!busy) editTotp = it.filter(Char::isDigit).take(6) }, "请输入 6 位谷歌验证码", keyboardType = KeyboardType.Number, testTag = "address.edit.totp")
+                    Spacer(Modifier.height(12.dp))
+                    vm.addressEditError?.let { Text(it, Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down) }
+                    LbButton(if (busy) "等待服务端结果…" else "确认修改", enabled = !busy && editTotp.length == 6, loading = busy, testTag = "address.edit.confirm") {
+                        vm.submitEditAddressConfirmed(target.id, editLabel, editMemo, editTotp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                LbButton("取消", kind = ButtonKind.SECONDARY, enabled = !busy, testTag = "address.edit.dismiss") { editTarget = null }
+            }
+        }
+    }
+
+    deleteTarget?.let { target ->
+        val busy = vm.addressDeleteBusy
+        val accepted = vm.addressDeleteAccepted
+        LbSheet("删除提现地址",onClose={if(!busy && !accepted)deleteTarget=null},showClose=!busy && !accepted,onWindowReady=onDialogWindow) {
+            Column(Modifier.padding(horizontal=Spacing.pageH).padding(bottom=24.dp)) {
+                AssetKv("地址",target.address)
+                AssetKv("币种 / 网络","${target.asset} / ${AssetsLogic.displayNetwork(target.network)}")
+                Text("删除后不能恢复。服务端列表重新读取不再包含同一地址后，才显示已删除。",Modifier.padding(top=8.dp),style=lb(FontSize.small),color=p.textSecondary)
+                Spacer(Modifier.height(10.dp))
+                LbTextField(deleteTotp,{if(!busy && !accepted)deleteTotp=it.filter(Char::isDigit).take(6)},"请输入 6 位谷歌验证码",keyboardType=KeyboardType.Number,testTag="address.delete.totp")
+                vm.addressDeleteError?.let{Text(it,Modifier.padding(top=8.dp),style=lb(FontSize.small),color=p.down)}
+                Spacer(Modifier.height(12.dp))
+                if(accepted) LbButton(if(busy)"仅重新读取中…"else"仅重新读取地址列表",enabled=!busy,loading=busy,testTag="address.delete.refresh"){vm.refreshAcceptedAddressDeletion()}
+                else LbButton(if(busy)"等待服务端结果…"else"确认删除地址",enabled=!busy&&deleteTotp.length==6,loading=busy,testTag="address.delete.confirm"){vm.submitDeleteAddressConfirmed(target,deleteTotp)}
+                Spacer(Modifier.height(8.dp))
+                LbButton("取消",kind=ButtonKind.SECONDARY,enabled=!busy&&!accepted,testTag="address.delete.dismiss"){deleteTarget=null}
+            }
+        }
     }
 
     verify?.let { (title, act) ->
@@ -191,7 +285,7 @@ private fun BoxToggle(on: Boolean, enabled: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit, onDone: () -> Unit) {
+fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit, onDone: () -> Unit, onDialogWindow: (android.view.Window?) -> Unit = {}) {
     BackHandler(onBack = onBack)
     val p = LB.p
     val scope = rememberCoroutineScope()
@@ -205,7 +299,19 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
     var totp by remember { mutableStateOf("") }
     var showNet by remember { mutableStateOf(false) }
     var showAsset by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
+    var showConfirm by remember { mutableStateOf(false) }
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+
+    LaunchedEffect(session) {
+        showConfirm = false
+        vm.clearAddressFeedback()
+    }
+    LaunchedEffect(vm.addressReceipt) {
+        if (vm.addressReceipt != null) {
+            showConfirm = false
+            onDone()
+        }
+    }
 
     LaunchedEffect(asset) {
         net = null
@@ -216,7 +322,7 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
         }
     }
 
-    val valid = net != null && address.trim().length >= 10 && totp.length == 6 &&
+    val valid = net != null && address.trim().length >= 10 &&
         (net?.memoRequired != true || memo.isNotBlank())
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
@@ -229,13 +335,13 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
             PickerField("选择网络", net?.network?.let { AssetsLogic.displayNetwork(it) } ?: "", "选择网络") { showNet = true }
             Spacer(Modifier.height(10.dp))
             Text("地址", style = lb(FontSize.caption), color = p.textSecondary)
-            LbTextField(address, { address = it }, "长按粘贴地址", Modifier.padding(top = 4.dp))
+            LbTextField(address, { if(!vm.addressBusy) address = it }, "长按粘贴地址", Modifier.padding(top = 4.dp), testTag = "address.input")
             if (net?.memoRequired == true) {
                 Spacer(Modifier.height(10.dp))
-                LbTextField(memo, { memo = it }, "该网络必须填写 Memo")
+                LbTextField(memo, { if(!vm.addressBusy) memo = it }, "该网络必须填写 Memo")
             }
             Spacer(Modifier.height(10.dp))
-            LbTextField(label, { label = it }, "如：我的USDT钱包")
+            LbTextField(label, { if(!vm.addressBusy) label = it }, "如：我的USDT钱包", testTag = "address.label")
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.pressable(scale = 1f) { whitelisted = !whitelisted }) {
                 Text(if (whitelisted) "☑" else "☐", style = lb(FontSize.body), color = p.textPrimary)
@@ -243,30 +349,39 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
                 Text("加入提现白名单", style = lb(FontSize.label), color = p.textPrimary)
             }
             Spacer(Modifier.height(12.dp))
-            LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "请输入 6 位谷歌验证码", keyboardType = KeyboardType.Number)
+
             Spacer(Modifier.height(24.dp))
         }
-        LbButton("保存", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), enabled = valid, loading = saving) {
-            scope.launch {
-                saving = true
-                vm.createAddress(
-                    ApiCreateWithdrawAddressRequest(
-                        asset = asset,
-                        network = net!!.network!!,
-                        address = address.trim(),
-                        memo = memo.ifBlank { null },
-                        label = label.ifBlank { null },
-                        whitelisted = whitelisted,
-                        totpCode = totp,
-                    ),
-                ).fold(
-                    onSuccess = { vm.toast.show("地址已保存"); onDone() },
-                    onFailure = { vm.toast.show(it.lbMessage()) },
-                )
-                saving = false
+        LbButton("复核并保存", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), enabled = valid && !vm.addressBusy && vm.addressReceipt == null, loading = vm.addressBusy, testTag = "address.review") {
+            showConfirm = true
+        }
+    }
+
+    if (showConfirm) {
+        LbSheet("确认新增提现地址", onClose = { if (!vm.addressBusy) showConfirm = false }, showClose = !vm.addressBusy, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
+                Text("提交后将向服务端新增地址；仅服务端列表读回同一条记录才算保存更新。", style = lb(FontSize.small), color = p.textSecondary)
+                AssetKv("币种", asset); AssetKv("网络", AssetsLogic.displayNetwork(net?.network)); AssetKv("地址", address.trim())
+                if (label.isNotBlank()) AssetKv("标签", label.trim()); if (memo.isNotBlank()) AssetKv("Memo", memo.trim())
+                AssetKv("加入白名单", if (whitelisted) "是" else "否")
+                Spacer(Modifier.height(12.dp))
+                val receipt = vm.addressReceipt
+                if (receipt != null) {
+                    Text("列表已读回记录 ${receipt.readback.id}", style = lb(FontSize.small), color = p.textPrimary, modifier = Modifier.testTag("address.receipt"))
+                } else {
+                    LbTextField(totp, { if (!vm.addressBusy) totp = it.filter(Char::isDigit).take(6) }, "请输入 6 位谷歌验证码", keyboardType = KeyboardType.Number, testTag = "address.totp")
+                }
+                Spacer(Modifier.height(12.dp))
+                vm.addressError?.let { Text(it, Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down) }
+                LbButton(if (vm.addressBusy) "等待服务端结果…" else "确认新增", loading = vm.addressBusy, enabled = receipt != null || (valid && totp.length == 6 && !vm.addressBusy), testTag = "address.confirm") {
+                    if (receipt != null) { showConfirm = false; onDone(); return@LbButton }
+                    vm.submitCreateAddressConfirmed(ApiCreateWithdrawAddressRequest(asset = asset, network = net!!.network!!, address = address.trim(), memo = memo.ifBlank { null }, label = label.ifBlank { null }, whitelisted = whitelisted, totpCode = totp))
+                }
+                LbButton("取消", kind = ButtonKind.SECONDARY, enabled = !vm.addressBusy, testTag = "address.dismiss") { showConfirm = false }
             }
         }
     }
+
     if (showNet) {
         LbSheet("选择网络", onClose = { showNet = false }, showClose = true) {
             if (nets.isEmpty()) EmptyState("暂无可用网络", Modifier.height(200.dp))
@@ -289,27 +404,73 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
 }
 
 @Composable
-fun WithdrawRecordsScreen(vm: AssetsViewModel, onBack: () -> Unit) {
+fun WithdrawRecordsScreen(vm: AssetsViewModel, onBack: () -> Unit, onDialogWindow: (android.view.Window?) -> Unit = {}) {
     BackHandler(onBack = onBack)
     val p = LB.p
-    var items by remember { mutableStateOf<List<click.cowa.linbit.core.generated.ApiWithdrawal>?>(null) }
-    LaunchedEffect(Unit) {
-        vm.withdrawRecords().onSuccess { items = it }.onFailure { vm.toast.show(it.lbMessage()); items = emptyList() }
+    val scope = rememberCoroutineScope()
+    var items by remember { mutableStateOf<List<ApiWithdrawal>?>(null) }
+    var cancelTarget by remember { mutableStateOf<ApiWithdrawal?>(null) }
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+
+    fun reload() {
+        scope.launch { vm.withdrawRecords().fold(onSuccess={items=it},onFailure={e->vm.toast.show(e.lbMessage());if(items==null)items=emptyList()}) }
     }
+    LaunchedEffect(session) { cancelTarget=null;reload() }
+    LaunchedEffect(vm.withdrawCancelReceipt?.readback?.id,vm.withdrawCancelConflict?.id) {
+        vm.withdrawCancelReceipt?.readback?.let { readback -> items=items?.map{if(it.id==readback.id)readback else it} }
+        vm.withdrawCancelConflict?.let { readback -> items=items?.map{if(it.id==readback.id)readback else it} }
+        if(vm.withdrawCancelReceipt!=null||vm.withdrawCancelConflict!=null){cancelTarget=null;reload()}
+    }
+    fun statusLabel(s: ApiWithdrawal.Status): String = when (s) {
+        ApiWithdrawal.Status.PENDING -> "待审核"
+        ApiWithdrawal.Status.PROCESSING -> "处理中"
+        ApiWithdrawal.Status.COMPLETED -> "已完成"
+        ApiWithdrawal.Status.FAILED -> "失败"
+        ApiWithdrawal.Status.CANCELED -> "已撤销"
+    }
+
     Column(Modifier.fillMaxSize().background(p.bg)) {
         AssetsNavBar("提现记录", onBack = onBack)
-        when {
-            items == null -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(Modifier.padding(40.dp), color = p.brand, strokeWidth = 2.dp) }
-            items!!.isEmpty() -> EmptyState("暂无提现记录")
-            else -> Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
-                items!!.forEach { w ->
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).testTag("withdraw.records.scroll")) {
+            vm.withdrawCancelReceipt?.let { receipt ->
+                Text("已从服务端记录读回撤销", style = lb(FontSize.label), color = p.brand)
+                Text("实际记录状态：${statusLabel(receipt.readback.status)}", Modifier.testTag("withdraw.cancel.readback"), style = lb(FontSize.small), color = p.textPrimary)
+                Text("原扣款账户：${receipt.account}", style = lb(FontSize.small), color = p.textSecondary)
+                Text("服务端可用余额已读回：以下余额来自实际账户响应", style = lb(FontSize.small), color = p.textSecondary)
+                Text("${receipt.balance.toPlainString()} ${receipt.readback.asset}", Modifier.testTag("withdraw.cancel.balance"), style = lbNum(FontSize.title), color = p.textPrimary)
+            }
+            vm.withdrawCancelConflict?.let { current ->
+                Text("当前记录为${statusLabel(current.status)}，不能撤销", Modifier.testTag("withdraw.cancel.conflict"), style = lb(FontSize.small), color = p.down)
+            }
+            when {
+                items == null -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(Modifier.padding(40.dp), color = p.brand, strokeWidth = 2.dp) }
+                items!!.isEmpty() -> EmptyState("暂无提现记录")
+                else -> items!!.forEach { row ->
+                    val w=vm.withdrawCancelConflict?.takeIf{it.id==row.id}?:vm.withdrawCancelReceipt?.readback?.takeIf{it.id==row.id}?:row
+                    val isCurrent=vm.withdrawCancelBusy&&cancelTarget?.id==w.id
                     AssetsCard(Modifier.padding(bottom = 10.dp)) {
                         Text("${w.amount} ${w.asset} · ${AssetsLogic.displayNetwork(w.network)}", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
-                        Spacer(Modifier.height(4.dp))
-                        AssetKv("状态", w.status.value)
-                        AssetKv("时间", w.createdAt)
+                        Spacer(Modifier.height(8.dp));AssetKv("状态", statusLabel(w.status),Modifier.testTag(if(w.status==ApiWithdrawal.Status.PENDING)"withdraw.cancel.pending.status" else "withdraw.cancel.readback.status"));AssetKv("时间", AssetsLogic.displayWithdrawTime(w.createdAt))
+                        if (AssetsLogic.canCancelWithdrawal(w.status)) {
+                            Spacer(Modifier.height(8.dp))
+                            LbButton("撤销申请", kind = ButtonKind.OUTLINE, height = 36.dp, loading = isCurrent, enabled = !vm.withdrawCancelBusy && vm.withdrawCancelReceipt==null, testTag="withdraw.cancel.open") { cancelTarget = w }
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    val target=cancelTarget
+    if(target!=null) {
+        val busy=vm.withdrawCancelBusy
+        LbSheet("确认撤销提现", onClose = {if(!busy)cancelTarget=null}, showClose = !busy, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("仅待审核（pending）可撤销；状态改变/冲突不代表已撤销。以最终记录和原扣款账户余额读回为准。", style = lb(FontSize.small), color = p.textSecondary)
+                AssetKv("数量", "${target.amount} ${target.asset}");AssetKv("网络", AssetsLogic.displayNetwork(target.network));AssetKv("地址", target.address)
+                vm.withdrawCancelError?.let { Text(it,Modifier.testTag("withdraw.cancel.error"),style=lb(FontSize.small),color=p.down) }
+                LbButton(if(busy)"等待服务端结果…" else "确认撤销", kind = ButtonKind.SELL, loading = busy, enabled = !busy && AssetsLogic.canCancelWithdrawal(target.status), testTag="withdraw.cancel.confirm") { vm.submitWithdrawCancelConfirmed(target) }
+                LbButton("取消", kind = ButtonKind.OUTLINE, enabled = !busy, testTag="withdraw.cancel.dismiss") {cancelTarget=null}
             }
         }
     }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import click.cowa.linbit.R
@@ -53,6 +55,8 @@ fun LbTextField(
     height: Dp = 44.dp,
     leading: (@Composable () -> Unit)? = null,
     onFocusChange: (Boolean) -> Unit = {},
+    testTag: String? = null,
+    enabled: Boolean = true,
 ) {
     val p = LB.p
     var focused by remember { mutableStateOf(false) }
@@ -61,7 +65,7 @@ fun LbTextField(
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(height)
+                .heightIn(min = height)
                 .clip(RoundedCornerShape(Radius.md))
                 .background(if (error != null) p.bg else p.fill)
                 .border(
@@ -77,7 +81,8 @@ fun LbTextField(
                 if (value.isEmpty()) Text(placeholder, style = lbNum(FontSize.body), color = p.textTertiary, maxLines = 1)
                 BasicTextField(
                     value = value,
-                    onValueChange = onValueChange,
+                    onValueChange = if (enabled) onValueChange else { _ -> },
+                    enabled = enabled,
                     singleLine = true,
                     textStyle = lbNum(FontSize.body).copy(color = p.textPrimary),
                     cursorBrush = SolidColor(p.textPrimary),
@@ -86,7 +91,7 @@ fun LbTextField(
                         keyboardType = if (secure) KeyboardType.Password else keyboardType,
                         autoCorrectEnabled = false,
                     ),
-                    modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused; onFocusChange(it.isFocused) },
+                    modifier = Modifier.then(if (testTag == null) Modifier else Modifier.testTag(testTag)).fillMaxWidth().onFocusChanged { focused = it.isFocused; onFocusChange(it.isFocused) },
                 )
             }
             if (value.isNotEmpty() && focused) {

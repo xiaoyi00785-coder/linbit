@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -53,7 +54,7 @@ import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
 import click.cowa.linbit.ui.theme.lbNum
 
-private val Tabs = listOf("总览", "资金", "合约", "现货", "理财", "策略", "TradFi")
+private val Tabs = listOf("总览", "资金", "合约", "现货", "理财", "策略", "模拟", "TradFi")
 
 @Composable
 fun AssetsScreen(
@@ -63,6 +64,8 @@ fun AssetsScreen(
     onOpenFutures: () -> Unit = {},
     onOpenSpot: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
+    /** Production earn/strategy/TradFi hosts; no placeholder success or duplicate balances. */
+    onOpenAssetFeature: (String) -> Unit = {},
     vm: AssetsViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
@@ -76,11 +79,13 @@ fun AssetsScreen(
     LaunchedEffect(sessionVersion) { vm.load() }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            PrimaryTabs(Tabs, s.tab, onSelect = { i ->
-                if (i >= 4) vm.toast.show("${Tabs[i]}即将开放") else vm.setTab(i)
-            }, Modifier.padding(horizontal = Spacing.pageH))
-        }
+        PrimaryTabs(Tabs, s.tab, onSelect = { i ->
+            if (i >= 4) {
+                // The old guest guard below suppressed every tab action. These
+                // destinations have real production login handling.
+                if (loggedIn) onOpenAssetFeature(listOf("earn", "strategy", "paper", "tradfi")[i - 4]) else onLogin()
+            } else vm.setTab(i)
+        }, Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH), scrollable = true)
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))
 
         if (!loggedIn) {
@@ -110,7 +115,7 @@ fun AssetsScreen(
         val total = vm.totalUsdt()
         val emptyOverview = s.tab == 0 && total.signum() == 0
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
                 LbIcon(R.drawable.ic_avatar, 22.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onOpenProfile))
             }

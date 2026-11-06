@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -172,9 +174,9 @@ fun DepositScreen(asset: String, vm: AssetsViewModel, onBack: () -> Unit, onChan
         loadingNets = false
     }
 
-    Column(Modifier.fillMaxSize().background(p.bg)) {
+    Column(Modifier.fillMaxSize().background(p.bg).navigationBarsPadding().imePadding()) {
         AssetsNavBar("充值", onBack = onBack)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(top = 8.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(top = 8.dp).padding(bottom = 16.dp)) {
             Row(
                 Modifier.fillMaxWidth().height(44.dp).background(p.fill, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onChangeAsset).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 import click.cowa.linbit.R
 import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.ui.theme.FontSize
@@ -117,6 +118,7 @@ fun LbButton(
     loading: Boolean = false,
     radius: Dp = Radius.md,
     subtitle: String? = null,
+    testTag: String? = null,
     onClick: () -> Unit,
 ) {
     val p = LB.p
@@ -133,7 +135,7 @@ fun LbButton(
         ButtonKind.BUY, ButtonKind.SELL -> Color.White
     }
     Box(
-        modifier
+        modifier.then(if (testTag == null) Modifier else Modifier.testTag(testTag))
             .fillMaxWidth()
             .height(height)
             .clip(RoundedCornerShape(radius))

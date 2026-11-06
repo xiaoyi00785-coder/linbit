@@ -11,17 +11,18 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import click.cowa.linbit.data.assets.AssetsNav
 import click.cowa.linbit.data.assets.AssetsRoute
+import click.cowa.linbit.data.assets.WithdrawAddressPrefill
 import click.cowa.linbit.ui.theme.LB
 
 /** 资产子页全屏覆盖层（充值 / 提现 / 划转 / 地址簿）。 */
 @Composable
-fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel()) {
+fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val route by assetsNav.route.collectAsStateWithLifecycle()
     val r = route ?: return
     val p = LB.p
     Box(Modifier.fillMaxSize().background(p.bg).statusBarsPadding()) {
         when (r) {
-            is AssetsRoute.Transfer -> TransferScreen(vm, onBack = assetsNav::clear)
+            is AssetsRoute.Transfer -> TransferScreen(vm, onBack = assetsNav::clear, onDialogWindow = onDialogWindow)
             is AssetsRoute.CoinPicker -> CoinPickerScreen(
                 mode = r.mode,
                 vm = vm,
@@ -45,19 +46,37 @@ fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel()) {
                 assetsNav = assetsNav,
                 onBack = assetsNav::clear,
                 onChangeAsset = { assetsNav.open(AssetsRoute.CoinPicker(AssetsRoute.CoinPicker.Mode.Withdraw)) },
+                onDialogWindow = onDialogWindow,
             )
             is AssetsRoute.AddressBook -> AddressBookScreen(
                 vm = vm,
-                onBack = assetsNav::clear,
+                onBack = {
+                    if (assetsNav.addressBookForWithdraw) {
+                        assetsNav.addressBookForWithdraw = false
+                        assetsNav.openWithdraw()
+                    } else assetsNav.clear()
+                },
                 onAdd = { assetsNav.openAddAddress(it) },
+                onDialogWindow = onDialogWindow,
+                onPickForWithdraw = if (assetsNav.addressBookForWithdraw) { { a ->
+                    assetsNav.pickWithdrawAddress(
+                        WithdrawAddressPrefill(
+                            asset = a.asset,
+                            network = a.network,
+                            address = a.address,
+                            memo = a.memo,
+                        ),
+                    )
+                } } else null,
             )
             is AssetsRoute.AddAddress -> AddAddressScreen(
                 assetInit = r.asset,
                 vm = vm,
                 onBack = { assetsNav.openAddressBook() },
                 onDone = { assetsNav.openAddressBook() },
+                onDialogWindow = onDialogWindow,
             )
-            is AssetsRoute.WithdrawRecords -> WithdrawRecordsScreen(vm, onBack = assetsNav::clear)
+            is AssetsRoute.WithdrawRecords -> WithdrawRecordsScreen(vm, onBack = assetsNav::clear, onDialogWindow = onDialogWindow)
         }
     }
 }

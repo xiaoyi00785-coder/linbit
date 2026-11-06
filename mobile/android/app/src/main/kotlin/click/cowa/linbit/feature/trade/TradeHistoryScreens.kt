@@ -1,6 +1,7 @@
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +39,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import click.cowa.linbit.R
+import click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest
 import click.cowa.linbit.core.generated.ApiFuturesAlgoOrder
 import click.cowa.linbit.core.generated.ApiFuturesBills200ResponseBillsInner
 import click.cowa.linbit.core.generated.ApiFuturesMyTrades200ResponseTradesInner
@@ -45,11 +48,18 @@ import click.cowa.linbit.core.generated.ApiFuturesPositionHistory
 import click.cowa.linbit.core.generated.ApiOrder
 import click.cowa.linbit.core.generated.ApiTrade
 import click.cowa.linbit.core.network.LinbitApi
+import click.cowa.linbit.data.MarketStore
 import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.network.apiCall
 import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.ui.components.ChipButton
+import click.cowa.linbit.ui.theme.Radius
+import click.cowa.linbit.ui.components.NumberBox
+import click.cowa.linbit.ui.components.LbButton
+import click.cowa.linbit.ui.components.KvRow
+import click.cowa.linbit.ui.components.ButtonKind
+import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.ui.components.EmptyState
 import click.cowa.linbit.ui.components.LbIcon
 import click.cowa.linbit.ui.components.PrimaryTabs
@@ -68,10 +78,11 @@ import javax.inject.Inject
 class TradeHistoryViewModel @Inject constructor(
     private val api: LinbitApi,
     private val tokens: TokenStore,
+    private val market: MarketStore,
 ) : ViewModel() {
     val loggedIn get() = tokens.loggedIn
     val sessionVersion get() = tokens.sessionVersion
-
+    val marketState get() = market.state
     var spotOpen by mutableStateOf<List<ApiOrder>>(emptyList()); private set
     var spotHistory by mutableStateOf<List<ApiOrder>>(emptyList()); private set
     var spotTrades by mutableStateOf<List<ApiTrade>>(emptyList()); private set
@@ -87,123 +98,125 @@ class TradeHistoryViewModel @Inject constructor(
     var loadingMore by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     var actionError by mutableStateOf<String?>(null); private set
+    var actionBusy by mutableStateOf(false); private set
+    private var requestGeneration = 0L
+    private var requestJob: kotlinx.coroutines.Job? = null
+    private var moreJob: kotlinx.coroutines.Job? = null
+    private var actionJob: kotlinx.coroutines.Job? = null
+    private var actionGeneration = 0L
+    private data class AlgoQuery(val tab: Int, val symbol: String?, val time: Int, val billKind: String?, val plan: Boolean, val history: Boolean, val epoch: Long)
 
+    init { viewModelScope.launch { tokens.sessionVersion.collect { version ->
+        requestGeneration++; requestJob?.cancel(); moreJob?.cancel(); actionGeneration++; actionJob?.cancel()
+        clear()
+    } } }
     fun clear() {
         spotOpen = emptyList(); spotHistory = emptyList(); spotTrades = emptyList()
         futOrders = emptyList(); futHistory = emptyList(); futPositions = emptyList()
         futTrades = emptyList(); futBills = emptyList(); futAlgos = emptyList()
         posCursor = null; algoCursor = null
-        loading = false; loadingMore = false; error = null; actionError = null
+        loading = false; loadingMore = false; error = null; actionError = null; actionBusy = false
     }
-
-    fun loadSpot(tab: Int, symbol: String?) {
-        if (!tokens.loggedIn.value) return
-        viewModelScope.launch {
+    private fun valid(generation: Long, epoch: Long) = generation == requestGeneration && epoch == tokens.sessionVersion.value
+    /** Load only the selected contract. No global breadth-first request may race the user-selected filter. */
+    private fun queryFutures(selected: AlgoQuery): kotlinx.coroutines.Job {
+        moreJob?.cancel(); loadingMore = false
+        val generation = ++requestGeneration; val epoch = selected.epoch
+        clearCursors()
+        requestJob?.cancel()
+        val job = viewModelScope.launch {
             loading = true; error = null
             try {
-                when (tab) {
-                    0 -> spotOpen = apiCall { api.spotOpenOrders(symbol) }.items
-                    1 -> spotHistory = apiCall { api.spotOrderHistory(symbol = symbol) }.items
-                    2 -> spotTrades = apiCall { api.spotTrades(symbol = symbol) }.items
+                when (selected.tab) {
+                    0 -> apiCall { api.futuresOrders(symbol = selected.symbol, status = "open") }.orders.orEmpty().also { if (valid(generation, epoch)) futOrders = it }
+                    1 -> apiCall { api.futuresOrders(symbol = selected.symbol) }.orders.orEmpty().filter { !TradeHistoryLogic.isOpenStatus(it.status) }.also { if (valid(generation, epoch)) futHistory = it }
+                    2 -> apiCall { api.futuresPositionHistory(symbol = selected.symbol, startTime = TradeHistoryLogic.positionStartTimeMs(selected.time), limit = 50) }.also { if (valid(generation, epoch)) { futPositions = it.positions.orEmpty(); posCursor = it.nextCursor } }
+                    3 -> apiCall { api.futuresMyTrades(symbol = selected.symbol) }.trades.orEmpty().also { if (valid(generation, epoch)) futTrades = it }
+                    4 -> apiCall { api.futuresBills(kind = selected.billKind) }.bills.orEmpty().also { if (valid(generation, epoch)) futBills = it }
+                    5 -> queryAlgo(selected).also { if (valid(generation, epoch)) { futAlgos = it.orders.orEmpty(); algoCursor = it.nextCursor } }
                 }
-            } catch (e: Throwable) { error = e.lbMessage() }
-            finally { loading = false }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Throwable) { if (valid(generation, epoch)) error = e.lbMessage() }
+            finally { if (valid(generation, epoch)) loading = false }
         }
+        requestJob = job
+        return job
     }
+    private fun clearCursors() { posCursor = null; algoCursor = null }
+    private suspend fun queryAlgo(query: AlgoQuery) = if (query.plan) apiCall { api.futuresPlanOrders(symbol = query.symbol, status = TradeHistoryLogic.algoStatusParam(query.history)) } else apiCall { api.futuresTpslOrders(symbol = query.symbol, status = TradeHistoryLogic.algoStatusParam(query.history)) }
 
-    /**
-     * @param tab 0 当前委托 1 历史委托 2 历史仓位 3 成交 4 流水 5 条件委托
-     * @param timeFilter 仓位时间档
-     * @param billKind 流水 kind
-     * @param algoPlan true=计划委托 false=止盈止损
-     * @param algoHistory status=history
-     */
-    fun loadFutures(
-        tab: Int,
-        symbol: String?,
-        timeFilter: Int = 1,
-        billKind: String? = null,
-        algoPlan: Boolean = true,
-        algoHistory: Boolean = false,
-    ) {
+    fun loadFutures(tab: Int, symbol: String?, timeFilter: Int = 1, billKind: String? = null, algoPlan: Boolean = true, algoHistory: Boolean = false) {
         if (!tokens.loggedIn.value) return
-        viewModelScope.launch {
-            loading = true; error = null; posCursor = null; algoCursor = null
-            try {
-                when (tab) {
-                    0 -> futOrders = apiCall { api.futuresOrders(symbol = symbol, status = "open") }.orders.orEmpty()
-                    1 -> futHistory = apiCall { api.futuresOrders(symbol = symbol) }.orders.orEmpty()
-                        .filter { !TradeHistoryLogic.isOpenStatus(it.status) }
-                    2 -> {
-                        val start = TradeHistoryLogic.positionStartTimeMs(timeFilter)
-                        val r = apiCall { api.futuresPositionHistory(symbol = symbol, startTime = start, limit = 50) }
-                        futPositions = r.positions.orEmpty(); posCursor = r.nextCursor
-                    }
-                    3 -> futTrades = apiCall { api.futuresMyTrades(symbol = symbol) }.trades.orEmpty()
-                    4 -> futBills = apiCall { api.futuresBills(kind = billKind) }.bills.orEmpty()
-                    5 -> {
-                        val status = TradeHistoryLogic.algoStatusParam(algoHistory)
-                        val r = if (algoPlan) apiCall { api.futuresPlanOrders(symbol = symbol, status = status) }
-                        else apiCall { api.futuresTpslOrders(symbol = symbol, status = status) }
-                        futAlgos = r.orders.orEmpty(); algoCursor = r.nextCursor
-                    }
-                }
-            } catch (e: Throwable) { error = e.lbMessage() }
-            finally { loading = false }
-        }
+        queryFutures(AlgoQuery(tab, symbol, timeFilter, billKind, algoPlan, algoHistory, tokens.sessionVersion.value))
     }
-
     fun loadMorePositions(symbol: String?, timeFilter: Int) {
-        val c = posCursor ?: return
-        if (loadingMore) return
-        viewModelScope.launch {
+        val cursor = posCursor ?: return; if (loadingMore || !tokens.loggedIn.value) return
+        val generation=requestGeneration;val epoch=tokens.sessionVersion.value
+        moreJob = viewModelScope.launch {
             loadingMore = true
             try {
-                val start = TradeHistoryLogic.positionStartTimeMs(timeFilter)
-                val r = apiCall { api.futuresPositionHistory(symbol = symbol, startTime = start, cursor = c, limit = 50) }
-                futPositions = futPositions + r.positions.orEmpty(); posCursor = r.nextCursor
-            } catch (e: Throwable) { actionError = e.lbMessage() }
-            finally { loadingMore = false }
+                val r = apiCall { api.futuresPositionHistory(symbol=symbol,startTime=TradeHistoryLogic.positionStartTimeMs(timeFilter),cursor=cursor,limit=50) }
+                if (valid(generation,epoch)) { futPositions += r.positions.orEmpty();posCursor=r.nextCursor }
+            } catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(valid(generation,epoch))actionError=e.lbMessage()}
+            finally{if(valid(generation,epoch))loadingMore=false}
         }
     }
-
     fun loadMoreAlgos(symbol: String?, algoPlan: Boolean, algoHistory: Boolean) {
-        val c = algoCursor ?: return
-        if (loadingMore) return
-        viewModelScope.launch {
+        val cursor=algoCursor ?: return;if(loadingMore || !tokens.loggedIn.value)return
+        val generation=requestGeneration;val epoch=tokens.sessionVersion.value
+        moreJob=viewModelScope.launch {
             loadingMore = true
             try {
-                val status = TradeHistoryLogic.algoStatusParam(algoHistory)
-                val r = if (algoPlan) apiCall { api.futuresPlanOrders(symbol = symbol, status = status, cursor = c) }
-                else apiCall { api.futuresTpslOrders(symbol = symbol, status = status, cursor = c) }
-                futAlgos = futAlgos + r.orders.orEmpty(); algoCursor = r.nextCursor
-            } catch (e: Throwable) { actionError = e.lbMessage() }
-            finally { loadingMore = false }
+                val status=TradeHistoryLogic.algoStatusParam(algoHistory)
+                val r=if(algoPlan)apiCall{api.futuresPlanOrders(symbol=symbol,status=status,cursor=cursor)}else apiCall{api.futuresTpslOrders(symbol=symbol,status=status,cursor=cursor)}
+                if(valid(generation,epoch)){futAlgos += r.orders.orEmpty();algoCursor=r.nextCursor}
+            } catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(valid(generation,epoch))actionError=e.lbMessage()}
+            finally{if(valid(generation,epoch))loadingMore=false}
         }
     }
-
-    fun cancelSpot(id: String, onDone: () -> Unit) {
-        viewModelScope.launch {
-            try { apiCall { api.cancelSpotOrder(id) }; actionError = null; onDone() }
-            catch (e: Throwable) { actionError = e.lbMessage() }
-        }
+    fun loadSpot(tab: Int, symbol: String?) {
+        if (!tokens.loggedIn.value) return
+        val generation = ++requestGeneration; val epoch = tokens.sessionVersion.value
+        moreJob?.cancel();loadingMore=false
+        requestJob?.cancel()
+        requestJob = viewModelScope.launch { loading = true; error = null; try { when (tab) {
+            0 -> apiCall { api.spotOpenOrders(symbol) }.items.also { if (valid(generation, epoch)) spotOpen = it }
+            1 -> apiCall { api.spotOrderHistory(symbol = symbol) }.items.also { if (valid(generation, epoch)) spotHistory = it }
+            2 -> apiCall { api.spotTrades(symbol = symbol) }.items.also { if (valid(generation, epoch)) spotTrades = it } } }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Throwable) { if (valid(generation, epoch)) error = e.lbMessage() }
+            finally { if (valid(generation, epoch)) loading = false } }
     }
-
-    fun cancelFutures(id: Long, onDone: () -> Unit) {
-        viewModelScope.launch {
-            try { apiCall { api.cancelFuturesOrder(id) }; actionError = null; onDone() }
-            catch (e: Throwable) { actionError = e.lbMessage() }
-        }
-    }
-
-    fun cancelAlgo(id: Long, plan: Boolean, onDone: () -> Unit) {
-        viewModelScope.launch {
+    fun cancelSpot(id: String, onDone: () -> Unit) = doCancel(onDone) { api.cancelSpotOrder(id) }
+    fun cancelFutures(id: Long, onDone: () -> Unit) = doCancel(onDone) { api.cancelFuturesOrder(id) }
+    fun cancelAlgo(id: Long, plan: Boolean, onDone: () -> Unit) = doCancel(onDone) { if (plan) apiCall { api.cancelFuturesPlan(id) } else apiCall { api.cancelFuturesTpsl(id) } }
+    private fun doCancel(onDone: () -> Unit, action: suspend () -> Unit) {
+        if (actionBusy || !tokens.loggedIn.value) return
+        val epoch = tokens.sessionVersion.value; val generation = ++actionGeneration
+        actionBusy = true; actionError = null
+        actionJob = viewModelScope.launch {
             try {
-                if (plan) apiCall { api.cancelFuturesPlan(id) } else apiCall { api.cancelFuturesTpsl(id) }
-                actionError = null; onDone()
-            } catch (e: Throwable) { actionError = e.lbMessage() }
+                action()
+                if (tokens.sessionVersion.value == epoch && actionGeneration == generation) onDone()
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Throwable) { if (tokens.sessionVersion.value == epoch && actionGeneration == generation) actionError = e.lbMessage() }
+            finally { if (tokens.sessionVersion.value == epoch && actionGeneration == generation) actionBusy = false }
         }
     }
+    fun amendAlgo(id: Long, plan: Boolean, body: ApiFuturesAlgoAmendRequest, onDone: (Boolean, String?) -> Unit) {
+        if (actionBusy || !tokens.loggedIn.value) return
+        val epoch = tokens.sessionVersion.value; val generation = ++actionGeneration
+        actionBusy = true; actionError = null
+        actionJob = viewModelScope.launch { try {
+            if (plan) apiCall { api.amendFuturesPlan(id, body) } else apiCall { api.amendFuturesTpsl(id, body) }
+            if (actionGeneration == generation && tokens.sessionVersion.value == epoch) onDone(true, null)
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Throwable) { if (actionGeneration == generation && tokens.sessionVersion.value == epoch) { actionError = e.lbMessage(); onDone(false, actionError) } }
+        finally { if (actionGeneration == generation && tokens.sessionVersion.value == epoch) actionBusy = false } }
+    }
+    override fun onCleared() { requestGeneration++; actionGeneration++; requestJob?.cancel();moreJob?.cancel(); actionJob?.cancel(); super.onCleared() }
 }
 
 @Composable
@@ -211,48 +224,67 @@ fun SpotHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: String? 
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
+    val market by vm.marketState.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
-    LaunchedEffect(tab, sessionVersion) {
-        vm.clear()
-        if (loggedIn) vm.loadSpot(tab, symbol)
+    var filterSymbol by remember { mutableStateOf(symbol) }
+    var pickPair by remember { mutableStateOf(false) }
+    fun reload() { if (loggedIn) vm.loadSpot(tab, filterSymbol) }
+    LaunchedEffect(tab, sessionVersion, filterSymbol) {
+        reload()
     }
     HistoryShell("历史记录", onClose) {
         PrimaryTabs(listOf("当前委托", "历史委托", "成交明细"), tab, { tab = it }, size = FontSize.label, scrollable = true)
-        HorizontalDivider(Modifier.padding(top = 8.dp), color = p.divider)
+        HistorySymbolChip(filterSymbol, spot = true) { pickPair = true }
+        HorizontalDivider(Modifier.padding(top = 4.dp), color = p.divider)
         vm.actionError?.let { Text(it, Modifier.padding(vertical = 6.dp), style = lb(FontSize.small), color = p.down) }
         when {
             !loggedIn -> EmptyState("登录后查看历史记录") { ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin) }
             vm.loading && listForSpot(vm, tab).isEmpty() -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            vm.error != null && listForSpot(vm, tab).isEmpty() -> EmptyState(vm.error ?: "加载失败") { ChipButton("重试", Modifier.height(32.dp)) { vm.loadSpot(tab, symbol) } }
+            vm.error != null && listForSpot(vm, tab).isEmpty() -> EmptyState(vm.error ?: "加载失败") { ChipButton("重试", Modifier.height(32.dp)) { reload() } }
             listForSpot(vm, tab).isEmpty() -> EmptyState("暂无数据")
             tab == 0 -> vm.spotOpen.forEach { o ->
                 HistOrderRow(o.symbol, o.side.value, o.price, o.quantity, o.filledQuantity, o.status.value) {
-                    vm.cancelSpot(o.orderId) { vm.loadSpot(0, symbol) }
+                    vm.cancelSpot(o.orderId) { reload() }
                 }
             }
             tab == 1 -> vm.spotHistory.forEach { o -> HistOrderRow(o.symbol, o.side.value, o.price, o.quantity, o.filledQuantity, o.status.value, showCancel = false) }
             else -> vm.spotTrades.forEach { t -> HistTradeRow(t.symbol, t.side.value, t.price, t.quantity, t.createdAt) }
         }
     }
+    if (pickPair) {
+        PairPickerSheet(
+            rows = market.spot,
+            current = filterSymbol.orEmpty(),
+            spot = true,
+            onPick = { filterSymbol = it; pickPair = false },
+            onClose = { pickPair = false },
+            allowAll = true,
+            onPickAll = { filterSymbol = null },
+        )
+    }
 }
 
 @Composable
-fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: String? = null, vm: TradeHistoryViewModel = hiltViewModel()) {
+fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: String? = null, vm: TradeHistoryViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var typeFilter by remember { mutableIntStateOf(0) }
     var timeFilter by remember { mutableIntStateOf(1) }
+    var cancelAlgoTarget by remember { mutableStateOf<Pair<ApiFuturesAlgoOrder, Boolean>?>(null) }
     var billKind by remember { mutableStateOf<String?>(null) }
     var algoPlan by remember { mutableStateOf(true) }
     var algoHistory by remember { mutableStateOf(false) }
+    var amendAlgoTarget by remember { mutableStateOf<ApiFuturesAlgoOrder?>(null) }
+    var filterSymbol by remember { mutableStateOf(symbol) }
+    var pickPair by remember { mutableStateOf(false) }
+    val market by vm.marketState.collectAsStateWithLifecycle()
     val tabs = listOf("当前委托", "历史委托", "历史仓位", "成交明细", "资金流水", "条件委托")
     fun reload() {
-        if (loggedIn) vm.loadFutures(tab, symbol, timeFilter, billKind, algoPlan, algoHistory)
+        if (loggedIn) vm.loadFutures(tab, filterSymbol, timeFilter, billKind, algoPlan, algoHistory)
     }
-    LaunchedEffect(tab, sessionVersion, timeFilter, billKind, algoPlan, algoHistory) {
-        vm.clear()
+    LaunchedEffect(tab, sessionVersion, timeFilter, billKind, algoPlan, algoHistory, filterSymbol) {
         reload()
     }
     HistoryShell("历史记录", onClose) {
@@ -267,6 +299,7 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
                 }
             }
         }
+        HistorySymbolChip(filterSymbol, spot = false) { pickPair = true }
         HistoryFilterBar(
             tab = tab,
             typeFilter = typeFilter,
@@ -300,7 +333,7 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
                 vm.futPositions.forEach { PosHistRow(it) }
                 if (vm.posCursor != null) {
                     ChipButton(if (vm.loadingMore) "加载中…" else "加载更多", Modifier.fillMaxWidth().height(40.dp).padding(vertical = 8.dp)) {
-                        if (!vm.loadingMore) vm.loadMorePositions(symbol, timeFilter)
+                        if (!vm.loadingMore) vm.loadMorePositions(filterSymbol, timeFilter)
                     }
                 }
             }
@@ -308,17 +341,65 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
             tab == 4 -> vm.futBills.forEach { BillRow(it) }
             else -> {
                 vm.futAlgos.forEach { a ->
-                    AlgoHistRow(a, canCancel = !algoHistory) {
-                        a.algoId?.let { id -> vm.cancelAlgo(id, algoPlan) { reload() } }
+                    AlgoHistRow(
+                        a,
+                        canCancel = !algoHistory && !vm.actionBusy,
+                        canAmend = !algoHistory && !vm.actionBusy,
+                        onAmend = { amendAlgoTarget = a },
+                    ) {
+                        cancelAlgoTarget = a to algoPlan
                     }
                 }
                 if (vm.algoCursor != null) {
                     ChipButton(if (vm.loadingMore) "加载中…" else "加载更多", Modifier.fillMaxWidth().height(40.dp).padding(vertical = 8.dp)) {
-                        if (!vm.loadingMore) vm.loadMoreAlgos(symbol, algoPlan, algoHistory)
+                        if (!vm.loadingMore) vm.loadMoreAlgos(filterSymbol, algoPlan, algoHistory)
                     }
                 }
             }
         }
+    }
+    cancelAlgoTarget?.let { (order, plan) ->
+        LbSheet(if (plan) "撤销条件委托？" else "撤销止盈止损？", onClose = { if (!vm.actionBusy) cancelAlgoTarget = null }, showClose = !vm.actionBusy, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("${order.symbol ?: "--"} · ${order.algoType?.value ?: ""}", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                Text("确认撤销这条进行中委托？撤销后将不再自行触发；其它进行中订单不受影响。请以撤销后的列表结果为准。", style = lb(FontSize.label), color = p.textSecondary)
+                vm.actionError?.let { Text(it, style = lb(FontSize.small), color = p.down) }
+                LbButton(if (vm.actionBusy) "等待服务端结果…" else "确认撤销", loading = vm.actionBusy, enabled = !vm.actionBusy, testTag = "history.algo.cancel.confirm") {
+                    order.algoId?.let { id -> vm.cancelAlgo(id, plan) { cancelAlgoTarget = null; reload() } }
+                }
+                LbButton("取消", kind = ButtonKind.SECONDARY, enabled = !vm.actionBusy, testTag = "history.algo.cancel.dismiss") { cancelAlgoTarget = null }
+            }
+        }
+    }
+    amendAlgoTarget?.let { a ->
+        if (vm.actionBusy) return@let
+        AmendAlgoSheet(vm, a, plan = algoPlan, onClose = {
+            amendAlgoTarget = null
+            reload()
+        }, onDialogWindow = onDialogWindow)
+    }
+}
+
+@Composable
+private fun HistorySymbolChip(symbol: String?, spot: Boolean, onClick: () -> Unit) {
+    val p = LB.p
+    val label = when {
+        symbol.isNullOrBlank() -> "币对"
+        spot -> symbol.replace("USDT", "/USDT")
+        else -> symbol
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp).pressable(scale = 1f, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            Modifier.background(p.fill, RoundedCornerShape(4.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+            style = lb(FontSize.small, FontWeight.Medium),
+            color = p.textPrimary,
+            maxLines = 1,
+        )
+        Text(" ▾", style = lb(FontSize.small), color = p.textSecondary)
     }
 }
 
@@ -487,13 +568,22 @@ private fun BillRow(b: ApiFuturesBills200ResponseBillsInner) {
 }
 
 @Composable
-private fun AlgoHistRow(a: ApiFuturesAlgoOrder, canCancel: Boolean, onCancel: () -> Unit) {
+private fun AlgoHistRow(
+    a: ApiFuturesAlgoOrder,
+    canCancel: Boolean,
+    canAmend: Boolean = false,
+    onAmend: (() -> Unit)? = null,
+    onCancel: () -> Unit,
+) {
     val p = LB.p
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(a.symbol ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
             Text(" ${a.algoType?.value ?: ""}", style = lb(FontSize.small), color = p.textSecondary)
             Box(Modifier.weight(1f))
+            if (canAmend && onAmend != null) {
+                ChipButton("改单", Modifier.height(24.dp).padding(end = 6.dp), onClick = onAmend)
+            }
             if (canCancel) ChipButton("撤销", Modifier.height(24.dp), onClick = onCancel)
             else Text(a.status?.value ?: "", style = lb(FontSize.small), color = p.textSecondary)
         }
@@ -507,4 +597,77 @@ private fun AlgoHistRow(a: ApiFuturesAlgoOrder, canCancel: Boolean, onCancel: ()
         }
     }
     HorizontalDivider(color = p.divider)
+}
+
+/** 条件委托改单 sheet（真实 PUT plan/tpsl amend 契约）。 */
+@Composable
+internal fun AmendAlgoSheet(vm: TradeHistoryViewModel, order: ApiFuturesAlgoOrder, plan: Boolean, onClose: () -> Unit, onDialogWindow: (android.view.Window?) -> Unit = {}) {
+    val p = LB.p
+    val oldMarket = order.orderType == ApiFuturesAlgoOrder.OrderType.MARKET || order.price.isNullOrBlank()
+    var trigger by remember { mutableStateOf(order.triggerPrice ?: "") }
+    var price by remember { mutableStateOf(order.price ?: "") }
+    var qty by remember { mutableStateOf(order.qty ?: "") }
+    var market by remember { mutableStateOf(oldMarket) }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun fmt(v: java.math.BigDecimal): String = v.stripTrailingZeros().toPlainString()
+    LbSheet(if (plan) "改条件单" else "改止盈止损", { if (!saving) onClose() }, showClose = !saving, onWindowReady = onDialogWindow) {
+        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("${order.symbol ?: "--"} · ${order.side ?: "--"}", style = lb(FontSize.small), color = p.textSecondary)
+            Row {
+                KVCell("原触发价", apiAmount(order.triggerPrice), Modifier.weight(1f))
+                KVCell("原委托价", apiAmount(order.price, "市价"), Modifier.weight(1f), TextAlign.Center)
+                KVCell("原数量", apiAmount(order.qty, "整仓"), Modifier.weight(1f), TextAlign.End)
+            }
+            NumberBox("新触发价", "USDT", trigger, { trigger = it; error = null })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("触发后委托", style = lb(FontSize.small), color = p.textSecondary)
+                FilterChip("限价", !market) { market = false }
+                FilterChip("市价", market) { market = true; price = "" }
+            }
+            if (!market) NumberBox("新委托价", "USDT", price, { price = it; error = null })
+            NumberBox("新数量", order.symbol?.removeSuffix("USDT") ?: "币", qty, { qty = it; error = null })
+            error?.let {
+                Text(
+                    it,
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(p.fill).padding(10.dp),
+                    style = lb(FontSize.small),
+                    color = p.down,
+                )
+            }
+            LbButton("确认修改", kind = ButtonKind.PRIMARY, loading = saving) {
+                val prepared = AmendAlgoLogic.prepare(
+                    newTrigger = trigger,
+                    newPrice = price,
+                    newQty = qty,
+                    market = market,
+                    oldTrigger = order.triggerPrice,
+                    oldPrice = order.price,
+                    oldQty = order.qty,
+                    oldMarket = oldMarket,
+                    formatPrice = ::fmt,
+                    formatQty = ::fmt,
+                )
+                val err = prepared.error
+                if (err != null) error = err else {
+                    val id = order.algoId
+                    if (id == null) error = "无效条件单" else {
+                        saving = true
+                        vm.amendAlgo(
+                            id, plan,
+                            ApiFuturesAlgoAmendRequest(
+                                triggerPrice = prepared.triggerPrice,
+                                price = prepared.price,
+                                qty = prepared.qty,
+                                orderType = prepared.orderType,
+                            ),
+                        ) { ok, msg ->
+                            saving = false
+                            if (ok) onClose() else error = msg
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

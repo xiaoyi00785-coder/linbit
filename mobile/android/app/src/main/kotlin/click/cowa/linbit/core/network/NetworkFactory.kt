@@ -40,4 +40,8 @@ object NetworkFactory {
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
         .create(LinbitApi::class.java)
+
+    fun paperApi(client: OkHttpClient, baseUrl: String): click.cowa.linbit.data.paper.PaperTradingApi = Retrofit.Builder()
+        .baseUrl(baseUrl).client(client).addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build().create(click.cowa.linbit.data.paper.PaperTradingApi::class.java)
 }

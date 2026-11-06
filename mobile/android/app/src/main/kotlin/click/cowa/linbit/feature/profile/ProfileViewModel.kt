@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -44,6 +45,13 @@ class ProfileViewModel @Inject constructor(
 
     init { restoreInterruptedSwitch() }
 
+    /** 离屏证据：本地示例账号资料，非真实个人/生产会话。 */
+    internal var holdEvidence: Boolean = false
+    internal fun seedEvidenceProfile(account: ApiAccount, kyc: ApiKycStatus? = null, security: ApiSecurityOverview? = null, saved: List<SavedAccount> = emptyList()) {
+        holdEvidence = true
+        _s.value = ProfileUiState(loading = false, error = null, account = account, kyc = kyc, security = security, saved = saved.ifEmpty { listOf(SavedAccount(account.uid, ProfileLogic.displayName(account), ProfileLogic.contact(account))) })
+    }
+
     fun addAccount(onDone: () -> Unit) {
         val uid = _s.value.account?.uid ?: return
         accounts.beginAddAccount(uid)
@@ -52,6 +60,7 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun load(silent: Boolean = false) {
+        if (holdEvidence) return
         viewModelScope.launch {
             if (!silent) _s.value = _s.value.copy(loading = true, error = null)
             try {
@@ -110,11 +119,130 @@ class ProfileViewModel @Inject constructor(
 class SecurityViewModel @Inject constructor(
     private val api: LinbitApi,
     val toast: ToastCenter,
+    private val tokens: TokenStore,
+    private val passkeys: PasskeyRegistrationService,
 ) : ViewModel() {
     private val _s = MutableStateFlow(SecurityUiState())
     val state: StateFlow<SecurityUiState> = _s.asStateFlow()
+    internal var holdEvidence: Boolean = false
+    /** 离屏证据：2FA 设置页使用不可用占位，不暴露可扫密钥。 */
+    internal var evidenceTotpUiPlaceholder: Boolean = false
+
+    /** 离屏证据：安全概览示例；不写入真实 2FA 密钥。 */
+    internal fun seedEvidenceSecurity(overview: ApiSecurityOverview) {
+        holdEvidence = true
+        _s.value = SecurityUiState(loading = false, security = overview)
+    }
+
+    /** 离屏证据：2FA 设置 UI（说明/表单/校验错误）；密钥与 QR 为明确不可用占位，不发起绑定。 */
+    internal fun seedEvidenceTotpSetupUi(error: String? = null, code: String = "") {
+        holdEvidence = true
+        evidenceTotpUiPlaceholder = true
+        _s.value = SecurityUiState(
+            loading = false,
+            bindingLoading = false,
+            binding = ApiTotpBinding(
+                secret = "PLACEHOLDER-NOT-A-TOTP-SECRET",
+                otpauthUri = "linbit-test://totp-unavailable",
+            ),
+            code = code,
+            error = error,
+        )
+    }
+
+    fun showDeletePasskey(item: ApiPasskey?) {
+        item?.id?.takeIf { it.isNotBlank() } ?: return
+        _s.value = _s.value.copy(passkeyDeleteTarget = if (deleteInFlight) _s.value.passkeyDeleteTarget else item, passkeysError = null)
+    }
+    fun cancelDeletePasskey() { if (!deleteInFlight) _s.value = _s.value.copy(passkeyDeleteTarget = null) }
+    fun confirmDeletePasskey() {
+        val item = _s.value.passkeyDeleteTarget ?: return
+        val id = item.id ?: return
+        if (deleteInFlight || passkeyInFlight || !tokens.loggedIn.value || passkeyEpoch != tokens.sessionVersion.value) return
+        val epoch = tokens.sessionVersion.value
+        val generation = ++passkeyGeneration
+        deleteInFlight = true
+        _s.value = _s.value.copy(passkeyDeleteBusy = true, passkeysError = null)
+        passkeyJob = viewModelScope.launch {
+            try {
+                val response = api.deletePasskey(id)
+                if (response.code() != 204) throw retrofit2.HttpException(response)
+                if (current(generation, epoch)) {
+                    val list = apiCall { api.listPasskeys() }
+                    if (current(generation, epoch)) {
+                        _s.value = _s.value.copy(passkeys = list.items.orEmpty(), passkeysEnabled = list.enabled == true, passkeyDeleteTarget = null)
+                        toast.show("通行密钥已删除")
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (current(generation, epoch)) _s.value = _s.value.copy(passkeysError = e.lbMessage()) }
+            finally { if (current(generation, epoch)) { deleteInFlight = false; _s.value = _s.value.copy(passkeyDeleteBusy = false) } }
+        }
+    }
+    private var deleteInFlight = false
+
+    fun loadPasskeys() {
+        viewModelScope.launch {
+            _s.value = _s.value.copy(passkeysLoading = true, passkeysError = null)
+            try {
+                val response = apiCall { api.listPasskeys() }
+                if (passkeyEpoch == tokens.sessionVersion.value) {
+                    _s.value = _s.value.copy(passkeysLoading = false, passkeysEnabled = response.enabled == true, passkeys = response.items.orEmpty())
+                }
+            } catch (e: Exception) {
+                if (passkeyEpoch == tokens.sessionVersion.value) _s.value = _s.value.copy(passkeysLoading = false, passkeysError = e.lbMessage())
+            }
+        }
+    }
+    fun registerPasskey(activity: android.app.Activity, name: String) {
+        val code = _s.value.passkeyCode
+        if (passkeyInFlight || !tokens.loggedIn.value || activity.isFinishing || activity.isDestroyed) return
+        if (code.length !in 6..8 || code.any { !it.isDigit() }) {
+            _s.value = _s.value.copy(passkeysError = if (_s.value.security?.twoFactor?.enabled == true) "请输入身份验证器 6 位动态码" else "请输入安全验证码"); return
+        }
+        val epoch = tokens.sessionVersion.value
+        val generation = ++passkeyGeneration
+        passkeyInFlight = true
+        _s.value = _s.value.copy(passkeyBusy = true, passkeysError = null)
+        passkeyJob = viewModelScope.launch {
+            try {
+                passkeys.register(activity, code, _s.value.security?.twoFactor?.enabled == true, name.trim().ifEmpty { "Passkey" })
+                if (current(generation, epoch)) {
+                    val response = apiCall { api.listPasskeys() }
+                    if (current(generation, epoch)) {
+                        _s.value = _s.value.copy(passkeys = response.items.orEmpty(), passkeysEnabled = response.enabled == true, passkeyCode = "")
+                        toast.show("通行密钥已绑定")
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (current(generation, epoch)) _s.value = _s.value.copy(passkeysError = e.lbMessage()) }
+            finally { if (current(generation, epoch)) { passkeyInFlight = false; _s.value = _s.value.copy(passkeyBusy = false) } }
+        }
+    }
+    private var passkeyInFlight = false
+    private var passkeyGeneration = 0L
+    private var passkeyEpoch = tokens.sessionVersion.value
+    private var passkeyJob: Job? = null
+    private fun current(generation: Long, epoch: Long) = generation == passkeyGeneration && epoch == passkeyEpoch && epoch == tokens.sessionVersion.value && tokens.loggedIn.value
+    fun passkeyCode(value: String) { if (!passkeyInFlight) _s.value = _s.value.copy(passkeyCode = value.filter(Char::isDigit).take(8), passkeysError = null) }
+    fun cancelPasskeyRegistration() {
+        if (!passkeyInFlight) return
+        passkeyGeneration++; passkeyJob?.cancel(); passkeyInFlight = false
+        _s.value = _s.value.copy(passkeyBusy = false, passkeysError = "已取消通行密钥注册，可重新验证后重试")
+    }
+    override fun onCleared() { passkeyGeneration++; passkeyJob?.cancel(); super.onCleared() }
+    init {
+        viewModelScope.launch { tokens.sessionVersion.collect { epoch ->
+            if (passkeyEpoch != epoch) {
+                passkeyEpoch = epoch; passkeyGeneration++
+                passkeyJob?.cancel(); passkeyInFlight = false; deleteInFlight = false
+                _s.value = _s.value.copy(passkeys = emptyList(), passkeysEnabled = false, passkeyCode = "", passkeyBusy = false, passkeysError = null, passkeyDeleteTarget = null, passkeyDeleteBusy = false)
+            }
+        } }
+    }
 
     fun load() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(loading = true, error = null)
             try { _s.value = _s.value.copy(loading = false, security = apiCall { api.securityOverview() }) }
@@ -123,6 +251,7 @@ class SecurityViewModel @Inject constructor(
     }
 
     fun beginBinding() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(bindingLoading = true, error = null, binding = null, code = "")
             try { _s.value = _s.value.copy(bindingLoading = false, binding = apiCall { api.bindTotp() }) }
@@ -133,6 +262,7 @@ class SecurityViewModel @Inject constructor(
     fun code(raw: String) { _s.value = _s.value.copy(code = raw.filter(Char::isDigit).take(6), error = null) }
 
     fun verify(onDone: () -> Unit) {
+        if (holdEvidence) return // 证据态不提交真实绑定
         viewModelScope.launch {
             _s.value = _s.value.copy(submitting = true, error = null)
             try {
@@ -145,6 +275,7 @@ class SecurityViewModel @Inject constructor(
     }
 
     fun disable(onDone: () -> Unit) {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(submitting = true, error = null)
             try {
@@ -165,6 +296,14 @@ data class SecurityUiState(
     val security: ApiSecurityOverview? = null,
     val binding: ApiTotpBinding? = null,
     val code: String = "",
+    val passkeysLoading: Boolean = false,
+    val passkeysEnabled: Boolean = false,
+    val passkeys: List<click.cowa.linbit.core.generated.ApiPasskey> = emptyList(),
+    val passkeyCode: String = "",
+    val passkeyBusy: Boolean = false,
+    val passkeysError: String? = null,
+    val passkeyDeleteTarget: ApiPasskey? = null,
+    val passkeyDeleteBusy: Boolean = false,
 )
 
 @HiltViewModel
@@ -175,8 +314,16 @@ class KycViewModel @Inject constructor(
 ) : ViewModel() {
     private val _s = MutableStateFlow(KycUiState())
     val state: StateFlow<KycUiState> = _s.asStateFlow()
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：KYC 状态示例；默认非 APPROVED，不提交真实证件。 */
+    internal fun seedEvidenceKyc(status: ApiKycStatus) {
+        holdEvidence = true
+        _s.value = KycUiState(loading = false, status = status)
+    }
 
     fun load() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(loading = true, error = null)
             try { _s.value = _s.value.copy(loading = false, status = apiCall { api.kycStatus() }) }
@@ -245,8 +392,16 @@ class SubAccountsViewModel @Inject constructor(
 ) : ViewModel() {
     private val _s = MutableStateFlow(SubAccountsUiState())
     val state: StateFlow<SubAccountsUiState> = _s.asStateFlow()
+    internal var holdEvidence: Boolean = false
+
+    /** 离屏证据：子账户列表示例（非生产会话）。 */
+    internal fun seedEvidenceSubAccounts(items: List<ApiSubAccount>) {
+        holdEvidence = true
+        _s.value = SubAccountsUiState(loading = false, items = items)
+    }
 
     fun load() {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(loading = true, error = null)
             try { _s.value = _s.value.copy(loading = false, items = apiCall { api.subAccounts() }.items.orEmpty()) }
@@ -255,6 +410,7 @@ class SubAccountsViewModel @Inject constructor(
     }
 
     fun create(username: String, nickname: String, note: String, onDone: () -> Unit) {
+        if (holdEvidence) return
         viewModelScope.launch {
             _s.value = _s.value.copy(submitting = true, error = null)
             try {

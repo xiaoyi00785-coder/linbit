@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -73,24 +76,28 @@ private object Route {
 
 /** 登录 / 注册 / 找回密码 全流程（全屏，自带返回栈）。onClose：关闭（取消或登录成功）。 */
 @Composable
-fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hiltViewModel()) {
+fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val p = LB.p
     val nav = rememberNavController()
     var resetToken by remember { mutableStateOf("") }
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    DisposableEffect(vm, activity) {
+        onDispose { vm.cancelPasskeyLogin() }
+    }
     val soon: (String) -> Unit = { vm.toast.show(it) }
     Box(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         NavHost(nav, startDestination = if (startRegister) Route.REGISTER else Route.LOGIN) {
             composable(Route.LOGIN) {
                 LoginAccountScreen(vm, onClose = onClose, onNext = { nav.navigate(Route.PASSWORD) }, onRegister = {
                     nav.navigate(Route.REGISTER) { popUpTo(Route.LOGIN) { inclusive = true } }
-                }, soon = soon)
+                }, soon = soon, onPasskey = { activity?.let { vm.loginWithPasskey(it, onClose) } })
             }
             composable(Route.PASSWORD) {
                 PasswordScreen(vm, onBack = { nav.popBackStack() }, onForgot = { nav.navigate(Route.FORGOT) },
                     onChallenge = { nav.navigate(Route.VERIFY_LOGIN) }, onDone = onClose, soon = soon)
             }
             composable(Route.VERIFY_LOGIN) {
-                VerifyScreen(vm, VerifyMode.LOGIN, onBack = { nav.popBackStack() }, onDone = onClose, onSetPassword = {}, onResetToken = {}, soon = soon)
+                VerifyScreen(vm, VerifyMode.LOGIN, onBack = { nav.popBackStack() }, onDone = onClose, onSetPassword = {}, onResetToken = {}, soon = soon, onWindowReady = onDialogWindow)
             }
             composable(Route.REGISTER) {
                 RegisterScreen(vm, onClose = onClose, onNext = { nav.navigate(Route.VERIFY_REGISTER) }, onLogin = {
@@ -125,7 +132,7 @@ private fun lightSubtitle(text: String) = AnnotatedString(text)
 // ───────────── 登录 · 账户（ref2 #3 / #9）─────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -> Unit, onRegister: () -> Unit, soon: (String) -> Unit) {
+internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -> Unit, onRegister: () -> Unit, soon: (String) -> Unit, onPasskey: () -> Unit = {}) {
     val p = LB.p
     var showCountry by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
@@ -134,10 +141,11 @@ internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: 
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("登录", lightSubtitle("立即登录，每日登录领红包 🧧"))
             LabeledAccountField(vm) { showCountry = true }
-            AuthButton("登录", Modifier.padding(top = 32.dp)) { vm.submitAccount(onNext) }
+            AuthButton("登录", Modifier.padding(top = 32.dp), testTag = "auth.login.next") { vm.submitAccount(onNext) }
             OrDivider(Modifier.padding(vertical = 32.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SocialButton(R.drawable.ic_passkey, "使用通行密钥继续") { soon("通行密钥登录即将开放") }
+                SocialButton(R.drawable.ic_passkey, if (vm.passkeyLoading) "正在等待系统通行密钥…" else "使用通行密钥继续", enabled = !vm.passkeyLoading && !vm.loading, testTag = "auth.passkey.login") { onPasskey() }
+                vm.passkeyError?.let { Text(it, color = p.down, style = click.cowa.linbit.ui.theme.lb(FontSize.small)) }
                 SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 登录即将开放") }
                 SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 登录即将开放") }
             }
@@ -160,7 +168,7 @@ internal fun PasswordScreen(vm: AuthViewModel, onBack: () -> Unit, onForgot: () 
             AuthHeader("请输入密码", AnnotatedString(vm.id.masked), LB.p.textSecondary)
             FieldLabel("密码")
             Box(Modifier.height(8.dp))
-            LbTextField(vm.password, vm::onPasswordChange, "输入您的密码", secure = true, error = vm.passwordError)
+            LbTextField(vm.password, vm::onPasswordChange, "输入您的密码", secure = true, testTag = "auth.password", error = vm.passwordError)
             if (vm.cooldown > 0) {
                 Box(Modifier.padding(top = 12.dp).fillMaxWidth().background(p.downTint, RoundedCornerShape(Radius.md)).padding(12.dp)) {
                     Text("验证码发送过于频繁，请 ${vm.cooldown} 秒后重试", style = lb(FontSize.small), color = p.down)
@@ -180,6 +188,7 @@ internal fun PasswordScreen(vm: AuthViewModel, onBack: () -> Unit, onForgot: () 
 internal fun VerifyScreen(
     vm: AuthViewModel, mode: VerifyMode, onBack: () -> Unit, onDone: () -> Unit,
     onSetPassword: () -> Unit, onResetToken: (String) -> Unit, soon: (String) -> Unit,
+    onWindowReady: (android.view.Window?) -> Unit = {},
 ) {
     val p = LB.p
     var methodIndex by remember { mutableIntStateOf(0) }
@@ -224,11 +233,11 @@ internal fun VerifyScreen(
     if (showHelp) {
         val lines = if (totp) listOf("请确认手机系统时间为自动设置", "如更换手机或丢失验证器，请联系在线客服重置", "重置 2FA 后 24 小时内禁止提现")
         else listOf("请检查垃圾邮件 / 短信拦截", "确认${if (vm.id.kind == click.cowa.linbit.core.auth.AccountId.Kind.PHONE) "手机号" else "邮箱"}填写正确：${vm.id.masked}", "验证码 10 分钟内有效，60 秒后可重新发送", "仍未收到请联系在线客服")
-        LbSheet(title = if (totp) "无法使用验证器?" else "收不到验证码?", onClose = { showHelp = false }) {
+        LbSheet(title = if (totp) "无法使用验证器?" else "收不到验证码?", onClose = { showHelp = false }, onWindowReady = onWindowReady) {
             Column(Modifier.padding(horizontal = Spacing.pageH), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 lines.forEach { Text("• $it", style = lb(FontSize.caption), color = p.textSecondary) }
             }
-            LbButton("我知道了", Modifier.padding(Spacing.pageH)) { showHelp = false }
+            LbButton("我知道了", Modifier.padding(Spacing.pageH), onClick = { showHelp = false })
         }
     }
 }
@@ -268,7 +277,7 @@ internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -
                     style = lb(FontSize.small), color = p.textPrimary,
                 )
             }
-            AuthButton("注册", Modifier.padding(top = 16.dp), loading = vm.loading) { vm.submitRegister(agree, onNext) }
+            AuthButton("注册", Modifier.padding(top = 16.dp), loading = vm.loading, testTag = "auth.register.submit") { vm.submitRegister(agree, onNext) }
             OrDivider(Modifier.padding(vertical = 32.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 注册即将开放") }
@@ -295,8 +304,8 @@ internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -
                 )
                 Text("1分钟即可完成注册", style = lb(FontSize.caption), color = p.textSecondary)
                 Row(Modifier.padding(top = 20.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LbButton("退出", Modifier.weight(1f), kind = ButtonKind.SECONDARY) { showRetain = false; onClose() }
-                    LbButton("继续", Modifier.weight(1f)) { showRetain = false }
+                    LbButton("退出", Modifier.weight(1f), kind = ButtonKind.SECONDARY, onClick = { showRetain = false; onClose() })
+                    LbButton("继续", Modifier.weight(1f), onClick = { showRetain = false })
                 }
             }
         }
@@ -322,7 +331,7 @@ internal fun SetPasswordScreen(
             )
             FieldLabel("密码")
             Box(Modifier.height(8.dp))
-            LbTextField(pwd, { pwd = it; error = null }, "8-64 位，含字母和数字", secure = true, error = PasswordRule.hint(pwd))
+            LbTextField(pwd, { pwd = it; error = null }, "8-64 位，含字母和数字", secure = true, error = PasswordRule.hint(pwd), testTag = "auth.new.password")
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 PasswordRule.rules(pwd).forEach { (name, ok) ->
                     Text((if (ok) "✓ " else "○ ") + name, style = lb(FontSize.small), color = if (ok) p.up else p.textTertiary)
@@ -332,7 +341,7 @@ internal fun SetPasswordScreen(
                 Box(Modifier.height(20.dp))
                 FieldLabel("确认密码")
                 Box(Modifier.height(8.dp))
-                LbTextField(pwd2, { pwd2 = it; error = null }, "再次输入密码", secure = true, error = error)
+                LbTextField(pwd2, { pwd2 = it; error = null }, "再次输入密码", secure = true, error = error, testTag = "auth.confirm.password")
             }
             AuthButton("确认", Modifier.padding(top = 32.dp), loading = vm.loading) {
                 if (!PasswordRule.ok(pwd)) { error = PasswordRule.hint(pwd) ?: "请输入密码"; return@AuthButton }
@@ -352,29 +361,55 @@ internal fun ForgotScreen(vm: AuthViewModel, onBack: () -> Unit, onNext: () -> U
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("重置密码", AnnotatedString("为保障资金安全，重置密码后 24 小时内禁止提现。"))
             LabeledAccountField(vm) { showCountry = true }
-            AuthButton("下一步", Modifier.padding(top = 32.dp), loading = vm.loading) { vm.submitForgot(onNext) }
+            AuthButton("下一步", Modifier.padding(top = 32.dp), loading = vm.loading, testTag = "auth.forgot.next") { vm.submitForgot(onNext) }
         }
     }
     if (showCountry) CountrySheet(vm.countryCode, onPick = { vm.countryCode = it; showCountry = false }, onClose = { showCountry = false })
 }
 
 // ───────────── 底部弹层 ─────────────
+/** 离屏证据：同窗内联渲染 sheet，便于 content 位图捕获（生产默认 false）。 */
+val LocalLbSheetInlineEvidence = staticCompositionLocalOf { false }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, content: @Composable () -> Unit) {
+fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, onWindowReady: (android.view.Window?) -> Unit = {}, content: @Composable () -> Unit) {
     val p = LB.p
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = p.bgElevated,
-        shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
-    ) {
-        Column(Modifier.navigationBarsPadding()) {
+    val sheetBody: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().heightIn(max = 680.dp).navigationBarsPadding().imePadding().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
             if (title != null) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
                 if (showClose) LbIcon(R.drawable.ic_close, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onClose))
             }
             content()
+        }
+    }
+    if (LocalLbSheetInlineEvidence.current) {
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(p.bgElevated, RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet)),
+            ) { sheetBody() }
+        }
+    } else {
+        ModalBottomSheet(
+            onDismissRequest = onClose,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = p.bgElevated,
+            shape = RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet),
+        ) {
+            // LocalView is dialog-scoped INSIDE ModalBottomSheet. Outside it, parent
+            // belongs to the Activity and silently returns no independent Window.
+            val dialog = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)
+            val callback = androidx.compose.runtime.rememberUpdatedState(onWindowReady)
+            androidx.compose.runtime.DisposableEffect(dialog?.window) {
+                check(dialog?.window != null) { "Production sheet did not expose its independent Window" }
+                callback.value(dialog.window)
+                onDispose { callback.value(null) }
+            }
+            sheetBody()
         }
     }
 }

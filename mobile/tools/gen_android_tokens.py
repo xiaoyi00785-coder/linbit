@@ -2,15 +2,14 @@
 """由 mobile/tokens/tokens.json 生成 Android 设计令牌 ui/theme/Tokens.kt（对应 iOS DesignSystem/Tokens.swift）。
 
 用法：python3 mobile/tools/gen_android_tokens.py
-Android 与 iOS 共用同一份 tokens.json；仅有的平台差异写在下面的 DARK_OVERRIDES：
-  - 夜间背景使用品牌指定的 #070808（tokens.json 中的 #0B0B0C 是按日间层级推导、"待设计确认"的占位）。
+Android 与 iOS 共用同一份 tokens.json（含明暗配色）；不再覆盖 dark.bg / textOnPrimary。
 """
 import json, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "tokens", "tokens.json")
 OUT = os.path.join(HERE, "..", "android", "app", "src", "main", "kotlin", "click", "cowa", "linbit", "ui", "theme", "Tokens.kt")
-DARK_OVERRIDES = {"bg": "#070808", "textOnPrimary": "#070808"}
+DARK_OVERRIDES = {}
 
 
 def color(v):

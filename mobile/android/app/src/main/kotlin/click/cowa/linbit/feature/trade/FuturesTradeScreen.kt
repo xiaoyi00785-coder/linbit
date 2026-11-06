@@ -2,14 +2,18 @@ package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -23,11 +27,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +83,9 @@ import click.cowa.linbit.ui.theme.lbNum
 import java.math.BigDecimal
 
 /** 合约 Tab 根（对照图 ref/11）：合约 / 事件合约 / TradFi / 模拟交易。 */
+/** Testable production owner injection; default remains Hilt and never puts a host in the history route. */
+val LocalFuturesTradeFactory = androidx.compose.runtime.staticCompositionLocalOf<@Composable () -> FuturesTradeViewModel> { { hiltViewModel() } }
+
 @Composable
 fun FuturesRootScreen(
     bottomInset: Dp,
@@ -88,13 +98,14 @@ fun FuturesRootScreen(
     /** TradFi 资产点击：futures=true 切合约交易对，false 切现货 Tab。 */
     onTrade: (Boolean, String) -> Unit = { _, _ -> },
     onCopy: () -> Unit = {},
+    onPriceAlerts: () -> Unit = {},
     modifier: Modifier = Modifier,
     initialTop: Int = 0,
     autoStart: Boolean = true,
-    vm: FuturesTradeViewModel = hiltViewModel(),
+    vm: FuturesTradeViewModel = LocalFuturesTradeFactory.current.invoke(),
 ) {
     val p = LB.p
-    var top by remember { mutableStateOf(initialTop) }
+    var top by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
@@ -113,7 +124,7 @@ fun FuturesRootScreen(
         when (top) {
             0 -> FuturesTradeContent(
                 vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
-                onSim = { top = 3 }, onCopy = onCopy, modifier = Modifier.weight(1f),
+                onSim = { top = 3 }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f),
             )
             1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin)
             2 -> TradFiScreen(
@@ -153,6 +164,7 @@ fun FuturesTradeContent(
     onHistory: () -> Unit,
     onSim: () -> Unit = {},
     onCopy: () -> Unit = {},
+    onPriceAlerts: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val p = LB.p
@@ -181,10 +193,11 @@ fun FuturesTradeContent(
         shownBook.asks.map { BookLevel(it.price, it.qty.multiply(it.price)) },
     )
 
+    val pageH = LayoutAdapt.pageH(LocalConfiguration.current.screenWidthDp)
     Column(modifier.fillMaxSize().background(p.bg)) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+        Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState())) {
             // 交易对头：BTCUSDT ▾ •  /  永续 +0.66%
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.pressable(scale = 1f) { sheet = "pairs" }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(vm.symbol, style = lb(18.sp, FontWeight.SemiBold), color = p.textPrimary)
@@ -204,7 +217,7 @@ fun FuturesTradeContent(
                 }
             }
             // 全仓 / 合仓 · 100x · 100x · 资金费率
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     ChipButton("${if (vm.cross) "全仓" else "逐仓"} / ${if (vm.hedge) "分仓" else "合仓"}", Modifier.height(24.dp)) { sheet = "mode" }
                     ChipButton("${vm.leverage}x", Modifier.height(24.dp), color = p.up, bg = p.upTint) { sheet = "leverage" }
@@ -213,10 +226,10 @@ fun FuturesTradeContent(
                 // 费率与保证金模式同一行，不能占用盘口上方的额外 40dp。
                 Column(Modifier.width(138.dp).height(24.dp), horizontalAlignment = Alignment.End) {
                     Text("资金费率(8H) / 倒计时", style = lb(10.sp).copy(lineHeight = 12.sp), color = p.textTertiary, maxLines = 1)
-                    Text("${Fmt.amount(vm.fundingRate, 4)}% / ${vm.fundingCountdown}", style = lbNum(10.sp).copy(lineHeight = 12.sp), color = p.textPrimary, maxLines = 1)
+                    Text("${Fmt.amount(vm.fundingRate, 4)}% / ${vm.fundingCountdown.also { vm.nowMs }}", style = lbNum(10.sp).copy(lineHeight = 12.sp), color = p.textPrimary, maxLines = 1)
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // 左：表单
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     PillSegment(
@@ -281,15 +294,18 @@ fun FuturesTradeContent(
                 }
             }
             // 仓位 / 委托 / 跟单 / 卡券
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                listOf("仓位 (${vm.positions.size})", "委托 (${vm.openOrders.size + vm.planAlgos.size + vm.tpslAlgos.size})", "跟单 (0)", "卡券 (${vm.bonus.size})").forEachIndexed { i, t ->
-                    Text(t, Modifier.pressable(scale = 1f) { bottomTab = i }, style = lb(FontSize.label, if (bottomTab == i) FontWeight.Medium else FontWeight.Normal), color = if (bottomTab == i) p.textPrimary else p.textSecondary)
+            // Large fonts must not squeeze the history action into a zero-width tail.
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    listOf("仓位 (${vm.positions.size})", "委托 (${vm.openOrders.size + vm.planAlgos.size + vm.tpslAlgos.size})", "跟单 (0)", "卡券 (${vm.bonus.size})").forEachIndexed { i, t ->
+                        Text(t, Modifier.pressable(scale = 1f) { bottomTab = i }, style = lb(FontSize.label, if (bottomTab == i) FontWeight.Medium else FontWeight.Normal), color = if (bottomTab == i) p.textPrimary else p.textSecondary)
+                    }
                 }
-                Box(Modifier.weight(1f))
-                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.pressable(scale = 1f, onClick = onHistory))
+                Spacer(Modifier.width(18.dp))
+                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.requiredSize(48.dp).pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" })
             }
             HorizontalDivider(color = p.divider)
-            if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 CheckRow(vm.onlyCurrent, "只看当前") { vm.onlyCurrent = it }
                 Box(Modifier.weight(1f))
                 if (bottomTab == 0) ChipButton("一键平仓", Modifier.height(28.dp).width(80.dp), color = p.textPrimary) { if (vm.shownPositions.isNotEmpty()) closeAllAsk = true }
@@ -300,7 +316,7 @@ fun FuturesTradeContent(
                     LaunchedEffect(Unit) { vm.loadTodayPnl() }
                     TodayPnlCard(vm)
                     if (vm.shownPositions.isEmpty()) EmptyState("可用余额：${Fmt.amount(vm.available, 2)} ${vm.quote}\n划转资金到合约账户开始交易，或尝试0风险模拟交易") {
-                        Row(Modifier.padding(horizontal = Spacing.pageH), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.padding(horizontal = pageH), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ChipButton("充值", Modifier.weight(1f).height(36.dp), onClick = onDeposit)
                             ChipButton("模拟盘", Modifier.weight(1f).height(36.dp), onClick = onSim)
                             ChipButton("跟单交易", Modifier.weight(1f).height(36.dp), onClick = onCopy)
@@ -372,7 +388,7 @@ fun FuturesTradeContent(
         "tools" -> ToolsSheet(vm.toast::show, { sheet = null }) { tool ->
             when (tool) {
                 "计算器" -> showCalculator = true
-                "价格预警" -> vm.toast.show("价格预警即将开放")
+                "价格预警" -> { sheet = null; onPriceAlerts() }
                 "模拟交易" -> onSim()
             }
         }

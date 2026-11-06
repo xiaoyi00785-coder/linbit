@@ -2,6 +2,7 @@ package click.cowa.linbit.feature.assets
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +38,7 @@ import click.cowa.linbit.core.network.lbMessage
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.data.assets.AssetsNav
+import click.cowa.linbit.data.assets.AssetsRoute
 import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.ui.components.CoinIcon
 import click.cowa.linbit.ui.components.EmptyState
@@ -63,6 +66,7 @@ fun WithdrawScreen(
     assetsNav: AssetsNav,
     onBack: () -> Unit,
     onChangeAsset: () -> Unit,
+    onDialogWindow: (android.view.Window?) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val p = LB.p
@@ -79,9 +83,34 @@ fun WithdrawScreen(
     var amount by remember { mutableStateOf("") }
     var to by remember { mutableStateOf("") }
     var totp by remember { mutableStateOf("") }
+    var smsCode by remember { mutableStateOf("") }
     var fundPw by remember { mutableStateOf("") }
     var showConfirm by remember { mutableStateOf(false) }
-    var submitting by remember { mutableStateOf(false) }
+    var twoFa by remember { mutableStateOf(true) }
+    var sendingCode by remember { mutableStateOf(false) }
+    var pendingNetwork by remember { mutableStateOf<String?>(null) }
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+    var debitAccount by remember(session) { mutableStateOf("funding") }
+    var accountReady by remember(session) { mutableStateOf(false) }
+
+    LaunchedEffect(session) {
+        vm.clearWithdrawFeedback()
+        debitAccount = runCatching { vm.withdrawDebitAccount() }.getOrDefault("funding")
+        vm.load(silent = true)
+        accountReady = true
+    }
+    LaunchedEffect(vm.withdrawReceipt, vm.withdrawError) { if (vm.withdrawReceipt != null) showConfirm = false }
+    LaunchedEffect(Unit) {
+        assetsNav.consumeWithdrawPrefill()?.let { pref ->
+            asset = pref.asset
+            addr = pref.address
+            memo = pref.memo.orEmpty()
+            pendingNetwork = pref.network
+        }
+    }
+    LaunchedEffect(showConfirm) {
+        if (showConfirm) twoFa = runCatching { vm.twoFactorEnabled() }.getOrDefault(true)
+    }
 
     LaunchedEffect(asset) {
         nets = emptyList(); net = null; walletNets = emptyList(); walletNet = null
@@ -109,12 +138,22 @@ fun WithdrawScreen(
                 }
                 net = nets.firstOrNull()
             }
+            pendingNetwork?.let { pn ->
+                nets.firstOrNull { it.network.equals(pn, true) }?.let { n ->
+                    net = n
+                    walletNet = walletNets.firstOrNull { it.network.equals(pn, true) }
+                }
+                pendingNetwork = null
+            }
         }
         vm.load(silent = true)
     }
     LaunchedEffect(assetInit) { if (!assetInit.isNullOrBlank()) asset = assetInit }
 
-    val free = (vm.state.value.funding + vm.state.value.spot)
+    // Host load is asynchronous; a plain StateFlow.value read cannot invalidate
+    // the form and strands a valid account on 0 until another recomposition.
+    val accountState by vm.state.collectAsStateWithLifecycle()
+    val free = (if(debitAccount=="spot")accountState.spot else accountState.funding)
         .firstOrNull { it.asset.equals(asset, true) }?.free
         ?.let { Dec.parse(it) } ?: BigDecimal.ZERO
     val minS = AssetsLogic.positiveAmount(net?.minWithdraw)
@@ -125,19 +164,18 @@ fun WithdrawScreen(
     val value = Dec.parse(amount)
     val receive = AssetsLogic.receiveAmount(amount, net?.gasFeeEstimate)
 
-    fun amtError(): String? {
-        if (amount.isBlank()) return null
-        if (value.signum() <= 0) return "请输入提现数量"
-        if (value > free) return "可用余额不足"
-        minS?.let { if (value < Dec.parse(it)) return "最小提现数量 $it $asset" }
-        maxS?.let { if (value > Dec.parse(it)) return "单笔最大提现 $it $asset" }
-        feeS?.let { if (value <= Dec.parse(it)) return "提现数量需大于链上网络费（Gas） $it $asset" }
-        return null
-    }
+    fun amtError(): String? = AssetsLogic.chainAmountError(
+        amount = amount,
+        free = free,
+        minWithdraw = net?.minWithdraw,
+        maxWithdraw = net?.maxWithdraw,
+        gasFee = net?.gasFeeEstimate,
+        asset = asset,
+    )
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         AssetsNavBar("提现", onBack = onBack) {
-            Text("地址簿", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook() }, style = lb(FontSize.small), color = p.textSecondary)
+            Text("地址簿", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook(forWithdraw = true) }, style = lb(FontSize.small), color = p.textSecondary)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(top = 8.dp)) {
             WarnBanner("为保障账户安全，修改密码或绑定/解绑身份验证器会触发提现保护期。")
@@ -190,15 +228,15 @@ fun WithdrawScreen(
                 Row {
                     Text("提现地址", style = lb(FontSize.caption), color = p.textSecondary)
                     Spacer(Modifier.weight(1f))
-                    Text("地址簿 ›", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook() }, style = lb(FontSize.small), color = p.brand)
+                    Text("地址簿 ›", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook(forWithdraw = true) }, style = lb(FontSize.small), color = p.brand)
                 }
-                LbTextField(addr, { addr = it.trim() }, "输入或粘贴地址", Modifier.padding(top = 4.dp))
+                LbTextField(addr, { addr = it.trim() }, "输入或粘贴地址", Modifier.padding(top = 4.dp), testTag = "withdraw.address")
                 Spacer(Modifier.height(8.dp))
-                LbTextField(memo, { memo = it.trim() }, if (memoReq) "Memo / Tag（必填）" else "Memo / Tag（选填）")
+                LbTextField(memo, { memo = it.trim() }, if (memoReq) "Memo / Tag（必填）" else "Memo / Tag（选填）", testTag = "withdraw.memo")
             } else {
                 WarnBanner("转给 Linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器。")
                 Spacer(Modifier.height(8.dp))
-                LbTextField(to, { to = it.trim() }, "请输入接收方 UID 或邮箱")
+                LbTextField(to, { to = it.trim() }, "请输入接收方 UID 或邮箱", testTag = "withdraw.recipient")
             }
             Spacer(Modifier.height(12.dp))
             Text(if (tab == 0) "提现数量" else "转账数量", style = lb(FontSize.caption), color = p.textSecondary)
@@ -212,7 +250,7 @@ fun WithdrawScreen(
                     if (tab == 0 && minS != null) "最小提现数量: $minS" else "请输入数量",
                     Modifier.weight(1f),
                     keyboardType = KeyboardType.Decimal,
-                    error = amtError(),
+                    error = amtError(), testTag = "withdraw.amount",
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(asset, style = lb(FontSize.label), color = p.textPrimary)
@@ -233,9 +271,22 @@ fun WithdrawScreen(
             }
             Spacer(Modifier.height(12.dp))
             Text("* 请谨防诈骗！Linbit 不会以任何形式索要账户密码，也不会要求私下转账或提现。", style = lb(11.sp), color = p.textTertiary)
+            Spacer(Modifier.height(12.dp))
+            vm.withdrawError?.takeIf { !showConfirm }?.let { Text(it, style=lb(FontSize.small), color=p.down) }
+            vm.withdrawReceipt?.let { r ->
+                val w=r.readback
+                Column(Modifier.fillMaxWidth().background(p.bgElevated,RoundedCornerShape(Radius.md)).padding(12.dp)) {
+                    Text(if(w.status==click.cowa.linbit.core.generated.ApiWithdrawal.Status.COMPLETED)"服务端状态：completed" else "提现申请已受理，尚未到账", style=lb(FontSize.body,FontWeight.SemiBold),color=p.textPrimary)
+                    Text("服务端提交状态：${r.submission.status.value}",Modifier.padding(top=8.dp),style=lb(FontSize.label),color=p.textSecondary)
+                    Text("提现记录读回状态：${w.status.value}",Modifier.padding(top=4.dp),style=lb(FontSize.label),color=p.textSecondary)
+                    Text("记录编号：${w.id}",Modifier.padding(top=4.dp),style=lbNum(FontSize.small),color=p.textSecondary)
+                    Text("已从服务端读回提现记录及余额；状态不等同链上到账。",Modifier.padding(top=4.dp).testTag("withdraw.receipt"),style=lb(FontSize.small),color=p.textSecondary)
+                    Text("读回${if(r.account=="spot")"现货"else"资金"}可用：${Fmt.amount(r.balance,2)} $asset",Modifier.padding(top=4.dp),style=lbNum(FontSize.small),color=p.textPrimary)
+                }
+            }
             Spacer(Modifier.height(24.dp))
         }
-        val canSubmit = if (tab == 0) {
+        val canSubmit = accountReady && !vm.withdrawBusy && !vm.withdrawAwaitingReadback && vm.withdrawReceipt == null && if (tab == 0) {
             addr.length >= 10 && value.signum() > 0 && amtError() == null && net != null && (!memoReq || memo.isNotBlank())
         } else {
             to.isNotBlank() && value.signum() > 0 && amtError() == null
@@ -249,7 +300,7 @@ fun WithdrawScreen(
                     color = p.textPrimary,
                 )
             }
-            LbButton(if (tab == 0) "提现" else "转账", Modifier.width(140.dp), enabled = canSubmit) { showConfirm = true }
+            LbButton(if (tab == 0) "提现" else "转账", Modifier.width(140.dp), enabled = canSubmit, testTag = "withdraw.review") { showConfirm = true }
         }
     }
 
@@ -268,7 +319,7 @@ fun WithdrawScreen(
         )
     }
     if (showConfirm) {
-        LbSheet("安全验证", onClose = { if (!submitting) showConfirm = false }, showClose = true) {
+        LbSheet("安全验证", onClose = { if (!vm.withdrawBusy && !vm.withdrawAwaitingReadback) showConfirm = false }, showClose = !vm.withdrawBusy && !vm.withdrawAwaitingReadback, onWindowReady = onDialogWindow) {
             Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
                 Text(
                     if (tab == 0) "提现 $amount $asset（${AssetsLogic.displayNetwork(net?.network)}），扣除 Gas ${feeS ?: "--"}，到账 ${receive ?: "--"}"
@@ -277,54 +328,46 @@ fun WithdrawScreen(
                     color = p.textSecondary,
                 )
                 Spacer(Modifier.height(12.dp))
-                LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "谷歌验证器动态码", keyboardType = KeyboardType.Number)
+                if (twoFa) {
+                    LbTextField(totp, { if(!vm.withdrawBusy) totp = it.filter(Char::isDigit).take(6) }, "谷歌验证器动态码", keyboardType = KeyboardType.Number, testTag="withdraw.totp")
+                } else {
+                    Text("未开启 2FA：发送 purpose=withdraw 验证码到绑定邮箱/手机", style = lb(FontSize.small), color = p.textSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LbTextField(
+                            smsCode,
+                            { smsCode = it.filter(Char::isDigit).take(8) },
+                            "邮箱/手机验证码",
+                            Modifier.weight(1f),
+                            keyboardType = KeyboardType.Number,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        LbButton("发送", Modifier.width(88.dp), loading = sendingCode, enabled = !sendingCode && !vm.withdrawBusy) {
+                            scope.launch {
+                                sendingCode = true
+                                vm.sendWithdrawCode().fold(
+                                    onSuccess = { vm.toast.show("验证码已发送") },
+                                    onFailure = { e -> vm.toast.show(e.lbMessage()) },
+                                )
+                                sendingCode = false
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 LbTextField(fundPw, { fundPw = it.filter(Char::isDigit).take(6) }, "资金密码（若已设置）", secure = true, keyboardType = KeyboardType.NumberPassword)
                 Spacer(Modifier.height(12.dp))
-                LbButton("确认提交", loading = submitting, enabled = totp.length == 6) {
-                    scope.launch {
-                        submitting = true
-                        val result = if (tab == 0) {
-                            vm.submitWithdraw(
-                                ApiWithdrawRequest(
-                                    asset = asset,
-                                    network = net!!.network,
-                                    address = addr,
-                                    amount = amount,
-                                    memo = memo.ifBlank { null },
-                                    totpCode = totp,
-                                    fundPassword = fundPw.ifBlank { null },
-                                ),
-                            )
-                        } else {
-                            val isEmail = to.contains("@")
-                            vm.submitInternal(
-                                ApiInternalTransferRequest(
-                                    clientId = AssetsLogic.newClientId(),
-                                    asset = asset,
-                                    amount = amount,
-                                    totpCode = totp,
-                                    toUid = if (isEmail) null else to,
-                                    toEmail = if (isEmail) to else null,
-                                    fundPassword = fundPw.ifBlank { null },
-                                ),
-                            )
-                        }
-                        result.fold(
-                            onSuccess = {
-                                vm.toast.show(if (tab == 0) "提现申请已提交" else "转账成功")
-                                showConfirm = false
-                                amount = ""; addr = ""; memo = ""; totp = ""; fundPw = ""
-                                vm.load(silent = true)
-                            },
-                            onFailure = { vm.toast.show(it.lbMessage()) },
-                        )
-                        submitting = false
-                    }
+                val verifyOk = AssetsLogic.withdrawVerifyReady(twoFa, totp, smsCode)
+                LbButton(if(vm.withdrawBusy)"等待服务端结果…" else if(vm.withdrawAwaitingReadback)"已受理，请查看记录" else "确认提交", loading = vm.withdrawBusy, enabled = vm.withdrawAwaitingReadback || (verifyOk && !vm.withdrawBusy), testTag="withdraw.confirm") {
+                    if(vm.withdrawAwaitingReadback && !vm.withdrawBusy){ showConfirm=false; assetsNav.open(AssetsRoute.WithdrawRecords); return@LbButton }
+                    if(vm.submitWithdrawConfirmed(ApiWithdrawRequest(asset,network=net!!.network,address=addr,amount=amount,memo=memo.ifBlank{null},totpCode=AssetsLogic.withdrawAuthCodes(twoFa,totp,smsCode).totpCode,code=AssetsLogic.withdrawAuthCodes(twoFa,totp,smsCode).code,fundPassword=fundPw.ifBlank{null}))) Unit
                 }
+                vm.withdrawError?.let { Text(it,Modifier.padding(top=10.dp),style=lb(FontSize.small),color=p.down) }
+                LbButton("取消",kind=click.cowa.linbit.ui.components.ButtonKind.SECONDARY,enabled=!vm.withdrawBusy&&!vm.withdrawAwaitingReadback,testTag="withdraw.dismiss"){showConfirm=false}
             }
         }
     }
+
 }
 
 /** 提现网络：显示手续费 + 预计到账；推荐来自 /wallet/networks。不标「最低」以免与充值规则混淆时可按产品再加。 */

@@ -49,6 +49,8 @@ import click.cowa.linbit.core.network.LinbitApi
 import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.network.apiCall
 import click.cowa.linbit.core.network.lbMessage
+import click.cowa.linbit.core.realtime.MarketSocket
+import click.cowa.linbit.core.realtime.WsMessageParser
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.feature.auth.LbSheet
 import click.cowa.linbit.ui.components.ButtonKind
@@ -69,13 +71,14 @@ import click.cowa.linbit.ui.theme.lb
 import click.cowa.linbit.ui.theme.lbNum
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
-/** 事件合约下单入参校验（对照 OpenAPI 限额前置条件）。 */
+/** 事件合约下单入参校验与订单合并（对照 OpenAPI /event/orders 与 WS event:orders）。 */
 object EventContractLogic {
     fun validateStake(stakeText: String, minStake: String?, maxStake: String?): String? {
         val stake = Dec.parse(stakeText)
@@ -105,15 +108,69 @@ object EventContractLogic {
         if (m.signum() <= 0) return null
         return m.multiply(java.math.BigDecimal(mult)).stripTrailingZeros().toPlainString()
     }
+
+    fun isActive(o: ApiEventOrder): Boolean = when (o.status) {
+        ApiEventOrder.Status.PENDING, ApiEventOrder.Status.OPEN, ApiEventOrder.Status.SETTLING -> true
+        else -> false
+    }
+
+    /** 将 WS/轮询订单合并进进行中与历史列表；返回结算提示文案（无则 null）。 */
+    fun applyOrder(
+        o: ApiEventOrder,
+        open: List<ApiEventOrder>,
+        history: List<ApiEventOrder>,
+        asset: String,
+    ): Triple<List<ApiEventOrder>, List<ApiEventOrder>, String?> {
+        val id = o.id
+        return if (isActive(o)) {
+            val nextOpen = if (id == null) listOf(o) + open
+            else {
+                val i = open.indexOfFirst { it.id == id }
+                if (i >= 0) open.toMutableList().also { it[i] = o } else listOf(o) + open
+            }
+            Triple(nextOpen, history.filter { it.id == null || it.id != id }, null)
+        } else {
+            val nextOpen = if (id == null) open else open.filter { it.id != id }
+            val histWithout = if (id == null) history else history.filter { it.id != id }
+            val nextHist = listOf(o) + histWithout
+            val toast = if (o.status == ApiEventOrder.Status.SETTLED) {
+                val r = when (o.result) {
+                    ApiEventOrder.Result.WON -> "猜中，获得 ${apiAmount(o.payout)} $asset"
+                    ApiEventOrder.Result.LOST -> "未猜中"
+                    ApiEventOrder.Result.TIE -> "平局，本金已退还"
+                    ApiEventOrder.Result.REFUNDED -> "已退款"
+                    null -> "已结算"
+                }
+                "${o.symbol ?: ""} $r".trim()
+            } else null
+            Triple(nextOpen, nextHist, toast)
+        }
+    }
+
+    fun rules(cfg: ApiEventProducts?, asset: String): List<String> {
+        val pct = run {
+            val r = Dec.parse(cfg?.payoutRatio)
+            if (r.signum() <= 0) "--" else r.multiply(java.math.BigDecimal(100)).stripTrailingZeros().toPlainString()
+        }
+        return listOf(
+            "选择产品与结算周期，预测到期时指数价格相对开仓价的涨跌。",
+            "猜中获得投注金额 × ${pct}% 的收益并返还本金；未猜中损失投注金额。",
+            "到期价格与开仓价相同视为平局，退还本金。",
+            "单笔投注 ${apiAmount(cfg?.minStake)} – ${apiAmount(cfg?.maxStake)} $asset，每日累计上限 ${apiAmount(cfg?.dailyLimit)} $asset。",
+            "指数价格不可用或产品暂停时无法下单；已开仓订单按规则退款。",
+        )
+    }
 }
 
 @HiltViewModel
 class EventContractViewModel @Inject constructor(
     private val api: LinbitApi,
     private val tokens: TokenStore,
+    private val socket: MarketSocket,
     val toast: ToastCenter,
 ) : ViewModel() {
     val loggedIn get() = tokens.loggedIn
+    val sessionVersion get() = tokens.sessionVersion
 
     var cfg by mutableStateOf<ApiEventProducts?>(null); private set
     var disabled by mutableStateOf(false); private set
@@ -125,10 +182,14 @@ class EventContractViewModel @Inject constructor(
     var placing by mutableStateOf(false); private set
     var openOrders by mutableStateOf<List<ApiEventOrder>>(emptyList()); private set
     var historyOrders by mutableStateOf<List<ApiEventOrder>>(emptyList()); private set
+    var historyCursor by mutableStateOf<String?>(null); private set
+    var loadingMore by mutableStateOf(false); private set
     var dailyUsed by mutableStateOf<String?>(null); private set
     var ordersTab by mutableStateOf(0)
 
     private var poll: Job? = null
+    private var wsJob: Job? = null
+    private var sessionJob: Job? = null
 
     val product: ApiEventProductsProductsInner?
         get() = cfg?.products?.firstOrNull { it.symbol == symbol } ?: cfg?.products?.firstOrNull()
@@ -136,6 +197,19 @@ class EventContractViewModel @Inject constructor(
     val asset: String get() = cfg?.stakeAsset ?: "USDT"
 
     fun start() {
+        if (sessionJob == null) {
+            sessionJob = viewModelScope.launch {
+                tokens.sessionVersion.drop(1).collect {
+                    clearAccountData()
+                    if (tokens.loggedIn.value) {
+                        refreshOrders(silent = true)
+                        ensureWs()
+                    } else {
+                        stopWs()
+                    }
+                }
+            }
+        }
         viewModelScope.launch { load() }
         poll?.cancel()
         poll = viewModelScope.launch {
@@ -145,9 +219,39 @@ class EventContractViewModel @Inject constructor(
                 if (tokens.loggedIn.value) refreshOrders(silent = true)
             }
         }
+        if (tokens.loggedIn.value) ensureWs() else stopWs()
     }
 
-    fun stop() { poll?.cancel(); poll = null }
+    fun stop() {
+        poll?.cancel(); poll = null
+        stopWs()
+    }
+
+    private fun clearAccountData() {
+        openOrders = emptyList()
+        historyOrders = emptyList()
+        historyCursor = null
+        dailyUsed = null
+    }
+
+    private fun ensureWs() {
+        if (wsJob?.isActive == true) return
+        stopWs()
+        if (!tokens.loggedIn.value) return
+        // OpenAPI：鉴权后订阅 event:orders，帧 data 为 EventOrder；账号隔离靠 auth + session 清理
+        wsJob = viewModelScope.launch {
+            socket.subscribe("event:orders").collect { frame ->
+                if (!tokens.loggedIn.value) return@collect
+                val o = WsMessageParser.eventOrder(frame) ?: return@collect
+                val (nextOpen, nextHist, tip) = EventContractLogic.applyOrder(o, openOrders, historyOrders, asset)
+                openOrders = nextOpen
+                historyOrders = nextHist
+                tip?.let { toast.show(it, if (o.result == ApiEventOrder.Result.WON) ToastCenter.Kind.SUCCESS else ToastCenter.Kind.INFO) }
+            }
+        }
+    }
+
+    private fun stopWs() { wsJob?.cancel(); wsJob = null }
 
     fun load(silent: Boolean = false) {
         viewModelScope.launch {
@@ -175,17 +279,39 @@ class EventContractViewModel @Inject constructor(
     }
 
     fun refreshOrders(silent: Boolean = false) {
-        if (!tokens.loggedIn.value) { openOrders = emptyList(); historyOrders = emptyList(); return }
+        if (!tokens.loggedIn.value) {
+            clearAccountData(); stopWs(); return
+        }
         viewModelScope.launch {
             try {
                 val open = apiCall { api.eventOrders(status = "open", symbol = symbol, limit = 50) }
-                openOrders = open.orders.orEmpty()
+                openOrders = open.orders.orEmpty().filter(EventContractLogic::isActive)
                 dailyUsed = open.dailyUsed
                 val hist = apiCall { api.eventOrders(status = "settled", symbol = symbol, limit = 50) }
                 historyOrders = hist.orders.orEmpty()
+                historyCursor = hist.nextBefore
+                ensureWs()
             } catch (e: Throwable) {
                 if (!silent) toast.show(e.lbMessage(), ToastCenter.Kind.ERROR)
             }
+        }
+    }
+
+    /** GET /event/orders?status=settled&before=… */
+    fun loadMoreHistory() {
+        val c = historyCursor ?: return
+        if (loadingMore || !tokens.loggedIn.value) return
+        viewModelScope.launch {
+            loadingMore = true
+            try {
+                val hist = apiCall { api.eventOrders(status = "settled", symbol = symbol, before = c, limit = 50) }
+                val more = hist.orders.orEmpty()
+                val seen = historyOrders.mapNotNull { it.id }.toHashSet()
+                historyOrders = historyOrders + more.filter { it.id == null || it.id !in seen }
+                historyCursor = hist.nextBefore
+            } catch (e: Throwable) {
+                toast.show(e.lbMessage(), ToastCenter.Kind.ERROR)
+            } finally { loadingMore = false }
         }
     }
 
@@ -220,7 +346,10 @@ class EventContractViewModel @Inject constructor(
         }
     }
 
-    override fun onCleared() { stop() }
+    override fun onCleared() {
+        sessionJob?.cancel(); sessionJob = null
+        stop()
+    }
 }
 
 @Composable
@@ -279,6 +408,20 @@ fun EventContractScreen(
                         if (pr.paused == true) Text("暂停", style = lb(FontSize.small), color = p.textTertiary)
                     }
                 }
+            }
+            var showRules by remember { mutableStateOf(false) }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = pageH).padding(bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("事件合约", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "规则",
+                    Modifier.pressable(scale = 1f) { showRules = true },
+                    style = lb(FontSize.small),
+                    color = p.brand,
+                )
             }
             Column(
                 Modifier.padding(horizontal = pageH).clip(RoundedCornerShape(Radius.lg)).background(p.fill).padding(14.dp),
@@ -380,9 +523,33 @@ fun EventContractScreen(
                     ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin)
                 }
                 list.isEmpty() -> EmptyState("暂无订单")
-                else -> list.forEach { EventOrderRow(it) }
+                else -> {
+                    list.forEach { EventOrderRow(it) }
+                    if (vm.ordersTab == 1 && vm.historyCursor != null) {
+                        ChipButton(
+                            if (vm.loadingMore) "加载中…" else "加载更多",
+                            Modifier.fillMaxWidth().height(40.dp).padding(horizontal = pageH, vertical = 8.dp),
+                        ) { if (!vm.loadingMore) vm.loadMoreHistory() }
+                    }
+                }
             }
             Spacer(Modifier.height(24.dp))
+            if (showRules) {
+                LbSheet("事件合约规则", { showRules = false }, showClose = true) {
+                    Column(
+                        Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        EventContractLogic.rules(vm.cfg, vm.asset).forEach { r ->
+                            Row {
+                                Text("• ", style = lb(FontSize.caption), color = p.textSecondary)
+                                Text(r, style = lb(FontSize.caption), color = p.textSecondary)
+                            }
+                        }
+                        LbButton("知道了") { showRules = false }
+                    }
+                }
+            }
         }
     }
     pendingUp?.let { up ->

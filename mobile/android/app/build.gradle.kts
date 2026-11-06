@@ -16,8 +16,9 @@ android {
         applicationId = "click.cowa.linbit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        testInstrumentationRunner = "click.cowa.linbit.instrumentation.ProductionLoopbackRunner"
+        versionCode = 3
+        versionName = "0.3.0"
 
         // 与 iOS 的 LBAPIBase / LBWSURL 一致；可用 -PlinbitApiBase=... 覆盖（例如指向本地 gateway）
         val apiBase = (project.findProperty("linbitApiBase") as String?) ?: "https://api.cowa.click"
@@ -57,6 +58,17 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            // 离屏证据：-PoffscreenShots=1 或 -Doffscreen.shots=1
+            val shots = (project.findProperty("offscreenShots") as? String)
+                ?: System.getProperty("offscreen.shots")
+                ?: ""
+            it.systemProperty("offscreen.shots", shots)
+            setOf("production.evidence", "production.evidence.dir", "legacy.composite.shots").forEach { key ->
+                System.getProperty(key)?.let { value -> it.systemProperty(key, value) }
+            }
+        }
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -65,6 +77,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.credentials)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -97,7 +110,19 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
+
 
 // 本地截图对照（不入库）：存在 shots.gradle.kts 时加载 Robolectric / Compose 测试依赖
 file("shots.gradle.kts").takeIf { it.exists() }?.let { apply(from = it) }

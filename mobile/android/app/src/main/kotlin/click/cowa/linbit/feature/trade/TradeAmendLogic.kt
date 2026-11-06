@@ -54,3 +54,63 @@ object TpslLogic {
         return null
     }
 }
+
+
+/** 条件委托改单入参（PUT /futures/plan-orders/{id} 或 /futures/tpsl-orders/{id}）。 */
+object AmendAlgoLogic {
+    data class Outcome(
+        val error: String? = null,
+        val triggerPrice: String? = null,
+        val price: String? = null,
+        val qty: String? = null,
+        val orderType: click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest.OrderType? = null,
+    )
+
+    /**
+     * @param market true 表示改为市价触发后委托（清除 price）
+     * 至少修改触发价 / 委托价 / 数量 / 市价其一；与旧值相同的字段省略。
+     */
+    fun prepare(
+        newTrigger: String,
+        newPrice: String,
+        newQty: String,
+        market: Boolean,
+        oldTrigger: String?,
+        oldPrice: String?,
+        oldQty: String?,
+        oldMarket: Boolean,
+        formatPrice: (java.math.BigDecimal) -> String,
+        formatQty: (java.math.BigDecimal) -> String,
+    ): Outcome {
+        val nt = Dec.parse(newTrigger)
+        val np = Dec.parse(newPrice)
+        val nq = Dec.parse(newQty)
+        val ot = Dec.parse(oldTrigger)
+        val op = Dec.parse(oldPrice)
+        val oq = Dec.parse(oldQty)
+        if (newTrigger.isBlank() && newPrice.isBlank() && newQty.isBlank() && market == oldMarket) {
+            return Outcome(error = "请至少修改一项")
+        }
+        if (newTrigger.isNotBlank() && nt.signum() <= 0) return Outcome(error = "请输入有效触发价")
+        if (!market && newPrice.isNotBlank() && np.signum() <= 0) return Outcome(error = "请输入有效委托价")
+        if (newQty.isNotBlank() && nq.signum() <= 0) return Outcome(error = "请输入有效数量")
+        val triggerOut = if (newTrigger.isNotBlank() && nt.compareTo(ot) != 0) formatPrice(nt) else null
+        val orderType = when {
+            market && !oldMarket -> click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest.OrderType.MARKET
+            !market && oldMarket -> click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest.OrderType.LIMIT
+            !market && newPrice.isNotBlank() && np.compareTo(op) != 0 -> click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest.OrderType.LIMIT
+            else -> null
+        }
+        val priceOut = when {
+            market -> null
+            newPrice.isNotBlank() && np.compareTo(op) != 0 -> formatPrice(np)
+            orderType == click.cowa.linbit.core.generated.ApiFuturesAlgoAmendRequest.OrderType.LIMIT && newPrice.isNotBlank() -> formatPrice(np)
+            else -> null
+        }
+        val qtyOut = if (newQty.isNotBlank() && nq.compareTo(oq) != 0) formatQty(nq) else null
+        if (triggerOut == null && priceOut == null && qtyOut == null && orderType == null) {
+            return Outcome(error = "内容未变化")
+        }
+        return Outcome(triggerPrice = triggerOut, price = priceOut, qty = qtyOut, orderType = orderType)
+    }
+}

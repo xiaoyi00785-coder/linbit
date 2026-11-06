@@ -3,6 +3,7 @@ package click.cowa.linbit.feature.assets
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawNetwork
+import click.cowa.linbit.core.generated.ApiWithdrawal
 import click.cowa.linbit.core.util.Dec
 import java.math.BigDecimal
 
@@ -94,4 +95,65 @@ object AssetsLogic {
 
     fun newClientId(prefix: String = "and"): String =
         "$prefix-${java.util.UUID.randomUUID()}"
+
+    /**
+     * 链上提现数量校验（对照 OpenAPI：amount > gas、≥ min、≤ max/可用）。
+     * 返回用户可见错误；null 表示通过。
+     */
+    fun chainAmountError(
+        amount: String,
+        free: BigDecimal,
+        minWithdraw: String?,
+        maxWithdraw: String?,
+        gasFee: String?,
+        asset: String,
+    ): String? {
+        if (amount.isBlank()) return null
+        val value = Dec.parse(amount)
+        if (value.signum() <= 0) return "请输入提现数量"
+        if (value > free) return "可用余额不足"
+        positiveAmount(minWithdraw)?.let { if (value < Dec.parse(it)) return "最小提现数量 $it $asset" }
+        positiveAmount(maxWithdraw)?.let { if (value > Dec.parse(it)) return "单笔最大提现 $it $asset" }
+        positiveAmount(gasFee)?.let { if (value <= Dec.parse(it)) return "提现数量需大于链上网络费（Gas） $it $asset" }
+        return null
+    }
+
+    /** 二次验证：已开 2FA 用 totp；未开 2FA 用邮箱/手机码（purpose=withdraw）。 */
+    fun withdrawVerifyReady(twoFactorEnabled: Boolean, totp: String, smsOrEmailCode: String): Boolean =
+        if (twoFactorEnabled) totp.filter(Char::isDigit).length == 6
+        else smsOrEmailCode.filter(Char::isDigit).length >= 4
+
+    data class WithdrawAuthCodes(val totpCode: String?, val code: String?)
+
+    fun withdrawAuthCodes(twoFactorEnabled: Boolean, totp: String, smsOrEmailCode: String): WithdrawAuthCodes {
+        val t = totp.filter(Char::isDigit).take(6)
+        val c = smsOrEmailCode.filter(Char::isDigit).take(8)
+        return if (twoFactorEnabled) WithdrawAuthCodes(totpCode = t.takeIf { it.length == 6 }, code = null)
+        else WithdrawAuthCodes(totpCode = null, code = c.takeIf { it.length >= 4 })
+    }
+
+
+    /** OpenAPI：仅 pending（待人工审核）可撤；processing/completed/failed/canceled 不可撤。 */
+    fun canCancelWithdrawal(status: ApiWithdrawal.Status?): Boolean =
+        status == ApiWithdrawal.Status.PENDING
+
+    /** 撤销成功后用服务端回写状态更新列表（竞态：已非 pending 则本地同步）。 */
+    fun applyWithdrawalUpdate(list: List<ApiWithdrawal>, updated: ApiWithdrawal): List<ApiWithdrawal> =
+        list.map { if (it.id == updated.id) updated else it }
+
+
+    /** 提现记录时间展示：ISO 尽量落到本地可读；解析失败则原样。 */
+    fun displayWithdrawTime(raw: String?): String {
+        val s = raw?.trim().orEmpty()
+        if (s.isEmpty()) return "--"
+        return try {
+            val instant = java.time.Instant.parse(s)
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(instant)
+        } catch (_: Throwable) {
+            s.replace('T', ' ').removeSuffix("Z")
+        }
+    }
+
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,10 +22,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +63,7 @@ import click.cowa.linbit.ui.components.ThemedIcon
 import click.cowa.linbit.ui.components.pressable
 import click.cowa.linbit.ui.theme.FontSize
 import click.cowa.linbit.ui.theme.LB
+import click.cowa.linbit.ui.theme.LayoutAdapt
 import click.cowa.linbit.ui.theme.Radius
 import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
@@ -77,13 +82,15 @@ fun SpotTradeScreen(
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
     autoStart: Boolean = true,
+    /** Preserve the production Host origin (Assets -> Spot earn/strategy); not a fixture flag. */
+    initialTop: Int = 0,
     vm: SpotTradeViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
     DisposableEffect(nav) { if (autoStart) vm.start(); onDispose { vm.stop() } }
-    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier)
+    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier, initialTop)
 }
 
 @Composable
@@ -100,18 +107,20 @@ fun SpotTradeContent(
     onTransfer: () -> Unit,
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
+    initialTop: Int = 0,
 ) {
     val p = LB.p
     var sheet by remember { mutableStateOf<String?>(null) }
     var skipConfirm by remember { mutableStateOf(false) }
     var ordersTab by remember { mutableStateOf(0) }
-    var topTab by remember { mutableStateOf(0) }
+    var topTab by rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
     var chartOpen by remember { mutableStateOf(false) }
     val step = vm.bookPrecision ?: BigDecimal.ONE.movePointLeft(vm.pricePrec)
     val grouped = remember(vm.book, step) { vm.book.grouped(step) }
+    val pageH = LayoutAdapt.pageH(LocalConfiguration.current.screenWidthDp)
 
     Column(modifier.fillMaxSize().background(p.bg)) {
-        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = pageH), verticalAlignment = Alignment.CenterVertically) {
             PrimaryTabs(listOf("现货", "策略", "理财", "闪兑"), topTab, { topTab = it }, size = 16.sp)
         }
         HorizontalDivider(color = p.divider)
@@ -119,9 +128,9 @@ fun SpotTradeContent(
             1 -> StrategySubpage(bottomInset, onLogin)
             2 -> EarnSubpage(bottomInset, onLogin)
             3 -> ConvertSubpage(bottomInset, onLogin)
-            else -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = bottomInset)) {
+            else -> Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset)) {
             // 交易对头
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.pressable(scale = 1f) { sheet = "pairs" }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("${vm.base}/${vm.quote}", style = lb(18.sp, FontWeight.SemiBold), color = p.textPrimary)
@@ -137,7 +146,7 @@ fun SpotTradeContent(
                     LbIcon(R.drawable.ic_more, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { vm.toast.show("更多功能即将开放") })
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // 左：表单
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillSegment(listOf("买入", "卖出"), if (vm.isBuy) 0 else 1, { vm.isBuy = it == 0; vm.applyPercent(0f) })
@@ -287,13 +296,15 @@ internal fun String.trimZeros(): String =
 @Composable
 private fun NoOrders(loggedIn: Boolean, onDeposit: () -> Unit, onTransfer: () -> Unit, onLogin: () -> Unit) {
     val p = LB.p
-    // 空态上边距 24px，图示 168px：操作区与悬浮导航保留参考图中的安全间距。
-    EmptyState(if (loggedIn) "划转资金，开始现货交易" else "登录后查看委托", iconSize = 56.dp, verticalPadding = 8.dp) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (loggedIn) {
-                ChipButton("充值", Modifier.width(90.dp).height(32.dp), onClick = onDeposit)
-                ChipButton("划转", Modifier.width(90.dp).height(32.dp), onClick = onTransfer)
-            } else ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin)
+    // 空态操作与悬浮 Tab 至少保留约 24dp 视觉间距（bottomInset 由 AppRoot 注入）。
+    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        EmptyState(if (loggedIn) "划转资金，开始现货交易" else "登录后查看委托", iconSize = 56.dp, verticalPadding = 8.dp) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (loggedIn) {
+                    ChipButton("充值", Modifier.width(90.dp).height(32.dp), onClick = onDeposit)
+                    ChipButton("划转", Modifier.width(90.dp).height(32.dp), onClick = onTransfer)
+                } else ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin)
+            }
         }
     }
 }

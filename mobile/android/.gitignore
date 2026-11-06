@@ -16,3 +16,17 @@ keystore.properties
 
 # 仓库根 .gitignore 有 `data/`（忽略数据目录），这里的 data 是 Kotlin 包（行情仓库），需要显式放行
 !app/src/main/kotlin/click/cowa/linbit/data/
+app/shots.gradle.kts
+# 离屏截图输出（可复现测试生成，不入库）
+app/build/reports/offscreen-shots/
+**/offscreen-shots/
+app/shots.gradle.kts
+
+# Targeted source exception only. Other ignored data/ trees stay untouched.
+!app/src/test/kotlin/click/cowa/linbit/data/
+!app/src/test/kotlin/click/cowa/linbit/data/paper/
+!app/src/test/kotlin/click/cowa/linbit/data/paper/PaperTradingContractTest.kt
+!app/src/test/kotlin/click/cowa/linbit/feature/assets/
+!app/src/test/kotlin/click/cowa/linbit/feature/assets/PaperAccountStateTest.kt
+
+!app/src/test/kotlin/click/cowa/linbit/data/paper/PaperFeatureGateTest.kt
