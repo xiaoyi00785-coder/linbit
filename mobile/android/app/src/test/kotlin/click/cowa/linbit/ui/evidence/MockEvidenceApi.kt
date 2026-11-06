@@ -47,6 +47,8 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
 
     var futuresTransferFailureGate: java.util.concurrent.CountDownLatch? = null
 
+    var addressDeleteFailureGate: java.util.concurrent.CountDownLatch? = null
+
     var addressEditFailureGate: java.util.concurrent.CountDownLatch? = null
 
     var addressCreateFailureGate: java.util.concurrent.CountDownLatch? = null
@@ -79,13 +81,14 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         val withdrawCancel = method == "POST" && path == "/wallet/withdraw/MOCK-WD-CANCEL/cancel" && response != null && request.body.size == 0L
         val addressCreate = method == "POST" && path == "/account/withdraw-addresses" && response != null && request.body.readUtf8() == "{\"asset\":\"USDT\",\"network\":\"TRC20\",\"address\":\"INVALID-ADDRESS-BOOK-LOCAL\",\"label\":\"Mock local label\",\"whitelisted\":false,\"totpCode\":\"123456\"}"
         val addressEdit = method == "PATCH" && path == "/account/withdraw-addresses/MOCK-ADDRESS-EDIT" && response != null && request.body.readUtf8() == "{\"label\":\"Mock edited label\",\"memo\":\"MEMO-LOCAL\",\"totpCode\":\"123456\"}"
-        if (sensitive && !withdrawCancel && !addressEdit && !addressCreate && !withdrawSubmit && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
+        val addressDelete = method == "DELETE" && path == "/account/withdraw-addresses/MOCK-ADDRESS-DELETE" && key == "DELETE /account/withdraw-addresses/MOCK-ADDRESS-DELETE?totpCode=123456" && requestBody.isEmpty() && (response != null || declaredRouteBodies.contains("$key $requestBody"))
+        if (sensitive && !addressDelete && !withdrawCancel && !addressEdit && !addressCreate && !withdrawSubmit && !declaredFailure && !passkeyRegisterPath && !deletePasskey) {
             return undeclared(request, "Sensitive mutation requires explicit loopback failure")
         }
         val algoCancel = method == "DELETE" && path.matches(Regex("/futures/(plan|tpsl)-orders/[0-9]+")) && response != null
         val algoCancelFailure = algoCancel && response?.httpCode() == 503
         val expected = (declaredFailure || algoCancelFailure) && response?.httpCode() == 503
-        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !futuresTransferOut && !withdrawSubmit && !withdrawCancel && !addressCreate && !addressEdit) {
+        if (method != "GET" && !expected && !paperBuy && !alertWrite && !passkeyLogin && !passkeyRegister && !deletePasskey && !algoCancel && !futuresTransfer && !futuresTransferOut && !withdrawSubmit && !withdrawCancel && !addressCreate && !addressEdit && !addressDelete) {
             return undeclared(request, "Only explicitly declared loopback mock alerts, paper orders, or failure routes are allowed")
         }
         synchronized(requests) { requests += "$key${if (method != "GET") " [${if (expected) "EXPECTED_LOOPBACK_FAILURE" else "DECLARED_LOOPBACK_MOCK"}]" else ""}" }
@@ -105,6 +108,7 @@ internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
         if (path == "/auth/passkey/login/finish") {
             check(passkeyFinishGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback finish latch timed out" }
         }
+        if (addressDelete && response?.httpCode() == 503) { check(addressDeleteFailureGate?.await(15,java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address DELETE latch timed out" } }
         if (addressEdit && response?.httpCode() == 503) { check(addressEditFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address PATCH latch timed out" } }
         if (addressCreate && response?.httpCode() == 503) { check(addressCreateFailureGate?.await(15, java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback address failure latch timed out" } }
         if (withdrawCancel && response?.httpCode() == 503) { check(withdrawCancelFailureGate?.await(15,java.util.concurrent.TimeUnit.SECONDS) != false) { "Loopback withdraw cancel latch timed out" } }

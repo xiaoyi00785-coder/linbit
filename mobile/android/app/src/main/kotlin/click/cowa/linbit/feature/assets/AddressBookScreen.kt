@@ -78,8 +78,9 @@ fun AddressBookScreen(
     var editLabel by remember { mutableStateOf("") }
     var editMemo by remember { mutableStateOf("") }
     var editTotp by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<ApiWithdrawAddress?>(null) }
+    var deleteTotp by remember { mutableStateOf("") }
     val session by vm.sessionVersion.collectAsStateWithLifecycle()
-    LaunchedEffect(session) { editTarget = null }
     LaunchedEffect(vm.addressEditReceipt?.readback?.id) {
         if (vm.addressEditReceipt != null) {
             editTarget = null; list = null
@@ -94,7 +95,8 @@ fun AddressBookScreen(
             vm.whitelist().onSuccess { whitelist = it }
         }
     }
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(session) { editTarget = null; deleteTarget = null; deleteTotp = ""; list = null; whitelist = null; reload() }
+    LaunchedEffect(vm.addressDeleteReceipt) { if(vm.addressDeleteReceipt!=null){deleteTarget=null;list=null;reload()} }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         AssetsNavBar("地址簿", onBack = onBack) {
@@ -140,6 +142,7 @@ fun AddressBookScreen(
                 else -> {
                     val shown = if (filter == 1) list!!.filter { it.whitelisted } else list!!
                     list!!.firstOrNull { it.id == vm.addressEditReceipt?.readback?.id }?.let { Text("已从服务端列表读回修改", Modifier.testTag("address.edit.readback"), style = lb(FontSize.small), color = p.brand) }
+                    vm.addressDeleteReceipt?.takeIf{receipt->list!!.none{it.id==receipt.id}}?.let{Text("已从服务端地址列表确认删除：${it.label}",Modifier.testTag("address.delete.readback"),style=lb(FontSize.small),color=p.brand)}
                     if (shown.isEmpty()) {
                         EmptyState(if (filter == 1) "暂无白名单地址" else "暂无地址")
                         Spacer(Modifier.height(12.dp))
@@ -181,6 +184,8 @@ fun AddressBookScreen(
                                     )
                                     Spacer(Modifier.width(8.dp))
                                 }
+                                Text("删除", Modifier.pressable(enabled = !vm.addressDeleteBusy, scale = 1f) { deleteTarget = a; deleteTotp = "" }.padding(horizontal = 10.dp, vertical = 4.dp).background(p.fill, RoundedCornerShape(Radius.sm)), style = lb(FontSize.small), color = p.down)
+                                Spacer(Modifier.width(8.dp))
                                 Text("复制", Modifier.pressable(scale = 1f) { copyText(ctx, a.address); vm.toast.show("已复制地址") }.padding(horizontal = 10.dp, vertical = 4.dp).background(p.fill, RoundedCornerShape(Radius.sm)), style = lb(FontSize.small), color = p.textPrimary)
                                 Spacer(Modifier.width(8.dp))
                                 Text(if (a.whitelisted) "移出白名单" else "加入白名单", Modifier.pressable(scale = 1f) {
@@ -228,6 +233,26 @@ fun AddressBookScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 LbButton("取消", kind = ButtonKind.SECONDARY, enabled = !busy, testTag = "address.edit.dismiss") { editTarget = null }
+            }
+        }
+    }
+
+    deleteTarget?.let { target ->
+        val busy = vm.addressDeleteBusy
+        val accepted = vm.addressDeleteAccepted
+        LbSheet("删除提现地址",onClose={if(!busy && !accepted)deleteTarget=null},showClose=!busy && !accepted,onWindowReady=onDialogWindow) {
+            Column(Modifier.padding(horizontal=Spacing.pageH).padding(bottom=24.dp)) {
+                AssetKv("地址",target.address)
+                AssetKv("币种 / 网络","${target.asset} / ${AssetsLogic.displayNetwork(target.network)}")
+                Text("删除后不能恢复。服务端列表重新读取不再包含同一地址后，才显示已删除。",Modifier.padding(top=8.dp),style=lb(FontSize.small),color=p.textSecondary)
+                Spacer(Modifier.height(10.dp))
+                LbTextField(deleteTotp,{if(!busy && !accepted)deleteTotp=it.filter(Char::isDigit).take(6)},"请输入 6 位谷歌验证码",keyboardType=KeyboardType.Number,testTag="address.delete.totp")
+                vm.addressDeleteError?.let{Text(it,Modifier.padding(top=8.dp),style=lb(FontSize.small),color=p.down)}
+                Spacer(Modifier.height(12.dp))
+                if(accepted) LbButton(if(busy)"仅重新读取中…"else"仅重新读取地址列表",enabled=!busy,loading=busy,testTag="address.delete.refresh"){vm.refreshAcceptedAddressDeletion()}
+                else LbButton(if(busy)"等待服务端结果…"else"确认删除地址",enabled=!busy&&deleteTotp.length==6,loading=busy,testTag="address.delete.confirm"){vm.submitDeleteAddressConfirmed(target,deleteTotp)}
+                Spacer(Modifier.height(8.dp))
+                LbButton("取消",kind=ButtonKind.SECONDARY,enabled=!busy&&!accepted,testTag="address.delete.dismiss"){deleteTarget=null}
             }
         }
     }

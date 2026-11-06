@@ -25,6 +25,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.PATCH
@@ -471,6 +472,9 @@ interface LinbitApi {
 
     @PATCH("account/withdraw-addresses/{id}")
     suspend fun updateWithdrawAddress(@Path("id") id: String, @Body body: ApiUpdateWithdrawAddressRequest): ApiWithdrawAddress
+
+    @HTTP(method = "DELETE", path = "account/withdraw-addresses/{id}", hasBody = false)
+    suspend fun deleteWithdrawAddress(@Path("id") id: String, @Query("code") code: String? = null, @Query("totpCode") totpCode: String? = null): retrofit2.Response<Unit>
 
     @GET("account/withdraw-whitelist")
     suspend fun withdrawWhitelist(): ApiWhitelistStatus

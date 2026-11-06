@@ -235,8 +235,52 @@ class AssetsViewModel @Inject constructor(
         };return true
     }
 
+    data class AddressDeleteReceipt(val id:String,val label:String)
+    var addressDeleteBusy by androidx.compose.runtime.mutableStateOf(false);private set
+    var addressDeleteError by androidx.compose.runtime.mutableStateOf<String?>(null);private set
+    var addressDeleteReceipt by androidx.compose.runtime.mutableStateOf<AddressDeleteReceipt?>(null);private set
+    var addressDeleteAccepted by androidx.compose.runtime.mutableStateOf(false);private set
+    private var addressDeleteTarget:ApiWithdrawAddress?=null
+    fun submitDeleteAddressConfirmed(target:ApiWithdrawAddress,totp:String):Boolean {
+        if(addressDeleteBusy||addressDeleteAccepted||addressBusy||addressEditBusy||!tokens.loggedIn.value)return false
+        addressDeleteTarget=target;addressDeleteAccepted=false;addressDeleteBusy=true;addressDeleteError=null;addressDeleteReceipt=null
+        val generation=++addressGeneration;val epoch=withdrawEpoch.value
+        addressJob=viewModelScope.launch {
+            try {
+                val response=apiCall{api.deleteWithdrawAddress(target.id,totpCode=totp)}
+                if(response.code()!=204){
+                    throw click.cowa.linbit.core.network.ApiFailure.Server(response.code(),click.cowa.linbit.core.network.ErrorEnvelope.parse(response.errorBody()?.string()),response.headers()["Retry-After"]?.toIntOrNull())
+                }
+                addressDeleteAccepted=true
+                refreshAcceptedAddressDeletion(epoch,generation)
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressDeleteError=e.lbMessage()}
+            finally{if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressDeleteBusy=false}
+        };return true
+    }
+    fun refreshAcceptedAddressDeletion():Boolean {
+        val target=addressDeleteTarget
+        if(!addressDeleteAccepted||addressDeleteBusy||target==null||!tokens.loggedIn.value)return false
+        addressDeleteBusy=true;addressDeleteError=null
+        val generation=addressGeneration;val epoch=withdrawEpoch.value
+        addressJob=viewModelScope.launch {
+            try{refreshAcceptedAddressDeletion(epoch,generation)}
+            catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressDeleteError=e.lbMessage()}
+            finally{if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressDeleteBusy=false}
+        };return true
+    }
+    private suspend fun refreshAcceptedAddressDeletion(epoch:Long,generation:Long) {
+        val target=addressDeleteTarget?:return
+        val items=apiCall{api.withdrawAddresses()}.items
+        if(epoch!=withdrawEpoch.value||generation!=addressGeneration)return
+        require(items.none{it.id==target.id}){"删除已受理，但服务端列表仍含该地址；只可重读列表，不能再次删除。"}
+        addressDeleteReceipt=AddressDeleteReceipt(target.id,target.label?.takeIf{it.isNotBlank()}?:target.address)
+    }
+
     fun acknowledgeAddressEdit(){if(addressEditReceipt!=null){addressEditReceipt=null;addressEditError=null}}
 
+    private fun addressDeleteGenerationReset(){addressDeleteBusy=false;addressDeleteError=null;addressDeleteReceipt=null;addressDeleteAccepted=false;addressDeleteTarget=null}
     fun clearAddressFeedback(){if(!addressBusy&&!addressAccepted){addressError=null;addressReceipt=null}}
 
     var withdrawBusy by androidx.compose.runtime.mutableStateOf(false); private set
