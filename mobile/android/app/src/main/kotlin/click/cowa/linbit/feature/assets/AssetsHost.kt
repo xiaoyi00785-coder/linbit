@@ -73,6 +73,7 @@ fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel(), onDi
                 vm = vm,
                 onBack = { assetsNav.openAddressBook() },
                 onDone = { assetsNav.openAddressBook() },
+                onDialogWindow = onDialogWindow,
             )
             is AssetsRoute.WithdrawRecords -> WithdrawRecordsScreen(vm, onBack = assetsNav::clear)
         }

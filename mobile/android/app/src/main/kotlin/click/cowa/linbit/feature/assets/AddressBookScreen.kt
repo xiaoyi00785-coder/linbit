@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -210,7 +212,7 @@ private fun BoxToggle(on: Boolean, enabled: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit, onDone: () -> Unit) {
+fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit, onDone: () -> Unit, onDialogWindow: (android.view.Window?) -> Unit = {}) {
     BackHandler(onBack = onBack)
     val p = LB.p
     val scope = rememberCoroutineScope()
@@ -224,7 +226,19 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
     var totp by remember { mutableStateOf("") }
     var showNet by remember { mutableStateOf(false) }
     var showAsset by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
+    var showConfirm by remember { mutableStateOf(false) }
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+
+    LaunchedEffect(session) {
+        showConfirm = false
+        vm.clearAddressFeedback()
+    }
+    LaunchedEffect(vm.addressReceipt) {
+        if (vm.addressReceipt != null) {
+            showConfirm = false
+            onDone()
+        }
+    }
 
     LaunchedEffect(asset) {
         net = null
@@ -235,7 +249,7 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
         }
     }
 
-    val valid = net != null && address.trim().length >= 10 && totp.length == 6 &&
+    val valid = net != null && address.trim().length >= 10 &&
         (net?.memoRequired != true || memo.isNotBlank())
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
@@ -248,13 +262,13 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
             PickerField("选择网络", net?.network?.let { AssetsLogic.displayNetwork(it) } ?: "", "选择网络") { showNet = true }
             Spacer(Modifier.height(10.dp))
             Text("地址", style = lb(FontSize.caption), color = p.textSecondary)
-            LbTextField(address, { address = it }, "长按粘贴地址", Modifier.padding(top = 4.dp))
+            LbTextField(address, { if(!vm.addressBusy) address = it }, "长按粘贴地址", Modifier.padding(top = 4.dp), testTag = "address.input")
             if (net?.memoRequired == true) {
                 Spacer(Modifier.height(10.dp))
-                LbTextField(memo, { memo = it }, "该网络必须填写 Memo")
+                LbTextField(memo, { if(!vm.addressBusy) memo = it }, "该网络必须填写 Memo")
             }
             Spacer(Modifier.height(10.dp))
-            LbTextField(label, { label = it }, "如：我的USDT钱包")
+            LbTextField(label, { if(!vm.addressBusy) label = it }, "如：我的USDT钱包", testTag = "address.label")
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.pressable(scale = 1f) { whitelisted = !whitelisted }) {
                 Text(if (whitelisted) "☑" else "☐", style = lb(FontSize.body), color = p.textPrimary)
@@ -262,30 +276,39 @@ fun AddAddressScreen(assetInit: String?, vm: AssetsViewModel, onBack: () -> Unit
                 Text("加入提现白名单", style = lb(FontSize.label), color = p.textPrimary)
             }
             Spacer(Modifier.height(12.dp))
-            LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "请输入 6 位谷歌验证码", keyboardType = KeyboardType.Number)
+
             Spacer(Modifier.height(24.dp))
         }
-        LbButton("保存", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), enabled = valid, loading = saving) {
-            scope.launch {
-                saving = true
-                vm.createAddress(
-                    ApiCreateWithdrawAddressRequest(
-                        asset = asset,
-                        network = net!!.network!!,
-                        address = address.trim(),
-                        memo = memo.ifBlank { null },
-                        label = label.ifBlank { null },
-                        whitelisted = whitelisted,
-                        totpCode = totp,
-                    ),
-                ).fold(
-                    onSuccess = { vm.toast.show("地址已保存"); onDone() },
-                    onFailure = { vm.toast.show(it.lbMessage()) },
-                )
-                saving = false
+        LbButton("复核并保存", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), enabled = valid && !vm.addressBusy && vm.addressReceipt == null, loading = vm.addressBusy, testTag = "address.review") {
+            showConfirm = true
+        }
+    }
+
+    if (showConfirm) {
+        LbSheet("确认新增提现地址", onClose = { if (!vm.addressBusy) showConfirm = false }, showClose = !vm.addressBusy, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
+                Text("提交后将向服务端新增地址；仅服务端列表读回同一条记录才算保存更新。", style = lb(FontSize.small), color = p.textSecondary)
+                AssetKv("币种", asset); AssetKv("网络", AssetsLogic.displayNetwork(net?.network)); AssetKv("地址", address.trim())
+                if (label.isNotBlank()) AssetKv("标签", label.trim()); if (memo.isNotBlank()) AssetKv("Memo", memo.trim())
+                AssetKv("加入白名单", if (whitelisted) "是" else "否")
+                Spacer(Modifier.height(12.dp))
+                val receipt = vm.addressReceipt
+                if (receipt != null) {
+                    Text("列表已读回记录 ${receipt.readback.id}", style = lb(FontSize.small), color = p.textPrimary, modifier = Modifier.testTag("address.receipt"))
+                } else {
+                    LbTextField(totp, { if (!vm.addressBusy) totp = it.filter(Char::isDigit).take(6) }, "请输入 6 位谷歌验证码", keyboardType = KeyboardType.Number, testTag = "address.totp")
+                }
+                Spacer(Modifier.height(12.dp))
+                vm.addressError?.let { Text(it, Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down) }
+                LbButton(if (vm.addressBusy) "等待服务端结果…" else "确认新增", loading = vm.addressBusy, enabled = receipt != null || (valid && totp.length == 6 && !vm.addressBusy), testTag = "address.confirm") {
+                    if (receipt != null) { showConfirm = false; onDone(); return@LbButton }
+                    vm.submitCreateAddressConfirmed(ApiCreateWithdrawAddressRequest(asset = asset, network = net!!.network!!, address = address.trim(), memo = memo.ifBlank { null }, label = label.ifBlank { null }, whitelisted = whitelisted, totpCode = totp))
+                }
+                LbButton("取消", kind = ButtonKind.SECONDARY, enabled = !vm.addressBusy, testTag = "address.dismiss") { showConfirm = false }
             }
         }
     }
+
     if (showNet) {
         LbSheet("选择网络", onClose = { showNet = false }, showClose = true) {
             if (nets.isEmpty()) EmptyState("暂无可用网络", Modifier.height(200.dp))

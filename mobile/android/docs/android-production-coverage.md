@@ -60,7 +60,7 @@
 | 充值 | 网络；自动到账账户选择 | `DepositScreens.kt:141-175,287-301` | 正常/空/明确错误 P；正确地址是在线网络 mock 的无效演示值，不得转账。弹层及 AppRoot 点击 U，不拿合成预览代替。 |
 | 提现 | 网络；链上/站内最终安全验证（2FA 或非 2FA） | `WithdrawScreen.kt:77-138,261-379` | 正常安全确认可达，独立离屏Window按manifest，PixelCopy/真机U；空网络/错误 P；本批仅链上已开2FA的AppRoot两适配local pending闭环 P/W：取消0 POST、在途ViewModel防重、503保留安全Window/金额/地址/TOTP并重试，202/pending提交与同id记录/借记余额readback分别显示；不是链上到账。地址簿/站内/撤销U。 |
 | 资产划转 | 现货→合约最终复核/失败重试/成功结果 | `TransferScreen.kt:55-160`；`AssetsViewModel.kt:184-222` | AppRoot P/W：320dp fontScale1.3浅色、360dp暗色；fake token与127.0.0.1精确POST；取消0写；真机、反向和其他设备 V/C 仍U。 |
-| 地址簿 | 白名单验证；改白名单；新增选择币种/网络；撤销 pending 提现 | `AddressBookScreen.kt:70-187,289-300,372-419` | U。 |
+| 地址簿 | 新增label/网络；白名单验证/edit；删除；撤销 pending 提现 | `AddressBookScreen.kt`；`AssetsViewModel.kt` | 新增单链两项适配P/W见下文；label/memo PATCH、delete、单条名单PATCH/全局开关、撤销U。 |
 | More | 卡券激活确认；合伙人申请；跟单；跟单二次确认；成为带单员；停止跟单；关闭工单 | `CouponsScreen.kt:94-132`；`PartnerScreen.kt:262-277`；`CopyTradingScreen.kt:311-365`；`SupportTicketsScreen.kt:309-314` | U。 |
 | Profile | 修改昵称；退出；移除本机账号；创建子账户；2FA 关闭确认 | `UserCenterScreens.kt:76-158,179-223`；`SubAccountsScreen.kt:42-88`；`SecurityScreens.kt:182-197` | U。 |
 | 安全（新） | 登录密码/防钓鱼/邮箱/手机/资金密码安全确认 | `SecurityFeatureScreens.kt`、`SecurityContactScreens.kt` | 表单 P；独立离屏Window按本批实际manifest，PixelCopy/真机U。契约按生成模型 loopback 测试，真机PixelCopy/V U，禁止 UI 自动发码/绑定。 |
@@ -195,7 +195,7 @@ Evidence directories (outside the repository): `/workspace/android-verification/
 
 本组有限剩余清单（不是泛泛重审全部Android）：
 1. **提现剩余 U**：本批链上已开2FA的两适配local pending闭环已验；completed/processing/failed/canceled实体Root、非2FA发码（不发送真实验证码）、链上实际结算、spot后端配置分支与真机P未验。
-2. **地址簿闭环 U**：需独立最终复核（新增/编辑/删除或白名单变更）、失败保留重试、列表readback、会话/防重。不能把验证码表单当最终复核也不能用旧合成预览抵。
+2. **地址簿剩余 U**：已有create的local复核/失败重试/同id列表readback/防重/会话隔离；label/memo PATCH（含单条whitelisted），DELETE及全局withdraw-whitelist写仍U。
 3. **地址簿内 pending 撤销记录 U**：保留为同组原范围单独动作，当前未验，不用本批划转mock替代；需本组完成时核真实契约并做local final review/readback（若真实API行为不同则据实记录）。
 
 
@@ -210,3 +210,13 @@ Evidence directories (outside the repository): `/workspace/android-verification/
 实际Read八个图片/manifest（`withdraw-fixed-evidence`）：两适配表单/独立Window初始复核/503保留/结果。窗口报告真实`productionDialogWindow=true`、`dialogDecorViewMeasured=960x2532px/1080x2532px`；`pixelCopy=NOT_RUN`。320大字号表单可读并滚动到底部记录，360错误和pending暗夜对比清楚；manifest由`PENDING_HUMAN_READ`更新为已实际Read，PixelCopy/设备图仍NOT_RUN；它们是相同真实链不同滚动阶段的图，不是全V。ref中未找到可逐像素匹配的此精确提现参考，记**no-exact-reference**；不把图张数代替其余交易/资产/安全验收。
 
 Keep U：地址簿增删改/白名单final review/readback/session/reentrancy，pending提现撤销，反向`out`划转，站内转账，completed/processing/failed/canceled实体Root，非2FA发码/spot配置链和真机/真实资金。此批次未部署/未发真实验证码/未调用非loopback资金写。超过原10–15分钟预算，主要诊断是AppRoot的提现方式+币种两步选择、route队列队列次序及mock敏感写的前置拒绝；这些过程性失败XML未冒充passed，正式目录只保存最终4/0/0/0独立结果。
+
+## 2026-11-06 1250 bounded address-create batch
+
+OpenAPI支持本批create和仍未验的PATCH/del三种实际写，不能把接口存在混合报成完成。本批只收**create**：`POST /account/withdraw-addresses`带USDT/TRC20/无效演示地址/Mock local label/false/fake TOTP，local；GET /account/withdraw-addresses`真实列表必须同id才能发布`AddressReceipt`，随后才回到真实列表再GET展示label+address。容许写入只此精确127.0.0.1 method/path/body；禁止发码、PATCH、DELETE、白名单开关及其他资金/提醒写。
+
+原生产缺漏：原保存直接POST并Toast即回跳，没有独立复核、无强制列表读回；本地saving不是ViewModel/session跨界面防重。本批家庭VM在同步入口拒绝busy/accepted重复，按session generation cancel/隔离late result，accepted但列表不全不能repost。Root两适配（320/fontScale1.3、360/dark）通过Assets入口→提现方式→地址簿→新增→真实复核Window，取消0 POST、held503单次在途、错误保留再确认→201→GET列表可见记录。新增VM两项真实Retrofit分别验held重复/旧session和success同id readback/不重复create。
+
+发现并修正复核内容在现有纵向Sheet里再套verticalScroll造成真独立Window 0x0/黑图：复用现有容器滚动，Root断言Window非零，并保存新的可Read窗口图片。期间早期匹配到表单自身label的假列表结果未沿用；正式断言同一生产Root已回AddressBook、真实list label/address、GET≥3且无REJECTED。无精确新增UI reference，明确no-exact-reference；8 PNG/manifest已Read，不是整本地址簿、编辑删除、设备PixelCopy或全V。
+
+独立XML `address-create-xml`；图片/元数据 `address-create-evidence`。独立Root **4 tests / 0 failures / 0 errors / 0 skipped**；VM 2项0 skipped。默认实测 **358 tests / 0 failures / 0 errors / 130 skipped**（本批Root 4项默认Assume skipped）；顺序Debug compile→Release compile→lintDebug→默认全测全部BUILD SUCCESSFUL。默认XML `address-default-xml`。保持U：pending提现撤销、反向out划转、提现其他状态、站内、地址白名单/PATCH/DELETE与非2FA/真机。本批超出预算，真实诊断包括资产币种资料、同font输入tag、嵌套滚动窗口归零及网络回调整合，不把中间错误XML当passed。

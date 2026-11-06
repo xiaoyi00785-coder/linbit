@@ -58,6 +58,8 @@ class AssetsViewModel @Inject constructor(
     private val _s = MutableStateFlow(AssetsUiState())
     val state: StateFlow<AssetsUiState> = _s.asStateFlow()
     private var withdrawJob: kotlinx.coroutines.Job? = null
+    private var addressJob: kotlinx.coroutines.Job? = null
+    private var addressGeneration = 0L
     private val withdrawEpoch = kotlinx.coroutines.flow.MutableStateFlow(0L)
 
     val loggedIn: StateFlow<Boolean> = tokens.loggedIn
@@ -187,6 +189,31 @@ class AssetsViewModel @Inject constructor(
     }
 
     data class WithdrawReceipt(val submission: ApiWithdrawal, val readback: ApiWithdrawal, val account: String, val balance: BigDecimal)
+    data class AddressReceipt(val created: ApiWithdrawAddress, val readback: ApiWithdrawAddress)
+    var addressBusy by androidx.compose.runtime.mutableStateOf(false); private set
+    var addressError by androidx.compose.runtime.mutableStateOf<String?>(null); private set
+    var addressReceipt by androidx.compose.runtime.mutableStateOf<AddressReceipt?>(null); private set
+    private var addressAccepted = false
+    fun submitCreateAddressConfirmed(req: ApiCreateWithdrawAddressRequest): Boolean {
+        if (addressBusy || addressAccepted || !tokens.loggedIn.value) return false
+        addressBusy=true; addressError=null; addressReceipt=null
+        val generation=++addressGeneration; val epoch=withdrawEpoch.value
+        addressJob=viewModelScope.launch {
+            try {
+                val created=apiCall{api.createWithdrawAddress(req)}
+                addressAccepted=true
+                val items=apiCall{api.withdrawAddresses()}.items
+                val actual=items.firstOrNull{it.id==created.id}
+                if(epoch!=withdrawEpoch.value||generation!=addressGeneration)return@launch
+                require(actual!=null){"地址已提交，但列表读回未找到该地址；请稍后查看地址簿。"}
+                addressReceipt=AddressReceipt(created,actual)
+            } catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(e:Throwable){if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressError=e.lbMessage()}
+            finally{if(epoch==withdrawEpoch.value&&generation==addressGeneration)addressBusy=false}
+        };return true
+    }
+    fun clearAddressFeedback(){if(!addressBusy&&!addressAccepted){addressError=null;addressReceipt=null}}
+
     var withdrawBusy by androidx.compose.runtime.mutableStateOf(false); private set
     var withdrawError by androidx.compose.runtime.mutableStateOf<String?>(null); private set
     var withdrawAwaitingReadback by androidx.compose.runtime.mutableStateOf(false); private set
@@ -227,7 +254,7 @@ class AssetsViewModel @Inject constructor(
     private var transferGeneration = 0L
     init { viewModelScope.launch { tokens.sessionVersion.collect {
         transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null
-        withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false
+        withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false; addressGeneration++; addressJob?.cancel(); addressBusy=false; addressError=null; addressReceipt=null; addressAccepted=false
     } } }
     fun transferFutures(toFutures: Boolean, amount: String): Boolean {
         if (transferBusy || !tokens.loggedIn.value) return false
@@ -256,7 +283,7 @@ class AssetsViewModel @Inject constructor(
         if(spot!=null&&futures!=null)_s.value=_s.value.copy(spot=spot.items,futures=futures,loading=false,error=null)
     }
     fun clearTransferFeedback(){if(!transferBusy){transferError=null;transferReceipt=null}}
-    override fun onCleared(){transferGeneration++;transferJob?.cancel();withdrawEpoch.value++;withdrawJob?.cancel();super.onCleared()}
+    override fun onCleared(){transferGeneration++;transferJob?.cancel();withdrawEpoch.value++;withdrawJob?.cancel();addressGeneration++;addressJob?.cancel();super.onCleared()}
 
     // ---- 地址簿 ----
     /** 离屏证据：地址簿列表/白名单开关（非生产）。 */
