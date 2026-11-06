@@ -59,6 +59,11 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
             it.maxHeapSize = "2g"
+            // 离屏证据：-PoffscreenShots=1 或 -Doffscreen.shots=1
+            val shots = (project.findProperty("offscreenShots") as? String)
+                ?: System.getProperty("offscreen.shots")
+                ?: ""
+            it.systemProperty("offscreen.shots", shots)
         }
     }
     packaging {
