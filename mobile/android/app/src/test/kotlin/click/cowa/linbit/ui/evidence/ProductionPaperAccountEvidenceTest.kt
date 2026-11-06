@@ -46,7 +46,7 @@ abstract class ProductionPaperAccountScenario(private val label: String, private
                 true
             } else true
         }.getOrDefault(false) } }
-        catch (e: Throwable) { throw AssertionError("Wait=$text enabled=${paperVm.available} loading=${paperVm.loading} failure=${paperVm.failure} account=${paperVm.account} balances=${paperVm.balances} last=${paperVm.lastOrder} requests=${api.dumpRequests()} tree=" + rule.onRoot(useUnmergedTree = true).printToString(), e) }
+        catch (e: Throwable) { throw AssertionError("Wait=$text enabled=${paperVm.available} loading=${paperVm.loading} failure=${paperVm.failure} account=${paperVm.account} balances=${paperVm.balances} last=${paperVm.lastOrder} requests=${api.dumpRequests()} tree=" + rule.onAllNodesWithText("操作未完成", substring = true, useUnmergedTree = true).printToString() + rule.onAllNodesWithText("虚拟", substring = true, useUnmergedTree = true).printToString(), e) }
     }
     private fun awaitBalance(mutations: Int, orderId: String, asset: String, amount: String) {
         try { rule.waitUntil(15_000) {
@@ -146,7 +146,58 @@ abstract class ProductionPaperAccountScenario(private val label: String, private
         }
     }
 
+
+    @Test fun appRootSeparateOrderTradeFirstAndLastPagesWithZeroWrites() {
+        MockEvidenceApi().use { server -> api = server
+            base(); api.defaultFeatureFlags = """{"features":{"paperTrading":true,"priceAlerts":false}}"""
+            val f = ProductionEvidenceFixtures(api, CoroutineScope(Dispatchers.Main))
+            val paperClient = f.paperClient(true); f.tokens.accessToken = "INVALID_LAYOUT_TOKEN"
+            paperVm = f.paper(paperClient)
+            repeat(2) { api.route("GET", "/paper/account", ACCOUNT) }
+            repeat(2) { api.route("GET", "/paper/balances?page=1&pageSize=20", BALANCES) }
+            api.route("GET", "/paper/orders?symbol=BTCUSDT&generation=3&page=1&pageSize=2", ORDERS_1)
+            api.route("GET", "/paper/orders?symbol=BTCUSDT&generation=3&page=2&pageSize=2", """{"code":"MOCK_PAGE_FAILURE","message":"controlled paper page failure"}""", 503)
+            api.route("GET", "/paper/orders?symbol=BTCUSDT&generation=3&page=2&pageSize=2", ORDERS_2)
+            api.route("GET", "/paper/trades?symbol=BTCUSDT&generation=3&page=1&pageSize=2", TRADES_1)
+            api.route("GET", "/paper/trades?symbol=BTCUSDT&generation=3&page=2&pageSize=2", TRADES_2)
+            pendingWindow = PendingWindow()
+            runBlocking { f.root().setTheme(if (label.endsWith("dark")) click.cowa.linbit.core.storage.ThemeMode.DARK else click.cowa.linbit.core.storage.ThemeMode.LIGHT) }
+            rule.setContent {
+                androidx.compose.runtime.CompositionLocalProvider(click.cowa.linbit.app.LocalRootHomeMarketFactory provides f.rootHomeMarket()) {
+                    click.cowa.linbit.app.AppRoot(f.root(), f.badge(), click.cowa.linbit.app.AssetRouteViewModels(f.assets(), f.spot(), f.tradFi(), paperVm), showSplash = false, onDialogWindow = { pendingWindow.window = it })
+                }
+            }
+            awaitText("首页"); rule.onNodeWithText("资产", useUnmergedTree = true).performClick(); awaitText("完成充值，开启您的 Linbit 之旅!")
+            rule.onNodeWithText("模拟", useUnmergedTree = false).performScrollTo().performClick(); awaitText("pa_mock")
+            rule.onNodeWithTag("paper-history").performScrollTo().performClick(); awaitText("虚拟买入 · BTCUSDT", scroll = true)
+            rule.onNodeWithText("100.010", substring = true, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            harness.dialogWindow("approot-$label-history-orders-page1", pendingWindow.window)
+            rule.onNodeWithTag("paper-history-next", useUnmergedTree = true).performScrollTo().assertIsEnabled().performClick()
+            awaitText("操作未完成", scroll = true)
+            Assert.assertEquals(2, paperVm.ordersHistory.items.size)
+            rule.onNodeWithTag("paper-history-retry", useUnmergedTree = true).performScrollTo().performClick()
+            awaitText("已到末页", scroll = true); awaitText("po_mock_order_3", scroll = true)
+            harness.dialogWindow("approot-$label-history-orders-last", pendingWindow.window)
+            rule.onNodeWithTag("paper-history-trades").performClick(); awaitText("虚拟买入 · BTCUSDT", scroll = true)
+            awaitText("已读取第1页", scroll = true)
+            rule.onNodeWithTag("paper-history-next").performScrollTo().performClick(); awaitText("已读取第2页", scroll = true)
+            awaitText("已到末页", scroll = true); awaitText("trade_mock_3", scroll = true)
+            harness.dialogWindow("approot-$label-history-trades-last", pendingWindow.window)
+            Assert.assertTrue(paperVm.ordersHistory.items.size == 3 && paperVm.tradesHistory.items.size == 3)
+            Assert.assertNull(paperVm.ordersHistory.failure); Assert.assertNull(paperVm.tradesHistory.failure)
+            Assert.assertTrue(api.requests.all { it.endsWith("pageSize=2") || !it.contains("/paper/orders?symbol=") && !it.contains("/paper/trades?symbol=") })
+            Assert.assertEquals(5, api.requests.count { it.startsWith("GET /paper/orders?") || it.startsWith("GET /paper/trades?") })
+            Assert.assertTrue(api.requests.all { !it.contains("/spot/order") && !it.contains("/order/accept") && !it.contains("/price-alerts") && !it.contains("/paper/account/reset") })
+            api.assertNoWrites()
+        }
+    }
+
     companion object {
+        const val ORDERS_1 = """{"page":1,"pageSize":2,"total":3,"items":[{"orderId":"po_mock_order_1","clientOrderId":"cid1","accountId":"pa_mock","mode":"paper","generation":3,"symbol":"BTCUSDT","side":"buy","type":"market","price":"80000.01","quantity":"0.00125","quoteOrderQty":"100.010","filledQuantity":"0.00125","status":"filled","priceSource":"INDEX","referencePrice":"80000.01","marketObservedAt":"2026-01-01T00:00:00Z","fee":"0","feeAsset":"USDT","createdAt":"2026-01-01T00:00:00Z","executedAt":"2026-01-01T00:00:00Z"},{"orderId":"po_mock_order_2","clientOrderId":"cid2","accountId":"pa_mock","mode":"paper","generation":3,"symbol":"BTCUSDT","side":"sell","type":"market","price":null,"quantity":"0.25001","quoteOrderQty":null,"filledQuantity":"0","status":"open","priceSource":"INDEX","referencePrice":"80000.01","marketObservedAt":"2026-01-01T00:00:00Z","fee":"0","feeAsset":"USDT","createdAt":"2026-01-01T00:00:01Z","executedAt":"2026-01-01T00:00:00Z"}],"generation":3}"""
+        const val ORDERS_2 = """{"page":2,"pageSize":2,"total":3,"items":[{"orderId":"po_mock_order_3","clientOrderId":"cid3","accountId":"pa_mock","mode":"paper","generation":3,"symbol":"BTCUSDT","side":"buy","type":"market","price":"80100.02","quantity":"0.00050","quoteOrderQty":"40.05001","filledQuantity":"0.00050","status":"filled","priceSource":"INDEX","referencePrice":"80100.02","marketObservedAt":"2026-01-01T00:00:00Z","fee":"0","feeAsset":"USDT","createdAt":"2026-01-01T00:00:02Z","executedAt":"2026-01-01T00:00:02Z"}],"generation":3}"""
+        const val TRADES_1 = """{"page":1,"pageSize":2,"total":3,"items":[{"tradeId":"trade_mock_1","orderId":"po_mock_order_1","mode":"paper","symbol":"BTCUSDT","side":"buy","price":"80000.01","quantity":"0.00125","fee":"0","feeAsset":"USDT","role":"taker","priceSource":"INDEX","marketObservedAt":"2026-01-01T00:00:00Z","createdAt":"2026-01-01T00:00:00Z"},{"tradeId":"trade_mock_2","orderId":"po_mock_order_1","mode":"paper","symbol":"BTCUSDT","side":"buy","price":"80000.01","quantity":"0.00004000","fee":"0","feeAsset":"USDT","role":"taker","priceSource":"INDEX","marketObservedAt":"2026-01-01T00:00:00Z","createdAt":"2026-01-01T00:00:01Z"}],"generation":3}"""
+        const val TRADES_2 = """{"page":2,"pageSize":2,"total":3,"items":[{"tradeId":"trade_mock_3","orderId":"po_mock_order_3","mode":"paper","symbol":"BTCUSDT","side":"buy","price":"80100.02","quantity":"0.00050","fee":"0","feeAsset":"USDT","role":"taker","priceSource":"INDEX","marketObservedAt":"2026-01-01T00:00:00Z","createdAt":"2026-01-01T00:00:02Z"}],"generation":3}"""
+
         const val ACCOUNT = """{"accountId":"pa_mock","mode":"paper","market":"spot","generation":3,"quoteAsset":"USDT","initialBalance":"10000.00000000","resetLimitPerUtcDay":1,"resetsUsedToday":0,"nextResetAt":null,"orderTypes":["market"],"priceSource":"INDEX","feeModel":"none","slippageModel":"none","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}"""
         const val BALANCES = """{"page":1,"pageSize":20,"total":2,"items":[{"asset":"USDT","free":"10000","locked":"0","total":"10000"},{"asset":"BTC","free":"2","locked":"0","total":"2"}],"account":"paper","mode":"paper","generation":3}"""
     }

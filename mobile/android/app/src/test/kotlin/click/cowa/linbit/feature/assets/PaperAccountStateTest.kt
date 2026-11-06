@@ -25,24 +25,39 @@ class PaperAccountStateTest {
     private fun vm(client: PaperTradingClient) = PaperAccountViewModel(client, tokens, ToastCenter(CoroutineScope(Dispatchers.Main)))
     private class MemoryApi(val account: PaperAccount) : PaperTradingApi {
         var balanceGeneration: Long = account.generation
+        var accountId = account.accountId
+        var failSecondOrderPage = false
+        var ordersRequests = 0
+        var tradesRequests = 0
+        val orderPages = mutableListOf<Int>()
+        val tradePages = mutableListOf<Int>()
+        var orderPageReply = CompletableDeferred<Response<PaperOrders>>()
+        var tradePageReply = CompletableDeferred<Response<PaperTrades>>()
+        var tradeResponse: PaperTrades? = null
+        var failure: Boolean = true
         var empty = false
         var accountReply = CompletableDeferred<PaperAccount>()
         var resetReply = CompletableDeferred<Response<PaperReset>>()
         val resetKeys = mutableListOf<String>()
         val orderRequests = mutableListOf<PaperOrderRequest>()
         var orderReply = CompletableDeferred<Response<PaperOrder>>()
-        override suspend fun account(): Response<PaperAccount> = Response.success(accountReply.await())
+        override suspend fun account(): Response<PaperAccount> = Response.success(accountReply.await().copy(accountId = accountId))
         override suspend fun balances(page: Int, pageSize: Int): Response<PaperBalances> = Response.success(
             PaperBalances(page, pageSize, if (empty) 0 else 2, if (empty) emptyList() else listOf(PaperBalance("USDT", if (orderRequests.any()) "9900" else "10000", "0", if (orderRequests.any()) "9900" else "10000"), PaperBalance("BTC", if (orderRequests.any()) "0.00125" else "2", "0", if (orderRequests.any()) "0.00125" else "2")), "paper", "paper", balanceGeneration))
         override suspend fun reset(key: String, request: PaperResetRequest): Response<PaperReset> { resetKeys += key; assertEquals("RESET_PAPER_ACCOUNT", request.confirmation); return resetReply.await() }
         override suspend fun placeOrder(request: PaperOrderRequest): Response<PaperOrder> { orderRequests += request; return orderReply.await() }
-        override suspend fun orders(symbol: String?, status: String?, generation: Long?, page: Int, pageSize: Int): Response<PaperOrders> = error("Not this batch")
+        override suspend fun orders(symbol: String?, status: String?, generation: Long?, page: Int, pageSize: Int): Response<PaperOrders> {
+            ordersRequests += 1; orderPages += page; assertEquals("BTCUSDT", symbol); assertEquals(balanceGeneration, generation); assertEquals(2, pageSize)
+            return if (ordersRequests == 1) orderPageReply.await() else if (ordersRequests == 2 && failSecondOrderPage) Response.error(500, "mock next page".toResponseBody()) else Response.success(PaperOrders(page, pageSize, 3, listOf(orderFixture.copy(orderId = "page-3", clientOrderId = "page-3")), account.generation))
+        }
         override suspend fun order(id: String): Response<PaperOrder> = error("Not this batch")
-        override suspend fun trades(symbol: String?, generation: Long?, page: Int, pageSize: Int): Response<PaperTrades> = error("Not this batch")
+        override suspend fun trades(symbol: String?, generation: Long?, page: Int, pageSize: Int): Response<PaperTrades> { tradesRequests += 1; if (failure && tradesRequests == 1) return Response.error(500, "mock page failure".toResponseBody())
+            tradeResponse?.let { return Response.success(it) }; return tradePageReply.await() }
         override suspend fun alerts(symbol: String?, status: String?, page: Int, pageSize: Int): Response<PriceAlerts> = error("Not this batch")
         override suspend fun createAlert(request: CreatePriceAlertRequest): Response<PriceAlert> = error("Not this batch")
         override suspend fun updateAlert(id: String, request: UpdatePriceAlertRequest): Response<PriceAlert> = error("Not this batch")
         override suspend fun deleteAlert(id: String, revision: Int?): Response<Unit> = error("Not this batch")
+        val orderFixture get() = PaperOrder("page-1", "page-1", "paper", "pa_mock", account.generation, "BTCUSDT", "buy", "market", "80000", "0.001", "100", "0.001", "filled", "INDEX", "80000", "mock-index-time", "0", "USDT", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
     }
     private fun ready(enabled: () -> Boolean = { true }, configure: MemoryApi.() -> Unit = {}): Pair<PaperAccountViewModel, MemoryApi> {
         tokens.accessToken = "test-paper-only"
@@ -161,6 +176,66 @@ class PaperAccountStateTest {
         assertNull(vm.account); assertNull(vm.lastOrder)
     }
 
+    @Test fun realOrderAndTradePagesHaveIndependentPagingFailureRetryAndTerminalEmptyStates() = runTest {
+        val (vm, api) = ready(); advanceUntilIdle()
+        vm.openHistory(PaperAccountViewModel.HistoryKind.ORDERS); runCurrent(); vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.ORDERS)
+        assertEquals(1, api.ordersRequests); assertTrue(vm.ordersHistory.loading)
+        api.orderPageReply.complete(Response.success(PaperOrders(1, 2, 3, listOf(api.orderFixture, api.orderFixture.copy(orderId = "page-2", clientOrderId = "page-2")), 3)))
+        advanceUntilIdle(); assertEquals(2, vm.ordersHistory.items.size); assertTrue(vm.ordersHistory.hasNext)
+        vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.ORDERS); vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.ORDERS)
+        advanceUntilIdle(); assertEquals(2, api.ordersRequests); assertEquals(3, vm.ordersHistory.items.size)
+        vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.ORDERS); assertFalse(vm.ordersHistory.hasNext)
+        vm.openHistory(PaperAccountViewModel.HistoryKind.TRADES); advanceUntilIdle()
+        assertTrue(vm.tradesHistory.failure.orEmpty().isNotEmpty()); assertEquals(1, api.tradesRequests)
+        api.tradeResponse = PaperTrades(1, 2, 0, emptyList(), 3)
+        vm.refreshHistory(PaperAccountViewModel.HistoryKind.TRADES); advanceUntilIdle()
+        assertNull(vm.tradesHistory.failure); assertTrue(vm.tradesHistory.items.isEmpty()); assertFalse(vm.tradesHistory.hasNext)
+        // No other endpoint, zero mutations, independent from real balances.
+        assertTrue(api.orderRequests.isEmpty())
+    }
+    @Test fun failedNextOrderPageKeepsItemsAndRetryLoadsThatPageOnlyOnceWithCorrectSymbol() = runTest {
+        val (vm, api) = ready(); advanceUntilIdle()
+        vm.openHistory(PaperAccountViewModel.HistoryKind.ORDERS)
+        api.orderPageReply.complete(Response.success(PaperOrders(1, 2, 3, listOf(api.orderFixture, api.orderFixture.copy(orderId = "page-2", clientOrderId = "page-2")), 3)))
+        advanceUntilIdle()
+        api.failSecondOrderPage = true; vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.ORDERS); advanceUntilIdle()
+        assertEquals(2, vm.ordersHistory.items.size); assertNotNull(vm.ordersHistory.failure)
+        api.failSecondOrderPage = false; vm.refreshHistory(PaperAccountViewModel.HistoryKind.ORDERS)
+        assertEquals(3, api.ordersRequests); runCurrent()
+        vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.ORDERS)
+        vm.refreshHistory(PaperAccountViewModel.HistoryKind.ORDERS)
+        assertEquals(3, api.ordersRequests)
+        advanceUntilIdle(); assertEquals(listOf(1, 2, 2), api.orderPages)
+        assertEquals(3, vm.ordersHistory.items.size); assertFalse(vm.ordersHistory.hasNext)
+        assertTrue(api.orderRequests.isEmpty())
+    }
+    @Test fun sessionAndAccountGenerationDiscardDeferredHistoryRatherThanMixingPages() = runTest {
+        val (vm, api) = ready(); advanceUntilIdle()
+        vm.openHistory(PaperAccountViewModel.HistoryKind.ORDERS)
+        tokens.accessToken = null
+        api.orderPageReply.complete(Response.success(PaperOrders(1, 2, 1, listOf(api.orderFixture), 3)))
+        advanceUntilIdle(); assertEquals(0, vm.ordersHistory.page); assertTrue(vm.ordersHistory.items.isEmpty())
+        tokens.accessToken = "test-paper-only-new-session"; advanceUntilIdle()
+        vm.openHistory(PaperAccountViewModel.HistoryKind.ORDERS)
+        // Fresh epoch only accepts its own replies; original fake account callback has already completed.
+        assertTrue(api.accountReply.isCompleted); assertFalse(vm.ordersHistory.loading)
+    }
+    @Test fun accountOrGenerationChangesInvalidateDeferredOrderPage() = runTest {
+        for (nextGeneration in listOf(3L, 4L)) {
+            val (vm, api) = ready(); advanceUntilIdle()
+            vm.openHistory(PaperAccountViewModel.HistoryKind.ORDERS)
+            assertTrue(vm.ordersHistory.loading)
+            api.balanceGeneration = nextGeneration
+            api.accountId = if (nextGeneration == 3L) "pa_other_mock" else "pa_mock"
+            api.accountReply = CompletableDeferred<PaperAccount>().apply { complete(account.copy(accountId = api.accountId, generation = nextGeneration)) }
+            vm.load(); advanceUntilIdle()
+            api.orderPageReply.complete(Response.success(PaperOrders(1, 2, 1, listOf(api.orderFixture.copy(accountId = api.accountId, generation = nextGeneration)), nextGeneration)))
+            advanceUntilIdle()
+            assertTrue(vm.ordersHistory.items.isEmpty())
+            assertEquals(1, api.ordersRequests)
+            assertNull(vm.ordersHistory.failure)
+        }
+    }
     @Test fun emptyPaperPaginationIsActualEmptyStateNotRealAssetFallback() = runTest {
         val (vm, api) = ready { empty = true }; advanceUntilIdle()
         assertEquals(0, vm.balances?.total); assertTrue(vm.balances?.items?.isEmpty() == true)
