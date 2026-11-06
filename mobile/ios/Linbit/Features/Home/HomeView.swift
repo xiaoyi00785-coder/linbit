@@ -36,7 +36,7 @@ struct HomeView: View {
                     sectionDivider
                     news
                 }
-                .padding(.bottom, Metrics.tabBarH + 40)
+                .padding(.bottom, Metrics.tabBarH + 72)
             }
             .refreshable { await vm.load(); await store.load() }
         }

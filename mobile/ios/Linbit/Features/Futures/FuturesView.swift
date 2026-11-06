@@ -64,7 +64,7 @@ struct FuturesTradeView: View {
                 chartToggle.padding(.top, 14).id("lb.chart")
                 bottomSection.padding(.top, 8).id("lb.bottom")
             }
-            .padding(.bottom, Metrics.tabBarH + 60)
+            .padding(.bottom, Metrics.tabBarH + 100)
         }
         .scrollDismissesKeyboard(.interactively)
         .lbKeyboardDone(focus: $keyboardFocus)

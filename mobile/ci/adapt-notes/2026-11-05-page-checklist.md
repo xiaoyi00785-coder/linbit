@@ -46,3 +46,23 @@ screens-pr / screens-adapt 外：home 日夜、markets、充提表单页、客�
 
 - 本环境无 Xcode：`xcodebuild` 不可用；以 GitHub Actions iOS `build` job 为 Release/编译证据。
 - OpenAPI 契约：提现已按既有 `/wallet/withdraw`；价格预警/模拟盘无 path 可对。
+
+## 4e326fc PR 冒烟截图（run 42153888929，merge SHA `803080f`，已实际 Read）
+
+路径：`/workspace/ci-shots-104-4e326fc/linbit-ios-803080f…/`  
+**Release/编译证据**：该 run `build` conclusion=`success`（event=pull_request）。非 xxxLarge。
+
+| 页 | 文件 | 结论 | 状态 |
+|----|------|------|------|
+| 首页 | home-light.png | **真实首页**（非开屏绿）；资产/充值/宫格/卡片可见；底内容与悬浮 Tab 仍偏近 | 已看；本批加大 home padding |
+| 合约 | futures-light.png | 顶栏「事件合约」完整；横幅全文多行；单登录钮；**仓位区登录钮被悬浮 Tab 挡住一截** | 已看；本批加大 futures padding |
+| 现货 | spot-light.png | 结构近 ref#28；仍见「手续费率」（790d6f5 已改文案，本图早于该 tip） | 已看 |
+| 登录 | login-light.png | 与 ref2/3 结构一致 | 已看 |
+| 资产 | assets-light.png | 未登录空态正常 | 已看 |
+| 客服列表 | support-list-light.png | 列表/状态徽标清晰，安全区正常 | 已看 |
+
+未在本批逐张打开但仍在同产物内：markets、futures-chart/leverage/tpsl、earn、swap、kyc、notif、security、loan、tradfi、copy、coupon、home-bell、assets-overview/networks、日夜间等——标为**未看**，不冒充已验。
+
+## tip `790d6f5`+
+
+含现货底栏横滑、预估手续费、PrimaryTabs fixedSize、预警/模拟盘依赖文案；以及本段 home/futures 底栏留白。新 CI：iOS `42155738788` 等。旧图不冒充该 tip 验收。
