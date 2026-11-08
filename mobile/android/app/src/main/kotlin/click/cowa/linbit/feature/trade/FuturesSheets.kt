@@ -90,11 +90,7 @@ fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit, onTool: (String) ->
                     row.forEach { t ->
                         Column(Modifier.weight(1f).pressable(scale = 1f) {
                             onClose()
-                            when (t) {
-                                "添加自选" -> toast("已添加到自选")
-                                "计算器", "价格预警", "模拟交易" -> onTool(t)
-                                else -> toast("${t}即将开放")
-                            }
+                            onTool(t)
                         }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(44.dp).border(1.dp, p.border, RoundedCornerShape(Radius.lg)), contentAlignment = Alignment.Center) {
                                 LbIcon(R.drawable.ic_doc_text, 20.dp, p.textPrimary)

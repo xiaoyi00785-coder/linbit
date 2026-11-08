@@ -277,8 +277,8 @@ private fun PaperAccountContent(loggedIn: Boolean, featureEnabled: Boolean, vm: 
         when {
             !loggedIn -> EmptyState("登录后可查看模拟账户") { LbButton("登录 / 注册", Modifier.fillMaxWidth(), onClick = onLogin) }
             !featureEnabled -> {
-                Text("模拟功能尚未开放", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
-                Text("当前版本仅保留独立模拟入口，未发起虚拟或真实交易请求。", Modifier.padding(top = 12.dp), style = lb(FontSize.body), color = p.textSecondary)
+                Text("模拟服务未启用", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+                Text("当前服务端未启用虚拟账户，请检查服务配置。不会使用真实账户代替模拟账户。", Modifier.padding(top = 12.dp), style = lb(FontSize.body), color = p.textSecondary)
             }
             vm.loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator(color = p.brand) }
             vm.failure != null && vm.account == null -> EmptyState(vm.failure ?: "模拟账户暂不可用") { LbButton("重试", Modifier.fillMaxWidth(), onClick = vm::load) }

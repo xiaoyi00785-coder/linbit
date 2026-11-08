@@ -85,12 +85,14 @@ fun SpotTradeScreen(
     /** Preserve the production Host origin (Assets -> Spot earn/strategy); not a fixture flag. */
     initialTop: Int = 0,
     vm: SpotTradeViewModel = hiltViewModel(),
+    onPriceAlerts: () -> Unit = {},
+    onFavorite: (String) -> Unit = {},
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
     DisposableEffect(nav) { if (autoStart) vm.start(); onDispose { vm.stop() } }
-    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier, initialTop)
+    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier, initialTop, onPriceAlerts, onFavorite)
 }
 
 @Composable
@@ -108,6 +110,8 @@ fun SpotTradeContent(
     onHistory: () -> Unit,
     modifier: Modifier = Modifier,
     initialTop: Int = 0,
+    onPriceAlerts: () -> Unit = {},
+    onFavorite: (String) -> Unit = {},
 ) {
     val p = LB.p
     var sheet by remember { mutableStateOf<String?>(null) }
@@ -143,7 +147,7 @@ fun SpotTradeContent(
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     LbIcon(R.drawable.ic_sun, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { sheet = "theme" })
                     LbIcon(R.drawable.ic_candles, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { chartOpen = !chartOpen })
-                    LbIcon(R.drawable.ic_more, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { vm.toast.show("更多功能即将开放") })
+                    LbIcon(R.drawable.ic_more, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { sheet = "tools" })
                 }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -202,7 +206,7 @@ fun SpotTradeContent(
                 OrderBookView(
                     book = grouped, rows = 5, rowHeight = 23.dp, pricePrec = vm.pricePrec, quote = vm.quote,
                     mid = {
-                        SpotMid(vm.last, vm.pricePrec, vm.changePct.signum() < 0, cnyRate?.let { "¥ " + Fmt.price(vm.last.multiply(it), 2) }) { vm.pickBookPrice(vm.last) }
+                        SpotMid(vm.last, vm.pricePrec, vm.changePct.signum() < 0, "$" + Fmt.price(vm.last, vm.pricePrec)) { vm.pickBookPrice(vm.last) }
                     },
                     mode = vm.bookMode, precisionText = step.stripTrailingZeros().toPlainString(),
                     onPick = vm::pickBookPrice, onMode = { sheet = "bookMode" }, onPrecision = { sheet = "precision" },
@@ -240,6 +244,17 @@ fun SpotTradeContent(
     }
 
     if (topTab == 0) when (sheet) {
+        "tools" -> SpotToolsSheet({ sheet = null }) { title ->
+            when (title) {
+                "充值" -> if (loggedIn) onDeposit() else onLogin()
+                "划转" -> if (loggedIn) onTransfer() else onLogin()
+                "价格预警" -> if (loggedIn) onPriceAlerts() else onLogin()
+                "添加自选" -> { onFavorite(vm.symbol); vm.toast.show("已添加到自选") }
+                else -> sheet = title
+            }
+        }
+        "交易偏好" -> if (loggedIn) TradePreferencesSheet(themeMode, onTheme, skipConfirm, { skipConfirm = it }) { sheet = null } else { androidx.compose.runtime.LaunchedEffect(Unit) { sheet = null; onLogin() } }
+        "新手教学" -> SpotGuideSheet { sheet = null }
         "orderKind" -> LbSheet(null, { sheet = null }) {
             Column(Modifier.padding(bottom = 20.dp)) {
                 listOf(0 to "当前委托", 2 to "条件单").forEach { (i, t) -> SheetOptionRow(t, ordersTab == i) { ordersTab = i; sheet = null } }

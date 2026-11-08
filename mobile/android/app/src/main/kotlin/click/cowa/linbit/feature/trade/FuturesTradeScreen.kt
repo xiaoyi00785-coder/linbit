@@ -103,6 +103,8 @@ fun FuturesRootScreen(
     initialTop: Int = 0,
     autoStart: Boolean = true,
     vm: FuturesTradeViewModel = LocalFuturesTradeFactory.current.invoke(),
+    onCoupons: () -> Unit = {},
+    onFavorite: (String) -> Unit = {},
 ) {
     val p = LB.p
     var top by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
@@ -124,7 +126,7 @@ fun FuturesRootScreen(
         when (top) {
             0 -> FuturesTradeContent(
                 vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
-                onSim = { top = 3 }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f),
+                onSim = { top = 3 }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f), onCoupons = onCoupons, onFavorite = onFavorite,
             )
             1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin)
             2 -> TradFiScreen(
@@ -136,17 +138,10 @@ fun FuturesRootScreen(
                 embedded = true,
                 bottomInset = bottomInset,
             )
-            // OpenAPI 暂无模拟/纸交易端点，不编造余额与成交
-            else -> ComingSoon("模拟交易", "后端尚未提供模拟交易契约（OpenAPI 无 paper/sim 端点），上线后按契约接入", bottomInset)
+            else -> Box(Modifier.fillMaxSize().padding(bottom = bottomInset)) {
+                click.cowa.linbit.feature.assets.PaperAccountScreen(onBack = { top = 0 }, onLogin = onLogin)
+            }
         }
-    }
-}
-
-@Composable
-private fun ComingSoon(title: String, note: String, bottomInset: Dp) {
-    val p = LB.p
-    Column(Modifier.fillMaxSize().padding(bottom = bottomInset), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        EmptyState(title) { Text(note, style = lb(FontSize.small), color = p.textSecondary, textAlign = TextAlign.Center) }
     }
 }
 
@@ -166,6 +161,8 @@ fun FuturesTradeContent(
     onCopy: () -> Unit = {},
     onPriceAlerts: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onCoupons: () -> Unit = {},
+    onFavorite: (String) -> Unit = {},
 ) {
     val p = LB.p
     var sheet by remember { mutableStateOf<String?>(null) }
@@ -261,7 +258,7 @@ fun FuturesTradeContent(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CheckRow(vm.tpsl, "止盈/止损", dashed = false) { vm.tpsl = it }
                             Box(Modifier.weight(1f))
-                            if (vm.tpsl) Text("高级设置 ›", Modifier.pressable(scale = 1f) { vm.toast.show("高级止盈止损即将开放") }, style = lb(FontSize.small), color = p.textSecondary)
+                            if (vm.tpsl) Text("高级设置 ›", Modifier.pressable(scale = 1f) { sheet = "advancedTpsl" }, style = lb(FontSize.small), color = p.textSecondary)
                         }
                         if (vm.tpsl) {
                             NumberBox("止盈", vm.quote, vm.tpText, { vm.tpText = it })
@@ -348,8 +345,8 @@ fun FuturesTradeContent(
                         else -> if (vm.shownPlans.isEmpty()) EmptyState("暂无计划委托") else vm.shownPlans.forEach { a -> AlgoOrderRow(a) { cancelAlgoTarget = a }; HorizontalDivider(Modifier.padding(horizontal = Spacing.pageH), color = p.divider) }
                     }
                 }
-                2 -> EmptyState("暂无跟单") { ChipButton("跟单交易", Modifier.width(120.dp).height(36.dp)) { vm.toast.show("跟单交易即将开放") } }
-                else -> Coupons(vm, couponTab) { couponTab = it }
+                2 -> EmptyState("暂无跟单") { ChipButton("跟单交易", Modifier.width(120.dp).height(36.dp)) { if (loggedIn) onCopy() else onLogin() } }
+                else -> Coupons(vm, couponTab, { couponTab = it }, { if (loggedIn) onCoupons() else onLogin() })
             }
             Box(Modifier.height(24.dp))
         }
@@ -389,7 +386,9 @@ fun FuturesTradeContent(
             when (tool) {
                 "计算器" -> showCalculator = true
                 "价格预警" -> { sheet = null; onPriceAlerts() }
-                "模拟交易" -> onSim()
+                "模拟交易" -> { sheet = null; onSim() }
+                "添加自选" -> { onFavorite(vm.symbol); vm.toast.show("已添加到自选") }
+                else -> sheet = tool
             }
         }
         "mode" -> MarginModeSheet(vm) { sheet = null }
@@ -412,6 +411,11 @@ fun FuturesTradeContent(
                 onConfirm = { sheet = null; vm.place(long) }, onClose = { sheet = null },
             )
         }
+    }
+    if (sheet == "advancedTpsl") EntryTpslSheet(vm) { sheet = null }
+    if (sheet == "交易偏好") TradePreferencesSheet(themeMode, onTheme, skipConfirm, { skipConfirm = it }) { sheet = null }
+    if (sheet in listOf("仓位档位介绍", "历史资金费率", "历史标记价格", "风险准备金", "新手教学")) {
+        TradeInfoSheet(sheet!!, vm, { sheet = null })
     }
     closeTarget?.let { pos ->
         ConfirmDialog("市价平仓", "确定以市价平掉 ${pos.symbol ?: ""} ${if (pos.side == ApiFuturesPosition.Side.SHORT) "空" else "多"}仓 ${pos.qty ?: ""} 吗？", "平仓", { closeTarget = null }) { vm.close(pos); closeTarget = null }
@@ -453,7 +457,7 @@ private fun SideButton(vm: FuturesTradeViewModel, loggedIn: Boolean, long: Boole
 }
 
 @Composable
-private fun Coupons(vm: FuturesTradeViewModel, tab: Int, onTab: (Int) -> Unit) {
+private fun Coupons(vm: FuturesTradeViewModel, tab: Int, onTab: (Int) -> Unit, onCenter: () -> Unit) {
     val p = LB.p
     val items = vm.bonus.filter { if (tab == 0) (it.kind ?: "trial") != "deduction" else it.kind == "deduction" }
     Row(Modifier.padding(horizontal = Spacing.pageH).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -464,7 +468,7 @@ private fun Coupons(vm: FuturesTradeViewModel, tab: Int, onTab: (Int) -> Unit) {
             )
         }
     }
-    if (items.isEmpty()) EmptyState("暂无卡券") { ChipButton("前往卡券中心", Modifier.width(140.dp).height(36.dp)) { vm.toast.show("卡券中心即将开放") } }
+    if (items.isEmpty()) EmptyState("暂无卡券") { ChipButton("前往卡券中心", Modifier.width(140.dp).height(36.dp)) { onCenter() } }
     else items.forEach { b ->
         Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 10.dp).border(1.dp, p.border, RoundedCornerShape(Radius.md)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

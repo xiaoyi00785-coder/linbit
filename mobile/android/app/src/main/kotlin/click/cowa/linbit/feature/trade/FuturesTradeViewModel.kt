@@ -102,6 +102,8 @@ class FuturesTradeViewModel @Inject constructor(
     var tpsl by mutableStateOf(false)
     var tpText by mutableStateOf("")
     var slText by mutableStateOf("")
+    var tpMark by mutableStateOf(true)
+    var slMark by mutableStateOf(true)
     var triggerText by mutableStateOf("")
     var planMarket by mutableStateOf(false)
     var bookPrecision by mutableStateOf<BigDecimal?>(null)
@@ -386,8 +388,8 @@ class FuturesTradeViewModel @Inject constructor(
                     reduceOnly = if (isOpen || hedge) null else true,
                     tpPrice = if (withTp && tpText.isNotEmpty()) tpText else null,
                     slPrice = if (withTp && slText.isNotEmpty()) slText else null,
-                    tpTriggerPriceType = if (withTp && tpText.isNotEmpty()) ApiFuturesPlaceOrderRequest.TpTriggerPriceType.MARK else null,
-                    slTriggerPriceType = if (withTp && slText.isNotEmpty()) ApiFuturesPlaceOrderRequest.SlTriggerPriceType.MARK else null,
+                    tpTriggerPriceType = if (withTp && tpText.isNotEmpty()) (if (tpMark) ApiFuturesPlaceOrderRequest.TpTriggerPriceType.MARK else ApiFuturesPlaceOrderRequest.TpTriggerPriceType.LAST) else null,
+                    slTriggerPriceType = if (withTp && slText.isNotEmpty()) (if (slMark) ApiFuturesPlaceOrderRequest.SlTriggerPriceType.MARK else ApiFuturesPlaceOrderRequest.SlTriggerPriceType.LAST) else null,
                     positionSide = posSide,
                     triggerPrice = if (isPlan) fmt(Dec.parse(triggerText), pricePrec) else null,
                     triggerPriceType = if (isPlan) ApiFuturesPlaceOrderRequest.TriggerPriceType.LAST else null,
