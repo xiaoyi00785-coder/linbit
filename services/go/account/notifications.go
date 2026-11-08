@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -51,13 +53,30 @@ func (p NotifyPrefs) wants(kind string) bool {
 }
 
 type noticeDTO struct {
-	ID    string `json:"id"`
-	Kind  string `json:"kind"`
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	Time  int64  `json:"time"` // unix ms
-	Read  bool   `json:"read"`
-	Email string `json:"emailStatus"`
+	ID    string      `json:"id"`
+	Kind  string      `json:"kind"`
+	Title string      `json:"title"`
+	Body  string      `json:"body"`
+	Time  int64       `json:"time"` // unix ms
+	Read  bool        `json:"read"`
+	Email string      `json:"emailStatus"`
+	Link  *noticeLink `json:"link,omitempty"`
+}
+
+// noticeLink is a typed in-app target. It is not a URL. Absent means the
+// notice has no reliable destination; clients must not guess one from body.
+type noticeLink struct {
+	Type     string `json:"type"`
+	TicketID string `json:"ticketId,omitempty"`
+}
+
+var supportTicketIDRe = regexp.MustCompile(`^[0-9]+$`)
+
+func supportTicketLink(typ, id sql.NullString) *noticeLink {
+	if !typ.Valid || !id.Valid || typ.String != "support_ticket" || !supportTicketIDRe.MatchString(id.String) {
+		return nil
+	}
+	return &noticeLink{Type: "support_ticket", TicketID: id.String}
 }
 
 // ---- store ----
@@ -84,10 +103,21 @@ func (s *Store) SetNotifyPrefs(ctx context.Context, userID int64, p NotifyPrefs)
 }
 
 func (s *Store) InsertNotification(ctx context.Context, userID int64, kind, title, body, emailStatus string) (int64, error) {
+	return s.InsertNotificationRef(ctx, userID, kind, title, body, emailStatus, "", "")
+}
+
+func (s *Store) InsertNotificationRef(ctx context.Context, userID int64, kind, title, body, emailStatus, resourceType, resourceID string) (int64, error) {
+	var typ, rid any
+	if resourceType != "" || resourceID != "" {
+		if resourceType != "support_ticket" || !supportTicketIDRe.MatchString(resourceID) {
+			return 0, errors.New("invalid notification resource")
+		}
+		typ, rid = resourceType, resourceID
+	}
 	var id int64
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO notifications (user_id, kind, title, body, email_status)
-		VALUES ($1,$2,$3,$4,$5) RETURNING id`, userID, kind, title, body, emailStatus).Scan(&id)
+		INSERT INTO notifications (user_id, kind, title, body, email_status, resource_type, resource_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, userID, kind, title, body, emailStatus, typ, rid).Scan(&id)
 	return id, err
 }
 func (s *Store) InsertNotificationDedup(ctx context.Context, userID int64, kind, title, body, dedupKey string) (int64, error) {
@@ -124,7 +154,7 @@ func (s *Store) ListNotifications(ctx context.Context, userID int64, kind string
 		return nil, 0, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, title, body, created_at, read_at IS NOT NULL, email_status
+		SELECT id, kind, title, body, created_at, read_at IS NOT NULL, email_status, resource_type, resource_id
 		FROM notifications WHERE user_id=$1 AND ($2='' OR kind=$2)
 		ORDER BY id DESC LIMIT $3 OFFSET $4`, userID, kind, limit, offset)
 	if err != nil {
@@ -136,11 +166,13 @@ func (s *Store) ListNotifications(ctx context.Context, userID int64, kind string
 		var d noticeDTO
 		var id int64
 		var at time.Time
-		if err := rows.Scan(&id, &d.Kind, &d.Title, &d.Body, &at, &d.Read, &d.Email); err != nil {
+		var resType, resID sql.NullString
+		if err := rows.Scan(&id, &d.Kind, &d.Title, &d.Body, &at, &d.Read, &d.Email, &resType, &resID); err != nil {
 			return nil, 0, err
 		}
 		d.ID = strconv.FormatInt(id, 10)
 		d.Time = at.UnixMilli()
+		d.Link = supportTicketLink(resType, resID)
 		out = append(out, d)
 	}
 	return out, total, rows.Err()
@@ -193,6 +225,10 @@ func (s *Store) MarkNotificationsRead(ctx context.Context, userID int64, ids []i
 // (force, or the user's preference when force is nil), emails it in the
 // background. Errors are logged; a notification never fails its caller.
 func (s *Server) notify(ctx context.Context, u *User, kind, title, body string, force *bool) (int64, error) {
+	return s.notifyLinked(ctx, u, kind, title, body, force, "", "")
+}
+
+func (s *Server) notifyLinked(ctx context.Context, u *User, kind, title, body string, force *bool, resType, resID string) (int64, error) {
 	wantEmail := false
 	if force != nil {
 		wantEmail = *force
@@ -212,7 +248,7 @@ func (s *Server) notify(ctx context.Context, u *User, kind, title, body string, 
 			status = "no_address"
 		}
 	}
-	id, err := s.store.InsertNotification(ctx, u.ID, kind, title, body, status)
+	id, err := s.store.InsertNotificationRef(ctx, u.ID, kind, title, body, status, resType, resID)
 	if err != nil {
 		return 0, err
 	}

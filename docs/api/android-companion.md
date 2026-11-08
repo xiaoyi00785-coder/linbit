@@ -218,6 +218,10 @@ K 线：`GET /market/klines` 与 `GET /futures/market/klines` 增加固定秒数
 
 自有客服仍是登录用户工单：`/support/tickets`。管理员经 `/admin/v1/support/tickets/{id}/messages` 回复。没有游客会话，避免无身份的人冒充用户。第三方客服 URL 仍只在明确配置后出现。
 
+管理员回复会给工单所有者写一条 `kind:"system"` 通知。新回复的 `link` 为 `{type:"support_ticket", ticketId:"<id>"}`，`ticketId` 是数字字符串，与 `GET /support/tickets/{id}` 相同，且只出现在该用户自己的 `GET /notifications` 里。没有 `deepLink`，也不接受外部 URL。`link` 缺省表示这条通知没有可靠定位（历史行、广播、交易/安全通知，以及正文里碰巧写了工单号的旧消息）。客户端不得从正文猜工单。
+
+工单未读和系统通知未读仍然分开。`GET /support/tickets/{id}` 只把该工单的 `unread` 清掉（`user_read_at`）。系统通知仍用登录用户的 `POST /notifications/read`，按通知 `id` 标记；`{all:true}` 只影响当前用户。没有「打开工单即标关联通知已读」的既有约定，因此不自动同步。
+
 ## 11. 与安卓页面的字段差异
 
 对照 `feat/android-easicoin-restore` `427b123` 的页面，不是改那条分支：
@@ -229,4 +233,4 @@ K 线：`GET /market/klines` 与 `GET /futures/market/klines` 增加固定秒数
 
 迁移增加 `account/00016_user_api_keys.sql`（空表）。没有活动表，也没有把旧余额迁到合约。
 
-迁移（服务启动时 goose，本任务不在生产执行）：`market-data/00010_academy.sql`、`00011_por_review.sql`，`account/00014_oauth_identities.sql`、`00015_cards.sql`、`00016_user_api_keys.sql`，`asset/00009_user_deposit_account.sql`。表都是空的，除储备状态列外不改现有公开数据。
+迁移（服务启动时 goose，本任务不在生产执行）：`market-data/00010_academy.sql`、`00011_por_review.sql`，`account/00014_oauth_identities.sql`、`00015_cards.sql`、`00016_user_api_keys.sql`、`00017_notification_resource.sql`，`asset/00009_user_deposit_account.sql`。`00017` 只给 `notifications` 增加可空的 `resource_type`/`resource_id`，旧行保持 NULL。表都是空的，除储备状态列外不改现有公开数据。

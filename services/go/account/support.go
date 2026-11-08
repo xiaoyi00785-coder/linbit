@@ -647,6 +647,8 @@ func (s *Server) handleCreateTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /support/tickets/{id}
+// Clears the ticket's own unread flag (user_read_at). It does not mark the
+// owner's system notifications read; those stay on POST /notifications/read.
 func (s *Server) handleGetTicket(w http.ResponseWriter, r *http.Request) {
 	_, t, ok := s.userTicket(w, r)
 	if !ok {
@@ -834,7 +836,14 @@ func (s *Server) handleInternalTicketReply(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if u, err := s.store.UserByID(r.Context(), t.userID); err == nil {
-		s.notifyAsync(u, common.NoticeSystem, "客服已回复您的工单", "您的工单「"+t.Subject+"」有新的客服回复，请前往 帮助与客服 → 我的工单 查看。")
+		// Inbox row is written before the reply returns so the owner can open
+		// it by ticket id. Email stays best-effort inside notifyLinked.
+		// Opening the ticket does not mark this notice read.
+		title := "客服已回复您的工单"
+		body := "您的工单「" + t.Subject + "」有新的客服回复，请前往 帮助与客服 → 我的工单 查看。"
+		if _, err := s.notifyLinked(r.Context(), u, common.NoticeSystem, title, body, nil, "support_ticket", t.ID); err != nil {
+			log.Printf("support notify ticket %s: %v", t.ID, err)
+		}
 	}
 	t, err = s.store.GetTicket(r.Context(), id)
 	if err != nil {
