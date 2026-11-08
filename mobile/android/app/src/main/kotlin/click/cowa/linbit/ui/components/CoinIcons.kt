@@ -6,6 +6,22 @@ import click.cowa.linbit.R
 /** 本地打包图标索引；新增币种须同时运行 mobile/tools/gen_coin_icons.py。 */
 internal object CoinIcons {
     @DrawableRes
+    fun normalize(base: String): String {
+        var b = base.trim().uppercase().removeSuffix(".E")
+        b = b.substringBefore('/').substringBefore('-').substringBefore('_')
+        return b
+    }
+
+    @Volatile private var assetSet: Set<String>? = null
+
+    /** spothq/cryptocurrency-icons 128/color PNG（assets/coins，CC0）。 */
+    fun assetUri(ctx: android.content.Context, base: String): String? {
+        val set = assetSet ?: runCatching { ctx.assets.list("coins")?.toSet() ?: emptySet() }.getOrDefault(emptySet()).also { assetSet = it }
+        val f = base.lowercase() + ".png"
+        return if (f in set) "file:///android_asset/coins/$f" else null
+    }
+
+    @DrawableRes
     fun drawable(base: String): Int? = when (base.trim().uppercase().removeSuffix(".E")) {
         "AAVE" -> R.drawable.coin_aave
         "AVAX" -> R.drawable.coin_avax

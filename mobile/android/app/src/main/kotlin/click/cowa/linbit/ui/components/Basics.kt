@@ -245,23 +245,26 @@ fun SortLabel(title: String, showArrow: Boolean = true, modifier: Modifier = Mod
     }
 }
 
-/** 币种图标：优先本地 CC0 矢量图；未打包时远程加载，仍失败才显示首字母圆。 */
+/** 币种图标：本地 CC0 矢量 → 本地 spothq 全量 PNG（assets/coins）→ CoinCap 公开 CDN → 首字母圆。不生成任何图标。 */
 @Composable
 fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Modifier) {
-    val local = remember(base) { CoinIcons.drawable(base) }
+    val key = CoinIcons.normalize(base)
+    val local = remember(key) { CoinIcons.drawable(key) }
     if (local != null) {
-        Image(painterResource(local), contentDescription = null, modifier = modifier.size(size))
+        Image(painterResource(local), contentDescription = key, modifier = modifier.size(size))
         return
     }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val asset = remember(key) { CoinIcons.assetUri(ctx, key) }
     val p = LB.p
     val fallback: @Composable () -> Unit = {
         Box(modifier.size(size).clip(CircleShape).background(p.fillStrong), contentAlignment = Alignment.Center) {
-            Text(base.trim().firstOrNull()?.uppercase() ?: "?", style = lb(FontSize.small, FontWeight.SemiBold), color = p.textSecondary)
+            Text(key.firstOrNull()?.uppercase() ?: "?", style = lb(FontSize.small, FontWeight.SemiBold), color = p.textSecondary)
         }
     }
     SubcomposeAsyncImage(
-        model = "https://assets.coincap.io/assets/icons/${base.trim().lowercase()}@2x.png",
-        contentDescription = null,
+        model = asset ?: "https://assets.coincap.io/assets/icons/${key.lowercase()}@2x.png",
+        contentDescription = key,
         contentScale = ContentScale.Fit,
         modifier = modifier.size(size).clip(CircleShape),
         loading = { fallback() },
