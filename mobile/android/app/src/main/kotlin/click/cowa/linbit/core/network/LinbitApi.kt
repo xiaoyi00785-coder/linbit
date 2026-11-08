@@ -761,4 +761,14 @@ interface LinbitApi {
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("support/guest")
     suspend fun supportPublicConfig(): click.cowa.linbit.feature.auth.ApiSupportPublicConfig
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("cards/product")
+    suspend fun cardProduct(): click.cowa.linbit.feature.more.ApiCardState
+
+    @GET("cards/application")
+    suspend fun cardApplication(): click.cowa.linbit.feature.more.ApiCardState
+
+    @POST("cards/applications")
+    suspend fun applyCard(@Body body: click.cowa.linbit.feature.more.ApiCardApplyRequest): click.cowa.linbit.feature.more.ApiCardState
 }

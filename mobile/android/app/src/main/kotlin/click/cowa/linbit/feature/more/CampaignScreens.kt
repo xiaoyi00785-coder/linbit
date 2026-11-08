@@ -348,3 +348,68 @@ fun ApiKeyScreen(onBack: () -> Unit, vm: ApiKeyViewModel = hiltViewModel()) {
     del?.let { d -> AlertDialog(onDismissRequest = { del = null }, title = { Text("删除 API Key") }, text = { Text("删除「${d.label}」后，使用该 Key 的程序将立即失效。") },
         confirmButton = { TextButton(onClick = { vm.delete(d.id); del = null }) { Text("删除", color = p.down) } }, dismissButton = { TextButton(onClick = { del = null }) { Text("取消") } }) }
 }
+
+// ======================= 卡片（/cards/*，契约 §3） =======================
+@Serializable data class ApiCardIssuer(val legalName: String? = null, val registrationRef: String? = null)
+@Serializable data class ApiCardProductInfo(val name: String? = null, val network: String? = null, val currency: String? = null, val fees: List<String> = emptyList(), val regions: List<String> = emptyList(), val termsUrl: String? = null)
+@Serializable data class ApiCardApplicationInfo(val id: String? = null, val status: String? = null, val createdAt: String? = null)
+@Serializable data class ApiCardState(val configured: Boolean = false, val submitted: Boolean = false, val status: String = "unconfigured", val product: ApiCardProductInfo? = null, val issuer: ApiCardIssuer? = null, val application: ApiCardApplicationInfo? = null)
+@Serializable data class ApiCardApplyRequest(val agreeTerms: Boolean = true)
+
+@HiltViewModel
+class CardViewModel @Inject constructor(private val api: LinbitApi, private val tokens: TokenStore, val toast: ToastCenter) : ViewModel() {
+    val loggedIn get() = tokens.loggedIn
+    var product by mutableStateOf<Load<ApiCardState>>(Load.Loading); private set
+    var application by mutableStateOf<ApiCardState?>(null); private set
+    var busy by mutableStateOf(false); private set
+    fun load() { product = Load.Loading; viewModelScope.launch {
+        product = runCatching { apiCall { api.cardProduct() } }.toLoad()
+        if (tokens.loggedIn.value) application = runCatching { apiCall { api.cardApplication() } }.getOrNull() } }
+    fun apply() { if (busy) return; busy = true; viewModelScope.launch {
+        runCatching { apiCall { api.applyCard(ApiCardApplyRequest()) } }
+            .onSuccess { application = it; toast.show(if (it.submitted) "申请已提交，等待审核" else "申请未提交") }
+            .onFailure { toast.show(if (it is ApiFailure.Server && it.error?.code == "CARD_UNCONFIGURED") "卡片产品尚未开通，申请未提交" else it.lbMessage()) }
+        busy = false } }
+}
+
+@Composable
+fun CardScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: CardViewModel = hiltViewModel()) {
+    val p = LB.p; val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    LaunchedEffect(loggedIn) { vm.load() }
+    MoreFrame("Linbit 卡", onBack) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
+            when (val l = vm.product) {
+                Load.Loading -> MoreLoading()
+                is Load.Err -> MoreError(l.msg, vm::load)
+                is Load.Missing -> EmptyState("卡片服务暂未开通", Modifier.padding(top = 60.dp))
+                is Load.Ok -> {
+                    val s = l.v
+                    Box(Modifier.fillMaxWidth().padding(top = 16.dp).height(190.dp).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF1B1D22), Color(0xFF3A3F47))), RoundedCornerShape(16.dp)).padding(20.dp)) {
+                        Text("Linbit", style = lb(FontSize.title, FontWeight.Bold), color = Color.White)
+                        Text(s.product?.network ?: "", Modifier.align(Alignment.BottomEnd), style = lb(FontSize.body, FontWeight.SemiBold), color = Color.White)
+                        Text(s.product?.name ?: "加密货币卡", Modifier.align(Alignment.BottomStart), style = lb(FontSize.caption), color = Color(0xFFBFC3C9))
+                    }
+                    if (!s.configured) {
+                        EmptyState("卡片产品尚未开通", Modifier.padding(top = 24.dp)) { Text("发行方信息尚未审核通过，暂不接受申请。", style = lb(FontSize.caption), color = p.textSecondary) }
+                    } else {
+                        Text("产品信息", Modifier.padding(top = 24.dp, bottom = 8.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+                        s.issuer?.legalName?.let { KvRow("发行方", it) }
+                        s.issuer?.registrationRef?.let { KvRow("登记编号", it) }
+                        s.product?.currency?.let { KvRow("结算币种", it) }
+                        if (s.product?.regions?.isNotEmpty() == true) KvRow("支持地区", s.product.regions.joinToString("、"))
+                        s.product?.fees?.forEach { Text("• $it", Modifier.padding(vertical = 2.dp), style = lb(FontSize.caption), color = p.textSecondary) }
+                        s.product?.termsUrl?.let { u -> Text("查看卡片条款", Modifier.padding(vertical = 8.dp).pressable { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u))) } }, color = p.brand, style = lb(FontSize.caption)) }
+                        val app = vm.application?.application
+                        Spacer(Modifier.height(20.dp))
+                        when {
+                            !loggedIn -> LbButton("登录后申请", Modifier.fillMaxWidth(), onClick = onLogin)
+                            app?.status != null -> KvRow("申请状态", when (app.status) { "submitted" -> "审核中"; "approved" -> "已通过"; "rejected" -> "未通过"; else -> app.status })
+                            else -> LbButton("立即申请", Modifier.fillMaxWidth(), loading = vm.busy, onClick = vm::apply)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

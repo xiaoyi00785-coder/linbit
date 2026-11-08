@@ -149,4 +149,13 @@ class Batch3VisualEvidenceTest {
         rule.onNodeWithText("交易统计").assertExists()
         capture("b3-pnl-history")
     }
+    @Test fun cardUnconfigured() {
+        val body = """{"configured":false,"submitted":false,"status":"unconfigured","product":null,"issuer":null,"application":null}"""
+        api.route("GET", "/cards/product", body); api.route("GET", "/cards/application", body)
+        val vm = CardViewModel(fixtures.retrofit, fixtures.tokens, fixtures.toast)
+        render { CardScreen({}, {}, vm) }
+        rule.waitUntil(5000) { vm.product !is Load.Loading }
+        rule.onNodeWithText("卡片产品尚未开通").assertExists()
+        capture("b3-card-unconfigured")
+    }
 }

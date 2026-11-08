@@ -88,6 +88,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             "充值返现" -> MorePage.CASHBACK
             "交易抽奖" -> MorePage.LOTTERY
             "API Key" -> MorePage.API_KEY
+            "Linbit 卡" -> MorePage.CARD
             else -> null
         }
         if (page != null) morePage = page
