@@ -129,7 +129,8 @@ fun AssetsScreen(
                     onWithdraw = { showWithdraw = true },
                     onTransfer = { assetsNav.openTransfer() },
                     onTrade = { if (s.tab == 2) onOpenFutures() else onOpenSpot() },
-                    onSoon = { vm.toast.show(it) },
+                    onPnl = { onOpenAssetFeature("pnl") },
+                    onQuickBuy = { onOpenAssetFeature("quickbuy") },
                 )
                 if (s.tab == 2) FuturesCard(vm, s) else AssetList(
                     vm, s, showSearch,
@@ -222,7 +223,7 @@ private fun Header(hide: Boolean, total: java.math.BigDecimal, cny: java.math.Bi
             Spacer(Modifier.width(6.dp))
             Text("USDT", style = lb(FontSize.small), color = p.textPrimary)
         }
-        val fiat = if (hide) "≈ ****" else if (cny != null) "≈ " + Fmt.fiat(total, cny, 2) else null
+        val fiat = if (hide) "≈ ****" else "≈ $" + Fmt.amount(total, 2)
         if (fiat != null) Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
         if (tab == 1 || tab == 2) {
             val label = if (tab == 2) "今日盈亏" else "可用余额"
@@ -245,13 +246,14 @@ private fun Actions(
     onWithdraw: () -> Unit,
     onTransfer: () -> Unit,
     onTrade: () -> Unit,
-    onSoon: (String) -> Unit,
+    onPnl: () -> Unit,
+    onQuickBuy: () -> Unit,
 ) {
     val p = LB.p
     val items: List<Pair<String, () -> Unit>> = when (tab) {
-        2 -> listOf("去交易" to onTrade, "划转" to onTransfer, "盈亏" to { onSoon("盈亏分析即将开放") })
-        3 -> listOf("去交易" to onTrade, "充值" to onDeposit, "快捷买币" to { onSoon("快捷买币即将开放") }, "划转" to onTransfer)
-        else -> listOf("充值" to onDeposit, "快捷买币" to { onSoon("快捷买币即将开放") }, "提现" to onWithdraw, "划转" to onTransfer)
+        2 -> listOf("去交易" to onTrade, "划转" to onTransfer, "盈亏" to onPnl)
+        3 -> listOf("去交易" to onTrade, "充值" to onDeposit, "快捷买币" to onQuickBuy, "划转" to onTransfer)
+        else -> listOf("充值" to onDeposit, "快捷买币" to onQuickBuy, "提现" to onWithdraw, "划转" to onTransfer)
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(top = 20.dp)) {
         items.forEach { (title, act) ->
@@ -263,7 +265,7 @@ private fun Actions(
                     Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(title.take(1), style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+                    LbIcon(when (title) { "充值" -> R.drawable.ic_asset_deposit; "提现" -> R.drawable.ic_asset_withdraw; "快捷买币" -> R.drawable.ic_asset_card; "划转" -> R.drawable.ic_mc_transfer_square_light; "盈亏" -> R.drawable.ic_candles; else -> R.drawable.ic_asset_trade }, 22.dp, p.textPrimary)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(title, style = lb(FontSize.small), color = p.textPrimary)
@@ -316,7 +318,7 @@ private fun AssetList(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(if (s.hideAmount) "****" else b.total, style = lbNum(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-                    val fiat = if (s.hideAmount) "≈ ****" else s.cnyRate?.let { "≈ " + Fmt.fiat(vm.usd(b), it, 2) }
+                    val fiat = if (s.hideAmount) "≈ ****" else "≈ $" + Fmt.amount(vm.usd(b), 2)
                     if (fiat != null) Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
                 }
             }

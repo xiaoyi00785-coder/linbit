@@ -20,10 +20,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 /** One actual AppRoot host for the existing earn/strategy/TradFi OpenAPI features. */
 @Composable
 fun AssetFeatureHost(feature: String, onBack: () -> Unit, onLogin: () -> Unit, onTrade: (Boolean, String) -> Unit, spotVm: SpotSubpagesViewModel? = null, tradFiVm: TradFiViewModel? = null, paperVm: PaperAccountViewModel? = null, onDialogWindow: (android.view.Window?) -> Unit = {}) {
-    require(feature in setOf("earn", "strategy", "paper", "tradfi")) { "Unsupported asset feature: $feature" }
+    require(feature in setOf("earn", "strategy", "paper", "tradfi", "pnl", "quickbuy")) { "Unsupported asset feature: $feature" }
     BackHandler(onBack = onBack)
     Box(Modifier.fillMaxSize().background(LB.p.bg).statusBarsPadding().navigationBarsPadding()) {
         when (feature) {
+            "pnl" -> PnlAnalysisScreen(onBack)
+            "quickbuy" -> QuickBuyScreen(onBack)
             "earn" -> EarnSubpage(0.dp, onLogin, vm = spotVm ?: hiltViewModel(), onBack = onBack, onDialogWindow = onDialogWindow)
             "strategy" -> StrategySubpage(0.dp, onLogin, vm = spotVm ?: hiltViewModel(), onBack = onBack, onDialogWindow = onDialogWindow)
             "paper" -> PaperAccountScreen(onBack, onLogin, vm = paperVm ?: hiltViewModel(), onDialogWindow = onDialogWindow)
