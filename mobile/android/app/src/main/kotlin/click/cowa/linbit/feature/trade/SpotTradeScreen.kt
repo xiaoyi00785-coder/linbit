@@ -132,7 +132,7 @@ fun SpotTradeContent(
         when (topTab) {
             1 -> StrategySubpage(bottomInset, onLogin)
             2 -> EarnSubpage(bottomInset, onLogin)
-            3 -> ConvertSubpage(bottomInset, onLogin)
+            3 -> ConvertSubpage(bottomInset, onLogin, marketRows = marketRows, onDeposit = onDeposit)
             else -> Column(Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset)) {
             // 交易对头
             Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), verticalAlignment = Alignment.Top) {

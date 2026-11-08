@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -125,7 +127,15 @@ class SpotSubpagesViewModel @Inject constructor(
         viewModelScope.launch { runCatching { apiCall { api.balances("spot") } }.onSuccess { r ->
             convertBalances = r.items.orEmpty().associate { it.asset to Dec.parse(it.free) } } }
     }
+    var convertOrders by mutableStateOf<List<click.cowa.linbit.core.generated.ApiConvertOrder>?>(null); private set
+    var convertOrdersError by mutableStateOf<String?>(null); private set
+    fun loadConvertOrders() {
+        convertOrdersError = null
+        viewModelScope.launch { runCatching { apiCall { api.convertOrders(1, 50) } }
+            .onSuccess { convertOrders = it.items.orEmpty() }.onFailure { convertOrders = null; convertOrdersError = it.lbMessage() } }
+    }
     fun clearAccountData() {
+        convertOrders = null
         convertBalances = emptyMap(); quoteError = null
         earnSummary = null
         earnPositions = emptyList()
@@ -809,6 +819,42 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
 private data class EarnAction(val product: ApiEarnProduct, val subscribe: Boolean)
 
 @Composable
+private fun ConvertHistoryPage(vm: SpotSubpagesViewModel, onBack: () -> Unit) {
+    val p = LB.p
+    LaunchedEffect(Unit) { vm.loadConvertOrders() }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onBack, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Column(Modifier.fillMaxSize().background(p.bg).then(Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)).testTag("convert.historyPage")) {
+            Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).pressable(scale = 1f, onClick = onBack), contentAlignment = Alignment.CenterStart) { LbIcon(click.cowa.linbit.R.drawable.ic_arrow_left, 22.dp, p.textPrimary) }
+                Text("闪兑记录", Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Spacer(Modifier.size(40.dp))
+            }
+            val orders = vm.convertOrders
+            when {
+                orders == null && vm.convertOrdersError == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                orders == null -> EmptyState(vm.convertOrdersError ?: "加载失败", verticalPadding = 120.dp) { ChipButton("重试", Modifier.height(32.dp)) { vm.loadConvertOrders() } }
+                orders.isEmpty() -> EmptyState("暂无记录", verticalPadding = 120.dp)
+                else -> Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
+                    orders.forEach { o ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${o.from ?: "--"} → ${o.to ?: "--"}", Modifier.weight(1f), style = lb(FontSize.body, FontWeight.SemiBold), color = p.textPrimary)
+                                Text(ConvertQuoteLogic.statusText(o.status), style = lb(FontSize.caption), color = if (o.status == "filled" || o.status == "FILLED") p.up else p.textSecondary)
+                            }
+                            KvRow("兑出", "${o.fromAmount ?: "--"} ${o.from ?: ""}")
+                            KvRow("兑入", "${o.toAmount ?: "--"} ${o.to ?: ""}")
+                            KvRow("汇率", o.rate ?: "--")
+                            KvRow("时间", o.createdAt?.let { ConvertQuoteLogic.timeText(it) } ?: "--")
+                        }
+                        androidx.compose.material3.HorizontalDivider(color = p.border)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ConvertCoin(asset: String, onClick: () -> Unit) {
     Row(Modifier.pressable(scale = 1f, onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         CoinIcon(asset, 24.dp); Text(asset, Modifier.padding(start = 6.dp), style = lb(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
@@ -817,11 +863,13 @@ private fun ConvertCoin(asset: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
+fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}, marketRows: List<click.cowa.linbit.data.MarketRow> = emptyList(), onDeposit: () -> Unit = {}) {
+    var showFaq by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    var from by remember { mutableStateOf("USDT") }
-    var to by remember { mutableStateOf("BTC") }
+    var from by remember { mutableStateOf("BTC") }
+    var to by remember { mutableStateOf("USDT") }
     var amount by remember { mutableStateOf("") }
     var pendingConfirm by remember { mutableStateOf<ConvertQuoteLogic.Form?>(null) }
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
@@ -852,6 +900,9 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
         Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("现货闪兑", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
             Text("0 手续费", Modifier.padding(start = 8.dp).background(p.brand, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp), style = lb(FontSize.small, FontWeight.Medium), color = androidx.compose.ui.graphics.Color.Black)
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.size(36.dp).testTag("convert.help").pressable(scale = 1f) { showFaq = true }, contentAlignment = Alignment.Center) { LbIcon(click.cowa.linbit.R.drawable.ic_cv_help, 22.dp, p.textPrimary) }
+            Box(Modifier.padding(start = 8.dp).size(36.dp).testTag("convert.history").pressable(scale = 1f) { if (loggedIn) showHistory = true else onLogin() }, contentAlignment = Alignment.Center) { LbIcon(click.cowa.linbit.R.drawable.ic_cv_history, 22.dp, p.textPrimary) }
         }
         when {
             vm.loading && vm.convertPairs == null -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -861,9 +912,9 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                 val fromAssets = ConvertQuoteLogic.fromAssets(pairs)
                 LaunchedEffect(fromAssets, from, to) {
                     if (fromAssets.isEmpty()) return@LaunchedEffect
-                    if (from !in fromAssets) { from = fromAssets.first(); val tos = ConvertQuoteLogic.toAssets(pairs, from); to = tos.firstOrNull { it != from } ?: tos.firstOrNull() ?: to; vm.bumpConvertForm(); return@LaunchedEffect }
+                    if (from !in fromAssets) { from = if ("BTC" in fromAssets) "BTC" else fromAssets.first(); val tos = ConvertQuoteLogic.toAssets(pairs, from); to = tos.firstOrNull { it != from } ?: tos.firstOrNull() ?: to; vm.bumpConvertForm(); return@LaunchedEffect }
                     val tos = ConvertQuoteLogic.toAssets(pairs, from)
-                    if (tos.isNotEmpty() && to !in tos) { to = tos.first(); vm.bumpConvertForm() }
+                    if (tos.isNotEmpty() && to !in tos) { to = if ("USDT" in tos) "USDT" else tos.first(); vm.bumpConvertForm() }
                 }
                 if (fromAssets.isEmpty()) { EmptyState("暂无可交易闪兑币对"); return@Column }
                 val pair = ConvertQuoteLogic.findPair(pairs, from, to)
@@ -878,6 +929,7 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("兑出", Modifier.weight(1f), style = lb(FontSize.caption), color = p.textSecondary)
                         Text("可用: " + (if (loggedIn) avail?.let { Fmt.amount(it, 8) } ?: "0" else "--"), Modifier.pressable { avail?.takeIf { it.signum() > 0 }?.let { amount = it.stripTrailingZeros().toPlainString(); vm.bumpConvertForm() } }, style = lb(FontSize.caption), color = p.textSecondary)
+                        LbIcon(click.cowa.linbit.R.drawable.ic_cv_plus, 16.dp, p.textTertiary, Modifier.padding(start = 4.dp).testTag("convert.deposit").pressable(scale = 1f) { if (loggedIn) onDeposit() else onLogin() })
                     }
                     Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         ConvertCoin(from) { picker = "from" }
@@ -897,7 +949,7 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                     Box(Modifier.requiredSize(36.dp).background(p.bg, RoundedCornerShape(6.dp)).pressable {
                         val tos = ConvertQuoteLogic.toAssets(pairs, to)
                         if (from in tos) { val f = from; from = to; to = f; amount = ""; vm.bumpConvertForm() } else vm.toast.show("该方向暂不支持闪兑")
-                    }, contentAlignment = Alignment.Center) { Text("⇅", style = lb(FontSize.body, FontWeight.Bold), color = p.textPrimary) }
+                    }, contentAlignment = Alignment.Center) { LbIcon(click.cowa.linbit.R.drawable.ic_cv_swap, 18.dp, p.textPrimary) }
                 }
                 // 兑入卡片
                 Column(Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.lg)).padding(16.dp)) {
@@ -919,9 +971,9 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                     }
                     if (left != null) Text("${kotlin.math.ceil(left).toInt()}s", Modifier.padding(start = 2.dp), style = lbNum(FontSize.small), color = p.textTertiary)
                     Spacer(Modifier.weight(1f))
-                    val rateText = q?.let { if (inverse) "1 $to ≈ ${it.inverseRate ?: "--"} $from" else "1 $from ≈ ${it.rate ?: "--"} $to" } ?: if (inverse) "1 $to ≈ -- $from" else "1 $from ≈ -- $to"
+                    val rateText = q?.let { if (inverse) "1 $to ≈ ${it.inverseRate ?: "--"} $from" else "1 $from ≈ ${it.rate ?: "--"} $to" } ?: ConvertQuoteLogic.referenceRate(marketRows, from, to).let { r -> if (inverse) "1 $to ≈ ${r?.let { ConvertQuoteLogic.fmtRate(java.math.BigDecimal.ONE.divide(it, 12, java.math.RoundingMode.HALF_UP)) } ?: "--"} $from" else "1 $from ≈ ${r?.let { ConvertQuoteLogic.fmtRate(it) } ?: "--"} $to" }
                     Text(rateText, style = lbNum(FontSize.caption), color = p.textPrimary)
-                    Text("⇄", Modifier.padding(start = 6.dp).pressable(scale = 1f) { inverse = !inverse }, style = lb(FontSize.body), color = p.textSecondary)
+                    LbIcon(click.cowa.linbit.R.drawable.ic_cv_inverse, 16.dp, p.textSecondary, Modifier.padding(start = 6.dp).pressable(scale = 1f) { inverse = !inverse })
                 }
                 when {
                     pair == null -> Text("所选币对不在可交易列表中", Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down)
@@ -938,6 +990,15 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
             }
         }
     }
+    if (showFaq) LbSheet("常见问题", { showFaq = false }, showClose = true, onWindowReady = onDialogWindow) {
+        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ConvertQuoteLogic.FAQ.forEach { (q, a) ->
+                Text(q, Modifier.padding(top = 8.dp), style = lb(FontSize.body, FontWeight.SemiBold), color = p.textPrimary)
+                Text(a, style = lb(FontSize.caption), color = p.textSecondary)
+            }
+        }
+    }
+    if (showHistory) ConvertHistoryPage(vm) { showHistory = false }
     picker?.let { side ->
         val pairs = vm.convertPairs?.pairs
         val list = if (side == "from") ConvertQuoteLogic.fromAssets(pairs) else ConvertQuoteLogic.toAssets(pairs, from)
