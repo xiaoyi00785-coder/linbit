@@ -38,12 +38,15 @@ data class HomeState(
     val popups: List<click.cowa.linbit.core.generated.ApiPlacement> = emptyList(),
     val carousel: List<click.cowa.linbit.core.generated.ApiPlacement> = emptyList(),
     val searchHint: String? = null,
+    val tradfiSymbols: Set<String> = emptySet(),
+    val academy: List<click.cowa.linbit.feature.markets.ApiAcademyArticle>? = null,
     /** 新人奖励总额（/growth/config newcomer.total，兜底为任务奖励合计）。 */
     val newcomerTotal: String? = null,
 )
 
 /** 运营位 carousel 为空时的本地兜底：只指向 App 内已实现的真实页面（福利中心 / 跟单）。 */
 val LOCAL_BANNERS = listOf(
+    HomeBanner("card", "Linbit 卡", "数字资产 · 全球消费"),
     HomeBanner("redpacket", "全员红包雨火爆来袭", "福利中心 · 惊喜好礼等你拿"),
     HomeBanner("copy", "跟随顶级交易员一键跟单", "跟单交易 · 专业策略"),
 )
@@ -81,6 +84,8 @@ class HomeViewModel @Inject constructor(
                 val overview = async { if (tokens.loggedIn.value) runCatching { apiCall { api.assetsOverview() } }.getOrNull() else null }
                 val pl = async { runCatching { apiCall { api.homePlacements() } }.getOrNull() }
                 val growth = async { runCatching { apiCall { api.growthConfig() } }.getOrNull() }
+                val tf = async { runCatching { apiCall { api.tradFiAssets() } }.getOrNull() }
+                val ac = async { runCatching { apiCall { api.academyArticles(limit = 5) } }.getOrNull() }
                 val m = async { if (refreshMarket && market.state.value.spot.isEmpty()) market.load() }
                 m.await()
                 _state.value = _state.value.copy(
@@ -88,6 +93,8 @@ class HomeViewModel @Inject constructor(
                     newcomer = newcomer.await(),
                     totalUsdt = Dec.parse(overview.await()?.totalValueUsdt),
                     refreshing = false,
+                    tradfiSymbols = tf.await()?.items.orEmpty().mapNotNull { it.symbol }.toSet(),
+                    academy = ac.await()?.items ?: _state.value.academy,
                     popups = pl.await()?.slots?.get("popup").orEmpty().filter { !it.imageUrl.isNullOrBlank() },
                     carousel = pl.await()?.slots?.get("carousel").orEmpty().filter { !it.imageUrl.isNullOrBlank() },
                     searchHint = pl.await()?.slots?.get("search_hint")?.firstOrNull()?.title,
@@ -110,8 +117,8 @@ fun rankingRows(tab: Int, kind: MarketKind, m: MarketState, watch: List<String>)
     val rows = m.rows(kind)
     return when (tab) {
         0 -> rows.filter { it.symbol in watch }
-        2 -> rows.sortedByField(SortField.CHANGE, SortDir.DESC).take(5)
-        3 -> rows.sortedByField(SortField.CHANGE, SortDir.ASC).take(5)
-        else -> rows.sortedByField(SortField.VOLUME, SortDir.DESC).take(5)
+        2 -> rows.sortedByField(SortField.CHANGE, SortDir.DESC).take(7)
+        3 -> rows.sortedByField(SortField.CHANGE, SortDir.ASC).take(7)
+        else -> rows.sortedByField(SortField.VOLUME, SortDir.DESC).take(7)
     }
 }

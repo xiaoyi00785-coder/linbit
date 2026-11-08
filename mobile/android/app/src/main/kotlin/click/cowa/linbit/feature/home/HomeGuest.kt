@@ -45,15 +45,15 @@ import coil.compose.AsyncImage
 @Composable
 internal fun GuestHero(total: String?, asset: String, onLogin: () -> Unit) {
     val p = LB.p
-    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 120.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 262.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         val amount = total?.let { runCatching { java.text.DecimalFormat("#,##0.##").format(java.math.BigDecimal(it)) }.getOrNull() }
         Text(
             if (amount != null) "立即注册，最高可获得 $amount $asset" else "立即注册，开启数字资产之旅",
-            style = lb(30.sp, FontWeight.Medium), color = p.textPrimary, textAlign = TextAlign.Center, lineHeight = 40.sp,
+            style = lb(27.sp, FontWeight.Medium), color = p.textPrimary, textAlign = TextAlign.Center, lineHeight = 38.sp,
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
         Box(
-            Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(Radius.md)).background(p.primary).pressable(onClick = onLogin),
+            Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(Radius.md)).background(p.primary).pressable(onClick = onLogin),
             contentAlignment = Alignment.Center,
         ) { Text("登录/注册", style = lb(FontSize.body, FontWeight.Medium), color = p.textOnPrimary) }
     }

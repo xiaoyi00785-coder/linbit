@@ -147,6 +147,7 @@ fun HomeContent(
             b.link != null -> onOpenLink(b.link)
             b.id == "redpacket" -> onFeature("福利中心")
             b.id == "copy" -> onFeature("跟单")
+            b.id == "card" -> onFeature("Linbit 卡")
         }
     }
     LaunchedEffect(s.earn.size) { earnPage = 0; while (s.earn.size > 1) { delay(4_000); earnPage = (earnPage + 1) % s.earn.size } }
@@ -163,7 +164,8 @@ fun HomeContent(
         ) {
                 if (loggedIn) {
                     AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
-                    TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
+                    // 参考登录态（老用户）无新手任务卡；仅在新手任务可用时展示
+                    if (s.newcomer?.available == true) TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
                     RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
                     Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
                     Hairline(Modifier.padding(top = (64f / 3).dp))
@@ -173,8 +175,10 @@ fun HomeContent(
                 Hairline()
                 EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onFeature("理财") }
                 Hairline()
-                if (loggedIn) Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets)
-                else ProtectionSection(onReserves, onSupport)
+                if (loggedIn) {
+                    Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets, s.tradfiSymbols)
+                    NewsSection(s.academy, onSearch)
+                } else ProtectionSection(onReserves, onSupport)
             }
         }
     }
@@ -405,23 +409,48 @@ private fun EarnStrip(e: click.cowa.linbit.core.generated.ApiEarnProduct?, page:
 @Composable
 private fun Ranking(
     m: click.cowa.linbit.data.MarketState, watch: List<String>,
-    tab: Int, onTab: (Int) -> Unit, kind: Int, onKind: (Int) -> Unit, onMore: () -> Unit,
+    tab: Int, onTab: (Int) -> Unit, kind: Int, onKind: (Int) -> Unit, onMore: () -> Unit, tradfi: Set<String> = emptySet(),
 ) {
     val p = LB.p
     Column(Modifier.fillMaxWidth()) {
         PrimaryTabs(listOf("自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"), tab, onTab, Modifier.padding(horizontal = Spacing.pageH).padding(top = 16.dp), size = 16.sp, underline = true)
-        ChipBar(listOf("现货", "合约"), kind, onKind, Modifier.padding(vertical = 12.dp))
+        ChipBar(listOf("现货", "合约", "TradFi"), kind, onKind, Modifier.padding(vertical = 12.dp))
         Row(Modifier.fillMaxWidth().height(24.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
             Text("交易对", style = lb(FontSize.small), color = p.textSecondary, modifier = Modifier.weight(1f))
             Text("最新价", style = lb(FontSize.small), color = p.textSecondary)
             Text("涨跌幅", Modifier.width(Metrics.changeBadgeW + 12.dp), style = lb(FontSize.small), color = p.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.End)
         }
-        val rows = rankingRows(tab, if (kind == 0) MarketKind.SPOT else MarketKind.FUTURES, m, watch)
+        val rows = if (kind == 2) rankingRows(tab, MarketKind.FUTURES, m.copy(futures = m.futures.filter { it.symbol in tradfi }), watch)
+            else rankingRows(tab, if (kind == 0) MarketKind.SPOT else MarketKind.FUTURES, m, watch)
         if (rows.isEmpty()) EmptyState(if (tab == 0) "暂无自选" else "暂无数据", Modifier.fillMaxWidth().height(160.dp))
-        rows.forEach { MarketRowView(it, m.cnyRate, showIcon = false, compactPair = true, onClick = onMore) }
+        rows.forEach { MarketRowView(it, m.cnyRate, showIcon = true, compactPair = true, onClick = onMore) }
         Row(Modifier.fillMaxWidth().height(44.dp).pressable(scale = 1f, onClick = onMore), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             Text("查看更多", style = lb(FontSize.caption), color = p.textSecondary)
             LbIcon(R.drawable.ic_arrow_right, 12.dp, p.textSecondary)
+        }
+    }
+}
+
+
+// ── 公告 / 快讯 / 学院（参考登录态榜单下方）。公告、快讯后端暂无接口 → 真实空态；学院取 /academy/articles。──
+@Composable
+private fun NewsSection(academy: List<click.cowa.linbit.feature.markets.ApiAcademyArticle>?, onOpen: () -> Unit) {
+    val p = LB.p
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        PrimaryTabs(listOf("公告", "快讯", "学院"), tab, { tab = it }, Modifier.padding(horizontal = Spacing.pageH), size = 16.sp, underline = true)
+        when (tab) {
+            2 -> when {
+                academy == null -> EmptyState("加载失败", Modifier.fillMaxWidth().height(160.dp))
+                academy.isEmpty() -> EmptyState("暂无文章", Modifier.fillMaxWidth().height(160.dp))
+                else -> academy.forEach { a ->
+                    Column(Modifier.fillMaxWidth().pressable(scale = 1f, onClick = onOpen).padding(horizontal = Spacing.pageH, vertical = 14.dp)) {
+                        Text(a.title, style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        a.publishedAt?.let { Text(it.replace('T', ' ').take(19), Modifier.padding(top = 6.dp), style = lbNum(FontSize.small), color = p.textTertiary) }
+                    }
+                }
+            }
+            else -> EmptyState(if (tab == 0) "暂无公告" else "暂无快讯", Modifier.fillMaxWidth().height(160.dp))
         }
     }
 }

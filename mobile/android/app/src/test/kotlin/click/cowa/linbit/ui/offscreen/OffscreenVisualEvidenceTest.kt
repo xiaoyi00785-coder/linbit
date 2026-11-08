@@ -1,5 +1,8 @@
 package click.cowa.linbit.ui.offscreen
 
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -220,6 +223,42 @@ class OffscreenVisualEvidenceTest {
             (1..7).map { BookLevel(m - bd("0.1") * it.toBigDecimal(), bd("2.73")) },
             (1..7).map { BookLevel(m + bd("0.1") * it.toBigDecimal(), bd("0.4135")) },
         )
+    }
+
+    @Test fun homeLoggedInFull() {
+        enabled()
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 788.dp).background(Color.White)) {
+                    HomeContent(
+                        HomeState(earn = listOf(ApiEarnProduct(asset = "TRX", title = "TRX 定期理财", apr = "0.059"))),
+                        MarketState(
+                            spot = listOf(
+                                MarketRow("BTCUSDT", "BTC", "USDT", bd("75706.6"), bd("-0.17"), bd("3.21E8"), 1),
+                                MarketRow("ETHUSDT", "ETH", "USDT", bd("2227"), bd("-0.40"), bd("2.34E8"), 2),
+                                MarketRow("SOLUSDT", "SOL", "USDT", bd("88.99"), bd("-0.87"), bd("9.8E7"), 2),
+                            ),
+                            futures = listOf(
+                                MarketRow("BTCUSDT", "BTC", "USDT", bd("75706.6"), bd("-0.17"), bd("3.21E8"), 1),
+                                MarketRow("ETHUSDT", "ETH", "USDT", bd("2227"), bd("-0.40"), bd("2.34E8"), 2),
+                                MarketRow("BNBUSDT", "BNB", "USDT", bd("696.05"), bd("0.10"), bd("1.7E7"), 2),
+                                MarketRow("SOLUSDT", "SOL", "USDT", bd("88.99"), bd("-0.87"), bd("9.8E7"), 2),
+                            ),
+                            cnyRate = bd("7.15"),
+                        ),
+                        emptyList(), true, 0.dp,
+                        {}, {}, {}, {}, {},
+                        onRefresh = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        capture("Home-loggedin-1")
+        rule.onRoot().performTouchInput { swipeUp(startY = bottom - 10f, endY = top + 10f, durationMillis = 400) }
+        rule.waitForIdle(); capture("Home-loggedin-2")
+        rule.onRoot().performTouchInput { swipeUp(startY = bottom - 10f, endY = top + 10f, durationMillis = 400) }
+        rule.waitForIdle(); capture("Home-loggedin-3")
     }
 
     @Test fun homeWithDeadline() {
