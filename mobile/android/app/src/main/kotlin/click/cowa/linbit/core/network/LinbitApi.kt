@@ -155,7 +155,7 @@ interface LinbitApi {
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("home/placements")
     suspend fun homePlacements(
-        @Query("slots") slots: String = "popup,carousel",
+        @Query("slots") slots: String = "popup,carousel,search_hint",
         @Query("platform") platform: String = "app",
         @Query("locale") locale: String = "zh-CN",
         @Query("appVersion") appVersion: String = click.cowa.linbit.BuildConfig.VERSION_NAME,

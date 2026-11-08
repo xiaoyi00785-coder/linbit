@@ -71,6 +71,7 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
     fun isMine(m: ApiChatMessage) = m.mine == true || m.id in mineIds
     private fun chatError(t: Throwable): String = when ((t as? ApiFailure.Server)?.error?.code) {
         "FEATURE_DISABLED" -> "聊天室暂未开放"; "CHAT_KYC_REQUIRED" -> "完成身份认证后才能发言"; "CHAT_RATE_LIMITED" -> "发言太频繁，请稍后再试"
+        "CHAT_TOO_LONG" -> "消息过长"; "CHAT_LINK_BLOCKED" -> "不允许发送链接"; "CHAT_CONTACT_BLOCKED" -> "不允许发送联系方式"; "CHAT_WORD_BLOCKED" -> "消息包含敏感词"; "CHAT_UNAVAILABLE" -> "聊天室暂时不可用"
         "CHAT_MUTED" -> "您已被禁言"; "CHAT_BANNED" -> "您已被禁止使用聊天室"; else -> t.lbMessage() }
 }
 

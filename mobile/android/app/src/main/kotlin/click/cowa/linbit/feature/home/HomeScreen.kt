@@ -141,8 +141,8 @@ fun HomeContent(
     var swipeTick by remember { mutableIntStateOf(0) }
 
     val banners = remember(s.carousel) {
-        if (s.carousel.isEmpty()) LOCAL_BANNERS
-        else s.carousel.map { HomeBanner("pl:${it.id}", it.title.orEmpty(), null, it.imageUrl, it.linkUrl) }
+        // carousel 未配置时如实不展示轮播（不再用本地写死的活动文案）
+        s.carousel.map { HomeBanner("pl:${it.id}", it.title.orEmpty(), null, it.imageUrl, it.linkUrl) }
     }
     LaunchedEffect(banners.size, swipeTick) { if (swipeTick == 0) bannerPage = 0; while (banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % banners.size } }
     val onBanner: (HomeBanner) -> Unit = { b ->
@@ -173,9 +173,11 @@ fun HomeContent(
                     Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
                     Hairline(Modifier.padding(top = (64f / 3).dp))
                 } else GuestHero(s.newcomerTotal, s.newcomer?.asset ?: "USDT", onLogin)
-                val banner = banners.getOrNull(bannerPage) ?: banners[0]
-                CardPromo(banner, bannerPage, banners.size, onSwipe = { d -> bannerPage = ((bannerPage + d) % banners.size + banners.size) % banners.size; swipeTick++ }) { onBanner(banner) }
-                Hairline()
+                if (banners.isNotEmpty()) {
+                    val banner = banners.getOrNull(bannerPage) ?: banners[0]
+                    CardPromo(banner, bannerPage, banners.size, onSwipe = { d -> bannerPage = ((bannerPage + d) % banners.size + banners.size) % banners.size; swipeTick++ }) { onBanner(banner) }
+                    Hairline()
+                }
                 EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onFeature("理财") }
                 Hairline()
                 if (loggedIn) {
@@ -333,7 +335,7 @@ private fun Grid(modifier: Modifier, onTap: (String) -> Unit) {
 @Composable
 private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onSwipe: (Int) -> Unit = {}, onClick: () -> Unit) {
     val p = LB.p
-    val b = banner ?: LOCAL_BANNERS[0]
+    val b = banner ?: return
     val isCard = b.id == "card"
     Box(Modifier.fillMaxWidth().height((413f / 3).dp).testTag("home.banner").pointerInput(count) {
         var acc = 0f

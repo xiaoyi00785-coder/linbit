@@ -59,7 +59,11 @@ data class ApiTicker (
 
     /* lastPrice 来源：24h 内最近成交 > 盘口中间价 > 外部指数价（超过 24h 的旧成交价视为过期）。24h 内无本地成交时，priceChangePercent/high/low 取外部指数价的 24h 走势，volume/quoteVolume 为 0（不伪造成交）。合约行情另有 mark。 */
     @SerialName(value = "priceSource")
-    val priceSource: ApiTicker.PriceSource? = null
+    val priceSource: ApiTicker.PriceSource? = null,
+
+    /* 手工补充（契约 fef9984）：REST ticker 的 usd 折合对象；未部署时缺省为 null。 */
+    @SerialName(value = "usd")
+    val usd: click.cowa.linbit.core.realtime.WsUsd? = null
 
 ) {
 

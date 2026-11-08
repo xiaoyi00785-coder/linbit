@@ -65,6 +65,8 @@ class MarketStore(
             val fx = async { runCatching { apiCall { api.fiatRates("USD") } }.getOrNull() }
             val usd = async { runCatching { apiCall { api.usdRate() } }.getOrNull() }
             usd.await().let { u -> click.cowa.linbit.core.storage.QuoteDisplay.usdPerUsdt = u?.takeIf { it.available }?.rate?.let { Dec.parseOrNull(it) }?.takeIf { it.signum() > 0 }; click.cowa.linbit.core.storage.QuoteDisplay.usdStale = u?.stale == true }
+            // usd-rate 未部署时，用 REST ticker 的 usd.rate（同一 USDTUSD 汇率）兜底；两者都没有则保持 null → 显示 --
+            if (click.cowa.linbit.core.storage.QuoteDisplay.usdPerUsdt == null) spot.await()?.firstNotNullOfOrNull { t -> t.usd?.takeIf { it.available }?.rate?.let { Dec.parseOrNull(it) }?.takeIf { it.signum() > 0 }?.let { r -> r to t.usd.stale } }?.let { (r, st) -> click.cowa.linbit.core.storage.QuoteDisplay.usdPerUsdt = r; click.cowa.linbit.core.storage.QuoteDisplay.usdStale = st }
             Loaded(symbols.await(), spot.await(), fut.await(), cats.await(), fx.await()?.rates?.mapValues { it.value.content })
         }
         r.rates?.let { rates -> click.cowa.linbit.core.storage.QuoteDisplay.rates = rates.mapNotNull { (key, value) -> Dec.parseOrNull(value)?.takeIf { it.signum() > 0 }?.let { key to it } }.toMap() }
@@ -128,6 +130,7 @@ class MarketStore(
                                 val row = old.copy(
                                     last = if (v.signum() > 0) v else (refPrice[t.symbol] ?: old.last),
                                     changePct = Dec.parse(t.priceChangePercent),
+                                    usdPrice = t.usd?.let { u -> if (u.available) Dec.parseOrNull(u.price ?: "")?.takeIf { it.signum() > 0 } else null } ?: old.usdPrice,
                                     quoteVolume = t.quoteVolume?.let { Dec.parse(it) } ?: old.quoteVolume,
                                 )
                                 cur.copy(spot = cur.spot.toMutableList().also { it[i] = row })

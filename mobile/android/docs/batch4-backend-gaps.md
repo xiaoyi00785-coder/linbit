@@ -48,3 +48,15 @@
 - 「⋯」菜单：参考有 交易规则 / 历史数据 / 区间交易限额 / FAQ / 新手指引；后端无历史数据、区间限额、FAQ 内容接口，仅保留 交易规则（按 products 配置生成）与 新手指引。
 - 看涨/看跌收益率共用 `payoutRatio`（后端无分方向赔率）。
 - 下单扣款账户假定为现货（参考「Available Spot Balance」）；OpenAPI 未注明扣款账户，需后端确认。
+
+## 新契约对接状态（2026-11-08 生产 api.cowa.click 实测）
+
+| 接口 | 生产状态 | 安卓处理 |
+|---|---|---|
+| `GET /chat/rooms`、`/chat/rooms/{room}/messages`、`POST` 发言、`/ws chat:{room}` | 已部署（rooms 返回 general + spot.* ，消息为空） | 已接入：游客匿名读、登录发言（clientId 幂等）、WS message/delete 帧、用发言返回 id 识别自己；FEATURE_DISABLED/KYC/禁言/频率/长度/链接/联系方式/敏感词/不可用 均显示中文错误 |
+| `GET /home/placements` | 已部署，所有槽位为空 | 请求 popup,carousel,search_hint；carousel 为空时不展示轮播（已删除本地写死的活动横幅），popup 为空不弹，search_hint 为空时搜索框占位 BTC |
+| `GET /market/proof-of-reserves` | 已部署，`available=false` | 储备金证明弹层如实显示「暂未发布」空态 |
+| `GET /market/usd-rate` | **未部署（404）**，仅在分支 cursor/android-backend-companion-43c2 | 失败时不假设 1 USDT = 1 USD：折合价显示 `$--` |
+| REST ticker `usd` 字段 / WS ticker `usd` | **未部署**（生产 ticker 无 usd） | 已解析 `usd.available/price/rate/stale`；行情行优先显示 usd.price，usd-rate 缺失时用 ticker usd.rate 兜底，均缺失显示 `--` |
+
+后端待办：部署 companion 分支的 `/market/usd-rate` 与 ticker `usd` 字段；配置 placements 轮播位与储备金快照后客户端自动展示。

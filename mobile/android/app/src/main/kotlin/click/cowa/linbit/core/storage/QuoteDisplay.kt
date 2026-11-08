@@ -24,6 +24,13 @@ object QuoteDisplay {
         val usd = usdPerUsdt ?: return null
         return if (cur == "USD") usd else rates[cur]?.multiply(usd)
     }
+    /** 行情行：优先用后端 usd.price（USD 直接显示；其它法币 × rates），否则按汇率折算。 */
+    fun formatQuote(usdt: BigDecimal, usdPrice: BigDecimal?, precision: Int? = 2): String {
+        if (usdPrice == null) return format(usdt, precision)
+        val v = if (currency == "USD") usdPrice else rates[currency]?.multiply(usdPrice) ?: return format(usdt, precision)
+        val prefix = when (currency) { "USD" -> "$"; "CNY" -> "¥"; "EUR" -> "€"; else -> "$currency " }
+        return prefix + if (precision == null) Fmt.priceAuto(v) else Fmt.price(v, precision)
+    }
     fun format(usdt: BigDecimal, precision: Int? = 2, @Suppress("UNUSED_PARAMETER") cnyFallback: BigDecimal? = null): String {
         val rate = perUsdt()
         val prefix = when (currency) { "USD" -> "$"; "CNY" -> "¥"; "EUR" -> "€"; else -> "$currency " }

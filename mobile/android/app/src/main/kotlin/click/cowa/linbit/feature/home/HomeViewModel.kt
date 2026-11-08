@@ -32,7 +32,6 @@ data class HomeState(
     val totalUsdt: BigDecimal = BigDecimal.ZERO,
     val newcomer: ApiHomeNewcomer? = null,
     val earn: List<ApiEarnProduct> = emptyList(),
-    val banners: List<HomeBanner> = LOCAL_BANNERS,
     val refreshing: Boolean = false,
     /** 运营位：活动弹窗、轮播、搜索提示（/home/placements）。 */
     val popups: List<click.cowa.linbit.core.generated.ApiPlacement> = emptyList(),
@@ -44,12 +43,6 @@ data class HomeState(
     val newcomerTotal: String? = null,
 )
 
-/** 运营位 carousel 为空时的本地兜底：只指向 App 内已实现的真实页面（福利中心 / 跟单）。 */
-val LOCAL_BANNERS = listOf(
-    HomeBanner("redpacket", "全员红包雨火爆来袭", "福利中心 · 惊喜好礼等你拿"),
-    HomeBanner("copy", "跟随顶级交易员一键跟单", "跟单交易 · 专业策略"),
-    HomeBanner("bot", "自动化网格策略，震荡行情也能获利", "现货网格 · 策略交易"),
-)
 
 /** 首页数据（对应 iOS HomeViewModel）：总资产（登录后 /assets/overview）、新手任务、理财宝、榜单（由行情本地计算）。 */
 @HiltViewModel
