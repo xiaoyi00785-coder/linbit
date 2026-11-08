@@ -37,11 +37,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.graphicsLayer
 import click.cowa.linbit.R
@@ -411,12 +414,27 @@ private fun EventChart(vm: EventContractViewModel) {
         }
     }
     val pageH = Spacing.pageH
-    Row(Modifier.fillMaxWidth().padding(horizontal = pageH).height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+    var showInd by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(start = pageH - 4.dp, end = pageH).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         EV_INTERVALS.forEach { (k, label) ->
             val on = k == interval
-            Text(label, Modifier.weight(1f).clip(RoundedCornerShape(4.dp)).background(if (on) p.fill else androidx.compose.ui.graphics.Color.Transparent)
-                .pressable(scale = 1f) { interval = k }.padding(vertical = 4.dp), style = lb(FontSize.small, if (on) FontWeight.SemiBold else FontWeight.Normal),
-                color = if (on) p.textPrimary else p.textSecondary, textAlign = TextAlign.Center)
+            Text(label, Modifier.clip(RoundedCornerShape(4.dp)).background(if (on) p.fill else androidx.compose.ui.graphics.Color.Transparent)
+                .pressable(scale = 1f) { interval = k }.padding(horizontal = 8.dp, vertical = 4.dp), style = lb(FontSize.small, if (on) FontWeight.SemiBold else FontWeight.Normal),
+                color = if (on) p.textPrimary else p.textSecondary)
+        }
+        Spacer(Modifier.weight(1f))
+        LbIcon(R.drawable.ic_draw_line, 16.dp, p.textSecondary, Modifier.pressable { vm.toast.show("画线工具暂未开放") })
+        Spacer(Modifier.width(12.dp))
+        LbIcon(R.drawable.ic_chart_settings, 16.dp, p.textSecondary, Modifier.pressable { showInd = true })
+    }
+    if (showInd) LbSheet("指标设置", { showInd = false }, showClose = true) {
+        Column(Modifier.padding(bottom = 16.dp)) {
+            listOf("MA（5 / 10 / 20）", "BOLL（20, 2）", "EMA（5 / 10 / 20）").forEachIndexed { i, t ->
+                Row(Modifier.fillMaxWidth().height(52.dp).pressable(scale = 1f) { ind = i; showInd = false }.padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+                    Text(t, Modifier.weight(1f), style = lb(FontSize.body), color = p.textPrimary)
+                    if (ind == i) LbIcon(R.drawable.ic_check, 18.dp, p.textPrimary)
+                }
+            }
         }
     }
     val c = candles
@@ -429,7 +447,7 @@ private fun EventChart(vm: EventContractViewModel) {
     Row(Modifier.padding(horizontal = pageH).height(18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         lines.forEachIndexed { i, (n, v) -> Text("$n: ${v.lastOrNull()?.let { Fmt.price(java.math.BigDecimal(it), 2) } ?: "--"}", style = lbNum(10.sp), color = colors[i]) }
     }
-    Box(Modifier.fillMaxWidth().height(220.dp)) {
+    Box(Modifier.fillMaxWidth().height(150.dp)) {
         when {
             err != null && c == null -> Text(err ?: "", Modifier.align(Alignment.Center), style = lb(FontSize.small), color = p.down)
             c == null -> CircularProgressIndicator(Modifier.align(Alignment.Center).height(24.dp), color = p.textSecondary, strokeWidth = 2.dp)
@@ -503,7 +521,11 @@ fun EventContractScreen(
     val prefs = remember { ctx.getSharedPreferences("event_guide", android.content.Context.MODE_PRIVATE) }
     var guide by remember { mutableStateOf(if (prefs.getBoolean("seen", false)) -1 else 0) }
     val targets = remember { mutableStateMapOf<Int, androidx.compose.ui.geometry.Rect>() }
-    fun Modifier.target(i: Int) = onGloballyPositioned { targets[i] = it.boundsInRoot() }
+    val hostView = androidx.compose.ui.platform.LocalView.current
+    fun Modifier.target(i: Int) = onGloballyPositioned {
+        val loc = IntArray(2); hostView.getLocationOnScreen(loc)
+        targets[i] = it.boundsInRoot().translate(loc[0].toFloat(), loc[1].toFloat())
+    }
     DisposableEffect(Unit) { vm.start(); onDispose { vm.stop() } }
     LaunchedEffect(loggedIn, vm.symbol) { if (loggedIn) { vm.refreshOrders(); vm.loadSpot() } }
     val pct = Dec.parse(vm.cfg?.payoutRatio).let { if (it.signum() <= 0) "--" else it.multiply(java.math.BigDecimal(100)).stripTrailingZeros().toPlainString() + "%" }
@@ -533,7 +555,7 @@ fun EventContractScreen(
             Box(Modifier.fillMaxWidth().height(0.5.dp).background(p.divider))
             if (vm.product?.priceAvailable == false) Text("指数价格暂不可用，暂停下单", Modifier.padding(horizontal = pageH, vertical = 6.dp), style = lb(FontSize.small), color = p.down)
             // 周期 + 金额
-            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(0.42f).target(1)) {
                     Text("周期", style = lb(FontSize.caption), color = p.textSecondary)
                     Row(Modifier.padding(top = 8.dp).fillMaxWidth().height(44.dp).clip(RoundedCornerShape(Radius.md)).background(p.fill).pressable(scale = 1f) { showPeriods = true }.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -576,7 +598,7 @@ fun EventContractScreen(
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 18.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 8.dp).height(36.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.target(3), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     listOf("当前持仓 (${vm.openOrders.size})", "历史持仓 (${vm.historyOrders.size})").forEachIndexed { i, t ->
                         Text(t, Modifier.pressable(scale = 1f) { vm.ordersTab = i }, style = lb(FontSize.body, if (vm.ordersTab == i) FontWeight.Medium else FontWeight.Normal), color = if (vm.ordersTab == i) p.textPrimary else p.textSecondary)
@@ -588,7 +610,7 @@ fun EventContractScreen(
             val list = if (vm.ordersTab == 0) vm.openOrders else vm.historyOrders
             when {
                 !loggedIn -> EmptyState("登录后查看事件合约订单", Modifier.fillMaxWidth().padding(vertical = 24.dp)) { ChipButton("登录 / 注册", Modifier.width(140.dp).height(36.dp), onClick = onLogin) }
-                list.isEmpty() -> EmptyState("暂无记录", Modifier.fillMaxWidth().padding(vertical = 24.dp))
+                list.isEmpty() -> EmptyState("暂无记录", Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp))
                 else -> {
                     list.forEach { EventOrderRow(it) }
                     if (vm.ordersTab == 1 && vm.historyCursor != null) ChipButton(if (vm.loadingMore) "加载中…" else "加载更多", Modifier.fillMaxWidth().height(40.dp).padding(horizontal = pageH, vertical = 8.dp)) { if (!vm.loadingMore) vm.loadMoreHistory() }
@@ -656,38 +678,63 @@ fun EventContractScreen(
     }
 }
 
+/** 全屏引导（独立窗口，覆盖顶部 Tab 与底部导航）：聚光挖空 + 带箭头气泡；位置按参考逐步对齐。 */
 @Composable
 private fun EventGuide(i: Int, r: androidx.compose.ui.geometry.Rect, onPrev: () -> Unit, onNext: () -> Unit, onClose: () -> Unit) {
     val p = LB.p
     val d = androidx.compose.ui.platform.LocalDensity.current
-    val pad = with(d) { 6.dp.toPx() }
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().pressable(scale = 1f) {}) {
-        val origin = remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-        androidx.compose.foundation.Canvas(Modifier.fillMaxSize().onGloballyPositioned { origin.value = it.positionInRoot() }.graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)) {
-            drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f))
-            val o = origin.value
-            drawRoundRect(androidx.compose.ui.graphics.Color.Black, androidx.compose.ui.geometry.Offset(r.left - pad - o.x, r.top - pad - o.y), androidx.compose.ui.geometry.Size(r.width + pad * 2, r.height + pad * 2),
-                androidx.compose.ui.geometry.CornerRadius(pad), blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
-        }
-        val g = EV_GUIDE[i]
-        val topRoom = with(d) { (r.top - origin.value.y).toDp() }
-        val below = with(d) { (r.bottom - origin.value.y).toDp() } + 16.dp
-        val above = maxHeight - topRoom + 16.dp
-        val showAbove = below + 200.dp > maxHeight
-        Column(Modifier.align(if (showAbove) Alignment.BottomStart else Alignment.TopStart).padding(start = 12.dp, end = 12.dp)
-            .padding(top = if (showAbove) 0.dp else below, bottom = if (showAbove) above else 0.dp).widthIn(max = 300.dp)
-            .background(p.bg, RoundedCornerShape(12.dp)).padding(16.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Text(g.title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.Bold), color = p.textPrimary)
-                LbIcon(R.drawable.ic_close, 16.dp, p.textTertiary, Modifier.pressable(onClick = onClose))
+    androidx.compose.ui.window.Dialog(onDismissRequest = onClose, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val dv = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.runtime.SideEffect {
+            (dv.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.let { w ->
+                w.setDimAmount(0f); w.statusBarColor = android.graphics.Color.TRANSPARENT; w.navigationBarColor = android.graphics.Color.TRANSPARENT
+                w.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
             }
-            Text(g.body, Modifier.padding(top = 8.dp), style = lb(FontSize.body), color = p.textPrimary)
-            Row(Modifier.padding(top = 14.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("${i + 1}/4", Modifier.weight(1f), style = lbNum(FontSize.small), color = p.textSecondary)
-                LbIcon(R.drawable.ic_arrow_left, 18.dp, if (i == 0) p.textTertiary else p.textPrimary, Modifier.pressable(enabled = i > 0, onClick = onPrev))
-                Spacer(Modifier.width(18.dp))
-                if (i < 3) LbIcon(R.drawable.ic_chevron_right, 18.dp, p.textPrimary, Modifier.pressable(onClick = onNext))
-                else Text("完成", Modifier.clip(RoundedCornerShape(14.dp)).background(p.textPrimary).pressable(onClick = onNext).padding(horizontal = 14.dp, vertical = 5.dp), style = lb(FontSize.small, FontWeight.Medium), color = p.bg)
+        }
+        val origin = remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        val pad = with(d) { 6.dp.toPx() }
+        val hole = androidx.compose.ui.geometry.Rect(r.left - pad - origin.value.x, r.top - pad - origin.value.y, r.right + pad - origin.value.x, r.bottom + pad - origin.value.y)
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { val loc = IntArray(2); dv.getLocationOnScreen(loc); origin.value = it.positionInRoot() + androidx.compose.ui.geometry.Offset(loc[0].toFloat(), loc[1].toFloat()) }.pressable(scale = 1f) {}) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize().graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)) {
+                drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f))
+                drawRoundRect(androidx.compose.ui.graphics.Color.Black, hole.topLeft, hole.size, androidx.compose.ui.geometry.CornerRadius(pad), blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+            }
+            val g = EV_GUIDE[i]
+            val above = i == 3                     // 参考第 4 步气泡在目标上方
+            val alignEnd = i == 0 || i == 2         // 参考第 1、3 步气泡靠右
+            val cardW = minOf(maxWidth - 24.dp, 300.dp)
+            val holeTop = with(d) { hole.top.toDp() }; val holeBottom = with(d) { hole.bottom.toDp() }
+            val holeCx = with(d) { hole.center.x.toDp() }
+            val cardX = if (alignEnd) maxWidth - 12.dp - cardW else 12.dp
+            val arrowX = (holeCx - cardX).coerceIn(20.dp, cardW - 20.dp)
+            var cardH by remember { mutableStateOf(0.dp) }
+            val cardY = if (above) holeTop - 10.dp - cardH else holeBottom + 10.dp
+            Column(Modifier.offset(x = cardX, y = cardY).width(cardW).onGloballyPositioned { cardH = with(d) { it.size.height.toDp() } }) {
+                val tri = @Composable { up: Boolean ->
+                    androidx.compose.foundation.Canvas(Modifier.padding(start = arrowX - 8.dp).size(16.dp, 8.dp)) {
+                        val path = androidx.compose.ui.graphics.Path().apply {
+                            if (up) { moveTo(0f, size.height); lineTo(size.width / 2, 0f); lineTo(size.width, size.height) } else { moveTo(0f, 0f); lineTo(size.width / 2, size.height); lineTo(size.width, 0f) }
+                            close()
+                        }
+                        drawPath(path, p.bg)
+                    }
+                }
+                if (!above) tri(true)
+                Column(Modifier.fillMaxWidth().background(p.bg, RoundedCornerShape(12.dp)).padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text(g.title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.Bold), color = p.textPrimary)
+                        LbIcon(R.drawable.ic_close, 16.dp, p.textTertiary, Modifier.pressable(onClick = onClose))
+                    }
+                    Text(g.body, Modifier.padding(top = 8.dp), style = lb(FontSize.body), color = p.textPrimary)
+                    Row(Modifier.padding(top = 14.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}/4", Modifier.weight(1f), style = lbNum(FontSize.small), color = p.textSecondary)
+                        LbIcon(R.drawable.ic_arrow_left, 18.dp, if (i == 0) p.textTertiary else p.textPrimary, Modifier.pressable(enabled = i > 0, onClick = onPrev))
+                        Spacer(Modifier.width(18.dp))
+                        if (i < 3) LbIcon(R.drawable.ic_chevron_right, 18.dp, p.textPrimary, Modifier.pressable(onClick = onNext))
+                        else Text("完成", Modifier.clip(RoundedCornerShape(14.dp)).background(p.textPrimary).pressable(onClick = onNext).padding(horizontal = 14.dp, vertical = 5.dp), style = lb(FontSize.small, FontWeight.Medium), color = p.bg)
+                    }
+                }
+                if (above) tri(false)
             }
         }
     }
