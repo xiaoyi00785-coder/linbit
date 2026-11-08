@@ -38,7 +38,7 @@
 ## 联调与设备限制
 
 - 运维本轮反馈生产测试为 WAF 403/error1010；不绕过，不再把历史404当作当前事实。
-- 后端新候选 `3391af945e2504e0c27d442abe202735d544b4b5` / PR #111 未冻结未部署，未合并。后续按该候选适配 bonus.available 的 trial/deduction 字符串对象、新 K 线周期、公告等；newcomer.claimable 类型仍待后端复核，不能定版。
+- 后端后续已冻结 `be357384719872b1e8b765c69de95fd1b1c774e8` / PR #111（未合并、未部署），此前 `3391af9` 已被取代。后续按冻结契约适配 bonus.available 的 trial/deduction 十进制字符串对象、新 K 线周期、公告等；newcomer.claimable 已复核为字符串计数 "0"/"1"，不是金额，completed 才是 integer；本批未反向修改该 DTO，宽松 number 仅兼容旧生产。
 - 默认充值仅 funding/spot，合约直充不开放；事件仍无独立上下 payout/10m，不能假装已支持。
 - KVM 只读诊断：`/dev/kvm` 为 root:pulse-access 0660，当前 box 用户不在该组且无读写权限。既有 AVD 的正常启动已报告硬件加速权限失败；未提权、未 chmod666、未 wipe，也未退出任何账号。真实设备验证尚未完成，需要宿主给当前助手进程正常受支持的 KVM 访问能力。
 
