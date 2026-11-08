@@ -92,6 +92,18 @@ class Batch4VisualEvidenceTest {
         captureWithDialogs("b4-guest-support")
     }
 
+    /** 注册页返回 → 挽留弹层（参考 042）；金额来自 /growth/config（生产快照 total=220）。 */
+    @Test fun signupExitPrompt() {
+        api.route("GET", "/growth/config", """{"inviteBaseUrl":"https://www.cowa.click/r/","newcomer":{"available":true,"days":7,"total":"220"},"payoutAsset":"USDT","referral":{"rate":"0.1","validDays":365}}""")
+        val vm = fixtures.auth()
+        render { click.cowa.linbit.feature.auth.AuthFlow(true, {}, vm, gs = null) }
+        rule.waitForIdle()
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }; rule.waitForIdle()
+        rule.waitUntil(5000) { vm.newcomerTotal != null }
+        rule.waitForIdle()
+        captureWithDialogs("b4-signup-exit")
+    }
+
     @Test fun profileGuideOverlay() {
         rule.activity.getSharedPreferences("profile_guide", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         val vm = fixtures.profile()

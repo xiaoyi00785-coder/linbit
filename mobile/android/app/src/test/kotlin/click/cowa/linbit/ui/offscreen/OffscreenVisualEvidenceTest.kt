@@ -354,7 +354,7 @@ class OffscreenVisualEvidenceTest {
         val ctx = RuntimeEnvironment.getApplication()
         val auth = AuthRepository(api, tokens, deviceId = { "shot" }, deviceName = { "Robolectric" }, scope = scope)
         val fakeBridge = click.cowa.linbit.feature.auth.PasskeyCredentialBridge { _, _ -> throw click.cowa.linbit.feature.auth.PasskeyLoginFailure.Unsupported }
-        val authVm = AuthViewModel(auth, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(api, fakeBridge, { "shot" }, { "Robolectric" }))
+        val authVm = AuthViewModel(auth, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(api, fakeBridge, { "shot" }, { "Robolectric" }), api)
         rule.setContent {
             LinbitTheme(false) {
                 Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {

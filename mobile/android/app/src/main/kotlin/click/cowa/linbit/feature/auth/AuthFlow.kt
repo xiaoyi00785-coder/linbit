@@ -279,9 +279,11 @@ internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -
     Column(Modifier.fillMaxSize()) {
         AuthTopBar(isRoot = true, onLeft = { showRetain = true }, onSupport = { soon("support") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
+            // 金额来自 /growth/config newcomer.total；未取到时只显示通用文案，不写死数字
+            val nt = vm.newcomerTotal
             AuthHeader("创建帐户", buildAnnotatedString {
-                append("完成注册可获得最高 ")
-                withStyle(SpanStyle(color = p.textPrimary)) { append("15,200 USDT") }
+                if (nt != null) { append("完成注册可获得最高 "); withStyle(SpanStyle(color = p.textPrimary)) { append("${click.cowa.linbit.core.util.Fmt.amount(nt, nt.stripTrailingZeros().scale().coerceAtLeast(0))} ${vm.newcomerAsset}") } }
+                else append("1 分钟即可完成注册")
             })
             LabeledAccountField(vm) { showCountry = true }
             Row(Modifier.padding(top = 24.dp).pressable(scale = 1f) { showInvite = !showInvite }, verticalAlignment = Alignment.CenterVertically) {
@@ -314,20 +316,23 @@ internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -
     }
     if (showCountry) CountrySheet(vm.countryCode, onPick = { vm.countryCode = it; showCountry = false }, onClose = { showCountry = false })
     // ref2 #8 挽留弹窗
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.loadNewcomer() }
     if (showRetain) {
         LbSheet(title = null, onClose = { showRetain = false }) {
             Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LbImageIcon(R.drawable.ic_gift_big, 56.dp, Modifier.padding(top = 16.dp, bottom = 8.dp))
+                LbImageIcon(R.drawable.ic_gift_big, 100.dp, Modifier.padding(top = 16.dp, bottom = 8.dp))
+                // 金额来自 /growth/config newcomer.total（与首页一致），未配置时不写死数字
+                val total = vm.newcomerTotal
                 Text(
                     buildAnnotatedString {
-                        append("完成注册最高领 ")
-                        withStyle(SpanStyle(color = p.brand)) { append("15,200 USDT") }
+                        if (total != null) { append("完成注册最高可领 "); withStyle(SpanStyle(color = p.brand)) { append("${click.cowa.linbit.core.util.Fmt.amount(total, total.stripTrailingZeros().scale().coerceAtLeast(0))} ${vm.newcomerAsset}") } }
+                        else append("完成注册，开启交易之旅")
                     },
-                    style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary,
+                    style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
-                Text("1分钟即可完成注册", style = lb(FontSize.caption), color = p.textSecondary)
+                Text("1 分钟即可完成注册", style = lb(FontSize.caption), color = p.textSecondary)
                 Row(Modifier.padding(top = 20.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LbButton("退出", Modifier.weight(1f), kind = ButtonKind.SECONDARY, onClick = { showRetain = false; onClose() })
+                    LbButton("返回", Modifier.weight(1f), kind = ButtonKind.SECONDARY, onClick = { showRetain = false; onClose() })
                     LbButton("继续", Modifier.weight(1f), onClick = { showRetain = false })
                 }
             }

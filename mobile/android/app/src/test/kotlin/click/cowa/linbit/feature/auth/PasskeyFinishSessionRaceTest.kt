@@ -43,7 +43,7 @@ class PasskeyFinishSessionRaceTest {
             val api = NetworkFactory.api(client, server.baseUrl)
             val tokens = InMemoryTokenStore(); val scope = CoroutineScope(Dispatchers.Unconfined)
             val bridge = PasskeyCredentialBridge { _, _ -> credentialResponse("""{"id":"mock","rawId":"mock","type":"public-key","response":{"clientDataJSON":"mock","authenticatorData":"mock","signature":"mock"}}""") }
-            val vm = AuthViewModel(AuthRepository(api, tokens, { "loopback" }, { "loopback" }, scope), tokens, AppPrefs(org.robolectric.RuntimeEnvironment.getApplication()), ToastCenter(scope), PasskeyLoginService(api, bridge, { "loopback" }, { "loopback" }))
+            val vm = AuthViewModel(AuthRepository(api, tokens, { "loopback" }, { "loopback" }, scope), tokens, AppPrefs(org.robolectric.RuntimeEnvironment.getApplication()), ToastCenter(scope), PasskeyLoginService(api, bridge, { "loopback" }, { "loopback" }), api)
             vm.loginWithPasskey(screen) { fail("Late token must not finish the old login") }
             withTimeout(5_000) { while (server.requests.none { it.contains("/finish") }) kotlinx.coroutines.delay(25) }
             tokens.accessToken = "FAKE_INTERVENING_SESSION"

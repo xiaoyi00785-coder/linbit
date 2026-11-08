@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import click.cowa.linbit.R
 import click.cowa.linbit.core.storage.ThemeMode
 import click.cowa.linbit.core.util.Fmt
@@ -86,16 +87,19 @@ fun PairPickerSheet(
     val ep = remember { runCatching { dagger.hilt.android.EntryPointAccessors.fromApplication(ctx.applicationContext, PairSheetEntryPoint::class.java) }.getOrNull() }
     val watch by (ep?.watchlist()?.symbols ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())).collectAsState()
     val cats = if (spot && !allowAll) ep?.marketStore()?.state?.collectAsState()?.value?.categories.orEmpty() else emptyList()
-    val tabs = if (ep != null && !allowAll) listOf("自选") + cats.map { it.name } + listOf("全部") else emptyList()
+    val tabs = if (ep != null && !allowAll) cats.map { it.name } + listOf("全部") else emptyList()
     // 参考默认停在第一个分类（公链）；自选为空时不默认打开空的自选页
-    var tab by remember { mutableStateOf(if (tabs.isEmpty()) -1 else if (watch.isEmpty() && tabs.size > 2) 1 else 0) }
+    var tab by remember { mutableStateOf(if (tabs.isEmpty()) -1 else 0) }
     var q by remember { mutableStateOf("") }
     val base = when {
         q.isNotBlank() || tab < 0 || tab == tabs.lastIndex -> rows
-        tab == 0 -> rows.filter { it.symbol in watch }
-        else -> cats.getOrNull(tab - 1)?.symbols?.toSet()?.let { set -> rows.filter { it.symbol in set } } ?: rows
+        else -> cats.getOrNull(tab)?.symbols?.toSet()?.let { set -> rows.filter { it.symbol in set } } ?: rows
     }
-    val list = base.filter { q.isBlank() || it.symbol.contains(q.trim(), ignoreCase = true) }
+    // 参考：最新价 / 涨跌幅 表头可点，依次 降序 → 升序 → 默认
+    var sortKey by remember { mutableStateOf<String?>(null) }; var asc by remember { mutableStateOf(false) }
+    val filtered = base.filter { q.isBlank() || it.symbol.contains(q.trim(), ignoreCase = true) }
+    val list = when (sortKey) { "price" -> filtered.sortedBy { it.last }; "change" -> filtered.sortedBy { it.changePct }; else -> filtered }.let { if (sortKey != null && !asc) it.reversed() else it }
+    val onSort: (String) -> Unit = { k -> if (sortKey != k) { sortKey = k; asc = false } else if (!asc) asc = true else sortKey = null }
     LbSheet(null, onClose) {
       Column(Modifier.fillMaxWidth().height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.86f).dp)) {
         LbTextField(q, { q = it }, "搜索币对", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), height = 36.dp,
@@ -117,12 +121,12 @@ fun PairPickerSheet(
                 color = if (current.isEmpty()) p.brand else p.textPrimary,
             )
         }
-        val emptyFav = tab == 0 && q.isBlank() && list.isEmpty() && ep != null
+        val emptyFav = false // 参考标签栏无「自选」，自选通过行尾星标管理
         if (emptyFav) Text("交易对", Modifier.padding(horizontal = Spacing.pageH, vertical = 6.dp), style = lb(FontSize.small), color = p.textTertiary)
         else Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 6.dp)) {
             Text("交易对", Modifier.weight(1f), style = lb(FontSize.small), color = p.textTertiary)
-            Text("最新价", style = lb(FontSize.small), color = p.textTertiary)
-            Text("涨跌幅", Modifier.width(72.dp), style = lb(FontSize.small), color = p.textTertiary, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            SortHead("最新价", sortKey == "price", asc, Modifier.testTag("pair.sort.price")) { onSort("price") }
+            SortHead("涨跌幅", sortKey == "change", asc, Modifier.padding(start = 12.dp).padding(end = if (ep != null) 40.dp else 0.dp).testTag("pair.sort.change")) { onSort("change") }
         }
         if (emptyFav) {
             // 参考：自选为空 → 推荐成交额前列币对（默认全选）+「添加自选」
@@ -142,7 +146,7 @@ fun PairPickerSheet(
                         }
                         if (pair.size == 1) Box(Modifier.weight(1f))
                     } }
-                    LbButton("添加自选", Modifier.fillMaxWidth().padding(top = 8.dp), enabled = picked.isNotEmpty()) { ep.watchlist().add(picked) }
+                    LbButton("添加自选", Modifier.fillMaxWidth().padding(top = 8.dp), enabled = picked.isNotEmpty()) { ep?.watchlist()?.add(picked) }
                 }
             }
         } else {
@@ -245,3 +249,17 @@ fun ThemeModeSheet(mode: ThemeMode, onPick: (ThemeMode) -> Unit, onClose: () -> 
     }
 }
 
+
+
+/** 表头排序：文字 + 上下双三角，当前方向高亮。 */
+@Composable
+private fun SortHead(label: String, active: Boolean, asc: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val p = LB.p
+    Row(modifier.pressable(scale = 1f, onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = lb(FontSize.small), color = p.textTertiary)
+        Column(Modifier.padding(start = 2.dp)) {
+            Text("▲", style = lb(6.sp), color = if (active && asc) p.textPrimary else p.textTertiary.copy(alpha = 0.5f))
+            Text("▼", style = lb(6.sp), color = if (active && !asc) p.textPrimary else p.textTertiary.copy(alpha = 0.5f))
+        }
+    }
+}

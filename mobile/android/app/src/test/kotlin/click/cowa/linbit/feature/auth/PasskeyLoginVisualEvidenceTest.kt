@@ -60,7 +60,7 @@ class PasskeyLoginVisualEvidenceTest {
         val api = NetworkFactory.api(okhttp3.OkHttpClient(), server.baseUrl)
         val bridge = PasskeyCredentialBridge { _, _ -> throw error }
         vm = AuthViewModel(AuthRepository(api, tokens, { "visual-invalid" }, { "Robolectric" }, scope), tokens,
-            AppPrefs(RuntimeEnvironment.getApplication()), ToastCenter(scope), PasskeyLoginService(api, bridge, { "visual-invalid" }, { "Robolectric" }))
+            AppPrefs(RuntimeEnvironment.getApplication()), ToastCenter(scope), PasskeyLoginService(api, bridge, { "visual-invalid" }, { "Robolectric" }), api)
         rule.setContent { LinbitTheme(dark) { AuthFlow(startRegister = false, onClose = {}, vm = vm) } }
         rule.waitForIdle()
         rule.onNodeWithTag("auth.passkey.login").performScrollTo().assertIsEnabled().performClick()

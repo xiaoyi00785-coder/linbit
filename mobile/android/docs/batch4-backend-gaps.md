@@ -58,6 +58,7 @@
 | `GET /market/proof-of-reserves` | 已部署，`available=false` | 储备金证明弹层如实显示「暂未发布」空态 |
 | `GET /market/usd-rate` | **未部署（404）**，仅在分支 cursor/android-backend-companion-43c2 | 失败时不假设 1 USDT = 1 USD：折合价显示 `$--` |
 | REST ticker `usd` 字段 / WS ticker `usd` | **未部署**（生产 ticker 无 usd） | 已解析 `usd.available/price/rate/stale`；行情行优先显示 usd.price，usd-rate 缺失时用 ticker usd.rate 兜底，均缺失显示 `--` |
+| `GET/PUT/DELETE /assets/deposit-account` | **未部署**（仅 companion 分支；生产返回 404） | 偏好设置「默认充值账户」显示「暂未开放」，弹层说明服务端未上线，不再显示「读取失败」 |
+| K 线周期 `ApiKlineInterval` | 仅 1m/5m/15m/30m/1h/4h/1d/1w | 周期弹层只列后端支持的 8 个；参考的 3m/2h/6h/12h/1M 与「偏好周期」设置后端未提供，未显示 |
 
 后端待办：部署 companion 分支的 `/market/usd-rate` 与 ticker `usd` 字段；配置 placements 轮播位与储备金快照后客户端自动展示。
-| `GET/PUT/DELETE /assets/deposit-account` | **未部署**（仅 companion 分支；生产返回 404） | 偏好设置「默认充值账户」显示「暂未开放」，弹层说明服务端未上线，不再显示「读取失败」 |

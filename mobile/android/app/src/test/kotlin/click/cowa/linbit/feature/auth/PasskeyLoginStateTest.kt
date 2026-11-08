@@ -49,7 +49,7 @@ class PasskeyLoginStateTest {
         prefs = AppPrefs(org.robolectric.RuntimeEnvironment.getApplication())
         val toast = ToastCenter(scope)
         vm = AuthViewModel(AuthRepository(api, tokens, { "fake-device" }, { "loopback" }, scope), tokens, prefs, toast,
-            PasskeyLoginService(passkeyApi, bridge, { "fake-device" }, { "loopback" }))
+            PasskeyLoginService(passkeyApi, bridge, { "fake-device" }, { "loopback" }), api)
     }
     private suspend fun awaitBusy() = kotlinx.coroutines.withTimeout(5_000) {
         while (vm.passkeyLoading) kotlinx.coroutines.delay(25)
