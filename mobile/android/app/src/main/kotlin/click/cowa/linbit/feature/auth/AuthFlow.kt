@@ -87,8 +87,8 @@ fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hi
     DisposableEffect(vm, activity) {
         onDispose { vm.cancelPasskeyLogin() }
     }
-    var assistance by remember { mutableStateOf<String?>(null) }
-    val soon: (String) -> Unit = { assistance = it }
+    var assistanceKind by remember { mutableStateOf<String?>(null) }
+    val soon: (String) -> Unit = { assistanceKind = it }
     androidx.compose.runtime.CompositionLocalProvider(LocalAuthAssistance provides soon) {
     Box(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         NavHost(nav, startDestination = if (startRegister) Route.REGISTER else Route.LOGIN) {
@@ -131,12 +131,12 @@ fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hi
         }
     }
     }
-    assistance?.let { kind ->
+    assistanceKind?.let { kind ->
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { assistance = null },
+            onDismissRequest = { assistanceKind = null },
             title = { Text(if (kind == "support") "在线客服" else "Google 登录") },
             text = { Text(if (kind == "support") "账户问题请先登录，再通过客服工单提交。请勿向任何人提供密码或验证码。" else "当前服务未配置 Google OAuth 客户端及令牌交换接口，请使用邮箱、手机号或通行密钥登录。") },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { assistance = null }) { Text("知道了") } },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { assistanceKind = null }) { Text("知道了") } },
         )
     }
 }
@@ -372,6 +372,7 @@ internal fun SetPasswordScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ForgotScreen(vm: AuthViewModel, onBack: () -> Unit, onNext: () -> Unit) {
+    val assistance = LocalAuthAssistance.current
     var showCountry by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { assistance("support") })
