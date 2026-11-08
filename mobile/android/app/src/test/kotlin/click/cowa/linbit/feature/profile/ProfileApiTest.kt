@@ -16,6 +16,19 @@ class ProfileApiTest {
     private val api = NetworkFactory.api(NetworkFactory.bareClient(), server.url("/").toString())
     @After fun tearDown() { server.shutdown() }
 
+    @Test fun accountPreferencesUsesServerSupportedCurrenciesAndExactPutBody() = runTest {
+        val response = """{"quoteCurrency":"USD","defaultQuoteCurrency":"USD","supportedQuoteCurrencies":["USD","CNY"]}"""
+        server.enqueue(MockResponse().setBody(response))
+        assertEquals(listOf("USD", "CNY"), api.accountPreferences().supportedQuoteCurrencies)
+        assertEquals("/account/preferences", server.takeRequest().path)
+        server.enqueue(MockResponse().setBody(response.replace("\"quoteCurrency\":\"USD\"", "\"quoteCurrency\":\"CNY\"")))
+        assertEquals("CNY", api.updateAccountPreferences(ApiUpdateAccountPreferencesRequest("CNY")).quoteCurrency)
+        val request = server.takeRequest()
+        assertEquals("PUT", request.method)
+        assertEquals("/account/preferences", request.path)
+        assertEquals("""{"quoteCurrency":"CNY"}""", request.body.readUtf8())
+    }
+
     @Test fun accountKycAndTotpPathsMatchOpenApi() = runTest {
         server.enqueue(MockResponse().setBody("""{"uid":"u1","kycLevel":1,"twoFactorEnabled":false,"createdAt":"2026-01-01"}"""))
         assertEquals("u1", api.account().uid)
