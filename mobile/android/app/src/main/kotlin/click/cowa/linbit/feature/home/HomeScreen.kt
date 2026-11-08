@@ -72,7 +72,6 @@ private data class GridItem(val light: Int, val dark: Int, val title: String)
 private val GRID = listOf(
     GridItem(R.drawable.ic_g_chat_light, R.drawable.ic_g_chat_dark, "聊天室"), GridItem(R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark, "福利中心"), GridItem(R.drawable.ic_g_earn_light, R.drawable.ic_g_earn_dark, "理财"),
     GridItem(R.drawable.ic_g_tradfi_light, R.drawable.ic_g_tradfi_dark, "TradFi"), GridItem(R.drawable.ic_g_copy_light, R.drawable.ic_g_copy_dark, "跟单"), GridItem(R.drawable.ic_g_bot_light, R.drawable.ic_g_bot_dark, "策略交易"),
-    GridItem(R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark, "Linbit 卡"),
     GridItem(R.drawable.ic_g_more_light, R.drawable.ic_g_more_dark, "更多"),
 )
 
@@ -147,7 +146,7 @@ fun HomeContent(
             b.link != null -> onOpenLink(b.link)
             b.id == "redpacket" -> onFeature("福利中心")
             b.id == "copy" -> onFeature("跟单")
-            b.id == "card" -> onFeature("Linbit 卡")
+            b.id == "bot" -> onFeature("策略交易")
         }
     }
     LaunchedEffect(s.earn.size) { earnPage = 0; while (s.earn.size > 1) { delay(4_000); earnPage = (earnPage + 1) % s.earn.size } }
@@ -337,6 +336,9 @@ private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onClick: () ->
             if (b.imageUrl != null) {
                 coil.compose.AsyncImage(b.imageUrl, b.title, Modifier.padding(top = 16.dp).size(width = 100.dp, height = 90.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
                 Spacer(Modifier.width(12.dp))
+            } else if (b.id == "redpacket" || b.id == "copy" || b.id == "bot") {
+                Image(when (b.id) { "redpacket" -> R.drawable.ic_bn_redpacket; "bot" -> R.drawable.ic_bn_bot; else -> R.drawable.ic_bn_copy }, 0.dp, Modifier.padding(top = 18.dp).size(width = 92.dp, height = 80.dp))
+                Spacer(Modifier.width(10.dp))
             } else if (isCard) {
                 // ref/1：卡面整体 ≈ 59×48dp，居中于文案块上半（比 92×80 容器缩 0.8，左对齐）
                 CardArt(Modifier.padding(top = 21.dp).size(width = 92.dp, height = 80.dp).graphicsLayer { scaleX = 0.8f; scaleY = 0.8f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) })
@@ -383,7 +385,7 @@ private fun CardArt(modifier: Modifier) {
 
 @Composable
 private fun Image(res: Int, size: Dp, modifier: Modifier) =
-    androidx.compose.foundation.Image(painterResource(res), null, modifier.size(size))
+    androidx.compose.foundation.Image(painterResource(res), null, if (size > 0.dp) modifier.size(size) else modifier)
 
 // ── 理财宝（ref/1：第一行「理财宝 + 币图标」，第二行产品名 16 medium，右下 n/N）──
 @Composable

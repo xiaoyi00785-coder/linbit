@@ -46,9 +46,9 @@ data class HomeState(
 
 /** 运营位 carousel 为空时的本地兜底：只指向 App 内已实现的真实页面（福利中心 / 跟单）。 */
 val LOCAL_BANNERS = listOf(
-    HomeBanner("card", "Linbit 卡", "数字资产 · 全球消费"),
     HomeBanner("redpacket", "全员红包雨火爆来袭", "福利中心 · 惊喜好礼等你拿"),
     HomeBanner("copy", "跟随顶级交易员一键跟单", "跟单交易 · 专业策略"),
+    HomeBanner("bot", "自动化网格策略，震荡行情也能获利", "现货网格 · 策略交易"),
 )
 
 /** 首页数据（对应 iOS HomeViewModel）：总资产（登录后 /assets/overview）、新手任务、理财宝、榜单（由行情本地计算）。 */
