@@ -118,15 +118,13 @@ fun MarginModeSheet(vm: FuturesTradeViewModel, onClose: () -> Unit) {
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("保证金模式", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
             PillSegment(listOf("全仓", "逐仓"), mode, { mode = it }, height = 40.dp, activeColors = listOf(p.bg, p.bg), activeText = p.textPrimary)
-            Text(
-                if (mode == 0) "全仓模式：所有全仓仓位共享账户可用余额作为保证金，盈亏可相互抵消。" else "逐仓模式：每个仓位独立分配保证金，最大亏损为该仓位保证金。",
-                style = lb(FontSize.small), color = p.textSecondary,
-            )
             Text("仓位模式", Modifier.padding(top = 4.dp), style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
             PillSegment(listOf("合仓", "分仓"), posMode, { posMode = it }, height = 40.dp, activeColors = listOf(p.bg, p.bg), activeText = p.textPrimary)
+            // 参考：两组切换后只有一段合并说明
             Text(
-                if (posMode == 0) "合仓模式：同一合约（开多与开空）仅持有一个仓位，反向开仓会先减少已有仓位。"
-                else "分仓模式：同一合约可同时持有多个独立仓位，每笔开仓单独计算保证金与盈亏，可分别止盈止损、平仓。",
+                (if (mode == 0) "全仓" else "逐仓") + (if (posMode == 0) "合仓" else "分仓") + "：" +
+                (if (posMode == 0) "同一交易对同方向（多或空）的订单合并为一个仓位。" else "同一交易对可同时持有多个独立仓位，分别计算保证金与盈亏。") +
+                (if (mode == 0) "全仓仓位共享同一保证金池，盈亏可相互抵消。" else "每个仓位独立分配保证金，最大亏损为该仓位保证金。"),
                 style = lb(FontSize.small), color = p.textSecondary,
             )
             block?.let { Text(it, Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(p.fill).padding(10.dp), style = lb(FontSize.small), color = p.down) }
@@ -174,8 +172,10 @@ fun LeverageSheet(vm: FuturesTradeViewModel, onClose: () -> Unit) {
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("当前杠杆倍数最大可开 ${Fmt.amount(vm.maxNotional(lev) ?: BigDecimal.ZERO, 0)} ${vm.quote}", style = lb(FontSize.small), color = p.textSecondary)
-                Text("调整杠杆对当前合约的全部仓位与委托生效", style = lb(FontSize.small), color = p.textSecondary)
+                // 参考：最大仓位 / 当前仓位保证金 两行键值
+                val posMargin = vm.positions.filter { it.symbol == vm.symbol }.fold(BigDecimal.ZERO) { a, x -> a + click.cowa.linbit.core.util.Dec.parse(x.margin) }
+                Row { Text("最大仓位 ", style = lb(FontSize.small), color = p.textSecondary); Text("${vm.maxNotional(lev)?.let { Fmt.amount(it, 0) } ?: "--"} ${vm.quote}", style = lbNum(FontSize.small, FontWeight.Medium), color = p.textPrimary) }
+                Row { Text("当前仓位保证金 ", style = lb(FontSize.small), color = p.textSecondary); Text("${Fmt.amount(posMargin, 2).trimEnd('0').trimEnd('.')} ${vm.quote}", style = lbNum(FontSize.small, FontWeight.Medium), color = p.textPrimary) }
                 if (lev >= 50) Text("选择超过 50x 的杠杆交易会增加强行平仓的风险，请注意相关风险", style = lb(FontSize.small), color = p.down)
             }
             LbButton("保存", loading = saving) {

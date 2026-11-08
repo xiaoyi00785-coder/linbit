@@ -1,5 +1,8 @@
 package click.cowa.linbit.feature.home
 
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -135,12 +138,13 @@ fun HomeContent(
     var rankKind by rememberSaveable { mutableIntStateOf(1) } // ref/2：默认选中「合约」
     var bannerPage by remember { mutableIntStateOf(0) }
     var earnPage by remember { mutableIntStateOf(0) }
+    var swipeTick by remember { mutableIntStateOf(0) }
 
     val banners = remember(s.carousel) {
         if (s.carousel.isEmpty()) LOCAL_BANNERS
         else s.carousel.map { HomeBanner("pl:${it.id}", it.title.orEmpty(), null, it.imageUrl, it.linkUrl) }
     }
-    LaunchedEffect(banners.size) { bannerPage = 0; while (banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % banners.size } }
+    LaunchedEffect(banners.size, swipeTick) { if (swipeTick == 0) bannerPage = 0; while (banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % banners.size } }
     val onBanner: (HomeBanner) -> Unit = { b ->
         when {
             b.link != null -> onOpenLink(b.link)
@@ -170,7 +174,7 @@ fun HomeContent(
                     Hairline(Modifier.padding(top = (64f / 3).dp))
                 } else GuestHero(s.newcomerTotal, s.newcomer?.asset ?: "USDT", onLogin)
                 val banner = banners.getOrNull(bannerPage) ?: banners[0]
-                CardPromo(banner, bannerPage, banners.size) { onBanner(banner) }
+                CardPromo(banner, bannerPage, banners.size, onSwipe = { d -> bannerPage = ((bannerPage + d) % banners.size + banners.size) % banners.size; swipeTick++ }) { onBanner(banner) }
                 Hairline()
                 EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onFeature("理财") }
                 Hairline()
@@ -327,11 +331,14 @@ private fun Grid(modifier: Modifier, onTap: (String) -> Unit) {
 
 // ── 卡片轮播（ref/1：左侧卡面 + 右侧文案，右下角 n/N）──
 @Composable
-private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onClick: () -> Unit) {
+private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onSwipe: (Int) -> Unit = {}, onClick: () -> Unit) {
     val p = LB.p
     val b = banner ?: LOCAL_BANNERS[0]
     val isCard = b.id == "card"
-    Box(Modifier.fillMaxWidth().height((413f / 3).dp).pressable(scale = 1f, onClick = onClick)) {
+    Box(Modifier.fillMaxWidth().height((413f / 3).dp).testTag("home.banner").pointerInput(count) {
+        var acc = 0f
+        detectHorizontalDragGestures(onDragStart = { acc = 0f }, onDragEnd = { if (count > 1 && kotlin.math.abs(acc) > 60f) onSwipe(if (acc < 0) 1 else -1) }) { _, d -> acc += d }
+    }.pressable(scale = 1f, onClick = onClick)) {
         Row(Modifier.fillMaxSize().padding(start = 24.dp, end = Spacing.pageH), verticalAlignment = Alignment.Top) {
             if (b.imageUrl != null) {
                 coil.compose.AsyncImage(b.imageUrl, b.title, Modifier.padding(top = 16.dp).size(width = 100.dp, height = 90.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)

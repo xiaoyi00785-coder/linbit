@@ -98,7 +98,7 @@ fun PairPickerSheet(
       Column(Modifier.fillMaxWidth().height((androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.86f).dp)) {
         LbTextField(q, { q = it }, "搜索币对", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp), height = 36.dp,
             leading = { LbIcon(R.drawable.ic_search, 15.dp, p.textTertiary) })
-        if (tabs.isNotEmpty() && q.isBlank()) Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = Spacing.pageH, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        if (tabs.isNotEmpty() && q.isBlank()) Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = Spacing.pageH, end = 32.dp, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             tabs.forEachIndexed { i, t ->
                 Column(Modifier.pressable(scale = 1f) { tab = i }, horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(t, style = lb(FontSize.body, if (i == tab) FontWeight.SemiBold else FontWeight.Normal), color = if (i == tab) p.textPrimary else p.textSecondary)
