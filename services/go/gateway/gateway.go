@@ -231,13 +231,12 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
 			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
-			{method: http.MethodGet, path: "/spot/fee-schedule"},                 // public default fee rates (order)
-			{method: http.MethodGet, path: "/growth/config"},                     // invite/newcomer numbers (read-only)
-			{method: http.MethodGet, path: "/home/hot"},                          // home hot list (read-only)
-			{method: "", path: "/ws", optionalAuth: true},                        // market WebSocket; a token unlocks private channels (event:orders)
-			{method: http.MethodGet, path: "/event/products"},                    // event contract products (public)
-			{method: http.MethodGet, path: "/chat/rooms"},                        // chat: anyone can read
-			{method: http.MethodGet, path: "/chat/rooms/"},                       // chat history (prefix); posting needs auth
+			{method: http.MethodGet, path: "/spot/fee-schedule"}, // public default fee rates (order)
+			{method: http.MethodGet, path: "/growth/config"},     // invite/newcomer numbers (read-only)
+			{method: http.MethodGet, path: "/home/hot"},          // home hot list (read-only)
+			{method: "", path: "/ws", optionalAuth: true},        // market WebSocket; a token unlocks private channels (event:orders)
+			{method: http.MethodGet, path: "/event/products"},    // event contract products (public)
+			// Chat reads require login (2026-11-08). Market data stays public.
 			{method: http.MethodGet, path: "/academy/"},                          // academy categories and published articles
 			{method: http.MethodGet, path: "/cards/product"},                     // card intro; unconfigured until an issuer is approved
 			{method: http.MethodGet, path: "/fiat/buy"},                          // fiat buy availability; quotes stay authenticated

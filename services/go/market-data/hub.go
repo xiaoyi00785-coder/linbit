@@ -373,6 +373,9 @@ func (c *wsClient) validateChannel(channel string) (code, msg string) {
 			return "SUB_INVALID", "无效的合约行情频道: " + channel
 		}
 	case "chat":
+		if c.uid == "" {
+			return "AUTH_REQUIRED", "登录后查看聊天室：连接 /ws 时携带 Authorization: Bearer 或 ?token="
+		}
 		if len(parts) != 2 || c.hub.chatValidate == nil {
 			return "SUB_INVALID", "无效的聊天室频道: " + channel
 		}

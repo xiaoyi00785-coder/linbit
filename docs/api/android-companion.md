@@ -1,15 +1,28 @@
 # 安卓对接：本批后端契约
 
-基线 `1342bc5`。聊天室、首页运营位、公开储备查询沿用现有接口，没有重写。下面只列安卓需要的路径。金额是十进制字符串。未配置时响应里的 `configured` / `available` / `submitted` 为 false，不表示已开通、已提交或已到账。
+本文件描述 **companion 分支已实现的契约**，不是生产已上线证明。运维尚未核对生产 SHA 和 goose。对 `api.cowa.click` / `www` 的 GET 曾返回 Cloudflare 403 error 1010，这不能当成应用 404 或未实现。生产是否已部署以运维只读核对为准。
+
+基线实现从 `1342bc5` 累加。金额是十进制字符串。未配置时 `configured` / `available` / `submitted` 为 false，不表示已开通、已提交或已到账。
+
+## 上线状态（代码已实现 / 生产未验证）
+
+| 能力 | 分支代码 | 生产 |
+|---|---|---|
+| `GET /market/usd-rate`、REST ticker `usd`、WebSocket `ticker:{symbol}` 的 `usd` | 已实现，同一对象，USDT 不按 1 美元 | 未由本轮验证部署 |
+| `GET/PUT/DELETE /assets/deposit-account` | 已实现，仅 `funding`/`spot` | 未由本轮验证部署 |
+| 聊天室读取改为必须登录 | 本轮起 REST 与 `chat:{room}` 订阅都要登录 | 旧生产行为曾是游客可读；以部署后的 SHA 为准 |
+| 学院、卡片未配置、储备草稿审核、活动未配置、只读 API Key | 已实现 | 未由本轮验证部署 |
 
 网关：除注明「登录」外，下列 GET 不需要 Token。登录接口使用 `Authorization: Bearer <accessToken>`，网关注入 `X-User-Id`。错误体为 `{code, message, requestId}`；部分未配置响应在同一层带上 `configured` / `submitted`。
 
-## 1. 聊天室（已有，未改协议）
+## 1. 聊天室（登录后查看）
+
+2026-11-08 起，房间列表、历史消息和 `chat:{room}` 订阅都要登录。这替换了此前「游客可读」的规则。公开行情 `/market/*` 与 `/ws` 上的 `ticker`/`depth`/`trades`/`kline` 仍然匿名。旧客户端若匿名拉取聊天室，会收到 401，而不是空列表。
 
 | 方法 | 路径 | 认证 |
 |---|---|---|
-| GET | `/chat/rooms` | 无 |
-| GET | `/chat/rooms/{room}/messages?before=&limit=` | 无 |
+| GET | `/chat/rooms` | 登录 |
+| GET | `/chat/rooms/{room}/messages?before=&limit=` | 登录 |
 | POST | `/chat/rooms/{room}/messages` | 登录 |
 | POST | `/chat/messages/{id}/report` | 登录 |
 
@@ -17,7 +30,7 @@
 
 发消息体 `{clientId, text}`。`clientId` 必填且幂等。须登录；默认还要 `kycLevel >= 1`（后台 `minKycLevel` 可调到 0）。限流、禁言、链接/联系方式拦截沿用现有规则，可能返回 `CHAT_KYC_REQUIRED`、`CHAT_RATE_LIMITED`（带 `retryAfterMs`）、`CHAT_MUTED`、`CHAT_BANNED`。
 
-WebSocket：`GET /ws`（可带 `?token=`）。订阅频道 `chat:{room}`。帧与行情相同：`{channel, ts, data}`。`data` 为 `{type:"message", message}` 或 `{type:"delete", id}`。广播帧没有 `mine`，用 POST 返回的 `id` 认自己的消息。
+WebSocket：`GET /ws`。行情频道仍可匿名。订阅 `chat:{room}` 必须在握手时带 `Authorization: Bearer` 或 `?token=`，否则错误码 `AUTH_REQUIRED`，不推送历史。帧与行情相同：`{channel, ts, data}`。`data` 为 `{type:"message", message}` 或 `{type:"delete", id}`。广播帧没有 `mine`，用 POST 返回的 `id` 认自己的消息。发言仍受 KYC、限流、禁言和内容规则约束。
 
 后台：`/admin/v1/chat/*`（`content:edit`，写操作要 TOTP 和 reason）。
 
@@ -105,7 +118,7 @@ WebSocket：`GET /ws`（可带 `?token=`）。订阅频道 `chat:{room}`。帧�
 
 `rate` 是 **1 USDT 兑多少 USD**，来自 Coinbase `USDT-USD`，失败再试 Kraken `USDTUSD`。必须落在 `INDEX_USDT_USD_MIN`/`MAX`（默认 0.97–1.03）内，否则该来源作废。没有合格报价时 `available:false`，**不会**回退成 1。8 位小数，远离 0 的一半向上（half away from zero）。成功时 `source` 是主机名，`updatedAt` 是交易所时间（Kraken 用拉取时间），超过 1 分钟会刷新；刷新失败且报价不超过 15 分钟则 `stale:true`。
 
-`GET /market/ticker` 每条增加 `usd`：`{available, price, rate, source, updatedAt, stale, precision, rounding, convention, pegAssumed}`。仅 `*USDT` 且有正的 `lastPrice` 和有效汇率时 `available:true`，`price = lastPrice * rate`（同样 8 位）。否则 `price:null`，`reason` 为 `rate_unavailable`、`quote_not_usdt` 或 `no_price`。WebSocket ticker 不带 `usd`，用 REST 或 `/market/usd-rate`。
+`GET /market/ticker` 与 WebSocket 频道 `ticker:{symbol}` 使用同一个 `usd` 对象：`{available, price, rate, source, updatedAt, stale, precision, rounding, convention, pegAssumed}`。仅 `*USDT` 且有正的 `lastPrice` 和有效汇率时 `available:true`，`price = lastPrice * rate`（同样 8 位）。否则 `price:null`，`reason` 为 `rate_unavailable`、`quote_not_usdt` 或 `no_price`。推送只读内存缓存，不在每笔成交上请求外部汇率；后台约每分钟刷新。缓存为空时 `available:false`，不会把最新价当成美元价。
 
 `GET /market/fiat-rates?base=USDT|USDC|USD`：`rates` 是 **1 USD** 的法币汇率（来源 `FIAT_RATES_URLS`），`ratesBasis:"USD"`，`pegAssumed:false`。不要把 `rates.CNY` 直接乘 USDT 价格。两边都有时才有 `quotePerUsdt`（法币 per 1 USDT = 法币 per USD × USDTUSD）。汇率源全失败且没有上次成功值时 `available:false`、`rates:null`，不再返回写死的汇率表。
 
@@ -192,6 +205,18 @@ WebSocket：`GET /ws`（可带 `?token=`）。订阅频道 `chat:{room}`。帧�
 POST 体 `{label, permissions:["read"], ipWhitelist, totpCode}`。`permissions` 出现 `read` 以外的值返回 400 `PERMISSION_NOT_ALLOWED`。未开 TOTP 为 403 `TWOFA_REQUIRED`，验证码错误为 401 `INVALID_TOTP`。成功 **201** `{item, secret}`。`secret` 只在这一次出现，列表和日志都没有它。`item` 为 `{id, label, apiKey, permissions:["read"], ipWhitelist, createdAt}`，`createdAt` 是毫秒，`id` 是数字字符串。密钥前缀 `lbu_`，256 位随机。最多 10 把。
 
 `ipWhitelist` 最多 20 条 IP 或 CIDR，空名单表示不限制。网关只在对等地址属于 `TRUSTED_PROXY_CIDRS` 或带有效 `X-Linbit-Edge-Auth` 时采信转发的客户端 IP，其余用 TCP 对等地址。撤销后下一次校验即失败。`read` 只能 GET/HEAD `/assets`、`/spot`、`/futures`，不能下单、划转或提币。
+
+## 12. 本轮补齐与仍阻塞
+
+K 线：`GET /market/klines` 与 `GET /futures/market/klines` 增加固定秒数周期 `3m`、`2h`、`6h`、`12h`，由成交按桶聚合，与 1m/5m 相同。不提供 `1M`（自然月，且与 `1m` 大小写易混）和事件合约的 `10m`。事件结算周期仍以 `ev_config.periods` 为准，默认 `5m,15m,30m,1h,4h,1d`。看涨看跌共用一个 `payoutRatio`。下单扣款是现货 USDT（`system:event`，幂等 ref `event:stake:{id}`），余额不足时订单 `rejected`，不从合约保证金扣。本轮不改扣款账户、不新增 10m、不分方向赔率。
+
+`GET /home/newcomer` 的 `claimable` 改为数字字符串，表示可领取任务个数（`"0"`），不是 USDT 金额。金额仍看 `total` 和任务的 `amount`。
+
+`GET /futures/bonus` 的 `available` 保持对象 `{"trial":"...","deduction":"..."}`，金额是十进制字符串。旧 OpenAPI 把它写成单个字符串，与两种赠金不符；客户端应按对象读取。没有赠金时两项为 `"0"`，不是伪造的体验金余额。
+
+`GET /announcements` 与 `GET /announcements/{id}` 已是公开公告。没有单独的「快讯」接口。币种全称没有元数据来源，不编造 Bitcoin/Ether。闪兑限额仍是 `minUsdt`/`maxUsdt`（USDT 名义），没有按币种的独立 `fromMin`/`fromMax`。策略账户没有单独保证金率接口。单币资金流水没有公开过滤接口。这些不在本轮猜测规则。
+
+自有客服仍是登录用户工单：`/support/tickets`。管理员经 `/admin/v1/support/tickets/{id}/messages` 回复。没有游客会话，避免无身份的人冒充用户。第三方客服 URL 仍只在明确配置后出现。
 
 ## 11. 与安卓页面的字段差异
 

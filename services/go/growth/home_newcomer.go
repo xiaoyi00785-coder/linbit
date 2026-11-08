@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/linbit/platform/services/go/common"
 )
@@ -18,7 +19,7 @@ func (s *Server) handleHomeNewcomer(w http.ResponseWriter, r *http.Request) {
 	rules := s.cfg.Newcomer
 	out := map[string]any{"available": len(rules.Tasks) > 0, "loggedIn": uid != "", "enrolled": false,
 		"total": rules.total().String(), "asset": s.cfg.PayoutAsset, "days": rules.Days,
-		"completed": 0, "claimable": 0, "deadline": nil, "link": "/rewards/newcomer"}
+		"completed": 0, "claimable": "0", "deadline": nil, "link": "/rewards/newcomer"}
 	if len(rules.Tasks) == 0 {
 		out["tasks"], out["cta"] = []homeTask{}, "none"
 		common.WriteJSON(w, http.StatusOK, out)
@@ -53,7 +54,7 @@ func (s *Server) handleHomeNewcomer(w http.ResponseWriter, r *http.Request) {
 					expired++
 				}
 			}
-			out["enrolled"], out["completed"], out["claimable"] = st["enrolled"], done, claimable
+			out["enrolled"], out["completed"], out["claimable"] = st["enrolled"], done, strconv.Itoa(claimable)
 			if d, ok := st["deadline"]; ok {
 				out["deadline"] = d
 			}

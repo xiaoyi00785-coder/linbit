@@ -18,8 +18,8 @@ func TestChatRoutes(t *testing.T) {
 	for _, p := range []string{"/chat/rooms", "/chat/rooms/spot.BTCUSDT/messages?limit=20"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", p, nil))
-		if w.Code != http.StatusOK || market.lastUserID != "" {
-			t.Fatalf("%s: status %d uid %q", p, w.Code, market.lastUserID)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("anonymous GET %s = %d", p, w.Code)
 		}
 	}
 	for _, p := range []string{"/chat/rooms/general/messages", "/chat/messages/1/report"} {
@@ -37,5 +37,14 @@ func TestChatRoutes(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK || market.lastUserID != "80000001" || market.lastPath != "/chat/rooms/general/messages" {
 		t.Fatalf("authed POST: %d uid=%q path=%s", w.Code, market.lastUserID, market.lastPath)
+	}
+	for _, p := range []string{"/chat/rooms", "/chat/rooms/spot.BTCUSDT/messages?limit=20"} {
+		req := httptest.NewRequest("GET", p, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK || market.lastUserID != "80000001" {
+			t.Fatalf("authed GET %s: %d uid=%q", p, w.Code, market.lastUserID)
+		}
 	}
 }
