@@ -40,6 +40,7 @@ data class NotificationState(
     val page: Int = 1,
     val prefs: ApiNotifyPrefs? = null,
     val saving: Boolean = false,
+    val prefsError: String? = null,
 )
 
 @HiltViewModel
@@ -175,10 +176,11 @@ class NotificationViewModel @Inject constructor(
     fun loadPrefs() {
         if (_state.value.prefs != null) return
         val session = tokens.sessionVersion.value
+        _state.value = _state.value.copy(prefsError = null)
         viewModelScope.launch {
             runCatching { apiCall { api.notificationSettings() } }
-                .onSuccess { if (isCurrent(session)) _state.value = _state.value.copy(prefs = it) }
-                .onFailure { if (isCurrent(session)) toast.error(it) }
+                .onSuccess { if (isCurrent(session)) _state.value = _state.value.copy(prefs = it, prefsError = null) }
+                .onFailure { if (isCurrent(session)) _state.value = _state.value.copy(prefsError = it.lbMessage()) }
         }
     }
 
@@ -270,8 +272,18 @@ fun NotificationsScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: Notificatio
 @Composable
 private fun NotificationSettings(s: NotificationState, vm: NotificationViewModel, onBack: () -> Unit) {
     MoreFrame("通知设置", onBack) {
+        NotificationPreferencesPane(vm)
+    }
+}
+
+@Composable
+fun NotificationPreferencesPane(vm: NotificationViewModel = hiltViewModel()) {
+    val s by vm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.loadPrefs() }
+    Column(Modifier.fillMaxWidth()) {
         val prefs = s.prefs
-        if (prefs == null) MoreLoading(Modifier.weight(1f))
+        if (s.prefsError != null) MoreError(s.prefsError!!, vm::loadPrefs)
+        else if (prefs == null) MoreLoading(Modifier.height(160.dp))
         else Column(Modifier.verticalScroll(rememberScrollState()).padding(Spacing.pageH)) {
             Text("邮件通知", Modifier.padding(vertical = 12.dp), style = lb(FontSize.small), color = LB.p.textTertiary)
             PrefToggle("系统公告", "平台维护、规则变更等重要公告", prefs.emailSystem != false, !s.saving) { vm.setPref("system", it) }

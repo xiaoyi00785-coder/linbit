@@ -33,7 +33,7 @@ import click.cowa.linbit.feature.more.MorePage
 import click.cowa.linbit.ui.components.*
 import click.cowa.linbit.ui.theme.*
 
-enum class ProfilePage { HUB, SWITCH, SECURITY, KYC, SUBACCOUNTS }
+enum class ProfilePage { HUB, ACCOUNT, SWITCH, SECURITY, KYC, SUBACCOUNTS }
 
 @Composable
 fun UserCenterHost(
@@ -44,12 +44,14 @@ fun UserCenterHost(
     onLoginOther: () -> Unit,
     onFeature: (MorePage) -> Unit,
     vm: ProfileViewModel = hiltViewModel(),
+    onFeatureName: (String) -> Unit = {},
 ) {
     var page by remember { mutableStateOf(ProfilePage.HUB) }
     LaunchedEffect(Unit) { vm.load() }
     BackHandler { if (page == ProfilePage.HUB) onClose() else page = ProfilePage.HUB }
     when (page) {
-        ProfilePage.HUB -> UserCenterScreen(themeMode, onTheme, onLogout, onClose, onOpen = { page = it }, onFeature = onFeature, vm = vm)
+        ProfilePage.HUB -> ProfileLandingScreen(onClose, { page = ProfilePage.ACCOUNT }, { page = ProfilePage.SWITCH }, { page = ProfilePage.SECURITY }, onFeatureName, vm)
+        ProfilePage.ACCOUNT -> UserCenterScreen(themeMode, onTheme, onLogout, onClose, onOpen = { page = it }, onFeature = onFeature, vm = vm, onTrading = { onFeatureName(if (it) "合约" else "现货") })
         ProfilePage.SWITCH -> AccountSwitchScreen(onBack = { page = ProfilePage.HUB }, onAdd = { vm.addAccount(onLoginOther) }, vm = vm, onLogout = onLogout)
         ProfilePage.SECURITY -> SecurityHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
         ProfilePage.KYC -> KycHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
@@ -66,6 +68,7 @@ fun UserCenterScreen(
     onOpen: (ProfilePage) -> Unit,
     onFeature: (MorePage) -> Unit,
     vm: ProfileViewModel,
+    onTrading: (Boolean) -> Unit = {},
 ) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
@@ -111,19 +114,9 @@ fun UserCenterScreen(
                         ProfileRow("客服工单") { onFeature(MorePage.SUPPORT) }
                         ProfileRow("退出当前账户", destructive = true) { logoutConfirm = true }
                     }
-                    1 -> Column {
-                        Text("外观", Modifier.padding(horizontal = Spacing.pageH).padding(top = 12.dp, bottom = 10.dp), style = lb(FontSize.caption), color = p.textSecondary)
-                        Row(Modifier.padding(horizontal = Spacing.pageH), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            ThemeMode.entries.forEach { mode ->
-                                LbButton(mode.title, Modifier.weight(1f), kind = if (mode == themeMode) ButtonKind.PRIMARY else ButtonKind.SECONDARY, height = 40.dp) { onTheme(mode) }
-                            }
-                        }
-                        Text("计价货币", Modifier.padding(horizontal = Spacing.pageH).padding(top = 28.dp), style = lb(FontSize.caption), color = p.textSecondary)
-                        ProfileRow("默认计价货币", a?.quoteCurrency ?: "系统默认") { vm.toast.show("计价货币设置将在后续批次接入") }
-                    }
-                    else -> Box(Modifier.padding(Spacing.pageH).padding(top = 12.dp)) {
-                        InfoNote("站内信与邮件通知可在消息通知页查看和设置；系统推送将在 Firebase / FCM 接入后开放。")
-                    }
+                    1 -> PreferencesContent(themeMode, onTheme, onTrading)
+                    else -> click.cowa.linbit.feature.more.NotificationPreferencesPane()
+
                 }
             }
         }

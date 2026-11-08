@@ -211,6 +211,12 @@ interface LinbitApi {
     @DELETE("spot/orders/conditional/{id}")
     suspend fun cancelConditional(@Path("id") id: String): ApiConditionalOrder
 
+    @GET("account/preferences")
+    suspend fun accountPreferences(): ApiAccountPreferences
+
+    @PUT("account/preferences")
+    suspend fun updateAccountPreferences(@Body body: ApiUpdateAccountPreferencesRequest): ApiAccountPreferences
+
     @GET("account/fee-rates")
     suspend fun feeRates(@Query("symbol") symbol: String? = null): ApiFeeRates
 

@@ -35,7 +35,10 @@ fun resolveDark(mode: ThemeMode): Boolean = when (mode) {
 
 @Composable
 fun LinbitTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
-    val p = if (darkTheme) DarkPalette else LightPalette
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    click.cowa.linbit.core.storage.DisplayPrefs.load(ctx)
+    val base = if (darkTheme) DarkPalette else LightPalette
+    val p = if (click.cowa.linbit.core.storage.DisplayPrefs.redUp) base.copy(up = base.down, down = base.up, upTint = base.downTint, downTint = base.upTint) else base
     val scheme = if (darkTheme) {
         darkColorScheme(
             primary = p.primary, onPrimary = p.textOnPrimary, background = p.bg, onBackground = p.textPrimary,

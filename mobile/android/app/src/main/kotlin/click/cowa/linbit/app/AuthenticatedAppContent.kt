@@ -58,6 +58,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
     var marketsSearch by rememberSaveable { mutableStateOf(false) }
     var scan by rememberSaveable { mutableStateOf(false) }
     var hideTabBar by remember { mutableStateOf(false) }
+    val toolsMarketsVm = rootMarkets()
     val ctx = androidx.compose.ui.platform.LocalContext.current
     fun openLink(url: String) {
         runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -66,6 +67,11 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
     val unread by badgeVm.unread.collectAsStateWithLifecycle()
     fun openFeature(title: String) {
         when (title) {
+            "现货" -> { tab = MainTab.SPOT; return }
+            "合约" -> { tab = MainTab.FUTURES; return }
+            "快捷买币" -> { if (loggedIn) assetFeature = "quickbuy" else auth = "login"; return }
+            "模拟交易" -> { if (loggedIn) assetFeature = "paper" else auth = "login"; return }
+            "客服", "帮助中心" -> { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login"; return }
             "聊天室" -> { marketsTop = 2; tab = MainTab.MARKETS; return }
             "理财" -> { if (loggedIn) assetFeature = "earn" else auth = "login"; return }
             "策略交易" -> { if (loggedIn) assetFeature = "strategy" else auth = "login"; return }
@@ -125,11 +131,15 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                             else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
                         },
                         onCopy = { if (loggedIn) morePage = MorePage.COPY else auth = "login" },
-                        onPriceAlerts = { morePage = MorePage.PRICE_ALERTS },
+                        onPriceAlerts = { if (loggedIn) morePage = MorePage.PRICE_ALERTS else auth = "login" },
+                        onCoupons = { if (loggedIn) morePage = MorePage.COUPONS else auth = "login" },
+                        onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) },
                     )
                     MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" }
+                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" },
+                        onPriceAlerts = { if (loggedIn) morePage = MorePage.PRICE_ALERTS else auth = "login" },
+                        onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) }
                     )
                     MainTab.ASSETS -> if (loggedIn) AssetsScreen(
                         bottomInset,
@@ -168,6 +178,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 onClose = { userCenter = false },
                 onLoginOther = { userCenter = false; auth = "login" },
                 onFeature = { page -> userCenter = false; morePage = page }, vm = profileVm,
+                onFeatureName = { title -> userCenter = false; openFeature(title) },
             )
             if (moreMenu) {
                 // This overlay is outside Home's padding; own its system bar insets exactly once.
