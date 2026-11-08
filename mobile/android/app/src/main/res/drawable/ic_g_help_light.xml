@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 mobile/tools/gen_android_vectors.py 从 mobile/icons/*.svg 生成，请勿手改 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-6l-4 4v-4H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+        android:fillColor="#FF111111"/>
+    <path android:pathData="M10 8.2a2 2 0 1 1 2.8 1.8c-.5.3-.8.6-.8 1.2v.5h-1.6v-.7c0-1 .5-1.6 1.2-2a.6.6 0 1 0-.9-.8z"
+        android:fillColor="#FFABE127"/>
+    <path android:pathData="M10.2,14a1,1 0 1 0 2,0a1,1 0 1 0 -2,0z"
+        android:fillColor="#FFABE127"/>
+</vector>

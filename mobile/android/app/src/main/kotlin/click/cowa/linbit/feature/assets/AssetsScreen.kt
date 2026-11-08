@@ -610,7 +610,7 @@ private fun CoinDetailPage(vm: AssetsViewModel, asset: String, onBack: () -> Uni
                     Column(Modifier.weight(1f)) { Text("可用", style = lb(FontSize.caption), color = p.textTertiary); Text(if (s.hideAmount) "****" else balanceText(b?.free), Modifier.padding(top = 4.dp), style = lbNum(FontSize.body), color = p.textPrimary) }
                     Column(Modifier.weight(1f)) { Text("冻结", style = lb(FontSize.caption), color = p.textTertiary); Text(if (s.hideAmount) "****" else balanceText(b?.locked), Modifier.padding(top = 4.dp), style = lbNum(FontSize.body), color = p.textPrimary) }
                 }
-                Box(Modifier.padding(top = 20.dp).fillMaxWidth().height(0.5.dp).background(p.divider))
+                Box(Modifier.padding(top = 20.dp).fillMaxWidth().height(1.dp).background(p.border))
                 val pair = vm.pairFor(asset)
                 if (pair != null) {
                     Text("交易", Modifier.padding(top = 20.dp), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)

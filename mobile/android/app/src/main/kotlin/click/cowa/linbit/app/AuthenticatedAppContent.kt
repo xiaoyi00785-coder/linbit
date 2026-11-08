@@ -115,7 +115,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 when (tab) {
                     MainTab.HOME -> HomeScreen(
                         vm = rootHome(),
-                        bottomInset = bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "login" },
+                        bottomInset = bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "register" },
                         onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { moreMenu = true },
                         onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.assetsNav.openDeposit(switchTab = true) else auth = "login" },
                         onFeature = ::openFeature,
@@ -154,7 +154,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         assetsNav = vm.assetsNav,
                         onOpenFutures = { tab = MainTab.FUTURES },
                         onOpenSpot = { tab = MainTab.SPOT },
-                        onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
+                        onOpenProfile = { if (loggedIn) userCenter = true else auth = "register" },
                         onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
                         vm = routeVms.assets,
                     ) else Box(Modifier.fillMaxSize())

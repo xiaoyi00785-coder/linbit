@@ -32,13 +32,19 @@ private val recommended = listOf(
     HubItem("策略交易", R.drawable.ic_g_bot_light, R.drawable.ic_g_bot_dark),
 )
 private val popular = listOf(
-    HubItem("邀请好友", R.drawable.ic_avatar), HubItem("充值返现", R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark),
-    HubItem("TradFi", R.drawable.ic_g_tradfi_light, R.drawable.ic_g_tradfi_dark), HubItem("交易抽奖", R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark),
-    HubItem("合约", R.drawable.ic_candles), HubItem("现货", R.drawable.ic_ref_trade),
-    HubItem("模拟交易", R.drawable.ic_doc_text), HubItem("理财", R.drawable.ic_g_earn_light, R.drawable.ic_g_earn_dark),
-    HubItem("快捷买币", R.drawable.ic_ref_quickbuy), HubItem("聊天室", R.drawable.ic_g_chat_light, R.drawable.ic_g_chat_dark),
-    HubItem("帮助中心", R.drawable.ic_doc_text), HubItem("客服", R.drawable.ic_headset),
-    HubItem("API Key", R.drawable.ic_passkey),
+    HubItem("邀请好友", R.drawable.ic_g_referral_light, R.drawable.ic_g_referral_dark),
+    HubItem("充值返现", R.drawable.ic_g_cashback_light, R.drawable.ic_g_cashback_dark),
+    HubItem("TradFi", R.drawable.ic_g_tradfi_light, R.drawable.ic_g_tradfi_dark),
+    HubItem("交易抽奖", R.drawable.ic_g_lottery_light, R.drawable.ic_g_lottery_dark),
+    HubItem("合约", R.drawable.ic_g_futures_light, R.drawable.ic_g_futures_dark),
+    HubItem("现货", R.drawable.ic_g_spot_light, R.drawable.ic_g_spot_dark),
+    HubItem("模拟交易", R.drawable.ic_g_demo_light, R.drawable.ic_g_demo_dark),
+    HubItem("理财", R.drawable.ic_g_earn_light, R.drawable.ic_g_earn_dark),
+    HubItem("快捷买币", R.drawable.ic_g_quickbuy_light, R.drawable.ic_g_quickbuy_dark),
+    HubItem("聊天室", R.drawable.ic_g_chat_light, R.drawable.ic_g_chat_dark),
+    HubItem("帮助中心", R.drawable.ic_g_help_light, R.drawable.ic_g_help_dark),
+    HubItem("客服", R.drawable.ic_g_support_light, R.drawable.ic_g_support_dark),
+    HubItem("API Key", R.drawable.ic_g_apikey_light, R.drawable.ic_g_apikey_dark),
 )
 
 @Composable
@@ -67,7 +73,7 @@ fun ProfileLandingScreen(onBack: () -> Unit, onAccount: () -> Unit, onSwitch: ()
                 LbIcon(R.drawable.ic_arrow_right, 20.dp, p.textPrimary)
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp).border(1.dp, p.border, RoundedCornerShape(Radius.lg)).pressable(scale = 1f, onClick = onSecurity).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                LbIcon(R.drawable.ic_passkey, 30.dp, p.brand)
+                LbIcon(R.drawable.ic_shield, 30.dp, p.textPrimary)
                 Column(Modifier.padding(start = 12.dp)) {
                     Text("您的账户安全设置弱于多数用户", style = lb(FontSize.label), color = p.textPrimary)
                     Text("设置通行密钥", Modifier.padding(top = 4.dp), style = lb(FontSize.label), color = p.brand)

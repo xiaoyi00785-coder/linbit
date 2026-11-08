@@ -57,6 +57,13 @@ class Batch4VisualEvidenceTest {
             bitmap.recycle()
         }
     }
+    /** 游客点「我的」：参考 040_profile_login_gate = 创建帐户页 */
+    @Test fun profileGuestGate() {
+        val vm = fixtures.auth()
+        render { click.cowa.linbit.feature.auth.RegisterScreen(vm, {}, {}, {}, {}) }
+        capture("b4-profile-guest")
+    }
+
     @Test fun profileGuideOverlay() {
         rule.activity.getSharedPreferences("profile_guide", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         val vm = fixtures.profile()
