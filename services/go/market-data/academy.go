@@ -27,15 +27,17 @@ type academyCategory struct {
 }
 
 type academyArticle struct {
-	ID         int64  `json:"id"`
-	CategoryID string `json:"categoryId"`
-	Locale     string `json:"locale,omitempty"`
-	Title      string `json:"title"`
-	Summary    string `json:"summary"`
-	Body       string `json:"body,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Format     string `json:"format"`
-	UpdatedAt  string `json:"updatedAt,omitempty"`
+	ID          int64  `json:"id,string"`
+	CategoryID  string `json:"categoryId"`
+	Category    string `json:"category,omitempty"`
+	Locale      string `json:"locale,omitempty"`
+	Title       string `json:"title"`
+	Summary     string `json:"summary"`
+	Body        string `json:"body,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Format      string `json:"format"`
+	PublishedAt string `json:"publishedAt,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
 func (s *Server) academyRoutes(mux *http.ServeMux) {
@@ -114,7 +116,7 @@ func (s *Server) handleAcademyArticles(w http.ResponseWriter, r *http.Request) {
 		where += ` AND a.id<$` + strconv.Itoa(len(args))
 	}
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(r.Context(), `SELECT a.id, a.category_id, a.locale, a.title, a.summary
+	rows, err := db.QueryContext(r.Context(), `SELECT a.id, a.category_id, a.locale, a.title, a.summary, COALESCE(to_char(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '')
 		FROM academy_articles a JOIN academy_categories c ON c.id=a.category_id `+where+
 		` ORDER BY a.id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
@@ -125,12 +127,12 @@ func (s *Server) handleAcademyArticles(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		var a academyArticle
-		if err := rows.Scan(&a.ID, &a.CategoryID, &a.Locale, &a.Title, &a.Summary); err != nil {
+		if err := rows.Scan(&a.ID, &a.CategoryID, &a.Locale, &a.Title, &a.Summary, &a.PublishedAt); err != nil {
 			log.Printf("academy articles scan: %v", err)
 			common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 			return
 		}
-		a.Format = "plain"
+		a.Category, a.Format = a.CategoryID, "plain"
 		items = append(items, a)
 	}
 	hasMore := len(items) > limit
@@ -152,9 +154,9 @@ func (s *Server) handleAcademyArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var a academyArticle
-	err = db.QueryRowContext(r.Context(), `SELECT a.id, a.category_id, a.locale, a.title, a.summary, a.body
+	err = db.QueryRowContext(r.Context(), `SELECT a.id, a.category_id, a.locale, a.title, a.summary, a.body, COALESCE(to_char(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '')
 		FROM academy_articles a JOIN academy_categories c ON c.id=a.category_id
-		WHERE a.id=$1 AND a.status='published' AND c.enabled`, id).Scan(&a.ID, &a.CategoryID, &a.Locale, &a.Title, &a.Summary, &a.Body)
+		WHERE a.id=$1 AND a.status='published' AND c.enabled`, id).Scan(&a.ID, &a.CategoryID, &a.Locale, &a.Title, &a.Summary, &a.Body, &a.PublishedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "文章不存在")
 		return
@@ -164,7 +166,7 @@ func (s *Server) handleAcademyArticle(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	a.Format = "plain"
+	a.Category, a.Format = a.CategoryID, "plain"
 	common.WriteJSON(w, http.StatusOK, a)
 }
 
@@ -222,7 +224,7 @@ func (s *Server) searchSymbols(ctx context.Context, q string) []symbolDTO {
 }
 
 func (s *Server) searchArticles(ctx context.Context, q string) ([]academyArticle, error) {
-	rows, err := s.store.db.QueryContext(ctx, `SELECT a.id, a.category_id, a.locale, a.title, a.summary
+	rows, err := s.store.db.QueryContext(ctx, `SELECT a.id, a.category_id, a.locale, a.title, a.summary, COALESCE(to_char(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '')
 		FROM academy_articles a JOIN academy_categories c ON c.id=a.category_id
 		WHERE a.status='published' AND c.enabled AND (a.title ILIKE $1 ESCAPE '\\' OR a.summary ILIKE $1 ESCAPE '\\')
 		ORDER BY a.id DESC LIMIT 20`, "%"+escapeLike(q)+"%")
@@ -233,10 +235,10 @@ func (s *Server) searchArticles(ctx context.Context, q string) ([]academyArticle
 	out := []academyArticle{}
 	for rows.Next() {
 		var a academyArticle
-		if err := rows.Scan(&a.ID, &a.CategoryID, &a.Locale, &a.Title, &a.Summary); err != nil {
+		if err := rows.Scan(&a.ID, &a.CategoryID, &a.Locale, &a.Title, &a.Summary, &a.PublishedAt); err != nil {
 			return nil, err
 		}
-		a.Format = "plain"
+		a.Category, a.Format = a.CategoryID, "plain"
 		out = append(out, a)
 	}
 	return out, rows.Err()

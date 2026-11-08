@@ -95,6 +95,7 @@ func (s *Server) Routes() http.Handler {
 	s.partnerRoutes(mux)
 	s.referralRoutes(mux)
 	s.extraRoutes(mux)
+	s.campaignRoutes(mux)
 	// Internal: a user's own invite code (account service enriches GET /account).
 	mux.HandleFunc("GET /internal/growth/invite-code", s.internal(func(w http.ResponseWriter, r *http.Request) {
 		uid := r.URL.Query().Get("uid")

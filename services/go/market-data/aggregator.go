@@ -154,6 +154,8 @@ type Aggregator struct {
 	// index returns the external index price (nil = none). Used only as a
 	// display fallback when there are no trades; never feeds trade data.
 	index func(symbol string) (decimal.Decimal, bool)
+	// usdAnn stamps tickers from memory only. Nil leaves usd omitted.
+	usdAnn func(tickerDTO) *usdQuoteDTO
 }
 
 type persistJob struct {
@@ -191,6 +193,14 @@ func newSymbolState(symbol string) *symbolState {
 
 // SetBroadcaster attaches the live-push transport (the WS hub).
 func (a *Aggregator) SetBroadcaster(bc Broadcaster) { a.bc = bc }
+
+// SetUSDAnnotator attaches a pure USD stamp for ticker frames. The function
+// runs on the trade/index hot path and must only read memory.
+func (a *Aggregator) SetUSDAnnotator(fn func(tickerDTO) *usdQuoteDTO) {
+	a.mu.Lock()
+	a.usdAnn = fn
+	a.mu.Unlock()
+}
 
 // SetPrecisions loads per-symbol rendering precision from the shared trading-pair
 // catalogue (the `symbols` table owned by the order service) so REST and WS
@@ -490,6 +500,7 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 			if open.Sign() > 0 && last.Sign() > 0 {
 				dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
 			}
+			a.applyUSD(&dto)
 			return dto
 		}
 		// No local trades in 24h: derive change/high/low from the index
@@ -508,6 +519,7 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 				dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
 			}
 		}
+		a.applyUSD(&dto)
 		return dto
 	}
 	high := ss.window[0].price
@@ -533,7 +545,14 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		pct := last.Sub(open).Div(open).Mul(decimal.NewFromInt(100))
 		dto.PriceChangePercent = pct.Round(2).String()
 	}
+	a.applyUSD(&dto)
 	return dto
+}
+
+func (a *Aggregator) applyUSD(dto *tickerDTO) {
+	if a.usdAnn != nil {
+		dto.Usd = a.usdAnn(*dto)
+	}
 }
 
 // tradeCandleStats24hLocked sums 1m trade candles overlapping the last 24h.

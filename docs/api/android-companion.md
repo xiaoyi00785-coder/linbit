@@ -135,9 +135,13 @@ WebSocket：`GET /ws`（可带 `?token=`）。订阅频道 `chat:{room}`。帧�
 
 ### 默认充值账户
 
-`GET /assets/deposit-account` 登录。`{account, source, platformDefault, supported:["funding","spot"]}`。`source` 为 `user` 或 `platform`。没有个人设置时等于后台 `deposit_account`（默认 funding）。
+`GET /assets/deposit-account` 登录。`{account, source, platformDefault, supported:["funding","spot"]}`。`source` 为 `user` 或 `platform`。没有个人设置时等于后台 `deposit_account`（默认 funding）。**`supported` 不含 `futures`。**
 
-`PUT /assets/deposit-account` 体 `{account:"funding"|"spot"}`。`DELETE /assets/deposit-account` 恢复跟随平台。只影响之后链上充值入账账户，不划转余额、不到账。
+`PUT /assets/deposit-account` 体 `{account:"funding"|"spot"}`。`account:"futures"` 返回 **409** `DEPOSIT_ACCOUNT_UNSUPPORTED`，不写偏好。`DELETE /assets/deposit-account` 恢复跟随平台。只影响之后链上充值入账账户，不划转余额、不到账。
+
+合约账户不能作为充值目标：确认数足够后，钱包只调用资产服务 `POST /internal/deposit`，入账在资金或现货的复式账本（`wallet_ops` 按 `dep:{network}:{tx}:{log}` 幂等）。合约可用保证金在另一张 `fut_accounts` 上，今天只能通过先扣资金/现货再记一笔 `transfer_in` 划进去。没有一条事务能只给合约加余额、失败整体回滚、并且重放不会记两次。因此不把 `futures` 放进 `supported`，也不把充值先记到资金账户再自动划转。
+
+`GET /market/ticker` 的 WebSocket `ticker:{symbol}` 帧现在带同一个 `usd` 对象。推送只读内存缓存，不在每笔成交上请求 Coinbase/Kraken。缓存由后台每分钟刷新；没有合格报价时 `available:false`，`pegAssumed:false`。
 
 `GET /assets/overview` 增加 `depositAccountSource`、`platformDepositAccount`。原 `depositAccount` 改为当前生效账户。
 
@@ -153,4 +157,51 @@ WebSocket：`GET /ws`（可带 `?token=`）。订阅频道 `chat:{room}`。帧�
 | `COINBASE_API_URL` / `KRAKEN_API_URL` | USDTUSD 来源 |
 | `FIAT_RATES_URLS` | 美元法币汇率来源 |
 
-迁移（服务启动时 goose，本任务不在生产执行）：`market-data/00010_academy.sql`、`00011_por_review.sql`，`account/00014_oauth_identities.sql`、`00015_cards.sql`，`asset/00009_user_deposit_account.sql`。表都是空的，除储备状态列外不改现有公开数据。
+## 9. 充值返现与交易抽奖
+
+真实活动和奖品未知，两条都保持未配置，不插入参与、中奖或订单。
+
+`GET /campaigns/deposit-cashback` 可匿名。可选 Bearer 只用于将来的个人 `joined`，现在没有档位。
+
+```json
+{"configured":false,"available":false,"eligible":false,"title":"","subtitle":"","startAt":null,"endAt":null,"tiers":[],"rules":[]}
+```
+
+`startAt`/`endAt` 在将来有活动时用 Unix 毫秒。`rules` 是字符串数组。`POST /campaigns/deposit-cashback/tiers/{id}/join` 要登录，**409** `CAMPAIGN_UNCONFIGURED`，`joined:false`，不写记录。
+
+`GET /campaigns/trade-lottery` 可匿名。
+
+```json
+{"configured":false,"available":false,"title":"","startAt":null,"endAt":null,"prizes":[],"winners":[],"rules":[],"availableDraws":0}
+```
+
+`rules` 项在有活动时为 `{title, body}`。`winners` 只会出现打码字符串，当前为空。`availableDraws` 为 0，不是个人抽奖次数。`GET /campaigns/trade-lottery/entries?status=pending|drawn` 要登录，`{items:[], configured:false}`。没有开奖或派奖接口。
+
+邀请返佣继续用已有合伙人接口：`GET /partner/summary`、`/partner/links`、`/partner/team`、`/partner/commissions`。不另建邀请接口。
+
+## 10. API Key
+
+沿用子账户密钥的校验方式：请求头 `X-LB-APIKEY` 与 `X-LB-SECRET`，服务端只存 `sha256(secret)`。现有验签是比对哈希，不是用明文做 HMAC，所以只存哈希不会破坏校验。
+
+| 方法 | 路径 | 认证 |
+|---|---|---|
+| GET | `/account/api-keys` | 登录 |
+| POST | `/account/api-keys` | 登录，且必须已开启 TOTP |
+| DELETE | `/account/api-keys/{id}` | 登录，仅能删自己的 |
+
+POST 体 `{label, permissions:["read"], ipWhitelist, totpCode}`。`permissions` 出现 `read` 以外的值返回 400 `PERMISSION_NOT_ALLOWED`。未开 TOTP 为 403 `TWOFA_REQUIRED`，验证码错误为 401 `INVALID_TOTP`。成功 **201** `{item, secret}`。`secret` 只在这一次出现，列表和日志都没有它。`item` 为 `{id, label, apiKey, permissions:["read"], ipWhitelist, createdAt}`，`createdAt` 是毫秒，`id` 是数字字符串。密钥前缀 `lbu_`，256 位随机。最多 10 把。
+
+`ipWhitelist` 最多 20 条 IP 或 CIDR，空名单表示不限制。网关只在对等地址属于 `TRUSTED_PROXY_CIDRS` 或带有效 `X-Linbit-Edge-Auth` 时采信转发的客户端 IP，其余用 TCP 对等地址。撤销后下一次校验即失败。`read` 只能 GET/HEAD `/assets`、`/spot`、`/futures`，不能下单、划转或提币。
+
+## 11. 与安卓页面的字段差异
+
+对照 `feat/android-easicoin-restore` `427b123` 的页面，不是改那条分支：
+
+- 学院文章 `id` 改为 JSON 字符串，并同时给 `category`（等于 `categoryId`）和 `publishedAt`（UTC，`YYYY-MM-DDTHH:MM:SSZ`）。页面把 `id` 当成字符串，日期用 `publishedAt`。
+- 卡片在未配置时 `product` 为 null。页面还预留了 `name/network/currency/fees/regions/termsUrl`，没有发行方资料，这些字段不会编出来。
+- 创建 API Key 的页面请求体没有 `totpCode`，服务端仍然要求。未带验证码不能创建。
+- 充值账户页面有「合约账户」文案，但只渲染 `supported` 里的值。当前数组没有 `futures`。
+
+迁移增加 `account/00016_user_api_keys.sql`（空表）。没有活动表，也没有把旧余额迁到合约。
+
+迁移（服务启动时 goose，本任务不在生产执行）：`market-data/00010_academy.sql`、`00011_por_review.sql`，`account/00014_oauth_identities.sql`、`00015_cards.sql`、`00016_user_api_keys.sql`，`asset/00009_user_deposit_account.sql`。表都是空的，除储备状态列外不改现有公开数据。

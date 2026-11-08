@@ -225,8 +225,24 @@ func hostOf(raw string) string {
 	return raw
 }
 
-func (s *Server) usdForTicker(ctx context.Context, t tickerDTO) *usdQuoteDTO {
-	snap := s.currentUSDTUSD(ctx)
+// readUSDCache returns the last USDT/USD quote without contacting a venue.
+func readUSDCache() usdSnap {
+	usdCache.mu.Lock()
+	defer usdCache.mu.Unlock()
+	if !usdCache.snap.OK {
+		return usdSnap{}
+	}
+	s := usdCache.snap
+	if time.Since(usdCache.at) >= usdFresh {
+		s.Stale = true
+	}
+	if time.Since(s.UpdatedAt) >= usdStaleMax && time.Since(usdCache.at) >= usdFresh {
+		return usdSnap{}
+	}
+	return s
+}
+
+func annotateUSD(t tickerDTO, snap usdSnap) *usdQuoteDTO {
 	out := &usdQuoteDTO{Precision: usdPrecision, Rounding: "half_away_from_zero", Convention: usdConvention, PegAssumed: false}
 	if snap.OK {
 		rate := snap.Rate.StringFixed(usdPrecision)
@@ -247,6 +263,37 @@ func (s *Server) usdForTicker(ctx context.Context, t tickerDTO) *usdQuoteDTO {
 	out.Available = true
 	out.Price = &price
 	return out
+}
+
+func (s *Server) usdForTicker(ctx context.Context, t tickerDTO) *usdQuoteDTO {
+	return annotateUSD(t, s.currentUSDTUSD(ctx))
+}
+
+// StartUSDRefresh refreshes the USDT/USD cache off the ticker hot path.
+func (s *Server) StartUSDRefresh(ctx context.Context) {
+	go func() {
+		refreshUSD(ctx, s.cfg)
+		t := time.NewTicker(usdFresh)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				refreshUSD(ctx, s.cfg)
+			}
+		}
+	}()
+}
+
+func refreshUSD(ctx context.Context, cfg Config) {
+	snap, err := fetchUSDTUSD(ctx, cfg)
+	usdCache.mu.Lock()
+	defer usdCache.mu.Unlock()
+	usdCache.at = time.Now()
+	if err == nil {
+		usdCache.snap = snap
+	}
 }
 
 func (s *Server) handleUSDRate(w http.ResponseWriter, r *http.Request) {

@@ -63,7 +63,23 @@ func (s *Server) handlePutDepositAccount(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Account string `json:"account"`
 	}
-	if err := common.DecodeJSON(r, &req); err != nil || !validAcct(req.Account) {
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 仅支持 funding 或 spot")
+		return
+	}
+	if req.Account == "futures" {
+		// On-chain credit posts the asset ledger (funding/spot) only. Futures
+		// margin is a separate fut_accounts balance, reached today by an explicit
+		// transfer that first debits funding/spot. There is no single idempotent
+		// transaction that credits available margin without that debit, so futures
+		// is not offered. A silent fallback into funding would book the wrong wallet.
+		common.WriteJSON(w, http.StatusConflict, map[string]any{
+			"code": "DEPOSIT_ACCOUNT_UNSUPPORTED", "message": "链上充值还不能直接进入合约账户",
+			"supported": []string{AcctFunding, AcctSpot}, "account": req.Account, "requestId": common.RequestID(),
+		})
+		return
+	}
+	if !validAcct(req.Account) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 仅支持 funding 或 spot")
 		return
 	}

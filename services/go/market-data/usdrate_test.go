@@ -55,6 +55,35 @@ func TestFetchUSDTUSD(t *testing.T) {
 	}
 }
 
+func TestWSUSDReadsCacheOnly(t *testing.T) {
+	resetUSDCache()
+	a := NewAggregator(nil, []string{"BTCUSDT"})
+	fetches := 0
+	a.SetUSDAnnotator(func(tk tickerDTO) *usdQuoteDTO {
+		fetches++
+		return annotateUSD(tk, readUSDCache())
+	})
+	a.OnTrade(TradeEvent{Symbol: "BTCUSDT", TradeID: "1", Price: decimal.NewFromInt(100), Quantity: decimal.NewFromInt(1), TakerSide: "buy", Time: time.Now()})
+	var pushed tickerDTO
+	// no broadcaster records; call the frame directly
+	tk, _ := a.TickerFrame("BTCUSDT")
+	if tk.Usd == nil || tk.Usd.Available || tk.Usd.PegAssumed || tk.Usd.Reason != "rate_unavailable" {
+		t.Fatalf("empty cache %+v", tk.Usd)
+	}
+	usdCache.mu.Lock()
+	usdCache.snap = usdSnap{OK: true, Rate: decimal.RequireFromString("0.995"), Source: "example.test", UpdatedAt: time.Now().UTC()}
+	usdCache.at = time.Now()
+	usdCache.mu.Unlock()
+	tk, _ = a.TickerFrame("BTCUSDT")
+	if tk.Usd == nil || !tk.Usd.Available || tk.Usd.Price == nil || *tk.Usd.Price != "99.50000000" {
+		t.Fatalf("cached rate %+v", tk.Usd)
+	}
+	if fetches < 1 {
+		t.Fatal("annotator not used")
+	}
+	_ = pushed
+}
+
 func TestTickerVolumeFromTradeCandles(t *testing.T) {
 	a := NewAggregator(nil, []string{"BTCUSDT"})
 	now := a.now()
