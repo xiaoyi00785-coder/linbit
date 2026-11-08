@@ -84,6 +84,10 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             "价格预警" -> MorePage.PRICE_ALERTS
             "卡券中心" -> MorePage.COUPONS
             "合伙人计划" -> MorePage.PARTNER
+            "邀请好友" -> MorePage.REFERRAL
+            "充值返现" -> MorePage.CASHBACK
+            "交易抽奖" -> MorePage.LOTTERY
+            "API Key" -> MorePage.API_KEY
             else -> null
         }
         if (page != null) morePage = page

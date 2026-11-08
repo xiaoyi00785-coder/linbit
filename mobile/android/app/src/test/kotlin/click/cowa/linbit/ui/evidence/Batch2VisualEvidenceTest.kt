@@ -67,7 +67,7 @@ class Batch2VisualEvidenceTest {
         render { androidx.compose.runtime.CompositionLocalProvider(LocalAccountPreferencesFactory provides { vm }) { UserCenterScreen(ThemeMode.LIGHT, {}, {}, {}, {}, {}, profile) } }
         rule.onNodeWithText("偏好设置").performClick()
         rule.waitUntil(5000) { vm.preferences != null }
-        rule.onNodeWithText("涨跌颜色").assertExists()
+        rule.onNodeWithText("颜色偏好").assertExists()
         capture("preferences")
     }
     @Test fun fundingAssets() {

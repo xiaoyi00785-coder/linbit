@@ -42,6 +42,7 @@ enum class MorePage(val title: String) {
     WELFARE("福利中心"), COPY("跟单交易"), NOTIFICATIONS("消息通知"),
     PRICE_ALERTS("价格预警"),
     COUPONS("卡券中心"), PARTNER("合伙人计划"), TRADFI("TradFi"), SUPPORT("我的工单"),
+    REFERRAL("邀请好友"), CASHBACK("充值返现"), LOTTERY("交易抽奖"), API_KEY("API Key"),
 }
 
 @Composable
@@ -68,6 +69,10 @@ fun MoreHost(
             MorePage.PARTNER -> PartnerScreen(onClose, onLogin)
             MorePage.TRADFI -> TradFiScreen(onClose, onTrade)
             MorePage.SUPPORT -> SupportTicketsScreen(onClose, onLogin)
+            MorePage.REFERRAL -> ReferralScreen(onClose, onLogin)
+            MorePage.CASHBACK -> CashbackScreen(onClose, onLogin)
+            MorePage.LOTTERY -> LotteryScreen(onClose, onLogin, onFutures = { onTrade(true, "BTCUSDT") }, onReferral = { onOpen(MorePage.REFERRAL) })
+            MorePage.API_KEY -> ApiKeyScreen(onClose)
         }
     }
 }
@@ -94,6 +99,8 @@ fun MoreMenuScreen(onBack: () -> Unit, onOpen: (MorePage) -> Unit) {
                         MorePage.PARTNER -> R.drawable.ic_avatar
                         MorePage.TRADFI -> R.drawable.ic_g_tradfi_light
                         MorePage.SUPPORT -> R.drawable.ic_headset
+                        MorePage.REFERRAL, MorePage.CASHBACK, MorePage.LOTTERY -> R.drawable.ic_g_gift_light
+                        MorePage.API_KEY -> R.drawable.ic_passkey
                     }, 24.dp)
                     Spacer(Modifier.width(12.dp))
                     Text(page.title, Modifier.weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = LB.p.textPrimary)

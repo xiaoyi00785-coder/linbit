@@ -693,4 +693,31 @@ interface LinbitApi {
     @POST("support/attachments")
     suspend fun uploadSupportAttachment(@Part file: MultipartBody.Part): ApiSupportAttachment
 
+    // ---- 第三批接入点：服务端尚未提供（见 docs/batch3-backend-fields.md），404/501 时前端显示真实错误/未配置态 ----
+    @GET("campaigns/deposit-cashback")
+    suspend fun depositCashbackCampaign(): click.cowa.linbit.feature.more.ApiCashbackCampaign
+
+    @POST("campaigns/deposit-cashback/tiers/{tierId}/join")
+    suspend fun joinCashbackTier(@Path("tierId") tierId: String): click.cowa.linbit.feature.more.ApiCashbackCampaign
+
+    @GET("campaigns/trade-lottery")
+    suspend fun tradeLotteryCampaign(): click.cowa.linbit.feature.more.ApiLotteryCampaign
+
+    @GET("campaigns/trade-lottery/entries")
+    suspend fun tradeLotteryEntries(@Query("status") status: String): click.cowa.linbit.feature.more.ApiLotteryEntries
+
+    @GET("account/api-keys")
+    suspend fun apiKeys(): click.cowa.linbit.feature.more.ApiKeyList
+
+    @POST("account/api-keys")
+    suspend fun createApiKey(@Body body: click.cowa.linbit.feature.more.ApiKeyCreateRequest): click.cowa.linbit.feature.more.ApiKeyCreated
+
+    @DELETE("account/api-keys/{id}")
+    suspend fun deleteApiKey(@Path("id") id: String)
+
+    @GET("account/deposit-target")
+    suspend fun depositTarget(): click.cowa.linbit.feature.profile.ApiDepositTarget
+
+    @PUT("account/deposit-target")
+    suspend fun updateDepositTarget(@Body body: click.cowa.linbit.feature.profile.ApiDepositTarget): click.cowa.linbit.feature.profile.ApiDepositTarget
 }
