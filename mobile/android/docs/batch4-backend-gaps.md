@@ -22,3 +22,7 @@
 - `GET /futures/account` 无体验金、抵扣金字段 → 合约账户卡这两格显示 `--`（参考显示 0.00）。
 - 零余额币种列表：资金账户取 `/wallet/networks` 的 asset 去重，现货取行情 USDT 交易对 base；余额为真实 0。
 - 币种详情页：参考点币种进入详情（本轮未截到参考详情页），我们点币种进入充值页。
+
+## 资产（续）/ 登录态实机
+- 币种全称：`/wallet/networks`、`/market/symbols`、`/assets/balances` 均无全称字段 → 资产列表第二行显示币种代码（参考显示 Bitcoin / Ether 等全称）。需后端在资产元数据中提供 `name`。
+- 测试账号偏好计价为 CNY，生产 `/market/usd-rate` 未部署 → 所有折合显示 `≈ ¥--`（参考显示 `≈ $0.00`）。

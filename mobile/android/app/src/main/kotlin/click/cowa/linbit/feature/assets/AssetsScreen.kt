@@ -325,7 +325,7 @@ private fun AssetList(
                     Text(sub, style = lb(FontSize.small), color = p.textSecondary)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(if (s.hideAmount) "****" else b.total, style = lbNum(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                    Text(if (s.hideAmount) "****" else balanceText(b.total), style = lbNum(FontSize.body, FontWeight.Medium), color = p.textPrimary)
                     val fiat = if (s.hideAmount) "≈ ****" else "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(vm.usd(b), 2, s.cnyRate)
                     if (fiat != null) Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
                 }
@@ -437,4 +437,12 @@ private fun ConvertEntry(onClick: () -> Unit) {
         Spacer(Modifier.weight(1f))
         LbIcon(R.drawable.ic_chevron_right, 14.dp, p.textSecondary)
     }
+}
+
+
+/** 参考资产列表：余额去掉多余尾零，最少 2 位、最多 8 位小数（0 显示 0.00）。 */
+internal fun balanceText(raw: String?): String {
+    val d = click.cowa.linbit.core.util.Dec.parse(raw).setScale(8, java.math.RoundingMode.DOWN).stripTrailingZeros()
+    val scale = d.scale().coerceIn(2, 8)
+    return Fmt.amount(d, scale)
 }
