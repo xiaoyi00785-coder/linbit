@@ -22,6 +22,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import click.cowa.linbit.ui.components.pressable
+import click.cowa.linbit.ui.components.CoinIcon
+import click.cowa.linbit.ui.components.DownTriangle
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.platform.testTag
+import click.cowa.linbit.ui.components.LbIcon
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -105,7 +116,17 @@ class SpotSubpagesViewModel @Inject constructor(
     var acting by mutableStateOf(false); private set
     var actionFailure by mutableStateOf<String?>(null); private set
 
+    /** 闪兑可用余额（现货账户 free）；未登录为空。 */
+    var convertBalances by mutableStateOf<Map<String, java.math.BigDecimal>>(emptyMap()); private set
+    /** 自动询价的错误（不弹 toast，避免输入时刷屏）。 */
+    var quoteError by mutableStateOf<String?>(null); private set
+    fun loadConvertBalances() {
+        if (!tokens.loggedIn.value) { convertBalances = emptyMap(); return }
+        viewModelScope.launch { runCatching { apiCall { api.balances("spot") } }.onSuccess { r ->
+            convertBalances = r.items.orEmpty().associate { it.asset to Dec.parse(it.free) } } }
+    }
     fun clearAccountData() {
+        convertBalances = emptyMap(); quoteError = null
         earnSummary = null
         earnPositions = emptyList()
         earnOrders = emptyList()
@@ -197,9 +218,10 @@ class SpotSubpagesViewModel @Inject constructor(
         }
     }
 
-    fun requestQuote(from: String, to: String, amount: String, onDone: (Boolean) -> Unit = {}) {
-        if (!tokens.loggedIn.value) { toast.show("请先登录"); onDone(false); return }
+    fun requestQuote(from: String, to: String, amount: String, silent: Boolean = false, onDone: (Boolean) -> Unit = {}) {
+        if (!tokens.loggedIn.value) { if (!silent) toast.show("请先登录"); onDone(false); return }
         if (quoting || accepting) return
+        quoteError = null
         val form = ConvertQuoteLogic.Form(from, to, amount)
         if (Dec.parse(form.amount).signum() <= 0) { toast.show("请输入数量", ToastCenter.Kind.ERROR); onDone(false); return }
         val pair = ConvertQuoteLogic.findPair(convertPairs?.pairs, from, to)
@@ -223,7 +245,7 @@ class SpotSubpagesViewModel @Inject constructor(
             } catch (e: Throwable) {
                 val code = (e as? ApiFailure)?.code
                 if (ConvertQuoteLogic.shouldClearQuoteOnError(code)) quote = null
-                toast.error(e); onDone(false)
+                if (silent) quoteError = e.lbMessage() else toast.error(e); onDone(false)
             } finally { quoting = false }
         }
     }
@@ -787,6 +809,14 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
 private data class EarnAction(val product: ApiEarnProduct, val subscribe: Boolean)
 
 @Composable
+private fun ConvertCoin(asset: String, onClick: () -> Unit) {
+    Row(Modifier.pressable(scale = 1f, onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+        CoinIcon(asset, 24.dp); Text(asset, Modifier.padding(start = 6.dp), style = lb(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
+        DownTriangle(Modifier.padding(start = 4.dp))
+    }
+}
+
+@Composable
 fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, vm: SpotSubpagesViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val p = LB.p
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
@@ -796,20 +826,33 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
     var pendingConfirm by remember { mutableStateOf<ConvertQuoteLogic.Form?>(null) }
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadConvert() }
-    // 报价过期本地倒计时：到期清 quote 并禁止 accept
+    var inverse by remember { mutableStateOf(false) }
+    var picker by remember { mutableStateOf<String?>(null) } // "from" / "to"
+    LaunchedEffect(loggedIn, sessionVersion) { vm.loadConvertBalances() }
+    // 参考 App：输入即报价。数量/币种变化后 500ms 防抖自动询价；报价到期自动重新询价（不需要手动点「获取报价」）。
+    LaunchedEffect(from, to, amount, loggedIn) {
+        if (!loggedIn || Dec.parse(amount).signum() <= 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(500)
+        androidx.compose.runtime.snapshotFlow { vm.quoting || vm.accepting }.first { !it }
+        vm.requestQuote(from, to, amount, silent = true)
+    }
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(vm.quote?.quoteId) { while (vm.quote != null) { nowMs = System.currentTimeMillis(); kotlinx.coroutines.delay(250) } }
     LaunchedEffect(vm.quote?.quoteId, vm.quote?.expiresAt) {
         val q = vm.quote ?: return@LaunchedEffect
         val exp = ConvertQuoteLogic.normalizeExpiresAtMs(q.expiresAt) ?: return@LaunchedEffect
-        val wait = (exp - System.currentTimeMillis()).coerceAtLeast(0L)
-        kotlinx.coroutines.delay(wait)
+        kotlinx.coroutines.delay((exp - System.currentTimeMillis()).coerceAtLeast(0L))
         if (vm.holdExpiredQuoteForEvidence) return@LaunchedEffect
         if (vm.quote?.quoteId == q.quoteId && ConvertQuoteLogic.isExpired(vm.quote)) {
             vm.clearConvertQuote()
-            vm.toast.show("报价已过期，请重新询价", ToastCenter.Kind.ERROR)
+            if (pendingConfirm == null && Dec.parse(amount).signum() > 0) vm.requestQuote(from, to, amount, silent = true)
         }
     }
-    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = bottomInset + 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("闪兑", Modifier.padding(vertical = 12.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = bottomInset + 16.dp)) {
+        Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("现货闪兑", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+            Text("0 手续费", Modifier.padding(start = 8.dp).background(p.brand, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp), style = lb(FontSize.small, FontWeight.Medium), color = androidx.compose.ui.graphics.Color.Black)
+        }
         when {
             vm.loading && vm.convertPairs == null -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             vm.error != null && vm.convertPairs == null -> EmptyState(vm.error ?: "") { ChipButton("重试", Modifier.height(32.dp)) { vm.loadConvert() } }
@@ -818,97 +861,96 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                 val fromAssets = ConvertQuoteLogic.fromAssets(pairs)
                 LaunchedEffect(fromAssets, from, to) {
                     if (fromAssets.isEmpty()) return@LaunchedEffect
-                    if (from !in fromAssets) {
-                        from = fromAssets.first()
-                        val tos = ConvertQuoteLogic.toAssets(pairs, from)
-                        to = tos.firstOrNull { it != from } ?: tos.firstOrNull() ?: to
-                        vm.bumpConvertForm()
-                        return@LaunchedEffect
-                    }
+                    if (from !in fromAssets) { from = fromAssets.first(); val tos = ConvertQuoteLogic.toAssets(pairs, from); to = tos.firstOrNull { it != from } ?: tos.firstOrNull() ?: to; vm.bumpConvertForm(); return@LaunchedEffect }
                     val tos = ConvertQuoteLogic.toAssets(pairs, from)
-                    if (tos.isNotEmpty() && to !in tos) {
-                        to = tos.first()
-                        vm.bumpConvertForm()
+                    if (tos.isNotEmpty() && to !in tos) { to = tos.first(); vm.bumpConvertForm() }
+                }
+                if (fromAssets.isEmpty()) { EmptyState("暂无可交易闪兑币对"); return@Column }
+                val pair = ConvertQuoteLogic.findPair(pairs, from, to)
+                val paused = ConvertQuoteLogic.isPairPaused(pair)
+                val form = ConvertQuoteLogic.Form(from, to, amount)
+                val q = vm.quote?.takeIf { ConvertQuoteLogic.matchesForm(it, form) }
+                val avail = vm.convertBalances[from]
+                val insufficient = loggedIn && avail != null && Dec.parse(amount) > avail
+                val placeholder = vm.convertPairs?.let { c -> if (from == "USDT" && c.minUsdt != null && c.maxUsdt != null) "${c.minUsdt}~${c.maxUsdt}" else "请输入数量" } ?: "请输入数量"
+                // 兑出卡片
+                Column(Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.lg)).padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("兑出", Modifier.weight(1f), style = lb(FontSize.caption), color = p.textSecondary)
+                        Text("可用: " + (if (loggedIn) avail?.let { Fmt.amount(it, 8) } ?: "0" else "--"), Modifier.pressable { avail?.takeIf { it.signum() > 0 }?.let { amount = it.stripTrailingZeros().toPlainString(); vm.bumpConvertForm() } }, style = lb(FontSize.caption), color = p.textSecondary)
+                    }
+                    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ConvertCoin(from) { picker = "from" }
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                            if (amount.isEmpty()) Text(placeholder, style = lbNum(FontSize.title, FontWeight.SemiBold), color = p.textTertiary)
+                            androidx.compose.foundation.text.BasicTextField(amount, { v -> val t = v.filter { it.isDigit() || it == '.' }; if (t != amount && t.count { it == '.' } <= 1) { amount = t; vm.bumpConvertForm() } }, singleLine = true,
+                                textStyle = lbNum(FontSize.title, FontWeight.SemiBold).copy(color = p.textPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.End),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(p.textPrimary), modifier = Modifier.fillMaxWidth().testTag("convert.amount"))
+                        }
+                        if (loggedIn && avail != null && avail.signum() > 0) Text("最大", Modifier.padding(start = 8.dp).pressable { amount = avail.stripTrailingZeros().toPlainString(); vm.bumpConvertForm() }, style = lb(FontSize.caption, FontWeight.Medium), color = p.brand)
+                    }
+                    if (insufficient) Text("可用余额不足", Modifier.align(Alignment.End).padding(top = 6.dp), style = lb(FontSize.small), color = p.down)
+                }
+                // 互换
+                Box(Modifier.fillMaxWidth().height(10.dp).zIndex(1f), contentAlignment = Alignment.Center) {
+                    Box(Modifier.requiredSize(36.dp).background(p.bg, RoundedCornerShape(6.dp)).pressable {
+                        val tos = ConvertQuoteLogic.toAssets(pairs, to)
+                        if (from in tos) { val f = from; from = to; to = f; amount = ""; vm.bumpConvertForm() } else vm.toast.show("该方向暂不支持闪兑")
+                    }, contentAlignment = Alignment.Center) { Text("⇅", style = lb(FontSize.body, FontWeight.Bold), color = p.textPrimary) }
+                }
+                // 兑入卡片
+                Column(Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.lg)).padding(16.dp)) {
+                    Text("兑入", style = lb(FontSize.caption), color = p.textSecondary)
+                    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ConvertCoin(to) { picker = "to" }
+                        Text(q?.toAmount ?: if (vm.quoting && amount.isNotEmpty()) "…" else "", Modifier.weight(1f), style = lbNum(FontSize.title, FontWeight.SemiBold), color = p.textPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.End)
                     }
                 }
-                if (fromAssets.isEmpty()) {
-                    EmptyState("暂无可交易闪兑币对")
-                } else {
-                    val toAssets = ConvertQuoteLogic.toAssets(pairs, from)
-                    val pair = ConvertQuoteLogic.findPair(pairs, from, to)
-                    val paused = ConvertQuoteLogic.isPairPaused(pair)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        fromAssets.take(8).forEach { a ->
-                            ChipButton(a, Modifier.height(28.dp), color = if (from == a) p.textPrimary else p.textSecondary) {
-                                if (from != a) {
-                                    from = a
-                                    val nextTo = ConvertQuoteLogic.toAssets(pairs, a).firstOrNull { it != a } ?: to
-                                    to = nextTo
-                                    amount = amount // keep text but invalidate quote
-                                    vm.bumpConvertForm()
-                                }
-                            }
-                        }
+                // 汇率 + 倒计时
+                Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("汇率", style = lb(FontSize.caption), color = p.textSecondary)
+                    val exp = q?.let { ConvertQuoteLogic.normalizeExpiresAtMs(it.expiresAt) }
+                    val ttl = (q?.ttlSeconds ?: vm.convertPairs?.quoteTtlSeconds ?: 0).coerceAtLeast(1)
+                    val left = exp?.let { ((it - nowMs) / 1000f).coerceIn(0f, ttl.toFloat()) }
+                    Box(Modifier.padding(start = 6.dp).size(16.dp), contentAlignment = Alignment.Center) {
+                        if (vm.quoting) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp, color = p.brand)
+                        else if (left != null) androidx.compose.material3.CircularProgressIndicator(progress = { left / ttl }, modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp, color = p.brand, trackColor = p.border)
                     }
-                    Text("兑出 $from", style = lb(FontSize.small), color = p.textSecondary)
-                    NumberBox("数量", from, amount, {
-                        if (amount != it) {
-                            amount = it
-                            vm.bumpConvertForm()
-                        }
-                    }, testTag = "convert.amount")
-                    Text("兑入 $to", style = lb(FontSize.small), color = p.textSecondary)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        toAssets.take(8).forEach { a ->
-                            ChipButton(a, Modifier.height(28.dp), color = if (to == a) p.textPrimary else p.textSecondary) {
-                                if (to != a) {
-                                    to = a
-                                    vm.bumpConvertForm()
-                                }
-                            }
-                        }
-                    }
-                    if (pair == null) {
-                        Text("所选币对不在可交易列表中", style = lb(FontSize.small), color = p.down)
-                    } else if (paused) {
-                        Text(ConvertQuoteLogic.pauseHint(pair) ?: "该币对已暂停", style = lb(FontSize.small), color = p.down)
-                    }
-                    val form = ConvertQuoteLogic.Form(from, to, amount)
-                    val q = vm.quote
-                    val quoteOk = ConvertQuoteLogic.canAccept(q, form)
-                    q?.takeIf { ConvertQuoteLogic.matchesForm(it, form) }?.let { matched ->
-                        KvRow("报价", "1 ${matched.from} ≈ ${matched.rate ?: "--"} ${matched.to}")
-                        KvRow("兑出", "${matched.fromAmount ?: "--"} ${matched.from}")
-                        KvRow("预计到账", "${matched.toAmount ?: "--"} ${matched.to}")
-                        val expMs = ConvertQuoteLogic.normalizeExpiresAtMs(matched.expiresAt)
-                        KvRow(
-                            "有效至",
-                            expMs?.let {
-                                java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(it))
-                            } ?: "--",
-                        )
-                        if (ConvertQuoteLogic.isExpired(matched)) {
-                            Text("报价已过期", style = lb(FontSize.small), color = p.down)
-                        }
-                    }
-                    if (!loggedIn) LbButton("登录后闪兑") { onLogin() }
-                    else {
-                        LbButton(
-                            "获取报价",
-                            loading = vm.quoting,
-                            enabled = Dec.parse(amount).signum() > 0 && pair != null && !paused && !vm.quoting && !vm.accepting,
-                        ) { vm.requestQuote(from, to, amount) }
-                        if (q != null) {
-                            LbButton(
-                                "确认闪兑",
-                                kind = ButtonKind.BUY,
-                                loading = vm.accepting,
-                                enabled = quoteOk && !vm.quoting && !vm.accepting,
-                            ) { pendingConfirm = form }
-                        }
-                    }
+                    if (left != null) Text("${kotlin.math.ceil(left).toInt()}s", Modifier.padding(start = 2.dp), style = lbNum(FontSize.small), color = p.textTertiary)
+                    Spacer(Modifier.weight(1f))
+                    val rateText = q?.let { if (inverse) "1 $to ≈ ${it.inverseRate ?: "--"} $from" else "1 $from ≈ ${it.rate ?: "--"} $to" } ?: if (inverse) "1 $to ≈ -- $from" else "1 $from ≈ -- $to"
+                    Text(rateText, style = lbNum(FontSize.caption), color = p.textPrimary)
+                    Text("⇄", Modifier.padding(start = 6.dp).pressable(scale = 1f) { inverse = !inverse }, style = lb(FontSize.body), color = p.textSecondary)
+                }
+                when {
+                    pair == null -> Text("所选币对不在可交易列表中", Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down)
+                    paused -> Text(ConvertQuoteLogic.pauseHint(pair) ?: "该币对已暂停", Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down)
+                    vm.quoteError != null -> Text(vm.quoteError!!, Modifier.padding(bottom = 8.dp), style = lb(FontSize.small), color = p.down)
+                }
+                val quoteOk = ConvertQuoteLogic.canAccept(vm.quote, form)
+                when {
+                    !loggedIn -> LbButton("登录 / 注册", Modifier.fillMaxWidth()) { onLogin() }
+                    // 参考：报价有效且余额足够 → 兑换；否则按钮为「更新价格」（手动刷新汇率）
+                    quoteOk && !insufficient -> LbButton("兑换", Modifier.fillMaxWidth(), loading = vm.accepting, enabled = !vm.quoting && !vm.accepting && pair != null && !paused) { pendingConfirm = form }
+                    else -> LbButton("更新价格", Modifier.fillMaxWidth(), loading = vm.quoting, enabled = Dec.parse(amount).signum() > 0 && pair != null && !paused && !vm.quoting && !vm.accepting) { vm.requestQuote(from, to, amount, silent = true) }
                 }
             }
+        }
+    }
+    picker?.let { side ->
+        val pairs = vm.convertPairs?.pairs
+        val list = if (side == "from") ConvertQuoteLogic.fromAssets(pairs) else ConvertQuoteLogic.toAssets(pairs, from)
+        LbSheet(if (side == "from") "选择兑出币种" else "选择兑入币种", { picker = null }, showClose = true, onWindowReady = onDialogWindow) {
+            Column(Modifier.padding(bottom = 16.dp)) { list.forEach { a ->
+                Row(Modifier.fillMaxWidth().pressable(scale = 1f) {
+                    if (side == "from") { from = a; val tos = ConvertQuoteLogic.toAssets(pairs, a); if (to !in tos || to == a) to = tos.firstOrNull { it != a } ?: to } else to = a
+                    vm.bumpConvertForm(); picker = null
+                }.padding(horizontal = Spacing.pageH, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CoinIcon(a, 28.dp); Text(a, Modifier.weight(1f).padding(start = 10.dp), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                    if (loggedIn) Text(vm.convertBalances[a]?.let { Fmt.amount(it, 8) } ?: "0", style = lbNum(FontSize.caption), color = p.textSecondary)
+                    if ((side == "from" && a == from) || (side == "to" && a == to)) LbIcon(click.cowa.linbit.R.drawable.ic_check, 16.dp, p.textPrimary, Modifier.padding(start = 8.dp))
+                } } }
         }
     }
     val confirm = pendingConfirm
@@ -920,7 +962,7 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                 KvRow("兑出", "${confirm.amount} ${confirm.from}")
                 KvRow("预计到账", "${q?.toAmount ?: "--"} ${confirm.to}")
                 KvRow("兑换率", "1 ${confirm.from} ≈ ${q?.rate ?: "--"} ${confirm.to}")
-                if (!valid) Text("报价已失效，请关闭并重新询价", Modifier.padding(top = 8.dp), color = p.down, style = lb(FontSize.small))
+                if (!valid) Text("报价已失效，正在重新获取，请关闭后再确认", Modifier.padding(top = 8.dp), color = p.down, style = lb(FontSize.small))
             }
             LbButton("确认兑换", Modifier.padding(Spacing.pageH), enabled = valid && !vm.quoting && !vm.accepting, loading = vm.accepting) {
                 vm.acceptQuote(confirm.from, confirm.to, confirm.amount) { pendingConfirm = null }
