@@ -19,6 +19,9 @@ class QrDecoderTest {
         val pixels = IntArray(320 * 320) { i -> if (matrix[i % 320, i / 320]) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
         val bitmap = Bitmap.createBitmap(pixels, 320, 320, Bitmap.Config.ARGB_8888)
         assertEquals(payload, decodeQr(bitmap))
+        if (System.getProperty("production.evidence") == "1") {
+            java.io.File(System.getProperty("production.evidence.dir"), "qr-fixture.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
         bitmap.recycle()
     }
     @Test fun emptyPhotoIsNotAValidQr() {
