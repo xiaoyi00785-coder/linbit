@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="16dp" android:background="#FFFFFF">
+<TextView android:id="@+id/widget_symbol" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="BTCUSDT" android:textColor="#111111" android:textStyle="bold" android:textSize="16sp" />
+<TextView android:id="@+id/widget_price" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="--" android:textColor="#111111" android:textSize="24sp" android:layout_marginTop="8dp" />
+<TextView android:id="@+id/widget_updated" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="打开 Linbit 同步行情" android:textColor="#80858B" android:textSize="11sp" android:layout_marginTop="8dp" />
+</LinearLayout>

@@ -71,8 +71,8 @@ fun MarketRowView(
                 priceText(row), style = lbNum(if (compactPair) FontSize.symbol else FontSize.price, FontWeight.Medium),
                 color = p.textPrimary, maxLines = 1,
             )
-            if (cnyRate != null) {
-                Text(Fmt.fiat(row.last, cnyRate, row.precision), style = lbNum(FontSize.small), color = p.textSecondary, maxLines = 1)
+            if (row.quote in listOf("USDT", "USDC", "USD")) {
+                Text("$" + priceText(row), style = lbNum(FontSize.small), color = p.textSecondary, maxLines = 1)
             }
         }
         Spacer(Modifier.width(2.dp))

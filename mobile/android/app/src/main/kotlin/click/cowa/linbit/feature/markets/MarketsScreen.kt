@@ -64,6 +64,10 @@ fun MarketsScreen(
     val watch by vm.watch.collectAsStateWithLifecycle()
     val ctx = androidx.compose.ui.platform.LocalContext.current
     MarketPrefs.ensure(ctx)
+    androidx.compose.runtime.LaunchedEffect(state.spot) {
+        val symbol = ctx.getSharedPreferences("market_widget", android.content.Context.MODE_PRIVATE).getString("symbol", "BTCUSDT")
+        state.spot.firstOrNull { it.symbol == symbol }?.let { MarketQuoteWidget.cache(ctx, it) }
+    }
     var search by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(search) { onOverlay(search) }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { onOverlay(false) } }
@@ -94,6 +98,7 @@ fun MarketsContent(
     val p = LB.p
     var top by rememberSaveable(initialTop) { mutableIntStateOf(initialTop) }
     var menu by remember { mutableStateOf(false) }
+    var widgets by remember { mutableStateOf(false) }
     var iconSheet by remember { mutableStateOf(false) }       // 0 自选 1 市场 2 聊天室
     var kind by rememberSaveable { mutableIntStateOf(0) }      // 现货 / 合约 / TradFi
     var category by rememberSaveable { mutableIntStateOf(0) }
@@ -112,7 +117,7 @@ fun MarketsContent(
             Box(Modifier.padding(start = 18.dp)) {
                 LbIcon(R.drawable.ic_more, 22.dp, modifier = Modifier.pressable { menu = true })
                 Box(Modifier.align(Alignment.TopEnd).padding(top = 0.dp).size(6.dp).clip(CircleShape).background(p.badgeDot))
-                MarketsMoreMenu(menu, { menu = false }) { iconSheet = true }
+                MarketsMoreMenu(menu, { menu = false }, { iconSheet = true }, { widgets = true })
             }
         }
         HorizontalDivider(color = p.divider)
@@ -146,6 +151,7 @@ fun MarketsContent(
             else -> if (!loggedIn) ChatRoomGuest(onLogin) else EmptyState("聊天室服务暂不可用（后端未提供聊天接口）", Modifier.padding(top = 120.dp))
         }
         if (iconSheet) CoinIconSettingsSheet { iconSheet = false }
+        if (widgets) MarketWidgetsSheet(state.spot) { widgets = false }
     }
 }
 
@@ -201,14 +207,3 @@ private fun WatchlistTab(onAddWatch: (Set<String>) -> Unit, state: click.cowa.li
     }
 }
 
-@Composable
-fun Placeholder(title: String, note: String = "功能开发中", modifier: Modifier = Modifier.fillMaxSize()) {
-    val p = LB.p
-    Column(modifier.background(p.bg), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        click.cowa.linbit.ui.components.LinbitLogo(44.dp)
-        Box(Modifier.height(10.dp))
-        Text(title, style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
-        Box(Modifier.height(10.dp))
-        Text(note, style = lb(FontSize.caption), color = p.textSecondary)
-    }
-}

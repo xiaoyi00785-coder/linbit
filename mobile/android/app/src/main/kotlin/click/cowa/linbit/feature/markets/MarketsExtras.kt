@@ -103,12 +103,17 @@ object MarketPrefs {
 
 /** 右上角「…」下拉菜单。 */
 @Composable
-fun MarketsMoreMenu(expanded: Boolean, onDismiss: () -> Unit, onIconSettings: () -> Unit) {
+fun MarketsMoreMenu(expanded: Boolean, onDismiss: () -> Unit, onIconSettings: () -> Unit, onWidgets: () -> Unit = {}) {
     val p = LB.p
     androidx.compose.material3.DropdownMenu(
         expanded = expanded, onDismissRequest = onDismiss,
         containerColor = p.bgElevated, shape = RoundedCornerShape(Radius.xl),
     ) {
+        androidx.compose.material3.DropdownMenuItem(
+            text = { Text("Widgets", style = lb(FontSize.body), color = p.textPrimary) },
+            leadingIcon = { LbIcon(R.drawable.ic_doc_text, 18.dp, p.textPrimary) },
+            onClick = { onDismiss(); onWidgets() },
+        )
         androidx.compose.material3.DropdownMenuItem(
             text = { Text("币种图标设置", style = lb(FontSize.body), color = p.textPrimary) },
             leadingIcon = { LbIcon(R.drawable.ic_doc_text, 18.dp, p.textPrimary) },
@@ -173,6 +178,7 @@ fun MarketSearchScreen(
     var q by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableIntStateOf(0) }
     var category by rememberSaveable { mutableIntStateOf(0) }
+    var searchTab by rememberSaveable { mutableIntStateOf(0) }
     var history by remember { mutableStateOf(MarketPrefs.history(ctx)) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -200,6 +206,13 @@ fun MarketSearchScreen(
             }
             Text("取消", Modifier.padding(start = 14.dp).pressable(scale = 1f, onClick = onClose), style = lb(FontSize.body), color = p.brand)
         }
+        PrimaryTabs(listOf("热门搜索", "学院"), searchTab, { searchTab = it }, Modifier.padding(horizontal = Spacing.pageH).padding(top = 8.dp), size = FontSize.tabSecondary, underline = true)
+        if (searchTab == 1) {
+            EmptyState("学院内容服务未配置", Modifier.padding(top = 40.dp)) {
+                Text("当前服务端未提供文章列表和搜索接口", style = lb(FontSize.small), color = p.textSecondary)
+            }
+            return@Column
+        }
         if (q.isNotEmpty()) {
             val hits = buildList {
                 state.spot.filter { it.symbol.contains(q) || it.base.contains(q) }.forEach { add(MarketKind.SPOT to it) }
@@ -225,7 +238,6 @@ fun MarketSearchScreen(
                 }
             }
         }
-        PrimaryTabs(listOf("热门搜索"), 0, {}, Modifier.padding(horizontal = Spacing.pageH).padding(top = 8.dp), size = FontSize.tabSecondary)
         ChipBar(listOf("现货", "合约"), kind, { kind = it; category = 0 }, Modifier.padding(top = 14.dp))
         val mk = if (kind == 0) MarketKind.SPOT else MarketKind.FUTURES
         if (kind == 0) {
