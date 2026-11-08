@@ -185,7 +185,7 @@ fun WelfareScreen(
     }
     MoreFrame("福利中心", onBack, trailing = {
         LbIcon(R.drawable.ic_refresh, 22.dp, LB.p.textPrimary, Modifier.pressable(onClick = vm::load))
-    }) {
+    }, centered = true) {
         if (s.loading && s.newcomer == null) MoreLoading(Modifier.weight(1f))
         else if (s.error != null && s.newcomer == null) MoreError(s.error ?: "", vm::load, Modifier.weight(1f))
         else Column(Modifier.weight(1f).background(WfBg).verticalScroll(rememberScrollState())) {
@@ -209,6 +209,7 @@ fun WelfareScreen(
                         ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), "分享"))
                     }, horizontalArrangement = Arrangement.Center, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("分享", style = lb(FontSize.label, FontWeight.SemiBold), color = WfText)
+                    LbIcon(R.drawable.ic_share, 16.dp, WfText, Modifier.padding(start = 8.dp))
                 }
                 if (n?.cta == ApiHomeNewcomer.Cta.LOGIN || n?.cta == ApiHomeNewcomer.Cta.ENROLL || n?.cta == ApiHomeNewcomer.Cta.KYC) {
                     LbButton(newcomerCta(n.cta?.value), Modifier.padding(top = 14.dp, start = 48.dp, end = 48.dp), loading = s.enrolling) {

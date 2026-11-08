@@ -123,10 +123,11 @@ fun MoreFrame(
     title: String,
     onBack: () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
+    centered: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(LB.p.bg)) {
-        ProfileNavBar(title, onBack, trailing)
+        ProfileNavBar(title, onBack, trailing, centered)
         content()
     }
 }

@@ -22,13 +22,14 @@ import click.cowa.linbit.ui.theme.*
 import coil.compose.SubcomposeAsyncImage
 
 @Composable
-fun ProfileNavBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
+fun ProfileNavBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null, centered: Boolean = false) {
     val p = LB.p
     Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(32.dp).pressable(scale = 1f, onClick = onBack), contentAlignment = Alignment.CenterStart) {
             LbIcon(R.drawable.ic_arrow_left, 22.dp, p.textPrimary)
         }
-        Text(title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+        Text(title, Modifier.weight(1f), style = lb(FontSize.title, if (centered) FontWeight.Medium else FontWeight.SemiBold), color = p.textPrimary,
+            textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else null)
         if (trailing != null) trailing() else Spacer(Modifier.size(32.dp))
     }
 }

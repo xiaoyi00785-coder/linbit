@@ -129,7 +129,7 @@ fun FuturesRootScreen(
                 vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
                 onSim = { top = 3 }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f), onCoupons = onCoupons, onFavorite = onFavorite,
             )
-            1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin)
+            1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin, onTransfer = onTransfer)
             2 -> TradFiScreen(
                 onBack = {},
                 onTrade = { futures, symbol ->
