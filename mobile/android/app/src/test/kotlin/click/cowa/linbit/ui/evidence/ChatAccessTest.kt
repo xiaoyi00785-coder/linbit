@@ -84,6 +84,50 @@ class ChatAccessTest {
         Assert.assertTrue(login); Assert.assertTrue(api.requests.isEmpty())
     }
 
+    private fun captureChat(name: String) {
+        rule.waitForIdle()
+        System.getProperty("production.evidence.dir")?.let { path -> rule.runOnIdle {
+            val v = rule.activity.window.decorView
+            val b = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
+            v.draw(Canvas(b)); File(path).mkdirs()
+            File(path, "mock-$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }; b.recycle()
+        } }
+    }
+
+    @Test fun authenticatedListAndRoomEvidenceNoDuplicateHeaderOrDraftLeak() {
+        f.tokens.accessToken = "INVALID_LOCAL_LAYOUT_ONLY"
+        api.route("GET", "/chat/rooms", """{"rooms":[{"id":"general","type":"general","name":"本地测试群组 A","online":0},{"id":"spot.BTCUSDT","type":"spot","name":"本地测试群组 B","online":0,"symbol":"BTCUSDT"}]}""")
+        api.route("GET", "/chat/rooms/general/messages?limit=50", """{"items":[{"id":1,"room":"general","sender":"本地测试用户","text":"仅本地测试消息，用于验证阅读布局。","createdAt":"2026-01-01T00:00:00Z"}],"hasMore":false}""")
+        api.route("GET", "/chat/rooms/spot.BTCUSDT/messages?limit=50", """{"items":[],"hasMore":false}""")
+        val vm = f.chat()
+        var overlay by mutableStateOf(false)
+        rule.activity.actionBar?.hide()
+        rule.setContent { CompositionLocalProvider(LocalChatViewModelFactory provides { vm }) { LinbitTheme(false) {
+            Box(Modifier.fillMaxSize().background(LB.p.bg)) {
+                MarketsContent(click.cowa.linbit.data.MarketState(), emptyList(), 84.dp, {}, {},
+                    modifier = Modifier.padding(top = 24.dp), initialTop = 2, loggedIn = true, onChatOverlay = { overlay = it })
+                if (!overlay) FloatingTabBar(MainTab.MARKETS, {}, Modifier.align(Alignment.BottomCenter))
+            }
+        } } }
+        rule.waitUntil(8000) { vm.rooms != null }
+        captureChat("chat-auth-list")
+        rule.onNodeWithText("本地测试群组 A").performClick()
+        rule.waitUntil(8000) { !vm.messagesLoading }
+        rule.onNodeWithText("仅本地测试消息，用于验证阅读布局。").assertIsDisplayed()
+        rule.onNodeWithText("自选").assertDoesNotExist()
+        rule.onNodeWithText("市场").assertDoesNotExist()
+        rule.onNodeWithText("行情").assertDoesNotExist()
+        rule.onNodeWithText("发送").assertIsNotEnabled()
+        captureChat("chat-auth-room")
+        rule.onNode(hasSetTextAction()).performTextReplacement("不发送的本地草稿")
+        rule.activity.onBackPressedDispatcher.onBackPressed(); rule.waitForIdle()
+        rule.onNodeWithText("本地测试群组 B").performClick()
+        rule.waitUntil(8000) { !vm.messagesLoading }
+        rule.onNodeWithText("不发送的本地草稿").assertDoesNotExist()
+        rule.onNodeWithText("说点什么…").assertIsDisplayed()
+        Assert.assertTrue(api.mutationRequests.isEmpty())
+    }
+
     @Test fun authenticatedReadAndSendUseOnlyInProcessFake() {
         f.tokens.accessToken = "INVALID_IN_PROCESS_SESSION"
         var posts = 0

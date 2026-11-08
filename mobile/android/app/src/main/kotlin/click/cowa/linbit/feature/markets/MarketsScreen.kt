@@ -99,6 +99,7 @@ fun MarketsContent(
 ) {
     val p = LB.p
     var top by rememberSaveable(initialTop) { mutableIntStateOf(initialTop) }
+    var chatOverlay by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var widgets by remember { mutableStateOf(false) }
     var iconSheet by remember { mutableStateOf(false) }       // 0 自选 1 市场 2 聊天室
@@ -109,7 +110,7 @@ fun MarketsContent(
 
     Column(modifier.fillMaxSize().background(p.bg)) {
         // 顶栏：一级 Tab + 搜索 / 更多（更多带绿点）
-        Row(
+        if (!(top == 2 && chatOverlay)) Row(
             Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -122,7 +123,7 @@ fun MarketsContent(
                 MarketsMoreMenu(menu, { menu = false }, { iconSheet = true }, { widgets = true })
             }
         }
-        HorizontalDivider(color = p.divider)
+        if (!(top == 2 && chatOverlay)) HorizontalDivider(color = p.divider)
         when (top) {
             0 -> WatchlistTab(onAddWatch, state, watch, bottomInset, onOpenTrade)
             1 -> {
@@ -150,7 +151,7 @@ fun MarketsContent(
                     }
                 }
             }
-            else -> if (loggedIn) ChatRoomTab(loggedIn, onLogin, onChatOverlay) else ChatRoomGuest(onLogin)
+            else -> if (loggedIn) ChatRoomTab(loggedIn, onLogin, { chatOverlay = it; onChatOverlay(it) }, bottomInset = bottomInset) else ChatRoomGuest(onLogin)
         }
         if (iconSheet) CoinIconSettingsSheet { iconSheet = false }
         if (widgets) MarketWidgetsSheet(state.spot) { widgets = false }

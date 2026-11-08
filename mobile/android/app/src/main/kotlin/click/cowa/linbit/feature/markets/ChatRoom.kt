@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -43,6 +44,7 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
     var hasMore by mutableStateOf(false); private set
     var msgError by mutableStateOf<String?>(null); private set
     var sending by mutableStateOf(false); private set
+    var messagesLoading by mutableStateOf(false); private set
     private val mineIds = mutableSetOf<Long>()
     private var live: Job? = null
 
@@ -55,7 +57,7 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
     fun clearSession() {
         roomsJob?.cancel(); messagesJob?.cancel(); olderJob?.cancel(); sendJob?.cancel(); live?.cancel()
         rooms = null; roomsError = null; room = null; messages = emptyList()
-        hasMore = false; msgError = null; mineIds.clear(); sending = false
+        hasMore = false; msgError = null; mineIds.clear(); sending = false; messagesLoading = false
     }
 
     fun loadRooms() { if (!tokens.loggedIn.value) { clearSession(); return }; roomsError = null; roomsJob?.cancel(); roomsJob = viewModelScope.launch {
@@ -63,10 +65,10 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
 
     fun open(r: ApiChatRoom?) {
         if (!tokens.loggedIn.value) { clearSession(); return }
-        live?.cancel(); messagesJob?.cancel(); olderJob?.cancel(); room = r; messages = emptyList(); msgError = null; hasMore = false
+        live?.cancel(); messagesJob?.cancel(); olderJob?.cancel(); room = r; messages = emptyList(); msgError = null; hasMore = false; messagesLoading = r != null
         if (r == null) return
         messagesJob = viewModelScope.launch { runCatching { apiCall { api.chatMessages(r.id) } }
-            .onSuccess { if (!tokens.loggedIn.value || room?.id != r.id) return@onSuccess; messages = it.items.orEmpty().sortedBy { m -> m.id }; hasMore = it.hasMore == true }.onFailure { if (it !is kotlinx.coroutines.CancellationException && tokens.loggedIn.value) msgError = chatError(it) } }
+            .onSuccess { if (!tokens.loggedIn.value || room?.id != r.id) return@onSuccess; messages = (it.items.orEmpty() + messages).distinctBy { m -> m.id }.sortedBy { m -> m.id }; hasMore = it.hasMore == true }.onFailure { if (it !is kotlinx.coroutines.CancellationException && tokens.loggedIn.value) msgError = chatError(it) }; if (room?.id == r.id) messagesLoading = false }
         live = viewModelScope.launch { socket.subscribe("chat:${r.id}").collect { f -> runCatching {
             if (!tokens.loggedIn.value || room?.id != r.id) return@collect
             val d = f.data.jsonObject
@@ -92,7 +94,7 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
 internal val LocalChatViewModelFactory = staticCompositionLocalOf<(() -> ChatViewModel)?> { null }
 
 @Composable
-fun ChatRoomTab(loggedIn: Boolean, onLogin: () -> Unit, onOverlay: (Boolean) -> Unit = {}, vm: ChatViewModel = LocalChatViewModelFactory.current?.invoke() ?: hiltViewModel()) {
+fun ChatRoomTab(loggedIn: Boolean, onLogin: () -> Unit, onOverlay: (Boolean) -> Unit = {}, vm: ChatViewModel = LocalChatViewModelFactory.current?.invoke() ?: hiltViewModel(), bottomInset: Dp = 0.dp) {
     val p = LB.p
     val session by vm.loggedIn.collectAsState()
     val canRead = loggedIn && session
@@ -105,7 +107,7 @@ fun ChatRoomTab(loggedIn: Boolean, onLogin: () -> Unit, onOverlay: (Boolean) -> 
     }
     val room = vm.room
     LaunchedEffect(room) { onOverlay(room != null) }
-    if (room != null) { androidx.activity.compose.BackHandler { vm.open(null) }; ChatRoomScreen(room, loggedIn, onLogin, vm); return }
+    if (room != null) { androidx.activity.compose.BackHandler { vm.open(null) }; key(room.id) { ChatRoomScreen(room, loggedIn, onLogin, vm) }; return }
     var q by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -121,7 +123,7 @@ fun ChatRoomTab(loggedIn: Boolean, onLogin: () -> Unit, onOverlay: (Boolean) -> 
             rooms == null -> Box(Modifier.fillMaxWidth().padding(top = 80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             else -> { val list = rooms.filter { q.isBlank() || it.name.contains(q, true) }
                 if (list.isEmpty()) EmptyState("暂无群组", Modifier.padding(top = 80.dp))
-                LazyColumn { items(list, key = { it.id }) { r ->
+                LazyColumn(contentPadding = PaddingValues(bottom = bottomInset)) { items(list, key = { it.id }) { r ->
                     Row(Modifier.fillMaxWidth().pressable(scale = 1f) { vm.open(r) }.padding(horizontal = Spacing.pageH, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(40.dp).background(p.brand.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
                             if (r.symbol != null) CoinIcon(r.symbol.removeSuffix("USDT"), 28.dp) else LbIcon(R.drawable.ic_bell, 20.dp, p.brand) }
@@ -139,7 +141,10 @@ fun ChatRoomTab(loggedIn: Boolean, onLogin: () -> Unit, onOverlay: (Boolean) -> 
 private fun ChatRoomScreen(room: ApiChatRoom, loggedIn: Boolean, onLogin: () -> Unit, vm: ChatViewModel) {
     val p = LB.p; val list = rememberLazyListState()
     var text by remember { mutableStateOf("") }
-    LaunchedEffect(vm.messages.size) { if (vm.messages.isNotEmpty()) list.animateScrollToItem(vm.messages.size - 1) }
+    // Older-page insertion changes size, not the newest ID: keep the reader in place.
+    LaunchedEffect(vm.messages.lastOrNull()?.id) {
+        if (vm.messages.isNotEmpty()) list.animateScrollToItem(vm.messages.lastIndex + if (vm.hasMore) 1 else 0)
+    }
     Column(Modifier.fillMaxSize().background(p.bg).imePadding()) {
         Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp).pressable(scale = 1f) { vm.open(null) }, contentAlignment = Alignment.Center) { LbIcon(R.drawable.ic_arrow_left, 22.dp, p.textPrimary) }
@@ -150,10 +155,13 @@ private fun ChatRoomScreen(room: ApiChatRoom, loggedIn: Boolean, onLogin: () -> 
             vm.msgError != null -> EmptyState(vm.msgError!!, Modifier.weight(1f).padding(top = 80.dp)) { ChipButton("重试") { vm.open(room) } }
             else -> LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(Spacing.pageH, 8.dp)) {
                 if (vm.hasMore) item { Text("加载更早消息", Modifier.fillMaxWidth().pressable(onClick = vm::older).padding(8.dp), color = p.brand, style = lb(FontSize.caption), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-                if (vm.messages.isEmpty()) item { EmptyState("暂无消息", Modifier.padding(top = 60.dp)) }
+                if (vm.messagesLoading && vm.messages.isEmpty()) item { Box(Modifier.fillMaxWidth().padding(top = 60.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp), color = p.textTertiary, strokeWidth = 2.dp) } }
+                if (!vm.messagesLoading && vm.messages.isEmpty()) item { EmptyState("暂无消息", Modifier.padding(top = 60.dp)) }
                 items(vm.messages, key = { it.id }) { m -> val mine = vm.isMine(m)
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-                        if (!mine) Box(Modifier.size(36.dp).background(p.brand.copy(alpha = 0.15f), CircleShape))
+                        if (!mine) Box(Modifier.size(36.dp).background(p.brand.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
+                            Text(m.sender.take(1), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                        }
                         Column(Modifier.padding(horizontal = 8.dp).widthIn(max = 260.dp), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
                             if (!mine) Text(m.sender, style = lb(FontSize.small), color = p.textTertiary)
                             Text(m.text, Modifier.background(if (mine) p.brand.copy(alpha = 0.2f) else p.fill, RoundedCornerShape(10.dp)).padding(10.dp), style = lb(FontSize.body), color = p.textPrimary)
