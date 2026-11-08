@@ -226,7 +226,7 @@ private fun Header(hide: Boolean, total: java.math.BigDecimal, cny: java.math.Bi
             val label = if (tab == 2) "今日盈亏" else "可用余额"
             val value = if (hide) "****" else if (tab == 2) {
                 "${Fmt.amount(click.cowa.linbit.core.util.Dec.parse(s.futures?.crossUnrealizedPnl), 2)} USD"
-            } else "${Fmt.amount(vm.spotAvailUsdt(), 2)} USDT"
+            } else "${Fmt.amount(if (tab == 1) vm.fundingAvailUsdt() else vm.spotAvailUsdt(), 2)} USDT"
             Row(Modifier.padding(top = 8.dp)) {
                 Text(label, style = lb(FontSize.small), color = p.textSecondary)
                 Spacer(Modifier.width(8.dp))

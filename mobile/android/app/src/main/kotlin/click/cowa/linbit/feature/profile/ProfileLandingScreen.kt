@@ -47,6 +47,10 @@ fun ProfileLandingScreen(onBack: () -> Unit, onAccount: () -> Unit, onSwitch: ()
     val p = LB.p
     val clipboard = LocalClipboardManager.current
     var about by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val guidePrefs = remember { ctx.getSharedPreferences("profile_guide", android.content.Context.MODE_PRIVATE) }
+    var guide by remember { mutableStateOf(!guidePrefs.getBoolean("prefs_moved_seen", false)) }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding()) {
         ProfileNavBar("", onBack, trailing = { ThemedIcon(R.drawable.ic_mc_transfer_square_light, R.drawable.ic_mc_transfer_square_dark, 22.dp, Modifier.pressable(onClick = onSwitch)) })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
@@ -71,6 +75,14 @@ fun ProfileLandingScreen(onBack: () -> Unit, onAccount: () -> Unit, onSwitch: ()
             ProfileRow("关于 Linbit", "V" + BuildConfig.VERSION_NAME) { about = true }
             s.error?.let { Text(it, style = lb(FontSize.caption), color = p.down); TextButton(onClick = { vm.load() }) { Text("重试") } }
         }
+    }
+    // 参考 App 引导遮罩：「偏好设置已移至用户中心」+「知道了」，只出现一次
+    if (guide) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f)).pressable(scale = 1f) {}.statusBarsPadding()) {
+        Column(Modifier.padding(start = Spacing.pageH, top = 120.dp).background(p.bg, RoundedCornerShape(Radius.lg)).padding(16.dp).widthIn(max = 280.dp)) {
+            Text("偏好设置已移至用户中心。", style = lb(FontSize.body), color = p.textPrimary)
+            Text("知道了", Modifier.align(Alignment.End).padding(top = 12.dp).background(p.primary, RoundedCornerShape(Radius.md)).pressable { guidePrefs.edit().putBoolean("prefs_moved_seen", true).apply(); guide = false }.padding(horizontal = 16.dp, vertical = 8.dp), style = lb(FontSize.label, FontWeight.Medium), color = p.textOnPrimary)
+        }
+    }
     }
     if (about) AlertDialog(onDismissRequest = { about = false }, title = { Text("Linbit") }, text = { Text("版本 " + BuildConfig.VERSION_NAME) }, confirmButton = { TextButton(onClick = { about = false }) { Text("知道了") } })
 }

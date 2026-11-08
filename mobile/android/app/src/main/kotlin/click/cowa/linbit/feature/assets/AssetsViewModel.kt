@@ -94,7 +94,7 @@ class AssetsViewModel @Inject constructor(
             1 -> s.funding.fold(BigDecimal.ZERO) { a, b -> a + usd(b) }
             2 -> Dec.parse(s.futures?.marginBalance ?: s.futures?.walletBalance)
             3 -> s.spot.fold(BigDecimal.ZERO) { a, b -> a + usd(b) }
-            else -> s.spot.fold(BigDecimal.ZERO) { a, b -> a + usd(b) } +
+            else -> s.spot.fold(BigDecimal.ZERO) { a, b -> a + usd(b) } + s.funding.fold(BigDecimal.ZERO) { a, b -> a + usd(b) } +
                 Dec.parse(s.futures?.marginBalance ?: s.futures?.walletBalance)
         }
     }

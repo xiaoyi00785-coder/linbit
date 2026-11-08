@@ -63,8 +63,10 @@ class Batch2VisualEvidenceTest {
     @Test fun preferences() {
         api.route("GET", "/account/preferences", """{"quoteCurrency":"USD","defaultQuoteCurrency":"USD","supportedQuoteCurrencies":["USD","CNY"]}""")
         val vm = AccountPreferencesViewModel(fixtures.retrofit, fixtures.tokens)
+        api.route("GET", "/assets/deposit-account", """{"account":"funding","source":"platform","platformDefault":"funding","supported":["funding","spot"]}""")
+        val dvm = DepositTargetViewModel(fixtures.retrofit, fixtures.tokens, fixtures.toast)
         val profile = fixtures.profile()
-        render { androidx.compose.runtime.CompositionLocalProvider(LocalAccountPreferencesFactory provides { vm }) { UserCenterScreen(ThemeMode.LIGHT, {}, {}, {}, {}, {}, profile) } }
+        render { androidx.compose.runtime.CompositionLocalProvider(LocalAccountPreferencesFactory provides { vm }, LocalDepositTargetFactory provides { dvm }) { UserCenterScreen(ThemeMode.LIGHT, {}, {}, {}, {}, {}, profile) } }
         rule.onNodeWithText("偏好设置").performClick()
         rule.waitUntil(5000) { vm.preferences != null }
         rule.onNodeWithText("颜色偏好").assertExists()
@@ -85,13 +87,16 @@ class Batch2VisualEvidenceTest {
     @Test fun dailyPnl() {
         api.route("GET", "/futures/pnl/today", """{"asset":"USDT","since":1794096000000,"insuranceCover":"0","pnl":"0","realizedPnl":"0","funding":"0","fee":"0","liquidationFee":"0"}""")
         val vm = PnlAnalysisViewModel(fixtures.retrofit, fixtures.tokens)
-        render { PnlAnalysisScreen({}, vm) }
+        render { PnlAnalysisScreen({}, vm, PnlHistoryViewModel(fixtures.retrofit, fixtures.tokens)) }
         rule.waitUntil(5000) { vm.data != null }
         rule.onNodeWithText("已实现盈亏").assertExists()
         capture("pnl")
     }
     @Test fun fiatUnavailableWithoutFabricatedChannel() {
-        render { QuickBuyScreen({}) }
+        api.route("GET", "/fiat/buy", """{"configured":false,"available":false,"reason":"unconfigured"}""")
+        val fvm = FiatBuyViewModel(fixtures.retrofit)
+        render { QuickBuyScreen({}, fvm) }
+        rule.waitUntil(5000) { fvm.status != null }
         rule.onNodeWithText("暂无可用的支付渠道").assertExists()
         capture("quickbuy-unavailable")
     }

@@ -116,7 +116,7 @@ fun PnlHistorySection(vm: PnlHistoryViewModel = hiltViewModel()) {
 }
 
 @Composable
-fun PnlAnalysisScreen(onBack: () -> Unit, vm: PnlAnalysisViewModel = hiltViewModel()) {
+fun PnlAnalysisScreen(onBack: () -> Unit, vm: PnlAnalysisViewModel = hiltViewModel(), historyVm: PnlHistoryViewModel = hiltViewModel()) {
     Column(Modifier.fillMaxSize()) {
         AssetsNavBar("盈亏分析", onBack)
         Column(Modifier.fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -134,7 +134,7 @@ fun PnlAnalysisScreen(onBack: () -> Unit, vm: PnlAnalysisViewModel = hiltViewMod
                     LbButton("刷新", kind = ButtonKind.SECONDARY, onClick = vm::load)
                 }
             }
-            PnlHistorySection()
+            PnlHistorySection(historyVm)
         }
     }
 }
