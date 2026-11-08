@@ -258,3 +258,14 @@ fun UpArrow(modifier: Modifier = Modifier, tint: Color = LB.p.textSecondary) =
 @Composable
 fun ThemedIcon(@androidx.annotation.DrawableRes light: Int, @androidx.annotation.DrawableRes dark: Int, size: Dp, modifier: Modifier = Modifier) =
     LbImageIcon(if (LB.p.isDark) dark else light, size, modifier)
+
+/** 参考 App「Order Type」底部弹层：左侧图标 + 标题，选中项右侧对勾，无副标题。 */
+@Composable
+fun OrderTypeRow(@androidx.annotation.DrawableRes icon: Int, title: String, selected: Boolean, onClick: () -> Unit) {
+    val p = LB.p
+    Row(Modifier.fillMaxWidth().pressable(scale = 1f, onClick = onClick).padding(horizontal = Spacing.pageH, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        LbIcon(icon, 20.dp, p.textPrimary)
+        Text(title, Modifier.weight(1f).padding(start = 14.dp), style = lb(FontSize.body), color = p.textPrimary)
+        if (selected) LbIcon(R.drawable.ic_check, 18.dp, p.textPrimary)
+    }
+}

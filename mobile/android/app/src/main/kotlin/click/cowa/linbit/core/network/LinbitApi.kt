@@ -714,7 +714,7 @@ interface LinbitApi {
     suspend fun createApiKey(@Body body: click.cowa.linbit.feature.more.ApiKeyCreateRequest): click.cowa.linbit.feature.more.ApiKeyCreated
 
     @DELETE("account/api-keys/{id}")
-    suspend fun deleteApiKey(@Path("id") id: String)
+    suspend fun deleteApiKey(@Path("id") id: String): click.cowa.linbit.feature.more.ApiKeyRevoked
 
     @GET("assets/deposit-account")
     suspend fun depositTarget(): click.cowa.linbit.feature.profile.ApiDepositTarget

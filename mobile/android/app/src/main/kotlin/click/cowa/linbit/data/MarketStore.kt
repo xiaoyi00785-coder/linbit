@@ -119,6 +119,7 @@ class MarketStore(
             socket.subscribe(channels).collect { frame ->
                 when {
                     frame.channel.startsWith("ticker:") -> WsMessageParser.ticker(frame)?.let { t ->
+                        t.usd?.let { u -> if (u.available) Dec.parseOrNull(u.rate ?: "")?.takeIf { it.signum() > 0 }?.let { r -> click.cowa.linbit.core.storage.QuoteDisplay.usdPerUsdt = r; click.cowa.linbit.core.storage.QuoteDisplay.usdStale = u.stale } }
                         _state.update { cur ->
                             val i = cur.spot.indexOfFirst { it.symbol == t.symbol }
                             if (i < 0) cur else {

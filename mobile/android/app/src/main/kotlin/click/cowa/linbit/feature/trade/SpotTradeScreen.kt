@@ -59,6 +59,7 @@ import click.cowa.linbit.ui.components.PillSegment
 import click.cowa.linbit.ui.components.PrimaryTabs
 import click.cowa.linbit.ui.components.SelectBox
 import click.cowa.linbit.ui.components.SheetOptionRow
+import click.cowa.linbit.ui.components.OrderTypeRow
 import click.cowa.linbit.ui.components.ThemedIcon
 import click.cowa.linbit.ui.components.pressable
 import click.cowa.linbit.ui.theme.FontSize
@@ -263,7 +264,7 @@ fun SpotTradeContent(
         "kind" -> LbSheet("委托类型", { sheet = null }) {
             Column(Modifier.padding(bottom = 20.dp)) {
                 SpotOrderKind.entries.forEach { k ->
-                    SheetOptionRow(k.title, vm.kind == k, subtitle = k.desc) { vm.kind = k; vm.qtyEdited(); sheet = null }
+                    OrderTypeRow(when (k) { SpotOrderKind.LIMIT -> R.drawable.ic_ot_limit; SpotOrderKind.MARKET -> R.drawable.ic_ot_market; SpotOrderKind.PLAN -> R.drawable.ic_ot_trigger; SpotOrderKind.MAKER -> R.drawable.ic_ot_postonly }, k.title, vm.kind == k) { vm.kind = k; vm.qtyEdited(); sheet = null }
                 }
             }
         }

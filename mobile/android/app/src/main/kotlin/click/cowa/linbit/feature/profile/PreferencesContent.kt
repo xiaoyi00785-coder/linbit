@@ -69,7 +69,7 @@ class DepositTargetViewModel @Inject constructor(private val api: LinbitApi, pri
     fun select(t: DepositTarget, done: () -> Unit) = write(done) { api.updateDepositTarget(ApiDepositTargetUpdate(t.key)) }
     fun followPlatform(done: () -> Unit) = write(done) { api.resetDepositTarget() }
     private fun write(done: () -> Unit, call: suspend () -> ApiDepositTarget) { if (saving) return; saving = true; viewModelScope.launch {
-        runCatching { apiCall { call() } }.onSuccess { data = it; done() }.onFailure { toast.show(it.lbMessage()) }; saving = false } }
+        runCatching { apiCall { call() } }.onSuccess { data = it; done() }.onFailure { toast.show(if ((it as? ApiFailure.Server)?.error?.code == "DEPOSIT_ACCOUNT_UNSUPPORTED") "暂不支持该入账账户" else it.lbMessage()) }; saving = false } }
 }
 
 val LocalDepositTargetFactory = staticCompositionLocalOf<@Composable () -> DepositTargetViewModel> { { hiltViewModel() } }
@@ -115,7 +115,7 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
                 else -> {
                     val supported = depositVm.data?.supported.orEmpty()
                     DepositTarget.entries.forEach { t -> val ok = t.key in supported
-                        SheetOptionRow(t.title, depositVm.target == t, Modifier.padding(vertical = 4.dp).alpha(if (ok) 1f else 0.4f), subtitle = if (ok) t.desc else t.desc + "（服务端暂不支持该入账账户，暂不可选）") { if (ok) depositVm.select(t) { sheet = null } } }
+                        SheetOptionRow(t.title, depositVm.target == t, Modifier.padding(vertical = 4.dp).alpha(if (ok) 1f else 0.4f), subtitle = if (ok) t.desc else "暂不支持：充值无法直接入账合约账户，请充值后划转") { if (ok) depositVm.select(t) { sheet = null } } }
                     depositVm.data?.let { d -> if (d.source == "user") SheetOptionRow("跟随平台默认（" + (DepositTarget.entries.firstOrNull { it.key == d.platformDefault }?.title ?: "资金账户") + "）", false, Modifier.padding(vertical = 4.dp), subtitle = "恢复平台默认入账账户") { depositVm.followPlatform { sheet = null } } }
                     Text("仅影响之后的链上充值入账账户，不会划转已有余额。", Modifier.padding(top = 8.dp), style = lb(FontSize.caption), color = LB.p.textSecondary)
                     depositVm.error?.let { Text(it, Modifier.padding(top = 8.dp), color = LB.p.down, style = lb(FontSize.caption)) }

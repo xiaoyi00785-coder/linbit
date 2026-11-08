@@ -72,7 +72,7 @@ fun MoreHost(
             MorePage.REFERRAL -> ReferralScreen(onClose, onLogin)
             MorePage.CASHBACK -> CashbackScreen(onClose, onLogin)
             MorePage.LOTTERY -> LotteryScreen(onClose, onLogin, onFutures = { onTrade(true, "BTCUSDT") }, onReferral = { onOpen(MorePage.REFERRAL) })
-            MorePage.API_KEY -> ApiKeyScreen(onClose)
+            MorePage.API_KEY -> ApiKeyScreen(onClose, onSecurity = onProfile)
             MorePage.CARD -> CardScreen(onClose, onLogin)
         }
     }

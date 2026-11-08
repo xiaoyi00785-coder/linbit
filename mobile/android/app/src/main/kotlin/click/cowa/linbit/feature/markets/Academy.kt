@@ -27,7 +27,7 @@ import javax.inject.Inject
 
 @Serializable data class ApiAcademyCategory(val id: String, val name: String)
 @Serializable data class ApiAcademyCategories(val items: List<ApiAcademyCategory> = emptyList())
-@Serializable data class ApiAcademyArticle(val id: String, val title: String, val summary: String? = null, val category: String? = null, val publishedAt: String? = null, val body: String? = null, val format: String? = "plain")
+@Serializable data class ApiAcademyArticle(val id: String, val title: String, val summary: String? = null, val category: String? = null, val categoryId: String? = null, val publishedAt: String? = null, val body: String? = null, val format: String? = "plain")
 @Serializable data class ApiAcademyArticles(val items: List<ApiAcademyArticle> = emptyList(), val hasMore: Boolean = false)
 @Serializable data class ApiSearchSymbol(val symbol: String)
 @Serializable data class ApiMarketSearch(val query: String? = null, val symbols: List<kotlinx.serialization.json.JsonElement> = emptyList(), val articles: List<ApiAcademyArticle> = emptyList())

@@ -47,16 +47,21 @@ import javax.inject.Inject
 
 // ---------------- 服务端契约（接入点；字段说明见 docs/batch3-backend-fields.md） ----------------
 @Serializable data class ApiCashbackTier(val id: String, val depositAmount: String, val bonusAmount: String, val dailyFuturesVolume: String, val asset: String = "USDT", val joined: Boolean = false)
-@Serializable data class ApiCashbackCampaign(val title: String? = null, val subtitle: String? = null, val startAt: Long? = null, val endAt: Long? = null, val tiers: List<ApiCashbackTier> = emptyList(), val rules: List<String> = emptyList(), val eligible: Boolean? = null)
+@Serializable data class ApiCashbackCampaign(val configured: Boolean = false, val available: Boolean = false, val title: String? = null, val subtitle: String? = null, val startAt: Long? = null, val endAt: Long? = null, val tiers: List<ApiCashbackTier> = emptyList(), val rules: List<String> = emptyList(), val eligible: Boolean? = null)
 @Serializable data class ApiLotteryPrize(val asset: String, val amount: String)
-@Serializable data class ApiLotteryCampaign(val title: String? = null, val startAt: Long? = null, val endAt: Long? = null, val prizes: List<ApiLotteryPrize> = emptyList(), val winners: List<String> = emptyList(), val rules: List<ApiRuleItem> = emptyList(), val availableDraws: Int = 0)
+@Serializable data class ApiLotteryCampaign(val configured: Boolean = false, val available: Boolean = false, val title: String? = null, val startAt: Long? = null, val endAt: Long? = null, val prizes: List<ApiLotteryPrize> = emptyList(), val winners: List<String> = emptyList(), val rules: List<ApiRuleItem> = emptyList(), val availableDraws: Int = 0)
 @Serializable data class ApiRuleItem(val title: String, val body: String)
 @Serializable data class ApiLotteryEntry(val orderId: String, val symbol: String, val closedAt: Long? = null, val status: String, val prize: ApiLotteryPrize? = null)
-@Serializable data class ApiLotteryEntries(val items: List<ApiLotteryEntry> = emptyList())
+@Serializable data class ApiLotteryEntries(val items: List<ApiLotteryEntry> = emptyList(), val configured: Boolean = false)
 @Serializable data class ApiKeyItem(val id: String, val label: String, val apiKey: String, val permissions: List<String> = listOf("read"), val ipWhitelist: List<String> = emptyList(), val createdAt: Long? = null)
+@Serializable data class ApiKeyRevoked(val revoked: Boolean = false)
 @Serializable data class ApiKeyList(val items: List<ApiKeyItem> = emptyList())
-@Serializable data class ApiKeyCreateRequest(val label: String, val permissions: List<String> = listOf("read"), val ipWhitelist: List<String> = emptyList())
-@Serializable data class ApiKeyCreated(val item: ApiKeyItem, @SerialName("secret") val secret: String)
+@Serializable data class ApiKeyCreateRequest(val label: String, val permissions: List<String> = listOf("read"), val ipWhitelist: List<String> = emptyList(), val totpCode: String)
+/** secret 只在创建响应出现一次；toString 屏蔽，避免进日志。 */
+@Serializable data class ApiKeyCreated(val item: ApiKeyItem, @SerialName("secret") val secret: String) { override fun toString() = "ApiKeyCreated(item=$item, secret=***)" }
+object ApiKeyLimits { const val MAX_KEYS = 10; const val MAX_IPS = 20 }
+fun apiKeyError(t: Throwable): String = when ((t as? ApiFailure.Server)?.error?.code) {
+    "TWOFA_REQUIRED" -> "请先开启谷歌验证（TOTP）后再创建 API Key"; "INVALID_TOTP" -> "谷歌验证码错误"; "PERMISSION_NOT_ALLOWED" -> "仅支持只读权限"; else -> t.lbMessage() }
 
 /** 活动页统一的深色视觉（参考 App 的活动 H5 固定深色 + 荧光绿强调）。 */
 internal object CampaignPalette {
@@ -204,12 +209,12 @@ class CampaignViewModel @Inject constructor(private val api: LinbitApi, private 
     var lottery by mutableStateOf<Load<ApiLotteryCampaign>>(Load.Loading); private set
     var entries by mutableStateOf<Load<ApiLotteryEntries>>(Load.Loading); private set
     var joining by mutableStateOf<String?>(null); private set
-    fun loadCashback() { cashback = Load.Loading; viewModelScope.launch { cashback = runCatching { apiCall { api.depositCashbackCampaign() } }.toLoad() } }
+    fun loadCashback() { cashback = Load.Loading; viewModelScope.launch { cashback = runCatching { apiCall { api.depositCashbackCampaign() } }.toLoad().let { l -> if (l is Load.Ok && !l.v.configured) Load.Missing("未配置") else l } } }
     fun join(id: String) { if (joining != null) return; joining = id; viewModelScope.launch {
-        runCatching { apiCall { api.joinCashbackTier(id) } }.onSuccess { cashback = Load.Ok(it); toast.show("报名成功") }.onFailure { toast.show(it.lbMessage()) }; joining = null } }
-    fun loadLottery() { lottery = Load.Loading; viewModelScope.launch { lottery = runCatching { apiCall { api.tradeLotteryCampaign() } }.toLoad() } }
+        runCatching { apiCall { api.joinCashbackTier(id) } }.onSuccess { cashback = Load.Ok(it); toast.show("报名成功") }.onFailure { if ((it as? ApiFailure.Server)?.error?.code == "CAMPAIGN_UNCONFIGURED") { cashback = Load.Missing("活动未开放"); toast.show("活动未开放，报名未提交") } else toast.show(it.lbMessage()) }; joining = null } }
+    fun loadLottery() { lottery = Load.Loading; viewModelScope.launch { lottery = runCatching { apiCall { api.tradeLotteryCampaign() } }.toLoad().let { l -> if (l is Load.Ok && !l.v.configured) Load.Missing("未配置") else l } } }
     fun loadEntries(tab: Int) { if (!tokens.loggedIn.value) { entries = Load.Ok(ApiLotteryEntries()); return }; entries = Load.Loading
-        viewModelScope.launch { entries = runCatching { apiCall { api.tradeLotteryEntries(if (tab == 0) "pending" else "drawn") } }.toLoad() } }
+        viewModelScope.launch { entries = runCatching { apiCall { api.tradeLotteryEntries(if (tab == 0) "pending" else "drawn") } }.toLoad().let { l -> if (l is Load.Ok && !l.v.configured) Load.Missing("未配置") else l } } }
 }
 
 @Composable
@@ -301,14 +306,17 @@ class ApiKeyViewModel @Inject constructor(private val api: LinbitApi, val toast:
     var created by mutableStateOf<ApiKeyCreated?>(null)
     var busy by mutableStateOf(false); private set
     fun load() { keys = Load.Loading; viewModelScope.launch { keys = runCatching { apiCall { api.apiKeys() } }.toLoad() } }
-    fun create(label: String, ips: List<String>, done: () -> Unit) { if (busy) return; busy = true; viewModelScope.launch {
-        runCatching { apiCall { api.createApiKey(ApiKeyCreateRequest(label, listOf("read"), ips)) } }.onSuccess { created = it; done(); load() }.onFailure { toast.show(it.lbMessage()) }; busy = false } }
+    var createError by mutableStateOf<String?>(null)
+    var needTwoFa by mutableStateOf(false)
+    fun create(label: String, ips: List<String>, totp: String, done: () -> Unit) { if (busy) return; busy = true; createError = null; viewModelScope.launch {
+        runCatching { apiCall { api.createApiKey(ApiKeyCreateRequest(label, listOf("read"), ips, totp)) } }.onSuccess { created = it; done(); load() }
+            .onFailure { if ((it as? ApiFailure.Server)?.error?.code == "TWOFA_REQUIRED") { needTwoFa = true; done() } else createError = apiKeyError(it) }; busy = false } }
     fun delete(id: String) { if (busy) return; busy = true; viewModelScope.launch {
-        runCatching { apiCall { api.deleteApiKey(id) } }.onSuccess { toast.show("已删除"); load() }.onFailure { toast.show(it.lbMessage()) }; busy = false } }
+        runCatching { apiCall { api.deleteApiKey(id) } }.onSuccess { r -> toast.show(if (r.revoked) "已删除" else "删除未生效"); load() }.onFailure { toast.show(it.lbMessage()) }; busy = false } }
 }
 
 @Composable
-fun ApiKeyScreen(onBack: () -> Unit, vm: ApiKeyViewModel = hiltViewModel()) {
+fun ApiKeyScreen(onBack: () -> Unit, vm: ApiKeyViewModel = hiltViewModel(), onSecurity: () -> Unit = {}) {
     val p = LB.p; val clip = LocalClipboardManager.current
     var form by remember { mutableStateOf(false) }; var del by remember { mutableStateOf<ApiKeyItem?>(null) }
     LaunchedEffect(Unit) { vm.load() }
@@ -330,19 +338,25 @@ fun ApiKeyScreen(onBack: () -> Unit, vm: ApiKeyViewModel = hiltViewModel()) {
                             Text(it2.apiKey, Modifier.padding(top = 6.dp).pressable { clip.setText(AnnotatedString(it2.apiKey)); vm.toast.show("已复制") }, style = lbNum(FontSize.caption), color = p.textSecondary)
                             Text("权限：只读 · IP：" + (it2.ipWhitelist.joinToString().ifEmpty { "不限制" }) + " · " + day(it2.createdAt), Modifier.padding(top = 6.dp), style = lb(FontSize.small), color = p.textTertiary)
                         } }
-                        LbButton("创建只读 API Key", Modifier.fillMaxWidth().padding(vertical = 16.dp)) { form = true }
+                        LbButton(if (items.size >= ApiKeyLimits.MAX_KEYS) "已达上限（最多 ${ApiKeyLimits.MAX_KEYS} 个）" else "创建只读 API Key", Modifier.fillMaxWidth().padding(vertical = 16.dp), enabled = items.size < ApiKeyLimits.MAX_KEYS) { form = true }
                     }
                 }
             }
         }
     }
-    if (form) { var label by remember { mutableStateOf("") }; var ips by remember { mutableStateOf("") }
+    if (form) { var label by remember { mutableStateOf("") }; var ips by remember { mutableStateOf("") }; var totp by remember { mutableStateOf("") }
+        val ipList = ips.split(',', '，', '\n').map { it.trim() }.filter { it.isNotEmpty() }
         AlertDialog(onDismissRequest = { form = false }, title = { Text("创建只读 API Key") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             androidx.compose.material3.OutlinedTextField(label, { label = it.take(20) }, label = { Text("备注名") }, singleLine = true)
             androidx.compose.material3.OutlinedTextField(ips, { ips = it }, label = { Text("IP 白名单（选填，逗号分隔）") })
-            Text("只读 Key 仅可查询资产和订单，不能交易或提现。", style = lb(FontSize.small), color = p.textSecondary) } },
-            confirmButton = { TextButton(enabled = label.isNotBlank() && !vm.busy, onClick = { vm.create(label.trim(), ips.split(',', '，').map { it.trim() }.filter { it.isNotEmpty() }) { form = false } }) { Text("创建") } },
-            dismissButton = { TextButton(onClick = { form = false }) { Text("取消") } }) }
+            if (ipList.size > ApiKeyLimits.MAX_IPS) Text("IP 白名单最多 ${ApiKeyLimits.MAX_IPS} 条", style = lb(FontSize.small), color = p.down)
+            androidx.compose.material3.OutlinedTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, label = { Text("谷歌验证码") }, singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword))
+            vm.createError?.let { Text(it, style = lb(FontSize.small), color = p.down) }
+            Text("只读 Key 仅可查询资产和订单，不能交易、划转或提现。", style = lb(FontSize.small), color = p.textSecondary) } },
+            confirmButton = { TextButton(enabled = label.isNotBlank() && totp.length == 6 && ipList.size <= ApiKeyLimits.MAX_IPS && !vm.busy, onClick = { vm.create(label.trim(), ipList, totp) { form = false } }) { Text("创建") } },
+            dismissButton = { TextButton(onClick = { form = false; vm.createError = null }) { Text("取消") } }) }
+    if (vm.needTwoFa) AlertDialog(onDismissRequest = { vm.needTwoFa = false }, title = { Text("需要开启谷歌验证") }, text = { Text("创建 API Key 前须先开启谷歌验证（TOTP）。") },
+        confirmButton = { TextButton(onClick = { vm.needTwoFa = false; onSecurity() }) { Text("去开启") } }, dismissButton = { TextButton(onClick = { vm.needTwoFa = false }) { Text("取消") } })
     vm.created?.let { cr -> AlertDialog(onDismissRequest = {}, title = { Text("请保存您的 Secret Key") }, text = { Column { Text("Secret Key 只显示这一次，关闭后无法再次查看。", color = p.down); Spacer(Modifier.height(8.dp)); Text("API Key：" + cr.item.apiKey); Text("Secret Key：" + cr.secret) } },
         confirmButton = { TextButton(onClick = { clip.setText(AnnotatedString(cr.secret)); vm.toast.show("已复制 Secret Key") }) { Text("复制") } }, dismissButton = { TextButton(onClick = { vm.created = null }) { Text("我已保存") } }) }
     del?.let { d -> AlertDialog(onDismissRequest = { del = null }, title = { Text("删除 API Key") }, text = { Text("删除「${d.label}」后，使用该 Key 的程序将立即失效。") },

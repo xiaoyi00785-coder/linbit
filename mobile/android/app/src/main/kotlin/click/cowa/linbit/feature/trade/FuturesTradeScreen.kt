@@ -69,6 +69,7 @@ import click.cowa.linbit.ui.components.PillSegment
 import click.cowa.linbit.ui.components.PrimaryTabs
 import click.cowa.linbit.ui.components.SelectBox
 import click.cowa.linbit.ui.components.SheetOptionRow
+import click.cowa.linbit.ui.components.OrderTypeRow
 import click.cowa.linbit.ui.components.ThemedIcon
 import click.cowa.linbit.ui.components.ToastCenter
 import click.cowa.linbit.ui.components.UpArrow
@@ -377,7 +378,7 @@ fun FuturesTradeContent(
     when (sheet) {
         "kind" -> LbSheet("委托类型", { sheet = null }) {
             Column(Modifier.padding(bottom = 20.dp)) {
-                FuturesKind.entries.forEach { k -> SheetOptionRow(k.title, vm.kind == k) { vm.kind = k; sheet = null } }
+                FuturesKind.entries.forEach { k -> OrderTypeRow(when (k) { FuturesKind.LIMIT -> R.drawable.ic_ot_limit; FuturesKind.MARKET -> R.drawable.ic_ot_market; FuturesKind.PLAN -> R.drawable.ic_ot_trigger; FuturesKind.POST_ONLY -> R.drawable.ic_ot_postonly }, k.title, vm.kind == k) { vm.kind = k; sheet = null } }
             }
         }
         "bookMode" -> BookModeSheet(vm.bookMode, { vm.bookMode = it }) { sheet = null }
