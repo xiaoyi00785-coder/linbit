@@ -13,6 +13,8 @@ object NetworkFactory {
         ignoreUnknownKeys = true
         explicitNulls = false
         coerceInputValues = true
+        // 后端部分十进制字段以数字返回（契约为字符串，如 home/newcomer.claimable），宽松模式按字符串读取
+        isLenient = true
     }
 
     fun bareClient(): OkHttpClient = OkHttpClient.Builder()
