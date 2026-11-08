@@ -22,6 +22,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import javax.inject.Inject
 
@@ -100,7 +102,7 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
             when (title) {
                 "语言" -> SheetOptionRow("简体中文", true) { sheet = null }
-                "主题" -> ThemeMode.entries.forEach { mode -> SheetOptionRow(mode.title, mode == themeMode) { onTheme(mode); sheet = null } }
+                "主题" -> ThemeCards(themeMode) { onTheme(it); sheet = null }
                 "颜色偏好" -> UpDownColor.entries.forEach { c -> SheetOptionRow(c.title, DisplayPrefs.color == c) { DisplayPrefs.setColor(context, c); sheet = null } }
                 "主题设置" -> listOf(false to "新主题", true to "经典主题").forEach { (classic, label) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -123,4 +125,43 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
             }
         }
     } }
+}
+
+
+/** 参考 Theme 弹层：三张主题预览卡（自动 / 日间 / 夜间）+ 下方单选。 */
+@androidx.compose.runtime.Composable
+private fun ThemeCards(current: ThemeMode, onPick: (ThemeMode) -> Unit) {
+    val p = LB.p
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+        ThemeMode.entries.forEach { m ->
+            val on = m == current
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f).pressable(scale = 1f) { onPick(m) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                val shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(150.dp).clip(shape)
+                    .border(if (on) 2.dp else 1.dp, if (on) p.brand else p.divider, shape)) {
+                    androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+                        val halves = when (m) { ThemeMode.SYSTEM -> listOf(false, true); ThemeMode.LIGHT -> listOf(false); ThemeMode.DARK -> listOf(true) }
+                        halves.forEach { dark -> MiniScreen(dark, Modifier.weight(1f).fillMaxHeight()) }
+                    }
+                    if (m == ThemeMode.SYSTEM) Text("AUTO", Modifier.align(Alignment.TopCenter).padding(top = 14.dp), style = lb(FontSize.caption, androidx.compose.ui.text.font.FontWeight.SemiBold), color = androidx.compose.ui.graphics.Color(0xFF8A8A8A))
+                    else LbIcon(if (m == ThemeMode.LIGHT) click.cowa.linbit.R.drawable.ic_sun else click.cowa.linbit.R.drawable.ic_moon, 18.dp,
+                        if (m == ThemeMode.LIGHT) androidx.compose.ui.graphics.Color(0xFF111111) else androidx.compose.ui.graphics.Color.White, Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
+                }
+                androidx.compose.foundation.layout.Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (on) click.cowa.linbit.ui.components.SheetCheck(Modifier.size(16.dp))
+                    else androidx.compose.foundation.layout.Box(Modifier.size(16.dp).border(1.dp, p.textTertiary, androidx.compose.foundation.shape.CircleShape))
+                    Text(when (m) { ThemeMode.SYSTEM -> "跟随系统"; ThemeMode.LIGHT -> "日间"; ThemeMode.DARK -> "夜间" }, Modifier.padding(start = 6.dp), style = lb(FontSize.small), color = p.textPrimary)
+                }
+            }
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun MiniScreen(dark: Boolean, modifier: Modifier) {
+    val bg = if (dark) androidx.compose.ui.graphics.Color(0xFF151515) else androidx.compose.ui.graphics.Color(0xFFF7F7F7)
+    val blk = if (dark) androidx.compose.ui.graphics.Color(0xFF2E2E2E) else androidx.compose.ui.graphics.Color(0xFFE3E3E3)
+    androidx.compose.foundation.layout.Column(modifier.background(bg).padding(start = 8.dp, end = 8.dp, top = 44.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+        repeat(4) { i -> androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth(if (i % 2 == 0) 1f else 0.7f).height(if (i == 0) 22.dp else 10.dp).background(blk, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))) }
+    }
 }

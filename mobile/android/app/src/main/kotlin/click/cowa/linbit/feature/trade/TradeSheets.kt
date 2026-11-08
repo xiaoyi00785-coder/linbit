@@ -86,7 +86,8 @@ fun PairPickerSheet(
     val watch by (ep?.watchlist()?.symbols ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>())).collectAsState()
     val cats = if (spot && !allowAll) ep?.marketStore()?.state?.collectAsState()?.value?.categories.orEmpty() else emptyList()
     val tabs = if (ep != null && !allowAll) listOf("自选") + cats.map { it.name } + listOf("全部") else emptyList()
-    var tab by remember { mutableStateOf(if (tabs.isEmpty()) -1 else 0) }
+    // 参考默认停在第一个分类（公链）；自选为空时不默认打开空的自选页
+    var tab by remember { mutableStateOf(if (tabs.isEmpty()) -1 else if (watch.isEmpty() && tabs.size > 2) 1 else 0) }
     var q by remember { mutableStateOf("") }
     val base = when {
         q.isNotBlank() || tab < 0 || tab == tabs.lastIndex -> rows
