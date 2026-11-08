@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import click.cowa.linbit.core.storage.ThemeMode
@@ -57,11 +58,38 @@ class Batch4VisualEvidenceTest {
             bitmap.recycle()
         }
     }
+    /** 主窗口 + 所有弹窗窗口（Dialog 是独立窗口，decorView 抓不到）按底部对齐叠加。 */
+    private fun captureWithDialogs(name: String) {
+        rule.waitForIdle()
+        lateinit var base: Bitmap
+        rule.runOnIdle {
+            val main = rule.activity.window.decorView
+            base = Bitmap.createBitmap(main.width, main.height, Bitmap.Config.ARGB_8888)
+            val c = Canvas(base); main.draw(c)
+            org.robolectric.shadows.ShadowDialog.getShownDialogs().filter { it.isShowing }.forEach { d ->
+                val v = d.window!!.decorView
+                c.drawColor(android.graphics.Color.argb(0x80, 0, 0, 0))
+                c.save(); c.translate((base.width - v.width) / 2f, (base.height - v.height).toFloat()); v.draw(c); c.restore()
+            }
+        }
+        val out = File(System.getProperty("production.evidence.dir") ?: "build/reports/batch4").apply { mkdirs() }
+        File(out, "mock-$name.png").outputStream().use { base.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        File(out, "mock-$name.txt").writeText("Robolectric native-rendered production component (main + dialog windows composited); loopback fixtures; not device screenshot; no financial writes.\n" + api.dumpRequests())
+    }
     /** 游客点「我的」：参考 040_profile_login_gate = 创建帐户页 */
     @Test fun profileGuestGate() {
         val vm = fixtures.auth()
         render { click.cowa.linbit.feature.auth.RegisterScreen(vm, {}, {}, {}, {}) }
         capture("b4-profile-guest")
+    }
+
+    /** 游客点登录页右上角客服：未登录不开放在线客服，如实提示先登录提交工单（LbDialog 底部弹层）。 */
+    @Test fun guestSupport() {
+        val vm = fixtures.auth()
+        render { click.cowa.linbit.feature.auth.AuthFlow(false, {}, vm, gs = null) }
+        rule.onNodeWithTag("auth.support").performClick(); rule.waitForIdle()
+        rule.onNodeWithText("在线客服").assertExists()
+        captureWithDialogs("b4-guest-support")
     }
 
     @Test fun profileGuideOverlay() {
