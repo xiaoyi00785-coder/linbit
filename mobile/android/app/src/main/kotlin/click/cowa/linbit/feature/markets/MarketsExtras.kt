@@ -208,9 +208,7 @@ fun MarketSearchScreen(
         }
         PrimaryTabs(listOf("热门搜索", "学院"), searchTab, { searchTab = it }, Modifier.padding(horizontal = Spacing.pageH).padding(top = 8.dp), size = FontSize.tabSecondary, underline = true)
         if (searchTab == 1) {
-            EmptyState("学院内容服务未配置", Modifier.padding(top = 40.dp)) {
-                Text("当前服务端未提供文章列表和搜索接口", style = lb(FontSize.small), color = p.textSecondary)
-            }
+            AcademyTab(q)
             return@Column
         }
         if (q.isNotEmpty()) {

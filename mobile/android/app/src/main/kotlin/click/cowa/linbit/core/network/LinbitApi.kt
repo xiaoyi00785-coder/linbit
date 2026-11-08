@@ -715,17 +715,50 @@ interface LinbitApi {
     @DELETE("account/api-keys/{id}")
     suspend fun deleteApiKey(@Path("id") id: String)
 
-    @GET("account/deposit-target")
+    @GET("assets/deposit-account")
     suspend fun depositTarget(): click.cowa.linbit.feature.profile.ApiDepositTarget
 
-    @PUT("account/deposit-target")
-    suspend fun updateDepositTarget(@Body body: click.cowa.linbit.feature.profile.ApiDepositTarget): click.cowa.linbit.feature.profile.ApiDepositTarget
+    @PUT("assets/deposit-account")
+    suspend fun updateDepositTarget(@Body body: click.cowa.linbit.feature.profile.ApiDepositTargetUpdate): click.cowa.linbit.feature.profile.ApiDepositTarget
+
+    @DELETE("assets/deposit-account")
+    suspend fun resetDepositTarget(): click.cowa.linbit.feature.profile.ApiDepositTarget
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("auth/providers")
+    suspend fun authProviders(): click.cowa.linbit.feature.auth.ApiAuthProviders
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("fiat/buy")
+    suspend fun fiatBuyStatus(): click.cowa.linbit.feature.assets.ApiFiatBuyStatus
+
+    @GET("futures/pnl/history")
+    suspend fun futuresPnlHistory(@Query("from") from: String, @Query("to") to: String): click.cowa.linbit.feature.assets.ApiPnlHistory
+
+    @GET("spot/pnl/history")
+    suspend fun spotPnlHistory(@Query("from") from: String, @Query("to") to: String): click.cowa.linbit.feature.assets.ApiSpotPnlHistory
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("academy/categories")
+    suspend fun academyCategories(): click.cowa.linbit.feature.markets.ApiAcademyCategories
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("academy/articles")
+    suspend fun academyArticles(@Query("category") category: String? = null, @Query("locale") locale: String = "zh-CN", @Query("before") before: String? = null, @Query("limit") limit: Int = 20): click.cowa.linbit.feature.markets.ApiAcademyArticles
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("academy/articles/{id}")
+    suspend fun academyArticle(@Path("id") id: String): click.cowa.linbit.feature.markets.ApiAcademyArticle
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/search")
+    suspend fun marketSearch(@Query("q") q: String): click.cowa.linbit.feature.markets.ApiMarketSearch
 
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @POST("auth/google")
     suspend fun googleLogin(@Body body: click.cowa.linbit.feature.auth.ApiGoogleLoginRequest): ApiAuthTokens
 
     @Headers("${ApiHeaders.NO_AUTH}: 1")
-    @GET("support/public-config")
+    @GET("support/guest")
     suspend fun supportPublicConfig(): click.cowa.linbit.feature.auth.ApiSupportPublicConfig
 }

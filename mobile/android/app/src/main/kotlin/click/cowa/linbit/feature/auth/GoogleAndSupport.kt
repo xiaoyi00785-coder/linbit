@@ -24,9 +24,11 @@ import kotlinx.serialization.Serializable
 import javax.inject.Inject
 
 /** POST auth/google 请求体：Google ID token + 设备信息；新用户由服务端注册并可能要求补充邀请码/条款确认。 */
-@Serializable data class ApiGoogleLoginRequest(val idToken: String, val deviceId: String? = null, val inviteCode: String? = null)
+@Serializable data class ApiGoogleLoginRequest(val idToken: String, val deviceId: String? = null, val deviceName: String? = null)
+@Serializable data class ApiAuthProvider(val id: String, val configured: Boolean = false, val clientIds: List<String> = emptyList())
+@Serializable data class ApiAuthProviders(val providers: List<ApiAuthProvider> = emptyList())
 /** 游客在线客服公开配置：GET support/public-config。 */
-@Serializable data class ApiSupportPublicConfig(val chatUrl: String? = null, val helpCenterUrl: String? = null, val online: Boolean = false)
+@Serializable data class ApiSupportPublicConfig(val configured: Boolean = false, val available: Boolean = false, val mode: String = "unconfigured", val entryUrl: String? = null, val loginRequiredForTickets: Boolean = true)
 
 @HiltViewModel
 class GoogleSupportViewModel @Inject constructor(private val api: LinbitApi, private val tokens: TokenStore) : ViewModel() {
@@ -34,23 +36,25 @@ class GoogleSupportViewModel @Inject constructor(private val api: LinbitApi, pri
     var googleError by mutableStateOf<String?>(null); private set
     var supportLoading by mutableStateOf(false); private set
     var supportError by mutableStateOf<String?>(null); private set
-    val googleConfigured: Boolean get() = BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
 
     fun googleLogin(activity: Activity, onDone: () -> Unit) {
         if (googleLoading || tokens.loggedIn.value) return
-        if (!googleConfigured) { googleError = "Google 登录未配置：缺少 OAuth 客户端，请使用邮箱、手机号或通行密钥登录"; return }
         googleLoading = true; googleError = null
         viewModelScope.launch {
             try {
-                val option = GetGoogleIdOption.Builder().setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID).setFilterByAuthorizedAccounts(false).setAutoSelectEnabled(false).build()
+                // 优先服务端 /auth/providers 下发的 clientIds，其次构建期 GOOGLE_WEB_CLIENT_ID
+                val provider = runCatching { apiCall { api.authProviders() } }.getOrNull()?.providers?.firstOrNull { it.id == "google" }
+                val clientId = provider?.clientIds?.firstOrNull()?.takeIf { provider.configured } ?: BuildConfig.GOOGLE_WEB_CLIENT_ID.takeIf { it.isNotBlank() }
+                if (clientId == null) { googleError = "Google 登录未配置，请使用邮箱、手机号或通行密钥登录"; return@launch }
+                val option = GetGoogleIdOption.Builder().setServerClientId(clientId).setFilterByAuthorizedAccounts(false).setAutoSelectEnabled(false).build()
                 val cred = CredentialManager.create(activity).getCredential(activity, GetCredentialRequest.Builder().addCredentialOption(option).build()).credential
                 if (cred !is CustomCredential || cred.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) throw IllegalStateException("未取得 Google 凭据")
                 val idToken = GoogleIdTokenCredential.createFrom(cred.data).idToken
-                val t: ApiAuthTokens = apiCall { api.googleLogin(ApiGoogleLoginRequest(idToken)) }
+                val t: ApiAuthTokens = apiCall { api.googleLogin(ApiGoogleLoginRequest(idToken, android.provider.Settings.Secure.getString(activity.contentResolver, android.provider.Settings.Secure.ANDROID_ID), android.os.Build.MODEL)) }
                 tokens.save(t); onDone()
             } catch (e: CancellationException) { throw e
             } catch (_: GetCredentialCancellationException) { googleError = null
-            } catch (e: ApiFailure.Server) { googleError = if (e.status == 404 || e.status == 501) "服务端暂未开放 Google 登录" else e.lbMessage()
+            } catch (e: ApiFailure.Server) { googleError = when (e.error?.code) { "GOOGLE_UNCONFIGURED" -> "Google 登录未配置，请使用邮箱、手机号或通行密钥登录"; "GOOGLE_UNAVAILABLE" -> "Google 验证服务暂时不可用，请稍后重试"; else -> e.lbMessage() }
             } catch (e: Throwable) { googleError = (e as? ApiFailure)?.lbMessage() ?: e.message ?: "Google 登录失败" }
             finally { googleLoading = false }
         }
@@ -61,8 +65,8 @@ class GoogleSupportViewModel @Inject constructor(private val api: LinbitApi, pri
         supportLoading = true; supportError = null
         viewModelScope.launch {
             runCatching { apiCall { api.supportPublicConfig() } }
-                .onSuccess { c -> val url = c.chatUrl ?: c.helpCenterUrl
-                    if (url.isNullOrBlank()) supportError = "在线客服暂未配置，请登录后提交客服工单"
+                .onSuccess { c -> val url = c.entryUrl.takeIf { c.available && c.mode == "external" }
+                    if (url.isNullOrBlank()) supportError = "在线客服暂未开通，登录后可提交客服工单"
                     else runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.onFailure { supportError = "无法打开客服页面" } }
                 .onFailure { supportError = if (it is ApiFailure.Server && it.status in setOf(401, 403, 404, 501)) "在线客服暂未对游客开放，请登录后提交客服工单" else it.lbMessage() }
             supportLoading = false

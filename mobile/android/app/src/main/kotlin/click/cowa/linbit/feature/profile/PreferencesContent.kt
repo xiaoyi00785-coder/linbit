@@ -47,8 +47,9 @@ class AccountPreferencesViewModel @Inject constructor(private val api: LinbitApi
     }
 }
 
-/** 默认充值账户（接入点 GET/PUT account/deposit-target；字段见 docs/batch3-backend-fields.md）。 */
-@Serializable data class ApiDepositTarget(val account: String)
+/** 默认充值账户：GET/PUT/DELETE /assets/deposit-account（契约 android-companion.md §8）。 */
+@Serializable data class ApiDepositTarget(val account: String, val source: String? = null, val platformDefault: String? = null, val supported: List<String> = listOf("funding", "spot"))
+@Serializable data class ApiDepositTargetUpdate(val account: String)
 
 enum class DepositTarget(val key: String, val title: String, val desc: String) {
     FUNDING("funding", "资金账户", "充值后资产将自动转入资金账户"),
@@ -58,20 +59,16 @@ enum class DepositTarget(val key: String, val title: String, val desc: String) {
 
 @HiltViewModel
 class DepositTargetViewModel @Inject constructor(private val api: LinbitApi, private val tokens: TokenStore, val toast: click.cowa.linbit.ui.components.ToastCenter) : ViewModel() {
-    /** null = 尚未读到服务端设置；服务端未提供时 [unsupported] 为真，此时真实到账账户为资金账户。 */
-    var target by mutableStateOf<DepositTarget?>(null); private set
-    var unsupported by mutableStateOf(false); private set
+    var data by mutableStateOf<ApiDepositTarget?>(null); private set
+    val target: DepositTarget? get() = data?.let { d -> DepositTarget.entries.firstOrNull { it.key == d.account } }
     var error by mutableStateOf<String?>(null); private set
     var saving by mutableStateOf(false); private set
-    init { viewModelScope.launch { tokens.sessionVersion.collect { target = null; unsupported = false; if (tokens.loggedIn.value) load() } } }
-    fun load() { viewModelScope.launch { runCatching { apiCall { api.depositTarget() } }
-        .onSuccess { r -> target = DepositTarget.entries.firstOrNull { it.key == r.account } ?: DepositTarget.FUNDING; unsupported = false; error = null }
-        .onFailure { if (it is ApiFailure.Server && (it.status == 404 || it.status == 501)) { unsupported = true; target = DepositTarget.FUNDING; error = null } else error = it.lbMessage() } } }
-    fun select(t: DepositTarget, done: () -> Unit) { if (saving) return; saving = true; viewModelScope.launch {
-        runCatching { apiCall { api.updateDepositTarget(ApiDepositTarget(t.key)) } }
-            .onSuccess { r -> target = DepositTarget.entries.firstOrNull { it.key == r.account } ?: t; done() }
-            .onFailure { toast.show(if (it is ApiFailure.Server && (it.status == 404 || it.status == 501)) "服务端暂未开放该设置，充值仍存入资金账户" else it.lbMessage()) }
-        saving = false } }
+    init { viewModelScope.launch { tokens.sessionVersion.collect { data = null; error = null; if (tokens.loggedIn.value) load() } } }
+    fun load() { viewModelScope.launch { runCatching { apiCall { api.depositTarget() } }.onSuccess { data = it; error = null }.onFailure { error = it.lbMessage() } } }
+    fun select(t: DepositTarget, done: () -> Unit) = write(done) { api.updateDepositTarget(ApiDepositTargetUpdate(t.key)) }
+    fun followPlatform(done: () -> Unit) = write(done) { api.resetDepositTarget() }
+    private fun write(done: () -> Unit, call: suspend () -> ApiDepositTarget) { if (saving) return; saving = true; viewModelScope.launch {
+        runCatching { apiCall { call() } }.onSuccess { data = it; done() }.onFailure { toast.show(it.lbMessage()) }; saving = false } }
 }
 
 val LocalDepositTargetFactory = staticCompositionLocalOf<@Composable () -> DepositTargetViewModel> { { hiltViewModel() } }
@@ -115,8 +112,10 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
                     vm.error?.let { Text(it, color = LB.p.down, style = lb(FontSize.caption)); LbButton("重试", onClick = vm::load) }
                 }
                 else -> {
-                    DepositTarget.entries.forEach { t -> SheetOptionRow(t.title, depositVm.target == t, Modifier.padding(vertical = 4.dp), subtitle = t.desc) { depositVm.select(t) { sheet = null } } }
-                    if (depositVm.unsupported) Text("服务端暂未开放默认充值账户设置，当前充值存入资金账户。", Modifier.padding(top = 8.dp), style = lb(FontSize.caption), color = LB.p.textSecondary)
+                    val supported = depositVm.data?.supported.orEmpty()
+                    DepositTarget.entries.filter { it.key in supported }.forEach { t -> SheetOptionRow(t.title, depositVm.target == t, Modifier.padding(vertical = 4.dp), subtitle = t.desc) { depositVm.select(t) { sheet = null } } }
+                    depositVm.data?.let { d -> if (d.source == "user") SheetOptionRow("跟随平台默认（" + (DepositTarget.entries.firstOrNull { it.key == d.platformDefault }?.title ?: "资金账户") + "）", false, Modifier.padding(vertical = 4.dp), subtitle = "恢复平台默认入账账户") { depositVm.followPlatform { sheet = null } } }
+                    Text("仅影响之后的链上充值入账账户，不会划转已有余额。", Modifier.padding(top = 8.dp), style = lb(FontSize.caption), color = LB.p.textSecondary)
                     depositVm.error?.let { Text(it, Modifier.padding(top = 8.dp), color = LB.p.down, style = lb(FontSize.caption)) }
                 }
             }

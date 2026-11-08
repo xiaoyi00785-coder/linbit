@@ -15,6 +15,7 @@ import click.cowa.linbit.core.storage.ThemeMode
 import click.cowa.linbit.feature.assets.*
 import click.cowa.linbit.feature.profile.*
 import click.cowa.linbit.feature.more.*
+import click.cowa.linbit.feature.markets.*
 import click.cowa.linbit.ui.theme.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
@@ -106,7 +107,7 @@ class Batch3VisualEvidenceTest {
     }
     private fun prefs(open: String, name: String) {
         api.route("GET", "/account/preferences", """{"quoteCurrency":"USD","defaultQuoteCurrency":"USD","supportedQuoteCurrencies":["USD","CNY"]}""")
-        api.route("GET", "/account/deposit-target", """{"code":"NOT_FOUND","message":"not found"}""", 404)
+        api.route("GET", "/assets/deposit-account", """{"account":"funding","source":"platform","platformDefault":"funding","supported":["funding","spot"]}""")
         val vm = AccountPreferencesViewModel(fixtures.retrofit, fixtures.tokens)
         val dvm = DepositTargetViewModel(fixtures.retrofit, fixtures.tokens, fixtures.toast)
         val profile = fixtures.profile()
@@ -120,4 +121,32 @@ class Batch3VisualEvidenceTest {
     @Test fun themeSettingsSheet() = prefs("主题设置", "b3-theme-settings")
     @Test fun colorSheet() = prefs("颜色偏好", "b3-color")
     @Test fun depositTargetSheet() = prefs("默认充值账户", "b3-deposit-target")
+    @Test fun fiatUnavailable() {
+        api.route("GET", "/fiat/buy", """{"configured":false,"available":false,"reason":"unconfigured","quotes":false,"orders":false,"charged":false}""")
+        val vm = FiatBuyViewModel(fixtures.retrofit)
+        render { QuickBuyScreen({}, vm) }
+        rule.waitUntil(5000) { vm.status != null }
+        rule.onNodeWithText("暂无可用的支付渠道").assertExists()
+        capture("b3-fiat-unconfigured")
+    }
+    @Test fun academyEmpty() {
+        api.route("GET", "/academy/categories", """{"items":[]}""")
+        api.route("GET", "/academy/articles?locale=zh-CN&limit=20", """{"items":[]}""")
+        val vm = AcademyViewModel(fixtures.retrofit)
+        render { AcademyTab("", vm) }
+        rule.waitUntil(5000) { vm.articles != null }
+        rule.onNodeWithText("暂无文章").assertExists()
+        capture("b3-academy-empty")
+    }
+    @Test fun pnlHistory() {
+        val to = java.time.LocalDate.now(java.time.ZoneOffset.UTC); val from = to.minusDays(29)
+        val pts = (0 until 30).joinToString(",") { i -> val pnl = listOf("0","1.5","-0.8","2.1","0")[i % 5]; """{"date":"${from.plusDays(i.toLong())}","pnl":"$pnl","realizedPnl":"$pnl","funding":"0","fee":"0","liquidationFee":"0","insuranceCover":"0","tradeCount":${i % 3}}""" }
+        api.route("GET", "/futures/pnl/history?from=$from&to=$to", """{"asset":"USDT","realizedPnlAvailable":true,"points":[$pts],"totals":{"date":"","pnl":"16.8","realizedPnl":"16.8","funding":"0","fee":"0","liquidationFee":"0","insuranceCover":"0","tradeCount":30}}""")
+        api.route("GET", "/spot/pnl/history?from=$from&to=$to", """{"realizedPnlAvailable":false,"points":[],"totals":{"date":"","quoteVolume":"0","tradeCount":0,"nonUsdtTradeCount":0,"realizedPnl":null}}""")
+        val vm = PnlHistoryViewModel(fixtures.retrofit, fixtures.tokens)
+        render { androidx.compose.foundation.layout.Column(Modifier.padding(16.dp)) { PnlHistorySection(vm) } }
+        rule.waitUntil(5000) { vm.futures != null }
+        rule.onNodeWithText("交易统计").assertExists()
+        capture("b3-pnl-history")
+    }
 }
