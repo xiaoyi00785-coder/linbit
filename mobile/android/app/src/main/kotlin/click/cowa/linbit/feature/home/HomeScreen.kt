@@ -97,6 +97,7 @@ fun HomeScreen(
     onSearch: () -> Unit = {},
     onLogin: () -> Unit = {},
     onOpenLink: (String) -> Unit = {},
+    onScan: () -> Unit = {},
 ) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
@@ -110,7 +111,7 @@ fun HomeScreen(
     val reservesData by vm.reserves.collectAsStateWithLifecycle()
     Box(modifier) {
         HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh,
-            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() })
+            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() }, onScan = onScan)
         if (!popupShown && popups.isNotEmpty()) ActivityPopup(popups, p.isDark,
             onOpen = { pl -> popupShown = true; PopupFrequency.markShown(ctx, popups); pl.linkUrl?.let(onOpenLink) },
             onDismiss = { popupShown = true; PopupFrequency.markShown(ctx, popups) })
@@ -126,7 +127,7 @@ fun HomeContent(
     onOpenAvatar: () -> Unit, onOpenMarkets: () -> Unit, onOpenMore: () -> Unit, onSoon: (String) -> Unit, onDeposit: () -> Unit,
     onFeature: (String) -> Unit = {}, onNotifications: () -> Unit = {}, onSupport: () -> Unit = {}, unread: Int = 0,
     onRefresh: () -> Unit, modifier: Modifier = Modifier,
-    onSearch: () -> Unit = {}, onLogin: () -> Unit = {}, onOpenLink: (String) -> Unit = {}, onReserves: () -> Unit = {},
+    onSearch: () -> Unit = {}, onLogin: () -> Unit = {}, onOpenLink: (String) -> Unit = {}, onReserves: () -> Unit = {}, onScan: () -> Unit = {},
 ) {
     val p = LB.p
     var hide by rememberSaveable { mutableStateOf(false) }
@@ -150,7 +151,7 @@ fun HomeContent(
     LaunchedEffect(s.earn.size) { earnPage = 0; while (s.earn.size > 1) { delay(4_000); earnPage = (earnPage + 1) % s.earn.size } }
 
     Column(modifier.fillMaxSize().background(p.bg)) {
-        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread, onSearch, s.searchHint ?: "BTC")
+        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread, onSearch, s.searchHint ?: "BTC", onScan)
         PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
             Column(
             Modifier
@@ -185,7 +186,7 @@ private fun Hairline(modifier: Modifier = Modifier) {
 
 // ── 顶栏：Logo / 搜索 / 扫码 / 客服 / 通知（ref/1：左上为品牌 Logo，搜索框 31 高，3 个 22 图标）──
 @Composable
-private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int, onSearch: () -> Unit, hint: String) {
+private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int, onSearch: () -> Unit, hint: String, onScan: () -> Unit) {
     val p = LB.p
     Row(
         Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH),
@@ -202,7 +203,7 @@ private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> 
             LbIcon(R.drawable.ic_search, 15.dp, p.textTertiary)
             Text(hint, style = lb(FontSize.label), color = p.textTertiary, maxLines = 1)
         }
-        LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable { onSoon("扫一扫即将开放") })
+        LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable(onClick = onScan))
         LbIcon(R.drawable.ic_headset, modifier = Modifier.pressable { onSupport() })
         if (loggedIn) Box(Modifier.pressable(scale = 1f, onClick = onNotifications)) {
             LbIcon(R.drawable.ic_bell)

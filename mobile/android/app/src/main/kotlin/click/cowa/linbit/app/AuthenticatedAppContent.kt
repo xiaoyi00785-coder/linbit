@@ -56,6 +56,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
     var moreMenu by rememberSaveable { mutableStateOf(false) }
     var marketsTop by rememberSaveable { mutableStateOf(1) }
     var marketsSearch by rememberSaveable { mutableStateOf(false) }
+    var scan by rememberSaveable { mutableStateOf(false) }
     var hideTabBar by remember { mutableStateOf(false) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     fun openLink(url: String) {
@@ -110,7 +111,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         unread = unread,
                         onSearch = { marketsTop = 1; marketsSearch = true; tab = MainTab.MARKETS },
                         onLogin = { auth = "login" },
-                        onOpenLink = ::openLink,
+                        onOpenLink = ::openLink, onScan = { scan = true },
                     )
                     MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), initialTop = marketsTop, openSearch = marketsSearch, onSearchConsumed = { marketsSearch = false },
                         loggedIn = loggedIn, onLogin = { auth = "login" }, onOverlay = { hideTabBar = it }, onOpenTrade = { kind, sym ->
@@ -193,6 +194,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
                 "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol, vm = LocalTradeHistoryFactory.current.invoke(), onDialogWindow = onDialogWindow)
             }
+            if (scan) click.cowa.linbit.feature.scan.ScanScreen { scan = false }
             auth?.let { start -> if (authVm != null) AuthFlow(startRegister = start == "register", onClose = { auth = null }, vm = authVm, onDialogWindow = onDialogWindow) else AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
             ToastOverlay(vm.toast)
             if (splash) SplashOverlay(reduceMotion = false, onFinish = { splash = false })
