@@ -316,6 +316,8 @@ class EventContractViewModel @Inject constructor(
     }
 
     fun validation(): String? {
+        if (disabled || cfg?.enabled == false) return "事件合约已暂停"
+        if (cfg == null || product == null) return "产品信息不可用，请刷新后重试"
         if (product?.paused == true) return "该标的已暂停"
         if (product?.priceAvailable == false) return "指数价格暂不可用"
         return EventContractLogic.validateStake(stakeText, cfg?.minStake, cfg?.maxStake)
@@ -382,7 +384,7 @@ fun EventContractScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             EmptyState("事件合约") {
-                Text("猜涨跌，到期按指数价结算，敬请期待", style = lb(FontSize.small), color = p.textSecondary, textAlign = TextAlign.Center)
+                Text("当前服务已暂停事件合约，无法创建订单", style = lb(FontSize.small), color = p.textSecondary, textAlign = TextAlign.Center)
             }
         }
         else -> Column(Modifier.fillMaxSize().imePadding().padding(bottom = bottomInset).verticalScroll(rememberScrollState())) {

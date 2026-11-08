@@ -236,7 +236,7 @@ fun WelfareScreen(
                     }
                 }
             } else {
-                EmptyState("暂无进行中的新人活动，敬请期待", Modifier.fillMaxWidth().padding(vertical = 36.dp))
+                EmptyState("暂无进行中的新人活动", Modifier.fillMaxWidth().padding(vertical = 36.dp))
             }
             if (loggedIn && s.bonus != null) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
