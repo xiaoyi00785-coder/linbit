@@ -129,6 +129,7 @@ fun AssetsScreen(
                     onPnl = { onOpenAssetFeature("pnl") },
                     onQuickBuy = { onOpenAssetFeature("quickbuy") },
                 )
+                if (s.tab == 3) ConvertEntry { onOpenAssetFeature("convert") }
                 if (s.tab == 2) FuturesCard(vm, s) else AssetList(
                     vm, s, showSearch,
                     onSearch = { showSearch = it },
@@ -193,12 +194,20 @@ private fun OverviewEmpty(onDeposit: () -> Unit, onFutures: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))
         Spacer(Modifier.height(12.dp))
-        Text("责任与守护", style = lb(FontSize.title, FontWeight.Bold), color = p.textPrimary)
+        Text("责任与保障", style = lb(FontSize.title, FontWeight.Bold), color = p.textPrimary)
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("资产安全，我们的第一责任", style = lb(FontSize.label), color = p.textPrimary)
-                Text("查看更多", style = lb(FontSize.small), color = p.brand)
+                Text("资产安全是我们的首要任务", style = lb(FontSize.label), color = p.textPrimary)
+                Text("了解更多", Modifier.padding(top = 6.dp), style = lb(FontSize.small), color = p.brand)
             }
+            LbIcon(R.drawable.ic_shield, 40.dp, p.textSecondary)
+        }
+        Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("帮助中心与 7×24 小时客服", style = lb(FontSize.label), color = p.textPrimary)
+                Text("立即前往", Modifier.padding(top = 6.dp), style = lb(FontSize.small), color = p.brand)
+            }
+            LbIcon(R.drawable.ic_headset, 40.dp, p.textSecondary)
         }
     }
 }
@@ -219,6 +228,7 @@ private fun Header(hide: Boolean, total: java.math.BigDecimal, cny: java.math.Bi
             Text(if (hide) "****" else Fmt.amount(total, 2), style = lbNum(32.sp, FontWeight.Bold), color = p.textPrimary)
             Spacer(Modifier.width(6.dp))
             Text("USDT", style = lb(FontSize.small), color = p.textPrimary)
+            LbIcon(R.drawable.ic_caret_down, 10.dp, p.textPrimary, Modifier.padding(start = 2.dp, bottom = 9.dp))
         }
         val fiat = if (hide) "≈ ****" else "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(total, 2, cny)
         if (fiat != null) Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
@@ -300,8 +310,9 @@ private fun AssetList(
                 LbIcon(R.drawable.ic_sort, 18.dp, p.textSecondary, Modifier.pressable(scale = 1f, onClick = onFilter))
             }
         }
-        if (rows.isEmpty()) EmptyState(if (s.query.isEmpty()) "暂无资产" else "暂无相关币种", Modifier.padding(vertical = 40.dp))
-        rows.forEach { b ->
+        val all = rows + vm.zeroRows()
+        if (all.isEmpty()) EmptyState(if (s.query.isEmpty()) "暂无资产" else "暂无相关币种", Modifier.padding(vertical = 40.dp))
+        all.forEach { b ->
             Row(
                 Modifier.fillMaxWidth().height(60.dp).pressable(scale = 1f) { onOpenAsset(b.asset) }.padding(horizontal = Spacing.pageH),
                 verticalAlignment = Alignment.CenterVertically,
@@ -327,16 +338,18 @@ private fun AssetList(
 private fun FuturesCard(vm: AssetsViewModel, s: AssetsUiState) {
     val p = LB.p
     val f = s.futures
+    // 参考：账户权益 / 未实现盈亏 / 可用余额 · 体验金 / 抵扣金 / 仓位保证金 · 委托成本；每格下方 ≈ 法币
+    val dec = click.cowa.linbit.core.util.Dec::parse
+    val posMargin = f?.let { (dec(it.crossPositionMargin) + dec(it.isolatedMargin)).toPlainString() }
+    val upnl = f?.let { (dec(it.crossUnrealizedPnl) + dec(it.isolatedUnrealizedPnl)).toPlainString() }
     val cells = listOf(
         "账户权益(USDT)" to f?.marginBalance,
-        "未实现盈亏" to f?.crossUnrealizedPnl,
+        "未实现盈亏" to upnl,
         "可用余额" to f?.availableBalance,
-        "钱包余额" to f?.walletBalance,
-        "委托保证金" to f?.orderMargin,
-        "全仓保证金" to f?.crossPositionMargin,
-        "维持保证金" to f?.crossMaintenanceMargin,
-        "逐仓保证金" to f?.isolatedMargin,
-        "逐仓未实现盈亏" to f?.isolatedUnrealizedPnl,
+        "体验金" to null, // 后端 futures/account 未返回体验金字段 → --
+        "抵扣金" to null,
+        "仓位保证金" to posMargin,
+        "委托成本" to f?.orderMargin,
     )
     Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp)) {
         Box(Modifier.fillMaxWidth().height(8.dp).background(p.fill))
@@ -349,10 +362,12 @@ private fun FuturesCard(vm: AssetsViewModel, s: AssetsUiState) {
         }
         cells.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
-                row.forEach { (k, v) ->
-                    Column(Modifier.weight(1f)) {
+                row.forEachIndexed { i, (k, v) ->
+                    val align = when (i) { 0 -> Alignment.Start; 1 -> Alignment.CenterHorizontally; else -> Alignment.End }
+                    Column(Modifier.weight(1f), horizontalAlignment = align) {
                         Text(k, style = lb(11.sp), color = p.textSecondary, maxLines = 1)
-                        Text(if (s.hideAmount) "****" else Fmt.amount(click.cowa.linbit.core.util.Dec.parse(v), 2), style = lbNum(FontSize.label), color = p.textPrimary)
+                        Text(if (s.hideAmount) "****" else v?.let { Fmt.amount(dec(it), 2) } ?: "--", style = lbNum(FontSize.label), color = p.textPrimary)
+                        Text(if (s.hideAmount) "≈ ****" else "≈ " + (v?.let { click.cowa.linbit.core.storage.QuoteDisplay.format(dec(it), 2, s.cnyRate) } ?: "--"), style = lbNum(10.sp), color = p.textSecondary)
                     }
                 }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -405,5 +420,21 @@ private fun MethodCard(title: String, sub: String, badge: String?, onClick: () -
                 color = p.brand,
             )
         }
+    }
+}
+
+
+/** 现货账户「现货闪兑 0 手续费 ›」入口卡（参考 spot 账户页）。 */
+@Composable
+private fun ConvertEntry(onClick: () -> Unit) {
+    val p = LB.p
+    Row(Modifier.padding(horizontal = Spacing.pageH).padding(top = 16.dp).fillMaxWidth().height(44.dp)
+        .border(0.5.dp, p.border, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onClick).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        LbIcon(R.drawable.ic_cv_inverse, 16.dp, p.textPrimary)
+        Text("现货闪兑", Modifier.padding(start = 8.dp), style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+        Text("0 手续费", Modifier.padding(start = 8.dp).background(p.brand, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp), style = lb(10.sp, FontWeight.Medium), color = androidx.compose.ui.graphics.Color.Black)
+        Spacer(Modifier.weight(1f))
+        LbIcon(R.drawable.ic_chevron_right, 14.dp, p.textSecondary)
     }
 }

@@ -75,4 +75,17 @@ class Batch4VisualEvidenceTest {
         rule.onNodeWithText("资金").performClick(); rule.waitForIdle()
         capture("b4-assets-funding-holdings")
     }
+    @Test fun assetsZeroTabs() {
+        api.route("GET", "/assets/balances?account=spot&pageSize=200", """{"items":[],"page":1,"pageSize":200,"total":0}""")
+        api.route("GET", "/assets/balances?account=funding&pageSize=200", """{"items":[],"page":1,"pageSize":200,"total":0}""")
+        api.route("GET", "/futures/account", """{"asset":"USDT","walletBalance":"0","marginBalance":"0","availableBalance":"0","crossUnrealizedPnl":"0"}""")
+        api.route("GET", "/wallet/networks", """{"networks":[{"asset":"BTC","network":"BTC"},{"asset":"ETH","network":"ETH"},{"asset":"TRX","network":"TRON"},{"asset":"USDT","network":"TRON"}]}""")
+        val vm = fixtures.assets()
+        render { AssetsScreen(60.dp, {}, click.cowa.linbit.data.assets.AssetsNav(), vm = vm) }
+        rule.waitUntil(5000) { !vm.state.value.loading }
+        capture("b4-assets-zero-overview")
+        listOf("资金" to "funding", "合约" to "futures", "现货" to "spot").forEach { (t, n) ->
+            rule.onAllNodesWithText(t).onFirst().performClick(); rule.waitForIdle(); capture("b4-assets-zero-$n")
+        }
+    }
 }

@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class AssetsUiState(
+    /** 资金账户可充值币种（/wallet/networks 去重），零余额时按参考列出 0.00 行。 */
+    val listedFunding: List<String> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
     val spot: List<ApiBalance> = emptyList(),
@@ -88,6 +90,19 @@ class AssetsViewModel @Inject constructor(
         return AssetsLogic.filterBalances(src, s.query, s.hideSmall, ::usd)
     }
 
+    /** 参考：账户无持仓时仍列出可交易/可充值币种的 0.00 行（真实列表 + 真实零余额，不编造金额）。 */
+    fun zeroRows(): List<ApiBalance> {
+        val s = _s.value
+        if (s.query.isNotEmpty() || s.hideSmall) return emptyList()
+        val have = rows().map { it.asset }.toSet()
+        val names = when (s.tab) {
+            1 -> s.listedFunding
+            3 -> market.state.value.spot.filter { it.quote == "USDT" }.map { it.base } .plus("USDT").distinct().sorted()
+            else -> emptyList()
+        }
+        return names.filter { it !in have }.map { ApiBalance(asset = it, free = "0", locked = "0", total = "0.00") }
+    }
+
     fun totalUsdt(): BigDecimal {
         val s = _s.value
         return when (s.tab) {
@@ -118,9 +133,10 @@ class AssetsViewModel @Inject constructor(
                 val spot = apiCall { api.balances(account = "spot", pageSize = 200) }.items
                 val funding = runCatching { apiCall { api.balances(account = "funding", pageSize = 200) }.items }.getOrDefault(emptyList())
                 val futures = runCatching { apiCall { api.futuresAccount() } }.getOrNull()
+                val listed = runCatching { apiCall { api.walletNetworks() }.networks.mapNotNull { it.asset }.distinct().sorted() }.getOrDefault(_s.value.listedFunding)
                 val rate = market.state.value.cnyRate ?: _s.value.cnyRate
                 _s.value = _s.value.copy(
-                    loading = false, error = null, spot = spot, funding = funding, futures = futures, cnyRate = rate,
+                    loading = false, error = null, spot = spot, funding = funding, futures = futures, cnyRate = rate, listedFunding = listed,
                 )
             } catch (e: Exception) {
                 _s.value = _s.value.copy(loading = false, error = e.lbMessage())
