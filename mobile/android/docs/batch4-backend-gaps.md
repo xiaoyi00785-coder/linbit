@@ -6,7 +6,7 @@
 - 闪兑记录页无筛选（参考有筛选图标）；`GET /convert/orders` 无 asset/时间筛选参数。
 
 ## 首页
-- 参考登录态榜单下方有「公告 / 快讯 / 学院」。后端无公告、快讯接口 → 前两个 Tab 显示真实空态；学院取 `/academy/articles?limit=5`。
+- 参考登录态榜单下方有「公告 / 快讯 / 学院」。冻结候选 be357384 已有 `/announcements` 及详情接口，Android 尚未接入；不能再列为后端缺接口。无独立快讯契约；学院取 `/academy/articles?limit=5`。候选未部署，不能据此声称生产可用。
 - 榜单 TradFi 分组用 `/tradfi/assets` 的 symbol 过滤合约行情。
 - 首页轮播运营位为空时本地兜底为 福利中心 / 跟单 / 策略交易 三张（自绘矢量配图，指向 App 内真实页面）；有后端 carousel 图片时用后端图片。
 
@@ -33,8 +33,8 @@
 - 币种详情右上「记录」：无按币种过滤的资金流水接口，暂未放图标。
 
 ## 福利中心
-- `GET /home/newcomer` 的 `claimable` 返回数字 0，契约为字符串；客户端已开启宽松解析兼容，后端应按契约返回字符串。
-- `GET /futures/bonus` 的 `available` 返回对象 `{deduction, trial}`，契约为十进制字符串；当前解析失败，福利页不显示体验金区块（不影响主体）。需统一契约。
+- `GET /home/newcomer` 的 `claimable` 旧观察为数字；冻结候选 be357384 正式为字符串计数 `"0"/"1"`，不是金额；`completed` 为 integer。Android DTO 已是 String，宽松 number 仅兼容旧生产，不反改正式类型。
+- `GET /futures/bonus` 的 `available` 正式冻结契约是 `{trial, deduction}` 十进制字符串对象；Android 双 spec/生成 DTO 仍是 String，属于前端适配缺口，不应要求后端改回标量。留下一批同步 spec、重生成及福利消费方。
 - 无「每日任务」接口：每日任务标签显示「暂无每日任务」。
 - 新人任务仅有单一有效期（days），参考的 7/30/90 天分档无后端来源，只显示实际天数。
 - 无理财/现货类新人任务：对应筛选为空态。

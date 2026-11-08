@@ -10,6 +10,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -34,6 +38,9 @@ import click.cowa.linbit.ui.components.*
 import click.cowa.linbit.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -42,7 +49,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 
-/** 工单操作状态；所有请求由用户点击触发，无自动创建、回复或关闭。 */
+/** 工单操作状态；前台仅自动读取详情，创建、回复和关闭仍须用户点击。 */
 data class SupportState(
     val items: List<ApiSupportTicket> = emptyList(),
     val detail: ApiSupportTicket? = null,
@@ -51,6 +58,7 @@ data class SupportState(
     val busy: Boolean = false,
     val cooldown: Int = 0,
     val closedByConflict: Boolean = false,
+    val detailRefreshError: String? = null,
 )
 
 @HiltViewModel
@@ -58,10 +66,10 @@ class SupportViewModel @Inject constructor(private val api: LinbitApi, private v
     private val _state = MutableStateFlow(SupportState())
     val state: StateFlow<SupportState> = _state
     val loggedIn get() = tokens.loggedIn
+    val sessionVersion get() = tokens.sessionVersion
     var status: String? = null
     internal var holdEvidence: Boolean = false
 
-    init { viewModelScope.launch { tokens.sessionVersion.collect { if (!holdEvidence) _state.value = SupportState() } } }
 
     /** 离屏证据：工单列表示例。 */
     internal fun seedEvidenceSupport(items: List<ApiSupportTicket>) {
@@ -82,14 +90,69 @@ class SupportViewModel @Inject constructor(private val api: LinbitApi, private v
         }
     }
 
-    fun loadDetail(id: String) {
-        _state.value = _state.value.copy(loading = true, error = null)
-        viewModelScope.launch {
-            runCatching { apiCall { api.supportTicket(id) } }
-                .onSuccess { _state.value = _state.value.copy(detail = it, loading = false) }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = it.lbMessage()) }
+    private var detailEpoch = 0L
+    private var activeDetail: String? = null
+    private var detailPoll: Job? = null
+    private var detailRequest: Job? = null
+    private var mutationVersion = 0L
+    internal var detailRefreshMillis = 10_000L
+
+    init { viewModelScope.launch { tokens.sessionVersion.collect { if (!holdEvidence) { stopDetail(); _state.value = SupportState() } } } }
+
+    /** One foreground lease and at most one request; no timer exists while hidden/backgrounded. */
+    fun startDetail(id: String) {
+        if (!tokens.loggedIn.value || holdEvidence) return
+        if (activeDetail == id && detailPoll?.isActive == true) return
+        stopDetail()
+        activeDetail = id
+        val epoch = detailEpoch
+        if (_state.value.detail?.id != id) _state.value = _state.value.copy(detail = null, loading = true, error = null, detailRefreshError = null)
+        detailPoll = viewModelScope.launch {
+            while (isActive) {
+                requestDetail(id, epoch)?.join()
+                delay(detailRefreshMillis)
+            }
         }
     }
+
+    fun stopDetail(id: String? = null) {
+        if (id != null && activeDetail != id) return
+        detailEpoch++
+        activeDetail = null
+        detailPoll?.cancel(); detailPoll = null
+        detailRequest?.cancel(); detailRequest = null
+    }
+
+    /** Retry shares the same in-flight job as the polling loop, never queues duplicate reads. */
+    fun loadDetail(id: String) { if (activeDetail == id) requestDetail(id, detailEpoch) }
+
+    private fun requestDetail(id: String, epoch: Long): Job? {
+        if (activeDetail != id || epoch != detailEpoch || !tokens.loggedIn.value || _state.value.busy) return null
+        detailRequest?.takeIf { it.isActive }?.let { return it }
+        val session = tokens.sessionVersion.value
+        val revision = mutationVersion
+        fun current() = activeDetail == id && detailEpoch == epoch && tokens.loggedIn.value &&
+            tokens.sessionVersion.value == session && mutationVersion == revision && !_state.value.busy
+        detailRequest = viewModelScope.launch {
+            if (_state.value.detail == null) _state.value = _state.value.copy(loading = true, error = null)
+            try {
+                val ticket = apiCall { api.supportTicket(id) }
+                if (current() && ticket.id == id) {
+                    val previous = _state.value
+                    _state.value = previous.copy(detail = ticket, loading = false,
+                        error = if (previous.detail == null) null else previous.error, detailRefreshError = null)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Throwable) {
+                if (current()) _state.value = if (_state.value.detail == null)
+                    _state.value.copy(loading = false, error = e.lbMessage())
+                else _state.value.copy(detailRefreshError = e.lbMessage())
+            }
+        }
+        return detailRequest
+    }
+
+    override fun onCleared() { stopDetail() }
 
     private suspend fun upload(images: List<SupportImage>): List<String> = images.map { image ->
         apiCall {
@@ -101,40 +164,56 @@ class SupportViewModel @Inject constructor(private val api: LinbitApi, private v
 
     fun create(category: ApiSupportTicketCategory, subject: String, content: String, images: List<SupportImage>, onCreated: (String) -> Unit) {
         if (_state.value.busy) return
+        mutationVersion++; detailRequest?.cancel(); detailRequest = null
+        val mutationSession = tokens.sessionVersion.value
         _state.value = _state.value.copy(busy = true, error = null)
         viewModelScope.launch {
             runCatching {
                 val ids = upload(images)
                 apiCall { api.createSupportTicket(ApiSupportCreateTicketRequest(category, subject.trim(), content.trim(), ids.takeIf { it.isNotEmpty() })) }
             }.onSuccess {
+                if (tokens.sessionVersion.value != mutationSession || !tokens.loggedIn.value) return@onSuccess
                 toast.show("工单已提交", ToastCenter.Kind.SUCCESS)
                 _state.value = _state.value.copy(busy = false, detail = it)
                 onCreated(it.id)
-            }.onFailure { fail(it) }
+            }.onFailure { if (tokens.sessionVersion.value == mutationSession && tokens.loggedIn.value) fail(it) }
         }
     }
 
+    private fun canUpdateTicket(id: String) = activeDetail == id ||
+        (activeDetail == null && _state.value.detail?.id == id)
+
     fun reply(id: String, content: String, images: List<SupportImage>, onDone: () -> Unit) {
         if (_state.value.busy) return
+        mutationVersion++; detailRequest?.cancel(); detailRequest = null
+        val mutationSession = tokens.sessionVersion.value
         _state.value = _state.value.copy(busy = true, error = null)
         viewModelScope.launch {
             runCatching {
                 val ids = upload(images)
                 apiCall { api.replySupportTicket(id, ApiSupportReplyTicketRequest(content.trim(), ids.takeIf { it.isNotEmpty() })) }
             }.onSuccess {
-                _state.value = _state.value.copy(busy = false, detail = it, closedByConflict = false)
+                if (tokens.sessionVersion.value != mutationSession || !tokens.loggedIn.value) return@onSuccess
+                _state.value = if (canUpdateTicket(id)) _state.value.copy(busy = false, detail = it, closedByConflict = false)
+                else _state.value.copy(busy = false)
                 onDone()
-            }.onFailure { fail(it) }
+            }.onFailure { if (tokens.sessionVersion.value == mutationSession && tokens.loggedIn.value) {
+                if (canUpdateTicket(id)) fail(it) else _state.value = _state.value.copy(busy = false)
+            } }
         }
     }
 
     fun close(id: String) {
         if (_state.value.busy) return
+        mutationVersion++; detailRequest?.cancel(); detailRequest = null
+        val mutationSession = tokens.sessionVersion.value
         _state.value = _state.value.copy(busy = true)
         viewModelScope.launch {
             runCatching { apiCall { api.closeSupportTicket(id) } }
-                .onSuccess { toast.show("工单已关闭", ToastCenter.Kind.SUCCESS); _state.value = _state.value.copy(busy = false, detail = it) }
-                .onFailure { fail(it) }
+                .onSuccess { if (tokens.sessionVersion.value != mutationSession || !tokens.loggedIn.value) return@onSuccess; if (canUpdateTicket(id)) { toast.show("工单已关闭", ToastCenter.Kind.SUCCESS); _state.value = _state.value.copy(busy = false, detail = it) } else _state.value = _state.value.copy(busy = false) }
+                .onFailure { if (tokens.sessionVersion.value == mutationSession && tokens.loggedIn.value) {
+                    if (canUpdateTicket(id)) fail(it) else _state.value = _state.value.copy(busy = false)
+                } }
         }
     }
 
@@ -253,16 +332,43 @@ private fun SupportCreate(vm: SupportViewModel, onBack: () -> Unit, onCreated: (
     }
 }
 
+/** Uses RESUMED, not merely STARTED: pause, route disposal and account changes stop polling. */
 @Composable
-private fun SupportTicketDetail(id: String, vm: SupportViewModel, onBack: () -> Unit) {
+internal fun SupportDetailLifecycle(id: String, vm: SupportViewModel) {
+    val owner = LocalLifecycleOwner.current
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+    DisposableEffect(owner, id, vm, session) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> vm.startDetail(id)
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> vm.stopDetail(id)
+                else -> Unit
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) vm.startDetail(id)
+        onDispose { owner.lifecycle.removeObserver(observer); vm.stopDetail(id) }
+    }
+}
+
+internal class SupportDetailDraft {
+    val text = mutableStateOf("")
+    val images = mutableStateOf<List<SupportImage>>(emptyList())
+    val scroll = ScrollState(0)
+}
+
+@Composable
+internal fun SupportTicketDetail(id: String, vm: SupportViewModel, onBack: () -> Unit,
+    draft: SupportDetailDraft = remember(id) { SupportDetailDraft() }) {
     val s by vm.state.collectAsStateWithLifecycle()
-    var text by remember { mutableStateOf("") }
-    var images by remember { mutableStateOf<List<SupportImage>>(emptyList()) }
+    var text by draft.text
+    var images by draft.images
+    val scroll = draft.scroll
     var confirmClose by remember { mutableStateOf(false) }
     val picker = supportImagePicker(images.size, !s.busy && s.cooldown == 0) { result ->
         result.onSuccess { images = images + it }.onFailure { vm.toast.show(it.message ?: "无法读取所选图片", ToastCenter.Kind.ERROR) }
     }
-    LaunchedEffect(id) { vm.loadDetail(id) }
+    SupportDetailLifecycle(id, vm)
     BackHandler(enabled = s.busy) {}
     MoreFrame("工单详情", onBack, trailing = {
         if (s.detail != null && s.detail?.status != ApiSupportTicketStatus.CLOSED && !s.closedByConflict)
@@ -273,12 +379,13 @@ private fun SupportTicketDetail(id: String, vm: SupportViewModel, onBack: () -> 
             s.detail == null -> MoreError(s.error ?: "", { vm.loadDetail(id) }, Modifier.weight(1f))
             else -> {
                 val ticket = s.detail!!
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.weight(1f).verticalScroll(scroll).padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Row {
                         Text(ticket.subject, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = LB.p.textPrimary)
                         SupportStatus(if (s.closedByConflict) ApiSupportTicketStatus.CLOSED else ticket.status)
                     }
                     Text("${supportCategory(ticket.category)} · 工单号 ${ticket.id} · ${formatTime(ticket.createdAt)}", style = lb(FontSize.small), color = LB.p.textTertiary)
+                    s.detailRefreshError?.let { Text("刷新失败，保留已加载记录：$it", style = lb(FontSize.small), color = LB.p.textSecondary) }
                     ticket.messages.orEmpty().forEach { message ->
                         val mine = message.author == ApiSupportTicketMessage.Author.USER
                         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
