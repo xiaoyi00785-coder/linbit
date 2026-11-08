@@ -29,6 +29,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -409,12 +415,18 @@ internal fun EventChart(vm: EventContractViewModel) {
     LaunchedEffect(vm.symbol, interval) {
         err = null; candles = null
         while (true) {
-            try { candles = vm.klines(interval); err = null } catch (e: Throwable) { if (candles == null) err = e.lbMessage() }
+            try { candles = vm.klines(interval).sortedBy { it.timeMs }.distinctBy { it.timeMs }; err = null } catch (e: Throwable) { if (candles == null) err = e.lbMessage() }
             delay(10_000)
         }
     }
     val pageH = Spacing.pageH
     var showInd by remember { mutableStateOf(false) }
+    var showDrawing by remember { mutableStateOf(false) }
+    val drawingBook = remember { ChartDrawingBook() }
+    val drawingState = remember(vm.symbol, interval) { drawingBook.state(vm.symbol,interval) }
+    var visibleCount by remember(vm.symbol, interval) { mutableStateOf(60) }
+    LaunchedEffect(vm.symbol,interval) { drawingState.cancelDraft() }
+    if (showDrawing) ChartDrawingSheet(drawingState) { showDrawing=false }
     Row(Modifier.fillMaxWidth().padding(start = pageH - 4.dp, end = pageH).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         EV_INTERVALS.forEach { (k, label) ->
             val on = k == interval
@@ -423,7 +435,7 @@ internal fun EventChart(vm: EventContractViewModel) {
                 color = if (on) p.textPrimary else p.textSecondary)
         }
         Spacer(Modifier.weight(1f))
-        LbIcon(R.drawable.ic_draw_line, 16.dp, p.textSecondary, Modifier.pressable { vm.toast.show("画线工具暂未开放") })
+        LbIcon(R.drawable.ic_draw_line, 16.dp, if (drawingState.tool != DrawingTool.NONE) p.brand else p.textSecondary, Modifier.testTag("event.drawing.tools").semantics { contentDescription = "画线工具" }.pressable { showDrawing = true })
         Spacer(Modifier.width(12.dp))
         LbIcon(R.drawable.ic_chart_settings, 16.dp, p.textSecondary, Modifier.pressable { showInd = true })
     }
@@ -438,7 +450,7 @@ internal fun EventChart(vm: EventContractViewModel) {
         }
     }
     val history = candles
-    val c = history?.takeLast(60)
+    val c = history?.takeLast(visibleCount)
     val lines: List<Pair<String, List<Double?>>> = if (history == null) emptyList() else when (ind) {
         0 -> listOf("MA-5" to ma(history, 5), "MA-10" to ma(history, 10), "MA-20" to ma(history, 20))
         1 -> boll(history).let { (m, u, l) -> listOf("BOLL" to m, "UB" to u, "LB" to l) }
@@ -448,12 +460,19 @@ internal fun EventChart(vm: EventContractViewModel) {
             "ST↓" to points.map { it?.takeIf { p -> !p.bullish }?.value },
         ) }
     }
-    val visibleLines = lines.map { (name, values) -> name to values.takeLast(60) }
+    val visibleLines = lines.map { (name, values) -> name to values.takeLast(visibleCount) }
     val colors = if (ind == 3) listOf(p.up, p.down) else listOf(androidx.compose.ui.graphics.Color(0xFFF0A23B), androidx.compose.ui.graphics.Color(0xFFE0457B), androidx.compose.ui.graphics.Color(0xFF7B5CE0))
     Row(Modifier.padding(horizontal = pageH).height(18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         visibleLines.forEachIndexed { i, (n, v) -> Text("$n: ${v.lastOrNull()?.let { Fmt.price(java.math.BigDecimal(it), 2) } ?: "--"}", style = lbNum(10.sp), color = colors[i]) }
     }
-    Box(Modifier.fillMaxWidth().height(220.dp)) {
+    if (drawingState.tool != DrawingTool.NONE) Text(
+        if (drawingState.tool == DrawingTool.HORIZONTAL) "轻点图表放置水平线" else if (drawingState.pending == null) "轻点图表选择趋势线起点" else "轻点图表选择趋势线终点",
+        Modifier.padding(horizontal=pageH).testTag("event.drawing.hint"),style=lb(FontSize.small),color=p.brand)
+    Box(Modifier.fillMaxWidth().height(220.dp).pointerInput(drawingState.tool) {
+        detectTransformGestures { _, _, zoom, _ -> if (drawingState.tool == DrawingTool.NONE && zoom.isFinite() && zoom > 0f) {
+            visibleCount = (visibleCount / zoom).roundToInt().coerceIn(20,160)
+        } }
+    }) {
         when {
             err != null && c == null -> Text(err ?: "", Modifier.align(Alignment.Center), style = lb(FontSize.small), color = p.down)
             c == null -> CircularProgressIndicator(Modifier.align(Alignment.Center).height(24.dp), color = p.textSecondary, strokeWidth = 2.dp)
@@ -481,6 +500,7 @@ internal fun EventChart(vm: EventContractViewModel) {
                     val ly = y(last.toDouble())
                     drawLine(p.textTertiary, androidx.compose.ui.geometry.Offset(0f, ly), androidx.compose.ui.geometry.Offset(size.width, ly), 1f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 6f)))
                 }
+                ChartDrawingOverlay(c,lo,hi,drawingState,Modifier.fillMaxSize().padding(end=64.dp,top=6.dp,bottom=18.dp))
                 Column(Modifier.align(Alignment.TopEnd).fillMaxHeight().padding(top = 0.dp, bottom = 12.dp, end = 4.dp), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.End) {
                     (0..4).forEach { g -> Text(Fmt.price(java.math.BigDecimal(hi - (hi - lo) * g / 4), 2), style = lbNum(9.sp), color = p.textTertiary) }
                 }
@@ -497,6 +517,11 @@ internal fun EventChart(vm: EventContractViewModel) {
         listOf("MA", "BOLL", "EMA", "Supertrend").forEachIndexed { i, t ->
             Text(t, Modifier.pressable(scale = 1f) { ind = i }, style = lb(FontSize.caption, if (ind == i) FontWeight.SemiBold else FontWeight.Normal), color = if (ind == i) p.textPrimary else p.textSecondary)
         }
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal=pageH),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+        ChipButton("缩小",enabled=visibleCount < 160) { visibleCount=(visibleCount+20).coerceAtMost(160) }
+        ChipButton("放大",enabled=visibleCount > 20) { visibleCount=(visibleCount-20).coerceAtLeast(20) }
+        Text("${c?.size ?: 0} 根 · 画线 ${drawingState.items.size}",style=lb(FontSize.small),color=p.textSecondary)
     }
 }
 

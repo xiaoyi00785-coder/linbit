@@ -44,7 +44,7 @@
 ## 事件合约
 - 结算周期以 `/event/products.periods` 为准（5m/15m/30m/1h/4h/1d）；参考的 10m 无后端来源，不显示。
 - 参考 K 线周期含 10m；`/market/klines` 无 10m，K 线周期显示 1m/5m/15m/30m/1h/4h/1D。
-- 指标：MA / BOLL / EMA / Supertrend 由客户端用真实 K 线计算；Supertrend 使用 Wilder ATR 10 / 倍数 3（参考参数尚未采集确认），不需后端计算。画线工具仍待下一批实现，不能算完成。
+- 指标：MA / BOLL / EMA / Supertrend 由客户端用真实 K 线计算；Supertrend 使用 Wilder ATR 10 / 倍数 3（参考参数尚未采集确认），不需后端计算。已实现本地水平线、两点趋势线、选中删除/撤销/确认清空及缩放，按币种/周期隔离；仅参考画线入口可证实，具体工具菜单缺参考素材，不能称全套一比一。
 - 「⋯」菜单：参考有 交易规则 / 历史数据 / 区间交易限额 / FAQ / 新手指引；后端无历史数据、区间限额、FAQ 内容接口，仅保留 交易规则（按 products 配置生成）与 新手指引。
 - 看涨/看跌收益率共用 `payoutRatio`（后端无分方向赔率）。
 - 下单扣款账户假定为现货（参考「Available Spot Balance」）；OpenAPI 未注明扣款账户，需后端确认。
