@@ -720,4 +720,12 @@ interface LinbitApi {
 
     @PUT("account/deposit-target")
     suspend fun updateDepositTarget(@Body body: click.cowa.linbit.feature.profile.ApiDepositTarget): click.cowa.linbit.feature.profile.ApiDepositTarget
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @POST("auth/google")
+    suspend fun googleLogin(@Body body: click.cowa.linbit.feature.auth.ApiGoogleLoginRequest): ApiAuthTokens
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("support/public-config")
+    suspend fun supportPublicConfig(): click.cowa.linbit.feature.auth.ApiSupportPublicConfig
 }

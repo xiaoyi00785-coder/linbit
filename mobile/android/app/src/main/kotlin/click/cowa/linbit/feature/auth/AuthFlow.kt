@@ -62,6 +62,8 @@ import click.cowa.linbit.ui.theme.Radius
 import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
 
+/** 生产用 Hilt；单测传 null 走纯对话框。 */
+val LocalGoogleSupportFactory = androidx.compose.runtime.staticCompositionLocalOf<(@Composable () -> GoogleSupportViewModel)?> { { hiltViewModel() } }
 internal val LocalAuthAssistance = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
 
 private object Route {
@@ -78,7 +80,7 @@ private object Route {
 
 /** 登录 / 注册 / 找回密码 全流程（全屏，自带返回栈）。onClose：关闭（取消或登录成功）。 */
 @Composable
-fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
+fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}, gs: GoogleSupportViewModel? = LocalGoogleSupportFactory.current?.takeIf { androidx.compose.ui.platform.LocalContext.current is dagger.hilt.internal.GeneratedComponentManagerHolder }?.invoke()) {
     val p = LB.p
     val assistance = LocalAuthAssistance.current
     val nav = rememberNavController()
@@ -88,7 +90,14 @@ fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hi
         onDispose { vm.cancelPasskeyLogin() }
     }
     var assistanceKind by remember { mutableStateOf<String?>(null) }
-    val soon: (String) -> Unit = { assistanceKind = it }
+    val soon: (String) -> Unit = { kind ->
+        when {
+            gs != null && activity != null && kind == "google" -> gs.googleLogin(activity, onClose)
+            gs != null && activity != null && kind == "support" -> gs.openSupport(activity)
+            else -> assistanceKind = kind
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(gs?.googleError, gs?.supportError) { if (gs?.googleError != null) assistanceKind = "google"; if (gs?.supportError != null) assistanceKind = "support" }
     androidx.compose.runtime.CompositionLocalProvider(LocalAuthAssistance provides soon) {
     Box(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         NavHost(nav, startDestination = if (startRegister) Route.REGISTER else Route.LOGIN) {
@@ -133,10 +142,10 @@ fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hi
     }
     assistanceKind?.let { kind ->
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { assistanceKind = null },
+            onDismissRequest = { assistanceKind = null; gs?.clearGoogleError(); gs?.clearSupportError() },
             title = { Text(if (kind == "support") "在线客服" else "Google 登录") },
-            text = { Text(if (kind == "support") "账户问题请先登录，再通过客服工单提交。请勿向任何人提供密码或验证码。" else "当前服务未配置 Google OAuth 客户端及令牌交换接口，请使用邮箱、手机号或通行密钥登录。") },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { assistanceKind = null }) { Text("知道了") } },
+            text = { Text(if (kind == "support") (gs?.supportError ?: "账户问题请先登录，再通过客服工单提交。请勿向任何人提供密码或验证码。") else (gs?.googleError ?: "Google 登录未配置：缺少 OAuth 客户端，请使用邮箱、手机号或通行密钥登录。")) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { assistanceKind = null; gs?.clearGoogleError(); gs?.clearSupportError() }) { Text("知道了") } },
         )
     }
 }

@@ -26,6 +26,8 @@ android {
         buildConfigField("String", "API_BASE", "\"$apiBase\"")
         buildConfigField("String", "WS_URL", "\"$wsUrl\"")
         // 后端按 UA 识别客户端（REST 与 WS 都带），iOS 为 Linbit-iOS/1.0
+        // Google 登录：Web OAuth client id，由 -PgoogleWebClientId=... 注入；为空时登录页显示真实的未配置状态
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${(project.findProperty("googleWebClientId") as String?) ?: ""}\"")
         buildConfigField("String", "USER_AGENT", "\"Linbit-Android/$versionName\"")
     }
 
@@ -78,6 +80,8 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play)
+    implementation(libs.googleid)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
