@@ -94,13 +94,28 @@ fun HomeScreen(
     unread: Int = 0,
     modifier: Modifier = Modifier,
     vm: HomeViewModel = hiltViewModel(),
+    onSearch: () -> Unit = {},
+    onLogin: () -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
 ) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
     val m by vm.market_.collectAsStateWithLifecycle()
     val watch by vm.watchlist.symbols.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh, modifier = modifier)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var popupShown by rememberSaveable { mutableStateOf(false) }
+    val popups = remember(s.popups) { PopupFrequency.filter(ctx, s.popups) }
+    var reserves by rememberSaveable { mutableStateOf(false) }
+    val reservesData by vm.reserves.collectAsStateWithLifecycle()
+    Box(modifier) {
+        HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh,
+            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() })
+        if (!popupShown && popups.isNotEmpty()) ActivityPopup(popups, p.isDark,
+            onOpen = { pl -> popupShown = true; PopupFrequency.markShown(ctx, popups); pl.linkUrl?.let(onOpenLink) },
+            onDismiss = { popupShown = true; PopupFrequency.markShown(ctx, popups) })
+        if (reserves) ReservesSheet(reservesData, vm::loadReserves) { reserves = false }
+    }
 }
 
 /** 无状态首页内容（便于截图测试 / 预览）。 */
@@ -111,6 +126,7 @@ fun HomeContent(
     onOpenAvatar: () -> Unit, onOpenMarkets: () -> Unit, onOpenMore: () -> Unit, onSoon: (String) -> Unit, onDeposit: () -> Unit,
     onFeature: (String) -> Unit = {}, onNotifications: () -> Unit = {}, onSupport: () -> Unit = {}, unread: Int = 0,
     onRefresh: () -> Unit, modifier: Modifier = Modifier,
+    onSearch: () -> Unit = {}, onLogin: () -> Unit = {}, onOpenLink: (String) -> Unit = {}, onReserves: () -> Unit = {},
 ) {
     val p = LB.p
     var hide by rememberSaveable { mutableStateOf(false) }
@@ -119,11 +135,22 @@ fun HomeContent(
     var bannerPage by remember { mutableIntStateOf(0) }
     var earnPage by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(s.banners.size) { while (s.banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % s.banners.size } }
+    val banners = remember(s.carousel) {
+        if (s.carousel.isEmpty()) LOCAL_BANNERS
+        else s.carousel.map { HomeBanner("pl:${it.id}", it.title.orEmpty(), null, it.imageUrl, it.linkUrl) }
+    }
+    LaunchedEffect(banners.size) { bannerPage = 0; while (banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % banners.size } }
+    val onBanner: (HomeBanner) -> Unit = { b ->
+        when {
+            b.link != null -> onOpenLink(b.link)
+            b.id == "redpacket" -> onFeature("福利中心")
+            b.id == "copy" -> onFeature("跟单")
+        }
+    }
     LaunchedEffect(s.earn.size) { earnPage = 0; while (s.earn.size > 1) { delay(4_000); earnPage = (earnPage + 1) % s.earn.size } }
 
     Column(modifier.fillMaxSize().background(p.bg)) {
-        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread)
+        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread, onSearch, s.searchHint ?: "BTC")
         PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
             Column(
             Modifier
@@ -132,16 +159,20 @@ fun HomeContent(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 24.dp),
         ) {
-                AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
-                TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
-                RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
-                Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
-                Hairline(Modifier.padding(top = (64f / 3).dp))
-                CardPromo(s.banners.getOrNull(bannerPage), bannerPage, s.banners.size) { onSoon("Linbit Card 即将开放") }
+                if (loggedIn) {
+                    AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
+                    TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
+                    RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
+                    Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
+                    Hairline(Modifier.padding(top = (64f / 3).dp))
+                } else GuestHero(s.newcomerTotal, s.newcomer?.asset ?: "USDT", onLogin)
+                val banner = banners.getOrNull(bannerPage) ?: banners[0]
+                CardPromo(banner, bannerPage, banners.size) { onBanner(banner) }
                 Hairline()
-                EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onSoon("理财即将开放") }
+                EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onFeature("理财") }
                 Hairline()
-                Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets)
+                if (loggedIn) Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets)
+                else ProtectionSection(onReserves, onSupport)
             }
         }
     }
@@ -154,7 +185,7 @@ private fun Hairline(modifier: Modifier = Modifier) {
 
 // ── 顶栏：Logo / 搜索 / 扫码 / 客服 / 通知（ref/1：左上为品牌 Logo，搜索框 31 高，3 个 22 图标）──
 @Composable
-private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int) {
+private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int, onSearch: () -> Unit, hint: String) {
     val p = LB.p
     Row(
         Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH),
@@ -165,15 +196,15 @@ private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> 
         }
         Row(
             Modifier.weight(1f).height(Metrics.searchBarH).clip(RoundedCornerShape(Radius.md)).background(p.fill)
-                .pressable(scale = 1f) { onSoon("搜索即将开放") }.padding(horizontal = 10.dp),
+                .pressable(scale = 1f, onClick = onSearch).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             LbIcon(R.drawable.ic_search, 15.dp, p.textTertiary)
-            Text("BTC", style = lb(FontSize.label), color = p.textTertiary)
+            Text(hint, style = lb(FontSize.label), color = p.textTertiary, maxLines = 1)
         }
         LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable { onSoon("扫一扫即将开放") })
         LbIcon(R.drawable.ic_headset, modifier = Modifier.pressable { onSupport() })
-        Box(Modifier.pressable(scale = 1f, onClick = onNotifications)) {
+        if (loggedIn) Box(Modifier.pressable(scale = 1f, onClick = onNotifications)) {
             LbIcon(R.drawable.ic_bell)
             if (unread > 0) Box(Modifier.align(Alignment.TopEnd).background(p.down, RoundedCornerShape(8.dp)).padding(horizontal = 3.dp)) {
                 Text(if (unread > 99) "99+" else "$unread", style = lbNum(8.sp), color = Color.White)
@@ -302,7 +333,10 @@ private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onClick: () ->
     val isCard = b.id == "card"
     Box(Modifier.fillMaxWidth().height((413f / 3).dp).pressable(scale = 1f, onClick = onClick)) {
         Row(Modifier.fillMaxSize().padding(start = 24.dp, end = Spacing.pageH), verticalAlignment = Alignment.Top) {
-            if (isCard) {
+            if (b.imageUrl != null) {
+                coil.compose.AsyncImage(b.imageUrl, b.title, Modifier.padding(top = 16.dp).size(width = 100.dp, height = 90.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                Spacer(Modifier.width(12.dp))
+            } else if (isCard) {
                 // ref/1：卡面整体 ≈ 59×48dp，居中于文案块上半（比 92×80 容器缩 0.8，左对齐）
                 CardArt(Modifier.padding(top = 21.dp).size(width = 92.dp, height = 80.dp).graphicsLayer { scaleX = 0.8f; scaleY = 0.8f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) })
                 Spacer(Modifier.width(2.dp))

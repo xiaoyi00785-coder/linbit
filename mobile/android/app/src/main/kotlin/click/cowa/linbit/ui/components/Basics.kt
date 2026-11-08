@@ -249,13 +249,14 @@ fun SortLabel(title: String, showArrow: Boolean = true, modifier: Modifier = Mod
 @Composable
 fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Modifier) {
     val key = CoinIcons.normalize(base)
-    val local = remember(key) { CoinIcons.drawable(key) }
+    val stock = CoinIcons.isStock(key)
+    val local = remember(key, stock) { if (stock) null else CoinIcons.drawable(key) }
     if (local != null) {
         Image(painterResource(local), contentDescription = key, modifier = modifier.size(size))
         return
     }
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val asset = remember(key) { CoinIcons.assetUri(ctx, key) }
+    val asset = remember(key, stock) { if (stock) CoinIcons.stockLogoUrl(key) else CoinIcons.assetUri(ctx, key) }
     val p = LB.p
     val fallback: @Composable () -> Unit = {
         Box(modifier.size(size).clip(CircleShape).background(p.fillStrong), contentAlignment = Alignment.Center) {

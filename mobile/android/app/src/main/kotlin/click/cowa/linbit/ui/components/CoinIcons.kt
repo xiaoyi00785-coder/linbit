@@ -12,6 +12,12 @@ internal object CoinIcons {
         return b
     }
 
+    /** 代币化股票：不得套用同名加密货币图标（如 META≠Metadium），改用公开股票 Logo CDN。 */
+    @Volatile private var stocks: Set<String> = setOf("AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "COIN", "SPY", "QQQ", "NFLX", "AMD", "INTC", "MSTR", "HOOD", "CRCL")
+    fun registerStocks(bases: Collection<String>) { stocks = stocks + bases.map { normalize(it) } }
+    fun isStock(base: String) = normalize(base) in stocks
+    fun stockLogoUrl(base: String) = "https://financialmodelingprep.com/image-stock/${normalize(base)}.png"
+
     @Volatile private var assetSet: Set<String>? = null
 
     /** spothq/cryptocurrency-icons 128/color PNG（assets/coins，CC0）。 */

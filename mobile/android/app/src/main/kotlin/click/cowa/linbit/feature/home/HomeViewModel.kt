@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import javax.inject.Inject
 
-data class HomeBanner(val id: String, val title: String, val subtitle: String?)
+data class HomeBanner(val id: String, val title: String, val subtitle: String?, val imageUrl: String? = null, val link: String? = null)
 
 data class HomeState(
     val totalUsdt: BigDecimal = BigDecimal.ZERO,
@@ -34,12 +34,18 @@ data class HomeState(
     val earn: List<ApiEarnProduct> = emptyList(),
     val banners: List<HomeBanner> = LOCAL_BANNERS,
     val refreshing: Boolean = false,
+    /** 运营位：活动弹窗、轮播、搜索提示（/home/placements）。 */
+    val popups: List<click.cowa.linbit.core.generated.ApiPlacement> = emptyList(),
+    val carousel: List<click.cowa.linbit.core.generated.ApiPlacement> = emptyList(),
+    val searchHint: String? = null,
+    /** 新人奖励总额（/growth/config newcomer.total，兜底为任务奖励合计）。 */
+    val newcomerTotal: String? = null,
 )
 
-/** 运营位未接入前的本地兜底（与 iOS HomeViewModel.localBanners 一致）。 */
+/** 运营位 carousel 为空时的本地兜底：只指向 App 内已实现的真实页面（福利中心 / 跟单）。 */
 val LOCAL_BANNERS = listOf(
-    HomeBanner("card", "Linbit Card", "数字资产 · 全球消费"),
-    HomeBanner("redpacket", "全员红包雨火爆来袭", "惊喜好礼等你拿"),
+    HomeBanner("redpacket", "全员红包雨火爆来袭", "福利中心 · 惊喜好礼等你拿"),
+    HomeBanner("copy", "跟随顶级交易员一键跟单", "跟单交易 · 专业策略"),
 )
 
 /** 首页数据（对应 iOS HomeViewModel）：总资产（登录后 /assets/overview）、新手任务、理财宝、榜单（由行情本地计算）。 */
@@ -73,6 +79,8 @@ class HomeViewModel @Inject constructor(
                 val earn = async { runCatching { apiCall { api.earnProducts() } }.getOrNull() }
                 val newcomer = async { runCatching { apiCall { api.homeNewcomer() } }.getOrNull() }
                 val overview = async { if (tokens.loggedIn.value) runCatching { apiCall { api.assetsOverview() } }.getOrNull() else null }
+                val pl = async { runCatching { apiCall { api.homePlacements() } }.getOrNull() }
+                val growth = async { runCatching { apiCall { api.growthConfig() } }.getOrNull() }
                 val m = async { if (refreshMarket && market.state.value.spot.isEmpty()) market.load() }
                 m.await()
                 _state.value = _state.value.copy(
@@ -80,10 +88,19 @@ class HomeViewModel @Inject constructor(
                     newcomer = newcomer.await(),
                     totalUsdt = Dec.parse(overview.await()?.totalValueUsdt),
                     refreshing = false,
+                    popups = pl.await()?.slots?.get("popup").orEmpty().filter { !it.imageUrl.isNullOrBlank() },
+                    carousel = pl.await()?.slots?.get("carousel").orEmpty().filter { !it.imageUrl.isNullOrBlank() },
+                    searchHint = pl.await()?.slots?.get("search_hint")?.firstOrNull()?.title,
+                    newcomerTotal = growth.await()?.newcomer?.total
+                        ?: _state.value.newcomer?.tasks?.mapNotNull { Dec.parseOrNull(it.amount) }?.takeIf { it.isNotEmpty() }?.fold(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)?.toPlainString(),
                 )
             }
         }
     }
+
+    private val _reserves = MutableStateFlow<Result<click.cowa.linbit.core.generated.ApiProofOfReserves>?>(null)
+    val reserves: StateFlow<Result<click.cowa.linbit.core.generated.ApiProofOfReserves>?> = _reserves.asStateFlow()
+    fun loadReserves() { _reserves.value = null; viewModelScope.launch { _reserves.value = runCatching { apiCall { api.proofOfReserves() } } } }
 
     fun refresh() { viewModelScope.launch { market.load() }; load(refreshMarket = false) }
 }

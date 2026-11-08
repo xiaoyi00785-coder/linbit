@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
@@ -39,8 +40,7 @@ import click.cowa.linbit.ui.theme.Metrics
 import click.cowa.linbit.ui.theme.resolveDark
 
 @Composable
-internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadgeViewModel, routeVms: AssetRouteViewModels, showSplash: Boolean, onDialogWindow: (android.view.Window?) -> Unit) {
-    val loggedIn = true // This entire composable is mounted only by the authenticated production gate.
+internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadgeViewModel, routeVms: AssetRouteViewModels, showSplash: Boolean, onDialogWindow: (android.view.Window?) -> Unit, loggedIn: Boolean = true, authVm: click.cowa.linbit.feature.auth.AuthViewModel? = null) {
 
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
@@ -54,8 +54,22 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
     var morePage by rememberSaveable { mutableStateOf<MorePage?>(null) }
     var assetFeature by rememberSaveable { mutableStateOf<String?>(null) }
     var moreMenu by rememberSaveable { mutableStateOf(false) }
+    var marketsTop by rememberSaveable { mutableStateOf(1) }
+    var marketsSearch by rememberSaveable { mutableStateOf(false) }
+    var hideTabBar by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    fun openLink(url: String) {
+        runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .onFailure { vm.toast.show("无法打开链接") }
+    }
     val unread by badgeVm.unread.collectAsStateWithLifecycle()
     fun openFeature(title: String) {
+        when (title) {
+            "聊天室" -> { marketsTop = 2; tab = MainTab.MARKETS; return }
+            "理财" -> { if (loggedIn) assetFeature = "earn" else auth = "login"; return }
+            "策略交易" -> { if (loggedIn) assetFeature = "strategy" else auth = "login"; return }
+        }
+        if (!loggedIn) { auth = "login"; return }
         val page = when (title) {
             "福利中心" -> MorePage.WELFARE
             "跟单" -> MorePage.COPY
@@ -65,7 +79,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             "合伙人计划" -> MorePage.PARTNER
             else -> null
         }
-        if (page != null) morePage = page else vm.toast.show("$title 即将开放")
+        if (page != null) morePage = page
     }
 
     LinbitTheme(dark) {
@@ -74,7 +88,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             WindowCompat.getInsetsController((view.context as android.app.Activity).window, view).isAppearanceLightStatusBars = !dark
         }
         LaunchedEffect(Unit) {
-            vm.expired.collect { vm.toast.show("登录已过期，请重新登录"); userCenter = false; auth = "login" }
+            if (loggedIn) vm.expired.collect { vm.toast.show("登录已过期，请重新登录"); userCenter = false; auth = "login" }
         }
         // 登录成功后自动收起
         LaunchedEffect(loggedIn) { if (loggedIn) auth = null }
@@ -94,8 +108,12 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onNotifications = { morePage = MorePage.NOTIFICATIONS },
                         onSupport = { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login" },
                         unread = unread,
+                        onSearch = { marketsTop = 1; marketsSearch = true; tab = MainTab.MARKETS },
+                        onLogin = { auth = "login" },
+                        onOpenLink = ::openLink,
                     )
-                    MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), onOpenTrade = { kind, sym ->
+                    MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), initialTop = marketsTop, openSearch = marketsSearch, onSearchConsumed = { marketsSearch = false },
+                        loggedIn = loggedIn, onLogin = { auth = "login" }, onOverlay = { hideTabBar = it }, onOpenTrade = { kind, sym ->
                         if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
                     })
                     MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
@@ -112,7 +130,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
                         onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" }
                     )
-                    MainTab.ASSETS -> AssetsScreen(
+                    MainTab.ASSETS -> if (loggedIn) AssetsScreen(
                         bottomInset,
                         onLogin = { auth = "login" },
                         assetsNav = vm.assetsNav,
@@ -121,10 +139,10 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
                         onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
                         vm = routeVms.assets,
-                    )
+                    ) else Box(Modifier.fillMaxSize())
                 }
             }
-            FloatingTabBar(tab, { tab = it }, Modifier.align(Alignment.BottomCenter))
+            if (!hideTabBar) FloatingTabBar(tab, { if (it == MainTab.ASSETS && !loggedIn) auth = "login" else { if (it == MainTab.MARKETS && tab != MainTab.MARKETS) marketsTop = 1; tab = it } }, Modifier.align(Alignment.BottomCenter))
 
             // 首页/交易页打开充值或划转时切到资产 Tab
             val assetsRoute by vm.assetsNav.route.collectAsStateWithLifecycle()
@@ -175,7 +193,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
                 "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol, vm = LocalTradeHistoryFactory.current.invoke(), onDialogWindow = onDialogWindow)
             }
-            auth?.let { start -> AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
+            auth?.let { start -> if (authVm != null) AuthFlow(startRegister = start == "register", onClose = { auth = null }, vm = authVm, onDialogWindow = onDialogWindow) else AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
             ToastOverlay(vm.toast)
             if (splash) SplashOverlay(reduceMotion = false, onFinish = { splash = false })
         }

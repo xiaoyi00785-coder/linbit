@@ -54,7 +54,7 @@ fun MarketRowView(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (showIcon) CoinIcon(row.base)
+        if (showIcon && MarketPrefs.showCoinIcon) CoinIcon(row.base)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             if (compactPair) {
                 Text(row.symbol, style = lb(FontSize.symbol, FontWeight.Medium), color = p.textPrimary, maxLines = 1)

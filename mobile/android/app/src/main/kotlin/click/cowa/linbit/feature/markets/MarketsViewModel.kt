@@ -26,6 +26,8 @@ class MarketsViewModel @Inject constructor(
 
     fun refresh() { viewModelScope.launch { store.load() } }
 
+    fun toggleWatch(symbol: String) = watchlist.toggle(symbol)
+
     fun addToWatch(symbols: Collection<String>) = watchlist.add(symbols)
 
     fun precision(symbol: String): Int? = store.meta(symbol)?.pricePrecision

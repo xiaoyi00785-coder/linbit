@@ -56,11 +56,23 @@ import click.cowa.linbit.ui.theme.lb
 /** 行情页（对照图 ref/7 自选空态推荐、ref/8 / ref/9 市场-现货，ref/15 合约列表样式在后续里程碑）。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MarketsScreen(bottomInset: Dp, onOpenTrade: (MarketKind, String) -> Unit = { _, _ -> }, modifier: Modifier = Modifier, vm: MarketsViewModel = hiltViewModel()) {
-    val p = LB.p
+fun MarketsScreen(
+    bottomInset: Dp, onOpenTrade: (MarketKind, String) -> Unit = { _, _ -> }, modifier: Modifier = Modifier, vm: MarketsViewModel = hiltViewModel(),
+    initialTop: Int = 1, openSearch: Boolean = false, onSearchConsumed: () -> Unit = {}, loggedIn: Boolean = true, onLogin: () -> Unit = {}, onOverlay: (Boolean) -> Unit = {},
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val watch by vm.watch.collectAsStateWithLifecycle()
-    MarketsContent(state, watch, bottomInset, vm::refresh, vm::addToWatch, modifier, onOpenTrade = onOpenTrade)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    MarketPrefs.ensure(ctx)
+    var search by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(search) { onOverlay(search) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { onOverlay(false) } }
+    androidx.compose.runtime.LaunchedEffect(openSearch) { if (openSearch) { search = true; onSearchConsumed() } }
+    Box(modifier.fillMaxSize()) {
+        MarketsContent(state, watch, bottomInset, vm::refresh, vm::addToWatch, initialTop = initialTop, onOpenTrade = onOpenTrade,
+            onSearch = { search = true }, loggedIn = loggedIn, onLogin = onLogin)
+        if (search) MarketSearchScreen(state, watch, vm::toggleWatch, { search = false }, onOpenTrade)
+    }
 }
 
 /** 无状态内容（便于截图对照与预览）。 */
@@ -75,9 +87,14 @@ fun MarketsContent(
     modifier: Modifier = Modifier,
     initialTop: Int = 1,
     onOpenTrade: (MarketKind, String) -> Unit = { _, _ -> },
+    onSearch: () -> Unit = {},
+    loggedIn: Boolean = true,
+    onLogin: () -> Unit = {},
 ) {
     val p = LB.p
-    var top by rememberSaveable { mutableIntStateOf(initialTop) }       // 0 自选 1 市场 2 聊天室
+    var top by rememberSaveable(initialTop) { mutableIntStateOf(initialTop) }
+    var menu by remember { mutableStateOf(false) }
+    var iconSheet by remember { mutableStateOf(false) }       // 0 自选 1 市场 2 聊天室
     var kind by rememberSaveable { mutableIntStateOf(0) }      // 现货 / 合约 / TradFi
     var category by rememberSaveable { mutableIntStateOf(0) }
     var field by rememberSaveable { mutableStateOf(SortField.VOLUME) }
@@ -91,10 +108,11 @@ fun MarketsContent(
         ) {
             PrimaryTabs(listOf("自选", "市场", "聊天室"), top, { top = it })
             Box(Modifier.weight(1f))
-            LbIcon(R.drawable.ic_search, 22.dp)
+            if (top != 2) LbIcon(R.drawable.ic_search, 22.dp, modifier = Modifier.pressable(onClick = onSearch))
             Box(Modifier.padding(start = 18.dp)) {
-                LbIcon(R.drawable.ic_more, 22.dp)
+                LbIcon(R.drawable.ic_more, 22.dp, modifier = Modifier.pressable { menu = true })
                 Box(Modifier.align(Alignment.TopEnd).padding(top = 0.dp).size(6.dp).clip(CircleShape).background(p.badgeDot))
+                MarketsMoreMenu(menu, { menu = false }) { iconSheet = true }
             }
         }
         HorizontalDivider(color = p.divider)
@@ -106,7 +124,7 @@ fun MarketsContent(
                 }
                 HorizontalDivider(color = p.divider)
                 if (kind == 2) {
-                    Placeholder("TradFi", "TradFi 后端暂未提供")
+                    click.cowa.linbit.feature.more.TradFiScreen(onBack = {}, onTrade = { fut, sym -> onOpenTrade(if (fut) MarketKind.FUTURES else MarketKind.SPOT, sym) }, embedded = true, bottomInset = bottomInset)
                 } else {
                     val chips = listOf("全部") + state.categories.map { it.name }
                     ChipBar(chips, category.coerceAtMost(chips.size - 1), { category = it }, Modifier.padding(vertical = 10.dp))
@@ -125,8 +143,9 @@ fun MarketsContent(
                     }
                 }
             }
-            else -> Placeholder("聊天室", "聊天室后端暂未提供，敬请期待")
+            else -> if (!loggedIn) ChatRoomGuest(onLogin) else EmptyState("聊天室服务暂不可用（后端未提供聊天接口）", Modifier.padding(top = 120.dp))
         }
+        if (iconSheet) CoinIconSettingsSheet { iconSheet = false }
     }
 }
 

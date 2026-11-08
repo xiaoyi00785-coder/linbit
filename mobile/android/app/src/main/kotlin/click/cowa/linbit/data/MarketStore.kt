@@ -66,6 +66,9 @@ class MarketStore(
             Loaded(symbols.await(), spot.await(), fut.await(), cats.await(), fx.await()?.rates?.get("CNY")?.content)
         }
         symbolMeta = (r.symbols ?: symbolMeta.values.toList()).associateBy { it.symbol }
+        r.categories?.firstOrNull { it.id == "stocks" }?.symbols?.let { syms ->
+            click.cowa.linbit.ui.components.CoinIcons.registerStocks(syms.map { symbolMeta[it]?.base ?: it.removeSuffix("USDT") })
+        }
         // 现货无成交（lastPrice=0）时用同名合约的 标记价 → 指数价 兜底
         r.futures?.let { list ->
             refPrice = list.mapNotNull { t -> t.symbol?.let { it to MarketRow.effectivePrice(t.lastPrice, t.markPrice, t.indexPrice) } }.toMap()

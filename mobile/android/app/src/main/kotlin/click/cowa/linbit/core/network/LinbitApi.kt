@@ -143,6 +143,23 @@ interface LinbitApi {
     @GET("home/newcomer")
     suspend fun homeNewcomer(): ApiHomeNewcomer
 
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/proof-of-reserves")
+    suspend fun proofOfReserves(): click.cowa.linbit.core.generated.ApiProofOfReserves
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("growth/config")
+    suspend fun growthConfig(): click.cowa.linbit.core.generated.ApiGrowthConfig
+
+    /** 首页运营位（popup / carousel / search_hint 等），公开。 */
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("home/placements")
+    suspend fun homePlacements(
+        @Query("platform") platform: String = "app",
+        @Query("locale") locale: String = "zh-CN",
+        @Query("appVersion") appVersion: String = click.cowa.linbit.BuildConfig.VERSION_NAME,
+    ): click.cowa.linbit.core.generated.ApiHomePlacements
+
     @GET("rewards/newcomer")
     suspend fun newcomerState(): ApiNewcomerState
 
