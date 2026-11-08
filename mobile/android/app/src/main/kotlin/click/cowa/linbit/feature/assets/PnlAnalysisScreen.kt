@@ -51,9 +51,9 @@ fun PnlAnalysisScreen(onBack: () -> Unit, vm: PnlAnalysisViewModel = hiltViewMod
                 vm.error != null -> EmptyState(vm.error!!) { ChipButton("重试", onClick = vm::load) }
                 vm.data != null -> {
                     val data = vm.data!!
-                    listOf("总盈亏" to data.pnl, "已实现盈亏" to data.realizedPnl, "资金费用" to data.funding, "手续费" to data.fee, "强平费用" to data.liquidationFee).forEach { (label, value) ->
+                    listOf("总盈亏" to data.pnl, "已实现盈亏" to data.realizedPnl, "资金费用" to data.funding, "手续费" to data.fee, "强平费用" to data.liquidationFee, "风险准备金补偿" to data.insuranceCover).forEach { (label, value) ->
                         val amount = Dec.parse(value)
-                        KvRow(label, (if (amount.signum() > 0) "+" else "") + Fmt.amount(amount, 4) + " USDT")
+                        KvRow(label, (if (amount.signum() > 0) "+" else "") + Fmt.amount(amount, 4) + " " + data.asset)
                     }
                     LbButton("刷新", kind = ButtonKind.SECONDARY, onClick = vm::load)
                 }

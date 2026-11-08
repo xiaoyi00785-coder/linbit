@@ -69,14 +69,14 @@ private class QrPreview(context: Context, val onResult: (String) -> Unit, val on
                 if (released || bytes == null || !busy.compareAndSet(false, true)) return@setPreviewCallback
                 val size = cam.parameters.previewSize
                 val copy = bytes.copyOf()
-                executor.execute {
+                runCatching { executor.execute {
                     val reader = MultiFormatReader()
                     val source = PlanarYUVLuminanceSource(copy, size.width, size.height, 0, 0, size.width, size.height, false)
                     val result = runCatching { reader.decode(BinaryBitmap(HybridBinarizer(source))).text }.getOrNull()
                         ?: runCatching { reader.reset(); reader.decode(BinaryBitmap(HybridBinarizer(source.invert()))).text }.getOrNull()
                     if (result != null) Handler(Looper.getMainLooper()).post { if (!released) onResult(result) }
                     busy.set(false)
-                }
+                } }.onFailure { busy.set(false) }
             }
             c.startPreview()
         }.onFailure { stop(); onError("无法打开相机，请检查权限或相机是否被其他应用占用") }
@@ -107,7 +107,11 @@ fun ScanScreen(onClose: () -> Unit) {
         if (uri != null) scope.launch {
             val decoded = withContext(Dispatchers.Default) {
                 runCatching {
-                    val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+                    val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
                     context.contentResolver.openInputStream(uri)?.use { stream ->
                         android.graphics.BitmapFactory.decodeStream(stream, null, options)?.let { bitmap -> try { decodeQr(bitmap) } finally { bitmap.recycle() } }
                     }

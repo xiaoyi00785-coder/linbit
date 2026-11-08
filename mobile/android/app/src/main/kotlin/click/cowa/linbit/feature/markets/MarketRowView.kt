@@ -72,7 +72,7 @@ fun MarketRowView(
                 color = p.textPrimary, maxLines = 1,
             )
             if (row.quote in listOf("USDT", "USDC", "USD")) {
-                Text("$" + priceText(row), style = lbNum(FontSize.small), color = p.textSecondary, maxLines = 1)
+                Text(click.cowa.linbit.core.storage.QuoteDisplay.format(row.last, row.precision, cnyRate), style = lbNum(FontSize.small), color = p.textSecondary, maxLines = 1)
             }
         }
         Spacer(Modifier.width(2.dp))

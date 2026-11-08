@@ -278,7 +278,7 @@ fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Mod
 fun EmptyState(text: String = "暂无数据", modifier: Modifier = Modifier, iconSize: Dp = 64.dp, verticalPadding: Dp = 24.dp, content: (@Composable () -> Unit)? = null) {
     val p = LB.p
     Column(modifier.fillMaxWidth().padding(vertical = verticalPadding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        LbImageIcon(R.drawable.ic_empty_folder, iconSize)
+        LbImageIcon(R.drawable.ic_ref_empty_data, iconSize)
         Text(text, style = lb(FontSize.caption), color = if (content != null) p.textPrimary else p.textSecondary, textAlign = TextAlign.Center)
         content?.invoke()
     }

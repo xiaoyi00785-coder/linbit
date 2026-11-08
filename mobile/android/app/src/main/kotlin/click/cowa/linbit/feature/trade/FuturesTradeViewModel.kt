@@ -95,7 +95,7 @@ class FuturesTradeViewModel @Inject constructor(
     var hedge by mutableStateOf(false); private set
 
     var isOpen by mutableStateOf(true)
-    var kind by mutableStateOf(FuturesKind.LIMIT)
+    var kind by mutableStateOf(FuturesKind.MARKET)
     var priceText by mutableStateOf("")
     var costText by mutableStateOf("")
     var percent by mutableStateOf(0f)

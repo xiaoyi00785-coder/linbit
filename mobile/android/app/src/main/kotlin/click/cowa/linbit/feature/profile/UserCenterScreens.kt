@@ -47,15 +47,20 @@ fun UserCenterHost(
     onFeatureName: (String) -> Unit = {},
 ) {
     var page by remember { mutableStateOf(ProfilePage.HUB) }
+    var trail by remember { mutableStateOf(listOf<ProfilePage>()) }
+    fun open(next: ProfilePage) { trail = trail + page; page = next }
+    fun back() {
+        if (trail.isEmpty()) onClose() else { page = trail.last(); trail = trail.dropLast(1) }
+    }
     LaunchedEffect(Unit) { vm.load() }
-    BackHandler { if (page == ProfilePage.HUB) onClose() else page = ProfilePage.HUB }
+    BackHandler { back() }
     when (page) {
-        ProfilePage.HUB -> ProfileLandingScreen(onClose, { page = ProfilePage.ACCOUNT }, { page = ProfilePage.SWITCH }, { page = ProfilePage.SECURITY }, onFeatureName, vm)
-        ProfilePage.ACCOUNT -> UserCenterScreen(themeMode, onTheme, onLogout, onClose, onOpen = { page = it }, onFeature = onFeature, vm = vm, onTrading = { onFeatureName(if (it) "合约" else "现货") })
-        ProfilePage.SWITCH -> AccountSwitchScreen(onBack = { page = ProfilePage.HUB }, onAdd = { vm.addAccount(onLoginOther) }, vm = vm, onLogout = onLogout)
-        ProfilePage.SECURITY -> SecurityHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
-        ProfilePage.KYC -> KycHost(onBack = { page = ProfilePage.HUB; vm.load(silent = true) })
-        ProfilePage.SUBACCOUNTS -> SubAccountsScreen(onBack = { page = ProfilePage.HUB }, onSwitch = { page = ProfilePage.SWITCH })
+        ProfilePage.HUB -> ProfileLandingScreen(onClose, { open(ProfilePage.ACCOUNT) }, { open(ProfilePage.SWITCH) }, { open(ProfilePage.SECURITY) }, onFeatureName, vm)
+        ProfilePage.ACCOUNT -> UserCenterScreen(themeMode, onTheme, onLogout, ::back, onOpen = ::open, onFeature = onFeature, vm = vm, onTrading = { onFeatureName(if (it) "合约" else "现货") })
+        ProfilePage.SWITCH -> AccountSwitchScreen(onBack = ::back, onAdd = { vm.addAccount(onLoginOther) }, vm = vm, onLogout = onLogout)
+        ProfilePage.SECURITY -> SecurityHost(onBack = { back(); vm.load(silent = true) })
+        ProfilePage.KYC -> KycHost(onBack = { back(); vm.load(silent = true) })
+        ProfilePage.SUBACCOUNTS -> SubAccountsScreen(onBack = ::back, onSwitch = { open(ProfilePage.SWITCH) })
     }
 }
 

@@ -206,7 +206,7 @@ fun SpotTradeContent(
                 OrderBookView(
                     book = grouped, rows = 5, rowHeight = 23.dp, pricePrec = vm.pricePrec, quote = vm.quote,
                     mid = {
-                        SpotMid(vm.last, vm.pricePrec, vm.changePct.signum() < 0, "$" + Fmt.price(vm.last, vm.pricePrec)) { vm.pickBookPrice(vm.last) }
+                        SpotMid(vm.last, vm.pricePrec, vm.changePct.signum() < 0, click.cowa.linbit.core.storage.QuoteDisplay.format(vm.last, vm.pricePrec, cnyRate)) { vm.pickBookPrice(vm.last) }
                     },
                     mode = vm.bookMode, precisionText = step.stripTrailingZeros().toPlainString(),
                     onPick = vm::pickBookPrice, onMode = { sheet = "bookMode" }, onPrecision = { sheet = "precision" },

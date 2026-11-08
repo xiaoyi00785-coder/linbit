@@ -243,12 +243,7 @@ private fun AssetHeader(hide: Boolean, onToggle: () -> Unit, total: java.math.Bi
         }
         Spacer(Modifier.height(10.dp))
         // 汇率取不到时不用硬编码汇率：总资产为 0 仍显示 0.00，否则显示 --
-        val fiat = when {
-            hide -> "≈ ****"
-            cnyRate != null -> "≈ ¥ " + Fmt.price(total.multiply(cnyRate), 2)
-            total.signum() == 0 -> "≈ ¥ 0.00"
-            else -> "≈ ¥ --"
-        }
+        val fiat = if (hide) "≈ ****" else "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(total, 2, cnyRate)
         Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
     }
 }

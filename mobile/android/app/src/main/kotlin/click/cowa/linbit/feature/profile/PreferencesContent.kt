@@ -24,10 +24,10 @@ class AccountPreferencesViewModel @Inject constructor(private val api: LinbitApi
     var preferences by mutableStateOf<ApiAccountPreferences?>(null); private set
     var error by mutableStateOf<String?>(null); private set
     var saving by mutableStateOf(false); private set
-    init { viewModelScope.launch { tokens.sessionVersion.collect { preferences = null; error = null; if (tokens.loggedIn.value) load() } } }
+    init { viewModelScope.launch { tokens.sessionVersion.collect { preferences = null; error = null; QuoteDisplay.currency = "USD"; if (tokens.loggedIn.value) load() } } }
     fun load() {
         val session = tokens.sessionVersion.value
-        viewModelScope.launch { val result = runCatching { apiCall { api.accountPreferences() } }; if (session == tokens.sessionVersion.value) result.onSuccess { preferences = it; error = null }.onFailure { error = it.lbMessage() } }
+        viewModelScope.launch { val result = runCatching { apiCall { api.accountPreferences() } }; if (session == tokens.sessionVersion.value) result.onSuccess { preferences = it; QuoteDisplay.currency = it.quoteCurrency; error = null }.onFailure { error = it.lbMessage() } }
     }
     fun select(currency: String, onDone: () -> Unit) {
         if (saving) return
@@ -36,14 +36,16 @@ class AccountPreferencesViewModel @Inject constructor(private val api: LinbitApi
         viewModelScope.launch {
             val result = runCatching { apiCall { api.updateAccountPreferences(ApiUpdateAccountPreferencesRequest(currency)) } }
             if (session != tokens.sessionVersion.value) { saving = false; return@launch }
-            result.onSuccess { preferences = it; error = null; onDone() }.onFailure { error = it.lbMessage() }
+            result.onSuccess { preferences = it; QuoteDisplay.currency = it.quoteCurrency; error = null; onDone() }.onFailure { error = it.lbMessage() }
             saving = false
         }
     }
 }
 
+val LocalAccountPreferencesFactory = staticCompositionLocalOf<@Composable () -> AccountPreferencesViewModel> { { hiltViewModel() } }
+
 @Composable
-fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTrading: (Boolean) -> Unit, vm: AccountPreferencesViewModel = hiltViewModel()) {
+fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTrading: (Boolean) -> Unit, vm: AccountPreferencesViewModel = LocalAccountPreferencesFactory.current.invoke()) {
     val context = LocalContext.current
     var sheet by remember { mutableStateOf<String?>(null) }
     Column {

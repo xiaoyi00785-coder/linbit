@@ -63,8 +63,9 @@ class MarketStore(
             val fut = async { runCatching { apiCall { OneOfResponses.futuresTickers(api.futuresTicker()) } }.getOrNull() }
             val cats = async { runCatching { apiCall { api.categories() } }.getOrNull() }
             val fx = async { runCatching { apiCall { api.fiatRates() } }.getOrNull() }
-            Loaded(symbols.await(), spot.await(), fut.await(), cats.await(), fx.await()?.rates?.get("CNY")?.content)
+            Loaded(symbols.await(), spot.await(), fut.await(), cats.await(), fx.await()?.rates?.mapValues { it.value.content })
         }
+        r.rates?.let { rates -> click.cowa.linbit.core.storage.QuoteDisplay.rates = rates.mapNotNull { (key, value) -> Dec.parseOrNull(value)?.takeIf { it.signum() > 0 }?.let { key to it } }.toMap() }
         symbolMeta = (r.symbols ?: symbolMeta.values.toList()).associateBy { it.symbol }
         r.categories?.firstOrNull { it.id == "stocks" }?.symbols?.let { syms ->
             click.cowa.linbit.ui.components.CoinIcons.registerStocks(syms.map { symbolMeta[it]?.base ?: it.removeSuffix("USDT") })
@@ -103,8 +104,8 @@ class MarketStore(
         val spot: List<click.cowa.linbit.core.generated.ApiTicker>?,
         val futures: List<click.cowa.linbit.core.generated.ApiFuturesTicker>?,
         val categories: List<ApiMarketCategory>?,
-        val cnyRate: String?,
-    )
+        val rates: Map<String, String>?,
+    ) { val cnyRate: String? get() = rates?.get("CNY") }
 
     /** 订阅所有现货 ticker:SYMBOL 与合约 futures-ticker:SYMBOL，一个收集器处理全部帧。 */
     private fun subscribeTickers() {

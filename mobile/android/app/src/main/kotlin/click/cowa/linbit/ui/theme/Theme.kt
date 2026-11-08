@@ -37,7 +37,18 @@ fun resolveDark(mode: ThemeMode): Boolean = when (mode) {
 fun LinbitTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     click.cowa.linbit.core.storage.DisplayPrefs.load(ctx)
-    val base = if (darkTheme) DarkPalette else LightPalette
+    // Android reference palette sampled from the supplied EasiCoin screenshots.
+    // Keep generated cross-platform tokens untouched.
+    val base = if (darkTheme) DarkPalette else LightPalette.copy(
+        fill = androidx.compose.ui.graphics.Color(0xFFF2F3F4),
+        textPrimary = androidx.compose.ui.graphics.Color(0xFF101112),
+        textSecondary = androidx.compose.ui.graphics.Color(0xFF808588),
+        textTertiary = androidx.compose.ui.graphics.Color(0xFFA8AAAD),
+        up = androidx.compose.ui.graphics.Color(0xFF31BD65),
+        down = androidx.compose.ui.graphics.Color(0xFFED4C52),
+        upTint = androidx.compose.ui.graphics.Color(0xFFEFFAF3),
+        downTint = androidx.compose.ui.graphics.Color(0xFFFEF1F1),
+    )
     val p = if (click.cowa.linbit.core.storage.DisplayPrefs.redUp) base.copy(up = base.down, down = base.up, upTint = base.downTint, downTint = base.upTint) else base
     val scheme = if (darkTheme) {
         darkColorScheme(

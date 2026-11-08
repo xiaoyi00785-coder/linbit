@@ -1,6 +1,10 @@
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import click.cowa.linbit.R
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -85,8 +89,17 @@ fun TradeInfoSheet(title: String, vm: FuturesTradeViewModel, onClose: () -> Unit
 fun SpotToolsSheet(onClose: () -> Unit, onTool: (String) -> Unit) {
     LbSheet("常用功能", onClose) {
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
-            listOf("交易偏好", "充值", "划转", "价格预警", "添加自选", "新手教学").forEach { title ->
-                SheetOptionRow(title, false) { onClose(); onTool(title) }
+            val items = listOf("交易偏好" to R.drawable.ic_ref_settings, "充值" to R.drawable.ic_ref_deposit, "划转" to R.drawable.ic_ref_transfer, "价格预警" to R.drawable.ic_ref_price_alert, "添加自选" to R.drawable.ic_ref_star, "新手教学" to R.drawable.ic_ref_guide)
+            items.chunked(4).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
+                    row.forEach { (title, icon) ->
+                        Column(Modifier.weight(1f).pressable(scale = 1f) { onClose(); onTool(title) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.size(44.dp).border(1.dp, LB.p.border, RoundedCornerShape(Radius.md)), contentAlignment = Alignment.Center) { LbIcon(icon, 22.dp, LB.p.textPrimary) }
+                            Text(title, style = lb(FontSize.small), color = LB.p.textPrimary)
+                        }
+                    }
+                    repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }

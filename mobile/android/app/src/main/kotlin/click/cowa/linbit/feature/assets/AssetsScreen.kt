@@ -116,9 +116,6 @@ fun AssetsScreen(
         val emptyOverview = s.tab == 0 && total.signum() == 0
 
         Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 12.dp), horizontalArrangement = Arrangement.End) {
-                LbIcon(R.drawable.ic_avatar, 22.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onOpenProfile))
-            }
             if (emptyOverview) {
                 OverviewEmpty(onDeposit = { assetsNav.openDeposit(switchTab = false) }, onFutures = onOpenFutures)
             } else {
@@ -178,15 +175,15 @@ fun AssetsScreen(
 private fun OverviewEmpty(onDeposit: () -> Unit, onFutures: () -> Unit) {
     val p = LB.p
     Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 12.dp)) {
-        Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(150.dp, 120.dp).background(p.fill, RoundedCornerShape(16.dp)))
-            Text("Linbit", style = lb(18.sp, FontWeight.Bold), color = p.textTertiary)
-        }
+        // The captured reference overview has open whitespace above its deposit call to action.
+        Spacer(Modifier.height(270.dp))
         Text("完成充值，开启您的 Linbit 之旅!", style = lb(24.sp, FontWeight.Bold), color = p.textPrimary)
         Spacer(Modifier.height(12.dp))
         LbButton("充值", onClick = onDeposit)
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
+            click.cowa.linbit.ui.components.LbImageIcon(R.drawable.ic_ref_asset_gift, 76.dp)
+            Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text("您的账户尚无可用资产", style = lb(11.sp), color = p.textSecondary)
                 Text("充值任意金额，参与合约交易", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
@@ -223,7 +220,7 @@ private fun Header(hide: Boolean, total: java.math.BigDecimal, cny: java.math.Bi
             Spacer(Modifier.width(6.dp))
             Text("USDT", style = lb(FontSize.small), color = p.textPrimary)
         }
-        val fiat = if (hide) "≈ ****" else "≈ $" + Fmt.amount(total, 2)
+        val fiat = if (hide) "≈ ****" else "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(total, 2, cny)
         if (fiat != null) Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
         if (tab == 1 || tab == 2) {
             val label = if (tab == 2) "今日盈亏" else "可用余额"
@@ -265,7 +262,7 @@ private fun Actions(
                     Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    LbIcon(when (title) { "充值" -> R.drawable.ic_asset_deposit; "提现" -> R.drawable.ic_asset_withdraw; "快捷买币" -> R.drawable.ic_asset_card; "划转" -> R.drawable.ic_mc_transfer_square_light; "盈亏" -> R.drawable.ic_candles; else -> R.drawable.ic_asset_trade }, 22.dp, p.textPrimary)
+                    LbIcon(when (title) { "充值" -> R.drawable.ic_ref_deposit; "提现" -> R.drawable.ic_ref_withdraw; "快捷买币" -> R.drawable.ic_ref_quickbuy; "划转" -> R.drawable.ic_ref_transfer; "盈亏" -> R.drawable.ic_candles; else -> R.drawable.ic_ref_trade }, 22.dp, p.textPrimary)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(title, style = lb(FontSize.small), color = p.textPrimary)
@@ -318,7 +315,7 @@ private fun AssetList(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(if (s.hideAmount) "****" else b.total, style = lbNum(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-                    val fiat = if (s.hideAmount) "≈ ****" else "≈ $" + Fmt.amount(vm.usd(b), 2)
+                    val fiat = if (s.hideAmount) "≈ ****" else "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(vm.usd(b), 2, s.cnyRate)
                     if (fiat != null) Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
                 }
             }

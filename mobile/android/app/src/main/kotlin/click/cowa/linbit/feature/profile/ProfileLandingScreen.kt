@@ -34,9 +34,9 @@ private val recommended = listOf(
 private val popular = listOf(
     HubItem("合伙人计划", R.drawable.ic_avatar), HubItem("卡券中心", R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark),
     HubItem("TradFi", R.drawable.ic_g_tradfi_light, R.drawable.ic_g_tradfi_dark), HubItem("福利中心", R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark),
-    HubItem("合约", R.drawable.ic_candles), HubItem("现货", R.drawable.ic_asset_trade),
+    HubItem("合约", R.drawable.ic_candles), HubItem("现货", R.drawable.ic_ref_trade),
     HubItem("模拟交易", R.drawable.ic_doc_text), HubItem("理财", R.drawable.ic_g_earn_light, R.drawable.ic_g_earn_dark),
-    HubItem("快捷买币", R.drawable.ic_asset_card), HubItem("聊天室", R.drawable.ic_g_chat_light, R.drawable.ic_g_chat_dark),
+    HubItem("快捷买币", R.drawable.ic_ref_quickbuy), HubItem("聊天室", R.drawable.ic_g_chat_light, R.drawable.ic_g_chat_dark),
     HubItem("帮助中心", R.drawable.ic_doc_text), HubItem("客服", R.drawable.ic_headset),
 )
 
