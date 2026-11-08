@@ -473,6 +473,25 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		QuoteVolume:        fmtPrec(decimal.Zero, p.pricePrec, p.ok),
 	}
 	if len(ss.window) == 0 {
+		// The live trade window is empty. If persisted 1m trade candles in the
+		// last 24h have volume, use that (restart recovered candles but not the
+		// trade window). Index candles are not a volume source.
+		if open, hi, lo, vol, quote, ok := a.tradeCandleStats24hLocked(ss); ok {
+			if last.GreaterThan(hi) {
+				hi = last
+			}
+			if lo.Sign() > 0 && last.LessThan(lo) {
+				lo = last
+			}
+			dto.High = fmtPrec(hi, p.pricePrec, p.ok)
+			dto.Low = fmtPrec(lo, p.pricePrec, p.ok)
+			dto.Volume = fmtPrec(vol, p.qtyPrec, p.ok)
+			dto.QuoteVolume = fmtPrec(quote, p.pricePrec, p.ok)
+			if open.Sign() > 0 && last.Sign() > 0 {
+				dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
+			}
+			return dto
+		}
 		// No local trades in 24h: derive change/high/low from the index
 		// candles (5m preferred: its backfill spans >24h; 1m otherwise).
 		// Volume stays 0 — no fabricated volume.
@@ -515,6 +534,37 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		dto.PriceChangePercent = pct.Round(2).String()
 	}
 	return dto
+}
+
+// tradeCandleStats24hLocked sums 1m trade candles overlapping the last 24h.
+// Index candles live in idxSeries and are ignored. ok is false when there is
+// no positive base volume.
+func (a *Aggregator) tradeCandleStats24hLocked(ss *symbolState) (open, hi, lo, vol, quote decimal.Decimal, ok bool) {
+	s := ss.series["1m"]
+	if s == nil || len(s.candles) == 0 {
+		return
+	}
+	from := a.now().Add(-ticker24h).Unix()
+	for _, c := range s.candles {
+		if c.OpenTime+60 <= from || c.Volume.Sign() <= 0 {
+			continue
+		}
+		if !ok {
+			open, hi, lo, ok = c.Open, c.High, c.Low, true
+		}
+		if c.High.GreaterThan(hi) {
+			hi = c.High
+		}
+		if c.Low.LessThan(lo) {
+			lo = c.Low
+		}
+		vol = vol.Add(c.Volume)
+		quote = quote.Add(c.QuoteVolume)
+	}
+	if vol.Sign() <= 0 {
+		ok = false
+	}
+	return
 }
 
 // indexStats24hLocked returns open/high/low over the last 24h of index

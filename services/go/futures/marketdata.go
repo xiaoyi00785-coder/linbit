@@ -127,23 +127,46 @@ func (s *Server) hDepth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := limitParam(r, 20, 200)
-	side := func(sd, ord string) [][2]decimal.Decimal {
-		rows, err := s.db.QueryContext(r.Context(), `SELECT price, sum(qty-filled) FROM fut_orders WHERE symbol=$1 AND side=$2 AND type='limit'
-			AND status IN ('new','partially_filled') GROUP BY price ORDER BY price `+ord+` LIMIT $3`, c.Symbol, sd, n)
-		out := [][2]decimal.Decimal{}
-		if err != nil {
-			return out
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var p, q decimal.Decimal
-			if rows.Scan(&p, &q) == nil {
-				out = append(out, [2]decimal.Decimal{p, q})
-			}
-		}
-		return out
+	bids, err := s.depthSide(r.Context(), c.Symbol, "buy", "DESC", n)
+	if err != nil {
+		writeErr(w, err)
+		return
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "bids": side("buy", "DESC"), "asks": side("sell", "ASC"), "time": s.now().UnixMilli()})
+	asks, err := s.depthSide(r.Context(), c.Symbol, "sell", "ASC", n)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if bids == nil {
+		bids = [][2]decimal.Decimal{}
+	}
+	if asks == nil {
+		asks = [][2]decimal.Decimal{}
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "bids": bids, "asks": asks, "time": s.now().UnixMilli()})
+}
+
+// depthSide reads resting limit orders. A query error is returned to the caller
+// instead of an empty book, so a database failure is not reported as "no depth".
+func (s *Server) depthSide(ctx context.Context, symbol, side, ord string, n int) ([][2]decimal.Decimal, error) {
+	if ord != "ASC" && ord != "DESC" {
+		return nil, bad("VALIDATION_ERROR", "盘口排序不合法")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT price, sum(qty-filled) FROM fut_orders WHERE symbol=$1 AND side=$2 AND type='limit'
+		AND status IN ('new','partially_filled') GROUP BY price ORDER BY price `+ord+` LIMIT $3`, symbol, side, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := [][2]decimal.Decimal{}
+	for rows.Next() {
+		var p, q decimal.Decimal
+		if err := rows.Scan(&p, &q); err != nil {
+			return nil, err
+		}
+		out = append(out, [2]decimal.Decimal{p, q})
+	}
+	return out, rows.Err()
 }
 
 func (s *Server) hTrades(w http.ResponseWriter, r *http.Request) {

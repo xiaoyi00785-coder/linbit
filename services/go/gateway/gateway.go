@@ -188,6 +188,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/app/features", proxy: marketProxy},               // app feature switches (market-data)
 			{prefix: "/home", proxy: marketProxy},                       // home placements/banners + hot list (market-data)
 			{prefix: "/chat", proxy: marketProxy},                       // trading chat rooms (market-data)
+			{prefix: "/academy", proxy: marketProxy},                    // academy articles (market-data)
+			{prefix: "/cards", proxy: accountProxy},                     // card product / application (account)
+			{prefix: "/fiat", proxy: accountProxy},                      // fiat buy config (account)
 			{prefix: "/tradfi", proxy: marketProxy},                     // tokenized stocks / metals catalogue (market-data)
 		},
 		public: []publicRoute{
@@ -202,6 +205,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/password/reset"},
 			{method: http.MethodPost, path: "/auth/passkey/login/begin"},
 			{method: http.MethodPost, path: "/auth/passkey/login/finish"},
+			{method: http.MethodGet, path: "/auth/providers"},
+			{method: http.MethodPost, path: "/auth/google"},
 			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
 			{method: "", path: "/market/"},                      // public market data (prefix)
 			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
@@ -230,6 +235,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/event/products"},                    // event contract products (public)
 			{method: http.MethodGet, path: "/chat/rooms"},                        // chat: anyone can read
 			{method: http.MethodGet, path: "/chat/rooms/"},                       // chat history (prefix); posting needs auth
+			{method: http.MethodGet, path: "/academy/"},                          // academy categories and published articles
+			{method: http.MethodGet, path: "/cards/product"},                     // card intro; unconfigured until an issuer is approved
+			{method: http.MethodGet, path: "/fiat/buy"},                          // fiat buy availability; quotes stay authenticated
+			{method: http.MethodGet, path: "/support/guest"},                     // guest support config; tickets stay authenticated
 			{method: http.MethodGet, path: "/tradfi/assets", optionalAuth: true}, // TradFi catalogue (flag + region gated)
 		},
 	}, nil

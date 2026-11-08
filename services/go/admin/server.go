@@ -171,6 +171,8 @@ func (s *Server) Routes() http.Handler {
 	s.registerHomeRoutes(a)
 	s.registerChatRoutes(a)
 	s.registerPorRoutes(a)
+	s.registerAcademyRoutes(a)
+	s.registerCardRoutes(a)
 	s.registerUserCreditRoutes(a)
 	s.registerAdjustRoutes(a)
 	s.registerEventRoutes(a)

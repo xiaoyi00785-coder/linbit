@@ -77,6 +77,18 @@ type Config struct {
 	// Quote (display fiat) currency preference.
 	DefaultQuoteCurrency string
 	QuoteCurrencies      []string
+
+	// Google ID-token audiences. Empty = Google login is not configured.
+	GoogleClientIDs []string
+	GoogleJWKSURL   string
+	// Guest support widget. Both a provider name and an https entry URL are
+	// required; otherwise GET /support/guest stays unconfigured.
+	SupportGuestProvider string
+	SupportGuestEntryURL string
+	// Fiat on-ramp. Even when both are set, quotes and orders stay unavailable
+	// until a real provider adapter exists. No payment is created.
+	FiatOnRampProvider string
+	FiatOnRampAPIBase  string
 }
 
 // LoadConfig reads configuration from the environment.
@@ -122,6 +134,12 @@ func LoadConfig() Config {
 		S3Region:              common.Env("S3_REGION", ""),
 		S3Endpoint:            common.Env("S3_ENDPOINT", ""),
 		S3PublicBase:          common.Env("S3_PUBLIC_BASE", ""),
+		GoogleClientIDs:       splitCSV(common.Env("GOOGLE_OAUTH_CLIENT_IDS", "")),
+		GoogleJWKSURL:         common.Env("GOOGLE_OAUTH_JWKS_URL", "https://www.googleapis.com/oauth2/v3/certs"),
+		SupportGuestProvider:  common.Env("SUPPORT_GUEST_PROVIDER", ""),
+		SupportGuestEntryURL:  common.Env("SUPPORT_GUEST_ENTRY_URL", ""),
+		FiatOnRampProvider:    common.Env("FIAT_ONRAMP_PROVIDER", ""),
+		FiatOnRampAPIBase:     common.Env("FIAT_ONRAMP_API_BASE", ""),
 	}
 }
 

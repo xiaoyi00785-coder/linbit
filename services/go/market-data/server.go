@@ -44,8 +44,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /market/klines", s.handleKlines)
 	mux.HandleFunc("GET /market/trades", s.handleTrades)
 	mux.HandleFunc("GET /market/index", s.handleIndex)
+	mux.HandleFunc("GET /market/usd-rate", s.handleUSDRate)
 	mux.HandleFunc("GET /market/proof-of-reserves", s.handleProofOfReserves)
 
+	s.academyRoutes(mux)
 	s.homeInternalRoutes(mux)
 	s.chatRoutes(mux)
 	s.porRoutes(mux)
@@ -177,6 +179,7 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 			common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "交易对不存在")
 			return
 		}
+		t.Usd = s.usdForTicker(r.Context(), t)
 		common.WriteJSON(w, http.StatusOK, t)
 		return
 	}
@@ -205,6 +208,7 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 	out := make([]tickerDTO, 0, len(syms))
 	for _, sym := range syms {
 		if t, ok := s.agg.TickerFrame(sym); ok {
+			t.Usd = s.usdForTicker(r.Context(), t)
 			out = append(out, t)
 		}
 	}

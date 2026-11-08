@@ -11,22 +11,16 @@ import (
 	"time"
 
 	"github.com/linbit/platform/services/go/common"
+	"github.com/shopspring/decimal"
 )
 
-// GET /market/fiat-rates?base=USDT — fiat conversion rates for display
-// ("≈ ¥7.12"). USDT/USDC are treated as 1 USD. Sources (FIAT_RATES_URLS,
-// comma list, USD base, no key) are tried in order; the result is cached 10
-// minutes. If every source fails we keep serving the last good value (with its
-// original source/updatedAt and stale:true), or a static table (source
-// "static") when none has ever succeeded.
+// GET /market/fiat-rates?base=USDT — fiat-per-USD rates from a live FX source.
+// rates are per 1 USD, not per 1 USDT. USDT is not pegged to USD here.
+// Sources (FIAT_RATES_URLS) are tried in order and cached 10 minutes. If every
+// source fails we keep the last good value (stale:true). If none has ever
+// succeeded, rates is null and available is false. There is no static table.
 
 const fiatTTL = 10 * time.Minute
-
-var fiatStatic = map[string]float64{
-	"USD": 1, "CNY": 7.12, "EUR": 0.92, "HKD": 7.8, "JPY": 150, "KRW": 1380, "GBP": 0.79,
-	"SGD": 1.34, "TWD": 32, "AUD": 1.52, "CAD": 1.37, "INR": 84, "RUB": 95, "VND": 25400,
-	"THB": 35, "IDR": 15800, "PHP": 57, "MYR": 4.6, "TRY": 34, "BRL": 5.6, "AED": 3.67,
-}
 
 type fiatSnap struct {
 	Rates     map[string]float64
@@ -104,7 +98,7 @@ func (s *Server) fiatRates(ctx context.Context) (fiatSnap, bool) {
 	if fiatCache.good != nil {
 		return *fiatCache.good, true
 	}
-	return fiatSnap{Rates: fiatStatic, Source: "static", UpdatedAt: time.Time{}}, true
+	return fiatSnap{}, true
 }
 
 func (s *Server) handleFiatRates(w http.ResponseWriter, r *http.Request) {
@@ -118,10 +112,33 @@ func (s *Server) handleFiatRates(w http.ResponseWriter, r *http.Request) {
 	}
 	snap, stale := s.fiatRates(r.Context())
 	var updated any
+	available := len(snap.Rates) > 0
 	if !snap.UpdatedAt.IsZero() {
 		updated = snap.UpdatedAt
 	}
+	usdt := s.currentUSDTUSD(r.Context())
+	var usdtRate any
+	var usdtAt any
+	if usdt.OK {
+		usdtRate = usdt.Rate.StringFixed(usdPrecision)
+		usdtAt = usdt.UpdatedAt.UTC()
+	}
+	var perUsdt any
+	if available && usdt.OK {
+		m := map[string]string{}
+		for k, v := range snap.Rates {
+			if v <= 0 {
+				continue
+			}
+			m[k] = decimal.NewFromFloat(v).Mul(usdt.Rate).Round(usdPrecision).StringFixed(usdPrecision)
+		}
+		perUsdt = m
+	}
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	common.WriteJSON(w, http.StatusOK, map[string]any{"base": base, "rates": snap.Rates,
-		"source": snap.Source, "updatedAt": updated, "stale": stale})
+	common.WriteJSON(w, http.StatusOK, map[string]any{
+		"base": base, "pegAssumed": false, "ratesBasis": "USD", "available": available,
+		"rates": snap.Rates, "source": snap.Source, "updatedAt": updated, "stale": stale && available,
+		"usdtUsd":      map[string]any{"available": usdt.OK, "rate": usdtRate, "source": usdt.Source, "updatedAt": usdtAt, "stale": usdt.Stale, "precision": usdPrecision, "pegAssumed": false},
+		"quotePerUsdt": perUsdt,
+	})
 }

@@ -16,6 +16,9 @@ type tickerDTO struct {
 	// PriceSource tells where lastPrice came from: trade | mid (best bid/ask
 	// midpoint, no trades yet) | index (external index, empty book) | none.
 	PriceSource string `json:"priceSource"`
+	// Usd is set on REST tickers. Nil on the in-memory/WS ticker (clients use
+	// GET /market/usd-rate or the REST ticker). USDT is not assumed equal to 1 USD.
+	Usd *usdQuoteDTO `json:"usd,omitempty"`
 }
 
 // depthDTO is an order-book snapshot or delta (openapi Depth / ws depth).
