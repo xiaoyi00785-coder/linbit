@@ -210,7 +210,7 @@ POST 体 `{label, permissions:["read"], ipWhitelist, totpCode}`。`permissions` 
 
 K 线：`GET /market/klines` 与 `GET /futures/market/klines` 增加固定秒数周期 `3m`、`2h`、`6h`、`12h`，由成交按桶聚合，与 1m/5m 相同。不提供 `1M`（自然月，且与 `1m` 大小写易混）和事件合约的 `10m`。事件结算周期仍以 `ev_config.periods` 为准，默认 `5m,15m,30m,1h,4h,1d`。看涨看跌共用一个 `payoutRatio`。下单扣款是现货 USDT（`system:event`，幂等 ref `event:stake:{id}`），余额不足时订单 `rejected`，不从合约保证金扣。本轮不改扣款账户、不新增 10m、不分方向赔率。
 
-`GET /home/newcomer` 的 `claimable` 改为数字字符串，表示可领取任务个数（`"0"`），不是 USDT 金额。金额仍看 `total` 和任务的 `amount`。
+`GET /home/newcomer` 的 `claimable` 是 JSON 字符串，值是可领取任务个数（无任务时为 `"0"`），不是 USDT 金额。金额仍看 `total` 和任务的 `amount`。类型以 OpenAPI `HomeNewcomer.claimable: string` 和安卓 `ApiHomeNewcomer.claimable: String` 为准。
 
 `GET /futures/bonus` 的 `available` 保持对象 `{"trial":"...","deduction":"..."}`，金额是十进制字符串。旧 OpenAPI 把它写成单个字符串，与两种赠金不符；客户端应按对象读取。没有赠金时两项为 `"0"`，不是伪造的体验金余额。
 
