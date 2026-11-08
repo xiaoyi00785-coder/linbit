@@ -62,6 +62,8 @@ import click.cowa.linbit.ui.theme.Radius
 import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
 
+internal val LocalAuthAssistance = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
+
 private object Route {
     const val LOGIN = "login"
     const val PASSWORD = "login/password"
@@ -78,13 +80,16 @@ private object Route {
 @Composable
 fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hiltViewModel(), onDialogWindow: (android.view.Window?) -> Unit = {}) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     val nav = rememberNavController()
     var resetToken by remember { mutableStateOf("") }
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
     DisposableEffect(vm, activity) {
         onDispose { vm.cancelPasskeyLogin() }
     }
-    val soon: (String) -> Unit = { vm.toast.show(it) }
+    var assistance by remember { mutableStateOf<String?>(null) }
+    val soon: (String) -> Unit = { assistance = it }
+    androidx.compose.runtime.CompositionLocalProvider(LocalAuthAssistance provides soon) {
     Box(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         NavHost(nav, startDestination = if (startRegister) Route.REGISTER else Route.LOGIN) {
             composable(Route.LOGIN) {
@@ -125,6 +130,15 @@ fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hi
             }
         }
     }
+    }
+    assistance?.let { kind ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { assistance = null },
+            title = { Text(if (kind == "support") "在线客服" else "Google 登录") },
+            text = { Text(if (kind == "support") "账户问题请先登录，再通过客服工单提交。请勿向任何人提供密码或验证码。" else "当前服务未配置 Google OAuth 客户端及令牌交换接口，请使用邮箱、手机号或通行密钥登录。") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { assistance = null }) { Text("知道了") } },
+        )
+    }
 }
 
 private fun lightSubtitle(text: String) = AnnotatedString(text)
@@ -134,10 +148,11 @@ private fun lightSubtitle(text: String) = AnnotatedString(text)
 @Composable
 internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -> Unit, onRegister: () -> Unit, soon: (String) -> Unit, onPasskey: () -> Unit = {}) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     var showCountry by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = true, onLeft = onClose, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = true, onLeft = onClose, onSupport = { soon("support") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("登录", lightSubtitle("立即登录，每日登录领红包 🧧"))
             LabeledAccountField(vm) { showCountry = true }
@@ -146,8 +161,7 @@ internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SocialButton(R.drawable.ic_passkey, if (vm.passkeyLoading) "正在等待系统通行密钥…" else "使用通行密钥继续", enabled = !vm.passkeyLoading && !vm.loading, testTag = "auth.passkey.login") { onPasskey() }
                 vm.passkeyError?.let { Text(it, color = p.down, style = click.cowa.linbit.ui.theme.lb(FontSize.small)) }
-                SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 登录即将开放") }
-                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 登录即将开放") }
+                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("google") }
             }
             Text(
                 "创建账户", Modifier.align(Alignment.CenterHorizontally).padding(top = 24.dp, bottom = 24.dp).pressable(onClick = onRegister),
@@ -162,8 +176,9 @@ internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: 
 @Composable
 internal fun PasswordScreen(vm: AuthViewModel, onBack: () -> Unit, onForgot: () -> Unit, onChallenge: () -> Unit, onDone: () -> Unit, soon: (String) -> Unit) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("support") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("请输入密码", AnnotatedString(vm.id.masked), LB.p.textSecondary)
             FieldLabel("密码")
@@ -191,6 +206,7 @@ internal fun VerifyScreen(
     onWindowReady: (android.view.Window?) -> Unit = {},
 ) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     var methodIndex by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
@@ -206,7 +222,7 @@ internal fun VerifyScreen(
     }
     fun submit() { vm.submitCode(mode, method, onDone, onSetPassword, onResetToken) }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("support") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader(title, subtitle)
             FieldLabel("验证码")
@@ -247,13 +263,14 @@ internal fun VerifyScreen(
 @Composable
 internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -> Unit, onLogin: () -> Unit, soon: (String) -> Unit) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     var showInvite by remember { mutableStateOf(false) }
     var agree by remember { mutableStateOf(true) }
     var showRetain by remember { mutableStateOf(false) }
     var showCountry by remember { mutableStateOf(false) }
     BackHandler { showRetain = true }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = true, onLeft = { showRetain = true }, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = true, onLeft = { showRetain = true }, onSupport = { soon("support") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("创建帐户", buildAnnotatedString {
                 append("完成注册可获得最高 ")
@@ -280,8 +297,7 @@ internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -
             AuthButton("注册", Modifier.padding(top = 16.dp), loading = vm.loading, testTag = "auth.register.submit") { vm.submitRegister(agree, onNext) }
             OrDivider(Modifier.padding(vertical = 32.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 注册即将开放") }
-                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 注册即将开放") }
+                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("google") }
             }
             Text(
                 "已有账户，立即登录", Modifier.align(Alignment.CenterHorizontally).padding(top = 24.dp, bottom = 24.dp).pressable(onClick = onLogin),
@@ -319,11 +335,12 @@ internal fun SetPasswordScreen(
     onTokenExpired: () -> Unit, onCodeInvalid: () -> Unit,
 ) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     var pwd by remember { mutableStateOf("") }
     var pwd2 by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { vm.toast.show("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { assistance("support") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader(
                 if (resetToken == null) "设置密码" else "重置密码",
@@ -357,7 +374,7 @@ internal fun SetPasswordScreen(
 internal fun ForgotScreen(vm: AuthViewModel, onBack: () -> Unit, onNext: () -> Unit) {
     var showCountry by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { vm.toast.show("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { assistance("support") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("重置密码", AnnotatedString("为保障资金安全，重置密码后 24 小时内禁止提现。"))
             LabeledAccountField(vm) { showCountry = true }
@@ -375,6 +392,7 @@ val LocalLbSheetInlineEvidence = staticCompositionLocalOf { false }
 @Composable
 fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, onWindowReady: (android.view.Window?) -> Unit = {}, content: @Composable () -> Unit) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     val sheetBody: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth().heightIn(max = 680.dp).navigationBarsPadding().imePadding().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
             if (title != null) Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -417,6 +435,7 @@ fun LbSheet(title: String?, onClose: () -> Unit, showClose: Boolean = false, onW
 @Composable
 private fun CountrySheet(selected: String, onPick: (String) -> Unit, onClose: () -> Unit) {
     val p = LB.p
+    val assistance = LocalAuthAssistance.current
     var q by remember { mutableStateOf("") }
     LbSheet("选择国家/地区", onClose) {
         LbTextField(q, { q = it }, "搜索", Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 8.dp))
