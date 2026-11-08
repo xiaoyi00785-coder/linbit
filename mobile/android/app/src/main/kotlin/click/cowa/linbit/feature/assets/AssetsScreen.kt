@@ -583,6 +583,17 @@ private fun CoinDetailPage(vm: AssetsViewModel, asset: String, onBack: () -> Uni
     val dec = click.cowa.linbit.core.util.Dec::parse
     val total = dec(b?.total)
     androidx.compose.ui.window.Dialog(onDismissRequest = onBack, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val dv = androidx.compose.ui.platform.LocalView.current
+        val lightBars = !LB.p.isDark
+        androidx.compose.runtime.SideEffect {
+            (dv.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.let { w ->
+                w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                w.setDimAmount(0f)
+                w.statusBarColor = android.graphics.Color.TRANSPARENT
+                w.navigationBarColor = android.graphics.Color.TRANSPARENT
+                androidx.core.view.WindowCompat.getInsetsController(w, dv).isAppearanceLightStatusBars = lightBars
+            }
+        }
         Column(Modifier.fillMaxSize().background(p.bg).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)) {
             Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(40.dp).pressable(scale = 1f, onClick = onBack), contentAlignment = Alignment.CenterStart) { LbIcon(R.drawable.ic_arrow_left, 22.dp, p.textPrimary) }
@@ -603,11 +614,11 @@ private fun CoinDetailPage(vm: AssetsViewModel, asset: String, onBack: () -> Uni
                 val pair = vm.pairFor(asset)
                 if (pair != null) {
                     Text("交易", Modifier.padding(top = 20.dp), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-                    Column(Modifier.padding(top = 12.dp).fillMaxWidth(0.5f).background(p.fill, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onTrade).padding(14.dp)) {
+                    Column(Modifier.padding(top = 12.dp).fillMaxWidth(0.47f).background(p.fill, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onTrade).padding(horizontal = 16.dp, vertical = 20.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) { Text("${pair.base}/${pair.quote}", Modifier.weight(1f), style = lb(FontSize.caption), color = p.textSecondary); LbIcon(R.drawable.ic_chevron_right, 12.dp, p.textTertiary) }
-                        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(Fmt.priceAuto(pair.last), style = lbNum(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-                            Text(Fmt.percent(pair.changePct), Modifier.padding(start = 8.dp), style = lbNum(FontSize.body), color = if (pair.changePct.signum() < 0) p.down else p.up)
+                        Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(Fmt.priceAuto(pair.last), style = lbNum(FontSize.title, FontWeight.Medium), color = p.textPrimary)
+                            Text(Fmt.percent(pair.changePct), Modifier.padding(start = 8.dp), style = lbNum(FontSize.title), color = if (pair.changePct.signum() < 0) p.down else p.up)
                         }
                     }
                 }

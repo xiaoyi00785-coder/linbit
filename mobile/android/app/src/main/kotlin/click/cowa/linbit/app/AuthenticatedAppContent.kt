@@ -73,6 +73,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             "模拟交易" -> { if (loggedIn) assetFeature = "paper" else auth = "login"; return }
             "客服", "帮助中心" -> { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login"; return }
             "聊天室" -> { marketsTop = 2; tab = MainTab.MARKETS; return }
+            "更多服务" -> { moreMenu = true; return }
             "Linbit 卡" -> { morePage = MorePage.CARD; return }
             "理财" -> { if (loggedIn) assetFeature = "earn" else auth = "login"; return }
             "策略交易" -> { if (loggedIn) assetFeature = "strategy" else auth = "login"; return }

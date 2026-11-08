@@ -55,25 +55,37 @@ fun ProfileLandingScreen(onBack: () -> Unit, onAccount: () -> Unit, onSwitch: ()
         ProfileNavBar("", onBack, trailing = { ThemedIcon(R.drawable.ic_mc_transfer_square_light, R.drawable.ic_mc_transfer_square_dark, 22.dp, Modifier.pressable(onClick = onSwitch)) })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             Row(Modifier.fillMaxWidth().padding(vertical = 16.dp).pressable(scale = 1f, onClick = onAccount), verticalAlignment = Alignment.CenterVertically) {
-                ProfileAvatar(s.account?.avatarUrl, 48.dp)
+                ProfileAvatar(s.account?.avatarUrl, 56.dp)
                 Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(ProfileLogic.displayName(s.account), style = lb(FontSize.body, FontWeight.SemiBold), color = p.textPrimary)
-                    Text("UID: " + (s.account?.uid ?: "--"), Modifier.pressable { s.account?.uid?.let { clipboard.setText(AnnotatedString(it)); vm.toast.show("UID 已复制") } }, style = lbNum(FontSize.caption), color = p.textSecondary)
-                    Text(ProfileLogic.kycLabel(s.kyc), style = lb(FontSize.small), color = p.warning)
+                    Row(Modifier.pressable { s.account?.uid?.let { clipboard.setText(AnnotatedString(it)); vm.toast.show("UID 已复制") } }, verticalAlignment = Alignment.CenterVertically) {
+                        Text("UID: " + (s.account?.uid ?: "--"), style = lbNum(FontSize.caption), color = p.textSecondary)
+                        LbIcon(R.drawable.ic_bn_copy, 12.dp, p.textSecondary, Modifier.padding(start = 4.dp))
+                    }
+                    Text(ProfileLogic.kycLabel(s.kyc), Modifier.background(p.warning.copy(alpha = 0.12f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp), style = lb(FontSize.small), color = p.warning)
                 }
                 LbIcon(R.drawable.ic_arrow_right, 20.dp, p.textPrimary)
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp).border(1.dp, p.border, RoundedCornerShape(Radius.lg)).pressable(scale = 1f, onClick = onSecurity).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 LbIcon(R.drawable.ic_passkey, 30.dp, p.brand)
                 Column(Modifier.padding(start = 12.dp)) {
-                    Text("守护您的账户安全", style = lb(FontSize.label), color = p.textPrimary)
-                    Text("账户安全设置 ›", style = lb(FontSize.caption), color = p.brand)
+                    Text("您的账户安全设置弱于多数用户", style = lb(FontSize.label), color = p.textPrimary)
+                    Text("设置通行密钥", Modifier.padding(top = 4.dp), style = lb(FontSize.label), color = p.brand)
                 }
             }
             HubGrid("推荐", recommended, onFeature)
             HubGrid("热门", popular, onFeature)
-            ProfileRow("关于 Linbit", "V" + BuildConfig.VERSION_NAME) { about = true }
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp).pressable(scale = 1f) { onFeature("更多服务") }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Text("更多服务", style = lb(FontSize.label), color = p.textSecondary)
+                LbIcon(R.drawable.ic_arrow_right, 14.dp, p.textSecondary, Modifier.padding(start = 2.dp))
+            }
             s.error?.let { Text(it, style = lb(FontSize.caption), color = p.down); TextButton(onClick = { vm.load() }) { Text("重试") } }
+        }
+        Row(Modifier.fillMaxWidth().height(52.dp).pressable(scale = 1f) { about = true }.padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+            LbIcon(R.drawable.ic_cv_help, 16.dp, p.textPrimary)
+            Text("关于 Linbit", Modifier.padding(start = 6.dp).weight(1f), style = lb(FontSize.body), color = p.textPrimary)
+            Text("V" + BuildConfig.VERSION_NAME, style = lbNum(FontSize.label), color = p.textTertiary)
+            LbIcon(R.drawable.ic_arrow_right, 16.dp, p.textTertiary, Modifier.padding(start = 8.dp))
         }
     }
     // 参考 App 引导遮罩：「偏好设置已移至用户中心」+「知道了」，只出现一次
@@ -93,7 +105,7 @@ private fun HubGrid(title: String, items: List<HubItem>, onFeature: (String) -> 
     items.chunked(4).forEach { row ->
         Row(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
             row.forEach { item ->
-                Column(Modifier.weight(1f).height(60.dp).pressable(scale = 1f) { onFeature(item.title) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f).height(66.dp).pressable(scale = 1f) { onFeature(item.title) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (item.light in listOf(R.drawable.ic_ref_trade, R.drawable.ic_ref_quickbuy)) LbReferenceIcon(item.light, 26.dp) else ThemedIcon(item.light, item.dark, 26.dp)
                     Text(item.title, style = lb(FontSize.small), color = LB.p.textPrimary)
                 }
