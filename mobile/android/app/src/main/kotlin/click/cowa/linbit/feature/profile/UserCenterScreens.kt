@@ -127,12 +127,8 @@ fun UserCenterScreen(
         }
     }
     if (editingNick && a != null) NicknameDialog(a, onClose = { editingNick = false }, onSaved = { editingNick = false; vm.load(silent = true) })
-    if (logoutConfirm) AlertDialog(
-        onDismissRequest = { logoutConfirm = false },
-        title = { Text("退出当前账户") }, text = { Text("退出后需重新登录才能交易与查看资产。") },
-        confirmButton = { TextButton(onClick = { logoutConfirm = false; onLogout() }) { Text("退出", color = p.down) } },
-        dismissButton = { TextButton(onClick = { logoutConfirm = false }) { Text("取消") } },
-    )
+    if (logoutConfirm) LbDialog("退出登录", { logoutConfirm = false }, "退出登录", { logoutConfirm = false; onLogout() },
+        message = "确定要退出当前账户吗？退出后需重新登录才能交易与查看资产。", destructive = true)
 }
 
 @Composable
@@ -140,18 +136,13 @@ private fun NicknameDialog(account: click.cowa.linbit.core.generated.ApiAccount,
     var nickname by remember { mutableStateOf(account.nickname.orEmpty()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = { if (!busy) onClose() }, title = { Text("修改昵称") },
-        text = { Column {
-            LbTextField(nickname, { nickname = it.take(32); error = null }, "1-32 个字符", error = error)
-            Text("昵称将展示在跟单、聊天室等公开场景。", Modifier.padding(top = 8.dp), style = lb(FontSize.small), color = LB.p.textSecondary)
-        } },
-        confirmButton = { TextButton(enabled = nickname.isNotBlank() && !busy, onClick = {
+    LbDialog("修改昵称", { if (!busy) onClose() }, "保存", {
             busy = true
             vm.save(nickname.trim()) { result -> busy = false; result.onSuccess { onSaved() }.onFailure { error = it.lbMessage() } }
-        }) { Text(if (busy) "保存中" else "保存") } },
-        dismissButton = { TextButton(onClick = onClose) { Text("取消") } },
-    )
+        }, onDismissClick = onClose, confirmEnabled = nickname.isNotBlank() && !busy, loading = busy) {
+        LbTextField(nickname, { nickname = it.take(32); error = null }, "1-32 个字符", error = error)
+        Text("昵称将展示在跟单、聊天室等公开场景。", style = lb(FontSize.small), color = LB.p.textSecondary)
+    }
 }
 
 @HiltViewModel
@@ -197,12 +188,8 @@ fun AccountSwitchScreen(
             LbButton("完成", Modifier.padding(Spacing.pageH), kind = ButtonKind.SECONDARY) { editing = false; picked = emptySet() }
         } else LbButton("+ 添加账号", Modifier.padding(Spacing.pageH), enabled = !s.switching, onClick = onAdd)
     }
-    if (confirmRemove) AlertDialog(
-        onDismissRequest = { confirmRemove = false }, title = { Text("删除本机登录记录") },
-        text = { Text("仅从本机移除账号与令牌，不会注销账户。删除当前账号将退出登录。") },
-        confirmButton = { TextButton(onClick = { confirmRemove = false; vm.removeAccounts(picked, onLogout); picked = emptySet(); editing = false }) { Text("删除", color = p.down) } },
-        dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("取消") } },
-    )
+    if (confirmRemove) LbDialog("删除本机登录记录", { confirmRemove = false }, "删除", { confirmRemove = false; vm.removeAccounts(picked, onLogout); picked = emptySet(); editing = false },
+        message = "仅从本机移除账号与令牌，不会注销账户。删除当前账号将退出登录。", destructive = true)
 }
 
 @Composable

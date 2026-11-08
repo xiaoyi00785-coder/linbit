@@ -1010,7 +1010,7 @@ fun ConvertSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit
                 }.padding(horizontal = Spacing.pageH, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     CoinIcon(a, 28.dp); Text(a, Modifier.weight(1f).padding(start = 10.dp), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
                     if (loggedIn) Text(vm.convertBalances[a]?.let { Fmt.amount(it, 8) } ?: "0", style = lbNum(FontSize.caption), color = p.textSecondary)
-                    if ((side == "from" && a == from) || (side == "to" && a == to)) LbIcon(click.cowa.linbit.R.drawable.ic_check, 16.dp, p.textPrimary, Modifier.padding(start = 8.dp))
+                    if ((side == "from" && a == from) || (side == "to" && a == to)) click.cowa.linbit.ui.components.SheetCheck(Modifier.padding(start = 8.dp))
                 } } }
         }
     }

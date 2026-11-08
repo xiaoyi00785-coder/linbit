@@ -346,21 +346,23 @@ fun ApiKeyScreen(onBack: () -> Unit, vm: ApiKeyViewModel = hiltViewModel(), onSe
     }
     if (form) { var label by remember { mutableStateOf("") }; var ips by remember { mutableStateOf("") }; var totp by remember { mutableStateOf("") }
         val ipList = ips.split(',', '，', '\n').map { it.trim() }.filter { it.isNotEmpty() }
-        AlertDialog(onDismissRequest = { form = false }, title = { Text("创建只读 API Key") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            androidx.compose.material3.OutlinedTextField(label, { label = it.take(20) }, label = { Text("备注名") }, singleLine = true)
-            androidx.compose.material3.OutlinedTextField(ips, { ips = it }, label = { Text("IP 白名单（选填，逗号分隔）") })
+        LbDialog("创建只读 API Key", { form = false }, "创建", { vm.create(label.trim(), ipList, totp) { form = false } },
+            onDismissClick = { form = false; vm.createError = null }, confirmEnabled = label.isNotBlank() && totp.length == 6 && ipList.size <= ApiKeyLimits.MAX_IPS && !vm.busy, loading = vm.busy) {
+            LbTextField(label, { label = it.take(20) }, "备注名")
+            LbTextField(ips, { ips = it }, "IP 白名单（选填，逗号分隔）")
             if (ipList.size > ApiKeyLimits.MAX_IPS) Text("IP 白名单最多 ${ApiKeyLimits.MAX_IPS} 条", style = lb(FontSize.small), color = p.down)
-            androidx.compose.material3.OutlinedTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, label = { Text("谷歌验证码") }, singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword))
+            LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "谷歌验证码", keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword)
             vm.createError?.let { Text(it, style = lb(FontSize.small), color = p.down) }
-            Text("只读 Key 仅可查询资产和订单，不能交易、划转或提现。", style = lb(FontSize.small), color = p.textSecondary) } },
-            confirmButton = { TextButton(enabled = label.isNotBlank() && totp.length == 6 && ipList.size <= ApiKeyLimits.MAX_IPS && !vm.busy, onClick = { vm.create(label.trim(), ipList, totp) { form = false } }) { Text("创建") } },
-            dismissButton = { TextButton(onClick = { form = false; vm.createError = null }) { Text("取消") } }) }
-    if (vm.needTwoFa) AlertDialog(onDismissRequest = { vm.needTwoFa = false }, title = { Text("需要开启谷歌验证") }, text = { Text("创建 API Key 前须先开启谷歌验证（TOTP）。") },
-        confirmButton = { TextButton(onClick = { vm.needTwoFa = false; onSecurity() }) { Text("去开启") } }, dismissButton = { TextButton(onClick = { vm.needTwoFa = false }) { Text("取消") } })
-    vm.created?.let { cr -> AlertDialog(onDismissRequest = {}, title = { Text("请保存您的 Secret Key") }, text = { Column { Text("Secret Key 只显示这一次，关闭后无法再次查看。", color = p.down); Spacer(Modifier.height(8.dp)); Text("API Key：" + cr.item.apiKey); Text("Secret Key：" + cr.secret) } },
-        confirmButton = { TextButton(onClick = { clip.setText(AnnotatedString(cr.secret)); vm.toast.show("已复制 Secret Key") }) { Text("复制") } }, dismissButton = { TextButton(onClick = { vm.created = null }) { Text("我已保存") } }) }
-    del?.let { d -> AlertDialog(onDismissRequest = { del = null }, title = { Text("删除 API Key") }, text = { Text("删除「${d.label}」后，使用该 Key 的程序将立即失效。") },
-        confirmButton = { TextButton(onClick = { vm.delete(d.id); del = null }) { Text("删除", color = p.down) } }, dismissButton = { TextButton(onClick = { del = null }) { Text("取消") } }) }
+            Text("只读 Key 仅可查询资产和订单，不能交易、划转或提现。", style = lb(FontSize.small), color = p.textSecondary)
+        } }
+    if (vm.needTwoFa) LbDialog("需要开启谷歌验证", { vm.needTwoFa = false }, "去开启", { vm.needTwoFa = false; onSecurity() }, message = "创建 API Key 前须先开启谷歌验证（TOTP）。")
+    vm.created?.let { cr -> LbDialog("请保存您的 Secret Key", {}, "复制", { clip.setText(AnnotatedString(cr.secret)); vm.toast.show("已复制 Secret Key") },
+        dismissText = "我已保存", onDismissClick = { vm.created = null }) {
+        Text("Secret Key 只显示这一次，关闭后无法再次查看。", style = lb(FontSize.label), color = p.down)
+        Text("API Key：" + cr.item.apiKey, style = lb(FontSize.label), color = p.textPrimary)
+        Text("Secret Key：" + cr.secret, style = lb(FontSize.label), color = p.textPrimary)
+    } }
+    del?.let { d -> LbDialog("删除 API Key", { del = null }, "删除", { vm.delete(d.id); del = null }, message = "删除「${d.label}」后，使用该 Key 的程序将立即失效。", destructive = true) }
 }
 
 // ======================= 卡片（/cards/*，契约 §3） =======================

@@ -432,7 +432,7 @@ private fun EventChart(vm: EventContractViewModel) {
             listOf("MA（5 / 10 / 20）", "BOLL（20, 2）", "EMA（5 / 10 / 20）").forEachIndexed { i, t ->
                 Row(Modifier.fillMaxWidth().height(52.dp).pressable(scale = 1f) { ind = i; showInd = false }.padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
                     Text(t, Modifier.weight(1f), style = lb(FontSize.body), color = p.textPrimary)
-                    if (ind == i) LbIcon(R.drawable.ic_check, 18.dp, p.textPrimary)
+                    if (ind == i) click.cowa.linbit.ui.components.SheetCheck()
                 }
             }
         }
@@ -629,7 +629,7 @@ fun EventContractScreen(
                     CoinIcon(pr.baseAsset ?: "?", 22.dp)
                     Text(pr.symbol ?: "--", Modifier.padding(start = 10.dp).weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
                     Text(if (pr.paused == true) "暂停" else apiAmount(pr.indexPrice), style = lbNum(FontSize.label), color = p.textSecondary)
-                    if (pr.symbol == vm.symbol) LbIcon(R.drawable.ic_check, 16.dp, p.textPrimary, Modifier.padding(start = 10.dp))
+                    if (pr.symbol == vm.symbol) click.cowa.linbit.ui.components.SheetCheck()
                 }
             }
         }
@@ -639,7 +639,7 @@ fun EventContractScreen(
             vm.cfg?.periods.orEmpty().forEach { pd ->
                 Row(Modifier.fillMaxWidth().height(52.dp).pressable(scale = 1f) { vm.period = pd.period ?: vm.period; showPeriods = false }.padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
                     Text((pd.period ?: "--").replace("d", "D"), Modifier.weight(1f), style = lb(FontSize.body), color = p.textPrimary)
-                    if (pd.period == vm.period) LbIcon(R.drawable.ic_check, 18.dp, p.textPrimary)
+                    if (pd.period == vm.period) click.cowa.linbit.ui.components.SheetCheck()
                 }
             }
         }

@@ -1,5 +1,6 @@
 package click.cowa.linbit.feature.auth
 
+import click.cowa.linbit.ui.components.LbDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -141,12 +142,9 @@ fun AuthFlow(startRegister: Boolean, onClose: () -> Unit, vm: AuthViewModel = hi
     }
     }
     assistanceKind?.let { kind ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { assistanceKind = null; gs?.clearGoogleError(); gs?.clearSupportError() },
-            title = { Text(if (kind == "support") "在线客服" else "Google 登录") },
-            text = { Text(if (kind == "support") (gs?.supportError ?: "账户问题请先登录，再通过客服工单提交。请勿向任何人提供密码或验证码。") else (gs?.googleError ?: "Google 登录未配置：缺少 OAuth 客户端，请使用邮箱、手机号或通行密钥登录。")) },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { assistanceKind = null; gs?.clearGoogleError(); gs?.clearSupportError() }) { Text("知道了") } },
-        )
+        val close = { assistanceKind = null; gs?.clearGoogleError(); gs?.clearSupportError(); Unit }
+        LbDialog(if (kind == "support") "在线客服" else "Google 登录", close, "知道了", close, dismissText = null,
+            message = if (kind == "support") (gs?.supportError ?: "账户问题请先登录，再通过客服工单提交。请勿向任何人提供密码或验证码。") else (gs?.googleError ?: "Google 登录未配置：缺少 OAuth 客户端，请使用邮箱、手机号或通行密钥登录。"))
     }
 }
 

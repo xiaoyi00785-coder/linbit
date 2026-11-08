@@ -266,6 +266,6 @@ fun OrderTypeRow(@androidx.annotation.DrawableRes icon: Int, title: String, sele
     Row(Modifier.fillMaxWidth().pressable(scale = 1f, onClick = onClick).padding(horizontal = Spacing.pageH, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         LbIcon(icon, 20.dp, p.textPrimary)
         Text(title, Modifier.weight(1f).padding(start = 14.dp), style = lb(FontSize.body), color = p.textPrimary)
-        if (selected) LbIcon(R.drawable.ic_check, 18.dp, p.textPrimary)
+        if (selected) click.cowa.linbit.ui.components.SheetCheck()
     }
 }

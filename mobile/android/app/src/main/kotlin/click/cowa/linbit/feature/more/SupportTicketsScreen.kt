@@ -306,12 +306,8 @@ private fun SupportTicketDetail(id: String, vm: SupportViewModel, onBack: () -> 
             }
         }
     }
-    if (confirmClose) AlertDialog(
-        onDismissRequest = { confirmClose = false }, title = { Text("关闭工单") },
-        text = { Text("关闭后将无法继续回复，如仍有问题可重新提交工单。") },
-        confirmButton = { TextButton(onClick = { confirmClose = false; vm.close(id) }) { Text("关闭", color = LB.p.down) } },
-        dismissButton = { TextButton(onClick = { confirmClose = false }) { Text("取消") } },
-    )
+    if (confirmClose) LbDialog("关闭工单", { confirmClose = false }, "关闭", { confirmClose = false; vm.close(id) },
+        message = "关闭后将无法继续回复，如仍有问题可重新提交工单。", destructive = true)
 }
 
 @Composable

@@ -1,5 +1,6 @@
 package click.cowa.linbit.feature.trade
 
+import click.cowa.linbit.ui.components.LbDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +56,7 @@ fun BookModeSheet(mode: Int, onPick: (Int) -> Unit, onClose: () -> Unit) {
                 ) {
                     BookModeGlyph(i)
                     Text(t, Modifier.weight(1f).padding(start = 12.dp), style = lb(FontSize.body), color = p.textPrimary)
-                    if (mode == i) LbIcon(R.drawable.ic_check, 20.dp, p.textPrimary)
+                    if (mode == i) click.cowa.linbit.ui.components.SheetCheck()
                 }
             }
         }
@@ -190,12 +191,5 @@ fun LeverageSheet(vm: FuturesTradeViewModel, onClose: () -> Unit) {
 @Composable
 fun ConfirmDialog(title: String, message: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     val p = LB.p
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = p.bgElevated,
-        title = { Text(title, style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary) },
-        text = { Text(message, style = lb(FontSize.label), color = p.textSecondary) },
-        confirmButton = { TextButton(onConfirm) { Text(confirm, style = lb(FontSize.label, FontWeight.Medium), color = p.down) } },
-        dismissButton = { TextButton(onDismiss) { Text("取消", style = lb(FontSize.label), color = p.textPrimary) } },
-    )
+    LbDialog(title, onDismiss, confirm, onConfirm, message = message, destructive = true)
 }

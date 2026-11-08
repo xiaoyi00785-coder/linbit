@@ -102,7 +102,7 @@ fun ProfileLandingScreen(onBack: () -> Unit, onAccount: () -> Unit, onSwitch: ()
         }
     }
     }
-    if (about) AlertDialog(onDismissRequest = { about = false }, title = { Text("Linbit") }, text = { Text("版本 " + BuildConfig.VERSION_NAME) }, confirmButton = { TextButton(onClick = { about = false }) { Text("知道了") } })
+    if (about) LbDialog("关于 Linbit", { about = false }, "知道了", { about = false }, message = "版本 V" + BuildConfig.VERSION_NAME, dismissText = null)
 }
 
 @Composable

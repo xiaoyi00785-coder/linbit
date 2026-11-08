@@ -145,8 +145,6 @@ fun ScanScreen(onClose: () -> Unit) {
             LbButton("相册", Modifier.weight(1f), kind = ButtonKind.SECONDARY) { photo.launch("image/*") }
         }
     }
-    result?.let { value -> AlertDialog(onDismissRequest = { result = null }, title = { Text("扫描结果") }, text = { Text(value.take(4096)) },
-        confirmButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(value)); result = null }) { Text("复制") } },
-        dismissButton = { TextButton(onClick = { result = null }) { Text("继续扫描") } }) }
-    error?.let { message -> AlertDialog(onDismissRequest = { error = null }, title = { Text("扫一扫") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } }) }
+    result?.let { value -> LbDialog("扫描结果", { result = null }, "复制", { clipboard.setText(AnnotatedString(value)); result = null }, message = value.take(4096), dismissText = "继续扫描") }
+    error?.let { message -> LbDialog("扫一扫", { error = null }, "知道了", { error = null }, message = message, dismissText = null) }
 }
