@@ -773,11 +773,10 @@ interface LinbitApi {
     @POST("cards/applications")
     suspend fun applyCard(@Body body: click.cowa.linbit.feature.more.ApiCardApplyRequest): click.cowa.linbit.feature.more.ApiCardState
 
-    @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("chat/rooms")
     suspend fun chatRooms(): ApiListChatRooms200Response
 
-    /** 带 Token 时服务端回 mine；游客匿名可读。 */
+    /** 登录后读取；带 Token 以返回 mine。游客由页面与 ViewModel 双重拦截。 */
     @GET("chat/rooms/{room}/messages")
     suspend fun chatMessages(@Path("room") room: String, @Query("before") before: Long? = null, @Query("limit") limit: Int = 50): ApiListChatMessages200Response
 

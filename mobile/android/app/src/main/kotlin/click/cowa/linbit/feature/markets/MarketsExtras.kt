@@ -276,11 +276,11 @@ private fun SearchRow(r: MarketRow, kind: MarketKind, starred: Boolean, onStar: 
 @Composable
 fun ChatRoomGuest(onLogin: () -> Unit) {
     val p = LB.p
-    Column(Modifier.fillMaxSize().padding(top = 120.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         EmptyState("登录后查看聊天记录")
         Box(
-            Modifier.width(140.dp).height(40.dp).clip(RoundedCornerShape(Radius.xl)).background(p.primary).pressable(onClick = onLogin),
+            Modifier.height(32.dp).clip(RoundedCornerShape(8.dp)).background(p.fill).pressable(onClick = onLogin).padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center,
-        ) { Text("立即登录", style = lb(FontSize.label, FontWeight.Medium), color = p.textOnPrimary) }
+        ) { Text("立即登录", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary) }
     }
 }

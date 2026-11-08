@@ -116,7 +116,7 @@ fun MarketsContent(
             PrimaryTabs(listOf("自选", "市场", "聊天室"), top, { top = it })
             Box(Modifier.weight(1f))
             if (top != 2) LbIcon(R.drawable.ic_search, 22.dp, modifier = Modifier.pressable(onClick = onSearch))
-            Box(Modifier.padding(start = 18.dp)) {
+            if (top != 2) Box(Modifier.padding(start = 18.dp)) {
                 LbIcon(R.drawable.ic_more, 22.dp, modifier = Modifier.pressable { menu = true })
                 Box(Modifier.align(Alignment.TopEnd).padding(top = 0.dp).size(6.dp).clip(CircleShape).background(p.badgeDot))
                 MarketsMoreMenu(menu, { menu = false }, { iconSheet = true }, { widgets = true })
@@ -150,7 +150,7 @@ fun MarketsContent(
                     }
                 }
             }
-            else -> ChatRoomTab(loggedIn, onLogin, onChatOverlay)
+            else -> if (loggedIn) ChatRoomTab(loggedIn, onLogin, onChatOverlay) else ChatRoomGuest(onLogin)
         }
         if (iconSheet) CoinIconSettingsSheet { iconSheet = false }
         if (widgets) MarketWidgetsSheet(state.spot) { widgets = false }

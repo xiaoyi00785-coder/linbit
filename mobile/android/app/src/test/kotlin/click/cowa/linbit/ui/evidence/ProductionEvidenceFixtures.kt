@@ -56,6 +56,8 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
         }
     }
 
+    fun chat(chatApi: click.cowa.linbit.core.network.LinbitApi = retrofit) = click.cowa.linbit.feature.markets.ChatViewModel(chatApi, MarketSocket(http, "ws://127.0.0.1/", "evidence", scope, accessToken = { null }), tokens, toast)
+
     fun rootHomeMarket(): click.cowa.linbit.app.RootHomeMarketFactory {
         val socket = MarketSocket(http, "ws://127.0.0.1/", "evidence", scope, accessToken = { null })
         val store = MarketStore(retrofit, socket, scope); val watch = click.cowa.linbit.data.Watchlist(org.robolectric.RuntimeEnvironment.getApplication())

@@ -79,7 +79,8 @@ internal fun AppRootContent(vm: AppViewModel, badgeVm: NotificationBadgeViewMode
     // 与参考 App 一致：游客可浏览首页/行情/交易页公开数据；资产及所有私有入口在 AuthenticatedAppContent 内按 loggedIn 拦截到登录。
     val firstSplash = rememberSaveable { mutableStateOf(showSplash) }
     LaunchedEffect(Unit) { firstSplash.value = false }
+    val pendingChat = rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.key(loggedIn) {
-        AuthenticatedAppContent(vm, badgeVm, routeVms, firstSplash.value, onDialogWindow, loggedIn = loggedIn, authVm = authVm)
+        AuthenticatedAppContent(vm, badgeVm, routeVms, firstSplash.value, onDialogWindow, loggedIn = loggedIn, authVm = authVm, pendingChat = pendingChat.value, onPendingChat = { pendingChat.value = it })
     }
 }

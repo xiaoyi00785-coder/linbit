@@ -32,7 +32,7 @@ import kotlinx.serialization.json.*
 import java.util.UUID
 import javax.inject.Inject
 
-/** 聊天室（契约 §1）：游客可读，登录可发；实时走 /ws chat:{room}。 */
+/** 聊天室（契约 §1）：登录后查看及发言；实时走 /ws chat:{room}。 */
 @HiltViewModel
 class ChatViewModel @Inject constructor(private val api: LinbitApi, private val socket: MarketSocket, private val tokens: TokenStore, val toast: ToastCenter) : ViewModel() {
     val loggedIn get() = tokens.loggedIn
@@ -46,15 +46,29 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
     private val mineIds = mutableSetOf<Long>()
     private var live: Job? = null
 
-    fun loadRooms() { roomsError = null; viewModelScope.launch {
-        runCatching { apiCall { api.chatRooms() } }.onSuccess { rooms = it.rooms.orEmpty() }.onFailure { roomsError = chatError(it) } } }
+    private var roomsJob: Job? = null
+    private var messagesJob: Job? = null
+    private var olderJob: Job? = null
+    private var sendJob: Job? = null
+    init { viewModelScope.launch { tokens.loggedIn.collect { if (!it) clearSession() } } }
+
+    fun clearSession() {
+        roomsJob?.cancel(); messagesJob?.cancel(); olderJob?.cancel(); sendJob?.cancel(); live?.cancel()
+        rooms = null; roomsError = null; room = null; messages = emptyList()
+        hasMore = false; msgError = null; mineIds.clear(); sending = false
+    }
+
+    fun loadRooms() { if (!tokens.loggedIn.value) { clearSession(); return }; roomsError = null; roomsJob?.cancel(); roomsJob = viewModelScope.launch {
+        runCatching { apiCall { api.chatRooms() } }.onSuccess { if (tokens.loggedIn.value) rooms = it.rooms.orEmpty() }.onFailure { if (it !is kotlinx.coroutines.CancellationException && tokens.loggedIn.value) roomsError = chatError(it) } } }
 
     fun open(r: ApiChatRoom?) {
-        live?.cancel(); room = r; messages = emptyList(); msgError = null
+        if (!tokens.loggedIn.value) { clearSession(); return }
+        live?.cancel(); messagesJob?.cancel(); olderJob?.cancel(); room = r; messages = emptyList(); msgError = null; hasMore = false
         if (r == null) return
-        viewModelScope.launch { runCatching { apiCall { api.chatMessages(r.id) } }
-            .onSuccess { messages = it.items.orEmpty().sortedBy { m -> m.id }; hasMore = it.hasMore == true }.onFailure { msgError = chatError(it) } }
+        messagesJob = viewModelScope.launch { runCatching { apiCall { api.chatMessages(r.id) } }
+            .onSuccess { if (!tokens.loggedIn.value || room?.id != r.id) return@onSuccess; messages = it.items.orEmpty().sortedBy { m -> m.id }; hasMore = it.hasMore == true }.onFailure { if (it !is kotlinx.coroutines.CancellationException && tokens.loggedIn.value) msgError = chatError(it) } }
         live = viewModelScope.launch { socket.subscribe("chat:${r.id}").collect { f -> runCatching {
+            if (!tokens.loggedIn.value || room?.id != r.id) return@collect
             val d = f.data.jsonObject
             when (d["type"]?.jsonPrimitive?.content) {
                 "message" -> { val m = Json { ignoreUnknownKeys = true }.decodeFromJsonElement(ApiChatMessage.serializer(), d["message"]!!)
@@ -62,12 +76,12 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
                 "delete" -> { val id = d["id"]!!.jsonPrimitive.long; messages = messages.filterNot { it.id == id } }
             } } } }
     }
-    fun older() { val r = room ?: return; val before = messages.firstOrNull()?.id ?: return
-        viewModelScope.launch { runCatching { apiCall { api.chatMessages(r.id, before = before) } }.onSuccess { messages = (it.items.orEmpty() + messages).distinctBy { m -> m.id }.sortedBy { m -> m.id }; hasMore = it.hasMore == true } } }
-    fun send(text: String, done: () -> Unit) { val r = room ?: return; if (sending || text.isBlank()) return; sending = true
-        viewModelScope.launch { runCatching { apiCall { api.postChatMessage(r.id, ApiPostChatMessageRequest(UUID.randomUUID().toString(), text.trim())) } }
-            .onSuccess { m -> mineIds += m.id; if (messages.none { it.id == m.id }) messages = (messages + m).sortedBy { it.id }; done() }
-            .onFailure { toast.show(chatError(it)) }; sending = false } }
+    fun older() { if (!tokens.loggedIn.value) { clearSession(); return }; val r = room ?: return; val before = messages.firstOrNull()?.id ?: return
+        olderJob?.cancel(); olderJob = viewModelScope.launch { runCatching { apiCall { api.chatMessages(r.id, before = before) } }.onSuccess { if (!tokens.loggedIn.value || room?.id != r.id) return@onSuccess; messages = (it.items.orEmpty() + messages).distinctBy { m -> m.id }.sortedBy { m -> m.id }; hasMore = it.hasMore == true } } }
+    fun send(text: String, done: () -> Unit) { if (!tokens.loggedIn.value) { clearSession(); return }; val r = room ?: return; if (sending || text.isBlank()) return; sending = true
+        sendJob = viewModelScope.launch { runCatching { apiCall { api.postChatMessage(r.id, ApiPostChatMessageRequest(UUID.randomUUID().toString(), text.trim())) } }
+            .onSuccess { m -> if (!tokens.loggedIn.value || room?.id != r.id) return@onSuccess; mineIds += m.id; if (messages.none { it.id == m.id }) messages = (messages + m).sortedBy { it.id }; done() }
+            .onFailure { if (it !is kotlinx.coroutines.CancellationException && tokens.loggedIn.value) toast.show(chatError(it)) }; sending = false } }
     fun isMine(m: ApiChatMessage) = m.mine == true || m.id in mineIds
     private fun chatError(t: Throwable): String = when ((t as? ApiFailure.Server)?.error?.code) {
         "FEATURE_DISABLED" -> "聊天室暂未开放"; "CHAT_KYC_REQUIRED" -> "完成身份认证后才能发言"; "CHAT_RATE_LIMITED" -> "发言太频繁，请稍后再试"
@@ -75,10 +89,20 @@ class ChatViewModel @Inject constructor(private val api: LinbitApi, private val 
         "CHAT_MUTED" -> "您已被禁言"; "CHAT_BANNED" -> "您已被禁止使用聊天室"; else -> t.lbMessage() }
 }
 
+internal val LocalChatViewModelFactory = staticCompositionLocalOf<(() -> ChatViewModel)?> { null }
+
 @Composable
-fun ChatRoomTab(loggedIn: Boolean, onLogin: () -> Unit, onOverlay: (Boolean) -> Unit = {}, vm: ChatViewModel = hiltViewModel()) {
+fun ChatRoomTab(loggedIn: Boolean, onLogin: () -> Unit, onOverlay: (Boolean) -> Unit = {}, vm: ChatViewModel = LocalChatViewModelFactory.current?.invoke() ?: hiltViewModel()) {
     val p = LB.p
-    LaunchedEffect(loggedIn) { vm.loadRooms() }
+    val session by vm.loggedIn.collectAsState()
+    val canRead = loggedIn && session
+    LaunchedEffect(canRead) { if (canRead) vm.loadRooms() else vm.clearSession() }
+    DisposableEffect(vm) { onDispose { vm.open(null); onOverlay(false) } }
+    if (!canRead) {
+        LaunchedEffect(Unit) { onOverlay(false) }
+        ChatRoomGuest(onLogin)
+        return
+    }
     val room = vm.room
     LaunchedEffect(room) { onOverlay(room != null) }
     if (room != null) { androidx.activity.compose.BackHandler { vm.open(null) }; ChatRoomScreen(room, loggedIn, onLogin, vm); return }

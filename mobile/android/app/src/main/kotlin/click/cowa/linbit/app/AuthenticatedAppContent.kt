@@ -40,7 +40,7 @@ import click.cowa.linbit.ui.theme.Metrics
 import click.cowa.linbit.ui.theme.resolveDark
 
 @Composable
-internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadgeViewModel, routeVms: AssetRouteViewModels, showSplash: Boolean, onDialogWindow: (android.view.Window?) -> Unit, loggedIn: Boolean = true, authVm: click.cowa.linbit.feature.auth.AuthViewModel? = null) {
+internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadgeViewModel, routeVms: AssetRouteViewModels, showSplash: Boolean, onDialogWindow: (android.view.Window?) -> Unit, loggedIn: Boolean = true, authVm: click.cowa.linbit.feature.auth.AuthViewModel? = null, pendingChat: Boolean = false, onPendingChat: (Boolean) -> Unit = {}) {
 
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
@@ -105,7 +105,12 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             if (loggedIn) vm.expired.collect { vm.toast.show("登录已过期，请重新登录"); userCenter = false; auth = "login" }
         }
         // 登录成功后自动收起
-        LaunchedEffect(loggedIn) { if (loggedIn) auth = null }
+        LaunchedEffect(loggedIn, pendingChat) {
+            if (loggedIn) {
+                auth = null
+                if (pendingChat) { marketsTop = 2; tab = MainTab.MARKETS; onPendingChat(false) }
+            }
+        }
 
         val p = LB.p
         // 内容区底部留白 = TabBar 高 + 间距，滚动内容可滑到胶囊下方
@@ -127,7 +132,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onOpenLink = ::openLink, onScan = { scan = true },
                     )
                     MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), initialTop = marketsTop, openSearch = marketsSearch, onSearchConsumed = { marketsSearch = false },
-                        loggedIn = loggedIn, onLogin = { auth = "login" }, onOverlay = { hideTabBar = it }, onOpenTrade = { kind, sym ->
+                        loggedIn = loggedIn, onLogin = { onPendingChat(true); auth = "login" }, onOverlay = { hideTabBar = it }, onOpenTrade = { kind, sym ->
                         if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
                     })
                     MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
@@ -213,7 +218,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol, vm = LocalTradeHistoryFactory.current.invoke(), onDialogWindow = onDialogWindow)
             }
             if (scan) click.cowa.linbit.feature.scan.ScanScreen { scan = false }
-            auth?.let { start -> if (authVm != null) AuthFlow(startRegister = start == "register", onClose = { auth = null }, vm = authVm, onDialogWindow = onDialogWindow) else AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
+            auth?.let { start -> if (authVm != null) AuthFlow(startRegister = start == "register", onClose = { auth = null; if (!vm.loggedIn.value) onPendingChat(false) }, vm = authVm, onDialogWindow = onDialogWindow) else AuthFlow(startRegister = start == "register", onClose = { auth = null; if (!vm.loggedIn.value) onPendingChat(false) }) }
             ToastOverlay(vm.toast)
             if (splash) SplashOverlay(reduceMotion = false, onFinish = { splash = false })
         }
