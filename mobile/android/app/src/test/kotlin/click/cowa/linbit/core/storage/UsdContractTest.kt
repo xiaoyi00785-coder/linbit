@@ -17,6 +17,15 @@ class UsdContractTest {
         assertNull(old.usd)
     }
 
+    @Test fun restAndWsUseIdenticalGeneratedUsdContract() {
+        val payload = """{"symbol":"BTCUSDT","lastPrice":"100","priceChangePercent":"0","high":"1","low":"1","volume":"0","quoteVolume":"0","usd":{"available":true,"price":"99.9","rate":"0.999","stale":true}}"""
+        val rest = json.decodeFromString(ApiTicker.serializer(), payload)
+        val ws = json.decodeFromString(click.cowa.linbit.core.realtime.WsTicker.serializer(), payload)
+        assertEquals(rest.usd, ws.usd)
+        val unavailable = json.decodeFromString(click.cowa.linbit.core.generated.ApiWsUsd.serializer(), "{}")
+        assertEquals(false, unavailable.available); assertEquals(false, unavailable.stale); assertNull(unavailable.price)
+    }
+
     @Test fun formatPrefersBackendUsdAndNeverAssumesPeg() {
         QuoteDisplay.currency = "USD"; QuoteDisplay.usdPerUsdt = null
         assertEquals("$--", QuoteDisplay.formatQuote(BigDecimal("100"), null, 2))

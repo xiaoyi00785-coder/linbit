@@ -5,7 +5,6 @@ import click.cowa.linbit.R
 
 /** 本地打包图标索引；新增币种须同时运行 mobile/tools/gen_coin_icons.py。 */
 internal object CoinIcons {
-    @DrawableRes
     fun normalize(base: String): String {
         var b = base.trim().uppercase().removeSuffix(".E")
         b = b.substringBefore('/').substringBefore('-').substringBefore('_')

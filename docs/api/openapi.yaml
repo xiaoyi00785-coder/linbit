@@ -8947,6 +8947,16 @@ components:
         name: { type: string, example: 公链 }
         symbols: { type: array, items: { type: string }, example: [BTCUSDT, ETHUSDT] }
 
+    WsUsd:
+      type: object
+      description: "REST ticker 与 WebSocket ticker 共用的 USD 折合对象；不可用时不伪造价格。"
+      required: [available, stale]
+      properties:
+        available: { type: boolean, default: false }
+        price: { type: string, nullable: true }
+        rate: { type: string, nullable: true }
+        stale: { type: boolean, default: false }
+
     Ticker:
       type: object
       required: [symbol, lastPrice, priceChangePercent, high, low, volume, quoteVolume]
@@ -8958,6 +8968,8 @@ components:
         low: { type: string, example: "76705.00" }
         volume: { type: string, example: "371.65" }
         quoteVolume: { type: string, example: "28915681.30" }
+        usd:
+          $ref: "#/components/schemas/WsUsd"
         priceSource:
           type: string
           enum: [trade, mid, index, none]

@@ -44,7 +44,7 @@
 ## 事件合约
 - 结算周期以 `/event/products.periods` 为准（5m/15m/30m/1h/4h/1d）；参考的 10m 无后端来源，不显示。
 - 参考 K 线周期含 10m；`/market/klines` 无 10m，K 线周期显示 1m/5m/15m/30m/1h/4h/1D。
-- 指标：MA / BOLL / EMA 由客户端用真实 K 线计算；参考的 Supertrend、画线工具、图表设置未实现。
+- 指标：MA / BOLL / EMA / Supertrend 由客户端用真实 K 线计算；Supertrend 使用 Wilder ATR 10 / 倍数 3（参考参数尚未采集确认），不需后端计算。画线工具仍待下一批实现，不能算完成。
 - 「⋯」菜单：参考有 交易规则 / 历史数据 / 区间交易限额 / FAQ / 新手指引；后端无历史数据、区间限额、FAQ 内容接口，仅保留 交易规则（按 products 配置生成）与 新手指引。
 - 看涨/看跌收益率共用 `payoutRatio`（后端无分方向赔率）。
 - 下单扣款账户假定为现货（参考「Available Spot Balance」）；OpenAPI 未注明扣款账户，需后端确认。
@@ -58,7 +58,7 @@
 | `GET /market/proof-of-reserves` | 已部署，`available=false` | 储备金证明弹层如实显示「暂未发布」空态 |
 | `GET /market/usd-rate` | **未部署（404）**，仅在分支 cursor/android-backend-companion-43c2 | 失败时不假设 1 USDT = 1 USD：折合价显示 `$--` |
 | REST ticker `usd` 字段 / WS ticker `usd` | **未部署**（生产 ticker 无 usd） | 已解析 `usd.available/price/rate/stale`；行情行优先显示 usd.price，usd-rate 缺失时用 ticker usd.rate 兜底，均缺失显示 `--` |
-| `GET/PUT/DELETE /assets/deposit-account` | **未部署**（仅 companion 分支；生产返回 404） | 偏好设置「默认充值账户」显示「暂未开放」，弹层说明服务端未上线，不再显示「读取失败」 |
+| `GET/PUT/DELETE /assets/deposit-account` | 2026-11-08 运维反馈：本轮生产测试被 WAF 403/error1010 拦截，不能由此判定部署状态；历史曾返回404不代表当前 | 后端当前候选仅 funding/spot；合约直充不得开放。前端仅按服务端 supported 启用候选；需 WAF 正常放行后只读联调，禁止绕过 |
 | K 线周期 `ApiKlineInterval` | 仅 1m/5m/15m/30m/1h/4h/1d/1w | 周期弹层只列后端支持的 8 个；参考的 3m/2h/6h/12h/1M 与「偏好周期」设置后端未提供，未显示 |
 
 后端待办：部署 companion 分支的 `/market/usd-rate` 与 ticker `usd` 字段；配置 placements 轮播位与储备金快照后客户端自动展示。

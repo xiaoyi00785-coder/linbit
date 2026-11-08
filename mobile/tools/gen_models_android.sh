@@ -44,6 +44,7 @@ for f in glob.glob(sys.argv[1] + "/Api*.kt"):
     s = s.replace("(data: kotlinx.serialization.json.JsonElement?)", "(data: kotlin.Any?)")
     # 手工处理的 oneOf 类已删除，去掉残留 import
     s = s.replace("import click.cowa.linbit.core.generated.ApiFuturesTicker200ResponseOneOf\n", "")
+    s = "\n".join(line.rstrip() for line in s.splitlines()).rstrip() + "\n"
     if s != o: open(f, "w", encoding="utf-8").write(s)
 PY
 rm -rf "$TMP"

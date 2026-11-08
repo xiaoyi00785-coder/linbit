@@ -37,8 +37,8 @@ data class WsTicker(
     val usd: WsUsd? = null,
 )
 
-@Serializable
-data class WsUsd(val available: Boolean = false, val price: String? = null, val rate: String? = null, val stale: Boolean = false)
+/** REST/WS 共用 OpenAPI 生成类型，避免两份协议漂移。 */
+typealias WsUsd = click.cowa.linbit.core.generated.ApiWsUsd
 
 /** `futures-ticker:<symbol>` 频道的 data（与 GET /futures/market/ticker 对象一致；含现货兼容别名）。 */
 @Serializable

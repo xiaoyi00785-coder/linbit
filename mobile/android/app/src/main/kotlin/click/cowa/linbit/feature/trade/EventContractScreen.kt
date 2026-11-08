@@ -398,18 +398,18 @@ private fun boll(c: List<Candle>): Triple<List<Double?>, List<Double?>, List<Dou
     return Triple(m, m.indices.map { i -> m[i]?.let { it + 2 * sd[i]!! } }, m.indices.map { i -> m[i]?.let { it - 2 * sd[i]!! } })
 }
 
-/** 事件合约 K 线：周期 + 蜡烛 + 指标线（MA / BOLL / EMA，均由真实 K 线计算）。 */
+/** 事件合约 K 线：周期 + 蜡烛 + 指标线（MA / BOLL / EMA / Supertrend，均由真实 K 线计算）。 */
 @Composable
-private fun EventChart(vm: EventContractViewModel) {
+internal fun EventChart(vm: EventContractViewModel) {
     val p = LB.p
     var interval by remember { mutableStateOf("15m") }
     var ind by remember { mutableStateOf(0) }
     var candles by remember { mutableStateOf<List<Candle>?>(null) }
     var err by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(vm.symbol, interval) {
-        err = null
+        err = null; candles = null
         while (true) {
-            try { candles = vm.klines(interval).takeLast(60); err = null } catch (e: Throwable) { if (candles == null) err = e.lbMessage() }
+            try { candles = vm.klines(interval); err = null } catch (e: Throwable) { if (candles == null) err = e.lbMessage() }
             delay(10_000)
         }
     }
@@ -429,7 +429,7 @@ private fun EventChart(vm: EventContractViewModel) {
     }
     if (showInd) LbSheet("指标设置", { showInd = false }, showClose = true) {
         Column(Modifier.padding(bottom = 16.dp)) {
-            listOf("MA（5 / 10 / 20）", "BOLL（20, 2）", "EMA（5 / 10 / 20）").forEachIndexed { i, t ->
+            listOf("MA（5 / 10 / 20）", "BOLL（20, 2）", "EMA（5 / 10 / 20）", "Supertrend（ATR 10，倍数 3）").forEachIndexed { i, t ->
                 Row(Modifier.fillMaxWidth().height(52.dp).pressable(scale = 1f) { ind = i; showInd = false }.padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
                     Text(t, Modifier.weight(1f), style = lb(FontSize.body), color = p.textPrimary)
                     if (ind == i) click.cowa.linbit.ui.components.SheetCheck()
@@ -437,24 +437,30 @@ private fun EventChart(vm: EventContractViewModel) {
             }
         }
     }
-    val c = candles
-    val lines: List<Pair<String, List<Double?>>> = if (c == null) emptyList() else when (ind) {
-        0 -> listOf("MA-5" to ma(c, 5), "MA-10" to ma(c, 10), "MA-20" to ma(c, 20))
-        1 -> boll(c).let { (m, u, l) -> listOf("BOLL" to m, "UB" to u, "LB" to l) }
-        else -> listOf("EMA-5" to ema(c, 5), "EMA-10" to ema(c, 10), "EMA-20" to ema(c, 20))
+    val history = candles
+    val c = history?.takeLast(60)
+    val lines: List<Pair<String, List<Double?>>> = if (history == null) emptyList() else when (ind) {
+        0 -> listOf("MA-5" to ma(history, 5), "MA-10" to ma(history, 10), "MA-20" to ma(history, 20))
+        1 -> boll(history).let { (m, u, l) -> listOf("BOLL" to m, "UB" to u, "LB" to l) }
+        2 -> listOf("EMA-5" to ema(history, 5), "EMA-10" to ema(history, 10), "EMA-20" to ema(history, 20))
+        else -> supertrend(history).let { points -> listOf(
+            "ST↑" to points.map { it?.takeIf { p -> p.bullish }?.value },
+            "ST↓" to points.map { it?.takeIf { p -> !p.bullish }?.value },
+        ) }
     }
-    val colors = listOf(androidx.compose.ui.graphics.Color(0xFFF0A23B), androidx.compose.ui.graphics.Color(0xFFE0457B), androidx.compose.ui.graphics.Color(0xFF7B5CE0))
+    val visibleLines = lines.map { (name, values) -> name to values.takeLast(60) }
+    val colors = if (ind == 3) listOf(p.up, p.down) else listOf(androidx.compose.ui.graphics.Color(0xFFF0A23B), androidx.compose.ui.graphics.Color(0xFFE0457B), androidx.compose.ui.graphics.Color(0xFF7B5CE0))
     Row(Modifier.padding(horizontal = pageH).height(18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        lines.forEachIndexed { i, (n, v) -> Text("$n: ${v.lastOrNull()?.let { Fmt.price(java.math.BigDecimal(it), 2) } ?: "--"}", style = lbNum(10.sp), color = colors[i]) }
+        visibleLines.forEachIndexed { i, (n, v) -> Text("$n: ${v.lastOrNull()?.let { Fmt.price(java.math.BigDecimal(it), 2) } ?: "--"}", style = lbNum(10.sp), color = colors[i]) }
     }
-    Box(Modifier.fillMaxWidth().height(150.dp)) {
+    Box(Modifier.fillMaxWidth().height(220.dp)) {
         when {
             err != null && c == null -> Text(err ?: "", Modifier.align(Alignment.Center), style = lb(FontSize.small), color = p.down)
             c == null -> CircularProgressIndicator(Modifier.align(Alignment.Center).height(24.dp), color = p.textSecondary, strokeWidth = 2.dp)
             c.isEmpty() -> EmptyState("暂无 K 线数据", Modifier.align(Alignment.Center))
             else -> {
-                val hi = maxOf(c.maxOf { it.high.toDouble() }, lines.flatMap { it.second }.filterNotNull().maxOrNull() ?: 0.0)
-                val lo = minOf(c.minOf { it.low.toDouble() }, lines.flatMap { it.second }.filterNotNull().minOrNull() ?: Double.MAX_VALUE)
+                val hi = maxOf(c.maxOf { it.high.toDouble() }, visibleLines.flatMap { it.second }.filterNotNull().maxOrNull() ?: 0.0)
+                val lo = minOf(c.minOf { it.low.toDouble() }, visibleLines.flatMap { it.second }.filterNotNull().minOrNull() ?: Double.MAX_VALUE)
                 val last = c.last().close
                 androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(end = 64.dp, top = 6.dp, bottom = 18.dp)) {
                     val step = size.width / c.size
@@ -467,9 +473,9 @@ private fun EventChart(vm: EventContractViewModel) {
                         val t = y(maxOf(k.open, k.close).toDouble()); val b = y(minOf(k.open, k.close).toDouble())
                         drawRect(col, androidx.compose.ui.geometry.Offset(x - step * 0.35f, t), androidx.compose.ui.geometry.Size(step * 0.7f, maxOf(b - t, 1.5f)))
                     }
-                    lines.forEachIndexed { li, (_, v) ->
+                    visibleLines.forEachIndexed { li, (_, v) ->
                         val path = androidx.compose.ui.graphics.Path(); var started = false
-                        v.forEachIndexed { i, d -> if (d != null) { val x = step * (i + 0.5f); if (!started) { path.moveTo(x, y(d)); started = true } else path.lineTo(x, y(d)) } }
+                        v.forEachIndexed { i, d -> if (d != null) { val x = step * (i + 0.5f); if (!started) { path.moveTo(x, y(d)); started = true } else path.lineTo(x, y(d)) } else started = false }
                         drawPath(path, colors[li], style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f))
                     }
                     val ly = y(last.toDouble())
@@ -488,7 +494,7 @@ private fun EventChart(vm: EventContractViewModel) {
         }
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = pageH).height(36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-        listOf("MA", "BOLL", "EMA").forEachIndexed { i, t ->
+        listOf("MA", "BOLL", "EMA", "Supertrend").forEachIndexed { i, t ->
             Text(t, Modifier.pressable(scale = 1f) { ind = i }, style = lb(FontSize.caption, if (ind == i) FontWeight.SemiBold else FontWeight.Normal), color = if (ind == i) p.textPrimary else p.textSecondary)
         }
     }
