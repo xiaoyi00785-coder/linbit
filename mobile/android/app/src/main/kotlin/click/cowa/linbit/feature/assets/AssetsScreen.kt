@@ -262,7 +262,7 @@ private fun Actions(
                     Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    LbIcon(when (title) { "充值" -> R.drawable.ic_ref_deposit; "提现" -> R.drawable.ic_ref_withdraw; "快捷买币" -> R.drawable.ic_ref_quickbuy; "划转" -> R.drawable.ic_ref_transfer; "盈亏" -> R.drawable.ic_candles; else -> R.drawable.ic_ref_trade }, 22.dp, p.textPrimary)
+                    click.cowa.linbit.ui.components.LbReferenceIcon(when (title) { "充值" -> R.drawable.ic_ref_deposit; "提现" -> R.drawable.ic_ref_withdraw; "快捷买币" -> R.drawable.ic_ref_quickbuy; "划转" -> R.drawable.ic_ref_transfer; "盈亏" -> R.drawable.ic_candles; else -> R.drawable.ic_ref_trade }, 22.dp)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(title, style = lb(FontSize.small), color = p.textPrimary)

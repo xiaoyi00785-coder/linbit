@@ -84,7 +84,7 @@ fun UserCenterScreen(
     val clipboard = LocalClipboardManager.current
     Column(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding()) {
         ProfileNavBar("用户中心", onClose, trailing = {
-            LbIcon(R.drawable.ic_mc_transfer_square_light, 22.dp, p.textPrimary, Modifier.pressable(scale = 1f) { onOpen(ProfilePage.SWITCH) })
+            ThemedIcon(R.drawable.ic_mc_transfer_square_light, R.drawable.ic_mc_transfer_square_dark, 22.dp, Modifier.pressable(scale = 1f) { onOpen(ProfilePage.SWITCH) })
         })
         when {
             s.loading && a == null -> ProfileLoading()

@@ -299,7 +299,9 @@ fun FuturesTradeContent(
                     }
                 }
                 Spacer(Modifier.width(18.dp))
-                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.requiredSize(48.dp).pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" })
+                Box(Modifier.size(48.dp).pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" }, contentAlignment = Alignment.Center) {
+                    ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp)
+                }
             }
             HorizontalDivider(color = p.divider)
             if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {

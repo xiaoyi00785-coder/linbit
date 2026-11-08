@@ -47,7 +47,7 @@ fun ProfileLandingScreen(onBack: () -> Unit, onAccount: () -> Unit, onSwitch: ()
     val clipboard = LocalClipboardManager.current
     var about by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(p.bg).statusBarsPadding().navigationBarsPadding()) {
-        ProfileNavBar("", onBack, trailing = { LbIcon(R.drawable.ic_mc_transfer_square_light, 22.dp, p.textPrimary, Modifier.pressable(onClick = onSwitch)) })
+        ProfileNavBar("", onBack, trailing = { ThemedIcon(R.drawable.ic_mc_transfer_square_light, R.drawable.ic_mc_transfer_square_dark, 22.dp, Modifier.pressable(onClick = onSwitch)) })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             Row(Modifier.fillMaxWidth().padding(vertical = 16.dp).pressable(scale = 1f, onClick = onAccount), verticalAlignment = Alignment.CenterVertically) {
                 ProfileAvatar(s.account?.avatarUrl, 48.dp)
@@ -81,7 +81,7 @@ private fun HubGrid(title: String, items: List<HubItem>, onFeature: (String) -> 
         Row(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
             row.forEach { item ->
                 Column(Modifier.weight(1f).height(60.dp).pressable(scale = 1f) { onFeature(item.title) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemedIcon(item.light, item.dark, 26.dp)
+                    if (item.light in listOf(R.drawable.ic_ref_trade, R.drawable.ic_ref_quickbuy)) LbReferenceIcon(item.light, 26.dp) else ThemedIcon(item.light, item.dark, 26.dp)
                     Text(item.title, style = lb(FontSize.small), color = LB.p.textPrimary)
                 }
             }

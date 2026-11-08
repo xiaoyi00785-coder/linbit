@@ -94,7 +94,7 @@ fun SpotToolsSheet(onClose: () -> Unit, onTool: (String) -> Unit) {
                 Row(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
                     row.forEach { (title, icon) ->
                         Column(Modifier.weight(1f).pressable(scale = 1f) { onClose(); onTool(title) }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(Modifier.size(44.dp).border(1.dp, LB.p.border, RoundedCornerShape(Radius.md)), contentAlignment = Alignment.Center) { LbIcon(icon, 22.dp, LB.p.textPrimary) }
+                            Box(Modifier.size(44.dp).border(1.dp, LB.p.border, RoundedCornerShape(Radius.md)), contentAlignment = Alignment.Center) { if (title in listOf("充值", "划转")) LbReferenceIcon(icon, 22.dp) else LbIcon(icon, 22.dp, LB.p.textPrimary) }
                             Text(title, style = lb(FontSize.small), color = LB.p.textPrimary)
                         }
                     }

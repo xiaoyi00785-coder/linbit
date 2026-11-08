@@ -90,6 +90,20 @@ fun LbImageIcon(@DrawableRes id: Int, size: Dp, modifier: Modifier = Modifier) {
     Image(painterResource(id), contentDescription = null, modifier = modifier.size(size))
 }
 
+/** Reference monochrome PNGs include opaque white cut-outs; tinting their alpha would destroy the glyph. */
+@Composable
+fun LbReferenceIcon(@DrawableRes id: Int, size: Dp, modifier: Modifier = Modifier) {
+    val filter = if (LB.p.isDark) androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f,
+        )),
+    ) else null
+    Image(painterResource(id), contentDescription = null, colorFilter = filter, modifier = modifier.size(size))
+}
+
 /** 品牌符号：单一来源 mobile/android/brand/mark*.svg → drawable/ic_mark / ic_mark_lime（浅色底用深色符号，深色底用品牌绿符号）。 */
 @Composable
 fun LinbitLogo(size: Dp, modifier: Modifier = Modifier) {
