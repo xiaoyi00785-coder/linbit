@@ -203,13 +203,20 @@ fun ChipBar(items: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             ) {
                 Text(
                     t, maxLines = 1, softWrap = false,
-                    style = lb(FontSize.chip, if (sel) FontWeight.Medium else FontWeight.Normal),
+                    style = lb(FontSize.chip, if (sel) FontWeight.Medium else FontWeight.Normal).tabLine(),
                     color = if (sel) p.textPrimary else p.textSecondary,
                 )
             }
         }
     }
 }
+
+/** 统一行盒：中文与纯拉丁文（如「TradFi」）走不同回退字体，行高/上沿不同会导致同一行标签不齐；固定行高 + 居中裁剪 + 关闭字体内边距保证同一基线。 */
+internal fun androidx.compose.ui.text.TextStyle.tabLine(): androidx.compose.ui.text.TextStyle = copy(
+    lineHeight = fontSize * 1.4f,
+    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.None),
+    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+)
 
 /** 一级 Tab（18sp，选中黑色 semibold，未选灰色；underline 时下方 16×3 胶囊）。 */
 @Composable
@@ -230,12 +237,12 @@ fun PrimaryTabs(
         items.forEachIndexed { i, t ->
             val sel = i == selected
             Column(
-                Modifier.pressable(scale = 1f) { onSelect(i) },
+                Modifier.alignBy(androidx.compose.ui.layout.FirstBaseline).pressable(scale = 1f) { onSelect(i) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     t,
-                    style = lb(size, if (sel) FontWeight.SemiBold else FontWeight.Normal),
+                    style = lb(size, if (sel) FontWeight.SemiBold else FontWeight.Normal).tabLine(),
                     color = if (sel) p.textPrimary else p.textSecondary,
                     maxLines = 1,
                     softWrap = false,
