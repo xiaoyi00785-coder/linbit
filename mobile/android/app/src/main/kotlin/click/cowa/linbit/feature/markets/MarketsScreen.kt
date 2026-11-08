@@ -69,12 +69,13 @@ fun MarketsScreen(
         state.spot.firstOrNull { it.symbol == symbol }?.let { MarketQuoteWidget.cache(ctx, it) }
     }
     var search by rememberSaveable { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(search) { onOverlay(search) }
+    var chatOpen by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(search, chatOpen) { onOverlay(search || chatOpen) }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { onOverlay(false) } }
     androidx.compose.runtime.LaunchedEffect(openSearch) { if (openSearch) { search = true; onSearchConsumed() } }
     Box(modifier.fillMaxSize()) {
         MarketsContent(state, watch, bottomInset, vm::refresh, vm::addToWatch, initialTop = initialTop, onOpenTrade = onOpenTrade,
-            onSearch = { search = true }, loggedIn = loggedIn, onLogin = onLogin)
+            onSearch = { search = true }, loggedIn = loggedIn, onLogin = onLogin, onChatOverlay = { chatOpen = it })
         if (search) MarketSearchScreen(state, watch, vm::toggleWatch, { search = false }, onOpenTrade)
     }
 }
@@ -92,6 +93,7 @@ fun MarketsContent(
     initialTop: Int = 1,
     onOpenTrade: (MarketKind, String) -> Unit = { _, _ -> },
     onSearch: () -> Unit = {},
+    onChatOverlay: (Boolean) -> Unit = {},
     loggedIn: Boolean = true,
     onLogin: () -> Unit = {},
 ) {
@@ -148,7 +150,7 @@ fun MarketsContent(
                     }
                 }
             }
-            else -> if (!loggedIn) ChatRoomGuest(onLogin) else EmptyState("聊天室服务暂不可用（后端未提供聊天接口）", Modifier.padding(top = 120.dp))
+            else -> ChatRoomTab(loggedIn, onLogin, onChatOverlay)
         }
         if (iconSheet) CoinIconSettingsSheet { iconSheet = false }
         if (widgets) MarketWidgetsSheet(state.spot) { widgets = false }

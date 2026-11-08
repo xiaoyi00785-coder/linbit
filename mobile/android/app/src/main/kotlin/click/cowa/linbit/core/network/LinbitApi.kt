@@ -155,6 +155,7 @@ interface LinbitApi {
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("home/placements")
     suspend fun homePlacements(
+        @Query("slots") slots: String = "popup,carousel",
         @Query("platform") platform: String = "app",
         @Query("locale") locale: String = "zh-CN",
         @Query("appVersion") appVersion: String = click.cowa.linbit.BuildConfig.VERSION_NAME,
@@ -771,4 +772,19 @@ interface LinbitApi {
 
     @POST("cards/applications")
     suspend fun applyCard(@Body body: click.cowa.linbit.feature.more.ApiCardApplyRequest): click.cowa.linbit.feature.more.ApiCardState
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("chat/rooms")
+    suspend fun chatRooms(): ApiListChatRooms200Response
+
+    /** 带 Token 时服务端回 mine；游客匿名可读。 */
+    @GET("chat/rooms/{room}/messages")
+    suspend fun chatMessages(@Path("room") room: String, @Query("before") before: Long? = null, @Query("limit") limit: Int = 50): ApiListChatMessages200Response
+
+    @POST("chat/rooms/{room}/messages")
+    suspend fun postChatMessage(@Path("room") room: String, @Body body: ApiPostChatMessageRequest): ApiChatMessage
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/usd-rate")
+    suspend fun usdRate(): click.cowa.linbit.core.storage.ApiUsdRate
 }

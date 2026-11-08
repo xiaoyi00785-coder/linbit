@@ -21,6 +21,7 @@ import kotlinx.serialization.Serializable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import javax.inject.Inject
 
@@ -113,7 +114,8 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
                 }
                 else -> {
                     val supported = depositVm.data?.supported.orEmpty()
-                    DepositTarget.entries.filter { it.key in supported }.forEach { t -> SheetOptionRow(t.title, depositVm.target == t, Modifier.padding(vertical = 4.dp), subtitle = t.desc) { depositVm.select(t) { sheet = null } } }
+                    DepositTarget.entries.forEach { t -> val ok = t.key in supported
+                        SheetOptionRow(t.title, depositVm.target == t, Modifier.padding(vertical = 4.dp).alpha(if (ok) 1f else 0.4f), subtitle = if (ok) t.desc else t.desc + "（服务端暂不支持该入账账户，暂不可选）") { if (ok) depositVm.select(t) { sheet = null } } }
                     depositVm.data?.let { d -> if (d.source == "user") SheetOptionRow("跟随平台默认（" + (DepositTarget.entries.firstOrNull { it.key == d.platformDefault }?.title ?: "资金账户") + "）", false, Modifier.padding(vertical = 4.dp), subtitle = "恢复平台默认入账账户") { depositVm.followPlatform { sheet = null } } }
                     Text("仅影响之后的链上充值入账账户，不会划转已有余额。", Modifier.padding(top = 8.dp), style = lb(FontSize.caption), color = LB.p.textSecondary)
                     depositVm.error?.let { Text(it, Modifier.padding(top = 8.dp), color = LB.p.down, style = lb(FontSize.caption)) }

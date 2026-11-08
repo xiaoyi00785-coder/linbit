@@ -72,6 +72,7 @@ private data class GridItem(val light: Int, val dark: Int, val title: String)
 private val GRID = listOf(
     GridItem(R.drawable.ic_g_chat_light, R.drawable.ic_g_chat_dark, "聊天室"), GridItem(R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark, "福利中心"), GridItem(R.drawable.ic_g_earn_light, R.drawable.ic_g_earn_dark, "理财"),
     GridItem(R.drawable.ic_g_tradfi_light, R.drawable.ic_g_tradfi_dark, "TradFi"), GridItem(R.drawable.ic_g_copy_light, R.drawable.ic_g_copy_dark, "跟单"), GridItem(R.drawable.ic_g_bot_light, R.drawable.ic_g_bot_dark, "策略交易"),
+    GridItem(R.drawable.ic_g_gift_light, R.drawable.ic_g_gift_dark, "Linbit 卡"),
     GridItem(R.drawable.ic_g_more_light, R.drawable.ic_g_more_dark, "更多"),
 )
 

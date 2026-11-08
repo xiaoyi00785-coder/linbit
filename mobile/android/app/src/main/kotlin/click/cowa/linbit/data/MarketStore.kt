@@ -62,7 +62,9 @@ class MarketStore(
             val spot = async { runCatching { apiCall { OneOfResponses.tickers(api.ticker()) } }.getOrNull() }
             val fut = async { runCatching { apiCall { OneOfResponses.futuresTickers(api.futuresTicker()) } }.getOrNull() }
             val cats = async { runCatching { apiCall { api.categories() } }.getOrNull() }
-            val fx = async { runCatching { apiCall { api.fiatRates() } }.getOrNull() }
+            val fx = async { runCatching { apiCall { api.fiatRates("USD") } }.getOrNull() }
+            val usd = async { runCatching { apiCall { api.usdRate() } }.getOrNull() }
+            usd.await().let { u -> click.cowa.linbit.core.storage.QuoteDisplay.usdPerUsdt = u?.takeIf { it.available }?.rate?.let { Dec.parseOrNull(it) }?.takeIf { it.signum() > 0 }; click.cowa.linbit.core.storage.QuoteDisplay.usdStale = u?.stale == true }
             Loaded(symbols.await(), spot.await(), fut.await(), cats.await(), fx.await()?.rates?.mapValues { it.value.content })
         }
         r.rates?.let { rates -> click.cowa.linbit.core.storage.QuoteDisplay.rates = rates.mapNotNull { (key, value) -> Dec.parseOrNull(value)?.takeIf { it.signum() > 0 }?.let { key to it } }.toMap() }
