@@ -68,6 +68,7 @@ class AssetsViewModel @Inject constructor(
     val sessionVersion: StateFlow<Long> = tokens.sessionVersion
     val marketState = market.state.stateIn(viewModelScope, SharingStarted.Eagerly, market.state.value)
 
+    fun pairFor(asset: String): click.cowa.linbit.data.MarketRow? = market.state.value.spot.firstOrNull { it.base == asset && it.quote == "USDT" }
     fun setTab(i: Int) { _s.value = _s.value.copy(tab = i) }
     fun toggleHide() { _s.value = _s.value.copy(hideAmount = !_s.value.hideAmount) }
     fun setHideSmall(v: Boolean) { _s.value = _s.value.copy(hideSmall = v) }

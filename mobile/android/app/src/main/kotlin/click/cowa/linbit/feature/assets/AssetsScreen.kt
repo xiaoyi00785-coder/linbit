@@ -2,6 +2,8 @@ package click.cowa.linbit.feature.assets
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,16 +76,18 @@ fun AssetsScreen(
     var showWithdraw by remember { mutableStateOf(false) }
     var showFilter by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var detail by remember { mutableStateOf<String?>(null) }
+    detail?.let { a -> CoinDetailPage(vm, a, onBack = { detail = null }, onTrade = { detail = null; onOpenSpot() }) }
     val p = LB.p
 
     LaunchedEffect(sessionVersion) { vm.load() }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
         PrimaryTabs(Tabs, s.tab, onSelect = { i ->
-            if (i >= 4) {
+            if (i >= 6) {
                 // The old guest guard below suppressed every tab action. These
                 // destinations have real production login handling.
-                if (loggedIn) onOpenAssetFeature(listOf("earn", "strategy", "paper", "tradfi")[i - 4]) else onLogin()
+                if (loggedIn) onOpenAssetFeature(listOf("paper", "tradfi")[i - 6]) else onLogin()
             } else vm.setTab(i)
         }, Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH), scrollable = true)
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))
@@ -116,7 +120,11 @@ fun AssetsScreen(
         val emptyOverview = s.tab == 0 && total.signum() == 0
 
         Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
-            if (emptyOverview) {
+            if (s.tab == 4) {
+                EarnTab(s, onOpen = { onOpenAssetFeature("earn") }, onTransfer = { assetsNav.openTransfer() }, onToggle = vm::toggleHide)
+            } else if (s.tab == 5) {
+                BotsTab(s, onOpen = { onOpenAssetFeature("strategy") }, onTransfer = { assetsNav.openTransfer() }, onToggle = vm::toggleHide)
+            } else if (emptyOverview) {
                 OverviewEmpty(onDeposit = { assetsNav.openDeposit(switchTab = false) }, onFutures = onOpenFutures)
             } else {
                 Header(s.hideAmount, total, s.cnyRate, s.tab, vm, onToggle = vm::toggleHide)
@@ -134,7 +142,7 @@ fun AssetsScreen(
                     vm, s, showSearch,
                     onSearch = { showSearch = it },
                     onFilter = { showFilter = true },
-                    onOpenAsset = { assetsNav.openDeposit(it) },
+                    onOpenAsset = { detail = it },
                 )
             }
         }
@@ -445,4 +453,165 @@ internal fun balanceText(raw: String?): String {
     val d = click.cowa.linbit.core.util.Dec.parse(raw).setScale(8, java.math.RoundingMode.DOWN).stripTrailingZeros()
     val scale = d.scale().coerceIn(2, 8)
     return Fmt.amount(d, scale)
+}
+
+
+// ── 理财 / 策略 账户标签（参考 Earn / Bots 账户页，嵌在资产页内）──
+@Composable
+private fun AccountHead(label: String, total: java.math.BigDecimal?, hide: Boolean, cny: java.math.BigDecimal?, onToggle: () -> Unit) {
+    val p = LB.p
+    Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = lb(FontSize.caption), color = p.textSecondary)
+            Spacer(Modifier.width(6.dp))
+            LbIcon(if (hide) R.drawable.ic_eye_off else R.drawable.ic_eye, 14.dp, p.textSecondary, Modifier.pressable(scale = 1f, onClick = onToggle))
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(if (hide) "****" else total?.let { Fmt.amount(it, 2) } ?: "--", style = lbNum(32.sp, FontWeight.Bold), color = p.textPrimary)
+            Spacer(Modifier.width(6.dp))
+            Text("USDT", style = lb(FontSize.small), color = p.textPrimary)
+            LbIcon(R.drawable.ic_caret_down, 10.dp, p.textPrimary, Modifier.padding(start = 2.dp, bottom = 9.dp))
+        }
+        Text(if (hide) "≈ ****" else "≈ " + (total?.let { click.cowa.linbit.core.storage.QuoteDisplay.format(it, 2, cny) } ?: "--"), style = lbNum(FontSize.small), color = p.textSecondary)
+    }
+}
+
+@Composable
+private fun KvTriple(items: List<Pair<String, String>>) {
+    val p = LB.p
+    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 14.dp)) {
+        items.forEachIndexed { i, (k, v) ->
+            Column(Modifier.weight(1f), horizontalAlignment = if (i == 0) Alignment.Start else if (i == items.lastIndex && items.size == 3) Alignment.End else Alignment.Start) {
+                Text(k, style = lb(11.sp), color = p.textSecondary, maxLines = 1)
+                Text(v, style = lbNum(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(items: List<Triple<String, Int, () -> Unit>>) {
+    val p = LB.p
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(top = 20.dp)) {
+        items.forEach { (t, icon, act) ->
+            Column(Modifier.weight(1f).pressable(onClick = act), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)), contentAlignment = Alignment.Center) { click.cowa.linbit.ui.components.LbReferenceIcon(icon, 22.dp) }
+                Spacer(Modifier.height(8.dp))
+                Text(t, style = lb(FontSize.small), color = p.textPrimary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EarnTab(s: AssetsUiState, onOpen: () -> Unit, onTransfer: () -> Unit, onToggle: () -> Unit) {
+    val p = LB.p
+    val vm: click.cowa.linbit.feature.trade.SpotSubpagesViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    LaunchedEffect(Unit) { vm.loadEarn() }
+    val sum = vm.earnSummary
+    val dec = click.cowa.linbit.core.util.Dec::parse
+    val signed = { v: String? -> v?.let { val d = dec(it); (if (d.signum() >= 0) "+" else "") + Fmt.amount(d, 2) + " USDT" } ?: "--" }
+    AccountHead("总资产估值", sum?.totalValueUsdt?.let(dec), s.hideAmount, s.cnyRate, onToggle)
+    KvTriple(listOf("累计收益" to (if (s.hideAmount) "****" else signed(sum?.totalInterestUsdt)), "昨日收益" to (if (s.hideAmount) "****" else signed(sum?.recentInterestUsdt))))
+    ActionRow(listOf(Triple("总览", R.drawable.ic_ref_trade, onOpen), Triple("划转", R.drawable.ic_ref_transfer, onTransfer), Triple("订单", R.drawable.ic_doc_text, onOpen)))
+    val best = vm.earnProducts.maxByOrNull { dec(it.apr) }
+    if (best != null) Row(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp).fillMaxWidth().border(0.5.dp, p.border, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onOpen).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("活期理财 · 天天赚币", style = lb(FontSize.label, FontWeight.SemiBold), color = p.textPrimary)
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                CoinIcon(best.asset ?: "USDT", 16.dp)
+                Text(best.title ?: best.asset ?: "", Modifier.padding(start = 6.dp).weight(1f), style = lb(FontSize.small), color = p.textPrimary, maxLines = 1)
+                Text(Fmt.amount(dec(best.apr).multiply(java.math.BigDecimal(100)), 2) + "% 最高年化", style = lbNum(FontSize.small), color = p.up)
+            }
+        }
+        LbIcon(R.drawable.ic_chevron_right, 14.dp, p.textSecondary)
+    }
+    var t by remember { mutableStateOf(0) }
+    Row(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        listOf("按币种", "按产品").forEachIndexed { i, x -> Text(x, Modifier.pressable(scale = 1f) { t = i }, style = lb(FontSize.body, if (t == i) FontWeight.SemiBold else FontWeight.Normal), color = if (t == i) p.textPrimary else p.textSecondary) }
+    }
+    val pos = vm.earnPositions
+    if (pos.isEmpty()) EmptyState("暂无记录", Modifier.padding(vertical = 30.dp))
+    else if (t == 0) pos.groupBy { it.asset ?: "--" }.forEach { (a, list) ->
+        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+            CoinIcon(a); Text(a, Modifier.padding(start = 12.dp).weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+            Text(if (s.hideAmount) "****" else balanceText(list.fold(java.math.BigDecimal.ZERO) { x, y -> x + dec(y.amount) }.toPlainString()), style = lbNum(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+        }
+    } else pos.forEach { x ->
+        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+            Text(x.title ?: x.asset ?: "--", Modifier.weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+            Text(if (s.hideAmount) "****" else "${balanceText(x.amount)} ${x.asset ?: ""}", style = lbNum(FontSize.body), color = p.textPrimary)
+        }
+    }
+}
+
+@Composable
+private fun BotsTab(s: AssetsUiState, onOpen: () -> Unit, onTransfer: () -> Unit, onToggle: () -> Unit) {
+    val p = LB.p
+    val vm: click.cowa.linbit.feature.trade.SpotSubpagesViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    LaunchedEffect(Unit) { vm.loadStrategy() }
+    val dec = click.cowa.linbit.core.util.Dec::parse
+    val running = vm.myGrids.filter { it.status?.value?.lowercase() == "running" }
+    val equity = vm.myGrids.fold(java.math.BigDecimal.ZERO) { a, g -> a + dec(g.`value`) }
+    val upnl = vm.myGrids.fold(java.math.BigDecimal.ZERO) { a, g -> a + dec(g.unrealizedPnl) }
+    AccountHead("总资产估值", equity, s.hideAmount, s.cnyRate, onToggle)
+    KvTriple(listOf("账户权益(USDT)" to (if (s.hideAmount) "****" else Fmt.amount(equity, 2)), "未实现盈亏(USDT)" to (if (s.hideAmount) "****" else Fmt.amount(upnl, 2)), "保证金率" to "--"))
+    ActionRow(listOf(Triple("去交易", R.drawable.ic_ref_trade, onOpen), Triple("划转", R.drawable.ic_ref_transfer, onTransfer)))
+    Box(Modifier.fillMaxWidth().padding(top = 20.dp).height(8.dp).background(p.fill))
+    Text("运行中", Modifier.padding(horizontal = Spacing.pageH).padding(top = 16.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+    if (running.isEmpty()) EmptyState("暂无记录", Modifier.padding(vertical = 30.dp))
+    running.forEach { g ->
+        Row(Modifier.fillMaxWidth().height(56.dp).pressable(scale = 1f, onClick = onOpen).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("${g.symbol ?: "--"} 现货网格", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                Text("投入 ${g.investment ?: "--"} USDT", style = lb(FontSize.small), color = p.textSecondary)
+            }
+            val tp = dec(g.totalProfit)
+            Text(if (s.hideAmount) "****" else (if (tp.signum() >= 0) "+" else "") + Fmt.amount(tp, 2), style = lbNum(FontSize.body, FontWeight.Medium), color = if (tp.signum() < 0) p.down else p.up)
+        }
+    }
+}
+
+
+/** 币种详情（参考：顶部币种 + 记录图标；账户余额 / ≈ 法币；可用 / 冻结；「交易」币对卡）。 */
+@Composable
+private fun CoinDetailPage(vm: AssetsViewModel, asset: String, onBack: () -> Unit, onTrade: () -> Unit) {
+    val p = LB.p
+    val s = vm.state.collectAsStateWithLifecycle().value
+    val list = if (s.tab == 1) s.funding else s.spot
+    val b = list.firstOrNull { it.asset == asset }
+    val dec = click.cowa.linbit.core.util.Dec::parse
+    val total = dec(b?.total)
+    androidx.compose.ui.window.Dialog(onDismissRequest = onBack, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Column(Modifier.fillMaxSize().background(p.bg).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)) {
+            Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).pressable(scale = 1f, onClick = onBack), contentAlignment = Alignment.CenterStart) { LbIcon(R.drawable.ic_arrow_left, 22.dp, p.textPrimary) }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    CoinIcon(asset, 22.dp); Text(asset, Modifier.padding(start = 6.dp), style = lb(FontSize.title, FontWeight.Medium), color = p.textPrimary)
+                }
+                Spacer(Modifier.size(40.dp))
+            }
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp)) {
+                Text(if (s.tab == 1) "资金账户余额" else "现货账户余额", style = lb(FontSize.caption), color = p.textTertiary)
+                Text(if (s.hideAmount) "****" else balanceText(b?.total), Modifier.padding(top = 8.dp), style = lbNum(26.sp, FontWeight.Bold), color = p.textPrimary)
+                Text("≈ " + (click.cowa.linbit.core.storage.QuoteDisplay.format((b?.let(vm::usd) ?: java.math.BigDecimal.ZERO), 2, s.cnyRate)), Modifier.padding(top = 4.dp), style = lbNum(FontSize.small), color = p.textTertiary)
+                Row(Modifier.padding(top = 24.dp)) {
+                    Column(Modifier.weight(1f)) { Text("可用", style = lb(FontSize.caption), color = p.textTertiary); Text(if (s.hideAmount) "****" else balanceText(b?.free), Modifier.padding(top = 4.dp), style = lbNum(FontSize.body), color = p.textPrimary) }
+                    Column(Modifier.weight(1f)) { Text("冻结", style = lb(FontSize.caption), color = p.textTertiary); Text(if (s.hideAmount) "****" else balanceText(b?.locked), Modifier.padding(top = 4.dp), style = lbNum(FontSize.body), color = p.textPrimary) }
+                }
+                Box(Modifier.padding(top = 20.dp).fillMaxWidth().height(0.5.dp).background(p.divider))
+                val pair = vm.pairFor(asset)
+                if (pair != null) {
+                    Text("交易", Modifier.padding(top = 20.dp), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                    Column(Modifier.padding(top = 12.dp).fillMaxWidth(0.5f).background(p.fill, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onTrade).padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) { Text("${pair.base}/${pair.quote}", Modifier.weight(1f), style = lb(FontSize.caption), color = p.textSecondary); LbIcon(R.drawable.ic_chevron_right, 12.dp, p.textTertiary) }
+                        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(Fmt.priceAuto(pair.last), style = lbNum(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                            Text(Fmt.percent(pair.changePct), Modifier.padding(start = 8.dp), style = lbNum(FontSize.body), color = if (pair.changePct.signum() < 0) p.down else p.up)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
