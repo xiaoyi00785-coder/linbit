@@ -63,11 +63,13 @@ enum class DepositTarget(val key: String, val title: String, val desc: String) {
 @HiltViewModel
 class DepositTargetViewModel @Inject constructor(private val api: LinbitApi, private val tokens: TokenStore, val toast: click.cowa.linbit.ui.components.ToastCenter) : ViewModel() {
     var data by mutableStateOf<ApiDepositTarget?>(null); private set
+    /** 生产未部署 /assets/deposit-account（404/405/501）：如实显示「暂未开放」，不当作读取失败。 */
+    var unavailable by mutableStateOf(false); private set
     val target: DepositTarget? get() = data?.let { d -> DepositTarget.entries.firstOrNull { it.key == d.account } }
     var error by mutableStateOf<String?>(null); private set
     var saving by mutableStateOf(false); private set
     init { viewModelScope.launch { tokens.sessionVersion.collect { data = null; error = null; if (tokens.loggedIn.value) load() } } }
-    fun load() { viewModelScope.launch { runCatching { apiCall { api.depositTarget() } }.onSuccess { data = it; error = null }.onFailure { error = it.lbMessage() } } }
+    fun load() { viewModelScope.launch { runCatching { apiCall { api.depositTarget() } }.onSuccess { data = it; error = null; unavailable = false }.onFailure { val st = (it as? ApiFailure.Server)?.status; if (st == 404 || st == 405 || st == 501) { unavailable = true; error = null } else error = it.lbMessage() } } }
     fun select(t: DepositTarget, done: () -> Unit) = write(done) { api.updateDepositTarget(ApiDepositTargetUpdate(t.key)) }
     fun followPlatform(done: () -> Unit) = write(done) { api.resetDepositTarget() }
     private fun write(done: () -> Unit, call: suspend () -> ApiDepositTarget) { if (saving) return; saving = true; viewModelScope.launch {
@@ -94,7 +96,7 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
         ProfileRow("颜色偏好", DisplayPrefs.color.title) { sheet = "颜色偏好" }
         ProfileRow("主题设置", if (DisplayPrefs.classicTheme) "经典主题" else "新主题") { sheet = "主题设置" }
         Spacer(Modifier.height(12.dp))
-        ProfileRow("默认充值账户", depositVm.target?.title ?: depositVm.error?.let { "读取失败" } ?: "--") { if (depositVm.error != null) depositVm.load(); sheet = "默认充值账户" }
+        ProfileRow("默认充值账户", depositVm.target?.title ?: (if (depositVm.unavailable) "暂未开放" else null) ?: depositVm.error?.let { "读取失败" } ?: "--") { if (depositVm.error != null) depositVm.load(); sheet = "默认充值账户" }
         ProfileRow("合约交易") { onTrading(true) }
         ProfileRow("现货交易") { onTrading(false) }
     }
@@ -114,7 +116,7 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
                     vm.preferences?.supportedQuoteCurrencies?.forEach { currency -> SheetOptionRow(currency, currency == vm.preferences?.quoteCurrency) { vm.select(currency) { sheet = null } } }
                     vm.error?.let { Text(it, color = LB.p.down, style = lb(FontSize.caption)); LbButton("重试", onClick = vm::load) }
                 }
-                else -> {
+                else -> if (depositVm.unavailable) Text("默认充值账户设置暂未开放（服务端未上线该接口），充值入账以充值页显示为准。", Modifier.padding(vertical = 12.dp), style = lb(FontSize.small), color = LB.p.textSecondary) else {
                     val supported = depositVm.data?.supported.orEmpty()
                     DepositTarget.entries.forEach { t -> val ok = t.key in supported
                         SheetOptionRow(t.title, depositVm.target == t, Modifier.padding(vertical = 4.dp).alpha(if (ok) 1f else 0.4f), subtitle = if (ok) t.desc else "暂不支持：充值无法直接入账合约账户，请充值后划转") { if (ok) depositVm.select(t) { sheet = null } } }

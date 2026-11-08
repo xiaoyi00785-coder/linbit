@@ -28,6 +28,13 @@ import javax.inject.Inject
 
 data class HomeBanner(val id: String, val title: String, val subtitle: String?, val imageUrl: String? = null, val link: String? = null)
 
+/** 运营位 carousel 为空时的自有兜底 banner：只指向 App 内已实现的真实页面。 */
+val LOCAL_BANNERS = listOf(
+    HomeBanner("redpacket", "全员红包雨火爆来袭", "福利中心 · 惊喜好礼等你拿"),
+    HomeBanner("copy", "跟随顶级交易员一键跟单", "跟单交易 · 专业策略"),
+    HomeBanner("bot", "自动化网格策略，震荡行情也能获利", "现货网格 · 策略交易"),
+)
+
 data class HomeState(
     val totalUsdt: BigDecimal = BigDecimal.ZERO,
     val newcomer: ApiHomeNewcomer? = null,

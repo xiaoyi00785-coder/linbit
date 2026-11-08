@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -148,7 +149,8 @@ fun PairPickerSheet(
             if (list.isEmpty()) EmptyState("暂无相关币种", Modifier.height(240.dp))
             LazyColumn(Modifier.weight(1f)) {
                 items(list, key = { it.symbol }) { r ->
-                    Row(Modifier.fillMaxWidth().height(52.dp).pressable(scale = 1f) { onPick(r.symbol); onClose() }.padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().height(52.dp).pressable(scale = 1f) { onPick(r.symbol); onClose() }.padding(start = Spacing.pageH, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        click.cowa.linbit.ui.components.CoinIcon(r.symbol.removeSuffix("USDT"), 24.dp); androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
                         Text(
                             if (spot) r.symbol.replace("USDT", "/USDT") else r.symbol, Modifier.weight(1f),
                             style = lb(FontSize.body, FontWeight.Medium), color = if (r.symbol == current) p.brand else p.textPrimary,
@@ -158,6 +160,10 @@ fun PairPickerSheet(
                             Fmt.percent(r.changePct), Modifier.width(72.dp), style = lbNum(FontSize.small),
                             color = if (r.changePct.signum() < 0) p.down else p.up, textAlign = androidx.compose.ui.text.style.TextAlign.End,
                         )
+                        // 参考：行尾自选星标，点按切换自选（本地自选列表）
+                        if (ep != null) { val fav = r.symbol in watch
+                            Box(Modifier.size(40.dp).testTag("pair.star.${r.symbol}").pressable { ep.watchlist().toggle(r.symbol) }, contentAlignment = Alignment.Center) {
+                                LbIcon(R.drawable.ic_star, 18.dp, if (fav) p.warning else p.textTertiary) } }
                     }
                 }
             }

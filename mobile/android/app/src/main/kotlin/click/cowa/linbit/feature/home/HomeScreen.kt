@@ -141,8 +141,9 @@ fun HomeContent(
     var swipeTick by remember { mutableIntStateOf(0) }
 
     val banners = remember(s.carousel) {
-        // carousel 未配置时如实不展示轮播（不再用本地写死的活动文案）
-        s.carousel.map { HomeBanner("pl:${it.id}", it.title.orEmpty(), null, it.imageUrl, it.linkUrl) }
+        // 有后端 carousel 用后端；为空时用三张自有配图兜底 banner（福利中心 / 跟单 / 策略交易，均为 App 内真实页面）
+        if (s.carousel.isEmpty()) LOCAL_BANNERS
+        else s.carousel.map { HomeBanner("pl:${it.id}", it.title.orEmpty(), null, it.imageUrl, it.linkUrl) }
     }
     LaunchedEffect(banners.size, swipeTick) { if (swipeTick == 0) bannerPage = 0; while (banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % banners.size } }
     val onBanner: (HomeBanner) -> Unit = { b ->
