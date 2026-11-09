@@ -14,6 +14,10 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { AppRoot() }
+        setContent {
+            // Start public quote/preference synchronization once per actual Activity owner.
+            androidx.hilt.navigation.compose.hiltViewModel<click.cowa.linbit.feature.profile.AccountPreferencesViewModel>()
+            AppRoot()
+        }
     }
 }

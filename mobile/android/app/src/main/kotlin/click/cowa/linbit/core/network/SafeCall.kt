@@ -19,7 +19,9 @@ suspend fun <T> apiCall(block: suspend () -> T): T = try {
 } catch (e: IOException) {
     throw ApiFailure.Transport(e)
 } catch (e: SerializationException) {
+    if (click.cowa.linbit.BuildConfig.DEBUG) android.util.Log.w("LbApi", "decode failed: ${e.message}")
     throw ApiFailure.Decoding(e)
 } catch (e: IllegalArgumentException) {
+    if (click.cowa.linbit.BuildConfig.DEBUG) android.util.Log.w("LbApi", "decode failed: ${e.message}")
     throw ApiFailure.Decoding(e)
 }

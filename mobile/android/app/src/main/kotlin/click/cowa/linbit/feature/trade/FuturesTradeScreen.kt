@@ -69,6 +69,7 @@ import click.cowa.linbit.ui.components.PillSegment
 import click.cowa.linbit.ui.components.PrimaryTabs
 import click.cowa.linbit.ui.components.SelectBox
 import click.cowa.linbit.ui.components.SheetOptionRow
+import click.cowa.linbit.ui.components.OrderTypeRow
 import click.cowa.linbit.ui.components.ThemedIcon
 import click.cowa.linbit.ui.components.ToastCenter
 import click.cowa.linbit.ui.components.UpArrow
@@ -103,20 +104,33 @@ fun FuturesRootScreen(
     initialTop: Int = 0,
     autoStart: Boolean = true,
     vm: FuturesTradeViewModel = LocalFuturesTradeFactory.current.invoke(),
+    onCoupons: () -> Unit = {},
+    onFavorite: (String) -> Unit = {},
+    /** 模拟交易页的独立虚拟账户 VM；为空时由 Hilt 提供（离屏测试显式注入）。 */
+    paperVm: click.cowa.linbit.feature.assets.PaperAccountViewModel? = null,
 ) {
     val p = LB.p
     var top by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
+    var welcome by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(welcome) { if (welcome != null) { kotlinx.coroutines.delay(900); welcome = null } }
+    fun goTop(i: Int) {
+        if (i == 3 && top != 3) welcome = "模拟交易" else if (i == 0 && top == 3) welcome = "实盘交易"
+        top = i
+    }
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
-    DisposableEffect(nav, top) { if (top == 0 && autoStart) vm.start(); onDispose { vm.stop() } }
+    DisposableEffect(nav, top) { if ((top == 0 || top == 3) && autoStart) vm.start(); onDispose { vm.stop() } }
     val widthDp = LocalConfiguration.current.screenWidthDp
     val pageH = LayoutAdapt.pageH(widthDp)
     val tabSpace = LayoutAdapt.tabSpacing(widthDp)
-    Column(modifier.fillMaxSize().background(p.bg)) {
-        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = pageH), verticalAlignment = Alignment.CenterVertically) {
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+        // 参考：进入 Demo Trading 后顶部改为「Demo Trading / Go back」，不再显示实盘页签
+        if (top == 3) DemoTradingHeader({ goTop(0) }, Modifier.padding(horizontal = pageH))
+        else Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = pageH), verticalAlignment = Alignment.CenterVertically) {
             PrimaryTabs(
-                listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { top = it },
+                listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { goTop(it) },
                 size = 16.sp, spacing = tabSpace, scrollable = LayoutAdapt.tabsScrollable(widthDp, 4),
             )
         }
@@ -124,9 +138,9 @@ fun FuturesRootScreen(
         when (top) {
             0 -> FuturesTradeContent(
                 vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
-                onSim = { top = 3 }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f),
+                onSim = { goTop(3) }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f), onCoupons = onCoupons, onFavorite = onFavorite,
             )
-            1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin)
+            1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin, onTransfer = onTransfer)
             2 -> TradFiScreen(
                 onBack = {},
                 onTrade = { futures, symbol ->
@@ -136,17 +150,17 @@ fun FuturesRootScreen(
                 embedded = true,
                 bottomInset = bottomInset,
             )
-            // OpenAPI 暂无模拟/纸交易端点，不编造余额与成交
-            else -> ComingSoon("模拟交易", "后端尚未提供模拟交易契约（OpenAPI 无 paper/sim 端点），上线后按契约接入", bottomInset)
+            else -> {
+                val paper = paperVm ?: hiltViewModel<click.cowa.linbit.feature.assets.PaperAccountViewModel>()
+                val feature by paper.featureState.collectAsStateWithLifecycle()
+                DemoTradingContent(
+                    vm, paper, loggedIn, feature.enabled, market.futures, bottomInset, themeMode, onTheme, onLogin,
+                    modifier = Modifier.weight(1f), onPriceAlerts = onPriceAlerts, onFavorite = onFavorite,
+                )
+            }
         }
     }
-}
-
-@Composable
-private fun ComingSoon(title: String, note: String, bottomInset: Dp) {
-    val p = LB.p
-    Column(Modifier.fillMaxSize().padding(bottom = bottomInset), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        EmptyState(title) { Text(note, style = lb(FontSize.small), color = p.textSecondary, textAlign = TextAlign.Center) }
+    welcome?.let { DemoWelcomeOverlay(it) }
     }
 }
 
@@ -166,6 +180,8 @@ fun FuturesTradeContent(
     onCopy: () -> Unit = {},
     onPriceAlerts: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onCoupons: () -> Unit = {},
+    onFavorite: (String) -> Unit = {},
 ) {
     val p = LB.p
     var sheet by remember { mutableStateOf<String?>(null) }
@@ -261,7 +277,7 @@ fun FuturesTradeContent(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CheckRow(vm.tpsl, "止盈/止损", dashed = false) { vm.tpsl = it }
                             Box(Modifier.weight(1f))
-                            if (vm.tpsl) Text("高级设置 ›", Modifier.pressable(scale = 1f) { vm.toast.show("高级止盈止损即将开放") }, style = lb(FontSize.small), color = p.textSecondary)
+                            if (vm.tpsl) Text("高级设置 ›", Modifier.pressable(scale = 1f) { sheet = "advancedTpsl" }, style = lb(FontSize.small), color = p.textSecondary)
                         }
                         if (vm.tpsl) {
                             NumberBox("止盈", vm.quote, vm.tpText, { vm.tpText = it })
@@ -302,7 +318,9 @@ fun FuturesTradeContent(
                     }
                 }
                 Spacer(Modifier.width(18.dp))
-                ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp, Modifier.requiredSize(48.dp).pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" })
+                Box(Modifier.size(48.dp).pressable(scale = 1f, onClick = onHistory).semantics { contentDescription = "合约历史" }, contentAlignment = Alignment.Center) {
+                    ThemedIcon(R.drawable.ic_duo_clock_fill_light, R.drawable.ic_duo_clock_fill_dark, 20.dp)
+                }
             }
             HorizontalDivider(color = p.divider)
             if (bottomTab < 2) Row(Modifier.fillMaxWidth().padding(horizontal = pageH).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -348,8 +366,8 @@ fun FuturesTradeContent(
                         else -> if (vm.shownPlans.isEmpty()) EmptyState("暂无计划委托") else vm.shownPlans.forEach { a -> AlgoOrderRow(a) { cancelAlgoTarget = a }; HorizontalDivider(Modifier.padding(horizontal = Spacing.pageH), color = p.divider) }
                     }
                 }
-                2 -> EmptyState("暂无跟单") { ChipButton("跟单交易", Modifier.width(120.dp).height(36.dp)) { vm.toast.show("跟单交易即将开放") } }
-                else -> Coupons(vm, couponTab) { couponTab = it }
+                2 -> EmptyState("暂无跟单") { ChipButton("跟单交易", Modifier.width(120.dp).height(36.dp)) { if (loggedIn) onCopy() else onLogin() } }
+                else -> Coupons(vm, couponTab, { couponTab = it }, { if (loggedIn) onCoupons() else onLogin() })
             }
             Box(Modifier.height(24.dp))
         }
@@ -378,7 +396,7 @@ fun FuturesTradeContent(
     when (sheet) {
         "kind" -> LbSheet("委托类型", { sheet = null }) {
             Column(Modifier.padding(bottom = 20.dp)) {
-                FuturesKind.entries.forEach { k -> SheetOptionRow(k.title, vm.kind == k) { vm.kind = k; sheet = null } }
+                FuturesKind.entries.forEach { k -> OrderTypeRow(when (k) { FuturesKind.LIMIT -> R.drawable.ic_ot_limit; FuturesKind.MARKET -> R.drawable.ic_ot_market; FuturesKind.PLAN -> R.drawable.ic_ot_trigger; FuturesKind.POST_ONLY -> R.drawable.ic_ot_postonly }, k.title, vm.kind == k) { vm.kind = k; sheet = null } }
             }
         }
         "bookMode" -> BookModeSheet(vm.bookMode, { vm.bookMode = it }) { sheet = null }
@@ -389,7 +407,9 @@ fun FuturesTradeContent(
             when (tool) {
                 "计算器" -> showCalculator = true
                 "价格预警" -> { sheet = null; onPriceAlerts() }
-                "模拟交易" -> onSim()
+                "模拟交易" -> { sheet = null; onSim() }
+                "添加自选" -> { onFavorite(vm.symbol); vm.toast.show("已添加到自选") }
+                else -> sheet = tool
             }
         }
         "mode" -> MarginModeSheet(vm) { sheet = null }
@@ -413,6 +433,11 @@ fun FuturesTradeContent(
             )
         }
     }
+    if (sheet == "advancedTpsl") EntryTpslSheet(vm) { sheet = null }
+    if (sheet == "交易偏好") TradePreferencesSheet(themeMode, onTheme, skipConfirm, { skipConfirm = it }) { sheet = null }
+    if (sheet in listOf("仓位档位介绍", "历史资金费率", "历史标记价格", "风险准备金", "新手教学")) {
+        TradeInfoSheet(sheet!!, vm, { sheet = null })
+    }
     closeTarget?.let { pos ->
         ConfirmDialog("市价平仓", "确定以市价平掉 ${pos.symbol ?: ""} ${if (pos.side == ApiFuturesPosition.Side.SHORT) "空" else "多"}仓 ${pos.qty ?: ""} 吗？", "平仓", { closeTarget = null }) { vm.close(pos); closeTarget = null }
     }
@@ -426,7 +451,7 @@ fun FuturesTradeContent(
 }
 
 @Composable
-private fun FuturesMid(last: BigDecimal, mark: BigDecimal, prec: Int, down: Boolean, onClick: () -> Unit) {
+internal fun FuturesMid(last: BigDecimal, mark: BigDecimal, prec: Int, down: Boolean, onClick: () -> Unit) {
     val p = LB.p
     Column(Modifier.fillMaxWidth().pressable(scale = 1f, onClick = onClick).padding(vertical = 6.dp)) {
         Text(if (last.signum() > 0) Fmt.price(last, prec) else "--", style = lbNum(20.sp, FontWeight.Bold), color = if (down) p.down else p.up, maxLines = 1)
@@ -453,7 +478,7 @@ private fun SideButton(vm: FuturesTradeViewModel, loggedIn: Boolean, long: Boole
 }
 
 @Composable
-private fun Coupons(vm: FuturesTradeViewModel, tab: Int, onTab: (Int) -> Unit) {
+private fun Coupons(vm: FuturesTradeViewModel, tab: Int, onTab: (Int) -> Unit, onCenter: () -> Unit) {
     val p = LB.p
     val items = vm.bonus.filter { if (tab == 0) (it.kind ?: "trial") != "deduction" else it.kind == "deduction" }
     Row(Modifier.padding(horizontal = Spacing.pageH).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -464,7 +489,7 @@ private fun Coupons(vm: FuturesTradeViewModel, tab: Int, onTab: (Int) -> Unit) {
             )
         }
     }
-    if (items.isEmpty()) EmptyState("暂无卡券") { ChipButton("前往卡券中心", Modifier.width(140.dp).height(36.dp)) { vm.toast.show("卡券中心即将开放") } }
+    if (items.isEmpty()) EmptyState("暂无卡券") { ChipButton("前往卡券中心", Modifier.width(140.dp).height(36.dp)) { onCenter() } }
     else items.forEach { b ->
         Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 10.dp).border(1.dp, p.border, RoundedCornerShape(Radius.md)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

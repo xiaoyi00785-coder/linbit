@@ -30,7 +30,7 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
         val ctx = org.robolectric.RuntimeEnvironment.getApplication()
         val repo = AuthRepository(retrofit, tokens, { "evidence-invalid-device" }, { "Robolectric Content Capture" }, scope)
         val fakeBridge = click.cowa.linbit.feature.auth.PasskeyCredentialBridge { _, _ -> error("Native bridge must be explicitly mocked per passkey scenario") }
-        return AuthViewModel(repo, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(retrofit, fakeBridge, { "evidence-invalid-device" }, { "Robolectric" }))
+        return AuthViewModel(repo, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(retrofit, fakeBridge, { "evidence-invalid-device" }, { "Robolectric" }), retrofit)
     }
 
     fun security(): SecurityViewModel = SecurityViewModel(retrofit, toast, tokens, passkeyRegistration())
@@ -55,6 +55,10 @@ internal class ProductionEvidenceFixtures(private val api: MockEvidenceApi, priv
             seedEvidenceProfile(ApiAccount(uid = "FAKE-PROFILE-1001", kycLevel = 0, twoFactorEnabled = false, createdAt = "2026-01-01T00:00:00Z", nickname = "Local Fake"))
         }
     }
+
+    fun event() = click.cowa.linbit.feature.trade.EventContractViewModel(retrofit, tokens, MarketSocket(http, "ws://127.0.0.1/", "evidence", scope, accessToken = { null }), toast)
+
+    fun chat(chatApi: click.cowa.linbit.core.network.LinbitApi = retrofit) = click.cowa.linbit.feature.markets.ChatViewModel(chatApi, MarketSocket(http, "ws://127.0.0.1/", "evidence", scope, accessToken = { null }), tokens, toast)
 
     fun rootHomeMarket(): click.cowa.linbit.app.RootHomeMarketFactory {
         val socket = MarketSocket(http, "ws://127.0.0.1/", "evidence", scope, accessToken = { null })

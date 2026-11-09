@@ -34,8 +34,8 @@ class ProductionPaperAvailabilityTest {
             f.tokens.accessToken = "INVALID_LAYOUT_TOKEN"
             api.route("GET", "/app/features", """{"features":{"paperTrading":false,"priceAlerts":false}}""")
             host(PaperAccountViewModel(click.cowa.linbit.di.AppModule.paperClient(click.cowa.linbit.core.network.NetworkFactory.paperApi(okhttp3.OkHttpClient(), api.baseUrl), click.cowa.linbit.di.AppModule.paperFeatureGate(click.cowa.linbit.core.network.NetworkFactory.api(okhttp3.OkHttpClient(), api.baseUrl))), f.tokens, f.toast))
-            rule.onNodeWithText("模拟功能尚未开放", useUnmergedTree = true).assertIsDisplayed()
-            rule.onNodeWithText("未发起虚拟或真实交易请求", substring = true, useUnmergedTree = true).assertIsDisplayed()
+            rule.onNodeWithText("模拟服务未启用", useUnmergedTree = true).assertIsDisplayed()
+            rule.onNodeWithText("不会使用真实账户代替模拟账户", substring = true, useUnmergedTree = true).assertIsDisplayed()
             Assert.assertTrue(api.requests.none { it.contains("/paper/") || it.contains("/spot/order") || it.contains("/order/accept") })
             api.assertNoWrites()
         }

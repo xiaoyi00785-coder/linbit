@@ -5,6 +5,27 @@ import click.cowa.linbit.R
 
 /** 本地打包图标索引；新增币种须同时运行 mobile/tools/gen_coin_icons.py。 */
 internal object CoinIcons {
+    fun normalize(base: String): String {
+        var b = base.trim().uppercase().removeSuffix(".E")
+        b = b.substringBefore('/').substringBefore('-').substringBefore('_')
+        return b
+    }
+
+    /** 代币化股票：不得套用同名加密货币图标（如 META≠Metadium），改用公开股票 Logo CDN。 */
+    @Volatile private var stocks: Set<String> = setOf("AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "COIN", "SPY", "QQQ", "NFLX", "AMD", "INTC", "MSTR", "HOOD", "CRCL")
+    fun registerStocks(bases: Collection<String>) { stocks = stocks + bases.map { normalize(it) } }
+    fun isStock(base: String) = normalize(base) in stocks
+    fun stockLogoUrl(base: String) = "https://financialmodelingprep.com/image-stock/${normalize(base)}.png"
+
+    @Volatile private var assetSet: Set<String>? = null
+
+    /** spothq/cryptocurrency-icons 128/color PNG（assets/coins，CC0）。 */
+    fun assetUri(ctx: android.content.Context, base: String): String? {
+        val set = assetSet ?: runCatching { ctx.assets.list("coins")?.toSet() ?: emptySet() }.getOrDefault(emptySet()).also { assetSet = it }
+        val f = base.lowercase() + ".png"
+        return if (f in set) "file:///android_asset/coins/$f" else null
+    }
+
     @DrawableRes
     fun drawable(base: String): Int? = when (base.trim().uppercase().removeSuffix(".E")) {
         "AAVE" -> R.drawable.coin_aave

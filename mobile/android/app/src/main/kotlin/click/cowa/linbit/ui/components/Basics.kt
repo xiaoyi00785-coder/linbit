@@ -90,6 +90,20 @@ fun LbImageIcon(@DrawableRes id: Int, size: Dp, modifier: Modifier = Modifier) {
     Image(painterResource(id), contentDescription = null, modifier = modifier.size(size))
 }
 
+/** Reference monochrome PNGs include opaque white cut-outs; tinting their alpha would destroy the glyph. */
+@Composable
+fun LbReferenceIcon(@DrawableRes id: Int, size: Dp, modifier: Modifier = Modifier) {
+    val filter = if (LB.p.isDark) androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f,
+        )),
+    ) else null
+    Image(painterResource(id), contentDescription = null, colorFilter = filter, modifier = modifier.size(size))
+}
+
 /** 品牌符号：单一来源 mobile/android/brand/mark*.svg → drawable/ic_mark / ic_mark_lime（浅色底用深色符号，深色底用品牌绿符号）。 */
 @Composable
 fun LinbitLogo(size: Dp, modifier: Modifier = Modifier) {
@@ -189,13 +203,20 @@ fun ChipBar(items: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             ) {
                 Text(
                     t, maxLines = 1, softWrap = false,
-                    style = lb(FontSize.chip, if (sel) FontWeight.Medium else FontWeight.Normal),
+                    style = lb(FontSize.chip, if (sel) FontWeight.Medium else FontWeight.Normal).tabLine(),
                     color = if (sel) p.textPrimary else p.textSecondary,
                 )
             }
         }
     }
 }
+
+/** 统一行盒：中文与纯拉丁文（如「TradFi」）走不同回退字体，行高/上沿不同会导致同一行标签不齐；固定行高 + 居中裁剪 + 关闭字体内边距保证同一基线。 */
+internal fun androidx.compose.ui.text.TextStyle.tabLine(): androidx.compose.ui.text.TextStyle = copy(
+    lineHeight = fontSize * 1.4f,
+    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.None),
+    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+)
 
 /** 一级 Tab（18sp，选中黑色 semibold，未选灰色；underline 时下方 16×3 胶囊）。 */
 @Composable
@@ -216,12 +237,12 @@ fun PrimaryTabs(
         items.forEachIndexed { i, t ->
             val sel = i == selected
             Column(
-                Modifier.pressable(scale = 1f) { onSelect(i) },
+                Modifier.alignBy(androidx.compose.ui.layout.FirstBaseline).pressable(scale = 1f) { onSelect(i) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     t,
-                    style = lb(size, if (sel) FontWeight.SemiBold else FontWeight.Normal),
+                    style = lb(size, if (sel) FontWeight.SemiBold else FontWeight.Normal).tabLine(),
                     color = if (sel) p.textPrimary else p.textSecondary,
                     maxLines = 1,
                     softWrap = false,
@@ -245,23 +266,27 @@ fun SortLabel(title: String, showArrow: Boolean = true, modifier: Modifier = Mod
     }
 }
 
-/** 币种图标：优先本地 CC0 矢量图；未打包时远程加载，仍失败才显示首字母圆。 */
+/** 币种图标：本地 CC0 矢量 → 本地 spothq 全量 PNG（assets/coins）→ CoinCap 公开 CDN → 首字母圆。不生成任何图标。 */
 @Composable
 fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Modifier) {
-    val local = remember(base) { CoinIcons.drawable(base) }
+    val key = CoinIcons.normalize(base)
+    val stock = CoinIcons.isStock(key)
+    val local = remember(key, stock) { if (stock) null else CoinIcons.drawable(key) }
     if (local != null) {
-        Image(painterResource(local), contentDescription = null, modifier = modifier.size(size))
+        Image(painterResource(local), contentDescription = key, modifier = modifier.size(size))
         return
     }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val asset = remember(key, stock) { if (stock) CoinIcons.stockLogoUrl(key) else CoinIcons.assetUri(ctx, key) }
     val p = LB.p
     val fallback: @Composable () -> Unit = {
         Box(modifier.size(size).clip(CircleShape).background(p.fillStrong), contentAlignment = Alignment.Center) {
-            Text(base.trim().firstOrNull()?.uppercase() ?: "?", style = lb(FontSize.small, FontWeight.SemiBold), color = p.textSecondary)
+            Text(key.firstOrNull()?.uppercase() ?: "?", style = lb(FontSize.small, FontWeight.SemiBold), color = p.textSecondary)
         }
     }
     SubcomposeAsyncImage(
-        model = "https://assets.coincap.io/assets/icons/${base.trim().lowercase()}@2x.png",
-        contentDescription = null,
+        model = asset ?: "https://assets.coincap.io/assets/icons/${key.lowercase()}@2x.png",
+        contentDescription = key,
         contentScale = ContentScale.Fit,
         modifier = modifier.size(size).clip(CircleShape),
         loading = { fallback() },
@@ -274,7 +299,7 @@ fun CoinIcon(base: String, size: Dp = Metrics.coinIcon, modifier: Modifier = Mod
 fun EmptyState(text: String = "暂无数据", modifier: Modifier = Modifier, iconSize: Dp = 64.dp, verticalPadding: Dp = 24.dp, content: (@Composable () -> Unit)? = null) {
     val p = LB.p
     Column(modifier.fillMaxWidth().padding(vertical = verticalPadding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        LbImageIcon(R.drawable.ic_empty_folder, iconSize)
+        LbImageIcon(R.drawable.ic_ref_empty_data, iconSize)
         Text(text, style = lb(FontSize.caption), color = if (content != null) p.textPrimary else p.textSecondary, textAlign = TextAlign.Center)
         content?.invoke()
     }

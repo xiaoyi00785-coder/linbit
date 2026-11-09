@@ -66,7 +66,7 @@ private fun CreateSubAccountSheet(s: SubAccountsUiState, vm: SubAccountsViewMode
     var note by remember { mutableStateOf("") }
     val nameError = ProfileLogic.subAccountNameError(username)
     LbSheet("创建子账户", onClose, showClose = true) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column {
                 FieldLabel("用户名")
                 Spacer(Modifier.height(6.dp))

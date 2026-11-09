@@ -54,10 +54,23 @@ class ProductionAppRootEvidenceTest {
         }
         awaitText("首页"); rule.onNodeWithText("资产", useUnmergedTree = true).performClick(); awaitText("完成充值，开启您的 Linbit 之旅!")
     }
-    @Test fun homeAssetsTabEarnClickPath() {
+    @Test fun homeEarnOpensSpotEarnTopTab() {
         MockEvidenceApi().use { api -> this.api = api
-            render(); rule.onNodeWithText("理财", useUnmergedTree = true).performClick(); awaitText("暂无理财产品")
-            harness.app("approot-assets-earn", 1170, 2364); api.assertNoWrites()
+            base()
+            val f = ProductionEvidenceFixtures(api, CoroutineScope(Dispatchers.Main))
+            f.tokens.accessToken = "INVALID_LAYOUT_TOKEN"
+            val route = click.cowa.linbit.app.AssetRouteViewModels(f.assets(), f.spot(), f.tradFi())
+            rule.setContent {
+                androidx.compose.runtime.CompositionLocalProvider(click.cowa.linbit.app.LocalRootHomeMarketFactory provides f.rootHomeMarket()) {
+                    click.cowa.linbit.app.AppRoot(f.root(), f.badge(), route, showSplash = false)
+                }
+            }
+            awaitText("首页")
+            // 宫格「理财」应深链到现货顶栏理财（非独立返回页）
+            rule.onNodeWithText("理财", useUnmergedTree = true).performClick()
+            awaitText("暂无理财产品")
+            rule.onNodeWithText("闪兑", useUnmergedTree = true).assertExists() // spot top tabs present
+            harness.app("approot-spot-earn", 1170, 2364); api.assertNoWrites()
             Assert.assertTrue(api.requests.any { it.startsWith("GET /earn/products") })
         }
     }

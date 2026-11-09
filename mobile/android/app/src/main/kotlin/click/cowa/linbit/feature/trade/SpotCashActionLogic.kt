@@ -54,6 +54,27 @@ object StrategyGridLogic {
 }
 
 object ConvertQuoteLogic {
+    /** 参考汇率：公开现货行情 last 价（X/USDT）推算 1 from ≈ ? to；仅展示，不用于成交。缺行情返回 null。 */
+    fun referenceRate(rows: List<click.cowa.linbit.data.MarketRow>, from: String, to: String): java.math.BigDecimal? {
+        fun px(a: String): java.math.BigDecimal? = if (a == "USDT") java.math.BigDecimal.ONE
+            else rows.firstOrNull { it.base == a && it.quote == "USDT" }?.last?.takeIf { it.signum() > 0 }
+        val f = px(from) ?: return null; val t = px(to) ?: return null
+        return f.divide(t, 12, java.math.RoundingMode.HALF_UP)
+    }
+    fun fmtRate(r: java.math.BigDecimal): String {
+        val scale = if (r >= java.math.BigDecimal.ONE) 5 else 10
+        return click.cowa.linbit.core.util.Fmt.group(r.setScale(scale, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString())
+    }
+    fun statusText(s: String?): String = when (s?.lowercase()) {
+        "filled", "success", "completed" -> "成功"; "failed", "rejected" -> "失败"; "pending", "processing" -> "处理中"; null -> "--"; else -> s
+    }
+    fun timeText(ms: Long): String = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA).format(java.util.Date(if (ms < 10_000_000_000L) ms * 1000 else ms))
+    val FAQ = listOf(
+        "1. 闪兑有什么优势？" to "Linbit 闪兑提供简单、零手续费、极速的兑换体验，适合想快速完成兑换的新手用户。",
+        "2. 闪兑的最小和最大金额是多少？" to "每笔兑换的金额限制因币种或币对而异，输入数量时会实时显示。",
+        "3. 兑换后资产何时到账？" to "兑换成功后，资产会立即存入您的现货账户。若兑换失败，请重试或联系客服。",
+        "4. 在哪里查看闪兑记录？" to "点击闪兑页面右上角的记录图标，即可查看您的闪兑记录。",
+    )
     data class Form(val from: String, val to: String, val amount: String)
 
     fun normalizeExpiresAtMs(expiresAt: Long?): Long? {

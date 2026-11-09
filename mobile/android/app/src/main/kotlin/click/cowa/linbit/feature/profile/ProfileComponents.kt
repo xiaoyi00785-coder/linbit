@@ -22,13 +22,14 @@ import click.cowa.linbit.ui.theme.*
 import coil.compose.SubcomposeAsyncImage
 
 @Composable
-fun ProfileNavBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
+fun ProfileNavBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null, centered: Boolean = false) {
     val p = LB.p
     Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(32.dp).pressable(scale = 1f, onClick = onBack), contentAlignment = Alignment.CenterStart) {
             LbIcon(R.drawable.ic_arrow_left, 22.dp, p.textPrimary)
         }
-        Text(title, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+        Text(title, Modifier.weight(1f), style = lb(FontSize.title, if (centered) FontWeight.Medium else FontWeight.SemiBold), color = p.textPrimary,
+            textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else null)
         if (trailing != null) trailing() else Spacer(Modifier.size(32.dp))
     }
 }
@@ -38,6 +39,8 @@ fun ProfileRow(
     title: String,
     value: String? = null,
     destructive: Boolean = false,
+    /** 参考偏好行右侧可放色块/K线图标，优先于纯文案 value。 */
+    trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val p = LB.p
@@ -47,7 +50,8 @@ fun ProfileRow(
     ) {
         Text(title, style = lb(FontSize.label), color = if (destructive) p.down else p.textPrimary)
         Spacer(Modifier.weight(1f))
-        if (value != null) Text(value, style = lb(FontSize.label), color = p.textSecondary, maxLines = 1)
+        if (trailing != null) trailing()
+        else if (value != null) Text(value, style = lb(FontSize.label), color = p.textSecondary, maxLines = 1)
         Spacer(Modifier.width(8.dp))
         LbIcon(R.drawable.ic_chevron_right, 13.dp, p.textTertiary)
     }

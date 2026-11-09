@@ -13,6 +13,11 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,6 +47,7 @@ enum class MorePage(val title: String) {
     WELFARE("福利中心"), COPY("跟单交易"), NOTIFICATIONS("消息通知"),
     PRICE_ALERTS("价格预警"),
     COUPONS("卡券中心"), PARTNER("合伙人计划"), TRADFI("TradFi"), SUPPORT("我的工单"),
+    REFERRAL("邀请好友"), CASHBACK("充值返现"), LOTTERY("交易抽奖"), API_KEY("API Key"), CARD("Linbit 卡"),
 }
 
 @Composable
@@ -57,17 +63,50 @@ fun MoreHost(
     alertVm: click.cowa.linbit.feature.alerts.PriceAlertViewModel = hiltViewModel(),
     onDialogWindow: (android.view.Window?) -> Unit = {},
 ) {
-    BackHandler(onBack = onClose)
+    var page by remember(initial) { mutableStateOf(initial) }
+    var openTicketId by remember { mutableStateOf<String?>(null) }
+    var markNotificationId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(initial) {
+        page = initial
+        if (initial != MorePage.SUPPORT) { openTicketId = null; markNotificationId = null }
+    }
+    BackHandler(onBack = {
+        when {
+            page == MorePage.SUPPORT && initial == MorePage.NOTIFICATIONS -> {
+                openTicketId = null; markNotificationId = null; page = MorePage.NOTIFICATIONS
+            }
+            page != initial -> { openTicketId = null; markNotificationId = null; page = initial }
+            else -> onClose()
+        }
+    })
     Box(modifier.fillMaxSize().background(LB.p.bg).statusBarsPadding().navigationBarsPadding()) {
-        when (initial) {
+        when (page) {
             MorePage.PRICE_ALERTS -> click.cowa.linbit.feature.alerts.PriceAlertScreen(onClose, onLogin, alertVm, onDialogWindow)
             MorePage.WELFARE -> WelfareScreen(onClose, onLogin, onOpen, onTrade, onProfile, onDeposit)
             MorePage.COPY -> CopyTradingScreen(onClose, onLogin)
-            MorePage.NOTIFICATIONS -> NotificationsScreen(onClose, onLogin)
+            MorePage.NOTIFICATIONS -> NotificationsScreen(onClose, onLogin, onOpenSupportTicket = { ticketId, notificationId ->
+                openTicketId = ticketId; markNotificationId = notificationId; page = MorePage.SUPPORT
+            })
             MorePage.COUPONS -> CouponsScreen(onClose, onLogin)
             MorePage.PARTNER -> PartnerScreen(onClose, onLogin)
             MorePage.TRADFI -> TradFiScreen(onClose, onTrade)
-            MorePage.SUPPORT -> SupportTicketsScreen(onClose, onLogin)
+            MorePage.SUPPORT -> SupportTicketsScreen(
+                onBack = {
+                    if (initial == MorePage.NOTIFICATIONS) {
+                        openTicketId = null; markNotificationId = null; page = MorePage.NOTIFICATIONS
+                    } else onClose()
+                },
+                onLogin = onLogin,
+                openTicketId = openTicketId,
+                markNotificationId = markNotificationId,
+                onOpenTicketConsumed = { openTicketId = null },
+                onSupportNotificationConsumed = { markNotificationId = null },
+            )
+            MorePage.REFERRAL -> ReferralScreen(onClose, onLogin)
+            MorePage.CASHBACK -> CashbackScreen(onClose, onLogin)
+            MorePage.LOTTERY -> LotteryScreen(onClose, onLogin, onFutures = { onTrade(true, "BTCUSDT") }, onReferral = { onOpen(MorePage.REFERRAL) })
+            MorePage.API_KEY -> ApiKeyScreen(onClose, onSecurity = onProfile)
+            MorePage.CARD -> CardScreen(onClose, onLogin)
         }
     }
 }
@@ -94,6 +133,9 @@ fun MoreMenuScreen(onBack: () -> Unit, onOpen: (MorePage) -> Unit) {
                         MorePage.PARTNER -> R.drawable.ic_avatar
                         MorePage.TRADFI -> R.drawable.ic_g_tradfi_light
                         MorePage.SUPPORT -> R.drawable.ic_headset
+                        MorePage.REFERRAL, MorePage.CASHBACK, MorePage.LOTTERY -> R.drawable.ic_g_gift_light
+                        MorePage.API_KEY -> R.drawable.ic_passkey
+                        MorePage.CARD -> R.drawable.ic_g_gift_light
                     }, 24.dp)
                     Spacer(Modifier.width(12.dp))
                     Text(page.title, Modifier.weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = LB.p.textPrimary)
@@ -114,10 +156,11 @@ fun MoreFrame(
     title: String,
     onBack: () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
+    centered: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(LB.p.bg)) {
-        ProfileNavBar(title, onBack, trailing)
+        ProfileNavBar(title, onBack, trailing, centered)
         content()
     }
 }

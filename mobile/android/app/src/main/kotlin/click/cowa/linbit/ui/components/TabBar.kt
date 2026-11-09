@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -43,39 +44,34 @@ enum class MainTab(val title: String, @DrawableRes val light: Int, @DrawableRes 
     ASSETS("资产", R.drawable.ic_tab_assets_light, R.drawable.ic_tab_assets_dark),
 }
 
-/** 悬浮胶囊 TabBar（对照图 ref/1.jpg 底部：高 61，左右各 21，半透明，选中项灰色胶囊，图标 20 + 11sp 文案）。 */
+/** 底部 Tab（参考 EasiCoin：通栏白底 + 顶部发丝线；图标 22 + 11sp 文案；选中黑色原色图标，未选灰色）。 */
 @Composable
 fun FloatingTabBar(selected: MainTab, onSelect: (MainTab) -> Unit, modifier: Modifier = Modifier) {
     val p = LB.p
-    Row(
-        modifier
-            .navigationBarsPadding()
-            .padding(horizontal = Metrics.tabBarInset, vertical = 6.dp)
-            .fillMaxWidth()
-            .height(Metrics.tabBarH)
-            .shadow(12.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.08f), spotColor = Color.Black.copy(alpha = 0.08f))
-            .clip(CircleShape)
-            .background(p.tabBarBg)
-            .border(BorderStroke(0.5.dp, p.tabBarBorder), CircleShape)
-            .padding(5.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        MainTab.entries.forEach { tab ->
-            val sel = tab == selected
-            Column(
-                Modifier
-                    .weight(1f)
-                    .height(Metrics.tabBarH - 10.dp)
-                    .clip(CircleShape)
-                    .background(if (sel) p.tabBarSelected else Color.Transparent)
-                    .testTag("main-tab-${tab.name.lowercase()}")
-                    .clickable(remember { MutableInteractionSource() }, indication = null) { onSelect(tab) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                androidx.compose.foundation.Image(painterResource(if (p.isDark) tab.dark else tab.light), null, Modifier.size(20.dp))
-                Box(Modifier.height(3.dp))
-                Text(tab.title, style = lb(FontSize.tabBar, FontWeight.Medium), color = p.textPrimary, maxLines = 1)
+    Column(modifier.fillMaxWidth().background(p.bg)) {
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(p.border))
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().height(Metrics.tabBarH - 3.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            MainTab.entries.forEach { tab ->
+                val sel = tab == selected
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .testTag("main-tab-${tab.name.lowercase()}")
+                        .clickable(remember { MutableInteractionSource() }, indication = null) { onSelect(tab) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    androidx.compose.foundation.Image(
+                        painterResource(if (p.isDark) tab.dark else tab.light), null, Modifier.size(22.dp),
+                        colorFilter = if (sel) null else androidx.compose.ui.graphics.ColorFilter.tint(p.textTertiary),
+                    )
+                    Box(Modifier.height(4.dp))
+                    Text(tab.title, style = lb(FontSize.tabBar, if (sel) FontWeight.Medium else FontWeight.Normal), color = if (sel) p.textPrimary else p.textTertiary, maxLines = 1)
+                }
             }
         }
     }

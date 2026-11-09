@@ -16,16 +16,17 @@
 package click.cowa.linbit.core.generated
 
 import click.cowa.linbit.core.generated.ApiFuturesBonus
+import click.cowa.linbit.core.generated.ApiFuturesBonusAvailable
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param items 
- * @param available 十进制字符串
+ *
+ * @param items
+ * @param available
  */
 @Serializable
 
@@ -34,12 +35,10 @@ data class ApiFuturesBonus200Response (
     @SerialName(value = "items")
     val items: kotlin.collections.List<ApiFuturesBonus>? = null,
 
-    /* 十进制字符串 */
     @SerialName(value = "available")
-    val available: kotlin.String? = null
+    val available: ApiFuturesBonusAvailable? = null
 
 ) {
 
 
 }
-

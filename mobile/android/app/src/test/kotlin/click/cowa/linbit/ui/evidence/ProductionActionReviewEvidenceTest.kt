@@ -25,14 +25,30 @@ class ProductionActionReviewEvidenceTest {
     private lateinit var strategyVm: click.cowa.linbit.feature.trade.SpotSubpagesViewModel
     private val harness by lazy { ProductionEvidenceHarness(rule) }
     private var dialog: android.view.Window? = null
-    private fun wait(text: String) { try { rule.waitUntil(10_000) { runCatching { rule.onAllNodesWithText(text, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) } } catch (e: Throwable) { throw AssertionError("Wait=$text tree=" + rule.onRoot(useUnmergedTree=false).printToString(10000).toString() + if (::strategyVm.isInitialized) " strategy error=${strategyVm.error}, preview=${strategyVm.gridPreview}, loading=${strategyVm.loading}, actionFailure=${strategyVm.actionFailure}" else "", e) } }
+    private fun wait(text: String) { try { rule.waitUntil(10_000) { runCatching { rule.onAllNodesWithText(text, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) } } catch (e: Throwable) {
+        val earnInfo = if (::earnVm.isInitialized) " earn error=${earnVm.error} actionFailure=${earnVm.actionFailure} acting=${earnVm.acting}" else ""
+        val stratInfo = if (::strategyVm.isInitialized) " strategy error=${strategyVm.error}, preview=${strategyVm.gridPreview}, loading=${strategyVm.loading}, actionFailure=${strategyVm.actionFailure}" else ""
+        throw AssertionError("Wait=$text$earnInfo$stratInfo", e)
+    } }
     private fun capture(name: String) { rule.waitUntil(5_000) { dialog != null }; harness.dialogWindow(name, dialog) }
     @Before fun installMain() { kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.test.UnconfinedTestDispatcher()) }
     @After fun resetMain() { kotlinx.coroutines.Dispatchers.resetMain() }
+    private fun expandUsdt() {
+        rule.waitUntil(10_000) {
+            !earnVm.loading && earnVm.earnProducts.any { it.asset == "USDT" } &&
+                runCatching { rule.onAllNodesWithTag("earn.asset.USDT", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false)
+        }
+        rule.onNodeWithTag("earn.asset.USDT", useUnmergedTree = true).performClick()
+        wait("USDT 活期理财")
+    }
     private fun earn(api: MockEvidenceApi) {
         val vm = evidenceVm(api); earnVm = vm
         rule.setContent { LinbitTheme(false) { AssetFeatureHost("earn", {}, {}, {_, _->}, vm, onDialogWindow = { dialog = it }) } }
-        wait("产品列表"); wait("USDT 活期理财"); wait("我的持仓")
+        wait("全部产品"); wait("我的持仓")
+        rule.waitUntil(10_000) { !earnVm.loading && earnVm.earnProducts.isNotEmpty() }
+        rule.waitUntil(10_000) {
+            runCatching { rule.onAllNodesWithTag("earn.asset.USDT", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false)
+        }
     }
     private fun strategy(api: MockEvidenceApi) {
         val vm = evidenceVm(api); strategyVm = vm
@@ -44,21 +60,22 @@ class ProductionActionReviewEvidenceTest {
         earnRoutes(api); earn(api); wait("我的持仓"); harness.app("asset-earn-normal-holding", 1170, 2364); api.assertNoWrites()
     } }
     @Test fun subscribeReviewAndStableFailure() { MockEvidenceApi().use { api ->
-        earnRoutes(api); earn(api); wait("产品列表")
+        earnRoutes(api); earn(api); wait("全部产品"); expandUsdt()
         harness.app("asset-earn-normal-products", 1170, 2364)
-        rule.onNodeWithText("申购", useUnmergedTree = true).performScrollTo().performClick()
-        rule.onAllNodesWithText("金额", substring = true).filterToOne(hasSetTextAction()).performTextInput("100")
+        rule.waitUntil(10_000) { runCatching { rule.onAllNodesWithTag("earn.subscribe", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
+        rule.onAllNodesWithTag("earn.subscribe", useUnmergedTree = true)[0].performScrollTo().performClick()
+        rule.waitUntil(10_000) { runCatching { rule.onNodeWithTag("earn.amount", useUnmergedTree = true).fetchSemanticsNode(); true }.getOrDefault(false) }
+        rule.onNodeWithTag("earn.amount", useUnmergedTree = true).performTextInput("100")
         rule.onNodeWithText("下一步 · 申购复核", substring = true).performClick(); wait("申购最终复核"); capture("asset-earn-subscribe-review")
         api.explicitFailure("POST", "/earn/products/evidence-earn/subscribe", "测试：申购失败")
         rule.onNodeWithText("确认申购", useUnmergedTree = true).performClick(); wait("操作未完成：测试：申购失败")
         rule.onNodeWithText("确认申购", useUnmergedTree = true).assertIsEnabled(); capture("asset-earn-subscribe-failure"); api.assertOnlyExpectedFailures()
     } }
     @Test fun allRedeemReviewUsesNullAmountAndStableFailure() { MockEvidenceApi().use { api ->
-        earnRoutes(api); earn(api); wait("产品列表")
+        earnRoutes(api); earn(api); wait("全部产品"); expandUsdt()
         rule.waitUntil(10_000) { !earnVm.loading && earnVm.error == null && earnVm.earnPositions.none { it.productId == "evidence-earn" }.not() }
-        rule.onNode(hasText("赎回") and hasClickAction()).performScrollTo()
-        rule.waitForIdle()
-        rule.onNode(hasText("赎回") and hasClickAction()).performClick()
+        rule.waitUntil(10_000) { runCatching { rule.onAllNodesWithTag("earn.redeem", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
+        rule.onAllNodesWithTag("earn.redeem", useUnmergedTree = true)[0].performScrollTo().performClick()
         try { wait("当前持仓") } catch (e: Throwable) {
             throw AssertionError("Redeem did not open: loading=${earnVm.loading}, error=${earnVm.error}, positions=${earnVm.earnPositions}, requests=${api.dumpRequests()}", e)
         }

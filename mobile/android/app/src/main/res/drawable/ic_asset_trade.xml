@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- ascending polyline -->
+    <path android:fillColor="#111111"
+        android:pathData="M4,16.5 L4,14.7 L9,10.2 L12.8,13.2 L18.2,7.2 L19.5,8.4 L12.8,15.7 L9,12.7 L5.8,15.5 L5.8,16.5z"/>
+    <!-- arrow head -->
+    <path android:fillColor="#111111"
+        android:pathData="M14.2,6.5 L19.8,6.5 L19.8,12.1 L18.1,12.1 L18.1,9.1 L14.2,9.1z"/>
+</vector>

@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
@@ -39,8 +40,7 @@ import click.cowa.linbit.ui.theme.Metrics
 import click.cowa.linbit.ui.theme.resolveDark
 
 @Composable
-internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadgeViewModel, routeVms: AssetRouteViewModels, showSplash: Boolean, onDialogWindow: (android.view.Window?) -> Unit) {
-    val loggedIn = true // This entire composable is mounted only by the authenticated production gate.
+internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadgeViewModel, routeVms: AssetRouteViewModels, showSplash: Boolean, onDialogWindow: (android.view.Window?) -> Unit, loggedIn: Boolean = true, authVm: click.cowa.linbit.feature.auth.AuthViewModel? = null, pendingChat: Boolean = false, onPendingChat: (Boolean) -> Unit = {}) {
 
     val mode by vm.themeMode.collectAsStateWithLifecycle()
     val spotSymbol by vm.tradeNav.spotSymbol.collectAsStateWithLifecycle()
@@ -54,8 +54,31 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
     var morePage by rememberSaveable { mutableStateOf<MorePage?>(null) }
     var assetFeature by rememberSaveable { mutableStateOf<String?>(null) }
     var moreMenu by rememberSaveable { mutableStateOf(false) }
+    var marketsTop by rememberSaveable { mutableStateOf(1) }
+    var marketsSearch by rememberSaveable { mutableStateOf(false) }
+    var scan by rememberSaveable { mutableStateOf(false) }
+    var hideTabBar by remember { mutableStateOf(false) }
+    val toolsMarketsVm = rootMarkets()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    fun openLink(url: String) {
+        runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .onFailure { vm.toast.show("无法打开链接") }
+    }
     val unread by badgeVm.unread.collectAsStateWithLifecycle()
     fun openFeature(title: String) {
+        when (title) {
+            "现货" -> { tab = MainTab.SPOT; return }
+            "合约" -> { tab = MainTab.FUTURES; return }
+            "快捷买币" -> { if (loggedIn) assetFeature = "quickbuy" else auth = "login"; return }
+            "模拟交易" -> { if (loggedIn) assetFeature = "paper" else auth = "login"; return }
+            "客服", "帮助中心" -> { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login"; return }
+            "聊天室" -> { marketsTop = 2; tab = MainTab.MARKETS; return }
+            "更多服务" -> { moreMenu = true; return }
+            "Linbit 卡" -> { morePage = MorePage.CARD; return }
+            "理财" -> { if (loggedIn) { vm.tradeNav.openSpotTop(2); tab = MainTab.SPOT } else auth = "login"; return }
+            "策略交易" -> { if (loggedIn) assetFeature = "strategy" else auth = "login"; return }
+        }
+        if (!loggedIn) { auth = "login"; return }
         val page = when (title) {
             "福利中心" -> MorePage.WELFARE
             "跟单" -> MorePage.COPY
@@ -63,9 +86,14 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             "价格预警" -> MorePage.PRICE_ALERTS
             "卡券中心" -> MorePage.COUPONS
             "合伙人计划" -> MorePage.PARTNER
+            "邀请好友" -> MorePage.REFERRAL
+            "充值返现" -> MorePage.CASHBACK
+            "交易抽奖" -> MorePage.LOTTERY
+            "API Key" -> MorePage.API_KEY
+            "Linbit 卡" -> MorePage.CARD
             else -> null
         }
-        if (page != null) morePage = page else vm.toast.show("$title 即将开放")
+        if (page != null) morePage = page
     }
 
     LinbitTheme(dark) {
@@ -74,10 +102,15 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             WindowCompat.getInsetsController((view.context as android.app.Activity).window, view).isAppearanceLightStatusBars = !dark
         }
         LaunchedEffect(Unit) {
-            vm.expired.collect { vm.toast.show("登录已过期，请重新登录"); userCenter = false; auth = "login" }
+            if (loggedIn) vm.expired.collect { vm.toast.show("登录已过期，请重新登录"); userCenter = false; auth = "login" }
         }
         // 登录成功后自动收起
-        LaunchedEffect(loggedIn) { if (loggedIn) auth = null }
+        LaunchedEffect(loggedIn, pendingChat) {
+            if (loggedIn) {
+                auth = null
+                if (pendingChat) { marketsTop = 2; tab = MainTab.MARKETS; onPendingChat(false) }
+            }
+        }
 
         val p = LB.p
         // 内容区底部留白 = TabBar 高 + 间距，滚动内容可滑到胶囊下方
@@ -87,15 +120,21 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 when (tab) {
                     MainTab.HOME -> HomeScreen(
                         vm = rootHome(),
-                        bottomInset = bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "login" },
+                        bottomInset = bottomInset, onOpenAvatar = { if (loggedIn) userCenter = true else auth = "register" },
                         onOpenMarkets = { tab = MainTab.MARKETS }, onOpenMore = { moreMenu = true },
                         onSoon = { vm.toast.show(it) }, onDeposit = { if (loggedIn) vm.assetsNav.openDeposit(switchTab = true) else auth = "login" },
                         onFeature = ::openFeature,
                         onNotifications = { morePage = MorePage.NOTIFICATIONS },
                         onSupport = { if (loggedIn) morePage = MorePage.SUPPORT else auth = "login" },
                         unread = unread,
+                        onSearch = { marketsTop = 1; marketsSearch = true; tab = MainTab.MARKETS },
+                        onLogin = { auth = "login" },
+                        onOpenLink = ::openLink, onScan = { scan = true },
+                        // 全屏层盖住首页时暂停游客主视觉动画
+                        heroActive = !splash && auth == null && !userCenter && !moreMenu && morePage == null && assetFeature == null && historyKind == null && !scan,
                     )
-                    MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), onOpenTrade = { kind, sym ->
+                    MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), initialTop = marketsTop, openSearch = marketsSearch, onSearchConsumed = { marketsSearch = false },
+                        loggedIn = loggedIn, onLogin = { onPendingChat(true); auth = "login" }, onOverlay = { hideTabBar = it }, onOpenTrade = { kind, sym ->
                         if (kind == click.cowa.linbit.data.MarketKind.SPOT) { vm.tradeNav.setSpot(sym); tab = MainTab.SPOT } else { vm.tradeNav.setFutures(sym); tab = MainTab.FUTURES }
                     })
                     MainTab.FUTURES -> click.cowa.linbit.feature.trade.FuturesRootScreen(
@@ -106,25 +145,40 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                             else { vm.tradeNav.setSpot(symbol); tab = MainTab.SPOT }
                         },
                         onCopy = { if (loggedIn) morePage = MorePage.COPY else auth = "login" },
-                        onPriceAlerts = { morePage = MorePage.PRICE_ALERTS },
+                        onPriceAlerts = { if (loggedIn) morePage = MorePage.PRICE_ALERTS else auth = "login" },
+                        onCoupons = { if (loggedIn) morePage = MorePage.COUPONS else auth = "login" },
+                        onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) },
+                        paperVm = routeVms.paper,
                     )
-                    MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
+                    MainTab.SPOT -> {
+                        val pendingSpotTop by vm.tradeNav.pendingSpotTop.collectAsStateWithLifecycle()
+                        click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
-                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" }
-                    )
-                    MainTab.ASSETS -> AssetsScreen(
+                        onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" },
+                        onPriceAlerts = { if (loggedIn) morePage = MorePage.PRICE_ALERTS else auth = "login" },
+                        onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) },
+                        initialTop = pendingSpotTop ?: 0,
+                        pendingTop = pendingSpotTop,
+                        onPendingTopConsumed = { vm.tradeNav.consumeSpotTop() },
+                    ) }
+                    MainTab.ASSETS -> if (loggedIn) AssetsScreen(
                         bottomInset,
                         onLogin = { auth = "login" },
                         assetsNav = vm.assetsNav,
                         onOpenFutures = { tab = MainTab.FUTURES },
                         onOpenSpot = { tab = MainTab.SPOT },
-                        onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
-                        onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
+                        onOpenProfile = { if (loggedIn) userCenter = true else auth = "register" },
+                        onOpenAssetFeature = { feature ->
+                            if (feature == "earn") { vm.tradeNav.openSpotTop(2); tab = MainTab.SPOT; vm.assetsNav.clear() }
+                            else { assetFeature = feature; vm.assetsNav.clear() }
+                        },
+                        onOpenSpotHistory = { historyKind = "spot" },
+                        onOpenFuturesHistory = { historyKind = "futures" },
                         vm = routeVms.assets,
-                    )
+                    ) else Box(Modifier.fillMaxSize())
                 }
             }
-            FloatingTabBar(tab, { tab = it }, Modifier.align(Alignment.BottomCenter))
+            if (!hideTabBar) FloatingTabBar(tab, { if (it == MainTab.ASSETS && !loggedIn) auth = "login" else { if (it == MainTab.MARKETS && tab != MainTab.MARKETS) marketsTop = 1; tab = it } }, Modifier.align(Alignment.BottomCenter))
 
             // 首页/交易页打开充值或划转时切到资产 Tab
             val assetsRoute by vm.assetsNav.route.collectAsStateWithLifecycle()
@@ -149,6 +203,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 onClose = { userCenter = false },
                 onLoginOther = { userCenter = false; auth = "login" },
                 onFeature = { page -> userCenter = false; morePage = page }, vm = profileVm,
+                onFeatureName = { title -> userCenter = false; openFeature(title) },
             )
             if (moreMenu) {
                 // This overlay is outside Home's padding; own its system bar insets exactly once.
@@ -175,7 +230,8 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                 "spot" -> click.cowa.linbit.feature.trade.SpotHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = spotSymbol)
                 "futures" -> click.cowa.linbit.feature.trade.FuturesHistoryScreen(onClose = { historyKind = null }, onLogin = { historyKind = null; auth = "login" }, symbol = futuresSymbol, vm = LocalTradeHistoryFactory.current.invoke(), onDialogWindow = onDialogWindow)
             }
-            auth?.let { start -> AuthFlow(startRegister = start == "register", onClose = { auth = null }) }
+            if (scan) click.cowa.linbit.feature.scan.ScanScreen { scan = false }
+            auth?.let { start -> if (authVm != null) AuthFlow(startRegister = start == "register", onClose = { auth = null; if (!vm.loggedIn.value) onPendingChat(false) }, vm = authVm, onDialogWindow = onDialogWindow) else AuthFlow(startRegister = start == "register", onClose = { auth = null; if (!vm.loggedIn.value) onPendingChat(false) }) }
             ToastOverlay(vm.toast)
             if (splash) SplashOverlay(reduceMotion = false, onFinish = { splash = false })
         }

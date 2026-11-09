@@ -265,16 +265,12 @@ private fun PartnerApplyDialog(busy: Boolean, onDismiss: () -> Unit, onSubmit: (
     var scale by remember { mutableIntStateOf(1) }
     val channels = listOf("社群", "自媒体", "KOL", "机构", "其他")
     val scales = listOf("< 1,000", "1,000 - 10,000", "10,000 - 100,000", "> 100,000")
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() }, title = { Text("申请成为合伙人") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            LbTextField(contact, { contact = it }, "Telegram / 邮箱 / 微信")
-            Text("推广渠道", style = lb(FontSize.small), color = LB.p.textSecondary)
-            ChipBar(channels, channel, { channel = it })
-            Text("用户规模", style = lb(FontSize.small), color = LB.p.textSecondary)
-            ChipBar(scales, scale, { scale = it })
-        } },
-        confirmButton = { TextButton(enabled = contact.trim().length >= 3 && !busy, onClick = { onSubmit(contact, channels[channel], scales[scale]) }) { Text(if (busy) "提交中" else "提交申请") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+    LbDialog("申请成为合伙人", { if (!busy) onDismiss() }, "提交申请", { onSubmit(contact, channels[channel], scales[scale]) },
+        onDismissClick = onDismiss, confirmEnabled = contact.trim().length >= 3 && !busy, loading = busy) {
+        LbTextField(contact, { contact = it }, "Telegram / 邮箱 / 微信")
+        Text("推广渠道", style = lb(FontSize.small), color = LB.p.textSecondary)
+        ChipBar(channels, channel, { channel = it })
+        Text("用户规模", style = lb(FontSize.small), color = LB.p.textSecondary)
+        ChipBar(scales, scale, { scale = it })
+    }
 }

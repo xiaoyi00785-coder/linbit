@@ -70,6 +70,18 @@ tags:
     description: 公告（公开只读）
 
 paths:
+  /market/usd-rate:
+    get:
+      tags: [Market]
+      operationId: usdRate
+      security: []
+      summary: 实时 USDTUSD 汇率，无合格来源时不可用
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsdRate' }
   /auth/code/send:
     post:
       tags: [Auth]
@@ -4796,8 +4808,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/FuturesBonus'
                   available:
-                    type: string
-                    description: 十进制字符串
+                    $ref: '#/components/schemas/FuturesBonusAvailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /earn/products:
@@ -4813,9 +4824,11 @@ paths:
         required: false
         schema:
           enum:
-          - flexible
+          - simple
           - fixed
-        description: flexible / fixed
+          - onchain
+          - flexible
+        description: simple / fixed / onchain（flexible=simple 兼容别名）
       - name: asset
         in: query
         required: false
@@ -7995,6 +8008,9 @@ components:
               term: { type: string }
               hourlyRate: { type: string, description: 十进制字符串 }
               status: { type: string }
+              days: { type: integer, description: 固定期限天数；活期为 0 }
+              annualRate: { type: string, description: 由小时利率折算的年化展示，十进制字符串 }
+              outstanding: { type: string, description: 十进制字符串 }
         collaterals:
           type: array
           items:
@@ -8947,6 +8963,45 @@ components:
         name: { type: string, example: 公链 }
         symbols: { type: array, items: { type: string }, example: [BTCUSDT, ETHUSDT] }
 
+    FuturesBonusAvailable:
+      type: object
+      description: 冻结 android-companion 契约，两种赠金独立，不相加冒充余额。
+      properties:
+        trial: { type: string, nullable: true }
+        deduction: { type: string, nullable: true }
+
+    UsdRate:
+      type: object
+      required: [available, stale]
+      properties:
+        pair: { type: string }
+        available: { type: boolean, default: false }
+        rate: { type: string, nullable: true }
+        source: { type: string }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean, default: false }
+        precision: { type: integer }
+        rounding: { type: string }
+        unit: { type: string }
+        pegAssumed: { type: boolean }
+
+    WsUsd:
+      type: object
+      description: REST 与 WebSocket 共用；冻结 usdrate.go JSON 字段，时间 RFC3339。
+      required: [available, stale]
+      properties:
+        available: { type: boolean, default: false }
+        price: { type: string, nullable: true }
+        rate: { type: string, nullable: true }
+        source: { type: string }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean, default: false }
+        precision: { type: integer }
+        rounding: { type: string }
+        convention: { type: string }
+        pegAssumed: { type: boolean }
+        reason: { type: string }
+
     Ticker:
       type: object
       required: [symbol, lastPrice, priceChangePercent, high, low, volume, quoteVolume]
@@ -8958,6 +9013,8 @@ components:
         low: { type: string, example: "76705.00" }
         volume: { type: string, example: "371.65" }
         quoteVolume: { type: string, example: "28915681.30" }
+        usd:
+          $ref: "#/components/schemas/WsUsd"
         priceSource:
           type: string
           enum: [trade, mid, index, none]
@@ -8988,7 +9045,7 @@ components:
 
     KlineInterval:
       type: string
-      enum: ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]
+      enum: ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w"]
 
     Kline:
       type: object
@@ -9016,6 +9073,18 @@ components:
         time: { type: integer, format: int64, description: 毫秒时间戳 }
         read: { type: boolean }
         emailStatus: { type: string }
+        link:
+          type: object
+          nullable: true
+          description: >
+            可选的应用内定位。只在服务端已关联接收者本人资源时出现。
+            不是 URL，不含外链。缺省或 null 表示没有可靠定位，客户端不得从 title/body 推断。
+          properties:
+            type: { type: string, enum: [support_ticket] }
+            ticketId:
+              type: string
+              description: 接收者本人的工单 id，与 GET /support/tickets/{id} 的 id 相同。打开工单不会把本通知标为已读。
+          required: [type, ticketId]
     NotificationList:
       type: object
       properties:
@@ -10014,8 +10083,13 @@ components:
         kind:
           type: string
           enum:
-          - flexible
+          - simple
           - fixed
+          - onchain
+          - flexible
+          description: |
+            后端种子/服务为 simple|fixed|onchain（见 earn 服务与 docs/api/earn.md）。
+            flexible 为历史/兼容别名（等同 simple）；客户端须能解析 simple/onchain，否则整表反序列化失败。
         asset:
           type: string
         title:

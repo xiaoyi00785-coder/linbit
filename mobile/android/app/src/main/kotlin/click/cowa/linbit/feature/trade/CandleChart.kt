@@ -1,5 +1,10 @@
 package click.cowa.linbit.feature.trade
 
+import androidx.compose.runtime.mutableIntStateOf
+
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +26,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -100,7 +107,12 @@ fun CandleChart(candles: List<Candle>, pricePrec: Int, modifier: Modifier = Modi
     }
 }
 
-private val INTERVALS = listOf("15m" to "15分", "1h" to "1小时", "4h" to "4小时", "1d" to "1天", "1w" to "1周")
+/** 冻结契约 12 项；部署前新增周期可能报错，绝不伪造 K 线。 */
+internal val CHART_INTERVALS = listOf("1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w")
+    .map { it to when(it) { "1d" -> "1D"; "1w" -> "1W"; else -> it } }
+private val ALL_INTERVALS = CHART_INTERVALS
+/** 参考 029：常用周期平铺，其余收进「更多」弹层（030）。 */
+private val QUICK_INTERVALS = listOf("15m", "1h", "4h", "1d")
 
 /**
  * 图表面板：K 线 +（合约）最近成交。加载函数由 ViewModel 注入，现货走 /market/klines，合约走 /futures/market/klines。
@@ -123,11 +135,13 @@ fun TradeChartPanel(
     var trades by remember { mutableStateOf<List<ApiFuturesPublicTrade>>(emptyList()) }
     var tradesErr by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(symbol, interval) {
-        loading = true; error = null
-        try { candles = loadCandles(interval); error = null }
+    var retry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(symbol, interval, retry) {
+        loading = true; error = null; candles = null
+        try { val result = loadCandles(interval); kotlinx.coroutines.currentCoroutineContext().ensureActive(); candles = result }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Throwable) { error = e.message ?: "加载失败"; candles = null }
-        finally { loading = false }
+        finally { if (kotlinx.coroutines.currentCoroutineContext().isActive) loading = false }
     }
     LaunchedEffect(symbol, tab, showTrades) {
         if (tab != 1 || loadTrades == null) return@LaunchedEffect
@@ -145,13 +159,30 @@ fun TradeChartPanel(
             }
         }
         if (tab == 0) {
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                INTERVALS.forEach { (k, label) ->
+            var showIntervals by remember { mutableStateOf(false) }
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                ALL_INTERVALS.filter { it.first in QUICK_INTERVALS }.forEach { (k, label) ->
                     Text(
                         label, Modifier.pressable(scale = 1f) { interval = k },
                         style = lb(FontSize.small, if (interval == k) FontWeight.SemiBold else FontWeight.Normal),
                         color = if (interval == k) p.textPrimary else p.textSecondary,
                     )
+                }
+                val more = interval !in QUICK_INTERVALS
+                Row(Modifier.testTag("chart.intervals.more").pressable(scale = 1f) { showIntervals = true }, verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (more) ALL_INTERVALS.first { it.first == interval }.second else "更多", style = lb(FontSize.small, if (more) FontWeight.SemiBold else FontWeight.Normal), color = if (more) p.textPrimary else p.textSecondary)
+                    click.cowa.linbit.ui.components.LbIcon(click.cowa.linbit.R.drawable.ic_chevron_down, 12.dp, p.textSecondary)
+                }
+            }
+            if (showIntervals) click.cowa.linbit.feature.auth.LbSheet("周期", { showIntervals = false }) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)) {
+                    ALL_INTERVALS.chunked(4).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { (k, label) -> val on = k == interval
+                            Box(Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(6.dp)).border(if (on) 1.dp else 0.5.dp, if (on) p.textPrimary else p.border, RoundedCornerShape(6.dp))
+                                .pressable(scale = 1f) { interval = k; showIntervals = false }, contentAlignment = Alignment.Center) {
+                                Text(label, style = lb(FontSize.body), color = p.textPrimary) } }
+                        repeat(4 - row.size) { Box(Modifier.weight(1f)) }
+                    } }
                 }
             }
             when {
@@ -161,7 +192,7 @@ fun TradeChartPanel(
                 ) { CircularProgressIndicator(Modifier.height(24.dp), color = p.textSecondary, strokeWidth = 2.dp) }
                 error != null && candles == null -> Column(Modifier.fillMaxWidth().height(180.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Text(error ?: "", style = lb(FontSize.small), color = p.down)
-                    ChipButton("重试", Modifier.padding(top = 8.dp).height(28.dp)) { interval = interval } // retrigger via same value — use key bump
+                    ChipButton("重试", Modifier.padding(top = 8.dp).height(28.dp)) { retry++ }
                 }
                 candles.isNullOrEmpty() -> EmptyState("暂无 K 线数据")
                 else -> CandleChart(candles!!, pricePrec)

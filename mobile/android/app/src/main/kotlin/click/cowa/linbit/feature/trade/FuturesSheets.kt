@@ -1,5 +1,6 @@
 package click.cowa.linbit.feature.trade
 
+import click.cowa.linbit.ui.components.LbDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +56,7 @@ fun BookModeSheet(mode: Int, onPick: (Int) -> Unit, onClose: () -> Unit) {
                 ) {
                     BookModeGlyph(i)
                     Text(t, Modifier.weight(1f).padding(start = 12.dp), style = lb(FontSize.body), color = p.textPrimary)
-                    if (mode == i) LbIcon(R.drawable.ic_check, 20.dp, p.textPrimary)
+                    if (mode == i) click.cowa.linbit.ui.components.SheetCheck()
                 }
             }
         }
@@ -78,11 +79,11 @@ private fun BookModeGlyph(mode: Int) {
 
 /** 常用功能（对照图 ref/13：4 列 × 3 行图标网格）。 */
 @Composable
-fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit, onTool: (String) -> Unit = {}) {
+fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit, exclude: Set<String> = emptySet(), onTool: (String) -> Unit = {}) {
     val p = LB.p
     val items = listOf(
         "交易偏好", "计算器", "价格预警", "模拟交易", "仓位档位介绍", "历史资金费率", "历史标记价格", "风险准备金", "添加自选", "新手教学",
-    )
+    ).filterNot { it in exclude }
     LbSheet("常用功能", onClose) {
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             items.chunked(4).forEach { row ->
@@ -90,11 +91,7 @@ fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit, onTool: (String) ->
                     row.forEach { t ->
                         Column(Modifier.weight(1f).pressable(scale = 1f) {
                             onClose()
-                            when (t) {
-                                "添加自选" -> toast("已添加到自选")
-                                "计算器", "价格预警", "模拟交易" -> onTool(t)
-                                else -> toast("${t}即将开放")
-                            }
+                            onTool(t)
                         }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(44.dp).border(1.dp, p.border, RoundedCornerShape(Radius.lg)), contentAlignment = Alignment.Center) {
                                 LbIcon(R.drawable.ic_doc_text, 20.dp, p.textPrimary)
@@ -122,15 +119,13 @@ fun MarginModeSheet(vm: FuturesTradeViewModel, onClose: () -> Unit) {
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("保证金模式", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
             PillSegment(listOf("全仓", "逐仓"), mode, { mode = it }, height = 40.dp, activeColors = listOf(p.bg, p.bg), activeText = p.textPrimary)
-            Text(
-                if (mode == 0) "全仓模式：所有全仓仓位共享账户可用余额作为保证金，盈亏可相互抵消。" else "逐仓模式：每个仓位独立分配保证金，最大亏损为该仓位保证金。",
-                style = lb(FontSize.small), color = p.textSecondary,
-            )
             Text("仓位模式", Modifier.padding(top = 4.dp), style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
             PillSegment(listOf("合仓", "分仓"), posMode, { posMode = it }, height = 40.dp, activeColors = listOf(p.bg, p.bg), activeText = p.textPrimary)
+            // 参考：两组切换后只有一段合并说明
             Text(
-                if (posMode == 0) "合仓模式：同一合约（开多与开空）仅持有一个仓位，反向开仓会先减少已有仓位。"
-                else "分仓模式：同一合约可同时持有多个独立仓位，每笔开仓单独计算保证金与盈亏，可分别止盈止损、平仓。",
+                (if (mode == 0) "全仓" else "逐仓") + (if (posMode == 0) "合仓" else "分仓") + "：" +
+                (if (posMode == 0) "同一交易对同方向（多或空）的订单合并为一个仓位。" else "同一交易对可同时持有多个独立仓位，分别计算保证金与盈亏。") +
+                (if (mode == 0) "全仓仓位共享同一保证金池，盈亏可相互抵消。" else "每个仓位独立分配保证金，最大亏损为该仓位保证金。"),
                 style = lb(FontSize.small), color = p.textSecondary,
             )
             block?.let { Text(it, Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(p.fill).padding(10.dp), style = lb(FontSize.small), color = p.down) }
@@ -178,8 +173,10 @@ fun LeverageSheet(vm: FuturesTradeViewModel, onClose: () -> Unit) {
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("当前杠杆倍数最大可开 ${Fmt.amount(vm.maxNotional(lev) ?: BigDecimal.ZERO, 0)} ${vm.quote}", style = lb(FontSize.small), color = p.textSecondary)
-                Text("调整杠杆对当前合约的全部仓位与委托生效", style = lb(FontSize.small), color = p.textSecondary)
+                // 参考：最大仓位 / 当前仓位保证金 两行键值
+                val posMargin = vm.positions.filter { it.symbol == vm.symbol }.fold(BigDecimal.ZERO) { a, x -> a + click.cowa.linbit.core.util.Dec.parse(x.margin) }
+                Row { Text("最大仓位 ", style = lb(FontSize.small), color = p.textSecondary); Text("${vm.maxNotional(lev)?.let { Fmt.amount(it, 0) } ?: "--"} ${vm.quote}", style = lbNum(FontSize.small, FontWeight.Medium), color = p.textPrimary) }
+                Row { Text("当前仓位保证金 ", style = lb(FontSize.small), color = p.textSecondary); Text("${Fmt.amount(posMargin, 2).trimEnd('0').trimEnd('.')} ${vm.quote}", style = lbNum(FontSize.small, FontWeight.Medium), color = p.textPrimary) }
                 if (lev >= 50) Text("选择超过 50x 的杠杆交易会增加强行平仓的风险，请注意相关风险", style = lb(FontSize.small), color = p.down)
             }
             LbButton("保存", loading = saving) {
@@ -194,12 +191,5 @@ fun LeverageSheet(vm: FuturesTradeViewModel, onClose: () -> Unit) {
 @Composable
 fun ConfirmDialog(title: String, message: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     val p = LB.p
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = p.bgElevated,
-        title = { Text(title, style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary) },
-        text = { Text(message, style = lb(FontSize.label), color = p.textSecondary) },
-        confirmButton = { TextButton(onConfirm) { Text(confirm, style = lb(FontSize.label, FontWeight.Medium), color = p.down) } },
-        dismissButton = { TextButton(onDismiss) { Text("取消", style = lb(FontSize.label), color = p.textPrimary) } },
-    )
+    LbDialog(title, onDismiss, confirm, onConfirm, message = message, destructive = true)
 }

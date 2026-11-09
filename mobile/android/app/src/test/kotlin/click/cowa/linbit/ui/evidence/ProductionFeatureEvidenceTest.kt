@@ -84,7 +84,9 @@ class ProductionFeatureEvidenceTest {
             else AssetFeatureHost(feature, { selected.value = null }, {}, { _, _ -> }, SpotSubpagesViewModel(f.retrofit, f.tokens, f.toast))
         } }
         wait("完成充值，开启您的 Linbit 之旅!")
-        rule.onNodeWithText("理财").performClick()
+        rule.onNodeWithText("理财").performClick() // 资产「理财」账户 tab
+        rule.waitUntil(10_000) { runCatching { rule.onAllNodesWithText("总览", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
+        rule.onNodeWithText("总览").performClick() // 进入产品入口 host
         Assert.assertEquals("earn", selected.value); wait("暂无理财产品")
         harness.app("asset-click-to-earn-empty", 1170, 2364)
     }

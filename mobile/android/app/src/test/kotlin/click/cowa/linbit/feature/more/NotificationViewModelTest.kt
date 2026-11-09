@@ -2,6 +2,7 @@ package click.cowa.linbit.feature.more
 
 import click.cowa.linbit.core.generated.ApiNewcomerTask
 import click.cowa.linbit.core.generated.ApiNotification
+import click.cowa.linbit.core.generated.ApiNotificationLink
 import click.cowa.linbit.core.generated.ApiNotificationList
 import click.cowa.linbit.core.generated.ApiReadNotificationsRequest
 import click.cowa.linbit.core.generated.ApiUpdatedCount
@@ -145,4 +146,53 @@ class NotificationViewModelTest {
         assertEquals(WelfareTaskRoute.Futures, welfareTaskRoute(ApiNewcomerTask.Type.VOLUME))
         assertNull(welfareTaskRoute(null))
     }
+
+    @Test fun `markReadById 只提交该通知 id 且不 all`() = runTest {
+        val captured = mutableListOf<ApiReadNotificationsRequest>()
+        val api = mock<LinbitApi> {
+            this.onBlocking { notifications(anyOrNull(), any(), any()) } doReturn ApiNotificationList(
+                items = listOf(unread("1"), unread("2")), unread = 2, total = 2,
+            )
+            this.onBlocking { readNotifications(any()) } doSuspendableAnswer { call ->
+                captured += call.getArgument<ApiReadNotificationsRequest>(0); ApiUpdatedCount(updated = 1)
+            }
+        }
+        val tokens = InMemoryTokenStore().apply { accessToken = "INVALID_LOCAL_ONLY" }
+        val vm = NotificationViewModel(api, tokens, ToastCenter(toastScope))
+        vm.load(); advanceUntilIdle()
+        vm.markReadById("1"); advanceUntilIdle()
+        assertEquals(listOf(listOf("1")), captured.map { it.ids })
+        assertTrue(captured.none { it.all == true })
+        assertEquals(true, vm.state.value.items.first { it.id == "1" }.read)
+        assertEquals(false, vm.state.value.items.first { it.id == "2" }.read)
+        // 未知 id 仍只带该 id，不扫其他
+        captured.clear()
+        vm.markReadById("missing-only"); advanceUntilIdle()
+        assertEquals(listOf(listOf("missing-only")), captured.map { it.ids })
+    }
+
+    @Test fun `带 support_ticket link 的通知仍可按 id 精确已读`() = runTest {
+        val linked = ApiNotification(
+            id = "n-ticket", kind = ApiNotification.Kind.SYSTEM, read = false,
+            link = ApiNotificationLink(ApiNotificationLink.Type.SUPPORT_TICKET, "88"),
+        )
+        val other = unread("other")
+        val captured = mutableListOf<List<String>>()
+        val api = mock<LinbitApi> {
+            this.onBlocking { notifications(anyOrNull(), any(), any()) } doReturn ApiNotificationList(
+                items = listOf(linked, other), unread = 2, total = 2,
+            )
+            this.onBlocking { readNotifications(any()) } doSuspendableAnswer { call ->
+                captured += call.getArgument<ApiReadNotificationsRequest>(0).ids.orEmpty(); ApiUpdatedCount(updated = 1)
+            }
+        }
+        val tokens = InMemoryTokenStore().apply { accessToken = "INVALID_LOCAL_ONLY" }
+        val vm = NotificationViewModel(api, tokens, ToastCenter(toastScope))
+        vm.load(); advanceUntilIdle()
+        assertEquals("88", supportTicketId(linked))
+        vm.markReadById("n-ticket"); advanceUntilIdle()
+        assertEquals(listOf(listOf("n-ticket")), captured)
+        assertEquals(false, vm.state.value.items.first { it.id == "other" }.read)
+    }
+
 }

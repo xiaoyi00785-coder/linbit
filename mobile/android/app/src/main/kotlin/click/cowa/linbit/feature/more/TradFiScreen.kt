@@ -9,6 +9,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -78,11 +80,15 @@ private fun ColumnScope.TradFiBody(onTrade: (Boolean, String) -> Unit, vm: TradF
         s.loading -> MoreLoading(Modifier.weight(1f))
         s.error != null -> MoreError(s.error ?: "", { vm.load() }, Modifier.weight(1f))
         s.data?.items.isNullOrEmpty() -> EmptyState("暂无可交易资产", Modifier.weight(1f))
-        else -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+        else -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+          // 多屏宽：列宽随屏宽在区间内伸缩；平板宽度下内容限宽 720dp 居中，避免价格列被拉到屏幕最右
+          val priceW = (maxWidth * 0.28f).coerceIn(96.dp, 150.dp)
+          val devW = (maxWidth * 0.16f).coerceIn(56.dp, 88.dp)
+          Column(Modifier.widthIn(max = 720.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
             Row(Modifier.padding(horizontal = Spacing.pageH, vertical = 8.dp)) {
-                Text("资产", Modifier.weight(1f), style = lb(FontSize.small), color = LB.p.textTertiary)
-                Text("最新价 / 参考价", Modifier.width(118.dp), style = lb(FontSize.small), color = LB.p.textTertiary)
-                Text("偏离", Modifier.width(52.dp), style = lb(FontSize.small), color = LB.p.textTertiary)
+                Text("资产", Modifier.padding(start = 42.dp).weight(1f), style = lb(FontSize.small), color = LB.p.textTertiary)
+                Text("最新价 / 参考价", Modifier.width(priceW), style = lb(FontSize.small), color = LB.p.textTertiary, textAlign = TextAlign.End, maxLines = 1)
+                Text("偏离", Modifier.width(devW), style = lb(FontSize.small), color = LB.p.textTertiary, textAlign = TextAlign.End)
             }
             s.data!!.items.forEach { asset ->
                 val active = asset.status != ApiTradFiAsset.Status.SUSPENDED
@@ -91,24 +97,25 @@ private fun ColumnScope.TradFiBody(onTrade: (Boolean, String) -> Unit, vm: TradF
                 }.padding(horizontal = Spacing.pageH, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     CoinIcon(asset.asset ?: "?", 32.dp)
                     Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f).padding(end = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(asset.asset ?: "--", style = lb(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
+                            Text(asset.asset ?: "--", Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis, style = lb(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
                             Spacer(Modifier.width(5.dp))
                             SmallTag(if (asset.market == ApiTradFiAsset.Market.FUTURES) "永续" else "现货")
-                            if (!active) { Spacer(Modifier.width(4.dp)); SmallTag("暂停", LB.p.down) }
+                            
                         }
                         Text(asset.underlying ?: asset.name ?: "", style = lb(FontSize.small), color = LB.p.textTertiary, maxLines = 1)
                     }
-                    Column(Modifier.width(118.dp), horizontalAlignment = Alignment.End) {
+                    Column(Modifier.width(priceW), horizontalAlignment = Alignment.End) {
                         // 列表价仍按行情格式化；交易历史页才要求金额字符串原样展示
-                        Text(asset.lastPrice?.let { Fmt.priceAuto(Dec.parse(it)) } ?: "--", style = lbNum(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
-                        Text(asset.referencePrice?.let { Fmt.priceAuto(Dec.parse(it)) } ?: "--", style = lbNum(FontSize.small), color = LB.p.textTertiary)
+                        Text(asset.lastPrice?.let { Fmt.priceAuto(Dec.parse(it)) } ?: "--", maxLines = 1, overflow = TextOverflow.Ellipsis, style = lbNum(FontSize.body, FontWeight.SemiBold), color = LB.p.textPrimary)
+                        Text(asset.referencePrice?.let { Fmt.priceAuto(Dec.parse(it)) } ?: "--", maxLines = 1, overflow = TextOverflow.Ellipsis, style = lbNum(FontSize.small), color = LB.p.textTertiary)
                     }
-                    Text(asset.currentDeviationBps?.let { Fmt.price(Dec.parse(it).divide(BigDecimal(100)), 2) + "%" } ?: "--", Modifier.width(52.dp), style = lbNum(FontSize.small, FontWeight.SemiBold), color = if (asset.widened == true) LB.p.down else LB.p.textSecondary)
+                    Text(asset.currentDeviationBps?.let { Fmt.price(Dec.parse(it).divide(BigDecimal(100)), 2) + "%" } ?: "--", Modifier.width(devW), maxLines = 1, textAlign = TextAlign.End, style = lbNum(FontSize.small, FontWeight.SemiBold), color = if (asset.widened == true) LB.p.down else LB.p.textSecondary)
                 }
             }
             Box(Modifier.padding(Spacing.pageH)) { InfoNote("代币化资产由发行方 1:1 托管底层资产；参考价来自永续合约市场，偏离过大时做市价差会自动放宽。部分国家或地区不提供此服务。") }
+          }
         }
     }
 }

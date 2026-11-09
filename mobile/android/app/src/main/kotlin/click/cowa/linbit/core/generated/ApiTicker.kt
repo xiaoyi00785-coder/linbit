@@ -15,21 +15,23 @@
 
 package click.cowa.linbit.core.generated
 
+import click.cowa.linbit.core.generated.ApiWsUsd
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param symbol 
- * @param lastPrice 
- * @param priceChangePercent 
- * @param high 
- * @param low 
- * @param volume 
- * @param quoteVolume 
+ *
+ * @param symbol
+ * @param lastPrice
+ * @param priceChangePercent
+ * @param high
+ * @param low
+ * @param volume
+ * @param quoteVolume
+ * @param usd
  * @param priceSource lastPrice 来源：24h 内最近成交 > 盘口中间价 > 外部指数价（超过 24h 的旧成交价视为过期）。24h 内无本地成交时，priceChangePercent/high/low 取外部指数价的 24h 走势，volume/quoteVolume 为 0（不伪造成交）。合约行情另有 mark。
  */
 @Serializable
@@ -57,6 +59,9 @@ data class ApiTicker (
     @SerialName(value = "quoteVolume")
     val quoteVolume: kotlin.String,
 
+    @SerialName(value = "usd")
+    val usd: ApiWsUsd? = null,
+
     /* lastPrice 来源：24h 内最近成交 > 盘口中间价 > 外部指数价（超过 24h 的旧成交价视为过期）。24h 内无本地成交时，priceChangePercent/high/low 取外部指数价的 24h 走势，volume/quoteVolume 为 0（不伪造成交）。合约行情另有 mark。 */
     @SerialName(value = "priceSource")
     val priceSource: ApiTicker.PriceSource? = null
@@ -77,4 +82,3 @@ data class ApiTicker (
     }
 
 }
-

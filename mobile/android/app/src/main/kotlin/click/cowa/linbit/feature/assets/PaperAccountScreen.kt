@@ -64,6 +64,12 @@ class PaperAccountViewModel @Inject constructor(
     private var requestedOrder: PaperOrderRequest? = null
     private var loadedGeneration = 0L
     var orderBuy by mutableStateOf(true); private set
+    /** 虚拟委托的交易对；模拟交易页随当前交易对切换，资产页默认 BTCUSDT。 */
+    var orderSymbol by mutableStateOf("BTCUSDT"); private set
+    /** 买入按 quoteOrderQty（成本）还是 quantity（数量）提交；卖出永远按数量（契约约束）。 */
+    var orderByQuote by mutableStateOf(true); private set
+    /** 历史分页筛选的交易对；null 表示不限交易对（「只看当前」关闭）。 */
+    var historySymbol by mutableStateOf<String?>("BTCUSDT"); private set
     var orderAmount by mutableStateOf(""); private set
     var orderSubmitting by mutableStateOf(false); private set
     var orderFailure by mutableStateOf<String?>(null); private set
@@ -106,6 +112,13 @@ class PaperAccountViewModel @Inject constructor(
             if (version == epoch) loading = false
         }
     }
+    fun setHistoryFilter(symbol: String?) {
+        if (historySymbol == symbol) return
+        historySymbol = symbol
+        ordersRequest += 1; tradesRequest += 1
+        ordersHistory = HistoryPage(generation = historyGeneration, hasNext = historyGeneration > 0)
+        tradesHistory = HistoryPage(generation = historyGeneration, hasNext = historyGeneration > 0)
+    }
     fun selectHistory(kind: HistoryKind) {
         if (historyKind != kind) historyKind = kind
     }
@@ -142,12 +155,12 @@ class PaperAccountViewModel @Inject constructor(
                 if (client.enabled && tokens.loggedIn.value) {
                     require(account?.generation == generation) { "虚拟账户代次已变化，请重试" }
                     if (kind == HistoryKind.ORDERS) {
-                        val response = client.orders(symbol = "BTCUSDT", generation = generation, page = page, pageSize = HISTORY_PAGE_SIZE)
+                        val response = client.orders(symbol = historySymbol, generation = generation, page = page, pageSize = HISTORY_PAGE_SIZE)
                         require(response.page == page && response.generation == generation && response.items.all { it.generation == generation && it.accountId == accountId }) { "订单分页代次不一致" }
                         val previous = ordersHistory.items.filter { it.generation == generation }
                         HistoryPage(if (page == 1) response.items else previous + response.items, response.page, response.total, (response.items.size.toLong() + (if (page == 1) 0 else previous.size)) < response.total, false, null, generation)
                     } else {
-                        val response = client.trades(symbol = "BTCUSDT", generation = generation, page = page, pageSize = HISTORY_PAGE_SIZE)
+                        val response = client.trades(symbol = historySymbol, generation = generation, page = page, pageSize = HISTORY_PAGE_SIZE)
                         require(response.page == page && response.generation == generation) { "成交分页代次不一致" }
                         val previous = tradesHistory.items
                         HistoryPage(if (page == 1) response.items else previous + response.items, response.page, response.total, (response.items.size.toLong() + (if (page == 1) 0 else previous.size)) < response.total, false, null, generation)
@@ -174,12 +187,13 @@ class PaperAccountViewModel @Inject constructor(
     }
     companion object { const val HISTORY_PAGE_SIZE = 2 }
 
-    fun orderDraft(buy: Boolean, text: String): String? {
+    fun orderDraft(buy: Boolean, text: String, symbol: String = "BTCUSDT", buyByQuote: Boolean = true): String? {
         if (orderSubmitting) return "请等待当前虚拟委托响应"
         val amount = text.trim().toBigDecimalOrNull() ?: return "请输入有效的${if (buy) "买入金额" else "卖出数量"}"
         val generation = account?.generation ?: return "虚拟账户尚未就绪"
         if (amount.signum() <= 0 || generation != balances?.generation || loading || !client.enabled || !tokens.loggedIn.value) return "请输入大于零的金额或数量，并等待虚拟账户就绪"
-        orderBuy = buy; orderAmount = text.trim(); orderFailure = null
+        if (!Regex("^[A-Z0-9]{2,32}$").matches(symbol)) return "交易对无效"
+        orderBuy = buy; orderAmount = text.trim(); orderFailure = null; orderSymbol = symbol; orderByQuote = buy && buyByQuote
         orderId = "android-paper-${UUID.randomUUID()}"; loadedGeneration = generation
         return null
     }
@@ -188,7 +202,7 @@ class PaperAccountViewModel @Inject constructor(
         val generation = account?.generation
         if (!client.enabled || !tokens.loggedIn.value) { clearOrder(); return "模拟功能已关闭或登录已失效" }
         if (generation == null || generation != balances?.generation || generation != loadedGeneration) return "虚拟账户已变化，请重新确认"
-        requestedOrder = PaperOrderRequest("BTCUSDT", if (orderBuy) "buy" else "sell", quantity = if (orderBuy) "" else orderAmount, quoteOrderQty = if (orderBuy) orderAmount else "", clientOrderId = orderId)
+        requestedOrder = PaperOrderRequest(orderSymbol, if (orderBuy) "buy" else "sell", quantity = if (orderByQuote) "" else orderAmount, quoteOrderQty = if (orderByQuote) orderAmount else "", clientOrderId = orderId)
         retryOrder()
         return null
     }
@@ -277,8 +291,8 @@ private fun PaperAccountContent(loggedIn: Boolean, featureEnabled: Boolean, vm: 
         when {
             !loggedIn -> EmptyState("登录后可查看模拟账户") { LbButton("登录 / 注册", Modifier.fillMaxWidth(), onClick = onLogin) }
             !featureEnabled -> {
-                Text("模拟功能尚未开放", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
-                Text("当前版本仅保留独立模拟入口，未发起虚拟或真实交易请求。", Modifier.padding(top = 12.dp), style = lb(FontSize.body), color = p.textSecondary)
+                Text("模拟服务未启用", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
+                Text("当前服务端未启用虚拟账户，请检查服务配置。不会使用真实账户代替模拟账户。", Modifier.padding(top = 12.dp), style = lb(FontSize.body), color = p.textSecondary)
             }
             vm.loading -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator(color = p.brand) }
             vm.failure != null && vm.account == null -> EmptyState(vm.failure ?: "模拟账户暂不可用") { LbButton("重试", Modifier.fillMaxWidth(), onClick = vm::load) }
@@ -359,28 +373,7 @@ private fun PaperAccountContent(loggedIn: Boolean, featureEnabled: Boolean, vm: 
 
     if (showHistory) {
         LbSheet("虚拟订单 / 成交记录", { showHistory = false }, onWindowReady = onDialogWindow) {
-            Column(Modifier.padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("仅虚拟账户 · 第${vm.account?.generation ?: 0}代；INDEX 是外部指数参考，不是真钱订单成交价。", style = lb(FontSize.small), color = p.textSecondary)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LbButton("订单", Modifier.weight(1f), kind = if (vm.historyKind == PaperAccountViewModel.HistoryKind.ORDERS) ButtonKind.PRIMARY else ButtonKind.OUTLINE, testTag = "paper-history-orders") { vm.openHistory(PaperAccountViewModel.HistoryKind.ORDERS) }
-                    LbButton("成交", Modifier.weight(1f), kind = if (vm.historyKind == PaperAccountViewModel.HistoryKind.TRADES) ButtonKind.PRIMARY else ButtonKind.OUTLINE, testTag = "paper-history-trades") { vm.openHistory(PaperAccountViewModel.HistoryKind.TRADES) }
-                }
-                if (vm.historyKind == PaperAccountViewModel.HistoryKind.ORDERS) {
-                    OrderList(vm, vm.ordersHistory)
-                } else {
-                    val state = vm.tradesHistory
-                    HistoryControls(state.failure, state.loading, state.page, state.hasNext, retry = { vm.refreshHistory(PaperAccountViewModel.HistoryKind.TRADES) }, next = { vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.TRADES) }) {
-                        if (state.items.isEmpty() && !state.loading && state.failure == null) Text("暂无虚拟成交记录", style = lb(FontSize.body), color = p.textSecondary)
-                        state.items.forEach { trade ->
-                            Text("虚拟${if (trade.side == "buy") "买入" else "卖出"} · ${trade.symbol}", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
-                            KvRow("成交量", trade.quantity)
-                            KvRow("INDEX 参考成交价", trade.price)
-                            KvRow("手续费", "${trade.fee} ${trade.feeAsset}")
-                            KvRow("订单 / 成交", "${trade.orderId} / ${trade.tradeId}")
-                        }
-                    }
-                }
-            }
+            PaperHistoryBody(vm)
         }
     }
 
@@ -388,6 +381,34 @@ private fun PaperAccountContent(loggedIn: Boolean, featureEnabled: Boolean, vm: 
 
 
 
+
+/** 虚拟订单 / 成交分页（资产模拟页与合约模拟交易页共用，读服务端分页）。 */
+@Composable
+fun PaperHistoryBody(vm: PaperAccountViewModel) {
+    val p = LB.p
+    Column(Modifier.padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("仅虚拟账户 · 第${vm.account?.generation ?: 0}代；INDEX 是外部指数参考，不是真钱订单成交价。", style = lb(FontSize.small), color = p.textSecondary)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LbButton("订单", Modifier.weight(1f), kind = if (vm.historyKind == PaperAccountViewModel.HistoryKind.ORDERS) ButtonKind.PRIMARY else ButtonKind.OUTLINE, testTag = "paper-history-orders") { vm.openHistory(PaperAccountViewModel.HistoryKind.ORDERS) }
+            LbButton("成交", Modifier.weight(1f), kind = if (vm.historyKind == PaperAccountViewModel.HistoryKind.TRADES) ButtonKind.PRIMARY else ButtonKind.OUTLINE, testTag = "paper-history-trades") { vm.openHistory(PaperAccountViewModel.HistoryKind.TRADES) }
+        }
+        if (vm.historyKind == PaperAccountViewModel.HistoryKind.ORDERS) {
+            OrderList(vm, vm.ordersHistory)
+        } else {
+            val state = vm.tradesHistory
+            HistoryControls(state.failure, state.loading, state.page, state.hasNext, retry = { vm.refreshHistory(PaperAccountViewModel.HistoryKind.TRADES) }, next = { vm.nextHistoryPage(PaperAccountViewModel.HistoryKind.TRADES) }) {
+                if (state.items.isEmpty() && !state.loading && state.failure == null) Text("暂无虚拟成交记录", style = lb(FontSize.body), color = p.textSecondary)
+                state.items.forEach { trade ->
+                    Text("虚拟${if (trade.side == "buy") "买入" else "卖出"} · ${trade.symbol}", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+                    KvRow("成交量", trade.quantity)
+                    KvRow("INDEX 参考成交价", trade.price)
+                    KvRow("手续费", "${trade.fee} ${trade.feeAsset}")
+                    KvRow("订单 / 成交", "${trade.orderId} / ${trade.tradeId}")
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun OrderList(vm: PaperAccountViewModel, state: PaperAccountViewModel.HistoryPage<PaperOrder>) {

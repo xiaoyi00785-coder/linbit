@@ -33,7 +33,9 @@ abstract class ProductionAdaptiveRound3Case {
     private fun wait(text: String) { rule.waitUntil(10_000) { runCatching { rule.onAllNodesWithText(text, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) } }
     @Test fun earnNormalAndReview() { MockEvidenceApi().use { api ->
         earnRoutes(api); rule.setContent { LinbitTheme(dark) { AssetFeatureHost("earn", {}, {}, {_,_ ->}, evidenceVm(api), onDialogWindow = { dialog = it }) } }
-        wait("我的持仓"); ProductionEvidenceHarness(rule).app("asset-earn-normal-$label")
+        wait("我的持仓"); wait("USDT")
+        rule.onNodeWithTag("earn.asset.USDT", useUnmergedTree = true).performClick(); wait("申购")
+        ProductionEvidenceHarness(rule).app("asset-earn-normal-$label")
         rule.onNodeWithText("申购", useUnmergedTree = true).performScrollTo().performClick(); rule.onNode(hasSetTextAction() and hasAnyAncestor(isDialog())).performTextInput("100")
         rule.onNodeWithText("下一步 · 申购复核", substring = true, useUnmergedTree = true).performClick(); wait("申购最终复核")
         rule.waitUntil(5_000) { dialog != null }; ProductionEvidenceHarness(rule).dialogWindow("asset-earn-subscribe-review-$label", dialog); api.assertNoWrites()

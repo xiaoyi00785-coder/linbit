@@ -77,6 +77,7 @@ fun AssetsHost(assetsNav: AssetsNav, vm: AssetsViewModel = hiltViewModel(), onDi
                 onDialogWindow = onDialogWindow,
             )
             is AssetsRoute.WithdrawRecords -> WithdrawRecordsScreen(vm, onBack = assetsNav::clear, onDialogWindow = onDialogWindow)
+            is AssetsRoute.DepositRecords -> DepositRecordsScreen(vm, onBack = assetsNav::clear)
         }
     }
 }

@@ -1,5 +1,8 @@
 package click.cowa.linbit.feature.home
 
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -94,13 +97,35 @@ fun HomeScreen(
     unread: Int = 0,
     modifier: Modifier = Modifier,
     vm: HomeViewModel = hiltViewModel(),
+    onSearch: () -> Unit = {},
+    onLogin: () -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
+    onScan: () -> Unit = {},
+    heroActive: Boolean = true,
 ) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
     val m by vm.market_.collectAsStateWithLifecycle()
     val watch by vm.watchlist.symbols.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh, modifier = modifier)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var popupShown by rememberSaveable { mutableStateOf(false) }
+    val popups = remember(s.popups) { PopupFrequency.filter(ctx, s.popups) }
+    var announcementId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var reserves by rememberSaveable { mutableStateOf(false) }
+    val reservesData by vm.reserves.collectAsStateWithLifecycle()
+    Box(modifier) {
+        HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh,
+            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() }, onScan = onScan, onAnnouncement = { announcementId = it },
+            heroActive = heroActive && announcementId == null && !reserves && (popupShown || popups.isEmpty()))
+        announcementId?.let { id -> androidx.compose.ui.window.Dialog(onDismissRequest = { announcementId = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(Modifier.fillMaxSize().background(p.bg)) { AnnouncementDetailScreen(id, { announcementId = null }) }
+        } }
+        if (!popupShown && popups.isNotEmpty()) ActivityPopup(popups, p.isDark,
+            onOpen = { pl -> popupShown = true; PopupFrequency.markShown(ctx, popups); pl.linkUrl?.let(onOpenLink) },
+            onDismiss = { popupShown = true; PopupFrequency.markShown(ctx, popups) })
+        if (reserves) ReservesSheet(reservesData, vm::loadReserves) { reserves = false }
+    }
 }
 
 /** 无状态首页内容（便于截图测试 / 预览）。 */
@@ -111,6 +136,8 @@ fun HomeContent(
     onOpenAvatar: () -> Unit, onOpenMarkets: () -> Unit, onOpenMore: () -> Unit, onSoon: (String) -> Unit, onDeposit: () -> Unit,
     onFeature: (String) -> Unit = {}, onNotifications: () -> Unit = {}, onSupport: () -> Unit = {}, unread: Int = 0,
     onRefresh: () -> Unit, modifier: Modifier = Modifier,
+    onSearch: () -> Unit = {}, onLogin: () -> Unit = {}, onOpenLink: (String) -> Unit = {}, onReserves: () -> Unit = {}, onScan: () -> Unit = {}, onAnnouncement: (Long) -> Unit = {},
+    heroActive: Boolean = true, heroFrameMs: Long? = null,
 ) {
     val p = LB.p
     var hide by rememberSaveable { mutableStateOf(false) }
@@ -118,12 +145,26 @@ fun HomeContent(
     var rankKind by rememberSaveable { mutableIntStateOf(1) } // ref/2：默认选中「合约」
     var bannerPage by remember { mutableIntStateOf(0) }
     var earnPage by remember { mutableIntStateOf(0) }
+    var swipeTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(s.banners.size) { while (s.banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % s.banners.size } }
+    val banners = remember(s.carousel) {
+        // 有后端 carousel 用后端；为空时用三张自有配图兜底 banner（福利中心 / 跟单 / 策略交易，均为 App 内真实页面）
+        if (s.carousel.isEmpty()) LOCAL_BANNERS
+        else s.carousel.map { HomeBanner("pl:${it.id}", it.title.orEmpty(), null, it.imageUrl, it.linkUrl) }
+    }
+    LaunchedEffect(banners.size, swipeTick) { if (swipeTick == 0) bannerPage = 0; while (banners.size > 1) { delay(5_000); bannerPage = (bannerPage + 1) % banners.size } }
+    val onBanner: (HomeBanner) -> Unit = { b ->
+        when {
+            b.link != null -> onOpenLink(b.link)
+            b.id == "redpacket" -> onFeature("福利中心")
+            b.id == "copy" -> onFeature("跟单")
+            b.id == "bot" -> onFeature("策略交易")
+        }
+    }
     LaunchedEffect(s.earn.size) { earnPage = 0; while (s.earn.size > 1) { delay(4_000); earnPage = (earnPage + 1) % s.earn.size } }
 
     Column(modifier.fillMaxSize().background(p.bg)) {
-        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread)
+        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread, onSearch, s.searchHint ?: "BTC", onScan)
         PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
             Column(
             Modifier
@@ -132,16 +173,25 @@ fun HomeContent(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 24.dp),
         ) {
-                AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
-                TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
-                RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
-                Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
-                Hairline(Modifier.padding(top = (64f / 3).dp))
-                CardPromo(s.banners.getOrNull(bannerPage), bannerPage, s.banners.size) { onSoon("Linbit Card 即将开放") }
+                if (loggedIn) {
+                    AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
+                    // 参考登录态（老用户）无新手任务卡；仅在新手任务可用时展示
+                    if (s.newcomer?.available == true) TaskCard(s.newcomer, Modifier.padding(top = 12.dp)) { onFeature("福利中心") }
+                    RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
+                    Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
+                    Hairline(Modifier.padding(top = (64f / 3).dp))
+                } else GuestHero(s.newcomerTotal, s.newcomer?.asset ?: "USDT", onLogin, heroActive, heroFrameMs)
+                if (banners.isNotEmpty()) {
+                    val banner = banners.getOrNull(bannerPage) ?: banners[0]
+                    CardPromo(banner, bannerPage, banners.size, onSwipe = { d -> bannerPage = ((bannerPage + d) % banners.size + banners.size) % banners.size; swipeTick++ }) { onBanner(banner) }
+                    Hairline()
+                }
+                EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onFeature("理财") }
                 Hairline()
-                EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onSoon("理财即将开放") }
-                Hairline()
-                Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets)
+                if (loggedIn) {
+                    Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets, s.tradfiSymbols)
+                    NewsSection(s.academy, onSearch, s.announcements, s.announcementsError, onRefresh, onAnnouncement)
+                } else ProtectionSection(onReserves, onSupport)
             }
         }
     }
@@ -154,7 +204,7 @@ private fun Hairline(modifier: Modifier = Modifier) {
 
 // ── 顶栏：Logo / 搜索 / 扫码 / 客服 / 通知（ref/1：左上为品牌 Logo，搜索框 31 高，3 个 22 图标）──
 @Composable
-private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int) {
+private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int, onSearch: () -> Unit, hint: String, onScan: () -> Unit) {
     val p = LB.p
     Row(
         Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH),
@@ -165,15 +215,15 @@ private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> 
         }
         Row(
             Modifier.weight(1f).height(Metrics.searchBarH).clip(RoundedCornerShape(Radius.md)).background(p.fill)
-                .pressable(scale = 1f) { onSoon("搜索即将开放") }.padding(horizontal = 10.dp),
+                .pressable(scale = 1f, onClick = onSearch).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             LbIcon(R.drawable.ic_search, 15.dp, p.textTertiary)
-            Text("BTC", style = lb(FontSize.label), color = p.textTertiary)
+            Text(hint, style = lb(FontSize.label), color = p.textTertiary, maxLines = 1)
         }
-        LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable { onSoon("扫一扫即将开放") })
+        LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable(onClick = onScan))
         LbIcon(R.drawable.ic_headset, modifier = Modifier.pressable { onSupport() })
-        Box(Modifier.pressable(scale = 1f, onClick = onNotifications)) {
+        if (loggedIn) Box(Modifier.pressable(scale = 1f, onClick = onNotifications)) {
             LbIcon(R.drawable.ic_bell)
             if (unread > 0) Box(Modifier.align(Alignment.TopEnd).background(p.down, RoundedCornerShape(8.dp)).padding(horizontal = 3.dp)) {
                 Text(if (unread > 99) "99+" else "$unread", style = lbNum(8.sp), color = Color.White)
@@ -211,12 +261,7 @@ private fun AssetHeader(hide: Boolean, onToggle: () -> Unit, total: java.math.Bi
         }
         Spacer(Modifier.height(10.dp))
         // 汇率取不到时不用硬编码汇率：总资产为 0 仍显示 0.00，否则显示 --
-        val fiat = when {
-            hide -> "≈ ****"
-            cnyRate != null -> "≈ ¥ " + Fmt.price(total.multiply(cnyRate), 2)
-            total.signum() == 0 -> "≈ ¥ 0.00"
-            else -> "≈ ¥ --"
-        }
+        val fiat = if (hide) "≈ ****" else "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(total, 2, cnyRate)
         Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
     }
 }
@@ -296,13 +341,22 @@ private fun Grid(modifier: Modifier, onTap: (String) -> Unit) {
 
 // ── 卡片轮播（ref/1：左侧卡面 + 右侧文案，右下角 n/N）──
 @Composable
-private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onClick: () -> Unit) {
+private fun CardPromo(banner: HomeBanner?, page: Int, count: Int, onSwipe: (Int) -> Unit = {}, onClick: () -> Unit) {
     val p = LB.p
-    val b = banner ?: LOCAL_BANNERS[0]
+    val b = banner ?: return
     val isCard = b.id == "card"
-    Box(Modifier.fillMaxWidth().height((413f / 3).dp).pressable(scale = 1f, onClick = onClick)) {
+    Box(Modifier.fillMaxWidth().height((413f / 3).dp).testTag("home.banner").pointerInput(count) {
+        var acc = 0f
+        detectHorizontalDragGestures(onDragStart = { acc = 0f }, onDragEnd = { if (count > 1 && kotlin.math.abs(acc) > 60f) onSwipe(if (acc < 0) 1 else -1) }) { _, d -> acc += d }
+    }.pressable(scale = 1f, onClick = onClick)) {
         Row(Modifier.fillMaxSize().padding(start = 24.dp, end = Spacing.pageH), verticalAlignment = Alignment.Top) {
-            if (isCard) {
+            if (b.imageUrl != null) {
+                coil.compose.AsyncImage(b.imageUrl, b.title, Modifier.padding(top = 16.dp).size(width = 100.dp, height = 90.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                Spacer(Modifier.width(12.dp))
+            } else if (b.id == "redpacket" || b.id == "copy" || b.id == "bot") {
+                Image(when (b.id) { "redpacket" -> R.drawable.ic_bn_redpacket; "bot" -> R.drawable.ic_bn_bot; else -> R.drawable.ic_bn_copy }, 0.dp, Modifier.padding(top = 18.dp).size(width = 92.dp, height = 80.dp))
+                Spacer(Modifier.width(10.dp))
+            } else if (isCard) {
                 // ref/1：卡面整体 ≈ 59×48dp，居中于文案块上半（比 92×80 容器缩 0.8，左对齐）
                 CardArt(Modifier.padding(top = 21.dp).size(width = 92.dp, height = 80.dp).graphicsLayer { scaleX = 0.8f; scaleY = 0.8f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) })
                 Spacer(Modifier.width(2.dp))
@@ -348,7 +402,7 @@ private fun CardArt(modifier: Modifier) {
 
 @Composable
 private fun Image(res: Int, size: Dp, modifier: Modifier) =
-    androidx.compose.foundation.Image(painterResource(res), null, modifier.size(size))
+    androidx.compose.foundation.Image(painterResource(res), null, if (size > 0.dp) modifier.size(size) else modifier)
 
 // ── 理财宝（ref/1：第一行「理财宝 + 币图标」，第二行产品名 16 medium，右下 n/N）──
 @Composable
@@ -374,23 +428,57 @@ private fun EarnStrip(e: click.cowa.linbit.core.generated.ApiEarnProduct?, page:
 @Composable
 private fun Ranking(
     m: click.cowa.linbit.data.MarketState, watch: List<String>,
-    tab: Int, onTab: (Int) -> Unit, kind: Int, onKind: (Int) -> Unit, onMore: () -> Unit,
+    tab: Int, onTab: (Int) -> Unit, kind: Int, onKind: (Int) -> Unit, onMore: () -> Unit, tradfi: Set<String> = emptySet(),
 ) {
     val p = LB.p
     Column(Modifier.fillMaxWidth()) {
         PrimaryTabs(listOf("自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"), tab, onTab, Modifier.padding(horizontal = Spacing.pageH).padding(top = 16.dp), size = 16.sp, underline = true)
-        ChipBar(listOf("现货", "合约"), kind, onKind, Modifier.padding(vertical = 12.dp))
+        ChipBar(listOf("现货", "合约", "TradFi"), kind, onKind, Modifier.padding(vertical = 12.dp))
         Row(Modifier.fillMaxWidth().height(24.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
             Text("交易对", style = lb(FontSize.small), color = p.textSecondary, modifier = Modifier.weight(1f))
             Text("最新价", style = lb(FontSize.small), color = p.textSecondary)
             Text("涨跌幅", Modifier.width(Metrics.changeBadgeW + 12.dp), style = lb(FontSize.small), color = p.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.End)
         }
-        val rows = rankingRows(tab, if (kind == 0) MarketKind.SPOT else MarketKind.FUTURES, m, watch)
+        val rows = if (kind == 2) rankingRows(tab, MarketKind.FUTURES, m.copy(futures = m.futures.filter { it.symbol in tradfi }), watch)
+            else rankingRows(tab, if (kind == 0) MarketKind.SPOT else MarketKind.FUTURES, m, watch)
         if (rows.isEmpty()) EmptyState(if (tab == 0) "暂无自选" else "暂无数据", Modifier.fillMaxWidth().height(160.dp))
-        rows.forEach { MarketRowView(it, m.cnyRate, showIcon = false, compactPair = true, onClick = onMore) }
+        rows.forEach { MarketRowView(it, m.cnyRate, showIcon = true, compactPair = true, onClick = onMore) }
         Row(Modifier.fillMaxWidth().height(44.dp).pressable(scale = 1f, onClick = onMore), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             Text("查看更多", style = lb(FontSize.caption), color = p.textSecondary)
             LbIcon(R.drawable.ic_arrow_right, 12.dp, p.textSecondary)
+        }
+    }
+}
+
+
+// 公告走正式公开接口；快讯没有独立契约，不伪造。
+@Composable
+internal fun NewsSection(academy: List<click.cowa.linbit.feature.markets.ApiAcademyArticle>?, onOpen: () -> Unit, announcements: List<click.cowa.linbit.core.generated.ApiAnnouncement>? = null, error: String? = null, onRetry: () -> Unit = {}, onAnnouncement: (Long) -> Unit = {}) {
+    val p = LB.p
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        PrimaryTabs(listOf("公告", "快讯", "学院"), tab, { tab = it }, Modifier.padding(horizontal = Spacing.pageH), size = 16.sp, underline = true)
+        when (tab) {
+            2 -> when {
+                academy == null -> EmptyState("加载失败", Modifier.fillMaxWidth().height(160.dp))
+                academy.isEmpty() -> EmptyState("暂无文章", Modifier.fillMaxWidth().height(160.dp))
+                else -> academy.forEach { a ->
+                    Column(Modifier.fillMaxWidth().pressable(scale = 1f, onClick = onOpen).padding(horizontal = Spacing.pageH, vertical = 14.dp)) {
+                        Text(a.title, style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        a.publishedAt?.let { Text(it.replace('T', ' ').take(19), Modifier.padding(top = 6.dp), style = lbNum(FontSize.small), color = p.textTertiary) }
+                    }
+                }
+            }
+            0 -> when {
+                error != null -> Column(Modifier.padding(Spacing.pageH)) { Text("公告加载失败：$error", style=lb(FontSize.small),color=p.down); click.cowa.linbit.ui.components.LbButton("重试",onClick=onRetry) }
+                announcements == null -> EmptyState("正在读取公告…",Modifier.fillMaxWidth().height(160.dp))
+                announcements.isEmpty() -> EmptyState("暂无公告",Modifier.fillMaxWidth().height(160.dp))
+                else -> announcements.forEach { a -> Column(Modifier.fillMaxWidth().then(if(a.id!=null) Modifier.pressable(scale=1f) { onAnnouncement(a.id) } else Modifier).padding(horizontal=Spacing.pageH,vertical=14.dp)) {
+                    Text(a.title ?: "--",style=lb(FontSize.body,FontWeight.Medium),color=p.textPrimary,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    Text(announcementTime(a),Modifier.padding(top=6.dp),style=lbNum(FontSize.small),color=p.textTertiary)
+                }; Box(Modifier.fillMaxWidth().height(0.5.dp).background(p.divider)) }
+            }
+            else -> EmptyState("暂无快讯", Modifier.fillMaxWidth().height(160.dp))
         }
     }
 }

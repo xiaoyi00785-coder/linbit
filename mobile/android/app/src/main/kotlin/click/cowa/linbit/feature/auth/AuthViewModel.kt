@@ -35,7 +35,15 @@ class AuthViewModel @Inject constructor(
     private val prefs: AppPrefs,
     val toast: ToastCenter,
     private val passkey: PasskeyLoginService,
+    private val growthApi: click.cowa.linbit.core.network.LinbitApi,
 ) : ViewModel() {
+    /** 注册挽留弹层金额：/growth/config newcomer.total；接口失败或未开放时为 null（不写死）。 */
+    var newcomerTotal by mutableStateOf<java.math.BigDecimal?>(null); private set
+    var newcomerAsset by mutableStateOf("USDT"); private set
+    fun loadNewcomer() { val api = growthApi; if (newcomerTotal != null) return
+        viewModelScope.launch { runCatching { click.cowa.linbit.core.network.apiCall { api.growthConfig() } }.getOrNull()?.let { g ->
+            newcomerAsset = g.payoutAsset ?: "USDT"
+            newcomerTotal = g.newcomer?.takeIf { it.available != false }?.total?.let { click.cowa.linbit.core.util.Dec.parseOrNull(it) }?.takeIf { it.signum() > 0 } } } }
     var raw by mutableStateOf("")
     var countryCode by mutableStateOf("86")
     var password by mutableStateOf("")

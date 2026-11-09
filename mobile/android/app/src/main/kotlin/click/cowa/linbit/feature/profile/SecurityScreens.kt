@@ -198,9 +198,6 @@ internal fun DisableTotpScreen(vm: SecurityViewModel, onBack: () -> Unit) {
         }
         LbButton("关闭身份验证器", Modifier.padding(Spacing.pageH), kind = ButtonKind.SELL, enabled = s.code.length == 6, loading = s.submitting, onClick = { confirm = true })
     }
-    if (confirm) AlertDialog(
-        onDismissRequest = { confirm = false }, title = { Text("确认关闭") }, text = { Text("关闭身份验证器会降低账户安全性，确定继续？") },
-        confirmButton = { TextButton(onClick = { confirm = false; vm.disable(onBack) }) { Text("关闭", color = p.down) } },
-        dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } },
-    )
+    if (confirm) LbDialog("确认关闭", { confirm = false }, "关闭", { confirm = false; vm.disable(onBack) },
+        message = "关闭身份验证器会降低账户安全性，确定继续？", destructive = true)
 }

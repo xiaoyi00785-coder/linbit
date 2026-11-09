@@ -143,6 +143,24 @@ interface LinbitApi {
     @GET("home/newcomer")
     suspend fun homeNewcomer(): ApiHomeNewcomer
 
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/proof-of-reserves")
+    suspend fun proofOfReserves(): click.cowa.linbit.core.generated.ApiProofOfReserves
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("growth/config")
+    suspend fun growthConfig(): click.cowa.linbit.core.generated.ApiGrowthConfig
+
+    /** 首页运营位（popup / carousel / search_hint 等），公开。 */
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("home/placements")
+    suspend fun homePlacements(
+        @Query("slots") slots: String = "popup,carousel,search_hint",
+        @Query("platform") platform: String = "app",
+        @Query("locale") locale: String = "zh-CN",
+        @Query("appVersion") appVersion: String = click.cowa.linbit.BuildConfig.VERSION_NAME,
+    ): click.cowa.linbit.core.generated.ApiHomePlacements
+
     @GET("rewards/newcomer")
     suspend fun newcomerState(): ApiNewcomerState
 
@@ -155,6 +173,15 @@ interface LinbitApi {
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("earn/products")
     suspend fun earnProducts(): ApiEarnProducts200Response
+
+    /** Same path as earnProducts; JsonElement enables per-item resilient catalogue decode. */
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("earn/products")
+    suspend fun earnProductsRaw(): kotlinx.serialization.json.JsonElement
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("loans/market")
+    suspend fun loanMarket(): click.cowa.linbit.core.generated.ApiLoanMarket
 
     @GET("assets/overview")
     suspend fun assetsOverview(): ApiAssetsOverview
@@ -193,6 +220,12 @@ interface LinbitApi {
 
     @DELETE("spot/orders/conditional/{id}")
     suspend fun cancelConditional(@Path("id") id: String): ApiConditionalOrder
+
+    @GET("account/preferences")
+    suspend fun accountPreferences(): ApiAccountPreferences
+
+    @PUT("account/preferences")
+    suspend fun updateAccountPreferences(@Body body: ApiUpdateAccountPreferencesRequest): ApiAccountPreferences
 
     @GET("account/fee-rates")
     suspend fun feeRates(@Query("symbol") symbol: String? = null): ApiFeeRates
@@ -670,4 +703,103 @@ interface LinbitApi {
     @POST("support/attachments")
     suspend fun uploadSupportAttachment(@Part file: MultipartBody.Part): ApiSupportAttachment
 
+    // ---- 第三批接入点：服务端尚未提供（见 docs/batch3-backend-fields.md），404/501 时前端显示真实错误/未配置态 ----
+    @GET("campaigns/deposit-cashback")
+    suspend fun depositCashbackCampaign(): click.cowa.linbit.feature.more.ApiCashbackCampaign
+
+    @POST("campaigns/deposit-cashback/tiers/{tierId}/join")
+    suspend fun joinCashbackTier(@Path("tierId") tierId: String): click.cowa.linbit.feature.more.ApiCashbackCampaign
+
+    @GET("campaigns/trade-lottery")
+    suspend fun tradeLotteryCampaign(): click.cowa.linbit.feature.more.ApiLotteryCampaign
+
+    @GET("campaigns/trade-lottery/entries")
+    suspend fun tradeLotteryEntries(@Query("status") status: String): click.cowa.linbit.feature.more.ApiLotteryEntries
+
+    @GET("account/api-keys")
+    suspend fun apiKeys(): click.cowa.linbit.feature.more.ApiKeyList
+
+    @POST("account/api-keys")
+    suspend fun createApiKey(@Body body: click.cowa.linbit.feature.more.ApiKeyCreateRequest): click.cowa.linbit.feature.more.ApiKeyCreated
+
+    @DELETE("account/api-keys/{id}")
+    suspend fun deleteApiKey(@Path("id") id: String): click.cowa.linbit.feature.more.ApiKeyRevoked
+
+    @GET("assets/deposit-account")
+    suspend fun depositTarget(): click.cowa.linbit.feature.profile.ApiDepositTarget
+
+    @PUT("assets/deposit-account")
+    suspend fun updateDepositTarget(@Body body: click.cowa.linbit.feature.profile.ApiDepositTargetUpdate): click.cowa.linbit.feature.profile.ApiDepositTarget
+
+    @DELETE("assets/deposit-account")
+    suspend fun resetDepositTarget(): click.cowa.linbit.feature.profile.ApiDepositTarget
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("auth/providers")
+    suspend fun authProviders(): click.cowa.linbit.feature.auth.ApiAuthProviders
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("fiat/buy")
+    suspend fun fiatBuyStatus(): click.cowa.linbit.feature.assets.ApiFiatBuyStatus
+
+    @GET("futures/pnl/history")
+    suspend fun futuresPnlHistory(@Query("from") from: String, @Query("to") to: String): click.cowa.linbit.feature.assets.ApiPnlHistory
+
+    @GET("spot/pnl/history")
+    suspend fun spotPnlHistory(@Query("from") from: String, @Query("to") to: String): click.cowa.linbit.feature.assets.ApiSpotPnlHistory
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("academy/categories")
+    suspend fun academyCategories(): click.cowa.linbit.feature.markets.ApiAcademyCategories
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("academy/articles")
+    suspend fun academyArticles(@Query("category") category: String? = null, @Query("locale") locale: String = "zh-CN", @Query("before") before: String? = null, @Query("limit") limit: Int = 20): click.cowa.linbit.feature.markets.ApiAcademyArticles
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("academy/articles/{id}")
+    suspend fun academyArticle(@Path("id") id: String): click.cowa.linbit.feature.markets.ApiAcademyArticle
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/search")
+    suspend fun marketSearch(@Query("q") q: String): click.cowa.linbit.feature.markets.ApiMarketSearch
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @POST("auth/google")
+    suspend fun googleLogin(@Body body: click.cowa.linbit.feature.auth.ApiGoogleLoginRequest): ApiAuthTokens
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("support/guest")
+    suspend fun supportPublicConfig(): click.cowa.linbit.feature.auth.ApiSupportPublicConfig
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("cards/product")
+    suspend fun cardProduct(): click.cowa.linbit.feature.more.ApiCardState
+
+    @GET("cards/application")
+    suspend fun cardApplication(): click.cowa.linbit.feature.more.ApiCardState
+
+    @POST("cards/applications")
+    suspend fun applyCard(@Body body: click.cowa.linbit.feature.more.ApiCardApplyRequest): click.cowa.linbit.feature.more.ApiCardState
+
+    @GET("chat/rooms")
+    suspend fun chatRooms(): ApiListChatRooms200Response
+
+    /** 登录后读取；带 Token 以返回 mine。游客由页面与 ViewModel 双重拦截。 */
+    @GET("chat/rooms/{room}/messages")
+    suspend fun chatMessages(@Path("room") room: String, @Query("before") before: Long? = null, @Query("limit") limit: Int = 50): ApiListChatMessages200Response
+
+    @POST("chat/rooms/{room}/messages")
+    suspend fun postChatMessage(@Path("room") room: String, @Body body: ApiPostChatMessageRequest): ApiChatMessage
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("market/usd-rate")
+    suspend fun usdRate(): click.cowa.linbit.core.storage.ApiUsdRate
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("announcements")
+    suspend fun announcements(@Query("category") category: String? = null): ApiListAnnouncements200Response
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("announcements/{id}")
+    suspend fun announcement(@Path("id") id: Long): ApiAnnouncement
 }

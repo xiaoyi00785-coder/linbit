@@ -5,10 +5,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
 internal fun earnRoutes(api: MockEvidenceApi, populated: Boolean = true) {
-    api.route("GET", "/earn/products", if (populated) """{"items":[{"id":"evidence-earn","kind":"flexible","asset":"USDT","title":"USDT 活期理财","apr":"0.052","minAmount":"10","perUserMax":"5000","status":"ONLINE"}]}""" else """{"items":[]}""")
+    // earnProductsRaw + typed fallback may each GET once; queue twice.
+    val productsBody = if (populated) """{"items":[{"id":"evidence-earn","kind":"simple","asset":"USDT","title":"USDT 活期理财","apr":"0.052","bonusApr":"0.06","aprMax":"0.06","minAmount":"10","perUserMax":"5000","status":"ONLINE","hot":true,"sort":10},{"id":"evidence-btc","kind":"fixed","asset":"BTC","title":"BTC 定期","apr":"0.087","termDays":14,"minAmount":"0.01","status":"ONLINE","hot":true,"sort":20},{"id":"evidence-sol","kind":"onchain","asset":"SOL","title":"SOL 质押","apr":"0.064","unlockDays":2,"minAmount":"0.01","status":"ONLINE","hot":false,"sort":30}]}""" else """{"items":[]}"""
+    api.route("GET", "/earn/products", productsBody)
+    api.route("GET", "/earn/products", productsBody)
     api.route("GET", "/earn/summary", """{"totalValueUsdt":"1250","totalInterestUsdt":"2.5"}""")
-    api.route("GET", "/earn/positions", if (populated) """{"items":[{"productId":"evidence-earn","kind":"flexible","asset":"USDT","title":"USDT 活期理财","amount":"1250","totalInterest":"2.5"}]}""" else """{"items":[]}""")
+    api.route("GET", "/earn/positions", if (populated) """{"items":[{"productId":"evidence-earn","kind":"simple","asset":"USDT","title":"USDT 活期理财","amount":"1250","totalInterest":"2.5"}]}""" else """{"items":[]}""")
     api.route("GET", "/earn/orders", """{"items":[]}"""); api.route("GET", "/earn/records", """{"items":[]}""")
+    api.route("GET", "/loans/market", """{"asset":"USDT","terms":[{"term":"flexible","days":0,"hourlyRate":"0.000003847","annualRate":"0.0337","status":"online"}],"collaterals":[{"asset":"BTC","cap":"10","price":"75030"}],"initialLtv":"0.8","warnLtv":"0.88","liquidationLtv":"0.95","userLimit":"1200000","minAmount":"10"}""")
 }
 internal fun strategyRoutes(api: MockEvidenceApi, populated: Boolean = true) {
     api.route("GET", "/strategy/config", """{"minGrids":2,"maxGrids":100,"minInvestment":"10","sellBaseOnStop":false}""")

@@ -179,12 +179,8 @@ fun CopyTradingScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: CopyViewModel
             onSubmit = { input -> vm.follow(trader.str("traderId") ?: return@FollowDialog, input) { followTrader = null; vm.loadFollows() } })
     }
     if (become) BecomeTraderDialog(s.busy, { become = false }) { n, b, share -> vm.become(n, b, share) { become = false } }
-    stopId?.let { id -> AlertDialog(
-        onDismissRequest = { stopId = null }, title = { Text("停止跟单") },
-        text = { Text("停止后将按市价平掉该带单员的全部跟单仓位，剩余资金返还至合约账户。") },
-        confirmButton = { TextButton(enabled = !s.busy, onClick = { stopId = null; vm.stop(id) }) { Text("确认停止", color = LB.p.down) } },
-        dismissButton = { TextButton(onClick = { stopId = null }) { Text("取消") } },
-    ) }
+    stopId?.let { id -> LbDialog("停止跟单", { stopId = null }, "确认停止", { stopId = null; vm.stop(id) },
+        message = "停止后将按市价平掉该带单员的全部跟单仓位，剩余资金返还至合约账户。", destructive = true, confirmEnabled = !s.busy) }
 }
 
 @Composable
@@ -319,9 +315,8 @@ private fun FollowDialog(trader: JsonObject, minimum: BigDecimal, busy: Boolean,
     var confirm by remember { mutableStateOf(false) }
     val input = CopyLogic.Input(amount, fixed, ratio, margin, maxPerTrade, tp, sl)
     val error = if (amount.isBlank()) null else CopyLogic.error(input, minimum)
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() }, title = { Text("跟单 ${trader.str("nickname") ?: ""}") },
-        text = { Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LbDialog("跟单 ${trader.str("nickname") ?: ""}", { if (!busy) onDismiss() }, "确认跟单", { confirm = true },
+        onDismissClick = onDismiss, confirmEnabled = !busy && amount.isNotBlank() && error == null, loading = busy) {
             Text("分润比例 ${trader.ratio("profitShare", 0)}，仅对盈利部分收取", style = lb(FontSize.small), color = LB.p.textSecondary)
             ChipBar(listOf("按比例跟单", "固定保证金"), if (fixed) 1 else 0, { fixed = it == 1 })
             FieldLabel("跟单金额 (USDT)")
@@ -334,16 +329,9 @@ private fun FollowDialog(trader: JsonObject, minimum: BigDecimal, busy: Boolean,
                 LbTextField(sl, { sl = it }, "止损 %（选填）", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
             }
             InfoNote("跟单资金将从合约账户划入独立跟单仓位，停止跟单将按市价平仓并返还剩余资金。")
-        } },
-        confirmButton = { TextButton(enabled = !busy && amount.isNotBlank() && error == null, onClick = { confirm = true }) { Text(if (busy) "提交中" else "确认跟单") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
-    if (confirm) AlertDialog(
-        onDismissRequest = { confirm = false }, title = { Text("确认跟单 ${trader.str("nickname") ?: ""}") },
-        text = { Text("将从合约账户划转 $amount USDT 到独立的跟单账户（${if (fixed) "固定保证金 $margin USDT / 笔" else "按比例 $ratio 倍跟单"}），带单员开平仓时自动跟随，盈利部分按 ${trader.ratio("profitShare", 0)} 分润。") },
-        confirmButton = { TextButton(onClick = { confirm = false; onSubmit(input) }) { Text("确认跟单") } },
-        dismissButton = { TextButton(onClick = { confirm = false }) { Text("返回修改") } },
-    )
+    }
+    if (confirm) LbDialog("确认跟单 ${trader.str("nickname") ?: ""}", { confirm = false }, "确认跟单", { confirm = false; onSubmit(input) },
+        message = "将从合约账户划转 $amount USDT 到独立的跟单账户（${if (fixed) "固定保证金 $margin USDT / 笔" else "按比例 $ratio 倍跟单"}），带单员开平仓时自动跟随，盈利部分按 ${trader.ratio("profitShare", 0)} 分润。", dismissText = "返回修改")
 }
 
 @Composable
@@ -352,15 +340,10 @@ private fun BecomeTraderDialog(busy: Boolean, onDismiss: () -> Unit, onSubmit: (
     var bio by remember { mutableStateOf("") }
     var share by remember { mutableIntStateOf(1) }
     val shares = listOf("0.05", "0.1", "0.15", "0.2")
-    AlertDialog(
-        onDismissRequest = onDismiss, title = { Text("成为带单员") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("申请需人工审核；合约账户权益需满足最低要求。", style = lb(FontSize.small), color = LB.p.textSecondary)
-            LbTextField(nickname, { nickname = it.take(20) }, "昵称（2-20 个字符）")
-            LbTextField(bio, { bio = it.take(200) }, "介绍您的交易风格")
-            ChipBar(listOf("5%", "10%", "15%", "20%"), share, { share = it })
-        } },
-        confirmButton = { TextButton(enabled = nickname.length in 2..20 && !busy, onClick = { onSubmit(nickname, bio, shares[share]) }) { Text("提交") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+    LbDialog("成为带单员", onDismiss, "提交", { onSubmit(nickname, bio, shares[share]) }, confirmEnabled = nickname.length in 2..20 && !busy, loading = busy) {
+        Text("申请需人工审核；合约账户权益需满足最低要求。", style = lb(FontSize.small), color = LB.p.textSecondary)
+        LbTextField(nickname, { nickname = it.take(20) }, "昵称（2-20 个字符）")
+        LbTextField(bio, { bio = it.take(200) }, "介绍您的交易风格")
+        ChipBar(listOf("5%", "10%", "15%", "20%"), share, { share = it })
+    }
 }

@@ -1,5 +1,8 @@
 package click.cowa.linbit.ui.offscreen
 
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -222,6 +225,42 @@ class OffscreenVisualEvidenceTest {
         )
     }
 
+    @Test fun homeLoggedInFull() {
+        enabled()
+        rule.setContent {
+            LinbitTheme(false) {
+                Box(Modifier.requiredSize(390.dp, 788.dp).background(Color.White)) {
+                    HomeContent(
+                        HomeState(earn = listOf(ApiEarnProduct(asset = "TRX", title = "TRX 定期理财", apr = "0.059"))),
+                        MarketState(
+                            spot = listOf(
+                                MarketRow("BTCUSDT", "BTC", "USDT", bd("75706.6"), bd("-0.17"), bd("3.21E8"), 1),
+                                MarketRow("ETHUSDT", "ETH", "USDT", bd("2227"), bd("-0.40"), bd("2.34E8"), 2),
+                                MarketRow("SOLUSDT", "SOL", "USDT", bd("88.99"), bd("-0.87"), bd("9.8E7"), 2),
+                            ),
+                            futures = listOf(
+                                MarketRow("BTCUSDT", "BTC", "USDT", bd("75706.6"), bd("-0.17"), bd("3.21E8"), 1),
+                                MarketRow("ETHUSDT", "ETH", "USDT", bd("2227"), bd("-0.40"), bd("2.34E8"), 2),
+                                MarketRow("BNBUSDT", "BNB", "USDT", bd("696.05"), bd("0.10"), bd("1.7E7"), 2),
+                                MarketRow("SOLUSDT", "SOL", "USDT", bd("88.99"), bd("-0.87"), bd("9.8E7"), 2),
+                            ),
+                            cnyRate = bd("7.15"),
+                        ),
+                        emptyList(), true, 0.dp,
+                        {}, {}, {}, {}, {},
+                        onRefresh = {},
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        capture("Home-loggedin-1")
+        rule.onRoot().performTouchInput { swipeUp(startY = bottom - 10f, endY = top + 10f, durationMillis = 400) }
+        rule.waitForIdle(); capture("Home-loggedin-2")
+        rule.onRoot().performTouchInput { swipeUp(startY = bottom - 10f, endY = top + 10f, durationMillis = 400) }
+        rule.waitForIdle(); capture("Home-loggedin-3")
+    }
+
     @Test fun homeWithDeadline() {
         enabled()
         val deadline = Instant.now().plus(6, ChronoUnit.DAYS).plus(12, ChronoUnit.HOURS).toString()
@@ -315,7 +354,7 @@ class OffscreenVisualEvidenceTest {
         val ctx = RuntimeEnvironment.getApplication()
         val auth = AuthRepository(api, tokens, deviceId = { "shot" }, deviceName = { "Robolectric" }, scope = scope)
         val fakeBridge = click.cowa.linbit.feature.auth.PasskeyCredentialBridge { _, _ -> throw click.cowa.linbit.feature.auth.PasskeyLoginFailure.Unsupported }
-        val authVm = AuthViewModel(auth, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(api, fakeBridge, { "shot" }, { "Robolectric" }))
+        val authVm = AuthViewModel(auth, tokens, AppPrefs(ctx), toast, click.cowa.linbit.feature.auth.PasskeyLoginService(api, fakeBridge, { "shot" }, { "Robolectric" }), api)
         rule.setContent {
             LinbitTheme(false) {
                 Box(Modifier.requiredSize(390.dp, 844.dp).background(Color.White)) {

@@ -33,7 +33,12 @@ data class WsTicker(
     val low: String? = null,
     val volume: String? = null,
     val quoteVolume: String? = null,
+    /** 契约 fef9984：WS ticker 带与 REST 相同的 usd 对象。 */
+    val usd: WsUsd? = null,
 )
+
+/** REST/WS 共用 OpenAPI 生成类型，避免两份协议漂移。 */
+typealias WsUsd = click.cowa.linbit.core.generated.ApiWsUsd
 
 /** `futures-ticker:<symbol>` 频道的 data（与 GET /futures/market/ticker 对象一致；含现货兼容别名）。 */
 @Serializable

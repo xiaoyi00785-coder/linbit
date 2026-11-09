@@ -79,7 +79,7 @@ fun AuthTopBar(isRoot: Boolean, onLeft: () -> Unit, onSupport: () -> Unit) {
             LbIcon(if (isRoot) R.drawable.ic_chevron_down else R.drawable.ic_arrow_left, 22.dp, p.textPrimary)
         }
         Box(Modifier.weight(1f))
-        Box(Modifier.size(44.dp).pressable(onClick = onSupport), contentAlignment = Alignment.CenterEnd) {
+        Box(Modifier.size(44.dp).testTag("auth.support").pressable(onClick = onSupport), contentAlignment = Alignment.CenterEnd) {
             LbIcon(R.drawable.ic_headset, 22.dp, p.textPrimary)
         }
     }

@@ -119,11 +119,7 @@ fun CouponsScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: CouponViewModel =
         val message = if (c.kind == ApiCoupon.Kind.TRIAL)
             "激活后将向合约账户发放 $amount 体验金，${c.validDays ?: 0} 天内有效。体验金仅可用于开仓，盈利可提取，亏损优先扣除体验金。激活要求合约账户自有资金不低于 $amount。"
         else "激活后 ${c.validDays ?: 0} 天内，交易手续费将优先由本券抵扣，最高 $amount。"
-        AlertDialog(
-            onDismissRequest = { confirm = null }, title = { Text("激活${c.title ?: "卡券"}") }, text = { Text(message) },
-            confirmButton = { TextButton(onClick = { confirm = null; vm.activate(c) }) { Text("确认激活") } },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } },
-        )
+        LbDialog("激活${c.title ?: "卡券"}", { confirm = null }, "确认激活", { confirm = null; vm.activate(c) }, message = message)
     }
 }
 
