@@ -412,16 +412,25 @@ private fun Actions(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
-                    Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)),
+                    Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)).testTag("assets.action.$title"),
                     contentAlignment = Alignment.Center,
                 ) {
-                    click.cowa.linbit.ui.components.LbReferenceIcon(when (title) { "充值" -> R.drawable.ic_ref_deposit; "提现" -> R.drawable.ic_ref_withdraw; "快捷买币" -> R.drawable.ic_ref_quickbuy; "划转" -> R.drawable.ic_ref_transfer; "盈亏" -> R.drawable.ic_candles; else -> R.drawable.ic_ref_trade }, 22.dp)
+                    // 矢量线性图标 + tint；禁止 title.take(1) 文字占位（真机曾显示「去/充/快/划」）。
+                    LbIcon(AssetsActionIcons.drawable(title), 22.dp, p.textPrimary)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(title, style = lb(FontSize.small), color = p.textPrimary)
             }
         }
     }
+    // 参考 App：快捷按钮下方去掉整宽浅灰分隔块，仅留白。
+    AssetsSectionGap()
+}
+
+/** 参考 App：快捷按钮下方无整宽浅灰分隔块，仅留白距。 */
+@Composable
+private fun AssetsSectionGap() {
+    Spacer(Modifier.height(16.dp).testTag("assets.section.gap"))
 }
 
 @Composable
@@ -436,9 +445,8 @@ private fun AssetList(
     val p = LB.p
     val rows = vm.rows()
     Column {
-        Box(Modifier.fillMaxWidth().height(8.dp).background(p.fill).padding(top = 20.dp))
         Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = Spacing.pageH),
+            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = Spacing.pageH).padding(top = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showSearch) {
@@ -494,9 +502,7 @@ private fun FuturesCard(vm: AssetsViewModel, s: AssetsUiState) {
         "仓位保证金" to posMargin,
         "委托成本" to f?.orderMargin,
     )
-    Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp)) {
-        Box(Modifier.fillMaxWidth().height(8.dp).background(p.fill))
-        Spacer(Modifier.height(12.dp))
+    Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 12.dp)) {
         Text("持有仓位", style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
         Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             CoinIcon("USDT", 20.dp)
@@ -642,7 +648,7 @@ private fun ActionRow(items: List<Triple<String, Int, () -> Unit>>) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(top = 20.dp)) {
         items.forEach { (t, icon, act) ->
             Column(Modifier.weight(1f).pressable(onClick = act), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)), contentAlignment = Alignment.Center) { click.cowa.linbit.ui.components.LbReferenceIcon(icon, 22.dp) }
+                Box(Modifier.size(40.dp).background(p.fill, RoundedCornerShape(Radius.lg)), contentAlignment = Alignment.Center) { LbIcon(icon, 22.dp, p.textPrimary) }
                 Spacer(Modifier.height(8.dp))
                 Text(t, style = lb(FontSize.small), color = p.textPrimary)
             }
@@ -667,7 +673,8 @@ private fun EarnTab(
     val signed = { v: String? -> v?.let { val d = dec(it); (if (d.signum() >= 0) "+" else "") + Fmt.amount(d, 2) + " USDT" } ?: "--" }
     AccountHead("总资产估值", sum?.totalValueUsdt?.let(dec), s.hideAmount, s.cnyRate, onToggle, onHistory = onHistory)
     KvTriple(listOf("累计收益" to (if (s.hideAmount) "****" else signed(sum?.totalInterestUsdt)), "昨日收益" to (if (s.hideAmount) "****" else signed(sum?.recentInterestUsdt))))
-    ActionRow(listOf(Triple("总览", R.drawable.ic_ref_trade, onOpen), Triple("划转", R.drawable.ic_ref_transfer, onTransfer), Triple("订单", R.drawable.ic_doc_text, onOrders)))
+    ActionRow(listOf(Triple("总览", R.drawable.ic_asset_trade, onOpen), Triple("划转", R.drawable.ic_asset_transfer, onTransfer), Triple("订单", R.drawable.ic_doc_text, onOrders)))
+    AssetsSectionGap()
     val best = vm.earnProducts.maxByOrNull { dec(it.apr) }
     if (best != null) Row(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp).fillMaxWidth().border(0.5.dp, p.border, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onOpen).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -710,8 +717,8 @@ private fun BotsTab(s: AssetsUiState, onOpen: () -> Unit, onTransfer: () -> Unit
     val upnl = vm.myGrids.fold(java.math.BigDecimal.ZERO) { a, g -> a + dec(g.unrealizedPnl) }
     AccountHead("总资产估值", equity, s.hideAmount, s.cnyRate, onToggle)
     KvTriple(listOf("账户权益(USDT)" to (if (s.hideAmount) "****" else Fmt.amount(equity, 2)), "未实现盈亏(USDT)" to (if (s.hideAmount) "****" else Fmt.amount(upnl, 2)), "保证金率" to "--"))
-    ActionRow(listOf(Triple("去交易", R.drawable.ic_ref_trade, onOpen), Triple("划转", R.drawable.ic_ref_transfer, onTransfer)))
-    Box(Modifier.fillMaxWidth().padding(top = 20.dp).height(8.dp).background(p.fill))
+    ActionRow(listOf(Triple("去交易", R.drawable.ic_asset_trade, onOpen), Triple("划转", R.drawable.ic_asset_transfer, onTransfer)))
+    AssetsSectionGap()
     Text("运行中", Modifier.padding(horizontal = Spacing.pageH).padding(top = 16.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
     if (running.isEmpty()) EmptyState("暂无记录", Modifier.padding(vertical = 30.dp))
     running.forEach { g ->
