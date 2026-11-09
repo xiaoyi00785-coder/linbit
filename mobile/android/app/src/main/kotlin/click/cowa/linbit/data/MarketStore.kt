@@ -28,6 +28,9 @@ data class MarketState(
     val futuresCategories: List<ApiMarketCategory> = emptyList(),
     /** TradFi 交易对 symbol 集合（来自 GET /tradfi/assets）；空表示后端无 TradFi 或加载失败。 */
     val tradFiSymbols: Set<String> = emptySet(),
+    /** 从 spot/futures ticker 剔出的 TradFi 行（自选·TradFi 展示用）。 */
+    val tradFiSpotRows: List<MarketRow> = emptyList(),
+    val tradFiFuturesRows: List<MarketRow> = emptyList(),
     /** USDT→CNY 汇率（/market/fiat-rates）；取不到时为 null，界面不显示折合金额（不使用硬编码汇率）。 */
     val cnyRate: BigDecimal? = null,
     val loading: Boolean = false,
@@ -105,29 +108,40 @@ class MarketStore(
             refPrice = list.mapNotNull { t -> t.symbol?.let { it to MarketRow.effectivePrice(t.lastPrice, t.markPrice, t.indexPrice) } }.toMap()
         }
         _state.update { cur ->
-            var spot = cur.spot
-            var futures = cur.futures
+            var spotRaw = cur.spot + cur.tradFiSpotRows
+            var futuresRaw = cur.futures + cur.tradFiFuturesRows
             r.spot?.let { list ->
-                spot = list.map { t ->
+                spotRaw = list.map { t ->
                     val row = MarketRow.spot(t, symbolMeta[t.symbol])
                     if (row.last.signum() == 0) row.copy(last = refPrice[row.symbol] ?: BigDecimal.ZERO) else row
                 }
             }
             r.futures?.let { list ->
-                val spotMap = spot.associate { it.symbol to it.last }
-                futures = list.mapNotNull { MarketRow.futures(it) }.map { row ->
+                val spotMap = spotRaw.associate { it.symbol to it.last }
+                futuresRaw = list.mapNotNull { MarketRow.futures(it) }.map { row ->
                     if (row.last.signum() == 0) row.copy(last = spotMap[row.symbol] ?: BigDecimal.ZERO) else row
                 }
             }
+            val tradFi = r.tradFiSymbols ?: cur.tradFiSymbols
+            // 客户端剔除：后端 spot/futures ticker 若混入 TradFi 品种，现货/合约 tab 不再展示。
+            val part = click.cowa.linbit.feature.markets.MarketsTabCatalog.partition(spotRaw, futuresRaw, tradFi)
             val rate = Dec.parseOrNull(r.cnyRate)?.takeIf { it.signum() > 0 }
-            val spotCats = r.spotCategories ?: cur.spotCategories.ifEmpty { cur.categories }
-            val futCats = r.futuresCategories ?: cur.futuresCategories
+            val spotCatsRaw = r.spotCategories ?: cur.spotCategories.ifEmpty { cur.categories }
+            val futCatsRaw = r.futuresCategories ?: cur.futuresCategories
+            val spotCats = click.cowa.linbit.feature.markets.MarketsTabCatalog.sanitizeCategories(
+                spotCatsRaw, tradFi, part.spot.map { it.symbol }.toSet(),
+            )
+            val futCats = click.cowa.linbit.feature.markets.MarketsTabCatalog.sanitizeCategories(
+                futCatsRaw, tradFi, part.futures.map { it.symbol }.toSet(),
+            )
             cur.copy(
-                spot = spot, futures = futures,
+                spot = part.spot, futures = part.futures,
                 categories = spotCats,
                 spotCategories = spotCats,
                 futuresCategories = futCats,
-                tradFiSymbols = r.tradFiSymbols ?: cur.tradFiSymbols,
+                tradFiSymbols = tradFi,
+                tradFiSpotRows = part.tradFiSpotRows,
+                tradFiFuturesRows = part.tradFiFuturesRows,
                 cnyRate = rate ?: cur.cnyRate, loading = false,
                 error = if (r.spot == null && r.futures == null) "行情加载失败，请检查网络" else null,
             )

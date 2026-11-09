@@ -91,6 +91,8 @@ fun MarketsContent(
     onAddWatch: (Set<String>) -> Unit,
     modifier: Modifier = Modifier,
     initialTop: Int = 1,
+    /** 市场二级：0 现货 / 1 合约 / 2 TradFi（离屏证据与深链用）。 */
+    initialKind: Int = 0,
     onOpenTrade: (MarketKind, String) -> Unit = { _, _ -> },
     onSearch: () -> Unit = {},
     onChatOverlay: (Boolean) -> Unit = {},
@@ -103,7 +105,7 @@ fun MarketsContent(
     var menu by remember { mutableStateOf(false) }
     var widgets by remember { mutableStateOf(false) }
     var iconSheet by remember { mutableStateOf(false) }       // 0 自选 1 市场 2 聊天室
-    var kind by rememberSaveable { mutableIntStateOf(0) }      // 现货 / 合约 / TradFi
+    var kind by rememberSaveable(initialKind) { mutableIntStateOf(initialKind.coerceIn(0, 2)) }      // 现货 / 合约 / TradFi
     var category by rememberSaveable { mutableIntStateOf(0) }
     var field by rememberSaveable { mutableStateOf(SortField.VOLUME) }
     var dir by rememberSaveable { mutableStateOf(SortDir.NONE) }
@@ -221,7 +223,7 @@ private fun WatchlistTab(onAddWatch: (Set<String>) -> Unit, state: click.cowa.li
         }
         return
     }
-    val watchedRows = MarketsTabCatalog.watchRows(watch, state.spot, state.futures, state.tradFiSymbols, sub)
+    val watchedRows = MarketsTabCatalog.watchRows(watch, state.spot, state.futures, state.tradFiSymbols, sub, state.tradFiSpotRows, state.tradFiFuturesRows)
         .sortedByField(field, dir)
     if (watchedRows.isEmpty()) {
         EmptyState(

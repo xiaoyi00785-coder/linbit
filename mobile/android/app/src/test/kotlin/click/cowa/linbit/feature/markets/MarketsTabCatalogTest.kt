@@ -11,83 +11,107 @@ import org.junit.Test
 import java.math.BigDecimal
 
 class MarketsTabCatalogTest {
-    private fun row(sym: String, kind: MarketKind, vol: String = "1") = MarketRow(
-        symbol = sym,
-        base = sym.removeSuffix("USDT"),
-        quote = "USDT",
-        last = BigDecimal.ONE,
-        changePct = BigDecimal.ZERO,
-        quoteVolume = BigDecimal(vol),
-        precision = 2,
-        kind = kind,
+    private fun row(sym: String, kind: MarketKind) = MarketRow(
+        symbol = sym, base = sym.removeSuffix("USDT"), quote = "USDT",
+        last = BigDecimal.ONE, changePct = BigDecimal.ZERO, quoteVolume = BigDecimal.ONE,
+        precision = 2, kind = kind,
     )
 
-    private val spot = listOf(
-        row("BTCUSDT", MarketKind.SPOT),
-        row("ETHUSDT", MarketKind.SPOT),
-        row("AAPLUSDT", MarketKind.SPOT),
-        row("TSLAUSDT", MarketKind.SPOT),
+    private val tradFi = setOf(
+        "AAPLUSDT", "AMZNUSDT", "COINUSDT", "GOOGLUSDT", "METAUSDT", "MSFTUSDT",
+        "NVDAUSDT", "PAXGUSDT", "SPYUSDT", "TSLAUSDT", "XAUTUSDT", "XAGUSDT", "WTIUSDT",
     )
-    private val futures = listOf(
-        row("BTCUSDT", MarketKind.FUTURES),
-        row("DOGEUSDT", MarketKind.FUTURES),
-        row("XRPUSDT", MarketKind.FUTURES),
-        row("WTIUSDT", MarketKind.FUTURES),
-    )
-    private val tradFi = setOf("AAPLUSDT", "TSLAUSDT", "WTIUSDT", "XAGUSDT")
 
-    @Test fun spotAndFuturesListsAreDistinct() {
-        val spotSyms = spot.map { it.symbol }.toSet()
-        val futSyms = futures.map { it.symbol }.toSet()
-        assertTrue("futures-only DOGE must not be in spot", "DOGEUSDT" in futSyms && "DOGEUSDT" !in spotSyms)
-        assertTrue("spot-only AAPL must not be in futures", "AAPLUSDT" in spotSyms && "AAPLUSDT" !in futSyms)
-        assertFalse(spotSyms == futSyms)
+    private val spotRaw = listOf(
+        row("BTCUSDT", MarketKind.SPOT), row("ETHUSDT", MarketKind.SPOT), row("BNBUSDT", MarketKind.SPOT),
+        row("SOLUSDT", MarketKind.SPOT), row("TRXUSDT", MarketKind.SPOT),
+        row("AAPLUSDT", MarketKind.SPOT), row("AMZNUSDT", MarketKind.SPOT), row("COINUSDT", MarketKind.SPOT),
+        row("GOOGLUSDT", MarketKind.SPOT), row("METAUSDT", MarketKind.SPOT), row("MSFTUSDT", MarketKind.SPOT),
+        row("NVDAUSDT", MarketKind.SPOT), row("PAXGUSDT", MarketKind.SPOT), row("SPYUSDT", MarketKind.SPOT),
+        row("TSLAUSDT", MarketKind.SPOT), row("XAUTUSDT", MarketKind.SPOT),
+    )
+    private val futRaw = listOf(
+        row("BTCUSDT", MarketKind.FUTURES), row("ETHUSDT", MarketKind.FUTURES), row("BNBUSDT", MarketKind.FUTURES),
+        row("SOLUSDT", MarketKind.FUTURES), row("XRPUSDT", MarketKind.FUTURES), row("DOGEUSDT", MarketKind.FUTURES),
+        row("ARBUSDT", MarketKind.FUTURES), row("TONUSDT", MarketKind.FUTURES), row("LINKUSDT", MarketKind.FUTURES),
+        row("AVAXUSDT", MarketKind.FUTURES), row("XAGUSDT", MarketKind.FUTURES), row("WTIUSDT", MarketKind.FUTURES),
+    )
+
+    @Test fun partitionRemovesTradFiFromSpotAndFutures() {
+        val p = MarketsTabCatalog.partition(spotRaw, futRaw, tradFi)
+        assertEquals(
+            listOf("BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "TRXUSDT"),
+            p.spot.map { it.symbol },
+        )
+        assertFalse(p.spot.any { it.symbol in tradFi })
+        assertFalse(p.futures.any { it.symbol in tradFi })
+        assertTrue("XAG must leave futures", "XAGUSDT" !in p.futures.map { it.symbol })
+        assertTrue("WTI must leave futures", "WTIUSDT" !in p.futures.map { it.symbol })
+        assertTrue(p.tradFiSpotRows.map { it.symbol }.toSet().containsAll(setOf("AAPLUSDT", "PAXGUSDT")))
+        assertTrue(p.tradFiFuturesRows.map { it.symbol }.toSet().containsAll(setOf("XAGUSDT", "WTIUSDT")))
+        assertEquals(
+            emptySet<String>(),
+            MarketsTabCatalog.tradFiLeaksIntoSpotOrFutures(
+                p.spot.map { it.symbol }, p.futures.map { it.symbol }, tradFi,
+            ),
+        )
+    }
+
+    @Test fun tradFiDoesNotLeakIntoSpotOrFutures() {
+        val p = MarketsTabCatalog.partition(spotRaw, futRaw, tradFi)
+        assertEquals(
+            emptySet<String>(),
+            MarketsTabCatalog.tradFiLeaksIntoSpotOrFutures(
+                p.spot.map { it.symbol }, p.futures.map { it.symbol }, tradFi,
+            ),
+        )
+        // 参考 App：现货/合约可同名（BTCUSDT 等）；不得与 TradFi 集合交叉
+        val cryptoOverlap = MarketsTabCatalog.spotFuturesSymbolOverlap(p.spot.map { it.symbol }, p.futures.map { it.symbol })
+        assertTrue(cryptoOverlap.contains("BTCUSDT"))
+        assertTrue(cryptoOverlap.none { it in tradFi })
     }
 
     @Test fun watchEmptyNeverReturnsFullMarket() {
-        val rows = MarketsTabCatalog.watchRows(emptyList(), spot, futures, tradFi, MarketsTabCatalog.WatchSubTab.ALL)
-        assertTrue(rows.isEmpty())
-    }
-
-    @Test fun watchFiltersBySubTab() {
-        val watch = listOf("BTCUSDT", "AAPLUSDT", "DOGEUSDT", "WTIUSDT")
-        val all = MarketsTabCatalog.watchRows(watch, spot, futures, tradFi, MarketsTabCatalog.WatchSubTab.ALL)
-        val sp = MarketsTabCatalog.watchRows(watch, spot, futures, tradFi, MarketsTabCatalog.WatchSubTab.SPOT)
-        val fu = MarketsTabCatalog.watchRows(watch, spot, futures, tradFi, MarketsTabCatalog.WatchSubTab.FUTURES)
-        val tf = MarketsTabCatalog.watchRows(watch, spot, futures, tradFi, MarketsTabCatalog.WatchSubTab.TRADFI)
-        assertEquals(setOf("BTCUSDT", "AAPLUSDT", "DOGEUSDT", "WTIUSDT"), all.map { it.symbol }.toSet())
-        assertEquals(setOf("BTCUSDT", "AAPLUSDT"), sp.map { it.symbol }.toSet())
-        assertTrue(sp.all { it.kind == MarketKind.SPOT })
-        assertEquals(setOf("BTCUSDT", "DOGEUSDT", "WTIUSDT"), fu.map { it.symbol }.toSet())
-        assertTrue(fu.all { it.kind == MarketKind.FUTURES })
-        assertEquals(setOf("AAPLUSDT", "WTIUSDT"), tf.map { it.symbol }.toSet())
-    }
-
-    @Test fun recommendDiffersBySubTab() {
-        val all = MarketsTabCatalog.recommendSymbols(spot, futures, tradFi.toList(), MarketsTabCatalog.WatchSubTab.ALL)
-        val sp = MarketsTabCatalog.recommendSymbols(spot, futures, tradFi.toList(), MarketsTabCatalog.WatchSubTab.SPOT)
-        val fu = MarketsTabCatalog.recommendSymbols(spot, futures, tradFi.toList(), MarketsTabCatalog.WatchSubTab.FUTURES)
-        val tf = MarketsTabCatalog.recommendSymbols(spot, futures, tradFi.toList(), MarketsTabCatalog.WatchSubTab.TRADFI)
-        assertTrue(sp.all { it in spot.map { r -> r.symbol } })
-        assertTrue(fu.all { it in futures.map { r -> r.symbol } })
-        assertEquals(tradFi.toList().sorted().take(8), tf)
-        assertFalse(sp == fu)
-        assertFalse(sp.toSet() == tf.toSet())
-    }
-
-    @Test fun marketStateFilteredUsesKindSpecificCategories() {
-        val spotCats = listOf(ApiMarketCategory(id = "stocks", name = "股票", symbols = listOf("AAPLUSDT", "TSLAUSDT")))
-        val futCats = listOf(ApiMarketCategory(id = "commodities", name = "大宗商品", symbols = listOf("WTIUSDT")))
-        val state = MarketState(
-            spot = spot,
-            futures = futures,
-            spotCategories = spotCats,
-            futuresCategories = futCats,
-            categories = spotCats,
+        val p = MarketsTabCatalog.partition(spotRaw, futRaw, tradFi)
+        assertTrue(
+            MarketsTabCatalog.watchRows(
+                emptyList(), p.spot, p.futures, tradFi, MarketsTabCatalog.WatchSubTab.ALL,
+                p.tradFiSpotRows, p.tradFiFuturesRows,
+            ).isEmpty(),
         )
-        assertEquals(listOf("AAPLUSDT", "TSLAUSDT"), state.filtered(MarketKind.SPOT, 1).map { it.symbol })
-        assertEquals(listOf("WTIUSDT"), state.filtered(MarketKind.FUTURES, 1).map { it.symbol })
-        assertEquals(spot.map { it.symbol }, state.filtered(MarketKind.SPOT, 0).map { it.symbol })
-        assertEquals(futures.map { it.symbol }, state.filtered(MarketKind.FUTURES, 0).map { it.symbol })
+    }
+
+    @Test fun watchTradFiUsesExcludedRows() {
+        val p = MarketsTabCatalog.partition(spotRaw, futRaw, tradFi)
+        val rows = MarketsTabCatalog.watchRows(
+            listOf("AAPLUSDT", "WTIUSDT", "BTCUSDT"),
+            p.spot, p.futures, tradFi, MarketsTabCatalog.WatchSubTab.TRADFI,
+            p.tradFiSpotRows, p.tradFiFuturesRows,
+        )
+        assertEquals(setOf("AAPLUSDT", "WTIUSDT"), rows.map { it.symbol }.toSet())
+    }
+
+    @Test fun sanitizeCategoriesDropsTradFiAndEmpty() {
+        val cats = listOf(
+            ApiMarketCategory("stocks", "股票", listOf("AAPLUSDT", "TSLAUSDT")),
+            ApiMarketCategory("layer1", "公链", listOf("BTCUSDT", "ETHUSDT", "AAPLUSDT")),
+            ApiMarketCategory("meme", "Meme", emptyList()),
+        )
+        val allowed = setOf("BTCUSDT", "ETHUSDT")
+        val out = MarketsTabCatalog.sanitizeCategories(cats, tradFi, allowed)
+        assertEquals(1, out.size)
+        assertEquals("layer1", out[0].id)
+        assertEquals(listOf("BTCUSDT", "ETHUSDT"), out[0].symbols)
+    }
+
+    @Test fun marketStateFilteredUsesSanitizedCats() {
+        val p = MarketsTabCatalog.partition(spotRaw, futRaw, tradFi)
+        val spotCats = MarketsTabCatalog.sanitizeCategories(
+            listOf(ApiMarketCategory("layer1", "公链", listOf("BTCUSDT", "ETHUSDT", "AAPLUSDT"))),
+            tradFi, p.spot.map { it.symbol }.toSet(),
+        )
+        val state = MarketState(spot = p.spot, futures = p.futures, spotCategories = spotCats, categories = spotCats, tradFiSymbols = tradFi)
+        assertEquals(listOf("BTCUSDT", "ETHUSDT"), state.filtered(MarketKind.SPOT, 1).map { it.symbol })
+        assertTrue(state.filtered(MarketKind.SPOT, 0).none { it.symbol in tradFi })
     }
 }
