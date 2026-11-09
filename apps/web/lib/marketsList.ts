@@ -1,4 +1,5 @@
 "use client";
+/** 行情分类与服务端排序。分类接口失败时退回 tags，再退回本地映射；价格仍取实时行情。 */
 import { useEffect, useState } from "react";
 import { restBase } from "./market";
 

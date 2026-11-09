@@ -1,3 +1,5 @@
+/** 登录态（Zustand + localStorage，键名 lb-auth），替代原型里的 auth.js 事件。
+ *  只存 accessToken / refreshToken；过期换票在 rest.refreshAccess，失败则 logout。 */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -14,10 +16,6 @@ export interface AuthState {
   logout: () => void;
 }
 
-/**
- * 认证状态（Zustand + localStorage 持久化）。
- * 替代原型里基于 localStorage 事件的 auth.js。
- */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

@@ -1,3 +1,6 @@
+/** /gw/* 的服务端入口，全部方法交给 lib/gwProxy。
+ *  runtime=nodejs、dynamic=force-dynamic，避免把带身份头的响应静态缓存。
+ *  lib/gwProxy.ts 必须与 apps/partner/lib/gwProxy.ts 逐字相同，check-gw-proxy.mjs 会比这两份文件。 */
 import { proxyGw } from "@/lib/gwProxy";
 
 export const runtime = "nodejs";

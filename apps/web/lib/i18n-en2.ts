@@ -39,7 +39,7 @@ export const EN_T: Record<string, string> = {
   "扣除链上":"minus on-chain","到账":"credited","平台不收手续费":"no platform fee","你尚未设置资金密码，本次无需填写。建议前往":"You haven't set a fund password, so none is needed this time. We recommend setting one in","设置以提升资金安全。":"to better protect your funds.","成交量":"Volume",
   "资金密码错误次数过多，已锁定。":"Too many incorrect fund password attempts. Locked.",
   "请先设置资金密码，设置后才能转账。":"Set a fund password first to make transfers.","请先设置资金密码，设置后才能提现。":"Set a fund password first to make withdrawals.",
-  // split-sentence backfill
+  // 拆句回填：整句被拆开后，把落单的片段补进词典
   "短信验证码":"SMS code",
   "邮箱验证码":"Email code",
   "谷歌验证器":"Google Authenticator",
@@ -94,7 +94,7 @@ export const EN_P: [string, string][] = [
   ["✓ 提现申请已提交（{}），状态：审核中", "✓ Withdrawal request submitted ({}). Status: Under review"],
   ["资金密码错误次数过多，已锁定至 {}。", "Too many incorrect fund password attempts. Locked until {}."],
   ["订单状态：{}", "Order status: {}"],
-  // split-sentence backfill
+  // 拆句回填：整句被拆开后，把落单的片段补进词典
   ["验证码已发送至 {}，请在有效期内输入。", "Code sent to {}. Enter it before it expires."],
   ["检测到新设备登录，验证码已发送至 {}（{}）。", "New device detected. Code sent to {} ({})."],
   ["未找到匹配“{}”的交易对", "No pairs matching \"{}\""],

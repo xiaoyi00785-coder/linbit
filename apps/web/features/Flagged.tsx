@@ -167,6 +167,7 @@ export function Chat() {
     if (!authed) { window.location.assign("/login"); return; }
     const t = text.trim(); if (!t) return;
     if (rules?.maxLength && t.length > rules.maxLength) return toast(`消息不能超过 ${rules.maxLength} 字`, "err");
+    // 本地先按 rules.minIntervalMs 拦住连发；服务端 CHAT_RATE_LIMITED 仍走 errMsg
     if (rules?.minIntervalMs && Date.now() - last < rules.minIntervalMs) return toast(ERR.RATE_LIMITED, "err");
     const clientId = cid("chat");
     const r = await rest<Msg>("POST", `/chat/rooms/${encodeURIComponent(room)}/messages`, { clientId, text: t });

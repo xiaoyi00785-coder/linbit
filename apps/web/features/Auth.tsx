@@ -1,4 +1,5 @@
 "use client";
+/** 登录、注册与找回密码。回跳只允许站内路径；登录 429 按 Retry-After 倒计时并禁用按钮。 */
 import { passkeyLogin, webauthnSupported } from "@/lib/security";
 import { deviceId, deviceName } from "@/lib/account";
 import { G } from "@/components/Glyph";

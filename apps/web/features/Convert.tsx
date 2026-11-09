@@ -2,7 +2,7 @@
 /**
  * 闪兑：选币 → 数量 → 实时报价（10s 倒计时，到期自动重新报价）→ 确认 → 成功弹窗 → 兑换记录（分页）。
  * 接口（docs/api/convert.md）：
- *   GET  /convert/pairs  (public) → { assets:[{asset,precision}], pairs:[{from,to,fromPrecision,toPrecision,spreadBps,route}], minUsdt, maxUsdt, spreadBps, fee, quoteTtlSeconds }
+ *   GET  /convert/pairs（公开）→ { assets:[{asset,precision}], pairs:[{from,to,fromPrecision,toPrecision,spreadBps,route}], minUsdt, maxUsdt, spreadBps, fee, quoteTtlSeconds }
  *   POST /convert/quote  {from,to,fromAmount|toAmount} → { quoteId, rate, inverseRate, fromAmount, toAmount, fee, expiresAt, ttlSeconds }
  *   POST /convert/accept {quoteId} → { order, replay }（幂等）
  *   GET  /convert/orders?page&pageSize&asset → { items, page, pageSize, total }

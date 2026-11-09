@@ -1,4 +1,5 @@
 "use client";
+/** 营销配置、定期最高 APR、储备证明。拿不到接口时不写死金额与年化。 */
 import { useEffect, useState } from "react";
 import type { components } from "@linbit/api-client";
 import { api } from "./api";
@@ -44,7 +45,7 @@ export const useGrowthConfig = () => useLoad(loadGrowth);
 /** 定期理财最高 APR（小数），来自 GET /earn/products?kind=fixed */
 export const useMaxFixedApr = () => useLoad(loadMaxFixedApr);
 
-/** GET /market/proof-of-reserves */
+/** 储备证明：GET /market/proof-of-reserves。未发布时 available=false，调用方显示空态，不写死储备数字。 */
 export function useProofOfReserves() {
   const [v, setV] = useState<ProofOfReserves | null | undefined>(undefined);
   useEffect(() => {

@@ -1,3 +1,5 @@
+/** 全局 API 客户端：请求自动带 Bearer 与设备 ID。
+ *  401 交给 rest.refreshAccess，与 rest.ts 并发共用同一次刷新。 */
 import { createApiClient, DEFAULT_BASE_URL } from "@linbit/api-client";
 import { useAuthStore } from "./store";
 
