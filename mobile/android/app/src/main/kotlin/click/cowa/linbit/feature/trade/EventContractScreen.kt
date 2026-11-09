@@ -1,5 +1,7 @@
 package click.cowa.linbit.feature.trade
 
+import kotlinx.coroutines.ensureActive
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -391,7 +393,7 @@ class EventContractViewModel @Inject constructor(
     }
 }
 
-private val EV_INTERVALS = listOf("1m" to "1m", "5m" to "5m", "15m" to "15m", "30m" to "30m", "1h" to "1h", "4h" to "4h", "1d" to "1D")
+private val EV_INTERVALS = CHART_INTERVALS
 
 private fun ma(c: List<Candle>, n: Int): List<Double?> = c.indices.map { i -> if (i + 1 < n) null else (i - n + 1..i).sumOf { c[it].close.toDouble() } / n }
 private fun ema(c: List<Candle>, n: Int): List<Double?> {
@@ -415,7 +417,7 @@ internal fun EventChart(vm: EventContractViewModel) {
     LaunchedEffect(vm.symbol, interval) {
         err = null; candles = null
         while (true) {
-            try { candles = vm.klines(interval).sortedBy { it.timeMs }.distinctBy { it.timeMs }; err = null } catch (e: Throwable) { if (candles == null) err = e.lbMessage() }
+            try { val result = vm.klines(interval).sortedBy { it.timeMs }.distinctBy { it.timeMs }; kotlinx.coroutines.currentCoroutineContext().ensureActive(); candles = result; err = null } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { if (candles == null) err = e.lbMessage() }
             delay(10_000)
         }
     }
@@ -428,13 +430,14 @@ internal fun EventChart(vm: EventContractViewModel) {
     LaunchedEffect(vm.symbol,interval) { drawingState.cancelDraft() }
     if (showDrawing) ChartDrawingSheet(drawingState) { showDrawing=false }
     Row(Modifier.fillMaxWidth().padding(start = pageH - 4.dp, end = pageH).height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         EV_INTERVALS.forEach { (k, label) ->
             val on = k == interval
             Text(label, Modifier.clip(RoundedCornerShape(4.dp)).background(if (on) p.fill else androidx.compose.ui.graphics.Color.Transparent)
                 .pressable(scale = 1f) { interval = k }.padding(horizontal = 8.dp, vertical = 4.dp), style = lb(FontSize.small, if (on) FontWeight.SemiBold else FontWeight.Normal),
                 color = if (on) p.textPrimary else p.textSecondary)
         }
-        Spacer(Modifier.weight(1f))
+        }
         LbIcon(R.drawable.ic_draw_line, 16.dp, if (drawingState.tool != DrawingTool.NONE) p.brand else p.textSecondary, Modifier.testTag("event.drawing.tools").semantics { contentDescription = "画线工具" }.pressable { showDrawing = true })
         Spacer(Modifier.width(12.dp))
         LbIcon(R.drawable.ic_chart_settings, 16.dp, p.textSecondary, Modifier.pressable { showInd = true })

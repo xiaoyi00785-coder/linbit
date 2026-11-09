@@ -1,5 +1,7 @@
 package click.cowa.linbit.feature.home
 
+import click.cowa.linbit.core.network.lbMessage
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import click.cowa.linbit.core.generated.ApiEarnProduct
@@ -45,6 +47,8 @@ data class HomeState(
     val carousel: List<click.cowa.linbit.core.generated.ApiPlacement> = emptyList(),
     val searchHint: String? = null,
     val tradfiSymbols: Set<String> = emptySet(),
+    val announcements: List<click.cowa.linbit.core.generated.ApiAnnouncement>? = null,
+    val announcementsError: String? = null,
     val academy: List<click.cowa.linbit.feature.markets.ApiAcademyArticle>? = null,
     /** 新人奖励总额（/growth/config newcomer.total，兜底为任务奖励合计）。 */
     val newcomerTotal: String? = null,
@@ -85,6 +89,7 @@ class HomeViewModel @Inject constructor(
                 val pl = async { runCatching { apiCall { api.homePlacements() } }.getOrNull() }
                 val growth = async { runCatching { apiCall { api.growthConfig() } }.getOrNull() }
                 val tf = async { runCatching { apiCall { api.tradFiAssets() } }.getOrNull() }
+                val announcements = async { runCatching { apiCall { api.announcements() } } }
                 val ac = async { runCatching { apiCall { api.academyArticles(limit = 5) } }.getOrNull() }
                 val m = async { if (refreshMarket && market.state.value.spot.isEmpty()) market.load() }
                 m.await()
@@ -94,6 +99,8 @@ class HomeViewModel @Inject constructor(
                     totalUsdt = Dec.parse(overview.await()?.totalValueUsdt),
                     refreshing = false,
                     tradfiSymbols = tf.await()?.items.orEmpty().mapNotNull { it.symbol }.toSet(),
+                    announcements = announcements.await().getOrNull()?.let { it.items.orEmpty() },
+                    announcementsError = announcements.await().exceptionOrNull()?.lbMessage(),
                     academy = ac.await()?.items ?: _state.value.academy,
                     popups = pl.await()?.slots?.get("popup").orEmpty().filter { !it.imageUrl.isNullOrBlank() },
                     carousel = pl.await()?.slots?.get("carousel").orEmpty().filter { !it.imageUrl.isNullOrBlank() },

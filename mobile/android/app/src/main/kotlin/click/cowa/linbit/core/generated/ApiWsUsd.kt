@@ -21,12 +21,19 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * REST ticker 与 WebSocket ticker 共用的 USD 折合对象；不可用时不伪造价格。
+ * REST 与 WebSocket 共用；冻结 usdrate.go JSON 字段，时间 RFC3339。
  *
  * @param available
  * @param stale
  * @param price
  * @param rate
+ * @param source
+ * @param updatedAt
+ * @param precision
+ * @param rounding
+ * @param convention
+ * @param pegAssumed
+ * @param reason
  */
 @Serializable
 
@@ -42,7 +49,28 @@ data class ApiWsUsd (
     val price: kotlin.String? = null,
 
     @SerialName(value = "rate")
-    val rate: kotlin.String? = null
+    val rate: kotlin.String? = null,
+
+    @SerialName(value = "source")
+    val source: kotlin.String? = null,
+
+    @SerialName(value = "updatedAt")
+    val updatedAt: kotlin.String? = null,
+
+    @SerialName(value = "precision")
+    val precision: kotlin.Int? = null,
+
+    @SerialName(value = "rounding")
+    val rounding: kotlin.String? = null,
+
+    @SerialName(value = "convention")
+    val convention: kotlin.String? = null,
+
+    @SerialName(value = "pegAssumed")
+    val pegAssumed: kotlin.Boolean? = null,
+
+    @SerialName(value = "reason")
+    val reason: kotlin.String? = null
 
 ) {
 

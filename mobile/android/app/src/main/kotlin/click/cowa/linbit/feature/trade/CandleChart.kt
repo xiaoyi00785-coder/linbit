@@ -1,5 +1,10 @@
 package click.cowa.linbit.feature.trade
 
+import androidx.compose.runtime.mutableIntStateOf
+
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -102,8 +107,10 @@ fun CandleChart(candles: List<Candle>, pricePrec: Int, modifier: Modifier = Modi
     }
 }
 
-/** 后端 ApiKlineInterval 支持的全部周期（参考另有 3m/2h/6h/12h/1M，后端未提供，见 gaps）。 */
-private val ALL_INTERVALS = listOf("1m" to "1m", "5m" to "5m", "15m" to "15m", "30m" to "30m", "1h" to "1h", "4h" to "4h", "1d" to "1D", "1w" to "1W")
+/** 冻结契约 12 项；部署前新增周期可能报错，绝不伪造 K 线。 */
+internal val CHART_INTERVALS = listOf("1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w")
+    .map { it to when(it) { "1d" -> "1D"; "1w" -> "1W"; else -> it } }
+private val ALL_INTERVALS = CHART_INTERVALS
 /** 参考 029：常用周期平铺，其余收进「更多」弹层（030）。 */
 private val QUICK_INTERVALS = listOf("15m", "1h", "4h", "1d")
 
@@ -128,11 +135,13 @@ fun TradeChartPanel(
     var trades by remember { mutableStateOf<List<ApiFuturesPublicTrade>>(emptyList()) }
     var tradesErr by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(symbol, interval) {
-        loading = true; error = null
-        try { candles = loadCandles(interval); error = null }
+    var retry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(symbol, interval, retry) {
+        loading = true; error = null; candles = null
+        try { val result = loadCandles(interval); kotlinx.coroutines.currentCoroutineContext().ensureActive(); candles = result }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Throwable) { error = e.message ?: "加载失败"; candles = null }
-        finally { loading = false }
+        finally { if (kotlinx.coroutines.currentCoroutineContext().isActive) loading = false }
     }
     LaunchedEffect(symbol, tab, showTrades) {
         if (tab != 1 || loadTrades == null) return@LaunchedEffect
@@ -183,7 +192,7 @@ fun TradeChartPanel(
                 ) { CircularProgressIndicator(Modifier.height(24.dp), color = p.textSecondary, strokeWidth = 2.dp) }
                 error != null && candles == null -> Column(Modifier.fillMaxWidth().height(180.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Text(error ?: "", style = lb(FontSize.small), color = p.down)
-                    ChipButton("重试", Modifier.padding(top = 8.dp).height(28.dp)) { interval = interval } // retrigger via same value — use key bump
+                    ChipButton("重试", Modifier.padding(top = 8.dp).height(28.dp)) { retry++ }
                 }
                 candles.isNullOrEmpty() -> EmptyState("暂无 K 线数据")
                 else -> CandleChart(candles!!, pricePrec)

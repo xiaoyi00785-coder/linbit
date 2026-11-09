@@ -6,7 +6,7 @@
 - 闪兑记录页无筛选（参考有筛选图标）；`GET /convert/orders` 无 asset/时间筛选参数。
 
 ## 首页
-- 参考登录态榜单下方有「公告 / 快讯 / 学院」。冻结候选 be357384 已有 `/announcements` 及详情接口，Android 尚未接入；不能再列为后端缺接口。无独立快讯契约；学院取 `/academy/articles?limit=5`。候选未部署，不能据此声称生产可用。
+- 参考登录态榜单下方有「公告 / 快讯 / 学院」。候选已有 `/announcements` 及详情接口，Batch8 Android 已接首页公告区列表→详情（公开 GET）；不能再列为后端缺接口。无独立快讯契约；学院取 `/academy/articles?limit=5`。候选未部署，不能据此声称生产可用。
 - 榜单 TradFi 分组用 `/tradfi/assets` 的 symbol 过滤合约行情。
 - 首页轮播运营位为空时本地兜底为 福利中心 / 跟单 / 策略交易 三张（自绘矢量配图，指向 App 内真实页面）；有后端 carousel 图片时用后端图片。
 
@@ -19,7 +19,7 @@
 - 杠杆弹层「最大仓位」取风险档位 `maxNotional`，缺档位时显示 `--`。
 
 ## 资产页
-- `GET /futures/account` 无体验金、抵扣金字段 → 合约账户卡这两格显示 `--`（参考显示 0.00）。
+- `GET /futures/account` 无体验金、抵扣金字段；`/futures/bonus.available` 已在 Batch8 福利中心按两字段展示。合约资产卡尚未串接该独立只读接口，仍显示 `--`，属于后续前端接入，不应说后端无赠金接口。
 - 零余额币种列表：资金账户取 `/wallet/networks` 的 asset 去重，现货取行情 USDT 交易对 base；余额为真实 0。
 - 币种详情页：参考点币种进入详情（本轮未截到参考详情页），我们点币种进入充值页。
 
@@ -34,7 +34,7 @@
 
 ## 福利中心
 - `GET /home/newcomer` 的 `claimable` 旧观察为数字；冻结候选 be357384 正式为字符串计数 `"0"/"1"`，不是金额；`completed` 为 integer。Android DTO 已是 String，宽松 number 仅兼容旧生产，不反改正式类型。
-- `GET /futures/bonus` 的 `available` 正式冻结契约是 `{trial, deduction}` 十进制字符串对象；Android 双 spec/生成 DTO 仍是 String，属于前端适配缺口，不应要求后端改回标量。留下一批同步 spec、重生成及福利消费方。
+- `GET /futures/bonus` 的 `available` 正式冻结契约是 `{trial, deduction}` 十进制字符串对象；Batch8 已同步双 spec、生成对象 DTO 并在福利中心独立展示；缺失/错误显示 `--`，真实零显示 0，不相加冒充资产余额。不能要求后端改回标量。
 - 无「每日任务」接口：每日任务标签显示「暂无每日任务」。
 - 新人任务仅有单一有效期（days），参考的 7/30/90 天分档无后端来源，只显示实际天数。
 - 无理财/现货类新人任务：对应筛选为空态。
@@ -43,13 +43,13 @@
 
 ## 事件合约
 - 结算周期以 `/event/products.periods` 为准（5m/15m/30m/1h/4h/1d）；参考的 10m 无后端来源，不显示。
-- 参考 K 线周期含 10m；`/market/klines` 无 10m，K 线周期显示 1m/5m/15m/30m/1h/4h/1D。
+- 参考 K 线周期含 10m；`/market/klines` 无 10m，Batch8 按候选契约展示 1m/3m/5m/15m/30m/1h/2h/4h/6h/12h/1d/1w；无 1M/10m。部署前错误如实显示，不保留另一周期图当数据。
 - 指标：MA / BOLL / EMA / Supertrend 由客户端用真实 K 线计算；Supertrend 使用 Wilder ATR 10 / 倍数 3（参考参数尚未采集确认），不需后端计算。已实现本地水平线、两点趋势线、选中删除/撤销/确认清空及缩放，按币种/周期隔离；仅参考画线入口可证实，具体工具菜单缺参考素材，不能称全套一比一。
 - 「⋯」菜单：参考有 交易规则 / 历史数据 / 区间交易限额 / FAQ / 新手指引；后端无历史数据、区间限额、FAQ 内容接口，仅保留 交易规则（按 products 配置生成）与 新手指引。
 - 看涨/看跌收益率共用 `payoutRatio`（后端无分方向赔率）。
-- 下单扣款账户假定为现货（参考「Available Spot Balance」）；OpenAPI 未注明扣款账户，需后端确认。
+- 冻结候选文档/实现已确认扣现货 USDT；只是代码级确认，不是生产交易验证。本批未下单。
 
-## 新契约对接状态（2026-11-08 生产 api.cowa.click 实测）
+## 新契约对接状态（历史观察与运维反馈，非 Batch8 生产实测）
 
 | 接口 | 生产状态 | 安卓处理 |
 |---|---|---|
@@ -57,8 +57,10 @@
 | `GET /home/placements` | 已部署，所有槽位为空 | 请求 popup,carousel,search_hint；carousel 有数据用后端，为空时显示三张自有配图兜底 banner（福利中心/跟单/策略交易，可手滑、自动轮播），popup 为空不弹，search_hint 为空时搜索框占位 BTC |
 | `GET /market/proof-of-reserves` | 已部署，`available=false` | 储备金证明弹层如实显示「暂未发布」空态 |
 | `GET /market/usd-rate` | **未部署（404）**，仅在分支 cursor/android-backend-companion-43c2 | 失败时不假设 1 USDT = 1 USD：折合价显示 `$--` |
-| REST ticker `usd` 字段 / WS ticker `usd` | **未部署**（生产 ticker 无 usd） | 已解析 `usd.available/price/rate/stale`；行情行优先显示 usd.price，usd-rate 缺失时用 ticker usd.rate 兜底，均缺失显示 `--` |
-| `GET/PUT/DELETE /assets/deposit-account` | 2026-11-08 运维反馈：本轮生产测试被 WAF 403/error1010 拦截，不能由此判定部署状态；历史曾返回404不代表当前 | 后端当前候选仅 funding/spot；合约直充不得开放。前端仅按服务端 supported 启用候选；需 WAF 正常放行后只读联调，禁止绕过 |
-| K 线周期 `ApiKlineInterval` | 仅 1m/5m/15m/30m/1h/4h/1d/1w | 周期弹层只列后端支持的 8 个；参考的 3m/2h/6h/12h/1M 与「偏好周期」设置后端未提供，未显示 |
+| REST ticker `usd` 字段 / WS ticker `usd` | **未部署**（生产 ticker 无 usd） | Batch8 已完整解析 `available/price/rate/source/updatedAt/stale/precision/rounding/convention/pegAssumed/reason`；行情行优先显示 usd.price，usd-rate 缺失时用 ticker usd.rate 兜底，均缺失显示 `--` |
+| `GET/PUT/DELETE /assets/deposit-account` | 运维最新内网反馈未部署（404）；公网 403/error1010 是 WAF，须区分来源，不绕过 | 后端当前候选仅 funding/spot；合约直充不得开放。前端仅按服务端 supported 启用候选；需 WAF 正常放行后只读联调，禁止绕过 |
+| K 线周期 `ApiKlineInterval` | 历史生产仅8项；候选正式12项，未据此确认部署 | Batch8 UI/生成枚举按12项适配，新增3m/2h/6h/12h；不支持1M，错误不伪造为成功 |
 
 后端待办：部署 companion 分支的 `/market/usd-rate` 与 ticker `usd` 字段；配置 placements 轮播位与储备金快照后客户端自动展示。
+
+最新候选 a6257c29e2c2d73439624e086eb2ca9c53098621 取代 be357384，仍未合并/部署。通知 link 已有正式 support_ticket/ticketId 字符串契约，客户端下一批接入精确单条已读与跳转；不是继续等缺字段。account 迁移17交运维，本批不改后端。

@@ -110,11 +110,15 @@ fun HomeScreen(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var popupShown by rememberSaveable { mutableStateOf(false) }
     val popups = remember(s.popups) { PopupFrequency.filter(ctx, s.popups) }
+    var announcementId by rememberSaveable { mutableStateOf<Long?>(null) }
     var reserves by rememberSaveable { mutableStateOf(false) }
     val reservesData by vm.reserves.collectAsStateWithLifecycle()
     Box(modifier) {
         HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh,
-            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() }, onScan = onScan)
+            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() }, onScan = onScan, onAnnouncement = { announcementId = it })
+        announcementId?.let { id -> androidx.compose.ui.window.Dialog(onDismissRequest = { announcementId = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(Modifier.fillMaxSize().background(p.bg)) { AnnouncementDetailScreen(id, { announcementId = null }) }
+        } }
         if (!popupShown && popups.isNotEmpty()) ActivityPopup(popups, p.isDark,
             onOpen = { pl -> popupShown = true; PopupFrequency.markShown(ctx, popups); pl.linkUrl?.let(onOpenLink) },
             onDismiss = { popupShown = true; PopupFrequency.markShown(ctx, popups) })
@@ -130,7 +134,7 @@ fun HomeContent(
     onOpenAvatar: () -> Unit, onOpenMarkets: () -> Unit, onOpenMore: () -> Unit, onSoon: (String) -> Unit, onDeposit: () -> Unit,
     onFeature: (String) -> Unit = {}, onNotifications: () -> Unit = {}, onSupport: () -> Unit = {}, unread: Int = 0,
     onRefresh: () -> Unit, modifier: Modifier = Modifier,
-    onSearch: () -> Unit = {}, onLogin: () -> Unit = {}, onOpenLink: (String) -> Unit = {}, onReserves: () -> Unit = {}, onScan: () -> Unit = {},
+    onSearch: () -> Unit = {}, onLogin: () -> Unit = {}, onOpenLink: (String) -> Unit = {}, onReserves: () -> Unit = {}, onScan: () -> Unit = {}, onAnnouncement: (Long) -> Unit = {},
 ) {
     val p = LB.p
     var hide by rememberSaveable { mutableStateOf(false) }
@@ -183,7 +187,7 @@ fun HomeContent(
                 Hairline()
                 if (loggedIn) {
                     Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets, s.tradfiSymbols)
-                    NewsSection(s.academy, onSearch)
+                    NewsSection(s.academy, onSearch, s.announcements, s.announcementsError, onRefresh, onAnnouncement)
                 } else ProtectionSection(onReserves, onSupport)
             }
         }
@@ -444,9 +448,9 @@ private fun Ranking(
 }
 
 
-// ── 公告 / 快讯 / 学院（参考登录态榜单下方）。公告、快讯后端暂无接口 → 真实空态；学院取 /academy/articles。──
+// 公告走正式公开接口；快讯没有独立契约，不伪造。
 @Composable
-private fun NewsSection(academy: List<click.cowa.linbit.feature.markets.ApiAcademyArticle>?, onOpen: () -> Unit) {
+internal fun NewsSection(academy: List<click.cowa.linbit.feature.markets.ApiAcademyArticle>?, onOpen: () -> Unit, announcements: List<click.cowa.linbit.core.generated.ApiAnnouncement>? = null, error: String? = null, onRetry: () -> Unit = {}, onAnnouncement: (Long) -> Unit = {}) {
     val p = LB.p
     var tab by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -462,7 +466,16 @@ private fun NewsSection(academy: List<click.cowa.linbit.feature.markets.ApiAcade
                     }
                 }
             }
-            else -> EmptyState(if (tab == 0) "暂无公告" else "暂无快讯", Modifier.fillMaxWidth().height(160.dp))
+            0 -> when {
+                error != null -> Column(Modifier.padding(Spacing.pageH)) { Text("公告加载失败：$error", style=lb(FontSize.small),color=p.down); click.cowa.linbit.ui.components.LbButton("重试",onClick=onRetry) }
+                announcements == null -> EmptyState("正在读取公告…",Modifier.fillMaxWidth().height(160.dp))
+                announcements.isEmpty() -> EmptyState("暂无公告",Modifier.fillMaxWidth().height(160.dp))
+                else -> announcements.forEach { a -> Column(Modifier.fillMaxWidth().then(if(a.id!=null) Modifier.pressable(scale=1f) { onAnnouncement(a.id) } else Modifier).padding(horizontal=Spacing.pageH,vertical=14.dp)) {
+                    Text(a.title ?: "--",style=lb(FontSize.body,FontWeight.Medium),color=p.textPrimary,maxLines=2,overflow=TextOverflow.Ellipsis)
+                    Text(announcementTime(a),Modifier.padding(top=6.dp),style=lbNum(FontSize.small),color=p.textTertiary)
+                }; Box(Modifier.fillMaxWidth().height(0.5.dp).background(p.divider)) }
+            }
+            else -> EmptyState("暂无快讯", Modifier.fillMaxWidth().height(160.dp))
         }
     }
 }

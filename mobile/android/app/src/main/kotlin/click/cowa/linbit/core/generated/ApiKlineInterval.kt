@@ -20,15 +20,18 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * 
  *
- * Values: _1M,_5M,_15M,_30M,_1H,_4H,_1D,_1W
+ *
+ * Values: _1M,_3M,_5M,_15M,_30M,_1H,_2H,_4H,_6H,_12H,_1D,_1W
  */
 @Serializable
 enum class ApiKlineInterval(val value: kotlin.String) {
 
     @SerialName(value = "1m")
     _1M("1m"),
+
+    @SerialName(value = "3m")
+    _3M("3m"),
 
     @SerialName(value = "5m")
     _5M("5m"),
@@ -42,8 +45,17 @@ enum class ApiKlineInterval(val value: kotlin.String) {
     @SerialName(value = "1h")
     _1H("1h"),
 
+    @SerialName(value = "2h")
+    _2H("2h"),
+
     @SerialName(value = "4h")
     _4H("4h"),
+
+    @SerialName(value = "6h")
+    _6H("6h"),
+
+    @SerialName(value = "12h")
+    _12H("12h"),
 
     @SerialName(value = "1d")
     _1D("1d"),
@@ -77,4 +89,3 @@ enum class ApiKlineInterval(val value: kotlin.String) {
         }
     }
 }
-

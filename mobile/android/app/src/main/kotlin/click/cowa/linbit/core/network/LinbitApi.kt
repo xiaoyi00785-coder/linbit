@@ -786,4 +786,11 @@ interface LinbitApi {
     @Headers("${ApiHeaders.NO_AUTH}: 1")
     @GET("market/usd-rate")
     suspend fun usdRate(): click.cowa.linbit.core.storage.ApiUsdRate
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("announcements")
+    suspend fun announcements(@Query("category") category: String? = null): ApiListAnnouncements200Response
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("announcements/{id}")
+    suspend fun announcement(@Path("id") id: Long): ApiAnnouncement
 }

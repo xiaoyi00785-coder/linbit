@@ -1,5 +1,8 @@
 package click.cowa.linbit.feature.profile
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -101,7 +104,7 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
         ProfileRow("现货交易") { onTrading(false) }
     }
     sheet?.let { title -> LbSheet(title, { sheet = null }, showClose = true) {
-        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
             when (title) {
                 "语言" -> SheetOptionRow("简体中文", true) { sheet = null }
                 "主题" -> ThemeCards(themeMode) { onTheme(it); sheet = null }
@@ -112,6 +115,7 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
                         SheetOptionRow(label, DisplayPrefs.classicTheme == classic, Modifier.weight(1f).padding(start = 8.dp)) { DisplayPrefs.setClassicTheme(context, classic); sheet = null }
                     } }
                 "计价货币" -> {
+                    UsdRateInfo()
                     if (vm.preferences == null && vm.error == null) Text("正在读取账户偏好…", color = LB.p.textSecondary)
                     vm.preferences?.supportedQuoteCurrencies?.forEach { currency -> SheetOptionRow(currency, currency == vm.preferences?.quoteCurrency) { vm.select(currency) { sheet = null } } }
                     vm.error?.let { Text(it, color = LB.p.down, style = lb(FontSize.caption)); LbButton("重试", onClick = vm::load) }

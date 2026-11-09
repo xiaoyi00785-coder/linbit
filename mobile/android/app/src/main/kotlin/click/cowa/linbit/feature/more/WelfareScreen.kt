@@ -1,5 +1,7 @@
 package click.cowa.linbit.feature.more
 
+import click.cowa.linbit.core.util.Dec
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -56,6 +58,7 @@ class WelfareViewModel @Inject constructor(
     private val _state = kotlinx.coroutines.flow.MutableStateFlow(WelfareState())
     val state: kotlinx.coroutines.flow.StateFlow<WelfareState> = _state
     val loggedIn get() = tokens.loggedIn
+    val sessionVersion get() = tokens.sessionVersion
     internal var holdEvidence: Boolean = false
 
     /** 离屏证据：福利中心示例。 */
@@ -173,7 +176,8 @@ fun WelfareScreen(
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
-    LaunchedEffect(loggedIn) { vm.load() }
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+    LaunchedEffect(loggedIn, session) { vm.load() }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val go: (ApiNewcomerTask) -> Unit = { task ->
         when (welfareTaskRoute(task.type)) {
@@ -217,6 +221,7 @@ fun WelfareScreen(
                     }
                 }
             }
+            if (loggedIn) BonusBalances(s.bonus?.available)
             // ── 任务标签 ──
             var tab by remember { mutableStateOf(0) }
             Row(Modifier.fillMaxWidth().padding(top = 28.dp).padding(horizontal = Spacing.pageH), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -304,5 +309,21 @@ private fun WfTaskCard(task: ApiNewcomerTask, enrolled: Boolean, claiming: Boole
                 Text(if (claiming) "领取中…" else label, style = lb(FontSize.label, FontWeight.SemiBold), color = if (active) androidx.compose.ui.graphics.Color.Black else WfText)
             }
         }
+    }
+}
+
+/** 金额来自 available 的两个独立字段；未知不是零，不与资产余额相加。 */
+internal fun bonusAmount(raw: String?): String = Dec.parseOrNull(raw)?.takeIf { it.signum() >= 0 }?.stripTrailingZeros()?.toPlainString() ?: "--"
+
+@Composable
+internal fun BonusBalances(available: ApiFuturesBonusAvailable?) {
+    Column(Modifier.padding(horizontal = Spacing.pageH, vertical = 12.dp).fillMaxWidth()
+        .background(WfCard, RoundedCornerShape(12.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("可用合约赠金", style = lb(FontSize.body, FontWeight.SemiBold), color = WfText)
+        listOf("合约体验金" to available?.trial, "手续费抵扣金" to available?.deduction).forEach { (name, value) ->
+            Row { Text(name, Modifier.weight(1f), style = lb(FontSize.label), color = WfSub)
+                Text("${bonusAmount(value)} USDT", style = lbNum(FontSize.label), color = WfText) }
+        }
+        Text("仅用于保证金或手续费抵扣，不可转出", style = lb(FontSize.small), color = WfSub)
     }
 }

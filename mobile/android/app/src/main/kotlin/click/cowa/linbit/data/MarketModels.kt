@@ -21,6 +21,7 @@ data class MarketRow(
     val precision: Int?,
     /** 后端 usd.price（available=true 时）；为空则用 /market/usd-rate 折算或显示 --。 */
     val usdPrice: BigDecimal? = null,
+    val usd: click.cowa.linbit.core.generated.ApiWsUsd? = null,
 ) {
     companion object {
         fun spot(t: ApiTicker, meta: ApiSymbol?): MarketRow {
@@ -28,6 +29,7 @@ data class MarketRow(
             return MarketRow(
                 t.symbol, base, meta?.quote ?: "USDT", Dec.parse(t.lastPrice), Dec.parse(t.priceChangePercent),
                 Dec.parse(t.quoteVolume), meta?.pricePrecision,
+                usd = t.usd,
                 usdPrice = t.usd?.takeIf { it.available }?.price?.let { Dec.parseOrNull(it) }?.takeIf { it.signum() > 0 },
             )
         }

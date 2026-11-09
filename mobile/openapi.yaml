@@ -70,6 +70,18 @@ tags:
     description: 公告（公开只读）
 
 paths:
+  /market/usd-rate:
+    get:
+      tags: [Market]
+      operationId: usdRate
+      security: []
+      summary: 实时 USDTUSD 汇率，无合格来源时不可用
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsdRate' }
   /auth/code/send:
     post:
       tags: [Auth]
@@ -4796,8 +4808,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/FuturesBonus'
                   available:
-                    type: string
-                    description: 十进制字符串
+                    $ref: '#/components/schemas/FuturesBonusAvailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /earn/products:
@@ -8947,15 +8958,44 @@ components:
         name: { type: string, example: 公链 }
         symbols: { type: array, items: { type: string }, example: [BTCUSDT, ETHUSDT] }
 
+    FuturesBonusAvailable:
+      type: object
+      description: 冻结 android-companion 契约，两种赠金独立，不相加冒充余额。
+      properties:
+        trial: { type: string, nullable: true }
+        deduction: { type: string, nullable: true }
+
+    UsdRate:
+      type: object
+      required: [available, stale]
+      properties:
+        pair: { type: string }
+        available: { type: boolean, default: false }
+        rate: { type: string, nullable: true }
+        source: { type: string }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean, default: false }
+        precision: { type: integer }
+        rounding: { type: string }
+        unit: { type: string }
+        pegAssumed: { type: boolean }
+
     WsUsd:
       type: object
-      description: "REST ticker 与 WebSocket ticker 共用的 USD 折合对象；不可用时不伪造价格。"
+      description: REST 与 WebSocket 共用；冻结 usdrate.go JSON 字段，时间 RFC3339。
       required: [available, stale]
       properties:
         available: { type: boolean, default: false }
         price: { type: string, nullable: true }
         rate: { type: string, nullable: true }
+        source: { type: string }
+        updatedAt: { type: string, format: date-time, nullable: true }
         stale: { type: boolean, default: false }
+        precision: { type: integer }
+        rounding: { type: string }
+        convention: { type: string }
+        pegAssumed: { type: boolean }
+        reason: { type: string }
 
     Ticker:
       type: object
@@ -9000,7 +9040,7 @@ components:
 
     KlineInterval:
       type: string
-      enum: ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]
+      enum: ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w"]
 
     Kline:
       type: object
