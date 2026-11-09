@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -88,12 +89,14 @@ fun SpotTradeScreen(
     vm: SpotTradeViewModel = hiltViewModel(),
     onPriceAlerts: () -> Unit = {},
     onFavorite: (String) -> Unit = {},
+    pendingTop: Int? = null,
+    onPendingTopConsumed: () -> Unit = {},
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
     DisposableEffect(nav) { if (autoStart) vm.start(); onDispose { vm.stop() } }
-    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier, initialTop, onPriceAlerts, onFavorite)
+    SpotTradeContent(vm, loggedIn, market.spot, market.cnyRate, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory, modifier, initialTop, onPriceAlerts, onFavorite, pendingTop, onPendingTopConsumed)
 }
 
 @Composable
@@ -113,12 +116,19 @@ fun SpotTradeContent(
     initialTop: Int = 0,
     onPriceAlerts: () -> Unit = {},
     onFavorite: (String) -> Unit = {},
+    pendingTop: Int? = null,
+    onPendingTopConsumed: () -> Unit = {},
 ) {
     val p = LB.p
     var sheet by remember { mutableStateOf<String?>(null) }
     var skipConfirm by remember { mutableStateOf(false) }
     var ordersTab by remember { mutableStateOf(0) }
     var topTab by rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
+    LaunchedEffect(pendingTop) {
+        val t = pendingTop ?: return@LaunchedEffect
+        topTab = t.coerceIn(0, 3)
+        onPendingTopConsumed()
+    }
     var chartOpen by remember { mutableStateOf(false) }
     val step = vm.bookPrecision ?: BigDecimal.ONE.movePointLeft(vm.pricePrec)
     val grouped = remember(vm.book, step) { vm.book.grouped(step) }

@@ -75,7 +75,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
             "聊天室" -> { marketsTop = 2; tab = MainTab.MARKETS; return }
             "更多服务" -> { moreMenu = true; return }
             "Linbit 卡" -> { morePage = MorePage.CARD; return }
-            "理财" -> { if (loggedIn) assetFeature = "earn" else auth = "login"; return }
+            "理财" -> { if (loggedIn) { vm.tradeNav.openSpotTop(2); tab = MainTab.SPOT } else auth = "login"; return }
             "策略交易" -> { if (loggedIn) assetFeature = "strategy" else auth = "login"; return }
         }
         if (!loggedIn) { auth = "login"; return }
@@ -147,12 +147,17 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onCoupons = { if (loggedIn) morePage = MorePage.COUPONS else auth = "login" },
                         onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) },
                     )
-                    MainTab.SPOT -> click.cowa.linbit.feature.trade.SpotTradeScreen(
+                    MainTab.SPOT -> {
+                        val pendingSpotTop by vm.tradeNav.pendingSpotTop.collectAsStateWithLifecycle()
+                        click.cowa.linbit.feature.trade.SpotTradeScreen(
                         bottomInset, mode, vm::setTheme, onLogin = { auth = "login" },
                         onDeposit = { vm.assetsNav.openDeposit(switchTab = true) }, onTransfer = { vm.assetsNav.openTransfer(switchTab = true) }, onHistory = { historyKind = "spot" },
                         onPriceAlerts = { if (loggedIn) morePage = MorePage.PRICE_ALERTS else auth = "login" },
-                        onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) }
-                    )
+                        onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) },
+                        initialTop = pendingSpotTop ?: 0,
+                        pendingTop = pendingSpotTop,
+                        onPendingTopConsumed = { vm.tradeNav.consumeSpotTop() },
+                    ) }
                     MainTab.ASSETS -> if (loggedIn) AssetsScreen(
                         bottomInset,
                         onLogin = { auth = "login" },
@@ -160,7 +165,10 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onOpenFutures = { tab = MainTab.FUTURES },
                         onOpenSpot = { tab = MainTab.SPOT },
                         onOpenProfile = { if (loggedIn) userCenter = true else auth = "register" },
-                        onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
+                        onOpenAssetFeature = { feature ->
+                            if (feature == "earn") { vm.tradeNav.openSpotTop(2); tab = MainTab.SPOT; vm.assetsNav.clear() }
+                            else { assetFeature = feature; vm.assetsNav.clear() }
+                        },
                         onOpenSpotHistory = { historyKind = "spot" },
                         onOpenFuturesHistory = { historyKind = "futures" },
                         vm = routeVms.assets,

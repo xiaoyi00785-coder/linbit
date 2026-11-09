@@ -42,7 +42,6 @@ import click.cowa.linbit.core.generated.ApiEarnProduct
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.feature.auth.LbSheet
-import click.cowa.linbit.feature.profile.ProfileNavBar
 import click.cowa.linbit.ui.components.ButtonKind
 import click.cowa.linbit.ui.components.ChipButton
 import click.cowa.linbit.ui.components.CoinIcon
@@ -62,8 +61,9 @@ import java.math.BigDecimal
 
 /**
  * 理财产品入口页（对照 ref-capture/auth/028_earn_list、029_earn_btc_detail）。
- * 首页/个人中心「理财」与现货顶栏「理财」共用；资产页「理财」tab 为账户视图，不是本页。
- * 仅活期/定期（API kind）；链上/财富/借贷无契约时不造入口。不写假收益/余额。
+ * 主入口为底部「现货」顶栏「理财」（对照 028）；首页/个人中心「理财」深链到该顶栏。
+ * 资产页「理财」tab 仍是账户视图。仅活期/定期（API kind）；链上/财富/借贷无契约不造入口。
+ * 分类图标紧凑横排，有几种显示几种，绝不把单图标拉成全宽大卡。不写假 APR/余额。
  */
 @Composable
 fun EarnSubpage(
@@ -110,7 +110,14 @@ fun EarnSubpage(
     val hasFixed = products.any { it.kind == ApiEarnProduct.Kind.FIXED }
 
     Column(Modifier.fillMaxSize().testTag("earn.hub")) {
-        onBack?.let { ProfileNavBar("理财", it) }
+        // 参考为现货顶栏内嵌，无独立「理财」导航栏；仅深链残留 onBack 时给返回，不加标题栏占位。
+        onBack?.let { back ->
+            Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).pressable(scale = 1f, onClick = back), contentAlignment = Alignment.CenterStart) {
+                    LbIcon(R.drawable.ic_arrow_left, 22.dp, p.textPrimary)
+                }
+            }
+        }
         Column(
             Modifier.weight(1f).imePadding().verticalScroll(rememberScrollState())
                 .padding(bottom = bottomInset + 16.dp),
@@ -128,21 +135,21 @@ fun EarnSubpage(
 
             if (hasFlex || hasFixed) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
                     if (hasFlex) EarnKindChip(
                         title = "活期理财",
                         icon = R.drawable.ic_g_earn_light,
                         selected = kindFilter == ApiEarnProduct.Kind.FLEXIBLE,
-                        modifier = Modifier.weight(1f),
                     ) { kindFilter = if (kindFilter == ApiEarnProduct.Kind.FLEXIBLE) null else ApiEarnProduct.Kind.FLEXIBLE }
                     if (hasFixed) EarnKindChip(
                         title = "定期理财",
                         icon = R.drawable.ic_g_earn_dark,
                         selected = kindFilter == ApiEarnProduct.Kind.FIXED,
-                        modifier = Modifier.weight(1f),
                     ) { kindFilter = if (kindFilter == ApiEarnProduct.Kind.FIXED) null else ApiEarnProduct.Kind.FIXED }
+                    // 链上/财富/借贷无 API：不占位、不拉宽。
                 }
             }
 
@@ -208,7 +215,7 @@ fun EarnSubpage(
                     val aprHi = list.maxOf { Dec.parse(it.aprMax ?: it.apr) }
                     Column(Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = Spacing.pageH)
+                            Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Spacing.pageH)
                                 .pressable(scale = 1f) {
                                     expanded = if (open) expanded - asset else expanded + asset
                                 }.testTag("earn.asset.$asset"),
@@ -344,13 +351,14 @@ private fun EarnAssetHead(
             else -> {
                 val total = Dec.parse(summary?.totalValueUsdt)
                 val recent = Dec.parse(summary?.recentInterestUsdt)
-                Text(
-                    if (hide) "****" else Fmt.amount(total, 2),
-                    style = lbNum(32.sp, FontWeight.Bold),
-                    color = p.textPrimary,
-                )
-                Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("USDT", style = lb(FontSize.small), color = p.textPrimary)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        if (hide) "****" else Fmt.amount(total, 2),
+                        style = lbNum(32.sp, FontWeight.Bold),
+                        color = p.textPrimary,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("USDT", Modifier.padding(bottom = 6.dp), style = lb(FontSize.small), color = p.textPrimary)
                 }
                 val recentTxt = if (hide) "****" else {
                     val sign = if (recent.signum() >= 0) "+" else ""
@@ -368,22 +376,20 @@ private fun EarnAssetHead(
 }
 
 @Composable
-private fun EarnKindChip(title: String, icon: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun EarnKindChip(title: String, icon: Int, selected: Boolean, onClick: () -> Unit) {
     val p = LB.p
     Column(
-        modifier
-            .border(1.dp, if (selected) p.brand else p.border, RoundedCornerShape(Radius.md))
-            .background(if (selected) p.brand.copy(alpha = 0.08f) else p.bg, RoundedCornerShape(Radius.md))
-            .pressable(scale = 1f, onClick = onClick)
-            .padding(vertical = 12.dp),
+        Modifier.width(64.dp).pressable(scale = 1f, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(40.dp).clip(CircleShape).background(p.fill),
+            Modifier.size(44.dp).clip(CircleShape)
+                .background(if (selected) p.brand.copy(alpha = 0.16f) else p.fill)
+                .border(1.dp, if (selected) p.brand else p.border.copy(alpha = 0f), CircleShape),
             contentAlignment = Alignment.Center,
         ) { LbIcon(icon, 22.dp, p.textPrimary) }
-        Spacer(Modifier.height(8.dp))
-        Text(title, style = lb(FontSize.small, FontWeight.Medium), color = p.textPrimary)
+        Spacer(Modifier.height(6.dp))
+        Text(title, style = lb(11.sp), color = p.textPrimary, maxLines = 1)
     }
 }
 
@@ -398,10 +404,10 @@ private fun EarnFeatureCard(prod: ApiEarnProduct, onClick: () -> Unit) {
         else -> "活期"
     }
     Column(
-        Modifier.width(148.dp).height(96.dp)
-            .border(1.dp, p.border, RoundedCornerShape(Radius.md))
+        Modifier.width(120.dp).height(88.dp)
+            .background(p.fill, RoundedCornerShape(Radius.md))
             .pressable(scale = 1f, onClick = onClick)
-            .padding(12.dp),
+            .padding(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CoinIcon(asset, 18.dp)
@@ -441,7 +447,7 @@ private fun EarnProductRow(
     val p = LB.p
     Column(
         Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(bottom = 8.dp)
-            .background(p.fill, RoundedCornerShape(Radius.md)).padding(12.dp),
+            .background(p.fill, RoundedCornerShape(Radius.md)).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
