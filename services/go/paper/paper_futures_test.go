@@ -99,6 +99,32 @@ func TestPaperFuturesOrderLiquidationIsolation(t *testing.T) {
 	}
 }
 
+func TestPaperFuturesLimitRestsUntilMarkCrosses(t *testing.T) {
+	store := migratedStore(t)
+	ctx := context.Background()
+	src := stubFut{mark: decimal.RequireFromString("100000")}
+	out, err := store.PlaceFutOrder(ctx, "80000001", futOrderIn{
+		Symbol: "BTCUSDX", Side: "buy", Action: "open", Type: "limit", SizeMode: "quantity",
+		Quantity: decimal.RequireFromString("0.01"), Price: decimal.RequireFromString("90000"),
+		Leverage: 10, MarginMode: "cross", ClientOrderID: "pf-limit",
+	}, src)
+	if err != nil || out["status"] != "open" {
+		t.Fatalf("rest %#v %v", out, err)
+	}
+	src.mark = decimal.RequireFromString("89000")
+	sp, err := store.specBySymbol(ctx, src, "BTCUSDX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.matchResting(ctx, "80000001", "BTCUSDX", src.mark, sp); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := store.db.QueryRow(`SELECT status FROM paper_fut_orders WHERE client_order_id='pf-limit'`).Scan(&status); err != nil || status != "filled" {
+		t.Fatalf("status %s %v", status, err)
+	}
+}
+
 func TestLiveFuturesMarksMissingSymbolUnavailable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -824,15 +824,140 @@ func (s *Store) LiquidationSweep(ctx context.Context, src FutSource) error {
 		if !ok || !sp.Available {
 			continue
 		}
-		mark, _, _, qok, qerr := src.Quote(ctx, sp.LiveSymbol)
+		mark, _, fund, qok, qerr := src.Quote(ctx, sp.LiveSymbol)
 		if qerr != nil || !qok {
 			continue
+		}
+		if err := s.matchResting(ctx, r.u, r.s, mark, sp); err != nil {
+			return err
+		}
+		if err := s.triggerProtection(ctx, r.u, r.s, r.p, mark); err != nil {
+			return err
 		}
 		if _, err := s.LiquidateAt(ctx, r.u, r.s, r.p, mark, sp.MMR); err != nil {
 			return err
 		}
+		if fund != nil {
+			if err := s.ApplyFunding(ctx, r.u, r.s, *fund, time.Now().UTC().Truncate(time.Hour), true); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func (s *Store) matchResting(ctx context.Context, uid, symbol string, mark decimal.Decimal, sp FutSpec) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT order_id, side, position_side, action, order_type, COALESCE(price,0), COALESCE(trigger_price,0), qty, leverage, margin_mode FROM paper_fut_orders WHERE user_id=$1 AND symbol=$2 AND status IN ('open','untriggered')`, uid, symbol)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type pending struct {
+		id, side, ps, action, typ, mode string
+		price, trigger, qty             decimal.Decimal
+		lev                             int
+	}
+	var list []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.id, &p.side, &p.ps, &p.action, &p.typ, &p.price, &p.trigger, &p.qty, &p.lev, &p.mode); err != nil {
+			return err
+		}
+		list = append(list, p)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, p := range list {
+		fire := false
+		px := mark
+		switch p.typ {
+		case "limit":
+			fire = crosses(p.side, p.price, mark)
+			px = p.price
+		case "plan":
+			if p.side == "buy" {
+				fire = mark.GreaterThanOrEqual(p.trigger)
+			} else {
+				fire = mark.LessThanOrEqual(p.trigger)
+			}
+		}
+		if !fire {
+			continue
+		}
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		var status string
+		err = tx.QueryRowContext(ctx, `SELECT status FROM paper_fut_orders WHERE order_id=$1 FOR UPDATE`, p.id).Scan(&status)
+		if err != nil || (status != "open" && status != "untriggered") {
+			tx.Rollback()
+			continue
+		}
+		in := futOrderIn{Symbol: symbol, Side: p.side, PositionSide: p.ps, Action: p.action, Type: p.typ, Leverage: p.lev, MarginMode: p.mode}
+		if p.action == "close" {
+			err = s.reduce(ctx, tx, uid, p.id, in, p.qty, px)
+		} else {
+			err = s.fillLocked(ctx, tx, uid, p.id, in, sp, p.qty, px)
+		}
+		if err != nil {
+			tx.Rollback()
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_orders SET status='filled', filled_qty=$2, updated_at=now() WHERE order_id=$1`, p.id, p.qty); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) triggerProtection(ctx context.Context, uid, symbol, positionSide string, mark decimal.Decimal) error {
+	var qty decimal.Decimal
+	var tp, sl sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT qty::text, tp_trigger::text, sl_trigger::text FROM paper_fut_positions WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND qty <> 0`, uid, symbol, positionSide).Scan(&qty, &tp, &sl)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	q, _ := decimal.NewFromString(qty.String())
+	hit := false
+	if tp.Valid {
+		if t, e := decimal.NewFromString(tp.String); e == nil && t.IsPositive() {
+			if q.IsPositive() && mark.GreaterThanOrEqual(t) || q.IsNegative() && mark.LessThanOrEqual(t) {
+				hit = true
+			}
+		}
+	}
+	if sl.Valid {
+		if t, e := decimal.NewFromString(sl.String); e == nil && t.IsPositive() {
+			if q.IsPositive() && mark.LessThanOrEqual(t) || q.IsNegative() && mark.GreaterThanOrEqual(t) {
+				hit = true
+			}
+		}
+	}
+	if !hit {
+		return nil
+	}
+	return s.ClosePosition(ctx, uid, symbol, positionSide, markSource{mark: mark, symbol: symbol})
+}
+
+type markSource struct {
+	mark   decimal.Decimal
+	symbol string
+}
+
+func (m markSource) Specs(context.Context) ([]FutSpec, error) {
+	return []FutSpec{{Symbol: m.symbol, LiveSymbol: strings.TrimSuffix(m.symbol, "USDX") + "USDT", Available: true, MMR: decimal.RequireFromString("0.004"), MaxLeverage: 200, MinQty: decimal.RequireFromString("0.0001"), MaxQty: decimal.RequireFromString("100")}}, nil
+}
+func (m markSource) Quote(context.Context, string) (decimal.Decimal, decimal.Decimal, *decimal.Decimal, bool, error) {
+	return m.mark, m.mark, nil, true, nil
 }
 
 func (s *Store) ApplyFunding(ctx context.Context, uid, symbol string, rate decimal.Decimal, fundingTime time.Time, available bool) error {
