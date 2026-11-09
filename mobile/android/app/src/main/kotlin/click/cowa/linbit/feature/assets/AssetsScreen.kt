@@ -88,6 +88,8 @@ fun AssetsScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showValuation by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showEarnOrders by remember { mutableStateOf(false) }
+    var showEarnRecords by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<String?>(null) }
     detail?.let { a -> CoinDetailPage(vm, a, onBack = { detail = null }, onTrade = { detail = null; onOpenSpot() }) }
     val p = LB.p
@@ -133,7 +135,7 @@ fun AssetsScreen(
 
         Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 16.dp)) {
             if (s.tab == 4) {
-                EarnTab(s, onOpen = { onOpenAssetFeature("earn") }, onTransfer = { assetsNav.openTransfer() }, onToggle = vm::toggleHide)
+                EarnTab(s, onOpen = { onOpenAssetFeature("earn") }, onTransfer = { assetsNav.openTransfer() }, onToggle = vm::toggleHide, onHistory = { showHistory = true }, onOrders = { showEarnOrders = true })
             } else if (s.tab == 5) {
                 BotsTab(s, onOpen = { onOpenAssetFeature("strategy") }, onTransfer = { assetsNav.openTransfer() }, onToggle = vm::toggleHide)
             } else if (emptyOverview) {
@@ -217,45 +219,42 @@ fun AssetsScreen(
         }
     }
     if (showHistory) {
-        LbSheet("历史", { showHistory = false }, showClose = true) {
-            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                when (s.tab) {
-                    2 -> {
-                        HistoryOption("合约账户记录", "划转、已实现盈亏、资金费用等") {
-                            showHistory = false; onOpenFuturesHistory()
-                        }
-                        HistoryOption("交易历史", "永续委托、成交与已实现盈亏") {
-                            showHistory = false; onOpenFuturesHistory()
-                        }
-                    }
-                    3 -> {
-                        HistoryOption("现货交易历史", "委托、成交明细") {
-                            showHistory = false; onOpenSpotHistory()
-                        }
-                        HistoryOption("提现记录", "链上提现申请与状态") {
-                            showHistory = false; assetsNav.open(AssetsRoute.WithdrawRecords)
-                        }
-                        HistoryOption("充值记录", "链上充值到账记录") {
-                            showHistory = false; assetsNav.open(AssetsRoute.DepositRecords)
-                        }
-                    }
-                    else -> {
-                        HistoryOption("充值记录", "链上充值到账记录") {
-                            showHistory = false; assetsNav.open(AssetsRoute.DepositRecords)
-                        }
-                        HistoryOption("提现记录", "链上提现申请与状态") {
-                            showHistory = false; assetsNav.open(AssetsRoute.WithdrawRecords)
-                        }
-                        HistoryOption("现货交易历史", "委托、成交明细") {
-                            showHistory = false; onOpenSpotHistory()
-                        }
-                        HistoryOption("合约交易历史", "永续委托、成交与资金流水") {
-                            showHistory = false; onOpenFuturesHistory()
+        LbSheet("历史记录", { showHistory = false }, showClose = true) {
+            Column(
+                Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp).testTag("assets.history.sheet"),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                AssetsHistoryCatalog.optionsForTab(s.tab).forEach { opt ->
+                    HistoryOption(opt.title, opt.desc) {
+                        showHistory = false
+                        when (opt.action) {
+                            AssetsHistoryOption.Action.DEPOSIT_RECORDS -> assetsNav.open(AssetsRoute.DepositRecords)
+                            AssetsHistoryOption.Action.WITHDRAW_RECORDS -> assetsNav.open(AssetsRoute.WithdrawRecords)
+                            AssetsHistoryOption.Action.SPOT_HISTORY -> onOpenSpotHistory()
+                            AssetsHistoryOption.Action.FUTURES_HISTORY -> onOpenFuturesHistory()
+                            AssetsHistoryOption.Action.EARN_ORDERS -> showEarnOrders = true
+                            AssetsHistoryOption.Action.EARN_RECORDS -> showEarnRecords = true
                         }
                     }
                 }
             }
         }
+    }
+    if (showEarnOrders) {
+        EarnHistorySheet(
+            title = "理财订单",
+            empty = "暂无理财订单",
+            onClose = { showEarnOrders = false },
+            kind = EarnHistoryKind.ORDERS,
+        )
+    }
+    if (showEarnRecords) {
+        EarnHistorySheet(
+            title = "理财流水",
+            empty = "暂无理财流水",
+            onClose = { showEarnRecords = false },
+            kind = EarnHistoryKind.RECORDS,
+        )
     }
 
 }
@@ -602,13 +601,17 @@ internal fun balanceText(raw: String?): String {
 
 // ── 理财 / 策略 账户标签（参考 Earn / Bots 账户页，嵌在资产页内）──
 @Composable
-private fun AccountHead(label: String, total: java.math.BigDecimal?, hide: Boolean, cny: java.math.BigDecimal?, onToggle: () -> Unit) {
+private fun AccountHead(label: String, total: java.math.BigDecimal?, hide: Boolean, cny: java.math.BigDecimal?, onToggle: () -> Unit, onHistory: (() -> Unit)? = null) {
     val p = LB.p
     Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = lb(FontSize.caption), color = p.textSecondary)
             Spacer(Modifier.width(6.dp))
             LbIcon(if (hide) R.drawable.ic_eye_off else R.drawable.ic_eye, 14.dp, p.textSecondary, Modifier.pressable(scale = 1f, onClick = onToggle))
+            if (onHistory != null) {
+                Spacer(Modifier.weight(1f))
+                LbIcon(R.drawable.ic_doc_text, 18.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onHistory).testTag("assets.history"))
+            }
         }
         Row(verticalAlignment = Alignment.Bottom) {
             Text(if (hide) "****" else total?.let { Fmt.amount(it, 2) } ?: "--", style = lbNum(32.sp, FontWeight.Bold), color = p.textPrimary)
@@ -648,16 +651,23 @@ private fun ActionRow(items: List<Triple<String, Int, () -> Unit>>) {
 }
 
 @Composable
-private fun EarnTab(s: AssetsUiState, onOpen: () -> Unit, onTransfer: () -> Unit, onToggle: () -> Unit) {
+private fun EarnTab(
+    s: AssetsUiState,
+    onOpen: () -> Unit,
+    onTransfer: () -> Unit,
+    onToggle: () -> Unit,
+    onHistory: () -> Unit,
+    onOrders: () -> Unit,
+) {
     val p = LB.p
     val vm: click.cowa.linbit.feature.trade.SpotSubpagesViewModel = androidx.hilt.navigation.compose.hiltViewModel()
     LaunchedEffect(Unit) { vm.loadEarn() }
     val sum = vm.earnSummary
     val dec = click.cowa.linbit.core.util.Dec::parse
     val signed = { v: String? -> v?.let { val d = dec(it); (if (d.signum() >= 0) "+" else "") + Fmt.amount(d, 2) + " USDT" } ?: "--" }
-    AccountHead("总资产估值", sum?.totalValueUsdt?.let(dec), s.hideAmount, s.cnyRate, onToggle)
+    AccountHead("总资产估值", sum?.totalValueUsdt?.let(dec), s.hideAmount, s.cnyRate, onToggle, onHistory = onHistory)
     KvTriple(listOf("累计收益" to (if (s.hideAmount) "****" else signed(sum?.totalInterestUsdt)), "昨日收益" to (if (s.hideAmount) "****" else signed(sum?.recentInterestUsdt))))
-    ActionRow(listOf(Triple("总览", R.drawable.ic_ref_trade, onOpen), Triple("划转", R.drawable.ic_ref_transfer, onTransfer), Triple("订单", R.drawable.ic_doc_text, onOpen)))
+    ActionRow(listOf(Triple("总览", R.drawable.ic_ref_trade, onOpen), Triple("划转", R.drawable.ic_ref_transfer, onTransfer), Triple("订单", R.drawable.ic_doc_text, onOrders)))
     val best = vm.earnProducts.maxByOrNull { dec(it.apr) }
     if (best != null) Row(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp).fillMaxWidth().border(0.5.dp, p.border, RoundedCornerShape(Radius.md)).pressable(scale = 1f, onClick = onOpen).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -763,6 +773,77 @@ private fun CoinDetailPage(vm: AssetsViewModel, asset: String, onBack: () -> Uni
                         Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(Fmt.priceAuto(pair.last), style = lbNum(FontSize.title, FontWeight.Medium), color = p.textPrimary)
                             Text(Fmt.percent(pair.changePct), Modifier.padding(start = 8.dp), style = lbNum(FontSize.title), color = if (pair.changePct.signum() < 0) p.down else p.up)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private enum class EarnHistoryKind { ORDERS, RECORDS }
+
+/** 理财订单 / 理财流水（只读，数据来自 GET /earn/orders 与 /earn/records）。 */
+@Composable
+private fun EarnHistorySheet(title: String, empty: String, onClose: () -> Unit, kind: EarnHistoryKind) {
+    val p = LB.p
+    val vm: click.cowa.linbit.feature.trade.SpotSubpagesViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    LaunchedEffect(Unit) { vm.loadEarn() }
+    LbSheet(title, onClose, showClose = true) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)
+                .testTag(if (kind == EarnHistoryKind.ORDERS) "assets.earn.orders" else "assets.earn.records"),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            when (kind) {
+                EarnHistoryKind.ORDERS -> {
+                    val items = vm.earnOrders
+                    val err = vm.earnAccountError
+                    when {
+                        err != null && items.isEmpty() -> EmptyState(err, verticalPadding = 40.dp) {
+                            click.cowa.linbit.ui.components.ChipButton("重试", Modifier.height(32.dp)) { vm.loadEarn() }
+                        }
+                        items.isEmpty() -> EmptyState(empty, verticalPadding = 40.dp)
+                        else -> items.take(50).forEach { o ->
+                            Column(
+                                Modifier.fillMaxWidth().border(1.dp, p.border, RoundedCornerShape(Radius.md)).padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    "${o.title ?: o.asset ?: "--"} · ${o.status ?: "--"}",
+                                    style = lb(FontSize.body, FontWeight.Medium),
+                                    color = p.textPrimary,
+                                )
+                                Text("金额 ${o.amount ?: "--"} ${o.asset ?: ""}", style = lb(FontSize.small), color = p.textSecondary)
+                                Text("利息 ${o.interest ?: "--"}", style = lb(FontSize.small), color = p.textSecondary)
+                            }
+                        }
+                    }
+                }
+                EarnHistoryKind.RECORDS -> {
+                    val items = vm.earnRecords
+                    val err = vm.earnAccountError
+                    when {
+                        err != null && items.isEmpty() -> EmptyState(err, verticalPadding = 40.dp) {
+                            click.cowa.linbit.ui.components.ChipButton("重试", Modifier.height(32.dp)) { vm.loadEarn() }
+                        }
+                        items.isEmpty() -> EmptyState(empty, verticalPadding = 40.dp)
+                        else -> items.take(50).forEach { r ->
+                            val typeLabel = when (r.type) {
+                                click.cowa.linbit.core.generated.ApiEarnRecords200ResponseItemsInner.Type.SUBSCRIBE -> "申购"
+                                click.cowa.linbit.core.generated.ApiEarnRecords200ResponseItemsInner.Type.REDEEM -> "赎回"
+                                click.cowa.linbit.core.generated.ApiEarnRecords200ResponseItemsInner.Type.INTEREST -> "利息"
+                                click.cowa.linbit.core.generated.ApiEarnRecords200ResponseItemsInner.Type.MATURITY -> "到期"
+                                click.cowa.linbit.core.generated.ApiEarnRecords200ResponseItemsInner.Type.UNLOCK -> "解锁"
+                                null -> "--"
+                            }
+                            Column(
+                                Modifier.fillMaxWidth().border(1.dp, p.border, RoundedCornerShape(Radius.md)).padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text("$typeLabel · ${r.asset ?: "--"}", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                                Text("数量 ${r.amount ?: "--"}", style = lb(FontSize.small), color = p.textSecondary)
+                            }
                         }
                     }
                 }

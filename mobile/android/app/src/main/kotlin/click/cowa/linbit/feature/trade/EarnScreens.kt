@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import click.cowa.linbit.R
+import click.cowa.linbit.core.brand.BrandCopy
 import click.cowa.linbit.core.generated.ApiEarnProduct
 import click.cowa.linbit.core.util.Dec
 import click.cowa.linbit.core.util.Fmt
@@ -177,7 +178,12 @@ fun EarnSubpage(
                 ) {
                     featured.forEach { prod ->
                         EarnFeatureCard(prod) {
-                            if (!loggedIn) onLogin() else earnAction = EarnAction(prod, subscribe = true)
+                            val blocked = EarnProductAvailability.blockedToast(prod)
+                            when {
+                                blocked != null -> vm.toast.show(blocked)
+                                !loggedIn -> onLogin()
+                                else -> earnAction = EarnAction(prod, subscribe = true)
+                            }
                         }
                     }
                 }
@@ -259,6 +265,7 @@ fun EarnSubpage(
                                 onLogin = onLogin,
                                 onSubscribe = { earnAction = EarnAction(prod, subscribe = true) },
                                 onRedeem = { earnAction = EarnAction(prod, subscribe = false) },
+                                vmToast = { vm.toast.show(it) },
                             )
                         }
                     }
@@ -578,6 +585,7 @@ private fun EarnProductRow(
     onLogin: () -> Unit,
     onSubscribe: () -> Unit,
     onRedeem: () -> Unit,
+    vmToast: ((String) -> Unit)? = null,
 ) {
     val p = LB.p
     Column(
@@ -587,7 +595,7 @@ private fun EarnProductRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(prod.title ?: prod.asset ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                Text(BrandCopy.sanitize(prod.title ?: prod.asset ?: "--"), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
                 Text(
                     earnKindSubtitle(prod),
                     style = lb(FontSize.small),
@@ -599,9 +607,21 @@ private fun EarnProductRow(
                 Text(if (EarnApr.hasTier(prod)) "档位年化" else "年化", style = lb(FontSize.small), color = p.textTertiary)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ChipButton("申购", Modifier.height(28.dp).testTag("earn.subscribe"), enabled = true) {
-                if (!loggedIn) onLogin() else onSubscribe()
+        val phase = EarnProductAvailability.phase(prod)
+            val blocked = EarnProductAvailability.blockedToast(prod)
+            val subscribeLabel = if (phase == EarnSubscribePhase.OPEN) "申购" else EarnProductAvailability.ctaLabel(prod)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ChipButton(
+                subscribeLabel,
+                Modifier.height(28.dp).testTag("earn.subscribe"),
+                color = if (phase == EarnSubscribePhase.OPEN) p.textPrimary else p.textTertiary,
+                enabled = true,
+            ) {
+                when {
+                    blocked != null -> vmToast?.invoke(blocked)
+                    !loggedIn -> onLogin()
+                    else -> onSubscribe()
+                }
             }
             ChipButton("赎回", Modifier.height(28.dp).testTag("earn.redeem"), enabled = true) {
                 if (!loggedIn) onLogin() else onRedeem()
@@ -630,7 +650,9 @@ private fun EarnActionSheet(
     fun validate(): String? {
         validation = if (act.subscribe) {
             val value = Dec.parse(amount); val min = Dec.parse(act.product.minAmount); val cap = Dec.parse(act.product.perUserMax)
+            val blockedNow = EarnProductAvailability.blockedToast(act.product)
             when {
+                blockedNow != null -> blockedNow
                 value.signum() <= 0 -> "请输入申购金额"
                 min.signum() > 0 && value < min -> "不低于最小申购额 ${act.product.minAmount}"
                 cap.signum() > 0 && value > cap -> "不超过单人上限 ${act.product.perUserMax}"
@@ -646,7 +668,29 @@ private fun EarnActionSheet(
     }
     LbSheet(title, onDismiss, showClose = !vm.acting, onWindowReady = onDialogWindow) {
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val phase = EarnProductAvailability.phase(act.product)
+            val blocked = EarnProductAvailability.blockedToast(act.product)
             if (!review) {
+                if (act.subscribe) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("申购进度", style = lb(FontSize.caption), color = p.textSecondary)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            EarnProductAvailability.timelineLabel(act.product),
+                            Modifier.testTag("earn.timeline"),
+                            style = lb(FontSize.caption, FontWeight.Medium),
+                            color = if (phase == EarnSubscribePhase.OPEN) p.up else p.textTertiary,
+                        )
+                    }
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(p.fill, RoundedCornerShape(2.dp))) {
+                        if (phase == EarnSubscribePhase.OPEN) {
+                            Box(Modifier.fillMaxWidth(0.45f).height(4.dp).background(p.brand, RoundedCornerShape(2.dp)))
+                        }
+                    }
+                }
                 if (act.subscribe && act.product.kind == ApiEarnProduct.Kind.FIXED) {
                     Text("期限", style = lb(FontSize.caption), color = p.textSecondary)
                     Row(
@@ -674,7 +718,7 @@ private fun EarnActionSheet(
                             contentAlignment = Alignment.Center,
                         ) { if (agreed) Text("✓", style = lb(10.sp, FontWeight.Bold), color = androidx.compose.ui.graphics.Color.Black) }
                         Text(
-                            "我已阅读并同意 Linbit 理财服务协议",
+                            BrandCopy.EARN_AGREEMENT,
                             Modifier.padding(start = 8.dp),
                             style = lb(FontSize.small),
                             color = p.textSecondary,
@@ -687,17 +731,28 @@ private fun EarnActionSheet(
                     }
                 }
                 LbButton(
-                    if (all) "下一步 · 全部赎回复核" else if (act.subscribe) "下一步 · 申购复核" else "下一步 · 赎回复核",
+                    when {
+                        act.subscribe && blocked != null -> EarnProductAvailability.ctaLabel(act.product)
+                        all -> "下一步 · 全部赎回复核"
+                        act.subscribe -> "下一步 · 申购复核"
+                        else -> "下一步 · 赎回复核"
+                    },
                     kind = ButtonKind.PRIMARY,
                     enabled = !vm.acting,
-                ) { if (validate() == null) review = true }
+                    testTag = "earn.subscribe.cta",
+                ) {
+                    if (act.subscribe && blocked != null) {
+                        vm.toast.show(blocked)
+                        validation = blocked
+                    } else if (validate() == null) review = true
+                }
             } else {
                 Text(
                     if (act.subscribe) "申购最终复核" else if (all) "全部赎回最终复核" else "赎回最终复核",
                     style = lb(FontSize.title, FontWeight.SemiBold),
                     color = p.textPrimary,
                 )
-                KvRow("产品", act.product.title ?: asset)
+                KvRow("产品", BrandCopy.sanitize(act.product.title ?: asset))
                 KvRow("资产", asset)
                 if (act.subscribe) KvRow("年化收益", "${earnAprPct(Dec.parse(act.product.apr))}%")
                 if (!act.subscribe) KvRow("当前持仓", "${holding?.amount ?: "0"} $asset")
