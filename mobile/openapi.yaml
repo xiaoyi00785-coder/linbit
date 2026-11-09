@@ -1868,8 +1868,18 @@ paths:
         - name: market
           in: query
           required: false
-          description: spot（默认）只含现货交易对；futures 只含交易中的永续合约
+          description: spot（默认）只含加密现货；futures 只含加密永续。TradFi 标的默认不出现。
           schema: { type: string, enum: [spot, futures] }
+        - name: include
+          in: query
+          required: false
+          description: tradfi 时把股票、贵金属、大宗商品加回该 market 的分类
+          schema: { type: string, enum: [tradfi] }
+        - name: kind
+          in: query
+          required: false
+          description: 只保留这种类别
+          schema: { type: string, enum: [crypto, stock, metal, commodity] }
         - name: nonEmpty
           in: query
           required: false
@@ -1892,18 +1902,30 @@ paths:
       tags: [Market]
       summary: 24 小时行情 ticker（单个或全部）
       description: >
-        传入 `symbol` 时返回该交易对的单个 Ticker 对象；不传 `symbol` 时返回全部
-        交易对的 Ticker 数组。响应为二者之一（见 oneOf）。价格、quoteVolume 按交易对
-        计价币精度，base 成交量按数量精度，均为十进制字符串。
+        传入 `symbol` 时返回该交易对的单个 Ticker 对象，TradFi 交易对也可以按代码读取。
+        不传 `symbol` 时默认只返回加密现货。`include=tradfi` 把股票和贵金属加回列表，
+        `kind=` 按类别筛选。价格、quoteVolume 按交易对计价币精度，base 成交量按数量精度，
+        均为十进制字符串。quoteVolume 与 volume 只统计本所成交；priceSource=index 且没有
+        本所成交时这两项为 0，不使用外部交易所的成交量。
       operationId: getTicker
       security: []
       parameters:
         - name: symbol
           in: query
           required: false
-          description: 传入则返回单个对象；不传则返回全部交易对的数组
+          description: 传入则返回单个对象（含 TradFi 代码）；不传则返回默认加密现货数组
           schema: { type: string }
           example: BTCUSDT
+        - name: include
+          in: query
+          required: false
+          description: tradfi 时默认列表包含股票、贵金属等 TradFi 现货
+          schema: { type: string, enum: [tradfi] }
+        - name: kind
+          in: query
+          required: false
+          description: 只返回该类别
+          schema: { type: string, enum: [crypto, stock, metal, commodity] }
         - name: symbols
           in: query
           required: false
@@ -2969,7 +2991,10 @@ paths:
       - Futures
       summary: 合约行情（单个或全部）
       operationId: futuresTicker
-      description: 传 symbol 返回单个 FuturesTicker，否则返回 {tickers:[...]}。
+      description: >
+        传 symbol 返回单个 FuturesTicker，XAGUSDT 与 WTIUSDT 仍可按代码读取。
+        不传 symbol 时默认只返回加密永续。include=tradfi 或 kind=metal|commodity
+        才把白银和原油加回列表。下单路径不变。
       security: []
       parameters:
       - name: symbol
@@ -2977,7 +3002,16 @@ paths:
         required: false
         schema:
           type: string
-        description: 不填返回全部
+        description: 不填返回默认加密永续列表
+      - name: include
+        in: query
+        required: false
+        schema: { type: string, enum: [tradfi] }
+        description: tradfi 时列表包含 TradFi 永续
+      - name: kind
+        in: query
+        required: false
+        schema: { type: string, enum: [crypto, stock, metal, commodity] }
       responses:
         '200':
           description: OK
@@ -9819,6 +9853,7 @@ components:
       properties:
         id: { type: string, example: layer1 }
         name: { type: string, example: 公链 }
+        kind: { type: string, enum: [crypto, stock, metal, commodity], description: 分类里的标的类别 }
         symbols: { type: array, items: { type: string }, example: [BTCUSDT, ETHUSDT] }
 
     Ticker:
@@ -9826,6 +9861,8 @@ components:
       required: [symbol, lastPrice, priceChangePercent, high, low, volume, quoteVolume]
       properties:
         symbol: { type: string, example: BTCUSDT }
+        market: { type: string, enum: [spot, futures], description: 该行情所属市场 }
+        kind: { type: string, enum: [crypto, stock, metal, commodity] }
         lastPrice: { type: string, example: "76771.90" }
         priceChangePercent: { type: string, example: "-1.71" }
         high: { type: string, example: "78878.00" }
@@ -10328,6 +10365,12 @@ components:
       properties:
         symbol:
           type: string
+        market:
+          type: string
+          enum: [spot, futures]
+        kind:
+          type: string
+          enum: [crypto, stock, metal, commodity]
         lastPrice:
           type: string
           description: 十进制字符串

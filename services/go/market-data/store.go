@@ -62,6 +62,7 @@ func (s *Store) Symbols(ctx context.Context) ([]SymbolInfo, error) {
 type Category struct {
 	ID      string   `json:"id"`
 	Name    string   `json:"name"`
+	Kind    string   `json:"kind"`
 	Symbols []string `json:"symbols"`
 }
 
@@ -163,6 +164,25 @@ func (s *Store) RecentTakerTrades(ctx context.Context, since time.Time, max int)
 			return nil, err
 		}
 		out = append(out, ev)
+	}
+	return out, rows.Err()
+}
+
+// TradFiBySymbol maps a listed symbol to its TradFi market and kind.
+// Symbols absent from the map are crypto.
+func (s *Store) TradFiBySymbol(ctx context.Context) (map[string]instClass, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT symbol, market, kind FROM tradfi_assets`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]instClass{}
+	for rows.Next() {
+		var sym, market, kind string
+		if err := rows.Scan(&sym, &market, &kind); err != nil {
+			return nil, err
+		}
+		out[strings.ToUpper(sym)] = instClass{Market: market, Kind: kind}
 	}
 	return out, rows.Err()
 }

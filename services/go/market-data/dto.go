@@ -7,6 +7,8 @@ package main
 // tickerDTO is the 24h rolling ticker (openapi Ticker).
 type tickerDTO struct {
 	Symbol             string `json:"symbol"`
+	Market             string `json:"market"`
+	Kind               string `json:"kind"`
 	LastPrice          string `json:"lastPrice"`
 	PriceChangePercent string `json:"priceChangePercent"`
 	High               string `json:"high"`
