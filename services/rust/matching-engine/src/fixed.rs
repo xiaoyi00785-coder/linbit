@@ -1,23 +1,19 @@
-//! Fixed-point decimal arithmetic for prices and quantities.
+//! 价格和数量的定点小数。
 //!
-//! All amounts are represented as scaled `i128` integers with [`SCALE`] decimal
-//! places (1.0 == [`ONE`]). This keeps the matching hot path on exact integer
-//! math — no floating point ever touches an order's price or quantity. The Go
-//! settlement layer re-derives notionals and fees with its own arbitrary-
-//! precision decimal, so the engine only needs to compare prices and subtract
-//! quantities; eight decimal places comfortably covers every configured symbol.
+//! 金额都是带 [`SCALE`] 位小数的 `i128`（1.0 == [`ONE`]）。撮合热路径只做整数运算，
+//! 价格和数量不经过浮点。名义金额和手续费由 Go 结算层用自己的任意精度小数重算，
+//! 引擎只负责比价和扣减数量。内部统一 8 位小数，覆盖当前所有交易对的精度配置。
 
-/// Number of decimal places kept internally.
+/// 内部保留的小数位数。
 pub const SCALE: u32 = 8;
 
-/// The scaled representation of `1.0`.
+/// `1.0` 的定点表示。
 pub const ONE: i128 = 100_000_000; // 10^SCALE
 
-/// Parse a decimal string (e.g. "76768.40") into a scaled integer.
+/// 把十进制字符串（例如 "76768.40"）解析成定点整数。
 ///
-/// Rejects malformed input and any value with more than [`SCALE`] fractional
-/// digits — callers upstream (the Go order service) already validate precision,
-/// so extra digits indicate a bug rather than something to silently truncate.
+/// 非法格式，以及小数位超过 [`SCALE`] 的值，直接拒绝。精度校验在上游 Go 订单服务已经做过，
+/// 这里多出来的小数位是调用错误，不能静默截断。
 pub fn parse(s: &str) -> Result<i128, String> {
     let s = s.trim();
     if s.is_empty() {
@@ -51,7 +47,7 @@ pub fn parse(s: &str) -> Result<i128, String> {
     for c in frac_part.chars() {
         frac_val = frac_val * 10 + (c as u8 - b'0') as i128;
     }
-    // Pad the fractional part up to SCALE digits.
+    // 小数部分补零到 SCALE 位后再并入整数。
     for _ in 0..(SCALE - frac_part.len() as u32) {
         frac_val *= 10;
     }
@@ -59,8 +55,7 @@ pub fn parse(s: &str) -> Result<i128, String> {
     Ok(if neg { -v } else { v })
 }
 
-/// Format a scaled integer back to a canonical decimal string. Trailing zeros
-/// in the fractional part are trimmed (e.g. `70000.00000000` -> `"70000"`).
+/// 定点整数格式化回十进制字符串。小数部分去掉末尾的 0（`70000.00000000` 变成 `"70000"`）。
 pub fn format(v: i128) -> String {
     let neg = v < 0;
     let v = v.abs();
@@ -84,22 +79,22 @@ pub fn format(v: i128) -> String {
     out
 }
 
-/// Quantity buyable with `budget` quote at `price` (both scaled): `budget/price`
-/// as a scaled quantity, rounded down. Used for market-buy-by-quote matching.
+/// 报价预算 `budget` 在价格 `price` 上能买到的数量（两者都是定点）：`budget/price`，向下取整。
+/// 用于按报价金额成交的市价买单。
 pub fn qty_for_budget(budget: i128, price: i128) -> i128 {
     if price <= 0 {
         return 0;
     }
-    // qty_scaled = budget_scaled * ONE / price_scaled
+    // 定点：数量 = 预算 * ONE / 价格。整数除法，余数丢掉，即向下取整。
     budget * ONE / price
 }
 
-/// Notional = price * qty (both scaled) as a scaled quote amount, rounded down.
+/// 名义金额 = 价格 * 数量（均为定点），结果仍是定点报价金额，向下取整。
 pub fn notional(price: i128, qty: i128) -> i128 {
     price * qty / ONE
 }
 
-/// Round a scaled quantity down to `precision` decimal places.
+/// 把定点数量向下取整到 `precision` 位小数。`precision >= SCALE` 时原样返回。
 pub fn floor_to(v: i128, precision: u32) -> i128 {
     if precision >= SCALE {
         return v;

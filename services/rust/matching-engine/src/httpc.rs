@@ -1,12 +1,11 @@
-//! Minimal blocking HTTP/1.1 client — just enough to POST a JSON body to a
-//! local consumer. No external HTTP crate is needed for the local deployment.
+//! 只够给本机消费者 POST 一段 JSON 的阻塞 HTTP/1.1 客户端。本地部署不额外依赖 HTTP 库。
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-/// POST `body` to `url` with `Content-Type: application/json` and an optional
-/// `X-Internal-Token`. Returns the HTTP status code on success.
+/// 把 `body` POST 到 `url`，`Content-Type: application/json`。`token` 非空时带上 `X-Internal-Token`。
+/// 成功时返回 HTTP 状态码。
 pub fn post(url: &str, token: &str, body: &[u8]) -> Result<u16, String> {
     let (host, port, path) = parse_url(url)?;
     let addr = format!("{host}:{port}");

@@ -1,8 +1,7 @@
-//! Wire and domain types shared across the engine.
+//! 引擎内外共用的传输类型和领域类型。
 //!
-//! Commands arrive from the Go `order` service; prices and quantities are
-//! decimal strings on the wire and parsed into scaled integers (see
-//! [`crate::fixed`]) when a command is admitted to a symbol's book.
+//! 命令来自 Go 的 `order` 服务。线上的价格和数量是十进制字符串，
+//! 进入某个交易对的订单簿时才解析成定点整数（见 [`crate::fixed`]）。
 
 use serde::{Deserialize, Serialize};
 
@@ -38,8 +37,7 @@ pub enum OrderStatus {
     Rejected,
 }
 
-/// A command submitted to the engine. Serialized to the WAL verbatim so that
-/// replay reproduces the exact same sequence of matches.
+/// 提交给引擎的一条命令。按原样写入 WAL，重放时走出同一串成交。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "lowercase")]
 pub enum Command {
@@ -68,13 +66,13 @@ pub struct PlaceCommand {
     pub order_type: OrderType,
     #[serde(rename = "timeInForce")]
     pub time_in_force: TimeInForce,
-    /// Limit price (decimal string). Empty / "0" for market orders.
+    /// 限价，十进制字符串。市价单为空或 "0"。
     #[serde(default)]
     pub price: String,
-    /// Base quantity (decimal string). Required except for market-buy-by-quote.
+    /// 基础资产数量，十进制字符串。按报价金额的市价买单可以不填。
     #[serde(default)]
     pub quantity: String,
-    /// Quote budget for a market buy (decimal string); empty otherwise.
+    /// 市价买单的报价预算，十进制字符串。其他订单留空。
     #[serde(default, rename = "quoteOrderQty")]
     pub quote_order_qty: String,
 }
@@ -86,9 +84,8 @@ pub struct CancelCommand {
     pub order_id: String,
 }
 
-/// A single match between an aggressing (taker) order and a resting (maker)
-/// order. Money math (notional/fees) is done downstream in Go; the engine only
-/// reports the authoritative price and quantity of each fill.
+/// 吃单（taker）和挂单（maker）的一笔成交。名义金额和手续费在下游 Go 里算；
+/// 引擎只给出这笔成交的价格和数量，结算以这里为准。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Trade {
     #[serde(rename = "tradeId")]
@@ -108,7 +105,7 @@ pub struct Trade {
     pub taker_side: Side,
 }
 
-/// Updated state of a resting (maker) order touched by a match.
+/// 一笔成交碰到的挂单（maker）的新状态。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderUpdate {
     #[serde(rename = "orderId")]
@@ -120,34 +117,32 @@ pub struct OrderUpdate {
     pub filled_quantity: String,
 }
 
-/// The synchronous result of processing one command — returned to the order
-/// service as the command's HTTP response and used to drive settlement.
+/// 处理一条命令的同步结果。作为该命令的 HTTP 响应交回订单服务，并驱动结算。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecReport {
     pub symbol: String,
     #[serde(rename = "orderId")]
     pub order_id: String,
     pub status: OrderStatus,
-    /// Cumulative filled base quantity of the submitted/canceled order.
+    /// 被提交或被撤销的那张订单已成交的基础资产数量（累计）。
     #[serde(rename = "filledQuantity")]
     pub filled_quantity: String,
     pub trades: Vec<Trade>,
-    /// Resting orders (other users) whose fill state changed.
+    /// 成交状态发生了变化的对手挂单（其他用户）。
     #[serde(rename = "makerUpdates")]
     pub maker_updates: Vec<OrderUpdate>,
     #[serde(rename = "rejectReason", skip_serializing_if = "Option::is_none")]
     pub reject_reason: Option<String>,
 }
 
-/// One price level in a depth snapshot/delta.
+/// 深度快照或增量里的一个价位。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Level {
     pub price: String,
     pub quantity: String,
 }
 
-/// A depth event emitted on the event bus. `snapshot` carries the full book;
-/// otherwise the entry is a delta (quantity "0" means the level was removed).
+/// 发到事件总线上的深度。`snapshot` 为真时是全量订单簿；否则是增量，数量 `"0"` 表示该价位已删除。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepthEvent {
     pub symbol: String,
@@ -158,9 +153,8 @@ pub struct DepthEvent {
     pub asks: Vec<Level>,
 }
 
-/// Events published on the (replaceable) event bus for downstream consumers
-/// such as market-data. The authoritative settlement path uses the synchronous
-/// [`ExecReport`]; these events are the streaming/pub-sub view.
+/// 发给下游（例如行情服务）的事件。结算以同步的 [`ExecReport`] 为准；
+/// 这些事件只是推送视图，丢了也不会改余额。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum EngineEvent {

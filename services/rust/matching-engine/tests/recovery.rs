@@ -1,5 +1,4 @@
-//! Crash-recovery consistency: a fresh engine rebuilt from snapshot + WAL must
-//! reproduce the exact state of the engine that wrote them.
+//! 崩溃恢复的一致性：用快照加 WAL 重建出来的引擎，必须和写出它们的那份引擎状态一致。
 
 use std::sync::Arc;
 
@@ -22,9 +21,8 @@ fn place(id: &str, user: &str, side: Side, tif: TimeInForce, price: &str, qty: &
 }
 
 fn digest(state: &BookState) -> String {
-    // Compare everything except seq bookkeeping that legitimately differs only
-    // when the engine was snapshotted — here we compare the book itself plus the
-    // trade counter (which must match for deterministic trade ids).
+    // 比较订单簿本身和成交计数。成交计数必须一致，成交号才是确定的。
+    // 序号一类的簿记在打过快照之后可以不同，不放进摘要。
     serde_json::to_string(&(
         &state.bids,
         &state.asks,
@@ -44,11 +42,11 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
 }
 
 fn run_commands(engine: &mut SymbolEngine) {
-    // Mixed workload: resting orders, a partial fill, and a cancel.
+    // 混合负载：挂单、一笔部分成交、一次撤单。
     engine.process(&place("s1", "a", Side::Sell, TimeInForce::GTC, "70010", "1.5"));
     engine.process(&place("s2", "a", Side::Sell, TimeInForce::GTC, "70000", "2.0"));
     engine.process(&place("b1", "b", Side::Buy, TimeInForce::GTC, "69990", "1.0"));
-    // Crosses s2 partially (buys 0.5 of the 2.0 at 70000).
+    // 部分吃掉 s2：70000 上的 2.0 里买走 0.5。
     engine.process(&place("b2", "c", Side::Buy, TimeInForce::GTC, "70000", "0.5"));
     engine.process(&Command::Cancel(CancelCommand { symbol: "BTCUSDT".into(), order_id: "b1".into() }));
     engine.process(&place("s3", "a", Side::Sell, TimeInForce::GTC, "70020", "3.0"));
@@ -59,7 +57,7 @@ fn recovers_from_wal_without_snapshot() {
     let dir = tmpdir("nosnap");
     let sink = Arc::new(InMemorySink::default());
 
-    // snapshot_every = 0 -> never snapshots, so recovery is pure WAL replay.
+    // snapshot_every = 0：从不打快照，恢复就是纯 WAL 重放。
     let mut e1 = SymbolEngine::open(dir.clone(), "BTCUSDT", 1, 6, 0, sink.clone()).unwrap();
     run_commands(&mut e1);
     let before = digest(&e1.snapshot_state());
@@ -78,11 +76,11 @@ fn recovers_from_snapshot_plus_wal_tail() {
     let sink = Arc::new(InMemorySink::default());
 
     let mut e1 = SymbolEngine::open(dir.clone(), "BTCUSDT", 1, 6, 1000, sink.clone()).unwrap();
-    // First batch, then force a snapshot (truncates WAL)...
+    // 第一批之后强制打快照（WAL 被截断）……
     e1.process(&place("s1", "a", Side::Sell, TimeInForce::GTC, "70010", "1.5"));
     e1.process(&place("s2", "a", Side::Sell, TimeInForce::GTC, "70000", "2.0"));
     e1.maybe_snapshot();
-    // ...then a second batch that lands only in the post-snapshot WAL tail.
+    // ……然后第二批只落在快照之后的 WAL 尾部。
     e1.process(&place("b2", "c", Side::Buy, TimeInForce::GTC, "70000", "0.5"));
     e1.process(&place("s3", "a", Side::Sell, TimeInForce::GTC, "70020", "3.0"));
     let before = digest(&e1.snapshot_state());

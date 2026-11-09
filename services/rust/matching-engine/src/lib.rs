@@ -1,8 +1,7 @@
-//! Linbit spot matching engine library.
+//! 现货撮合引擎库。
 //!
-//! The crate is split so both the service binary (`main.rs`) and the benchmark
-//! (`bin/bench.rs`) can drive the same matching core, and so unit/integration
-//! tests can exercise it without any transport.
+//! 服务进程（`main.rs`）和压测二进制（`bin/bench.rs`）共用同一套撮合核心，
+//! 单测和集成测试也可以不经过传输层直接驱动它。
 
 pub mod book;
 pub mod bus;

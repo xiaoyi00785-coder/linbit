@@ -1,24 +1,18 @@
-//! Linbit spot matching engine service.
+//! 现货撮合引擎进程。
 //!
-//! Configuration (all via environment variables):
+//! 配置全部来自环境变量：
 //!
-//! * `BIND`            — listen address (default `0.0.0.0:8083`).
-//! * `SYMBOLS`         — comma list of `SYMBOL:qtyPrecision` (default
-//!                       `BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1,AAPLUSDT:4,TSLAUSDT:4,NVDAUSDT:4,MSFTUSDT:4,GOOGLUSDT:4,AMZNUSDT:4,METAUSDT:4,COINUSDT:4,SPYUSDT:4,PAXGUSDT:5,XAUTUSDT:5`). Append only: list order fixes each symbol's
-//!                       trade-id namespace.
-//! * `DATA_DIR`        — root for per-symbol WAL + snapshot files (default
-//!                       `./data`). Each symbol gets `DATA_DIR/<symbol>/`.
-//! * `SNAPSHOT_EVERY`  — snapshot after this many commands (default 1000).
-//! * `INTERNAL_TOKEN`  — shared token required on `/engine/*` (empty = open).
-//! * `EVENT_SINK_URL`  — if set, engine events are also POSTed here (the local
-//!                       pub/sub stand-in); otherwise events are logged.
-//! * `WAL_FSYNC`       — durability policy: `group` (default) group-commits a
-//!                       batch with a single fsync; `per_command` fsyncs every
-//!                       command on its own.
-//! * `WAL_BATCH_MAX`   — group commit: max commands coalesced per fsync
-//!                       (default 1024).
-//! * `WAL_BATCH_WINDOW_US` — group commit: max microseconds a command waits for
-//!                       batch-mates before the fsync fires (default 1000 = 1ms).
+//! * `BIND`            — 监听地址（默认 `0.0.0.0:8083`）。
+//! * `SYMBOLS`         — 逗号分隔的 `SYMBOL:qtyPrecision`（默认
+//!                       `BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1,AAPLUSDT:4,TSLAUSDT:4,NVDAUSDT:4,MSFTUSDT:4,GOOGLUSDT:4,AMZNUSDT:4,METAUSDT:4,COINUSDT:4,SPYUSDT:4,PAXGUSDT:5,XAUTUSDT:5`）。
+//!                       只能在末尾追加：列表顺序决定每个交易对的成交号区间。
+//! * `DATA_DIR`        — 各交易对 WAL 和快照的根目录（默认 `./data`）。每个交易对使用 `DATA_DIR/<symbol>/`。
+//! * `SNAPSHOT_EVERY`  — 每这么多条命令打一次快照（默认 1000）。
+//! * `INTERNAL_TOKEN`  — `/engine/*` 要求的共享令牌（空表示不校验）。
+//! * `EVENT_SINK_URL`  — 若设置，引擎事件会 POST 到这里（本地的消息流替身）；否则只打日志。
+//! * `WAL_FSYNC`       — 落盘策略：`group`（默认）整批一次 fsync；`per_command` 每条命令单独 fsync。
+//! * `WAL_BATCH_MAX`   — 组提交时，每次 fsync 最多合并的命令数（默认 1024）。
+//! * `WAL_BATCH_WINDOW_US` — 组提交时，一条命令最多等待同伴的微秒数，到点就 fsync（默认 1000，即 1ms）。
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -84,7 +78,7 @@ fn main() {
     }
 }
 
-/// Read the WAL durability policy from the environment (see module docs).
+/// 从环境变量读取 WAL 落盘策略，含义见本文件顶部的模块注释。
 fn parse_commit_mode() -> CommitMode {
     match env("WAL_FSYNC", "group").to_ascii_lowercase().as_str() {
         "per_command" | "per-command" | "each" | "sync" => CommitMode::PerCommand,

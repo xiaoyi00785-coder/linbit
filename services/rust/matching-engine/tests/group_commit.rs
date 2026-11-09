@@ -1,15 +1,10 @@
-//! Group-commit durability: batching the fsync must not change what the engine
-//! does. These tests pin three properties of `process_batch`:
+//! 组提交的持久化：把 fsync 合成一批不能改变引擎的行为。这些测试钉住 `process_batch` 的三点：
 //!
-//!   1. Crash recovery under group commit reproduces the exact pre-crash book,
-//!      both from a pure WAL replay and from a snapshot + WAL tail.
-//!   2. Group commit is observationally identical to per-command fsync — the same
-//!      command stream yields the same reports and the same final book, however
-//!      it is chopped into batches (including batch boundaries that straddle the
-//!      snapshot threshold).
-//!   3. A batch that was not fully fsynced (a torn tail, i.e. a crash mid-commit)
-//!      is dropped wholesale on recovery, so an unacknowledged batch never
-//!      half-applies.
+//!   1. 组提交下的崩溃恢复能还原崩溃前的订单簿，纯 WAL 重放和「快照 + WAL 尾部」两条路都要能还原。
+//!   2. 组提交和逐条 fsync 从外面看一样：同一串命令得到同样的报告和同样的最终订单簿，
+//!      不管怎么切批（包括批边界正好跨过快照阈值）。
+//!   3. 没有完整 fsync 的一批（写到一半的尾部，也就是提交过程中崩溃）在恢复时整批丢掉，
+//!      尚未确认的批不会应用一半。
 
 use std::io::Write;
 use std::sync::Arc;
@@ -36,20 +31,19 @@ fn cancel(id: &str) -> Command {
     Command::Cancel(CancelCommand { symbol: "BTCUSDT".into(), order_id: id.into() })
 }
 
-/// A reasonably busy mixed workload: resting orders on both sides, crossing
-/// takers that partially fill makers, and a cancel. Enough to exercise trade-id
-/// namespacing, partial fills, and book mutations.
+/// 一串比较密的混合指令：双边挂单、部分成交的吃单，以及一次撤单。
+/// 用来覆盖成交号区间、部分成交和订单簿改动。
 fn workload() -> Vec<Command> {
     vec![
         place("s1", "a", Side::Sell, TimeInForce::GTC, "70010", "1.5"),
         place("s2", "a", Side::Sell, TimeInForce::GTC, "70000", "2.0"),
         place("b1", "b", Side::Buy, TimeInForce::GTC, "69990", "1.0"),
-        place("b2", "c", Side::Buy, TimeInForce::GTC, "70000", "0.5"), // partial-fills s2
+        place("b2", "c", Side::Buy, TimeInForce::GTC, "70000", "0.5"), // 部分成交 s2
         cancel("b1"),
         place("s3", "a", Side::Sell, TimeInForce::GTC, "70020", "3.0"),
-        place("b3", "d", Side::Buy, TimeInForce::GTC, "70010", "2.0"), // sweeps 70000 then 70010
-        place("s4", "e", Side::Sell, TimeInForce::IOC, "69995", "10.0"), // IOC against bids
-        cancel("nope"), // rejected-not-found, still recorded in the WAL
+        place("b3", "d", Side::Buy, TimeInForce::GTC, "70010", "2.0"), // 先吃 70000，再吃 70010
+        place("s4", "e", Side::Sell, TimeInForce::IOC, "69995", "10.0"), // IOC 打买盘
+        cancel("nope"), // 拒绝 not_found，仍然记入 WAL
         place("b4", "f", Side::Buy, TimeInForce::GTC, "70005", "0.25"),
     ]
 }
@@ -68,8 +62,7 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
     base
 }
 
-/// Feed `cmds` through `process_batch` in fixed-size chunks (the last chunk may
-/// be short — a real batch boundary).
+/// 把 `cmds` 按固定大小切成块交给 `process_batch`。最后一块可以不满，这就是真实的批边界。
 fn run_in_chunks(engine: &mut SymbolEngine, cmds: &[Command], chunk: usize) -> Vec<ExecReport> {
     let mut reports = Vec::new();
     for group in cmds.chunks(chunk.max(1)) {
@@ -83,7 +76,7 @@ fn group_commit_recovers_from_wal_without_snapshot() {
     let dir = tmpdir("nosnap");
     let sink = Arc::new(InMemorySink::default());
 
-    // snapshot_every = 0 -> pure WAL replay on recovery.
+    // snapshot_every = 0：恢复时只重放 WAL，不读快照。
     let mut e1 = SymbolEngine::open(dir.clone(), "BTCUSDT", 1, 6, 0, sink.clone()).unwrap();
     run_in_chunks(&mut e1, &workload(), 4);
     let before = digest(&e1.snapshot_state());
@@ -102,8 +95,7 @@ fn group_commit_recovers_from_snapshot_plus_wal_tail() {
 
     let mut e1 = SymbolEngine::open(dir.clone(), "BTCUSDT", 1, 6, 1000, sink.clone()).unwrap();
     let cmds = workload();
-    // First batch, forced snapshot (truncates WAL), then a second batch landing
-    // only in the post-snapshot WAL tail.
+    // 第一批之后强制打快照（WAL 被截断），第二批只落在快照之后的 WAL 尾部。
     e1.process_batch(&cmds[..4]);
     e1.maybe_snapshot();
     run_in_chunks(&mut e1, &cmds[4..], 3);
@@ -120,13 +112,13 @@ fn group_commit_recovers_from_snapshot_plus_wal_tail() {
 fn group_commit_is_identical_to_per_command() {
     let cmds = workload();
 
-    // Reference: per-command fsync, one command at a time.
+    // 对照：逐条 fsync，一次一条。
     let dir_ref = tmpdir("ref");
     let mut reference = SymbolEngine::open(dir_ref.clone(), "BTCUSDT", 1, 6, 0, Arc::new(InMemorySink::default())).unwrap();
     let ref_reports: Vec<ExecReport> = cmds.iter().map(|c| reference.process(c)).collect();
     let ref_digest = digest(&reference.snapshot_state());
 
-    // Every chunking of the same stream must yield identical reports and book.
+    // 同一串命令无论怎么切批，报告和最终订单簿都必须相同。
     for chunk in [1usize, 2, 3, 5, cmds.len(), cmds.len() + 7] {
         let dir = tmpdir(&format!("gc{chunk}"));
         let mut e = SymbolEngine::open(dir.clone(), "BTCUSDT", 1, 6, 0, Arc::new(InMemorySink::default())).unwrap();
@@ -144,9 +136,8 @@ fn group_commit_is_identical_to_per_command() {
 
 #[test]
 fn group_commit_batch_straddles_snapshot_boundary() {
-    // snapshot_every = 3, but batches are size 4, so a single batch crosses the
-    // threshold. The one-snapshot-per-batch check must still fire and leave a
-    // consistent snapshot (+ possibly-empty tail) that recovers exactly.
+    // snapshot_every = 3，但批大小是 4，所以一批会跨过阈值。
+    // 每批只检查一次快照仍然要触发，留下一份能精确恢复的快照（尾部可以是空的）。
     let dir = tmpdir("straddle");
     let sink = Arc::new(InMemorySink::default());
     let mut e1 = SymbolEngine::open(dir.clone(), "BTCUSDT", 1, 6, 3, sink.clone()).unwrap();
@@ -162,9 +153,8 @@ fn group_commit_batch_straddles_snapshot_boundary() {
 
 #[test]
 fn torn_final_batch_is_dropped_on_recovery() {
-    // Model a crash mid-fsync: a durable prefix of commands, then a half-written
-    // trailing record. Recovery must keep the acknowledged prefix and discard the
-    // torn (never-acknowledged) tail — no partial application.
+    // 模拟 fsync 写到一半：前面的命令已经落盘，最后一条记录只写了一半。
+    // 恢复必须保留已确认的前缀，丢掉残缺的、从未确认的尾部，不能应用一半。
     let dir = tmpdir("torn");
     let sink = Arc::new(InMemorySink::default());
 
@@ -174,8 +164,7 @@ fn torn_final_batch_is_dropped_on_recovery() {
     let before = digest(&e1.snapshot_state());
     drop(e1);
 
-    // Append a torn JSON line to the WAL, as a crash during the next batch's
-    // fsync would leave behind.
+    // 往 WAL 末尾追加一行写了一半的 JSON，相当于下一批 fsync 过程中崩溃留下的尾巴。
     let mut f = std::fs::OpenOptions::new().append(true).open(dir.join("wal.log")).unwrap();
     f.write_all(br#"{"seq":6,"command":{"cmd":"place","symbol":"BTCUS"#).unwrap();
     f.sync_all().unwrap();

@@ -1,27 +1,21 @@
-//! Throughput + latency benchmark for the matching core and its WAL.
+//! 撮合核心和 WAL 的吞吐、延迟压测。
 //!
-//! Two kinds of runs are reported side by side:
+//! 两种跑法并排列出：
 //!
-//!   * **memory** — the engine with no WAL at all, measuring pure matching cost
-//!     (the historical baseline).
-//!   * **disk** — the engine writing a real WAL to a temp dir with fsync enabled,
-//!     under both durability policies: per-command fsync and group commit at a
-//!     range of batch sizes. This isolates the fsync-amortization win.
+//!   * memory — 完全不写 WAL，只量撮合本身的成本（历史基线）。
+//!   * disk — 往临时目录写真实 WAL 并 fsync。逐条 fsync，以及若干批大小的组提交都跑，
+//!     用来把「fsync 被分摊掉」的收益单独看出来。
 //!
-//!   cargo run --release --bin bench                 # 1,000,000 mem / 30,000 disk
-//!   cargo run --release --bin bench -- 2000000      # custom memory order count
-//!   cargo run --release --bin bench -- 2000000 50000 # custom memory + disk counts
+//!   cargo run --release --bin bench                 # 内存 1,000,000 / 磁盘 30,000
+//!   cargo run --release --bin bench -- 2000000      # 自定义内存订单数
+//!   cargo run --release --bin bench -- 2000000 50000 # 自定义内存和磁盘订单数
 //!
-//! For each run it prints throughput (orders/sec) and p50/p99/p999 latency, plus
-//! the host's core count and the temp filesystem + a measured raw-fsync latency so
-//! the absolute numbers are interpretable.
+//! 每次打印吞吐（订单/秒）和 p50/p99/p999 延迟，并附上机器核数、临时目录所在文件系统，
+//! 以及测得的单次 fsync 延迟，方便对照绝对数字。
 //!
-//! Latency model: a command's latency is the time until it is durable and
-//! applied. Under per-command fsync that is its own fsync. Under group commit a
-//! command only acks once its *batch* has fsync'd, so each command in a batch is
-//! charged the whole batch's service time — the latency a client that joined at
-//! batch open would see. Larger batches therefore trade per-command latency for
-//! throughput, which is exactly what the table shows.
+//! 延迟定义：从命令开始到它落盘并被应用。逐条 fsync 时就是它自己那次 fsync。
+//! 组提交时，一条命令要等自己所在的那一批 fsync 完才确认，所以批内每条命令都记整批的服务时间，
+//! 也就是批一开始就加入的客户端能看到的延迟。批越大，单条延迟换吞吐，表里就是这个关系。
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -34,7 +28,7 @@ use matching_engine::bus::EventSink;
 use matching_engine::fixed;
 use matching_engine::types::*;
 
-/// A sink that discards events — we are measuring matching + WAL, not the bus.
+/// 丢掉事件的出口。这里量的是撮合和 WAL，不是事件总线。
 struct NullSink;
 impl EventSink for NullSink {
     fn publish(&self, _event: &EngineEvent) {}
@@ -56,8 +50,7 @@ fn place(id: u64, user: &str, side: Side, price: &str, qty: &str) -> Command {
 
 const LEVELS: u64 = 1000;
 
-/// Build the stream of crossing orders used by every run: alternating a buy that
-/// lifts the best ask and a replenishing sell so the book never empties.
+/// 构造每次压测用的成交流：一笔打掉最优卖价的买单，接着一笔补回卖单，订单簿不会被吃空。
 fn workload(n: usize, start_oid: u64) -> Vec<Command> {
     let mut cmds = Vec::with_capacity(n);
     let mut oid = start_oid;
@@ -73,7 +66,7 @@ fn workload(n: usize, start_oid: u64) -> Vec<Command> {
     cmds
 }
 
-/// Seed a warm, deep book (1000 resting sell levels). Returns the next order id.
+/// 预先挂上 1000 档卖单。返回下一次可用的订单号。
 fn seed(engine: &mut SymbolEngine) -> u64 {
     let mut oid = 0u64;
     for i in 0..LEVELS {
@@ -109,7 +102,7 @@ fn summarize(label: &str, orders: usize, trades: u64, secs: f64, mut lat: Vec<u6
     }
 }
 
-/// Memory baseline: no WAL, one command at a time.
+/// 内存基线：没有 WAL，一次一条命令。
 fn run_memory(n: usize) -> Stats {
     let mut engine = SymbolEngine::in_memory("BTCUSDT", 1, 6, Arc::new(NullSink));
     let oid = seed(&mut engine);
@@ -126,12 +119,10 @@ fn run_memory(n: usize) -> Stats {
     summarize("memory (no WAL)", n, trades, start.elapsed().as_secs_f64(), lat)
 }
 
-/// Disk WAL run at a given batch size. `batch == 1` is the per-command policy
-/// (one fsync per command); larger batches group-commit with a single fsync.
-/// Each command in a committed batch is charged the batch's full service time.
+/// 按给定批大小跑磁盘 WAL。`batch == 1` 就是逐条策略（每条一次 fsync）；
+/// 更大的批用一次 fsync 做组提交。已提交的一批里，每条命令都记整批的服务时间。
 fn run_disk(dir: &Path, n: usize, batch: usize) -> Stats {
-    // snapshot_every = 0: never snapshot, so the measurement is pure WAL fsync
-    // cost (no periodic snapshot/truncate noise).
+    // snapshot_every = 0：从不打快照，测到的就是 WAL fsync 本身，没有周期性快照和截断的噪声。
     let mut engine = SymbolEngine::open(dir.to_path_buf(), "BTCUSDT", 1, 6, 0, Arc::new(NullSink)).unwrap();
     let oid = seed(&mut engine);
     let cmds = workload(n, oid);
@@ -175,7 +166,7 @@ fn main() {
 
     let mut rows = vec![run_memory(mem_n)];
 
-    // Disk runs: per-command, then group commit at increasing batch sizes.
+    // 磁盘：先逐条，再按递增的批大小做组提交。
     for batch in [1usize, 8, 32, 128, 1024] {
         let dir = PathBuf::from(&tmp).join(format!("linbit-bench-b{batch}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).ok();
@@ -210,7 +201,7 @@ fn print_table(rows: &[Stats]) {
     println!("(latency columns are per-command; group-commit rows charge each command its full batch service time)");
 }
 
-/// Format a nanosecond latency compactly as ns / µs / ms.
+/// 把纳秒延迟收成 ns / µs / ms。
 fn fmt_ns(ns: u64) -> String {
     if ns < 1_000 {
         format!("{ns}ns")
@@ -221,8 +212,8 @@ fn fmt_ns(ns: u64) -> String {
     }
 }
 
-/// Best-effort lookup of the device/fs-type/mount backing `path` via /proc/mounts
-/// (longest matching mount point wins). Returns "unknown" fields off Linux.
+/// 用 /proc/mounts 查 `path` 落在哪块设备、什么文件系统、哪个挂载点（最长匹配优先）。
+/// 非 Linux 上这些字段返回 "unknown"。
 fn temp_fs_info(path: &Path) -> (String, String, String) {
     let target = path.to_string_lossy().to_string();
     let mounts = match std::fs::read_to_string("/proc/mounts") {
@@ -245,8 +236,7 @@ fn temp_fs_info(path: &Path) -> (String, String, String) {
     best.unwrap_or_else(|| ("unknown".into(), "unknown".into(), "unknown".into()))
 }
 
-/// Measure mean single-fsync latency on the benchmark's filesystem so the table's
-/// absolute numbers can be read against the raw disk cost.
+/// 在压测使用的文件系统上量单次 fsync 的平均延迟，用来对照表里的绝对数字和磁盘本身的成本。
 fn raw_fsync_latency_us(dir: &Path) -> f64 {
     let path = dir.join(format!("linbit-fsync-probe-{}", std::process::id()));
     let mut f = match OpenOptions::new().create(true).write(true).truncate(true).open(&path) {
