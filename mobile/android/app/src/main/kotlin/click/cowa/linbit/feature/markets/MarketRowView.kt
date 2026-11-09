@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import click.cowa.linbit.core.util.Fmt
+import click.cowa.linbit.data.MarketKind
 import click.cowa.linbit.data.MarketRow
 import click.cowa.linbit.data.SortDir
 import click.cowa.linbit.data.SortField
@@ -57,11 +58,19 @@ fun MarketRowView(
         if (showIcon && MarketPrefs.showCoinIcon) CoinIcon(row.base)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             if (compactPair) {
-                Text(row.symbol, style = lb(FontSize.symbol, FontWeight.Medium), color = p.textPrimary, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(row.symbol, style = lb(FontSize.symbol, FontWeight.Medium), color = p.textPrimary, maxLines = 1)
+                    if (row.kind == MarketKind.FUTURES) {
+                        Text(" 永续", style = lb(FontSize.caption), color = p.textSecondary, maxLines = 1)
+                    }
+                }
             } else {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(row.base, style = lb(FontSize.symbolWithIcon, FontWeight.Medium), color = p.textPrimary, maxLines = 1)
                     Text(" / ${row.quote}", style = lb(FontSize.caption), color = p.textSecondary, maxLines = 1)
+                    if (row.kind == MarketKind.FUTURES) {
+                        Text(" · 永续", style = lb(FontSize.caption), color = p.textSecondary, maxLines = 1)
+                    }
                 }
             }
             Text(Fmt.volumeCN(row.quoteVolume), style = lbNum(FontSize.caption), color = p.textSecondary, maxLines = 1)

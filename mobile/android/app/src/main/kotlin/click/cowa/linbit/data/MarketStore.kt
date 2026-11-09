@@ -22,7 +22,12 @@ import java.math.BigDecimal
 data class MarketState(
     val spot: List<MarketRow> = emptyList(),
     val futures: List<MarketRow> = emptyList(),
+    /** 兼容旧调用：等同 spotCategories。 */
     val categories: List<ApiMarketCategory> = emptyList(),
+    val spotCategories: List<ApiMarketCategory> = emptyList(),
+    val futuresCategories: List<ApiMarketCategory> = emptyList(),
+    /** TradFi 交易对 symbol 集合（来自 GET /tradfi/assets）；空表示后端无 TradFi 或加载失败。 */
+    val tradFiSymbols: Set<String> = emptySet(),
     /** USDT→CNY 汇率（/market/fiat-rates）；取不到时为 null，界面不显示折合金额（不使用硬编码汇率）。 */
     val cnyRate: BigDecimal? = null,
     val loading: Boolean = false,
@@ -30,10 +35,15 @@ data class MarketState(
 ) {
     fun rows(kind: MarketKind) = if (kind == MarketKind.SPOT) spot else futures
 
+    fun categoriesFor(kind: MarketKind): List<ApiMarketCategory> =
+        (if (kind == MarketKind.SPOT) spotCategories.ifEmpty { categories } else futuresCategories)
+            .filter { it.symbols.isNotEmpty() }
+
     fun filtered(kind: MarketKind, categoryIndex: Int): List<MarketRow> {
         val all = rows(kind)
-        if (categoryIndex <= 0 || categoryIndex - 1 >= categories.size) return all
-        val set = categories[categoryIndex - 1].symbols.toSet()
+        val cats = categoriesFor(kind)
+        if (categoryIndex <= 0 || categoryIndex - 1 >= cats.size) return all
+        val set = cats[categoryIndex - 1].symbols.toSet()
         return all.filter { it.symbol in set }
     }
 }
@@ -61,7 +71,13 @@ class MarketStore(
             val symbols = async { runCatching { apiCall { api.symbols() } }.getOrNull() }
             val spot = async { runCatching { apiCall { OneOfResponses.tickers(api.ticker()) } }.getOrNull() }
             val fut = async { runCatching { apiCall { OneOfResponses.futuresTickers(api.futuresTicker()) } }.getOrNull() }
-            val cats = async { runCatching { apiCall { api.categories() } }.getOrNull() }
+            val spotCats = async { runCatching { apiCall { api.categories(market = "spot") } }.getOrNull()
+                ?: runCatching { apiCall { api.categories() } }.getOrNull() }
+            val futCats = async { runCatching { apiCall { api.categories(market = "futures") } }.getOrNull() }
+            val tradFi = async {
+                runCatching { apiCall { api.tradFiAssets(null) } }.getOrNull()
+                    ?.items?.mapNotNull { it.symbol }?.toSet()
+            }
             val fx = async { runCatching { apiCall { api.fiatRates("USDT") } }.getOrNull() }
             val usd = async { runCatching { apiCall { api.usdRate() } }.getOrNull() }
             click.cowa.linbit.core.storage.QuoteDisplay.applyRate(usd.await())
@@ -70,14 +86,18 @@ class MarketStore(
                 spot.await()?.firstNotNullOfOrNull { it.usd?.takeIf { u -> u.rate?.toBigDecimalOrNull()?.signum() == 1 && u.reason != "rate_unavailable" && u.pegAssumed != true } }
                     ?.let { click.cowa.linbit.core.storage.QuoteDisplay.applyTickerRate(it) }
             val fxBody = fx.await()
-            Loaded(symbols.await(), spot.await(), fut.await(), cats.await(), fxBody?.rates?.mapValues { it.value.content }, fxBody?.base)
+            Loaded(
+                symbols.await(), spot.await(), fut.await(),
+                spotCats.await(), futCats.await(), tradFi.await(),
+                fxBody?.rates?.mapValues { it.value.content }, fxBody?.base,
+            )
         }
         r.rates?.let { rates ->
             click.cowa.linbit.core.storage.QuoteDisplay.rates = rates.mapNotNull { (key, value) -> Dec.parseOrNull(value)?.takeIf { it.signum() > 0 }?.let { key to it } }.toMap()
             click.cowa.linbit.core.storage.QuoteDisplay.ratesBase = r.ratesBase?.uppercase() ?: "USDT"
         }
         symbolMeta = (r.symbols ?: symbolMeta.values.toList()).associateBy { it.symbol }
-        r.categories?.firstOrNull { it.id == "stocks" }?.symbols?.let { syms ->
+        r.spotCategories?.firstOrNull { it.id == "stocks" }?.symbols?.let { syms ->
             click.cowa.linbit.ui.components.CoinIcons.registerStocks(syms.map { symbolMeta[it]?.base ?: it.removeSuffix("USDT") })
         }
         // 现货无成交（lastPrice=0）时用同名合约的 标记价 → 指数价 兜底
@@ -100,8 +120,14 @@ class MarketStore(
                 }
             }
             val rate = Dec.parseOrNull(r.cnyRate)?.takeIf { it.signum() > 0 }
+            val spotCats = r.spotCategories ?: cur.spotCategories.ifEmpty { cur.categories }
+            val futCats = r.futuresCategories ?: cur.futuresCategories
             cur.copy(
-                spot = spot, futures = futures, categories = r.categories ?: cur.categories,
+                spot = spot, futures = futures,
+                categories = spotCats,
+                spotCategories = spotCats,
+                futuresCategories = futCats,
+                tradFiSymbols = r.tradFiSymbols ?: cur.tradFiSymbols,
                 cnyRate = rate ?: cur.cnyRate, loading = false,
                 error = if (r.spot == null && r.futures == null) "行情加载失败，请检查网络" else null,
             )
@@ -113,7 +139,9 @@ class MarketStore(
         val symbols: List<ApiSymbol>?,
         val spot: List<click.cowa.linbit.core.generated.ApiTicker>?,
         val futures: List<click.cowa.linbit.core.generated.ApiFuturesTicker>?,
-        val categories: List<ApiMarketCategory>?,
+        val spotCategories: List<ApiMarketCategory>?,
+        val futuresCategories: List<ApiMarketCategory>?,
+        val tradFiSymbols: Set<String>?,
         val rates: Map<String, String>?,
         val ratesBase: String? = null,
     ) { val cnyRate: String? get() = rates?.get("CNY") }

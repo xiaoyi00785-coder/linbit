@@ -134,19 +134,23 @@ fun MarketsContent(
                 if (kind == 2) {
                     click.cowa.linbit.feature.more.TradFiScreen(onBack = {}, onTrade = { fut, sym -> onOpenTrade(if (fut) MarketKind.FUTURES else MarketKind.SPOT, sym) }, embedded = true, bottomInset = bottomInset)
                 } else {
-                    val chips = listOf("全部") + state.categories.map { it.name }
-                    ChipBar(chips, category.coerceAtMost(chips.size - 1), { category = it }, Modifier.padding(vertical = 10.dp))
-                    MarketListHeader(field, dir, { f, d -> field = f; dir = d })
                     val mk = if (kind == 0) MarketKind.SPOT else MarketKind.FUTURES
-                    val rows = state.filtered(mk, category).sortedByField(field, dir)
+                    val cats = state.categoriesFor(mk)
+                    val chips = listOf("全部") + cats.map { it.name }
+                    val catIdx = category.coerceIn(0, (chips.size - 1).coerceAtLeast(0))
+                    ChipBar(chips, catIdx, { category = it }, Modifier.padding(vertical = 10.dp))
+                    MarketListHeader(field, dir, { f, d -> field = f; dir = d })
+                    val rows = state.filtered(mk, catIdx).sortedByField(field, dir)
                     PullToRefreshBox(isRefreshing = state.loading && rows.isNotEmpty(), onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
                         LazyColumn(contentPadding = PaddingValues(bottom = bottomInset)) {
                             if (rows.isEmpty()) item("empty") {
                                 if (state.loading) Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                                     androidx.compose.material3.CircularProgressIndicator(color = p.textTertiary, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
-                                } else EmptyState(state.error ?: "暂无数据")
+                                } else EmptyState(state.error ?: if (mk == MarketKind.FUTURES) "暂无合约交易对" else "暂无现货交易对")
                             }
-                            items(rows, key = { it.symbol }) { MarketRowView(it, state.cnyRate, onClick = { onOpenTrade(mk, it.symbol) }) }
+                            items(rows, key = { "${mk.name}:${it.symbol}" }) {
+                                MarketRowView(it, state.cnyRate, onClick = { onOpenTrade(mk, it.symbol) })
+                            }
                         }
                     }
                 }
@@ -158,55 +162,83 @@ fun MarketsContent(
     }
 }
 
-/** 自选：空时显示推荐（ref/7：两列卡片 + 勾选 + 黑色「加入自选」）；有自选时显示列表。 */
+/** 自选：只显示已加自选；空时按子 tab 推荐（对照 ref/7），绝不回退成全市场。 */
 @Composable
 private fun WatchlistTab(onAddWatch: (Set<String>) -> Unit, state: click.cowa.linbit.data.MarketState, watch: List<String>, bottomInset: Dp, onOpenTrade: (MarketKind, String) -> Unit) {
     val p = LB.p
     var kind by rememberSaveable { mutableIntStateOf(0) }
     var field by rememberSaveable { mutableStateOf(SortField.VOLUME) }
     var dir by rememberSaveable { mutableStateOf(SortDir.NONE) }
+    val sub = MarketsTabCatalog.watchSubTab(kind)
     Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         PrimaryTabs(listOf("全部", "现货", "合约", "TradFi"), kind, { kind = it }, size = FontSize.label, underline = true)
     }
     if (watch.isEmpty()) {
-        val recs = (state.futures.take(6) + state.spot.take(4)).map { it.symbol }.distinct()
-        var picked by remember(recs) { mutableStateOf(recs.toSet()) }
-        Column(Modifier.fillMaxSize().padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(Spacing.lg)) {
-            recs.chunked(2).forEach { pair ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    pair.forEach { s ->
-                        val on = s in picked
-                        Row(
-                            Modifier
-                                .weight(1f).height(58.dp)
-                                .border(BorderStroke(1.dp, p.border), RoundedCornerShape(Radius.lg))
-                                .pressable(scale = 1f) { picked = if (on) picked - s else picked + s }
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(s, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.Normal), color = p.textPrimary, maxLines = 1)
-                            Box(
-                                Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)).background(if (on) p.primary else androidx.compose.ui.graphics.Color.Transparent)
-                                    .border(BorderStroke(1.5.dp, p.primary), RoundedCornerShape(4.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) { if (on) Text("✓", style = lb(FontSize.small, FontWeight.Bold), color = p.textOnPrimary) }
+        val recs = MarketsTabCatalog.recommendSymbols(state.spot, state.futures, state.tradFiSymbols.toList().sorted(), sub)
+        if (recs.isEmpty()) {
+            EmptyState(
+                when (sub) {
+                    MarketsTabCatalog.WatchSubTab.TRADFI -> "暂无 TradFi 品种可添加"
+                    MarketsTabCatalog.WatchSubTab.FUTURES -> "暂无合约交易对可添加"
+                    MarketsTabCatalog.WatchSubTab.SPOT -> "暂无现货交易对可添加"
+                    else -> "暂无推荐"
+                },
+                Modifier.padding(top = 40.dp),
+            )
+        } else {
+            var picked by remember(recs, kind) { mutableStateOf(recs.toSet()) }
+            Column(Modifier.fillMaxSize().padding(Spacing.pageH), verticalArrangement = Arrangement.spacedBy(Spacing.lg)) {
+                Text("为你推荐", style = lb(FontSize.label, FontWeight.Medium), color = p.textSecondary)
+                recs.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        pair.forEach { s ->
+                            val on = s in picked
+                            Row(
+                                Modifier
+                                    .weight(1f).height(58.dp)
+                                    .border(BorderStroke(1.dp, p.border), RoundedCornerShape(Radius.lg))
+                                    .pressable(scale = 1f) { picked = if (on) picked - s else picked + s }
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(s, Modifier.weight(1f), style = lb(FontSize.title, FontWeight.Normal), color = p.textPrimary, maxLines = 1)
+                                Box(
+                                    Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)).background(if (on) p.primary else androidx.compose.ui.graphics.Color.Transparent)
+                                        .border(BorderStroke(1.5.dp, p.primary), RoundedCornerShape(4.dp)),
+                                    contentAlignment = Alignment.Center,
+                                ) { if (on) Text("✓", style = lb(FontSize.small, FontWeight.Bold), color = p.textOnPrimary) }
+                            }
                         }
+                        if (pair.size == 1) Box(Modifier.weight(1f))
                     }
-                    if (pair.size == 1) Box(Modifier.weight(1f))
                 }
+                Box(
+                    Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(Radius.xl)).background(p.primary)
+                        .pressable { onAddWatch(picked) },
+                    contentAlignment = Alignment.Center,
+                ) { Text("加入自选", style = lb(FontSize.body, FontWeight.Medium), color = p.textOnPrimary) }
             }
-            Box(
-                Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(Radius.xl)).background(p.primary)
-                    .pressable { onAddWatch(picked) },
-                contentAlignment = Alignment.Center,
-            ) { Text("加入自选", style = lb(FontSize.body, FontWeight.Medium), color = p.textOnPrimary) }
         }
-    } else {
-        MarketListHeader(field, dir, { f, d -> field = f; dir = d }, Modifier.padding(top = 8.dp))
-        val all = (state.spot + state.futures).filter { it.symbol in watch }.sortedByField(field, dir)
-        LazyColumn(contentPadding = PaddingValues(bottom = bottomInset)) {
-            items(all) { r -> MarketRowView(r, state.cnyRate, onClick = { onOpenTrade(if (state.futures.any { it.symbol == r.symbol } && state.spot.none { it.symbol == r.symbol }) MarketKind.FUTURES else MarketKind.SPOT, r.symbol) }) }
+        return
+    }
+    val watchedRows = MarketsTabCatalog.watchRows(watch, state.spot, state.futures, state.tradFiSymbols, sub)
+        .sortedByField(field, dir)
+    if (watchedRows.isEmpty()) {
+        EmptyState(
+            when (sub) {
+                MarketsTabCatalog.WatchSubTab.SPOT -> "该分类暂无现货自选"
+                MarketsTabCatalog.WatchSubTab.FUTURES -> "该分类暂无合约自选"
+                MarketsTabCatalog.WatchSubTab.TRADFI -> "该分类暂无 TradFi 自选"
+                else -> "暂无自选"
+            },
+            Modifier.padding(top = 40.dp),
+        )
+        return
+    }
+    MarketListHeader(field, dir, { f, d -> field = f; dir = d }, Modifier.padding(top = 8.dp))
+    LazyColumn(contentPadding = PaddingValues(bottom = bottomInset)) {
+        items(watchedRows, key = { "${it.kind}:${it.symbol}" }) { r ->
+            MarketRowView(r, state.cnyRate, onClick = { onOpenTrade(r.kind, r.symbol) })
         }
     }
 }
-
