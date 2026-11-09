@@ -15,6 +15,7 @@ sealed class AssetsRoute {
     data object AddressBook : AssetsRoute()
     data class AddAddress(val asset: String? = null) : AssetsRoute()
     data object WithdrawRecords : AssetsRoute()
+    data object DepositRecords : AssetsRoute()
 }
 
 /** 从地址簿选回提现表单的预填（本地状态，非生产资金）。 */

@@ -11,7 +11,7 @@ import java.math.BigDecimal
 
 class CompanionContractTest {
     private val json=Json { ignoreUnknownKeys=true }
-    @After fun reset() { QuoteDisplay.applyRate(null);QuoteDisplay.currency="USD";QuoteDisplay.rates=emptyMap() }
+    @After fun reset() { QuoteDisplay.applyRate(null);QuoteDisplay.currency="USD";QuoteDisplay.rates=emptyMap();QuoteDisplay.ratesBase="USD" }
     @Test fun independentBonusDecimalAmountsAndMissingValues() {
         val b=json.decodeFromString(ApiFuturesBonus200Response.serializer(),"""{"available":{"trial":"12345678901234567890.12345678","deduction":null},"items":[]}""")
         assertEquals("12345678901234567890.12345678",bonusAmount(b.available?.trial));assertEquals("--",bonusAmount(b.available?.deduction))

@@ -74,6 +74,13 @@ class AssetsViewModel @Inject constructor(
     fun pairFor(asset: String): click.cowa.linbit.data.MarketRow? = market.state.value.spot.firstOrNull { it.base == asset && it.quote == "USDT" }
     fun setTab(i: Int) { _s.value = _s.value.copy(tab = i) }
     fun toggleHide() { _s.value = _s.value.copy(hideAmount = !_s.value.hideAmount) }
+    /** 重新拉取行情与 fiat-rates/usd-rate，刷新 ≈ 折合。 */
+    fun reloadQuotes() {
+        viewModelScope.launch {
+            runCatching { market.load() }
+            _s.value = _s.value.copy(cnyRate = market.state.value.cnyRate ?: _s.value.cnyRate)
+        }
+    }
     fun setHideSmall(v: Boolean) { _s.value = _s.value.copy(hideSmall = v) }
     fun setQuery(q: String) { _s.value = _s.value.copy(query = q) }
 
@@ -474,6 +481,10 @@ class AssetsViewModel @Inject constructor(
 
     suspend fun updateAddressWhitelist(id: String, whitelisted: Boolean, totp: String): Result<*> = runCatching {
         apiCall { api.updateWithdrawAddress(id, ApiUpdateWithdrawAddressRequest(whitelisted = whitelisted, totpCode = totp)) }
+    }
+
+    suspend fun depositRecords(): Result<List<click.cowa.linbit.core.generated.ApiDeposit>> {
+        return runCatching { apiCall { api.depositRecords() }.items }
     }
 
     suspend fun withdrawRecords(): Result<List<ApiWithdrawal>> {

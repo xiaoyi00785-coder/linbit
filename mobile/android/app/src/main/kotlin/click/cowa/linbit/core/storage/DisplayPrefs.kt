@@ -13,6 +13,8 @@ object DisplayPrefs {
     var color by mutableStateOf(UpDownColor.GREEN_UP); private set
     /** 参考「主题设置」：新主题 / 经典主题（经典为参考默认）。 */
     var classicTheme by mutableStateOf(true); private set
+    /** 资产/首页总估值单位：USDT / BTC / ETH（用现货 ticker 折算，非法币）。 */
+    var valuationAsset by mutableStateOf("USDT"); private set
     val redUp: Boolean get() = color != UpDownColor.GREEN_UP
     private var loaded = false
     private fun sp(c: Context) = c.getSharedPreferences("display_prefs", Context.MODE_PRIVATE)
@@ -22,10 +24,16 @@ object DisplayPrefs {
         color = s.getString("updown", null)?.let { n -> UpDownColor.entries.firstOrNull { it.name == n } }
             ?: if (s.getBoolean("red_up", false)) UpDownColor.RED_UP_GREEN_DOWN else UpDownColor.GREEN_UP
         classicTheme = s.getBoolean("classic_theme", true)
+        valuationAsset = s.getString("valuation_asset", "USDT")?.takeIf { it in setOf("USDT", "BTC", "ETH") } ?: "USDT"
     }
     fun setColor(context: Context, value: UpDownColor) { color = value; sp(context).edit().putString("updown", value.name).putBoolean("red_up", value != UpDownColor.GREEN_UP).apply() }
     fun setRedUp(context: Context, value: Boolean) = setColor(context, if (value) UpDownColor.RED_UP_GREEN_DOWN else UpDownColor.GREEN_UP)
     fun setClassicTheme(context: Context, value: Boolean) { classicTheme = value; sp(context).edit().putBoolean("classic_theme", value).apply() }
+    fun setValuationAsset(context: Context, value: String) {
+        val v = value.takeIf { it in setOf("USDT", "BTC", "ETH") } ?: return
+        valuationAsset = v
+        sp(context).edit().putString("valuation_asset", v).apply()
+    }
 }
 
 /** 主题设置对应的涨/跌基色（取样自参考截图）。 */

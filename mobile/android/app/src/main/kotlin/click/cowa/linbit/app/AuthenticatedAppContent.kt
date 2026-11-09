@@ -161,6 +161,8 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onOpenSpot = { tab = MainTab.SPOT },
                         onOpenProfile = { if (loggedIn) userCenter = true else auth = "register" },
                         onOpenAssetFeature = { feature -> assetFeature = feature; vm.assetsNav.clear() },
+                        onOpenSpotHistory = { historyKind = "spot" },
+                        onOpenFuturesHistory = { historyKind = "futures" },
                         vm = routeVms.assets,
                     ) else Box(Modifier.fillMaxSize())
                 }

@@ -39,6 +39,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import click.cowa.linbit.R
+import click.cowa.linbit.core.storage.DisplayPrefs
+import click.cowa.linbit.core.storage.QuoteDisplay
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import java.math.BigDecimal
+import java.math.RoundingMode
 import click.cowa.linbit.core.util.Fmt
 import click.cowa.linbit.data.assets.AssetsNav
 import click.cowa.linbit.data.assets.AssetsRoute
@@ -70,6 +76,8 @@ fun AssetsScreen(
     onOpenProfile: () -> Unit = {},
     /** Production earn/strategy/TradFi hosts; no placeholder success or duplicate balances. */
     onOpenAssetFeature: (String) -> Unit = {},
+    onOpenSpotHistory: () -> Unit = {},
+    onOpenFuturesHistory: () -> Unit = {},
     vm: AssetsViewModel = hiltViewModel(),
 ) {
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
@@ -78,6 +86,8 @@ fun AssetsScreen(
     var showWithdraw by remember { mutableStateOf(false) }
     var showFilter by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showValuation by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<String?>(null) }
     detail?.let { a -> CoinDetailPage(vm, a, onBack = { detail = null }, onTrade = { detail = null; onOpenSpot() }) }
     val p = LB.p
@@ -129,7 +139,7 @@ fun AssetsScreen(
             } else if (emptyOverview) {
                 OverviewEmpty(onDeposit = { assetsNav.openDeposit(switchTab = false) }, onFutures = onOpenFutures)
             } else {
-                Header(s.hideAmount, total, s.cnyRate, s.tab, vm, onToggle = vm::toggleHide)
+                Header(s.hideAmount, total, s.cnyRate, s.tab, vm, onToggle = vm::toggleHide, onValuation = { showValuation = true }, onHistory = { showHistory = true })
                 Actions(
                     tab = s.tab,
                     onDeposit = { assetsNav.openDeposit() },
@@ -180,6 +190,87 @@ fun AssetsScreen(
             }
         }
     }
+
+    val ctx = LocalContext.current
+    if (showValuation) {
+        LbSheet("估值单位", { showValuation = false }, showClose = true) {
+            Column(Modifier.padding(bottom = 20.dp)) {
+                listOf("USDT", "BTC", "ETH").forEach { unit ->
+                    Row(
+                        Modifier.fillMaxWidth().pressable(scale = 1f) {
+                            DisplayPrefs.setValuationAsset(ctx, unit); showValuation = false
+                        }.padding(horizontal = Spacing.pageH, vertical = 14.dp).testTag("assets.valuation.$unit"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CoinIcon(unit, 22.dp)
+                        Text(unit, Modifier.padding(start = 10.dp).weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                        if (DisplayPrefs.valuationAsset == unit) Text("✓", style = lb(FontSize.body, FontWeight.Bold), color = p.brand)
+                    }
+                }
+                Text(
+                    "BTC/ETH 用现货 ticker 折算；非法币。法币≈见偏好「计价货币」。",
+                    Modifier.padding(horizontal = Spacing.pageH).padding(top = 4.dp),
+                    style = lb(FontSize.small),
+                    color = p.textTertiary,
+                )
+            }
+        }
+    }
+    if (showHistory) {
+        LbSheet("历史", { showHistory = false }, showClose = true) {
+            Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                when (s.tab) {
+                    2 -> {
+                        HistoryOption("合约账户记录", "划转、已实现盈亏、资金费用等") {
+                            showHistory = false; onOpenFuturesHistory()
+                        }
+                        HistoryOption("交易历史", "永续委托、成交与已实现盈亏") {
+                            showHistory = false; onOpenFuturesHistory()
+                        }
+                    }
+                    3 -> {
+                        HistoryOption("现货交易历史", "委托、成交明细") {
+                            showHistory = false; onOpenSpotHistory()
+                        }
+                        HistoryOption("提现记录", "链上提现申请与状态") {
+                            showHistory = false; assetsNav.open(AssetsRoute.WithdrawRecords)
+                        }
+                        HistoryOption("充值记录", "链上充值到账记录") {
+                            showHistory = false; assetsNav.open(AssetsRoute.DepositRecords)
+                        }
+                    }
+                    else -> {
+                        HistoryOption("充值记录", "链上充值到账记录") {
+                            showHistory = false; assetsNav.open(AssetsRoute.DepositRecords)
+                        }
+                        HistoryOption("提现记录", "链上提现申请与状态") {
+                            showHistory = false; assetsNav.open(AssetsRoute.WithdrawRecords)
+                        }
+                        HistoryOption("现货交易历史", "委托、成交明细") {
+                            showHistory = false; onOpenSpotHistory()
+                        }
+                        HistoryOption("合约交易历史", "永续委托、成交与资金流水") {
+                            showHistory = false; onOpenFuturesHistory()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+
+@Composable
+private fun HistoryOption(title: String, desc: String, onClick: () -> Unit) {
+    val p = LB.p
+    Column(
+        Modifier.fillMaxWidth().border(1.dp, p.border, RoundedCornerShape(Radius.md))
+            .pressable(scale = 1f, onClick = onClick).padding(14.dp),
+    ) {
+        Text(title, style = lb(FontSize.body, FontWeight.SemiBold), color = p.textPrimary)
+        Text(desc, Modifier.padding(top = 4.dp), style = lb(FontSize.small), color = p.textSecondary)
+    }
 }
 
 @Composable
@@ -223,25 +314,62 @@ private fun OverviewEmpty(onDeposit: () -> Unit, onFutures: () -> Unit) {
 }
 
 @Composable
-private fun Header(hide: Boolean, total: java.math.BigDecimal, cny: java.math.BigDecimal?, tab: Int, vm: AssetsViewModel, onToggle: () -> Unit) {
+private fun Header(
+    hide: Boolean,
+    total: BigDecimal,
+    cny: BigDecimal?,
+    tab: Int,
+    vm: AssetsViewModel,
+    onToggle: () -> Unit,
+    onValuation: () -> Unit,
+    onHistory: () -> Unit,
+) {
     val p = LB.p
     val s = vm.state.collectAsStateWithLifecycle().value
+    val unit = DisplayPrefs.valuationAsset
+    val quoteCur = QuoteDisplay.currency
+    val quoteRates = QuoteDisplay.rates
+    val quoteBase = QuoteDisplay.ratesBase
+    val usdPer = QuoteDisplay.usdPerUsdt
+    val display = remember(total, unit, s) { valuationAmount(total, unit, vm) }
     Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("总资产估值", style = lb(FontSize.caption), color = p.textSecondary)
             Spacer(Modifier.width(6.dp))
-            LbIcon(if (hide) R.drawable.ic_eye_off else R.drawable.ic_eye, 14.dp, p.textSecondary, Modifier.pressable(scale = 1f, onClick = onToggle))
+            LbIcon(if (hide) R.drawable.ic_eye_off else R.drawable.ic_eye, 14.dp, p.textSecondary, Modifier.pressable(scale = 1f, onClick = onToggle).testTag("assets.hide"))
             Spacer(Modifier.weight(1f))
-            LbIcon(R.drawable.ic_doc_text, 18.dp, p.textPrimary)
+            LbIcon(R.drawable.ic_doc_text, 18.dp, p.textPrimary, Modifier.pressable(scale = 1f, onClick = onHistory).testTag("assets.history"))
         }
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(if (hide) "****" else Fmt.amount(total, 2), style = lbNum(32.sp, FontWeight.Bold), color = p.textPrimary)
+            Text(
+                if (hide) "****" else display?.let { if (unit == "USDT") Fmt.amount(it, 2) else Fmt.amount(it, 8) } ?: "--",
+                style = lbNum(32.sp, FontWeight.Bold),
+                color = p.textPrimary,
+            )
             Spacer(Modifier.width(6.dp))
-            Text("USDT", style = lb(FontSize.small), color = p.textPrimary)
-            LbIcon(R.drawable.ic_caret_down, 10.dp, p.textPrimary, Modifier.padding(start = 2.dp, bottom = 9.dp))
+            Row(
+                Modifier.pressable(scale = 1f, onClick = onValuation).testTag("assets.valuation"),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(unit, style = lb(FontSize.small), color = p.textPrimary)
+                LbIcon(R.drawable.ic_caret_down, 10.dp, p.textPrimary, Modifier.padding(start = 2.dp, bottom = 2.dp))
+            }
         }
-        val fiat = if (hide) "≈ ****" else "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(total, 2, cny)
-        if (fiat != null) Text(fiat, style = lbNum(FontSize.small), color = p.textSecondary)
+        if (hide) {
+            Text("≈ ****", style = lbNum(FontSize.small), color = p.textSecondary)
+        } else {
+            @Suppress("UNUSED_VARIABLE")
+            val _observe = quoteCur + quoteBase + (usdPer?.toPlainString() ?: "") + quoteRates.size
+            val fiat = QuoteDisplay.format(total, 2, cny)
+            Text("≈ $fiat", Modifier.testTag("assets.fiat"), style = lbNum(FontSize.small), color = p.textSecondary)
+            if (fiat.endsWith("--")) {
+                val reason = QuoteDisplay.lastMissingReason ?: "汇率不可用"
+                Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(reason, Modifier.weight(1f), style = lb(FontSize.small), color = p.textTertiary)
+                    Text("重试", Modifier.pressable(scale = 1f) { vm.reloadQuotes() }.testTag("assets.fiat.retry"), style = lb(FontSize.small, FontWeight.Medium), color = p.brand)
+                }
+            }
+        }
         if (tab == 1 || tab == 2) {
             val label = if (tab == 2) "今日盈亏" else "可用余额"
             val value = if (hide) "****" else if (tab == 2) {
@@ -254,6 +382,12 @@ private fun Header(hide: Boolean, total: java.math.BigDecimal, cny: java.math.Bi
             }
         }
     }
+}
+
+private fun valuationAmount(totalUsdt: BigDecimal, unit: String, vm: AssetsViewModel): BigDecimal? {
+    if (unit == "USDT") return totalUsdt
+    val px = vm.pairFor(unit)?.last?.takeIf { it.signum() > 0 } ?: return null
+    return totalUsdt.divide(px, 8, RoundingMode.HALF_UP)
 }
 
 @Composable
