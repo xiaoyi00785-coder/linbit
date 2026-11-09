@@ -198,8 +198,11 @@ class SpotSubpagesViewModel @Inject constructor(
             loading = true; error = null
             try {
                 val raw = runCatching { apiCall { api.earnProductsRaw() } }.getOrNull()
-                earnProducts = if (raw != null) EarnCatalogue.itemsFrom(raw)
-                else apiCall { api.earnProducts() }.items ?: emptyList()
+                val soft = raw?.let { EarnCatalogue.itemsFrom(it) }
+                earnProducts = when {
+                    soft != null && soft.isNotEmpty() -> soft
+                    else -> apiCall { api.earnProducts() }.items ?: emptyList()
+                }
                 if (tokens.loggedIn.value) {
                     earnSummary = runCatching { apiCall { api.earnSummary() } }.getOrNull()
                     earnPositions = runCatching { apiCall { api.earnPositions() }.items ?: emptyList() }.getOrDefault(emptyList())

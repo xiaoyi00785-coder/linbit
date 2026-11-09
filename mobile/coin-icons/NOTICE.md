@@ -19,10 +19,10 @@
 
 ## Solana (SOL) 例外
 
-`sol.svg` / Android `coin_sol.xml` **不**使用 cryptocurrency-icons 的浅绿三杠版（与主流交易所不符）。
+`sol.svg` / Android `drawable-nodpi/coin_sol.png` **不**使用 cryptocurrency-icons 的浅绿三杠版（与主流交易所不符）。
 改用 [0xSequence/web3icons](https://github.com/0xSequence/web3icons) `icons/tokens/solana.svg` 衍生资源
 （与 `apps/web/public/coins/sol.svg` 同源）：黑底圆 + 紫青渐变三斜杠，**MIT License**。
-完整许可见 `apps/web/public/coins/LICENSE-ICONS.md`。`gen_coin_icons.py` 不得覆盖 `coin_sol.xml`。
+Android 使用 PNG（aapt 渐变矢量在 Robolectric 证据测会卡住）。`gen_coin_icons.py` 不得覆盖 handmade SOL/DOT/DOGE。
 
 ## DOT / DOGE 例外
 

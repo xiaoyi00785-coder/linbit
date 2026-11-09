@@ -28,5 +28,5 @@
 
 ## 产物
 
-- APK: `docs/batch12/linbit-vc8-0.3.5-earn-sol-icon.apk`（versionCode 8 / 0.3.5；debug cert SHA-256 `747ec0f1…c0111a`；apk sha256 `e0101439…9c8241dd`）
+- APK: `docs/batch12/linbit-vc8-0.3.5-earn-sol-icon.apk`（versionCode 8 / 0.3.5；debug cert SHA-256 `747ec0f1…c0111a`；apk sha256 `ce00879d…a31b9dde`）
 - 单测: CoinIconsTest / EarnAprTest / EarnProductKindDecodeTest 通过

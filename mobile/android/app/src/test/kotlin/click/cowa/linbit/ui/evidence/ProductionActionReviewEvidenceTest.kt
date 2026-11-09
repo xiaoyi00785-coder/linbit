@@ -34,13 +34,21 @@ class ProductionActionReviewEvidenceTest {
     @Before fun installMain() { kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.test.UnconfinedTestDispatcher()) }
     @After fun resetMain() { kotlinx.coroutines.Dispatchers.resetMain() }
     private fun expandUsdt() {
+        rule.waitUntil(10_000) {
+            !earnVm.loading && earnVm.earnProducts.any { it.asset == "USDT" } &&
+                runCatching { rule.onAllNodesWithTag("earn.asset.USDT", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false)
+        }
         rule.onNodeWithTag("earn.asset.USDT", useUnmergedTree = true).performClick()
         wait("USDT 活期理财")
     }
     private fun earn(api: MockEvidenceApi) {
         val vm = evidenceVm(api); earnVm = vm
         rule.setContent { LinbitTheme(false) { AssetFeatureHost("earn", {}, {}, {_, _->}, vm, onDialogWindow = { dialog = it }) } }
-        wait("全部产品"); wait("我的持仓"); wait("USDT")
+        wait("全部产品"); wait("我的持仓")
+        rule.waitUntil(10_000) { !earnVm.loading && earnVm.earnProducts.isNotEmpty() }
+        rule.waitUntil(10_000) {
+            runCatching { rule.onAllNodesWithTag("earn.asset.USDT", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false)
+        }
     }
     private fun strategy(api: MockEvidenceApi) {
         val vm = evidenceVm(api); strategyVm = vm
