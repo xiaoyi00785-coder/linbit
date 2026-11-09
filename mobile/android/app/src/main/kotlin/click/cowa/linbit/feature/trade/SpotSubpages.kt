@@ -103,6 +103,8 @@ class SpotSubpagesViewModel @Inject constructor(
     var loanMarket by mutableStateOf<ApiLoanMarket?>(null); private set
     var loanMarketError by mutableStateOf<String?>(null); private set
     var loanMarketLoading by mutableStateOf(false); private set
+    /** 登录态理财账户接口（持仓/订单/流水）全部失败时的错误；用于「我的持仓」显示重试，而不是误报空持仓。 */
+    var earnAccountError by mutableStateOf<String?>(null); private set
     var earnSummary by mutableStateOf<ApiEarnSummary200Response?>(null); private set
     var earnPositions by mutableStateOf<List<ApiEarnPositions200ResponseItemsInner>>(emptyList()); private set
     var earnOrders by mutableStateOf<List<ApiEarnOrders200ResponseItemsInner>>(emptyList()); private set
@@ -141,7 +143,7 @@ class SpotSubpagesViewModel @Inject constructor(
     fun clearAccountData() {
         convertOrders = null
         convertBalances = emptyMap(); quoteError = null
-        earnSummary = null
+        earnSummary = null; earnAccountError = null
         earnPositions = emptyList()
         earnOrders = emptyList()
         earnRecords = emptyList()
@@ -205,11 +207,15 @@ class SpotSubpagesViewModel @Inject constructor(
                 }
                 if (tokens.loggedIn.value) {
                     earnSummary = runCatching { apiCall { api.earnSummary() } }.getOrNull()
-                    earnPositions = runCatching { apiCall { api.earnPositions() }.items ?: emptyList() }.getOrDefault(emptyList())
-                    earnOrders = runCatching { apiCall { api.earnOrders() }.items ?: emptyList() }.getOrDefault(emptyList())
-                    earnRecords = runCatching { apiCall { api.earnRecords() }.items ?: emptyList() }.getOrDefault(emptyList())
+                    val pos = runCatching { apiCall { api.earnPositions() }.items ?: emptyList() }
+                    val ord = runCatching { apiCall { api.earnOrders() }.items ?: emptyList() }
+                    val rec = runCatching { apiCall { api.earnRecords() }.items ?: emptyList() }
+                    earnPositions = pos.getOrDefault(emptyList())
+                    earnOrders = ord.getOrDefault(emptyList())
+                    earnRecords = rec.getOrDefault(emptyList())
+                    earnAccountError = if (pos.isFailure && ord.isFailure && rec.isFailure) "持仓加载失败" else null
                 } else {
-                    earnSummary = null; earnPositions = emptyList(); earnOrders = emptyList(); earnRecords = emptyList()
+                    earnSummary = null; earnPositions = emptyList(); earnOrders = emptyList(); earnRecords = emptyList(); earnAccountError = null
                 }
             } catch (e: Throwable) { error = e.message ?: "加载失败" }
             finally { loading = false }

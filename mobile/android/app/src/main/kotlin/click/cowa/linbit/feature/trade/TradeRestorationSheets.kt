@@ -61,7 +61,7 @@ fun TradePreferencesSheet(mode: ThemeMode, onTheme: (ThemeMode) -> Unit, skipCon
 @Composable
 fun TradeInfoSheet(title: String, vm: FuturesTradeViewModel, onClose: () -> Unit) {
     LbSheet(title, onClose, showClose = true) {
-        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when (title) {
                 "仓位档位介绍" -> {
                     Text("持仓名义价值越大，可用最大杠杆越低。", style = lb(FontSize.caption), color = LB.p.textSecondary)

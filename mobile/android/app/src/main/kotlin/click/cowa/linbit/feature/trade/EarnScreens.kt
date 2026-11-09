@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -268,13 +269,16 @@ fun EarnSubpage(
 
     if (showPositions) {
         LbSheet("我的持仓", { showPositions = false }, showClose = true, onWindowReady = onDialogWindow) {
+            // LbSheet 本体已 verticalScroll；此处嵌套滚动会在测量时抛 IllegalStateException（vc4–vc10「我的持仓」闪退根因）。
             Column(
-                Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)
-                    .verticalScroll(rememberScrollState()),
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(bottom = 24.dp).testTag("earn.positions.sheet"),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (vm.earnPositions.isEmpty() && vm.earnOrders.isEmpty() && vm.earnRecords.isEmpty()) {
-                    EmptyState("暂无持仓与流水", verticalPadding = 40.dp)
+                    val err = vm.earnAccountError
+                    if (err != null) EmptyState(err, verticalPadding = 40.dp) {
+                        ChipButton("重试", Modifier.height(32.dp).testTag("earn.positions.retry"), onClick = { vm.loadEarn() })
+                    } else EmptyState("暂无持仓与流水", verticalPadding = 40.dp)
                 }
                 vm.earnPositions.forEach { pos ->
                     Column(
@@ -396,6 +400,27 @@ private fun EarnAssetHead(
 }
 
 
+/** 质押借币公开市场的纯展示格式化（真实 /loans/market 十进制字符串；非法值显示 "--"，不抛异常）。 */
+object LoanMarketFormat {
+    private fun dec(v: String?): BigDecimal? = v?.trim()?.takeIf { it.isNotEmpty() }?.let { runCatching { BigDecimal(it) }.getOrNull() }
+    /** 0.000003847 → 0.0003847%；0.06 → 6%。 */
+    fun pct(v: String?): String = dec(v)?.let { it.movePointRight(2).stripTrailingZeros().toPlainString() + "%" } ?: "--"
+    /** 参考 Loan Market 单元格「小时利率 / 年化利率」。 */
+    fun rateCell(hourly: String?, annual: String?): String = "${pct(hourly)} / ${pct(annual)}"
+    fun amount(v: String?): String = dec(v)?.let { java.text.DecimalFormat("#,##0.########").format(it) } ?: "--"
+    fun termLabel(term: String?, days: Int?): String = when {
+        term.equals("flexible", true) || days == 0 -> "活期"
+        days != null && days > 0 -> "$days 天"
+        else -> term?.takeIf { it.isNotBlank() } ?: "--"
+    }
+    fun online(status: String?): Boolean = status == null || status.equals("online", true)
+    fun errorText(@Suppress("UNUSED_PARAMETER") e: String?): String = "借币市场加载失败，请稍后重试"
+}
+
+/**
+ * 质押借币（只读公开市场，对照参考 Crypto Loans：流程四步 + Loan Market「小时 / 年化」利率 + 可质押币种）。
+ * 注意：LbSheet 本体已是 verticalScroll，这里绝不能再嵌套 verticalScroll / 无界 LazyColumn（vc8–vc10 闪退根因）。
+ */
 @Composable
 private fun EarnLoansMarketSheet(
     market: click.cowa.linbit.core.generated.ApiLoanMarket?,
@@ -406,48 +431,87 @@ private fun EarnLoansMarketSheet(
     onDialogWindow: (android.view.Window?) -> Unit,
 ) {
     val p = LB.p
-    LbSheet("质押借币（只读）", onDismiss, showClose = true, onWindowReady = onDialogWindow) {
+    LbSheet("质押借币", onDismiss, showClose = true, onWindowReady = onDialogWindow) {
         Column(
-            Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(bottom = 24.dp).testTag("earn.loans.sheet"),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("仅展示公开市场条款与可质押币种，不提供借款/还款/追加抵押提交。", style = lb(FontSize.small), color = p.textSecondary)
+            Text("以加密资产作抵押借入稳定币，随借随还", style = lb(FontSize.small), color = p.textSecondary)
+            LoanSteps()
+            val terms = market?.terms.orEmpty().filter { LoanMarketFormat.online(it.status) }
             when {
-                loading && market == null -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                error != null && market == null -> EmptyState(error!!) { ChipButton("重试", Modifier.height(32.dp), onClick = onRetry) }
-                market == null -> EmptyState("暂无借币市场")
+                loading && market == null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                error != null && market == null -> EmptyState(LoanMarketFormat.errorText(error), verticalPadding = 32.dp) {
+                    ChipButton("重试", Modifier.height(32.dp).testTag("earn.loans.retry"), onClick = onRetry)
+                }
+                market == null || market.asset.isNullOrBlank() || terms.isEmpty() -> EmptyState("暂无借币市场", verticalPadding = 32.dp) {
+                    ChipButton("刷新", Modifier.height(32.dp), onClick = onRetry)
+                }
                 else -> {
-                    KvRow("借款资产", market.asset ?: "--")
-                    KvRow("最低借款", "${market.minAmount ?: "--"} ${market.asset ?: ""}")
-                    KvRow("用户上限", market.userLimit ?: "--")
-                    KvRow("初始 LTV", market.initialLtv ?: "--")
-                    KvRow("预警 LTV", market.warnLtv ?: "--")
-                    KvRow("强平 LTV", market.liquidationLtv ?: "--")
-                    Text("期限", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
-                    (market.terms ?: emptyList()).forEach { term ->
-                        Column(
-                            Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.md)).padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(term.term ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-                            KvRow("状态", term.status ?: "--")
-                            KvRow("天数", (term.days ?: 0).toString())
-                            KvRow("小时利率", term.hourlyRate ?: "--")
-                            KvRow("年化利率", term.annualRate ?: "--")
+                    val asset = market.asset!!
+                    Text("借币市场", style = lb(FontSize.label, FontWeight.SemiBold), color = p.textPrimary)
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).border(0.5.dp, p.border, RoundedCornerShape(Radius.md))) {
+                        Row(Modifier.fillMaxWidth().background(p.fill).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text("借款期限", Modifier.weight(1f), style = lb(FontSize.caption), color = p.textTertiary)
+                            Text("小时利率 / 年化利率", style = lb(FontSize.caption), color = p.textTertiary)
+                        }
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CoinIcon(asset, 20.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(asset, style = lb(FontSize.body, FontWeight.SemiBold), color = p.textPrimary)
+                        }
+                        terms.forEach { t ->
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(LoanMarketFormat.termLabel(t.term, t.days), Modifier.weight(1f), style = lb(FontSize.small), color = p.textSecondary)
+                                Text(LoanMarketFormat.rateCell(t.hourlyRate, t.annualRate), style = lbNum(FontSize.small, FontWeight.Medium), color = p.textPrimary)
+                            }
                         }
                     }
-                    Text("可质押币种", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
-                    (market.collaterals ?: emptyList()).forEach { c ->
-                        Column(
-                            Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.md)).padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(c.asset ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-                            KvRow("单用户上限", c.cap ?: "--")
-                            KvRow("指数价", c.price ?: "--")
+                    val collaterals = market.collaterals.orEmpty().filter { !it.asset.isNullOrBlank() }
+                    if (collaterals.isNotEmpty()) {
+                        Text("可质押币种", style = lb(FontSize.label, FontWeight.SemiBold), color = p.textPrimary)
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).border(0.5.dp, p.border, RoundedCornerShape(Radius.md))) {
+                            Row(Modifier.fillMaxWidth().background(p.fill).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                Text("币种", Modifier.weight(1f), style = lb(FontSize.caption), color = p.textTertiary)
+                                Text("单用户质押上限", Modifier.weight(1f), style = lb(FontSize.caption), color = p.textTertiary, textAlign = TextAlign.End)
+                            }
+                            collaterals.forEach { c ->
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CoinIcon(c.asset!!, 20.dp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(c.asset!!, Modifier.weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                                    Text("${LoanMarketFormat.amount(c.cap)} ${c.asset}", style = lbNum(FontSize.small), color = p.textPrimary)
+                                }
+                            }
                         }
+                    }
+                    Text("借款规则", style = lb(FontSize.label, FontWeight.SemiBold), color = p.textPrimary)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        KvRow("初始质押率", LoanMarketFormat.pct(market.initialLtv))
+                        KvRow("预警质押率", LoanMarketFormat.pct(market.warnLtv))
+                        KvRow("强平质押率", LoanMarketFormat.pct(market.liquidationLtv))
+                        KvRow("最低借款", "${LoanMarketFormat.amount(market.minAmount)} $asset")
+                        KvRow("单用户借款上限", "${LoanMarketFormat.amount(market.userLimit)} $asset")
+                        market.overdueMultiplier?.let { KvRow("逾期利率倍数", "${LoanMarketFormat.amount(it)} 倍") }
+                        market.overdueLiquidationDays?.let { KvRow("逾期强平", "逾期 $it 天") }
+                        market.liquidationFeeRate?.let { KvRow("强平手续费", LoanMarketFormat.pct(it)) }
+                        market.earlyRepayPenaltyRate?.let { KvRow("提前还款违约金", LoanMarketFormat.pct(it)) }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoanSteps() {
+    val p = LB.p
+    Row(Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.md)).padding(vertical = 10.dp)) {
+        listOf("提交申请", "获得借款", "还款付息", "返还抵押").forEachIndexed { i, s ->
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("0${i + 1}", style = lbNum(FontSize.small, FontWeight.SemiBold), color = p.brand)
+                Spacer(Modifier.height(2.dp))
+                Text(s, style = lb(11.sp), color = p.textSecondary, maxLines = 1)
             }
         }
     }

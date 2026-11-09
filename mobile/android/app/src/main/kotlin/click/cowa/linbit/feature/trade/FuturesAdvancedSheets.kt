@@ -100,7 +100,7 @@ fun PositionTpslSheet(vm: FuturesTradeViewModel, position: ApiFuturesPosition, o
     var saving by remember { mutableStateOf(false) }
     val hasExisting = !position.tpPrice.isNullOrBlank() || !position.slPrice.isNullOrBlank()
     LbSheet("止盈止损", onClose, showClose = true) {
-        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(position.symbol ?: vm.symbol, style = lb(FontSize.body, FontWeight.SemiBold), color = p.textPrimary)
                 Text(if (long) "多" else "空", Modifier.clip(RoundedCornerShape(3.dp)).background(if (long) p.upTint else p.downTint).padding(horizontal = 4.dp), style = lb(10.sp), color = if (long) p.up else p.down)
