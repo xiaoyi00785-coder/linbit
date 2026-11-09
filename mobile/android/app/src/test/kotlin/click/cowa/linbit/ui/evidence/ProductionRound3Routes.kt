@@ -5,7 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
 internal fun earnRoutes(api: MockEvidenceApi, populated: Boolean = true) {
-    api.route("GET", "/earn/products", if (populated) """{"items":[{"id":"evidence-earn","kind":"flexible","asset":"USDT","title":"USDT 活期理财","apr":"0.052","minAmount":"10","perUserMax":"5000","status":"ONLINE"}]}""" else """{"items":[]}""")
+    api.route("GET", "/earn/products", if (populated) """{"items":[{"id":"evidence-earn","kind":"flexible","asset":"USDT","title":"USDT 活期理财","apr":"0.052","minAmount":"10","perUserMax":"5000","status":"ONLINE","hot":true},{"id":"evidence-btc","kind":"fixed","asset":"BTC","title":"BTC 定期","apr":"0.087","termDays":14,"minAmount":"0.01","status":"ONLINE","hot":true}]}""" else """{"items":[]}""")
     api.route("GET", "/earn/summary", """{"totalValueUsdt":"1250","totalInterestUsdt":"2.5"}""")
     api.route("GET", "/earn/positions", if (populated) """{"items":[{"productId":"evidence-earn","kind":"flexible","asset":"USDT","title":"USDT 活期理财","amount":"1250","totalInterest":"2.5"}]}""" else """{"items":[]}""")
     api.route("GET", "/earn/orders", """{"items":[]}"""); api.route("GET", "/earn/records", """{"items":[]}""")

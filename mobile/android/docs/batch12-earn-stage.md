@@ -1,26 +1,27 @@
-# Batch12 阶段报告：理财页实质重做（先交一页）
+# Batch12 Earn stage (vc6)
 
-## 对照来源
-- 参考（真机/已存）：`/workspace/ref-capture/auth/028_earn_list.png`、`029_earn_btc_detail.png`
-- 我方：Robolectric 离屏夹具 `asset-earn-normal-products.png` 等（非真机同状态实拍）
-- 左右图：`compare-earn-list-ref028-vs-ours-offscreen.png`（左参考 / 右离屏夹具）
+## 对照依据
+- 参考：`/workspace/ref-capture/auth/028_earn_list.png` + `028_earn_list.xml`，package=`io.easiex.app`（现货底栏 + 顶栏 Spot/Bots/Earn/Convert）
+- 我方：Robolectric 离屏 `asset-earn-normal-holding-vc6.png`（AssetFeatureHost earn + Spot 顶栏；非真机）
+- 左右图：`/workspace/linbit-verify/batch12/compare-earn-list-ref028-vs-ours-vc6-offscreen.png`
 
-## 结构对齐（相对旧扁平 Kv 列表）
-1. 理财资产头：总额、昨日收益、隐藏、我的持仓入口
-2. 活期/定期分类（仅 API `kind`；无链上/借贷假入口）
-3. 精选推荐横滑
-4. 搜索 + 全部产品按币种展开 APR 区间
-5. 申购/赎回弹层保留复核与失败态（测试只验证 UI，不写成功资金）
+## 本轮已对齐（真实已支持）
+- 导航：资产/更多「理财」深链到现货顶栏 index=2；Host 内嵌 PrimaryTabs；无独立返回标题栏（onBack=null）
+- 金额与 USDT 同一行
+- 分类图标：仅渲染已支持的活期/定期，紧凑 78dp 格，不拉成全宽大卡；链上/财富/借贷无 API → 不造入口
+- 精选推荐：灰底 126×100 横滑卡；APR 来自产品字段，不假 APR
+- 全部产品：标题→搜索→折叠资产行（密度对照 028）；点开再申购/赎回
 
-## 同批资产 bug（真机反馈）
-- ≈¥--：改用已部署 `GET /market/fiat-rates?base=USDT`（rates 为每 1 USDT 法币）；不再因未部署 `/market/usd-rate` 整页无金额。缺币种时显示 `--` + 原因 + 重试。不本地硬锚定 USDT=USD。
-- USDT 三角：估值单位 USDT/BTC/ETH 可点选并持久化；BTC/ETH 用现货 ticker 折算。
-- 文档图标：打开「历史」sheet → 充值/提现记录或现货/合约历史（只读）。
+## 无法对齐 / 缺参考
+- 四宫格后两格（On-chain / Wealth Hub / Loans）：无后端，不造无效入口
+- 理财头 USDT 下拉换计价：summary 接口为 USDT，未接估值切换（资产页估值另计）
+- 参考 Flash Sale / 营销角标文案：无对应字段时仅用 hot/newcomer/bonusApr→「热销/新手」
+- 模拟交易：穷尽 `/workspace/ref-capture` + stores；仅 More 列表文案与合约页「Demo Trading」角标提及，**缺 `io.easiex.app` Demo Trading 主界面整页截图/XML**；不把自有 paper 图当参考、不盲造
 
-## API 缺口（需后端）
-- `/market/usd-rate` 与 ticker.`usd` 仍未部署（404）；现用 fiat-rates base=USDT 可显示法币≈。
-- 理财：链上赚币 / Wealth Hub / 借贷、闪购倒计时等无 OpenAPI 字段 → 未造假入口。
-- 资金账户「流水总账」若参考还有独立 ledger，当前接 `wallet/deposit|withdraw/records` + 交易历史；缺统一 account-ledger 请补契约。
+## 资产页（保留已交付）
+- ≈ 法币：`GET /market/fiat-rates?base=USDT`
+- USDT 估值下拉：DisplayPrefs USDT/BTC/ETH
+- 右上角历史：sheet 分类 → 充值/提现/现货/合约独立流水页（非单一合并页；对照无独立「资产总历史」页可证）
 
-## 未做（下批）
-- 模拟交易页实质重做（缺独立参考屏；batch3/of 为自有包名截图不可当参考）
+## 用户附件
+- 声称路径 `.../attachments/f2f4c73….png`：本机全盘扫描无此文件名/SHA；无法 Read。资产 ≈/下拉/历史修复仍保留自 8a55392。

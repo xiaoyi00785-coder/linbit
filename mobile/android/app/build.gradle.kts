@@ -17,8 +17,8 @@ android {
         minSdk = 26
         targetSdk = 35
         testInstrumentationRunner = "click.cowa.linbit.instrumentation.ProductionLoopbackRunner"
-        versionCode = 5
-        versionName = "0.3.2"
+        versionCode = 6
+        versionName = "0.3.3"
 
         // 与 iOS 的 LBAPIBase / LBWSURL 一致；可用 -PlinbitApiBase=... 覆盖（例如指向本地 gateway）
         val apiBase = (project.findProperty("linbitApiBase") as String?) ?: "https://api.cowa.click"

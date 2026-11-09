@@ -97,10 +97,7 @@ fun EarnSubpage(
     val byAsset = remember(filtered) {
         filtered.groupBy { it.asset ?: "--" }.toList().sortedBy { it.first }
     }
-    LaunchedEffect(byAsset) {
-        val keys = byAsset.map { it.first }.toSet()
-        if (keys.isNotEmpty() && expanded.isEmpty()) expanded = keys
-    }
+    // 对照 028：资产行默认折叠，点开再看产品；不自动展开拉稀密度。
     val featured = remember(products) {
         products.filter { it.hot == true || it.newcomer == true || !it.bonusApr.isNullOrBlank() }
             .ifEmpty { products.sortedByDescending { Dec.parse(it.apr) }.take(6) }
@@ -135,8 +132,8 @@ fun EarnSubpage(
 
             if (hasFlex || hasFixed) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.Top,
                 ) {
                     if (hasFlex) EarnKindChip(
@@ -172,8 +169,15 @@ fun EarnSubpage(
                 }
             }
 
+            Text(
+                "全部产品",
+                Modifier.padding(horizontal = Spacing.pageH).padding(top = 18.dp, bottom = 8.dp)
+                    .testTag("earn.products"),
+                style = lb(FontSize.label, FontWeight.SemiBold),
+                color = p.textPrimary,
+            )
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 18.dp)
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(bottom = 4.dp)
                     .height(40.dp).background(p.fill, RoundedCornerShape(Radius.lg))
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -192,14 +196,6 @@ fun EarnSubpage(
                     },
                 )
             }
-
-            Text(
-                "全部产品",
-                Modifier.padding(horizontal = Spacing.pageH).padding(top = 16.dp, bottom = 4.dp)
-                    .testTag("earn.products"),
-                style = lb(FontSize.label, FontWeight.SemiBold),
-                color = p.textPrimary,
-            )
             when {
                 vm.loading && products.isEmpty() -> Box(
                     Modifier.fillMaxWidth().height(120.dp),
@@ -215,7 +211,7 @@ fun EarnSubpage(
                     val aprHi = list.maxOf { Dec.parse(it.aprMax ?: it.apr) }
                     Column(Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.fillMaxWidth().height(48.dp).padding(horizontal = Spacing.pageH)
+                            Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH)
                                 .pressable(scale = 1f) {
                                     expanded = if (open) expanded - asset else expanded + asset
                                 }.testTag("earn.asset.$asset"),
@@ -378,12 +374,13 @@ private fun EarnAssetHead(
 @Composable
 private fun EarnKindChip(title: String, icon: Int, selected: Boolean, onClick: () -> Unit) {
     val p = LB.p
+    // 对照 028 四宫格单格宽约屏宽/4；仅渲染已支持种类，绝不把单图标拉成全宽大卡。
     Column(
-        Modifier.width(64.dp).pressable(scale = 1f, onClick = onClick),
+        Modifier.width(78.dp).pressable(scale = 1f, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(44.dp).clip(CircleShape)
+            Modifier.size(48.dp).clip(CircleShape)
                 .background(if (selected) p.brand.copy(alpha = 0.16f) else p.fill)
                 .border(1.dp, if (selected) p.brand else p.border.copy(alpha = 0f), CircleShape),
             contentAlignment = Alignment.Center,
@@ -404,7 +401,7 @@ private fun EarnFeatureCard(prod: ApiEarnProduct, onClick: () -> Unit) {
         else -> "活期"
     }
     Column(
-        Modifier.width(120.dp).height(88.dp)
+        Modifier.width(126.dp).height(100.dp)
             .background(p.fill, RoundedCornerShape(Radius.md))
             .pressable(scale = 1f, onClick = onClick)
             .padding(10.dp),
