@@ -192,16 +192,17 @@ class ChatAccessTest {
         rule.onNodeWithText("行情").performClick()
         rule.onAllNodesWithText("聊天室").onFirst().performClick()
         rule.onNodeWithText("登录后查看聊天记录").assertIsDisplayed()
-        Assert.assertTrue(api.requests.none { it.contains("/chat/") })
+        // Snapshot reads: MockWebServer may still append on dispatcher threads.
+        Assert.assertTrue(api.requests.toList().none { it.contains("/chat/") })
         rule.onNodeWithText("立即登录").performClick()
         rule.onNodeWithTag("auth.account", useUnmergedTree = true).performTextReplacement("chat@example.invalid")
         rule.onNodeWithTag("auth.login.next", useUnmergedTree = true).performClick()
         rule.onNodeWithTag("auth.password", useUnmergedTree = true).performTextReplacement("Local-Test-Only-Password123")
         rule.onNodeWithText("下一步", useUnmergedTree = true).performClick()
-        rule.waitUntil(8000) { api.requests.any { it == "GET /chat/rooms" } }
+        rule.waitUntil(8000) { api.requests.toList().any { it == "GET /chat/rooms" } }
         rule.onNodeWithText("搜索群组名称").assertIsDisplayed()
         rule.onNodeWithText("登录后查看聊天记录").assertDoesNotExist()
-        Assert.assertEquals(1, api.requests.count { it == "GET /chat/rooms" })
+        Assert.assertEquals(1, api.requests.toList().count { it == "GET /chat/rooms" })
     }
 
     @Test fun sessionLossClearsPrivateRoomsAndMessages() {

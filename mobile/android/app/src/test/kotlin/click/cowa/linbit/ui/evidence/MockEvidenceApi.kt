@@ -11,9 +11,16 @@ internal data class MutationEvidence(val method: String?, val path: String?, val
 internal class MockEvidenceApi : Dispatcher(), AutoCloseable {
     val server = MockWebServer()
     private val routes = linkedMapOf<String, MutableList<MockResponse>>()
-    val requests = java.util.Collections.synchronizedList(mutableListOf<String>())
-    val mutationRequests = java.util.Collections.synchronizedList(mutableListOf<MutationEvidence>())
-    private val mutationStatuses = mutableListOf<Int>()
+    /**
+     * Request logs are appended from MockWebServer dispatcher threads while tests poll
+     * them on the main/test thread (e.g. Compose waitUntil). synchronizedList only
+     * locks individual calls — iterators from `.any`/`.count` still throw CME under
+     * concurrent append. CopyOnWriteArrayList makes iteration snapshots safe without
+     * changing production code.
+     */
+    val requests = java.util.concurrent.CopyOnWriteArrayList<String>()
+    val mutationRequests = java.util.concurrent.CopyOnWriteArrayList<MutationEvidence>()
+    private val mutationStatuses = java.util.concurrent.CopyOnWriteArrayList<Int>()
     private val declaredRouteBodies = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val expectedFailureKeys = mutableSetOf<String>()
     var defaultFeatureFlags: String? = null

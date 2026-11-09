@@ -44,3 +44,10 @@
 ### 语言（更正）
 - **全量 14 语言国际化尚未实现**；仅列表展示或点选 toast 不算完成，已回退。
 - 当前仅简体中文；参考语言页布局可日后复用，但不得冒充已支持。
+
+### 设备解阻（Batch11 research）
+- 宿主机 KVM：`dmesg` `kernel BUG ... kvm_arch_vcpu_create`（见 `linbit-verify/batch4/batch11-kvm-dmesg.txt`）。
+- 官方/论坛公共办法：`emulator ... -accel off`（`emulator -help-accel`；Cursor 论坛 staff 建议 Bot computer 用无加速）。
+- 本机验证：`-accel off` 可冷启原 AVD（保留 userdata，约 191s boot_completed），ADB device；但 framebuffer 花屏/绿屏，随后 **System UI isn't responding**，无法完成偏好/聊天/画线同状态实拍。
+- **全量 14 语国际化仍未实现**；仅简体中文 ≠ 参考 14 语完成。
+- 恢复路径（debugging-the-box）：请用户在桌面端点 [Update Bot's Computer](grokbot://app/v1/settings?id=update-computer)（重建实例，保留文件/登录；apt 等需重装）。不要 Reset。不自行改内核/全局 chmod。
