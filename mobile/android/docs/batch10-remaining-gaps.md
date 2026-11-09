@@ -8,7 +8,7 @@
 |---|---|---|
 | 偏好「颜色偏好」行尾 K 线对、「主题设置」行尾色块；充值账户上分隔线 | `ref-capture/auth/043_preferences.png`、`batch3/color.png` | `PreferencesContent.kt` + `ProfileRow.trailing` |
 | 颜色偏好弹层：左蜡烛+文案+对勾 | 同上 color | `ColorCandles` / `MiniCandle` |
-| 语言弹层：参考 14 语序；仅「简体中文」为选中；其它点选 toast，不改语言 | `auth/044_language.png`、`guest/036_language.png` | `PrefLanguages` |
+| 语言弹层：仅真正支持的简体中文（已回退假 14 语列表/toast） | `auth/044_language.png`（全量 14 语未实现，不算完成） | `PreferencesContent` 语言 sheet |
 | 修复 LbSheet 内再套 `verticalScroll`（嵌套无限高） | — | `PreferencesContent` sheet Column |
 
 ## 可继续（前端可定，有参考或不造假数据）
@@ -39,3 +39,8 @@
 ## 占位/未开放（非改措辞即可）
 
 - 每日任务「暂无每日任务」、API Key / 卡片 / 法币 unconfigured 空态、聊天 FEATURE_DISABLED 文案——需后端能力，前端保持真实空态。
+
+
+### 语言（更正）
+- **全量 14 语言国际化尚未实现**；仅列表展示或点选 toast 不算完成，已回退。
+- 当前仅简体中文；参考语言页布局可日后复用，但不得冒充已支持。

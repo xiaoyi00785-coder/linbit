@@ -21,7 +21,6 @@ import click.cowa.linbit.feature.profile.AccountPreferencesViewModel
 import click.cowa.linbit.feature.profile.DepositTargetViewModel
 import click.cowa.linbit.feature.profile.LocalAccountPreferencesFactory
 import click.cowa.linbit.feature.profile.LocalDepositTargetFactory
-import click.cowa.linbit.feature.profile.PrefLanguages
 import click.cowa.linbit.feature.auth.LocalLbSheetInlineEvidence
 import click.cowa.linbit.feature.profile.UserCenterScreen
 import click.cowa.linbit.ui.theme.LB
@@ -125,19 +124,13 @@ class Batch10PrefsEvidenceTest {
         capture("color-sheet")
     }
 
-    @Test fun languageSheetListsReferenceOrderWithoutSwitchingLocale() {
+    @Test fun languageSheetOnlySimplifiedChineseNoFakeList() {
         openPrefs("语言")
-        assertEquals(14, PrefLanguages.all.size)
-        assertEquals("English", PrefLanguages.all.first())
-        assertTrue(PrefLanguages.all.contains(PrefLanguages.SUPPORTED))
-        // 列表较长时底部项可能离屏；用语义树确认条目存在，不要求全部同时可见。
-        assertTrue(rule.onAllNodesWithText("简体中文").fetchSemanticsNodes().isNotEmpty())
-        assertTrue(rule.onAllNodesWithText("English").fetchSemanticsNodes().isNotEmpty())
-        assertTrue(rule.onAllNodesWithText("日本語", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
-        rule.onAllNodesWithText("English")[0].performClick()
-        rule.waitForIdle()
-        // 未切换语言：仍能回到偏好行看到简体中文（弹层可能仍开着或 toast）
-        assertTrue(rule.onAllNodesWithText("简体中文").fetchSemanticsNodes().isNotEmpty())
+        rule.onNodeWithText("简体中文").assertIsDisplayed()
+        // 不展示未实现的 English 等占位选项
+        assertEquals(0, rule.onAllNodesWithText("English").fetchSemanticsNodes().size)
+        assertEquals(0, rule.onAllNodesWithText("日本語", useUnmergedTree = true).fetchSemanticsNodes().size)
+        rule.onNodeWithText("其它语言尚未实现国际化", substring = true).assertIsDisplayed()
         capture("language-sheet")
     }
 }

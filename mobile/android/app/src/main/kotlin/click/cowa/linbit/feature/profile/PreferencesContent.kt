@@ -118,20 +118,9 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
             when (title) {
                 "语言" -> {
-                    // 参考语言列表结构（auth/044）；当前产品仅落地简体中文，其它项可点但不变语言。
-                    PrefLanguages.all.forEach { lang ->
-                        val selected = lang == PrefLanguages.SUPPORTED
-                        Row(
-                            Modifier.fillMaxWidth().pressable(scale = 1f) {
-                                if (selected) sheet = null
-                                else depositVm.toast.show("暂仅支持简体中文，未更改当前语言", ToastCenter.Kind.INFO)
-                            }.padding(vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(lang, Modifier.weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = LB.p.textPrimary)
-                            if (selected) SheetCheck()
-                        }
-                    }
+                    // 产品仅真正支持简体中文；不罗列未实现语言冒充对齐（见 batch10-remaining-gaps）。
+                    SheetOptionRow("简体中文", true) { sheet = null }
+                    Text("应用界面当前为简体中文。其它语言尚未实现国际化，不在此列出。", Modifier.padding(top = 8.dp, bottom = 4.dp), style = lb(FontSize.small), color = LB.p.textSecondary)
                 }
                 "主题" -> ThemeCards(themeMode) { onTheme(it); sheet = null }
                 "颜色偏好" -> UpDownColor.entries.forEach { c ->
@@ -180,15 +169,6 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
 
 
 
-/** 参考语言列表顺序（auth/044、guest/036）；仅简体中文为当前产品语言。 */
-internal object PrefLanguages {
-    const val SUPPORTED = "简体中文"
-    val all = listOf(
-        "English", "简体中文", "繁體中文", "Tiếng Việt", "日本語", "Bahasa Indonesia",
-        "Español (España)", "Português (Portugal)", "العربية", "Русский", "Italiano",
-        "Português (Brasil)", "العربية (السعودية)", "Français",
-    )
-}
 /** 参考颜色偏好：一对迷你蜡烛（左涨右跌，或红涨配色）。 */
 @Composable
 internal fun ColorCandles(color: UpDownColor, size: androidx.compose.ui.unit.Dp) {
