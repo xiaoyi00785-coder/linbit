@@ -368,6 +368,7 @@ struct FuturesBillRow: View {
 }
 
 /// 历史仓位行：方向 / 杠杆 / 状态，开平仓均价、最大持仓、已平数量、已实现 / 手续费 / 资金费 / 净盈亏，开平仓时间
+/// 净盈亏、已实现盈亏、手续费和资金费用按服务端十进制字符串原样显示，保留末尾的 0。
 struct PositionHistoryRow: View {
     @Environment(\.palette) private var p
     let h: APIFuturesPositionHistory

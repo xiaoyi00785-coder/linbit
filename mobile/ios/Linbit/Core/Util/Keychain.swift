@@ -1,3 +1,4 @@
+// 钥匙串：保存登录令牌，并生成稳定的设备标识。
 import Foundation
 import Security
 

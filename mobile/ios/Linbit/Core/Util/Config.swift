@@ -1,3 +1,4 @@
+// 读取接口与行情地址，并带上客户端标识和折算汇率。
 import Foundation
 
 enum AppConfig {

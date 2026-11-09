@@ -161,6 +161,7 @@ actor APIClient {
             guard let (data, resp) = try? await session.data(for: req),
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let t = try? CodableHelper.jsonDecoder.decode(APIAuthTokens.self, from: data) else {
+                // 刷新没成功（非 200、断网或解析失败）就清令牌；正在退出时不标登录过期。
                 tokens.clear()
                 if tokens.loggingOut { return false }
                 tokens.sessionExpired = true
