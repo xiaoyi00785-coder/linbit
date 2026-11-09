@@ -36,6 +36,10 @@ type Hub struct {
 
 	// chatValidate validates a "chat:{room}" channel (set by chatRoutes).
 	chatValidate func(room string) (code, msg string)
+	// paperSnapshot loads one private paper channel for uid. Nil means the
+	// paper service is not configured; subscribe still requires login and
+	// sends no fabricated snapshot.
+	paperSnapshot func(uid, channel string) any
 
 	mu       sync.RWMutex
 	channels map[string]map[*wsClient]struct{}
@@ -76,6 +80,10 @@ func (h *Hub) Relay(channel string, data json.RawMessage) {
 }
 
 // NewHub builds a hub over the given snapshot source.
+func (h *Hub) SetPaperSnapshot(fn func(uid, channel string) any) {
+	h.paperSnapshot = fn
+}
+
 func NewHub(snap Snapshotter) *Hub {
 	return &Hub{
 		snap:         snap,
@@ -152,7 +160,12 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // userChannels are private channels: the subscription is keyed by the
 // connection's user so a frame reaches only that user's sockets.
-var userChannels = map[string]bool{"event:orders": true}
+var userChannels = map[string]bool{
+	"event:orders":    true,
+	"paper:positions": true,
+	"paper:orders":    true,
+	"paper:balances":  true,
+}
 
 func userKey(channel, uid string) string { return channel + "#" + uid }
 
@@ -387,6 +400,13 @@ func (c *wsClient) validateChannel(channel string) (code, msg string) {
 		if c.uid == "" {
 			return "AUTH_REQUIRED", "私有频道需登录：连接 /ws 时携带 Authorization: Bearer 或 ?token="
 		}
+	case "paper":
+		if c.uid == "" {
+			return "AUTH_REQUIRED", "模拟合约频道需登录：连接 /ws 时携带 Authorization: Bearer 或 ?token="
+		}
+		if channel != "paper:positions" && channel != "paper:orders" && channel != "paper:balances" {
+			return "SUB_INVALID", "未知的模拟频道: " + channel
+		}
 	case "orders", "balances":
 		return "SUB_INVALID", "用户频道由账户/订单服务提供"
 	default:
@@ -417,6 +437,12 @@ func (c *wsClient) sendInitial(channel string) {
 		c.hub.lmu.RUnlock()
 		if ok {
 			c.sendData(channel, d)
+		}
+	case "paper":
+		if c.hub.paperSnapshot != nil {
+			if snap := c.hub.paperSnapshot(c.uid, channel); snap != nil {
+				c.sendData(channel, snap)
+			}
 		}
 	}
 }

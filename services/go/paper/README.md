@@ -8,7 +8,8 @@
 - 价格预警：spot INDEX、gte/lte、once、evaluation epoch、独立 300s 冷却、durable outbox；worker 按 alert_id keyset 每轮续扫全部 active，不停在前 500 条。只通过 account 写站内信，唯一 `(user_id,dedup_key)` 防重复，不发 email/APNs/FCM。
 - `clientOrderId` 新单和已成交重放都先复核当前 symbol/INDEX；行情陈旧/暂停时拒绝且不重复记账，恢复后返回相同 orderId/createdAt。未写入成功的并发重试同样无法绕过行情准入。
 - 通过受限的 `GET /internal/index` 读取 INDEX；响应 `source:"INDEX"` 与 `provider` 分别标明逻辑源与实际 venue，绝不接受 LAST/local fallback。index stale/missing 拒单并暂停推进触发 baseline。
-- 不调用真实 balances/ledger/order/matching，不支持充值/提现/互转/合约。
+- 不调用真实 balances/ledger/order/matching，不支持充值/提现/互转。
+- 模拟永续在 `/paper/futures/*`，独立 `paper_fut_*` 表和虚拟 USDX。价格、档位和资金费率只读真实 futures 接口；没有源则该交易对不可用。不写 `fut_accounts`。模拟跟单未做。
 
 ## Migration / release prerequisites
 

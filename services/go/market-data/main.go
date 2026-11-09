@@ -71,6 +71,7 @@ func main() {
 		}
 	}
 	hub := NewHub(agg)
+	attachPaperSnapshots(hub, common.Env("PAPER_URL", ""), cfg.InternalToken)
 	agg.SetBroadcaster(hub)
 	agg.StartPersister(ctx)
 
