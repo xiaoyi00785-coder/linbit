@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,21 +42,28 @@ import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
 import coil.compose.AsyncImage
 
-/** 游客首页主视觉：大标题「立即注册，最高可获得 N USDT」+ 黑色「登录/注册」按钮（参考 guest/002）。 */
+/**
+ * 游客首页主视觉（参考 guest/002）：顶部 16:9 品牌动画（对照参考顶部 3D 金币动图）+
+ * 大标题「立即注册，最高可获得 N USDT」+ 黑色「登录/注册」按钮。
+ */
 @Composable
-internal fun GuestHero(total: String?, asset: String, onLogin: () -> Unit) {
+internal fun GuestHero(total: String?, asset: String, onLogin: () -> Unit, heroActive: Boolean = true, heroFrameMs: Long? = null) {
     val p = LB.p
-    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 262.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        val amount = total?.let { runCatching { java.text.DecimalFormat("#,##0.##").format(java.math.BigDecimal(it)) }.getOrNull() }
-        Text(
-            if (amount != null) "立即注册，最高可获得 $amount $asset" else "立即注册，开启数字资产之旅",
-            style = lb(27.sp, FontWeight.Medium), color = p.textPrimary, textAlign = TextAlign.Center, lineHeight = 38.sp,
-        )
-        Spacer(Modifier.height(32.dp))
-        Box(
-            Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(Radius.md)).background(p.primary).pressable(onClick = onLogin),
-            contentAlignment = Alignment.Center,
-        ) { Text("登录/注册", style = lb(FontSize.body, FontWeight.Medium), color = p.textOnPrimary) }
+    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        GuestHeroAnimation(Modifier.fillMaxWidth().padding(top = 16.dp).aspectRatio(16f / 9f), active = heroActive, frameOverrideMs = heroFrameMs)
+        Spacer(Modifier.height(24.dp))
+        Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH), horizontalAlignment = Alignment.CenterHorizontally) {
+            val amount = total?.let { runCatching { java.text.DecimalFormat("#,##0.##").format(java.math.BigDecimal(it)) }.getOrNull() }
+            Text(
+                if (amount != null) "立即注册，最高可获得 $amount $asset" else "立即注册，开启数字资产之旅",
+                style = lb(27.sp, FontWeight.Medium), color = p.textPrimary, textAlign = TextAlign.Center, lineHeight = 38.sp,
+            )
+            Spacer(Modifier.height(32.dp))
+            Box(
+                Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(Radius.md)).background(p.primary).pressable(onClick = onLogin),
+                contentAlignment = Alignment.Center,
+            ) { Text("登录/注册", style = lb(FontSize.body, FontWeight.Medium), color = p.textOnPrimary) }
+        }
     }
 }
 

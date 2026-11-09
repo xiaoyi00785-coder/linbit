@@ -130,6 +130,8 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onSearch = { marketsTop = 1; marketsSearch = true; tab = MainTab.MARKETS },
                         onLogin = { auth = "login" },
                         onOpenLink = ::openLink, onScan = { scan = true },
+                        // 全屏层盖住首页时暂停游客主视觉动画
+                        heroActive = !splash && auth == null && !userCenter && !moreMenu && morePage == null && assetFeature == null && historyKind == null && !scan,
                     )
                     MainTab.MARKETS -> MarketsScreen(bottomInset, vm = rootMarkets(), initialTop = marketsTop, openSearch = marketsSearch, onSearchConsumed = { marketsSearch = false },
                         loggedIn = loggedIn, onLogin = { onPendingChat(true); auth = "login" }, onOverlay = { hideTabBar = it }, onOpenTrade = { kind, sym ->

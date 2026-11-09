@@ -101,6 +101,7 @@ fun HomeScreen(
     onLogin: () -> Unit = {},
     onOpenLink: (String) -> Unit = {},
     onScan: () -> Unit = {},
+    heroActive: Boolean = true,
 ) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
@@ -115,7 +116,8 @@ fun HomeScreen(
     val reservesData by vm.reserves.collectAsStateWithLifecycle()
     Box(modifier) {
         HomeContent(s, m, watch, loggedIn, bottomInset, onOpenAvatar, onOpenMarkets, onOpenMore, onSoon, onDeposit, onFeature, onNotifications, onSupport, unread, onRefresh = vm::refresh,
-            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() }, onScan = onScan, onAnnouncement = { announcementId = it })
+            onSearch = onSearch, onLogin = onLogin, onOpenLink = onOpenLink, onReserves = { reserves = true; vm.loadReserves() }, onScan = onScan, onAnnouncement = { announcementId = it },
+            heroActive = heroActive && announcementId == null && !reserves && (popupShown || popups.isEmpty()))
         announcementId?.let { id -> androidx.compose.ui.window.Dialog(onDismissRequest = { announcementId = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
             Box(Modifier.fillMaxSize().background(p.bg)) { AnnouncementDetailScreen(id, { announcementId = null }) }
         } }
@@ -135,6 +137,7 @@ fun HomeContent(
     onFeature: (String) -> Unit = {}, onNotifications: () -> Unit = {}, onSupport: () -> Unit = {}, unread: Int = 0,
     onRefresh: () -> Unit, modifier: Modifier = Modifier,
     onSearch: () -> Unit = {}, onLogin: () -> Unit = {}, onOpenLink: (String) -> Unit = {}, onReserves: () -> Unit = {}, onScan: () -> Unit = {}, onAnnouncement: (Long) -> Unit = {},
+    heroActive: Boolean = true, heroFrameMs: Long? = null,
 ) {
     val p = LB.p
     var hide by rememberSaveable { mutableStateOf(false) }
@@ -177,7 +180,7 @@ fun HomeContent(
                     RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
                     Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
                     Hairline(Modifier.padding(top = (64f / 3).dp))
-                } else GuestHero(s.newcomerTotal, s.newcomer?.asset ?: "USDT", onLogin)
+                } else GuestHero(s.newcomerTotal, s.newcomer?.asset ?: "USDT", onLogin, heroActive, heroFrameMs)
                 if (banners.isNotEmpty()) {
                     val banner = banners.getOrNull(bannerPage) ?: banners[0]
                     CardPromo(banner, bannerPage, banners.size, onSwipe = { d -> bannerPage = ((bannerPage + d) % banners.size + banners.size) % banners.size; swipeTick++ }) { onBanner(banner) }
