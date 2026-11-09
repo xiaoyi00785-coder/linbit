@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for the newcomer gift package + invite KYC reward +
-# activity center: KYC gate, single enrollment, bind / first-deposit /
-# stacked volume tasks, claim errors, vouchers landing in the coupon center,
-# invite reward for both sides once the invitee passes KYC, and the
-# activity list showing the points period 5 as ended.
-#
-#   bash scripts/smoke-gift.sh            # boots devstack
-#
+# 新人礼包 + 邀请 KYC 奖励 + 活动中心端到端 smoke。
+# KYC 门槛、只能报名一次、绑定/首充/累加交易量任务、领取错误、券进卡券中心、
+# 被邀请人 KYC 通过后双方得奖励、活动列表把积分第 5 期标为已结束。
+#   bash scripts/smoke-gift.sh            # 拉起 devstack
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
-#
-# End-to-end KYC smoke test for the Linbit KYC service:
-#
-#   register -> status none -> upload front/selfie (type + ownership checks) ->
-#   submit basic (level 1) -> duplicate submit rejected -> admin reject with a
-#   reason -> resubmit -> admin approve -> account kycLevel = 1 -> advanced
-#   (level 2) gating -> KYC-tiered withdrawal limit (level 0 blocked, level 1 ok).
-#
-# Admin review endpoints are called on the KYC service directly with the shared
-# internal token (the gateway never proxies /admin/*).
-#
-#   bash scripts/smoke-kyc.sh            # boots the devstack (no Docker)
-#   SMOKE_INNER=1 bash scripts/smoke-kyc.sh   # against a running stack
-#
+# KYC 端到端 smoke。
+# 注册 → status none → 上传正面/自拍（类型与归属校验）→ 提交基础（level 1）→ 重复提交拒绝 →
+# 后台驳回（带原因）→ 重提 → 后台通过 → account kycLevel = 1 → 高级（level 2）门槛 →
+# 按 KYC 档的提现限额（level 0 拒绝，level 1 通过）。
+# 审核接口直接打 KYC 服务，带共享 internal token（gateway 不代理 /admin/*）。
+#   bash scripts/smoke-kyc.sh                 # 拉起 devstack（无 Docker）
+#   SMOKE_INNER=1 bash scripts/smoke-kyc.sh   # 打已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

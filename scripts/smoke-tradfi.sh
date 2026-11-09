@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-#
-# Smoke for TradFi (tokenized stocks + metals; flags tokenizedStocks / metals):
-#   flags off -> FEATURE_DISABLED on /tradfi/assets + AAPLUSDT/PAXGUSDT orders;
-#   admin enables flags (2FA + reason); CF-IPCountry US / IR -> REGION_RESTRICTED;
-#   admin settings (restricted list) + asset + token (ADDRESS_REQUIRED, address
-#   then enable, audit); AAPLUSDT trade -> deviation monitor: index pinned +10%
-#   -> widened + Telegram alert, back to par -> recovery alert; XAG/WTI perps
-#   listed; crypto (BTCUSDT) orders from US still pass; grid create / convert
-#   quote / asset + sub-account transfers of TradFi are gated, stop / crypto not.
-#
-#   bash scripts/smoke-tradfi.sh     # boots devstack (honours DEVSTACK_*_PORT)
-#
+# TradFi smoke（代币化股票 + 贵金属；开关 tokenizedStocks / metals）。
+# 开关关 → /tradfi/assets 与 AAPLUSDT/PAXGUSDT 下单返回 FEATURE_DISABLED；后台开开关（2FA + reason）；
+# CF-IPCountry US / IR → REGION_RESTRICTED；后台设置（受限列表）+ 资产 + 代币（ADDRESS_REQUIRED，先填地址再开启，审计）；
+# AAPLUSDT 成交 → 偏离监控：指数钉在 +10% → 放宽价差 + Telegram 告警，回到平价 → 恢复告警；
+# XAG/WTI 永续已上架；美国 IP 下加密货币（BTCUSDT）下单仍通过；
+# TradFi 的网格创建 / 闪兑报价 / 资产与子账户划转被拦截，停止与加密货币不拦截。
+#   bash scripts/smoke-tradfi.sh     # 拉起 devstack（认 DEVSTACK_*_PORT）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

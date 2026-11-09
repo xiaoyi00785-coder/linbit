@@ -1,8 +1,8 @@
-# Linbit 后端服务（规划）
+# Linbit 后端服务
 
-本目录是 Linbit 交易所**后端服务的占位与规划**。当前前端（`apps/web`）通过
-`@linbit/api-client` 直接对接 Prism mock（`docs/api/openapi.yaml`）。后端按下述划分逐步落地时，
-各服务对外契约应继续以 `docs/api/openapi.yaml` 与 `docs/api/websocket.md` 为准。
+本目录是已经在跑的后端：`services/go` 下每个业务服务一个 Go module，`services/rust/matching-engine` 是现货撮合。
+对外 HTTP 和 WebSocket 契约以 `docs/api/openapi.yaml`、`docs/api/websocket.md` 为准。
+前端可以指向这些服务，也可以在本地用 Prism 按同一份契约返回 mock。
 
 ## 技术选型
 
@@ -22,8 +22,8 @@
 | `asset` | 资产余额、冻结/解冻、内部划转、估值 | Assets |
 | `order` | 现货下单/撤单、当前委托、历史订单、成交查询 | Spot |
 | `market-data` | 行情聚合：ticker/depth/kline/trades、交易对列表、WS 推送 | Market |
-| `admin` | 运营后台：审核、风控配置、公告、对账 | （内部，不公开） |
-| `risk` | 风控：限额、反洗钱、异常行为拦截、熔断 | （内部，旁路/同步校验） |
+| `admin` | 运营后台：审核、风控配置、公告、对账、人工调账 | （内部，不公开） |
+| （无独立 `risk` 进程） | 提现风控在 `wallet`，地区限制和客户端 IP 信任在 `gateway`，调账复核在 `admin` | （内部） |
 
 ### Rust 核心服务（`services/rust/*`）
 
@@ -38,15 +38,14 @@ client ──HTTP/WS──> gateway ──> account / order / asset / market-dat
                                    │
                         order ──> matching-engine (Rust) ──事件──> asset / market-data
                                    │
-                              risk（同步校验 / 旁路监控）
+                         wallet 提现风控 / gateway 地区与 IP 信任
 ```
 
 ## 约定
 
-- 对外 HTTP 契约以 `docs/api/openapi.yaml` 为单一事实来源（SSOT），可据此生成
-  Go / Kotlin / Swift 客户端与服务端 stub。
-- 服务间通信建议 gRPC + 事件流（如 Kafka/NATS），撮合事件走低延迟通道。
-- 金额一律用字符串/定点数传输，避免浮点精度丢失（与 openapi.yaml 中的 `string` 金额字段一致）。
+- 对外 HTTP 契约以 `docs/api/openapi.yaml` 为准，移动端客户端由它生成，生成物不要手改。
+- 服务之间目前走 HTTP，带内部令牌。撮合命令也是 HTTP。引擎事件默认 POST 给行情服务；Kafka 出口只留了编译开关，没有接入。
+- 金额用十进制字符串或定点整数传输，不用浮点。撮合引擎内部是 8 位小数的 `i128`，Go 结算用 `shopspring/decimal`。和 openapi.yaml 里的 `string` 金额字段一致。
 
 ## 现货链路 · 第一步（已落地：gateway / account / asset）
 

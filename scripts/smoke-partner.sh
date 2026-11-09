@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for the partner (agent) program and its plumbing:
-#   invite-code attribution at registration, partner application with manual
-#   admin review (RBAC + 2FA + audit), futures/spot fee capture from the
-#   order/futures feeds, tier promotion by directs' 30-day futures volume,
-#   tier commission + 10% platform-funded override (up to 2 levels above the direct partner), regular
-#   referral (non-partner inviter, no stacking), daily settlement paid into
-#   the funding account (idempotent), partner dashboards and gateway access.
-#
-#   bash scripts/smoke-partner.sh            # boots devstack
-#   SMOKE_INNER=1 ... bash scripts/smoke-partner.sh   # existing stack
-#
+# 合伙人端到端 smoke。
+# 注册时邀请码归属、合伙人申请人工审核（RBAC + 2FA + 审计）、从 order/futures feed 抓现货/合约手续费、
+# 按直客 30 日合约成交量升档、档位佣金 + 平台出资 10% 级差（直客合伙人往上最多 2 级）、
+# 普通邀请（非合伙人邀请人，不叠加）、每日结算打入资金账户（幂等）、合伙人看板与网关访问。
+#   bash scripts/smoke-partner.sh            # 拉起 devstack
+#   SMOKE_INNER=1 ... bash scripts/smoke-partner.sh   # 已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -1,25 +1,12 @@
 #!/usr/bin/env bash
-#
-# End-to-end market-data smoke test for the Linbit stack:
-#
-#   two users register + login -> internal credit (deposit) -> a resting limit
-#   sell and a crossing limit buy match in the engine -> the engine streams trade
-#   and depth events to the market-data service -> a WebSocket client (tools/wsprobe)
-#   receives the live ticker / depth / kline / trades pushes -> the REST endpoints
-#   (ticker, klines, depth, recent trades) return the expected values through the
-#   gateway's public /market/* routes.
-#
-# Two ways to run it (mirrors scripts/smoke-trade.sh):
-#
-#   1. No stack running (default, no Docker): boots the devstack (embedded
-#      postgres + miniredis + matching-engine + all services incl. market-data),
-#      re-runs itself inside it, tears everything down afterwards.
-#
-#        bash scripts/smoke-market.sh
-#
-#   2. Against a running stack: export GATEWAY_URL, ASSET_URL, MARKET_URL,
-#      INTERNAL_TOKEN and set SMOKE_INNER=1.
-#
+# 行情端到端 smoke。
+# 两人注册登录 → 内部入账 → 挂限价卖与吃单限价买在引擎成交 → 引擎把成交和深度推给 market-data →
+# WebSocket 客户端（tools/wsprobe）收到 ticker / depth / kline / trades →
+# REST（ticker、klines、depth、最近成交）经 gateway 公开 /market/* 对上预期值。
+# 无栈（默认，无 Docker）：拉起 devstack（内嵌 postgres + miniredis + matching-engine + 全部服务，含 market-data），
+# 在里面重跑本脚本，结束后拆掉。
+#   bash scripts/smoke-market.sh
+# 已有栈：导出 GATEWAY_URL、ASSET_URL、MARKET_URL、INTERNAL_TOKEN，并设 SMOKE_INNER=1。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

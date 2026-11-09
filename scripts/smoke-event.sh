@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
-#
-# Smoke for event contracts (feature flag `eventContracts`, futures service):
-#   flag off -> FEATURE_DISABLED; admin enables flag; GET /event/products;
-#   up/down orders at the dev index, clientId idempotency, stake/period/symbol
-#   validation, daily limit, exposure limit (EXPOSURE_LIMIT), admin config /
-#   pause symbol (2FA + reason + audit), forced expiry + settle (won / lost /
-#   tie / no-price refund), exactly-once ledger (re-tick changes nothing),
-#   WS push on event:orders (token in ?token=), admin orders + exposure.
-#
-#   bash scripts/smoke-event.sh     # boots devstack (honours DEVSTACK_*_PORT)
-#
+# 事件合约 smoke（功能开关 `eventContracts`，futures）。
+# 开关关 → FEATURE_DISABLED；后台开启；GET /event/products；
+# 按开发指数下看涨/看跌单、clientId 幂等、stake/period/symbol 校验、每日限额、敞口限额（EXPOSURE_LIMIT）、
+# 后台配置/暂停交易对（2FA + reason + 审计）、强制到期结算（赢/输/平/无价格退款）、
+# 账本恰好一次（再 tick 一次不变）、WS event:orders（token 在 ?token=）、后台订单与敞口。
+#   bash scripts/smoke-event.sh     # 拉起 devstack（认 DEVSTACK_*_PORT）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

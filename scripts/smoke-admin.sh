@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke test for the Linbit admin (back-office) service:
-#
-#   login (password + TOTP, lockout-safe failures) -> RBAC -> admin accounts
-#   (create / disable, never delete) -> users (PII masking, reveal, freeze /
-#   unfreeze) -> KYC review proxy -> two-person withdrawal review -> ledger /
-#   balances -> symbols -> fee change (super_admin + finance_second dual
-#   approval, 24h announcement, scheduled apply, rollback) -> coupons (budget
-#   > threshold needs finance) -> rewards (> threshold needs finance review)
-#   -> append-only audit log.
-#
-#   bash scripts/smoke-admin.sh                 # boots the devstack (no Docker)
-#   SMOKE_INNER=1 bash scripts/smoke-admin.sh   # against a running stack
-#
+# 后台 admin 端到端 smoke。
+# 登录（密码 + TOTP，失败不触发锁死）→ RBAC → 管理员账号（创建/禁用，不删除）→
+# 用户（PII 脱敏、reveal、冻结/解冻）→ KYC 审核代理 → 提现双人复核 → 流水/余额 → 交易对 →
+# 费率变更（super_admin + finance_second 双人审批、24h 公告、定时生效、回滚）→
+# 卡券（预算超阈值需 finance）→ 奖励（超阈值需 finance 复核）→ 只追加 audit log。
+#   bash scripts/smoke-admin.sh                 # 拉起 devstack（无 Docker）
+#   SMOKE_INNER=1 bash scripts/smoke-admin.sh   # 打已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

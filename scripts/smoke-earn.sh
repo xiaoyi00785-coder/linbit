@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for savings products (earn service): public catalogue,
-# simple (flexible) with T+1 interest, bonus tier and daily payout, redeem,
-# auto-earn sweep, fixed term (newcomer cap, newcomer-only, no early redeem,
-# maturity payout, total quota), on-chain staking with unlock period, summary.
-#
-#   bash scripts/smoke-earn.sh            # boots devstack
-#
+# 理财产品端到端 smoke（earn）。
+# 公开目录、活期 T+1 计息、奖励档与每日派息、赎回、自动赚币归集、
+# 定期（新人额度、仅新人、不可提前赎回、到期派息、总额度）、链上质押解锁期、汇总。
+#   bash scripts/smoke-earn.sh            # 拉起 devstack
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

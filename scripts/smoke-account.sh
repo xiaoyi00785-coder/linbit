@@ -1,27 +1,12 @@
 #!/usr/bin/env bash
-#
-# End-to-end account smoke test for the Linbit account service:
-#
-#   phone country-code validation (400) -> phone register (E.164) with SMS code
-#   -> two-step login on a NEW device (challenge -> SMS code -> tokens) -> device
-#   list (current-device flag) + remove -> forgot password (verify-code ->
-#   one-time resetToken -> reset, revokes sessions) -> withdrawal address book
-#   add/list/delete + whitelist toggle (code-gated) -> change nickname & avatar
-#   (URL patch + multipart upload + controlled retrieval + type rejection).
-#
-# Verification codes are read back through the account service's dev-only
-# internal endpoint (DEV_MODE=true), standing in for a real email/SMS provider.
-#
-# Two ways to run it (mirrors scripts/smoke-trade.sh):
-#
-#   1. No stack running (default, no Docker): boots the devstack, re-runs itself
-#      inside it, tears everything down afterwards.
-#
-#        bash scripts/smoke-account.sh
-#
-#   2. Against a running stack: export GATEWAY_URL, ACCOUNT_URL, INTERNAL_TOKEN
-#      and set SMOKE_INNER=1.
-#
+# 账户端到端 smoke。
+# 手机区号校验返回 400 → 手机注册（E.164 + 短信码）→ 新设备两步登录（challenge → 短信码 → token）→
+# 设备列表（当前设备标记）与移除 → 忘记密码（verify-code → 一次性 resetToken → reset，撤销会话）→
+# 提现地址簿增删与白名单开关（要验证码）→ 改昵称和头像（URL patch、multipart 上传、受控读取、类型拒绝）。
+# 验证码经 account 开发接口读回（DEV_MODE=true），代替真实邮件/短信。
+# 无栈（默认，无 Docker）：拉起 devstack，在里面重跑本脚本，结束后拆掉。
+#   bash scripts/smoke-account.sh
+# 已有栈：导出 GATEWAY_URL、ACCOUNT_URL、INTERNAL_TOKEN，并设 SMOKE_INNER=1。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

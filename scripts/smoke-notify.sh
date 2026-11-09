@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Smoke for the message center: in-app notifications (kinds, unread counts,
-# per-item / all read, isolation), the email channel (preferences; security is
-# always emailed; delivery status via the dev mock), the new-device login hook,
-# the internal producer API, and admin broadcast / single-user send (2FA+audit).
+# 消息中心 smoke：站内通知（类型、未读数、单条/全部已读、隔离）、邮件通道（偏好；security 始终发邮件；
+# 投递状态走开发 mock）、新设备登录钩子、内部生产接口、后台广播/单用户发送（2FA+审计）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

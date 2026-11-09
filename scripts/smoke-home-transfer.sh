@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-#
-# Smoke for home operations + general transfer:
-#   placements CRUD via admin (2FA + reason + audit), /home/placements filters,
-#   /home/banners alias, earn APR on a placement, hot list + pins,
-#   /home/newcomer (anon + authed), /app/features + admin toggle,
-#   /market/fiat-rates, /account/favorites, POST /assets/transfer (idempotent,
-#   SAME_ACCOUNT, earn, INSUFFICIENT_BALANCE, VALIDATION_ERROR), unified history
-#   incl. legacy /futures/transfer.
-#
-#   bash scripts/smoke-home-transfer.sh      # boots devstack (honours DEVSTACK_*_PORT)
+# 首页运营位 + 通用划转 smoke。
+# 后台 placements CRUD（2FA + reason + 审计）、/home/placements 过滤、/home/banners 别名、
+# 运营位上的理财 APR、热门列表 + 置顶、/home/newcomer（匿名 + 登录）、/app/features + 后台开关、
+# /market/fiat-rates、/account/favorites、POST /assets/transfer（幂等、SAME_ACCOUNT、earn、
+# INSUFFICIENT_BALANCE、VALIDATION_ERROR）、统一流水含旧 /futures/transfer。
+#   bash scripts/smoke-home-transfer.sh      # 拉起 devstack（认 DEVSTACK_*_PORT）
 #   SMOKE_INNER=1 GATEWAY_URL=... ACCOUNT_URL=... ASSET_URL=... ADMIN_URL=... EARN_URL=... \
 #     INTERNAL_TOKEN=... ADMIN_BOOTSTRAP_*=... bash scripts/smoke-home-transfer.sh
-#
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

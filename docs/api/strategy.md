@@ -1,51 +1,49 @@
-# Strategy API: spot grid bots (services/go/strategy, :8090)
+# 策略 API：现货网格（`services/go/strategy`，:8090）
 
-Spot only (no DCA / recurring buys). Every order goes through the order service (`POST /spot/orders` as the user), so balances, fees and matching are the same as for manual orders. The gateway proxies `/strategy/*`. `/strategy/config` and `/strategy/grid/square` are public; everything else needs a user token.
+仅现货（无 DCA / 定投）。每笔单都经订单服务以该用户 `POST /spot/orders`，余额、手续费、撮合与手动单相同。Gateway 代理 `/strategy/*`。`/strategy/config` 和 `/strategy/grid/square` 公开；其余要用户 token。
 
-## Grid model
+## 网格模型
 
-- `mode`: `arithmetic` (equal price steps) or `geometric` (equal ratio). Levels L0…Ln between `lowerPrice` and `upperPrice`, `gridCount` = n. Prices are rounded to the symbol's tick size.
-- Per-grid quantity q = investment / (Σ buy levels below P + count of sell levels above P × P × (1 + `GRID_BUY_BUFFER`)), floored to the step size. Every order must meet minQty / minNotional, otherwise `GRID_TOO_DENSE` / `INVESTMENT_TOO_LOW`.
-- Start: one market buy for the base needed by the sell side, then limit sells on levels above P and limit buys below P (the level nearest P is left empty).
-- Fill handling (poll loop, `GRID_POLL_MS`): buy filled at Li → sell at Li+1; sell filled at Lj → buy at Lj−1. Each completed sell books grid profit = sell proceeds − cost of the matching buy − fees.
-- Stop: `stopLossPrice` (last ≤ SL) / `takeProfitPrice` (last ≥ TP), manual stop, external cancel of a bot order (`order_canceled`), or a failed placement (`place_failed`). Stopping cancels open orders, books partial fills, and if `sellBaseOnStop` (default `GRID_SELL_ON_STOP`) market-sells the base. It is resumable (`stopping` state) after a restart. If a start fails before any order was placed, the bot is discarded.
-- Stats: value, gridProfit, unrealizedPnl, totalProfit, profitRate, gridApr, cycles, runtimeSeconds, maxDrawdown, maxDrawdown7d, fees. Snapshots every `GRID_SNAPSHOT_SECONDS` feed the drawdown and the curve.
+- `mode`：`arithmetic`（等差价格）或 `geometric`（等比）。`lowerPrice` 与 `upperPrice` 之间 L0…Ln，`gridCount` = n。价格按交易对 tick 取整。
+- 每格数量 q = investment / (Σ P 以下买档 + P 以上卖档数 × P × (1 + `GRID_BUY_BUFFER`))，再按步长向下取整。每笔须满足 minQty / minNotional，否则 `GRID_TOO_DENSE` / `INVESTMENT_TOO_LOW`。
+- 启动：先市价买入卖侧所需的基础币，再在 P 以上挂限价卖、P 以下挂限价买（最靠近 P 的一档留空）。
+- 成交处理（轮询，`GRID_POLL_MS`）：Li 买单成交 → 在 Li+1 挂卖；Lj 卖单成交 → 在 Lj−1 挂买。每笔完成的卖单记网格利润 = 卖出所得 − 对应买单成本 − 手续费。
+- 停止：`stopLossPrice`（最新价 ≤ SL）/ `takeProfitPrice`（最新价 ≥ TP）、手动停止、机器人订单被外部撤销（`order_canceled`）、或挂单失败（`place_failed`）。停止时撤销未完成订单、记部分成交，若 `sellBaseOnStop`（默认 `GRID_SELL_ON_STOP`）则市价卖掉基础币。重启后可从 `stopping` 继续。启动失败且尚未挂出任何单时，机器人丢弃。
+- 统计：value、gridProfit、unrealizedPnl、totalProfit、profitRate、gridApr、cycles、runtimeSeconds、maxDrawdown、maxDrawdown7d、fees。每 `GRID_SNAPSHOT_SECONDS` 打快照，供回撤和曲线。
 
-## Endpoints
+## 接口
 
-| Method | Path | Auth |
+| 方法 | 路径 | 认证 |
 |---|---|---|
-| GET | /strategy/config | public (limits and defaults) |
-| GET | /strategy/grid/square?sort=default\|roi\|runtime&page=&pageSize= | public (running bots, anonymized, runtime ≥ `GRID_SQUARE_MIN_RUN_SECONDS`) |
+| GET | /strategy/config | public（限额与默认值） |
+| GET | /strategy/grid/square?sort=default\|roi\|runtime&page=&pageSize= | public（运行中的机器人，匿名，运行时长 ≥ `GRID_SQUARE_MIN_RUN_SECONDS`） |
 | GET | /strategy/grid/preview?symbol=&mode=&lowerPrice=&upperPrice=&gridCount=&investment= | user |
 | POST | /strategy/grid `{symbol, mode, lowerPrice, upperPrice, gridCount, investment, stopLossPrice?, takeProfitPrice?, sellBaseOnStop?}` | user |
 | GET | /strategy/grid?status=running\|stopped\|all | user |
-| GET | /strategy/grid/{id} | user (404 for other users) |
+| GET | /strategy/grid/{id} | user（别人的 404） |
 | GET | /strategy/grid/{id}/orders?status= | user |
 | POST | /strategy/grid/{id}/stop `{sellBase?}` | user |
-| POST | /internal/dev/grid/tick | dev (DEV_MODE + internal token) |
+| POST | /internal/dev/grid/tick | dev（DEV_MODE + internal token） |
 
-Order service endpoints used internally (X-Internal-Token): `GET /internal/orders/{id}?userId=`, `GET /internal/symbols/{symbol}`.
+订单服务内部接口（X-Internal-Token）：`GET /internal/orders/{id}?userId=`、`GET /internal/symbols/{symbol}`。
 
-Errors: INVALID_MODE, SYMBOL_NOT_FOUND, SYMBOL_NOT_TRADING, INVALID_RANGE, INVALID_GRID_COUNT, INVALID_INVESTMENT, INVESTMENT_TOO_LOW, GRID_TOO_DENSE, NO_PRICE, PRICE_OUT_OF_RANGE, INVALID_STOP_LOSS, INVALID_TAKE_PROFIT, TOO_MANY_BOTS, INSUFFICIENT_BALANCE, ORDER_REJECTED, NO_LIQUIDITY, BOT_NOT_FOUND (404), BOT_NOT_RUNNING.
+错误：INVALID_MODE、SYMBOL_NOT_FOUND、SYMBOL_NOT_TRADING、INVALID_RANGE、INVALID_GRID_COUNT、INVALID_INVESTMENT、INVESTMENT_TOO_LOW、GRID_TOO_DENSE、NO_PRICE、PRICE_OUT_OF_RANGE、INVALID_STOP_LOSS、INVALID_TAKE_PROFIT、TOO_MANY_BOTS、INSUFFICIENT_BALANCE、ORDER_REJECTED、NO_LIQUIDITY、BOT_NOT_FOUND（404）、BOT_NOT_RUNNING。
 
-## Configurable defaults (environment variables)
+## 可配置默认值（环境变量）
 
-| Variable | Default | Meaning |
+| 变量 | 默认 | 含义 |
 |---|---|---|
-| PORT | 8090 | Port |
-| GRID_POLL_MS | 1000 | Order / price poll interval |
-| GRID_MAX_BOTS_PER_USER | 10 | Running bots per user |
-| GRID_MIN_GRIDS / GRID_MAX_GRIDS | 2 / 200 | Grid count range |
-| GRID_MIN_INVESTMENT | 10 | Minimum investment (quote) |
-| GRID_FEE_RATE | 0.001 | Fee used for previews only (real fees come from fills) |
-| GRID_BUY_BUFFER | 0.003 | Slippage buffer for the initial market buy |
-| GRID_MAX_RANGE_RATIO | 100 | Max upper/lower ratio |
-| GRID_SNAPSHOT_SECONDS | 60 | Snapshot interval |
-| GRID_SQUARE_MIN_RUN_SECONDS | 3600 | Min runtime to appear on the square |
-| GRID_SELL_ON_STOP | true | Default for sellBaseOnStop |
-
-Not implemented: copying a grid from the square, and per-bot copier counts.
+| PORT | 8090 | 端口 |
+| GRID_POLL_MS | 1000 | 订单/价格轮询间隔 |
+| GRID_MAX_BOTS_PER_USER | 10 | 每用户运行中的机器人数 |
+| GRID_MIN_GRIDS / GRID_MAX_GRIDS | 2 / 200 | 网格数范围 |
+| GRID_MIN_INVESTMENT | 10 | 最小投入（计价币） |
+| GRID_FEE_RATE | 0.001 | 仅预览用的费率（真实费率来自成交） |
+| GRID_BUY_BUFFER | 0.003 | 初始市价买入的滑点缓冲 |
+| GRID_MAX_RANGE_RATIO | 100 | 上下价最大倍数 |
+| GRID_SNAPSHOT_SECONDS | 60 | 快照间隔 |
+| GRID_SQUARE_MIN_RUN_SECONDS | 3600 | 上广场的最短运行时间 |
+| GRID_SELL_ON_STOP | true | sellBaseOnStop 的默认值 |
 
 ## 策略广场一键复制
 

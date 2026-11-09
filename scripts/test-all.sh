@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-#
-# Run `go vet` and `go test` for every Go module in the repo.
-#
-#   bash scripts/test-all.sh                 # DB-backed tests skip (no DATABASE_URL)
+# 对仓库里每个 Go module 跑 `go vet` 和 `go test`。
+#   bash scripts/test-all.sh                 # 未设 DATABASE_URL 时，依赖数据库的测试跳过
 #   cd tools/devstack && go run . -root "$(git -C ../.. rev-parse --show-toplevel)" \
-#       -exec "bash scripts/test-all.sh"     # DB-backed tests run against embedded postgres
-#
+#       -exec "bash scripts/test-all.sh"     # 依赖数据库的测试打内嵌 postgres
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

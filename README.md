@@ -1,30 +1,29 @@
 # Linbit 交易平台（Monorepo）
 
-Linbit 加密货币交易所的前端与 API 契约单一仓库（pnpm monorepo）。
+Linbit 交易所的前端、后台、移动端和后端在同一个仓库里。
 
-- **apps/web** — Next.js 14（App Router）+ TypeScript + Tailwind + Zustand + TanStack Query 的交易所前端。
-- **packages/ui** — React 组件库 + Tailwind preset + 设计令牌（CSS 变量，蓝色系品牌色、深色底）。
-- **packages/api-client** — 由 `docs/api/openapi.yaml` 生成的类型 + `openapi-fetch` SDK。
-- **packages/chart** — 基于 lightweight-charts v4 的 K 线组件。
-- **docs/api** — OpenAPI 3.0.3 契约 + WebSocket 协议文档（API 单一事实来源）。
-- **services** — 未来后端服务（Go + Rust）的规划与占位。
+- **apps/web** — Next.js（App Router）交易所网站。
+- **apps/partner** — 合伙人后台。
+- **prototypes/admin** — Vite 管理后台。
+- **packages/ui**、**packages/chart** — 共享 UI 和 K 线。
+- **packages/api-client** — 由 `docs/api/openapi.yaml` 生成的类型和 SDK。`src/schema.ts` 是生成文件，不要手改。
+- **docs/api** — OpenAPI 契约和 WebSocket 协议。契约文件保持原样，改契约要单独走生成流程。
+- **services/go** — 账户、网关、资产、钱包、订单、合约、行情等 Go 服务。
+- **services/rust/matching-engine** — 现货撮合。价格和数量在引擎里是 8 位小数的定点整数。
+- **mobile/ios**、**mobile/android** — 客户端。`Core/Generated` 和 `core/generated` 由 OpenAPI Generator 产出，不要手改。
 
-要求：**Node 20、pnpm 10**。
+Node 20、pnpm 10。后端各 Go module 和 Rust crate 分开构建，见 `services/README.md`。
 
 ## 目录结构
 
 ```
-linbit-platform/
-├─ apps/
-│  └─ web/                 # Next.js 前端
-├─ packages/
-│  ├─ ui/                  # 组件库 + tailwind preset + tokens.css
-│  ├─ api-client/          # openapi-typescript 类型 + openapi-fetch SDK
-│  └─ chart/               # KLineChart（lightweight-charts v4）
-├─ docs/api/
-│  ├─ openapi.yaml         # REST 契约（Prism mock / 代码生成的来源）
-│  └─ websocket.md         # WebSocket 协议
-├─ services/               # 后端服务规划（Go 业务服务 + Rust 撮合引擎）
+linbit/
+├─ apps/web、apps/partner
+├─ prototypes/admin
+├─ packages/ui、api-client、chart
+├─ docs/api/openapi.yaml、websocket.md
+├─ services/go/*、services/rust/matching-engine
+├─ mobile/ios、mobile/android
 └─ pnpm-workspace.yaml
 ```
 
@@ -89,89 +88,12 @@ pnpm gen:api
 
 ## 页面
 
-| 路由 | 说明 |
-| --- | --- |
-| `/` | 首页（Hero、热门交易对、安全介绍） |
-| `/markets` | 行情列表（搜索、排序） |
-| `/trade/[symbol]` | 现货交易（K 线 + 盘口 + 下单 + 当前委托，`ssr:false` 客户端渲染） |
-| `/login`、`/register` | 登录 / 注册 |
-| `/assets` | 资产余额（需登录） |
+路由在 `apps/web/app`。现货是 `/spot` 和 `/trade`，合约是 `/futures`，资产是 `/assets`。行情页依赖浏览器里的图表，用客户端渲染。
 
-## 设计令牌与换肤
+## 设计令牌
 
-所有颜色定义在 `packages/ui/src/styles/tokens.css`，以 CSS 变量提供（品牌色为蓝色
-`--lb-primary: #2f6bff`，深色底）。Tailwind 通过 `packages/ui/tailwind-preset.cjs` 把这些变量
-映射成 `lb-*` 颜色类。**换肤只需改变量，无需改类名。**
+颜色在 `packages/ui/src/styles/tokens.css`。当前主色是 `--lb-primary: #abe127`。Tailwind 通过 `packages/ui/tailwind-preset.cjs` 映射成 `lb-*` 类，换色改变量即可。
 
----
+## 后端
 
-## 从原型（/workspace/linbit）迁移到 apps/web
-
-原型是一个 **React 18 + Vite** 的 JSX 项目：`react-router` 的 **hash 路由**、单个
-`src/style.css`、`src/data.js` 提供模拟数据。迁移到本仓库 `apps/web` 的步骤如下。
-
-### 1. 路由：hash 路由 → App Router
-
-原型用 `<HashRouter>` + `<Routes>`（见 `src/App.jsx`、`src/main.jsx`）。按文件系统路由映射到
-`apps/web/app/`：
-
-| 原型路由（hash） | App Router 文件 |
-| --- | --- |
-| `#/` | `app/page.tsx` |
-| `#/markets` | `app/markets/page.tsx` |
-| `#/spot`、`#/trade`、`#/futures` | `app/trade/[symbol]/page.tsx`（现货；合约可后续加 `app/futures/...`） |
-| `#/login` | `app/login/page.tsx` |
-| `#/register` | `app/register/page.tsx` |
-| `#/assets` | `app/assets/page.tsx` |
-| `#/deposit`、`#/withdraw`、`#/orders`、`#/account/*` 等 | 后续按需在 `app/` 下补齐同名目录 |
-
-- 全局布局（Header/Footer）从原型的 `App.jsx`/`Nav.jsx` 迁到 `app/layout.tsx` + `components/SiteNav.tsx`。
-- `<Link to>` → `next/link` 的 `<Link href>`；`useNavigate()` → `useRouter()`（`next/navigation`）；
-  `useLocation()` → `usePathname()`。
-- 需要浏览器 API / 图表的页面（行情、交易）用 `next/dynamic` 的 `ssr:false` 只在客户端渲染，
-  交互组件加 `"use client"`。
-
-### 2. 组件：拆进 packages/ui
-
-原型把大量 UI 揉在 `App.jsx` / `Pages.jsx` / `Pages2.jsx` / `Nav.jsx` 内。抽取可复用的基础件到
-`packages/ui`（已内置 `Button`、`Input`、`Card`、`Tabs`、`Modal`、`Nav`、`TextLogo`）：
-
-- 原型的 `<Logo/>`（内联 SVG + 文案 `LINBIT`）→ 用 `TextLogo`（文字 logo `Linbit`）。
-- 原型的按钮/输入/卡片/标签页等 → 替换为 `@linbit/ui` 对应组件，className 改用 `lb-*` 令牌色。
-- 页面级业务组件（如订单簿、下单面板）留在 `apps/web`，基础件下沉到 `packages/ui`。
-
-### 3. 样式：style.css → tokens.css（并改蓝色）
-
-原型用单个 `src/style.css`，品牌色是 lime 绿 `#abe127`、CSS 变量名为 `--primary` / `--up` /
-`--down` 等。迁移：
-
-- 把颜色变量迁到 `packages/ui/src/styles/tokens.css`，统一前缀为 `--lb-*`，
-  **品牌色改为蓝色 `--lb-primary: #2f6bff`**（深色底保持）。
-- 组件里不再写死颜色，改用 Tailwind 的 `lb-*` 类（`bg-lb-primary`、`text-lb-up` 等），
-  由 `tailwind-preset.cjs` 映射到变量。
-- 其余布局类样式逐步用 Tailwind 工具类替代，`app/globals.css` 只保留少量全局规则。
-
-### 4. 模拟数据：data.js → api-client
-
-原型从 `src/data.js` 读取写死的 `coins` 数组与 `candles()` 函数。迁移：
-
-- 行情 / K 线 / 盘口 / 账户数据全部改为通过 `@linbit/api-client` 调用（见 `apps/web/lib/queries.ts`
-  中的 `useTickers` / `useKlines` / `useDepth` / `useBalances` 等 TanStack Query 封装）。
-- 开发期后端用 `pnpm mock`（Prism 按 `openapi.yaml` 的 examples 返回）。
-- `candles()` 仅作为 K 线为空时的占位（见 `apps/web/lib/demo.ts`），正式数据来自 `/market/klines`。
-- 登录态从原型基于 `localStorage` 的 `auth.js` 迁到 `apps/web/lib/store.ts`（Zustand + 持久化），
-  token 由 api-client 中间件自动附加为 `Authorization: Bearer`。
-
-### 5. 行情 / 交易页：ssr:false
-
-这两类页面依赖图表库（lightweight-charts）与浏览器环境，统一用 `next/dynamic` 的 `ssr:false`
-在客户端渲染（参考 `app/trade/[symbol]/page.tsx` 的写法：外层 server 包装 + `dynamic(..., { ssr:false })`
-加载内部 `"use client"` 组件）。
-
----
-
-## 后端规划
-
-见 [`services/README.md`](./services/README.md)：Go 业务服务（gateway、account、kyc、wallet、asset、
-order、market-data、admin、risk）与 Rust 撮合引擎（matching-engine）。对外契约以
-`docs/api/openapi.yaml` 为准。
+服务划分、端口和现货/钱包链路见 [`services/README.md`](./services/README.md)。没有单独的 `risk` 进程。
