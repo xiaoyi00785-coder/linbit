@@ -51,4 +51,14 @@ class CompanionContractTest {
         assertEquals("$-100.01",QuoteDisplay.format(BigDecimal("-100.004999996")))
     }
 
+
+    @Test fun notificationLinkIsSupportTicketOnlyAndNotUrl() {
+        val with=json.decodeFromString(ApiNotification.serializer(),"""{"id":"1","kind":"system","title":"t","body":"b","link":{"type":"support_ticket","ticketId":"42"}}""")
+        assertEquals(ApiNotificationLink.Type.SUPPORT_TICKET,with.link?.type);assertEquals("42",with.link?.ticketId)
+        val legacy=json.decodeFromString(ApiNotification.serializer(),"""{"id":"2","kind":"system","title":"旧通知","body":"工单 99"}""")
+        assertNull(legacy.link)
+        assertNull(click.cowa.linbit.feature.more.supportTicketId(legacy))
+        assertEquals("42",click.cowa.linbit.feature.more.supportTicketId(with))
+    }
+
 }

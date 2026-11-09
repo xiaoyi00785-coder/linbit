@@ -240,10 +240,77 @@ class SupportViewModel @Inject constructor(private val api: LinbitApi, private v
 }
 
 @Composable
-fun SupportTicketsScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: SupportViewModel = hiltViewModel()) {
+fun SupportTicketsScreen(
+    onBack: () -> Unit,
+    onLogin: () -> Unit,
+    openTicketId: String? = null,
+    markNotificationId: String? = null,
+    onOpenTicketConsumed: () -> Unit = {},
+    onSupportNotificationConsumed: () -> Unit = {},
+    vm: SupportViewModel = hiltViewModel(),
+    notificationVm: NotificationViewModel = hiltViewModel(),
+) {
     var route by remember { mutableStateOf("list") }
     var ticketId by remember { mutableStateOf<String?>(null) }
+    // 父级 openTicketId 只作一次投递；本地保留意图，供登录回跳与成功后精确标已读。
+    var pendingOpenTicketId by remember { mutableStateOf<String?>(null) }
+    var pendingMarkNotificationId by remember { mutableStateOf<String?>(null) }
+    var markedNotification by remember { mutableStateOf(false) }
+    var seenSession by remember { mutableStateOf<Long?>(null) }
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
+    val session by vm.sessionVersion.collectAsStateWithLifecycle()
+    val s by vm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(openTicketId, markNotificationId) {
+        if (openTicketId != null) {
+            pendingOpenTicketId = openTicketId
+            pendingMarkNotificationId = markNotificationId
+            markedNotification = false
+            onOpenTicketConsumed()
+        }
+    }
+    LaunchedEffect(pendingOpenTicketId, loggedIn) {
+        if (!loggedIn) return@LaunchedEffect
+        val id = pendingOpenTicketId ?: return@LaunchedEffect
+        if (ticketId != id) { ticketId = id; route = "list" }
+    }
+    LaunchedEffect(session) {
+        if (seenSession != null && seenSession != session) {
+            markedNotification = false
+            ticketId = null
+            pendingOpenTicketId = null
+            pendingMarkNotificationId = null
+            onSupportNotificationConsumed()
+        }
+        seenSession = session
+    }
+    LaunchedEffect(s.detail?.id, s.loading, s.error, pendingMarkNotificationId, pendingOpenTicketId, loggedIn, ticketId, markedNotification) {
+        when (val decision = evaluateSupportNotificationMark(
+            openTicketId = pendingOpenTicketId,
+            markNotificationId = pendingMarkNotificationId,
+            loggedIn = loggedIn,
+            alreadyHandled = markedNotification,
+            detailId = s.detail?.id,
+            loading = s.loading,
+            error = s.error,
+            localTicketId = ticketId,
+        )) {
+            is SupportNotificationMarkDecision.MarkRead -> {
+                markedNotification = true
+                notificationVm.markReadById(decision.notificationId)
+                pendingOpenTicketId = null
+                pendingMarkNotificationId = null
+                onSupportNotificationConsumed()
+            }
+            SupportNotificationMarkDecision.ConsumeWithoutMark -> {
+                // 404/鉴权失败：不标通知已读，仅消费打开意图；失败态由详情错误页展示。
+                markedNotification = true
+                pendingOpenTicketId = null
+                pendingMarkNotificationId = null
+                onSupportNotificationConsumed()
+            }
+            SupportNotificationMarkDecision.None -> Unit
+        }
+    }
     if (!loggedIn) {
         MoreFrame("我的工单", onBack) { EmptyState("登录后查看和提交工单", Modifier.weight(1f)) { LbButton("登录", Modifier.width(160.dp), onClick = onLogin) } }
         return

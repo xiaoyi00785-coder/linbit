@@ -1,5 +1,7 @@
 package click.cowa.linbit.feature.assets
 
+import click.cowa.linbit.feature.more.bonusAmount
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -354,8 +356,8 @@ private fun FuturesCard(vm: AssetsViewModel, s: AssetsUiState) {
         "账户权益(USDT)" to f?.marginBalance,
         "未实现盈亏" to upnl,
         "可用余额" to f?.availableBalance,
-        "体验金" to null, // 后端 futures/account 未返回体验金字段 → --
-        "抵扣金" to null,
+        "体验金" to s.bonus?.trial,
+        "抵扣金" to s.bonus?.deduction,
         "仓位保证金" to posMargin,
         "委托成本" to f?.orderMargin,
     )
@@ -374,8 +376,16 @@ private fun FuturesCard(vm: AssetsViewModel, s: AssetsUiState) {
                     val align = when (i) { 0 -> Alignment.Start; 1 -> Alignment.CenterHorizontally; else -> Alignment.End }
                     Column(Modifier.weight(1f), horizontalAlignment = align) {
                         Text(k, style = lb(11.sp), color = p.textSecondary, maxLines = 1)
-                        Text(if (s.hideAmount) "****" else v?.let { Fmt.amount(dec(it), 2) } ?: "--", style = lbNum(FontSize.label), color = p.textPrimary)
-                        Text(if (s.hideAmount) "≈ ****" else "≈ " + (v?.let { click.cowa.linbit.core.storage.QuoteDisplay.format(dec(it), 2, s.cnyRate) } ?: "--"), style = lbNum(10.sp), color = p.textSecondary)
+                        val bonusCell = k == "体验金" || k == "抵扣金"
+                        val text = if (s.hideAmount) "****" else if (bonusCell) bonusAmount(v) else v?.let { Fmt.amount(dec(it), 2) } ?: "--"
+                        Text(text, style = lbNum(FontSize.label), color = p.textPrimary)
+                        val approx = when {
+                            s.hideAmount -> "≈ ****"
+                            bonusCell && text == "--" -> "≈ --"
+                            bonusCell -> "≈ " + click.cowa.linbit.core.storage.QuoteDisplay.format(dec(v), 2, s.cnyRate)
+                            else -> "≈ " + (v?.let { click.cowa.linbit.core.storage.QuoteDisplay.format(dec(it), 2, s.cnyRate) } ?: "--")
+                        }
+                        Text(approx, style = lbNum(10.sp), color = p.textSecondary)
                     }
                 }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }

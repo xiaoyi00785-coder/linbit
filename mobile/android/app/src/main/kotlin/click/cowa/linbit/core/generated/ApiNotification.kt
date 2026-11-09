@@ -15,21 +15,23 @@
 
 package click.cowa.linbit.core.generated
 
+import click.cowa.linbit.core.generated.ApiNotificationLink
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
  *
- * @param id 
- * @param kind 
- * @param title 
- * @param body 
+ *
+ * @param id
+ * @param kind
+ * @param title
+ * @param body
  * @param time 毫秒时间戳
- * @param read 
- * @param emailStatus 
+ * @param read
+ * @param emailStatus
+ * @param link
  */
 @Serializable
 
@@ -55,12 +57,15 @@ data class ApiNotification (
     val read: kotlin.Boolean? = null,
 
     @SerialName(value = "emailStatus")
-    val emailStatus: kotlin.String? = null
+    val emailStatus: kotlin.String? = null,
+
+    @SerialName(value = "link")
+    val link: ApiNotificationLink? = null
 
 ) {
 
     /**
-     * 
+     *
      *
      * Values: SYSTEM,TRADE,ACTIVITY,SECURITY
      */
@@ -73,4 +78,3 @@ data class ApiNotification (
     }
 
 }
-

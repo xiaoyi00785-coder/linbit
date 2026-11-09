@@ -8,6 +8,7 @@ import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiCreateWithdrawAddressRequest
 import click.cowa.linbit.core.generated.ApiDepositAddress
 import click.cowa.linbit.core.generated.ApiFuturesAccount
+import click.cowa.linbit.core.generated.ApiFuturesBonusAvailable
 import click.cowa.linbit.core.generated.ApiFuturesTransferRequest
 import click.cowa.linbit.core.generated.ApiInternalTransferRequest
 import click.cowa.linbit.core.generated.ApiSetWhitelistRequest
@@ -43,6 +44,8 @@ data class AssetsUiState(
     val spot: List<ApiBalance> = emptyList(),
     val funding: List<ApiBalance> = emptyList(),
     val futures: ApiFuturesAccount? = null,
+    /** 独立 GET /futures/bonus.available，不计入账户权益。 */
+    val bonus: ApiFuturesBonusAvailable? = null,
     val hideAmount: Boolean = false,
     val hideSmall: Boolean = false,
     val query: String = "",
@@ -134,10 +137,15 @@ class AssetsViewModel @Inject constructor(
                 val spot = apiCall { api.balances(account = "spot", pageSize = 200) }.items
                 val funding = runCatching { apiCall { api.balances(account = "funding", pageSize = 200) }.items }.getOrDefault(emptyList())
                 val futures = runCatching { apiCall { api.futuresAccount() } }.getOrNull()
+                val bonus = runCatching { apiCall { api.futuresBonus() }.available }.getOrNull()
                 val listed = runCatching { apiCall { api.walletNetworks() }.networks.mapNotNull { it.asset }.distinct().sorted() }.getOrDefault(_s.value.listedFunding)
                 val rate = market.state.value.cnyRate ?: _s.value.cnyRate
+                if (!tokens.loggedIn.value) {
+                    _s.value = AssetsUiState(cnyRate = rate)
+                    return@launch
+                }
                 _s.value = _s.value.copy(
-                    loading = false, error = null, spot = spot, funding = funding, futures = futures, cnyRate = rate, listedFunding = listed,
+                    loading = false, error = null, spot = spot, funding = funding, futures = futures, bonus = bonus, cnyRate = rate, listedFunding = listed,
                 )
             } catch (e: Exception) {
                 _s.value = _s.value.copy(loading = false, error = e.lbMessage())
@@ -166,6 +174,15 @@ class AssetsViewModel @Inject constructor(
     /** 离屏证据：写入示例余额（非生产）。 */
     internal fun seedEvidenceBalances(funding: List<ApiBalance> = emptyList(), spot: List<ApiBalance> = emptyList()) {
         _s.value = _s.value.copy(funding = funding, spot = spot, loading = false, error = null)
+    }
+
+    /** 离屏证据：合约账户与独立赠金对象（非生产，不计入余额）。 */
+    internal fun seedEvidenceFutures(
+        futures: ApiFuturesAccount? = null,
+        bonus: ApiFuturesBonusAvailable? = null,
+        tab: Int = 2,
+    ) {
+        _s.value = _s.value.copy(futures = futures, bonus = bonus, tab = tab, loading = false, error = null)
     }
 
     suspend fun loadWithdrawNetworks(asset: String): Result<List<ApiWithdrawNetwork>> {
@@ -379,9 +396,15 @@ class AssetsViewModel @Inject constructor(
     private var transferGeneration = 0L
     private var transferDirection: Boolean? = null
     var transferAccepted by androidx.compose.runtime.mutableStateOf(false); private set
+    private var sessionObserved = false
     init { viewModelScope.launch { tokens.sessionVersion.collect {
         transferGeneration++; transferJob?.cancel(); transferBusy = false; transferError = null; transferReceipt = null; transferAccepted=false;transferDirection=null
         withdrawEpoch.value = tokens.sessionVersion.value; withdrawJob?.cancel(); withdrawBusy = false; withdrawError = null; withdrawReceipt = null; withdrawAwaitingReadback = false; withdrawCancelGeneration++;withdrawCancelJob?.cancel();withdrawCancelBusy=false;withdrawCancelError=null;withdrawCancelConflict=null;withdrawCancelReceipt=null;withdrawCancelAccepted=false; addressGeneration++; addressJob?.cancel(); addressBusy=false; addressError=null; addressReceipt=null; addressAccepted=false; addressEditAccepted=false; addressEditBusy=false; addressEditError=null; addressEditReceipt=null
+        // 仅切账号后清空余额/赠金；页面 LaunchedEffect(sessionVersion) 负责重载，避免回环测试里多打无关请求。
+        if (sessionObserved) {
+            _s.value = AssetsUiState(cnyRate = market.state.value.cnyRate ?: _s.value.cnyRate, tab = _s.value.tab, hideAmount = _s.value.hideAmount)
+        }
+        sessionObserved = true
     } } }
     fun transferFutures(toFutures: Boolean, amount: String): Boolean {
         if (transferBusy || transferAccepted || !tokens.loggedIn.value) return false

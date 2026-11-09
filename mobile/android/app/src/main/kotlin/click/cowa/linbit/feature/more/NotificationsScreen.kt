@@ -114,6 +114,25 @@ class NotificationViewModel @Inject constructor(
         }
     }
 
+    /** 仅按正式通知 id 精确已读；不打开工单、不 all=true。跨会话丢弃。 */
+    fun markReadById(id: String) {
+        val item = _state.value.items.firstOrNull { it.id == id }
+        if (item != null) markRead(item) else {
+            if (id.isBlank()) return
+            val session = tokens.sessionVersion.value
+            val readAll = markAllVersion
+            optimisticReadVersions[id] = readAll
+            viewModelScope.launch {
+                try {
+                    runCatching { apiCall { api.readNotifications(ApiReadNotificationsRequest(ids = listOf(id))) } }
+                        .onFailure { if (isCurrent(session) && markAllVersion == readAll) toast.error(it) }
+                } finally {
+                    if (isCurrent(session) && optimisticReadVersions[id] == readAll) optimisticReadVersions.remove(id)
+                }
+            }
+        }
+    }
+
     fun markRead(item: ApiNotification) {
         val id = item.id ?: return
         val current = _state.value.items.firstOrNull { it.id == id } ?: return
@@ -207,7 +226,12 @@ class NotificationViewModel @Inject constructor(
 }
 
 @Composable
-fun NotificationsScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: NotificationViewModel = hiltViewModel()) {
+fun NotificationsScreen(
+    onBack: () -> Unit,
+    onLogin: () -> Unit,
+    onOpenSupportTicket: (ticketId: String, notificationId: String) -> Unit = { _, _ -> },
+    vm: NotificationViewModel = hiltViewModel(),
+) {
     var tab by remember { mutableIntStateOf(0) }
     var settings by remember { mutableStateOf(false) }
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
@@ -238,9 +262,14 @@ fun NotificationsScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: Notificatio
                 s.items.forEach { item ->
                     var expanded by remember(item.id) { mutableStateOf(false) }
                     val unread = item.read == false
+                    val ticketId = supportTicketId(item)
                     Row(Modifier.fillMaxWidth().pressable(scale = 1f) {
-                        expanded = !expanded
-                        vm.markRead(item)
+                        if (ticketId != null && item.id != null) {
+                            onOpenSupportTicket(ticketId, item.id)
+                        } else {
+                            expanded = !expanded
+                            vm.markRead(item)
+                        }
                     }.padding(horizontal = Spacing.pageH, vertical = 14.dp), verticalAlignment = Alignment.Top) {
                         Box(Modifier.size(36.dp).background(LB.p.fill, CircleShape), contentAlignment = Alignment.Center) {
                             LbIcon(if (item.kind == ApiNotification.Kind.TRADE) R.drawable.ic_candles else R.drawable.ic_bell, 17.dp)
@@ -254,6 +283,7 @@ fun NotificationsScreen(onBack: () -> Unit, onLogin: () -> Unit, vm: Notificatio
                                 Text(formatMillis(item.time), style = lbNum(FontSize.small), color = LB.p.textTertiary)
                             }
                             Text(item.body ?: "", style = lb(FontSize.small), color = LB.p.textSecondary, maxLines = if (expanded) Int.MAX_VALUE else 2)
+                            if (ticketId != null) Text("查看工单", style = lb(FontSize.small), color = LB.p.brand)
                             if (expanded) when (item.emailStatus) {
                                 "sent" -> Text("已同步发送至邮箱", style = lb(FontSize.small), color = LB.p.textTertiary)
                                 "pending" -> Text("邮件发送中", style = lb(FontSize.small), color = LB.p.textTertiary)

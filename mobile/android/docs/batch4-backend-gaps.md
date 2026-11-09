@@ -64,3 +64,9 @@
 后端待办：部署 companion 分支的 `/market/usd-rate` 与 ticker `usd` 字段；配置 placements 轮播位与储备金快照后客户端自动展示。
 
 最新候选 a6257c29e2c2d73439624e086eb2ca9c53098621 取代 be357384，仍未合并/部署。通知 link 已有正式 support_ticket/ticketId 字符串契约，客户端下一批接入精确单条已读与跳转；不是继续等缺字段。account 迁移17交运维，本批不改后端。
+
+
+## Batch9（2026-11-08 America/New_York）
+- 通知 link→工单详情+精确已读：客户端已接 a6257c29 契约；迁移17/真实工单发送仍非本批。
+- 合约资产卡已串独立 `/futures/bonus`；不开放合约直充。
+- 真机/KVM 仍受限；远端 CI 对上一 head 已成功，本批推送后另查一次不轮询。
