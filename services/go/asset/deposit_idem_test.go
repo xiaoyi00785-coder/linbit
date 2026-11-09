@@ -39,13 +39,14 @@ func TestDepositPreferenceAndIdempotentCredit(t *testing.T) {
 	}
 	ctx := t.Context()
 	amt := decimal.RequireFromString("12.5")
-	if err := store.DepositTo(ctx, AcctSpot, uid, "USDT", amt, "dep:test:tx1:0"); err != nil {
+	ref := "dep:test:" + uid + ":0"
+	if err := store.DepositTo(ctx, AcctSpot, uid, "USDT", amt, ref); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.DepositTo(ctx, AcctSpot, uid, "USDT", amt, "dep:test:tx1:0"); err != ErrAlreadyApplied {
+	if err := store.DepositTo(ctx, AcctSpot, uid, "USDT", amt, ref); err != ErrAlreadyApplied {
 		t.Fatalf("replay credit: %v", err)
 	}
-	if err := store.DepositTo(ctx, AcctFunding, uid, "USDT", amt, "dep:test:tx1:0"); err != ErrAlreadyApplied {
+	if err := store.DepositTo(ctx, AcctFunding, uid, "USDT", amt, ref); err != ErrAlreadyApplied {
 		t.Fatalf("cross-account replay: %v", err)
 	}
 	spot, err := store.WalletBalances(ctx, AcctSpot, uid)
