@@ -1,5 +1,7 @@
 package main
 
+// 网格 HTTP：预览、创建、停止、策略广场和一键复制。
+
 import (
 	"context"
 	"database/sql"
@@ -14,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Routes 注册预览、创建、停止、策略广场和复制。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })

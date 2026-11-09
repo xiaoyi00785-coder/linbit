@@ -1,5 +1,7 @@
 package common
 
+// notify.go：把站内通知交给账户服务。失败只记日志，不挡住业务。没配 ACCOUNT_INTERNAL_URL 或 INTERNAL_TOKEN 则什么都不做。
+
 import (
 	"bytes"
 	"context"
@@ -36,9 +38,8 @@ type Notice struct {
 
 var notifyClient = &http.Client{Timeout: 5 * time.Second}
 
-// Notify delivers n to the account service in the background (best effort:
-// a failure is logged and never blocks or fails the business operation).
-// It reads ACCOUNT_INTERNAL_URL and INTERNAL_TOKEN; without them it is a no-op.
+// Notify 在后台把通知交给账户服务。失败只记日志，不让业务失败。
+// 读 ACCOUNT_INTERNAL_URL 和 INTERNAL_TOKEN；缺了就是空操作。
 func Notify(n Notice) {
 	base := os.Getenv("ACCOUNT_INTERNAL_URL")
 	tok := os.Getenv("INTERNAL_TOKEN")

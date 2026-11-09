@@ -1,13 +1,9 @@
 package main
 
-// convert.go: 闪兑 (convert / flash swap). The user requests a quote (RFQ)
-// priced off the external index (market-data /market/index, Binance → OKX)
-// minus a configurable spread; accepting it within the TTL moves balances
-// atomically in the user's spot (funding) account against the platform
-// counterparty account system:convert. There is no explicit fee — the
-// spread is the platform's revenue. system:convert is a ledger-only account
-// (not user funds); its net per-asset position is the platform's unhedged
-// convert exposure and is reported to the solvency check.
+// convert.go：闪兑。用户按外部指数要报价（market-data /market/index，Binance → OKX），
+// 再减可配置点差。TTL 内接受后，在用户现货（资金）账户和平台对手账户 system:convert 之间原子划转。
+// 没有单独手续费，点差就是平台收入。system:convert 只是账本账户，不是用户资金；
+// 它每个币种的净头寸是未对冲敞口，交给偿付检查。稳定币之间 1:1，不加点差。
 
 import (
 	"context"

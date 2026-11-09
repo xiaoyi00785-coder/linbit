@@ -16,27 +16,17 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// tradfi.go: gate for tokenized stocks / metals (docs/tradfi.md).
+// 代币化股票 / 金属闸门。
 //
-// Gated requests:
-//   - /tradfi/*                                    any TradFi flag on
-//   - POST /spot/orders      {symbol} TradFi spot  flag of the symbol's kind
-//   - POST /futures/orders   {symbol} XAG/WTI      metals
-//   - GET  /wallet/deposit/address?asset=          flag of the asset's kind
-//   - POST /wallet/withdraw  {asset}
-//   - POST /strategy/grid    {symbol}              grid creation
-//   - POST /strategy/grid/square/{id}/copy         source bot symbol (strategy internal lookup)
-//   - POST /convert/quote    {from,to}             both assets
-//   - POST /convert/accept   {quoteId}             quote assets (asset internal lookup;
-//                                                  404 = unknown quote, upstream rejects)
-//   - POST /assets/transfer, /sub-accounts/transfer {asset}
-//   Copy-trading mirrors are gated in futures (copy_tradfi.go), per follower.
+// 拦截：/tradfi/*（任一开关）；POST /spot/orders 的 TradFi 现货；POST /futures/orders 的 XAG/WTI；
+// GET /wallet/deposit/address 与 POST /wallet/withdraw 按资产种类；POST /strategy/grid；
+// POST /strategy/grid/square/{id}/copy（源品种查 strategy）；POST /convert/quote 两边资产；
+// POST /convert/accept 的报价资产（查 asset，404 表示未知报价，交给上游拒绝）；
+// POST /assets/transfer 与 /sub-accounts/transfer 的资产。跟单镜像在 futures 按跟随者拦截。
 //
-// Checks, in order: feature flag off -> 403 FEATURE_DISABLED; CF-IPCountry in
-// the restricted list -> 403 REGION_RESTRICTED; logged-in user whose KYC
-// country is restricted -> 403 REGION_RESTRICTED. Lookups that fail (market-
-// data gate, KYC country) fail closed with 503. Closing / reducing positions
-// and cancelling orders are never gated so users can always exit.
+// 顺序：开关关 403 FEATURE_DISABLED；CF-IPCountry 在受限名单 403 REGION_RESTRICTED；
+// 已登录且 KYC 国家受限同样 403。闸门或 KYC 国家查失败则 503。平仓、减仓、撤单不拦。
+// 国家未知在 check() 拒绝。全站 siteGeoCheck 对未知国家和名单失败是放行。
 
 type tradfiGate struct {
 	Features            map[string]bool   `json:"features"`
@@ -328,7 +318,7 @@ func (t *tradfiGuard) check(w http.ResponseWriter, r *http.Request) bool {
 	for _, c := range g.RestrictedCountries {
 		restricted[strings.ToUpper(c)] = true
 	}
-	// CF-IPCountry only counts from a trusted proxy peer; unknown -> fail closed.
+	// 只认已信任请求上的 CF-IPCountry。空、XX、T1 在这里 403，与全站地理封锁的放行相反。
 	ip := trustedCountry(r, t.trusted)
 	if ip == "" {
 		common.WriteError(w, http.StatusForbidden, "REGION_RESTRICTED", "无法确认您所在的国家或地区，暂不支持该服务")

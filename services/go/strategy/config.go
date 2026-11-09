@@ -1,5 +1,7 @@
 package main
 
+// 网格服务配置。FeeRate 只参与下单量和收益测算，真实手续费以成交回报为准。
+
 import (
 	"time"
 
@@ -38,6 +40,7 @@ func dec(key, def string) decimal.Decimal {
 	return d
 }
 
+// LoadConfig 从环境变量读取网格参数。
 func LoadConfig() Config {
 	return Config{
 		Port:            common.Env("PORT", "8090"),

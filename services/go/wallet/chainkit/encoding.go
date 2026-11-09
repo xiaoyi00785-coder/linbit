@@ -1,8 +1,6 @@
-// Package chainkit holds the real-chain building blocks for the wallet:
-// BIP32 public derivation (deposit addresses come from an xpub only),
-// address encoders, an encrypted local keystore, the HotSigner interface,
-// minimal RPC clients for TRON / EVM / BTC (esplora) / Solana, and the
-// transaction builders those chains need. No key material is ever logged.
+// Package chainkit 是钱包的真实链构件：BIP32 公钥派生（充值地址只从 xpub 来）、
+// 地址编码、加密 keystore、HotSigner、TRON / EVM / BTC(esplora) / Solana 的 RPC 客户端，
+// 以及这些链的交易拼装。种子只留在签名进程；日志不打密钥。
 package chainkit
 
 import (

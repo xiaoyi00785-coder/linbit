@@ -1,5 +1,7 @@
 package main
 
+// 报价循环。指数不可用则撤掉该对、暂停并发 Telegram。没有止损。
+
 import (
 	"context"
 	"database/sql"
@@ -69,11 +71,13 @@ type Maker struct {
 
 func key(market, sym string) string { return market + "/" + sym }
 
+// NewMaker 创建做市循环，告警走 Telegram。
 func NewMaker(cfg Config, db *sql.DB) *Maker {
 	return &Maker{cfg: cfg, db: db, rules: map[string]Rules{}, state: map[string]*PairState{}, feedDown: map[string]bool{},
 		alert: common.AlertTelegram}
 }
 
+// Pairs 返回全部做市配置，按市场和交易对排序。
 func (m *Maker) Pairs(ctx context.Context) ([]Pair, error) {
 	rows, err := m.db.QueryContext(ctx, `SELECT `+pairCols+` FROM mm_pairs ORDER BY market, symbol`)
 	if err != nil {
@@ -256,8 +260,7 @@ func (m *Maker) Cycle(ctx context.Context) {
 			}
 			inv = spotInventory(p, index, balances[strings.ToUpper(r.Base)], balances[strings.ToUpper(r.Quote)], baselines[strings.ToUpper(r.Base)])
 			if reason := oneSidedReason(inv); reason != "" {
-				// No base inventory and nothing seeded: quoting bids only would
-				// just build an unhedged long book. Stand down until seeded.
+				// 没有 base 库存、也没注资时只挂买单，会堆出无对冲的多头。先停，等注资。
 				m.cancelAll(ctx, r, st)
 				m.mu.Lock()
 				st.Inventory = inv

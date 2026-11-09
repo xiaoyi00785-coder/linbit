@@ -1,5 +1,7 @@
 package main
 
+// util.go：分页和状态映射。apiStatus 把内部提现状态映射成对外枚举。
+
 import (
 	"net/http"
 	"strconv"
@@ -44,8 +46,8 @@ func atoiDefault(s string, def, min, max int) int {
 	return n
 }
 
-// apiStatus maps an internal withdrawal status onto the openapi Withdrawal enum
-// (pending/processing/completed/failed/canceled).
+// apiStatus 把内部提现状态映射成对外枚举 pending/processing/completed/failed/canceled。
+// pending_review → pending；approved 和 processing → processing；rejected 和 canceled → canceled。
 func apiStatus(internal string) string {
 	switch internal {
 	case wStatusReview:

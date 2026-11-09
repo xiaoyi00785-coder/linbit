@@ -1,5 +1,7 @@
 package main
 
+// limits.go：提现前的 KYC 门和滚动 24h 额度。额度按 USDT 等值，先于任何冻结。
+
 import (
 	"context"
 	"net/http"
@@ -9,11 +11,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// usdtPrice resolves an asset's USDT price: pinned prices (stablecoins) first,
-// then market-data's real-time last price. ok=false means no price is available.
+// usdtPrice 取该币的 USDT 价：先钉死价（稳定币），再 market-data 实时价。ok=false 表示没有可用价。
 func (s *Server) usdtPrice(ctx context.Context, asset string) (decimal.Decimal, bool) {
-	// USDT is the quote unit itself: there is no USDTUSDT index, so without this
-	// every USDT withdrawal would fail closed to manual review.
+	// USDT 自己就是计价单位，没有 USDTUSDT 指数。不在这里钉 1，每笔 USDT 提现都会失败关闭转人工。
 	if strings.EqualFold(asset, "USDT") {
 		return decimal.NewFromInt(1), true
 	}
@@ -23,13 +23,12 @@ func (s *Server) usdtPrice(ctx context.Context, asset string) (decimal.Decimal, 
 	return s.market.LastPrice(ctx, asset)
 }
 
-// checkDailyLimit enforces the KYC gate and the KYC-tiered rolling-24h
-// withdrawal limit (USDT-equivalent), before any funds are frozen:
-//   - level < MinLevel (default 1)          → 403 KYC_REQUIRED
-//   - no USDT price for a counted asset      → 400 PRICE_UNAVAILABLE (fail closed)
-//   - 24h usage + this amount > level's cap  → 400 WITHDRAW_LIMIT_EXCEEDED
+// checkDailyLimit 在冻结之前执行：
+//   - 等级 < MinLevel（默认 1）              → 403 KYC_REQUIRED
+//   - 计入额度的币没有 USDT 价               → 400 PRICE_UNAVAILABLE（失败关闭）
+//   - 近 24h 已用 + 本笔 > 该等级上限         → 400 WITHDRAW_LIMIT_EXCEEDED
 //
-// The limit part is a no-op when no tiers are configured (e.g. unit tests).
+// 没配档位时（例如手写 Config 的单测）额度部分不生效。
 func (s *Server) checkDailyLimit(ctx context.Context, userID, asset string, amount decimal.Decimal) *apiError {
 	_, tiersOn := s.cfg.KYC.limit(0)
 	if s.cfg.KYC.MinLevel <= 0 && !tiersOn {

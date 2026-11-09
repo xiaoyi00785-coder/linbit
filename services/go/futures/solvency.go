@@ -1,5 +1,8 @@
 package main
 
+// 给每日偿付检查的合约侧负债。划入合约的资金已离开现货 balances，所以 fut_accounts.balance
+// （含系统账户）加上逐仓保证金都要算上。未实现盈亏是零和，不计入。
+
 import (
 	"net/http"
 
@@ -7,13 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// solvency.go: futures-side liabilities for the daily solvency check. Funds
-// moved into futures leave the spot balances table, so the futures wallets
-// (fut_accounts.balance, every account incl. system ones) plus isolated
-// margins are owed on top of spot balances. Unrealised PnL is zero-sum and
-// not counted.
-
-// GET /internal/solvency/liabilities (X-Internal-Token)
+// GET /internal/solvency/liabilities，校验 X-Internal-Token。做市账户 MM_USER_ID（默认 mm:main）单独列出。
 func (s *Server) hSolvency(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.InternalToken == "" || r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "内部令牌无效")

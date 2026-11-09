@@ -1,5 +1,8 @@
 package main
 
+// 条件单先不进订单簿：tp/sl 只减仓（qty 空表示全平），plan 到达触发价再下限价或市价。
+// 触发价对 LAST（无成交时用标记价）或 MARK，每个引擎 tick 比较。触发前不冻结保证金。
+
 import (
 	"context"
 	"database/sql"
@@ -14,12 +17,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// algo.go: algo orders kept off-book until a price watcher fires them:
-//   - tp / sl: reduce-only close of the whole position (qty NULL) or a part of it
-//   - plan:    conditional order (any side, limit or market) placed when the trigger price is reached
-// Triggers compare against the LAST (last trade; mark when there is no trade yet)
-// or MARK price on every engine tick. Nothing is reserved until the order is placed.
-
+// AlgoOrder 挂在 fut_algo_orders，状态 active 才会被触发；已触发或已撤的不能再改、再撤。
 type AlgoOrder struct {
 	ID          int64               `json:"algoId"`
 	UserID      string              `json:"-"`
@@ -130,6 +128,7 @@ type TPSLReq struct {
 	SLType       string `json:"slTriggerPriceType"`
 }
 
+// CreateTPSL 只给已有仓位挂只减仓止盈止损。positionSide 必须与当前单向/对冲模式一致，无仓返回 NO_POSITION。
 func (s *Server) CreateTPSL(ctx context.Context, uid string, r TPSLReq) ([]AlgoOrder, error) {
 	c, err := s.contract(r.Symbol)
 	if err != nil {
@@ -340,6 +339,7 @@ func (s *Server) CreatePlan(ctx context.Context, uid string, r PlaceReq) (AlgoOr
 	return a, err
 }
 
+// CancelAlgo 只撤 status=active 且 kind 在 kinds 里的委托，否则按不存在返回。
 func (s *Server) CancelAlgo(ctx context.Context, uid string, id int64, kinds []string) (AlgoOrder, error) {
 	var a AlgoOrder
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
@@ -369,8 +369,7 @@ func (s *Server) CancelAlgo(ctx context.Context, uid string, id int64, kinds []s
 
 // ---- watcher ----
 
-// triggerAlgos fires active algo orders whose trigger price was reached and
-// expires TP/SL orders whose position is gone. Caller holds s.mu.
+// triggerAlgos 触发已到价的 active 条件单，并把仓位已消失的 tp/sl 标为 canceled/position_closed。调用方持有 s.mu。
 func (s *Server) triggerAlgos(ctx context.Context) {
 	_, _ = s.db.ExecContext(ctx, `UPDATE fut_algo_orders a SET status='canceled', fail_reason='position_closed', updated_at=now()
 		WHERE a.status='active' AND a.kind IN ('tp','sl') AND NOT EXISTS (SELECT 1 FROM fut_positions p WHERE p.user_id=a.user_id AND p.symbol=a.symbol AND p.position_side=a.position_side AND p.qty<>0)`)

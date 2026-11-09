@@ -1,5 +1,9 @@
 package main
 
+// store_chain.go：真实链才用的持久化。HD 序号、扫块游标、按真实高度写入 chain_txs，以及归集状态机。
+// RecordChainTx 按 (network, tx_hash, log_index) 幂等。
+// ClaimForBroadcast 在发送之前把 approved 占成 processing 且 tx hash 为空，崩溃也不能付第二次。
+
 import (
 	"context"
 	"database/sql"
@@ -8,10 +12,6 @@ import (
 
 	"github.com/shopspring/decimal"
 )
-
-// store_chain.go holds the persistence used only by the real-chain adapter:
-// HD index allocation, deposit discovery cursors, chain_txs ingestion at real
-// heights and the sweep state machine.
 
 // NextHDIndex reserves the next deposit-key index (shared across chains).
 func (s *Store) NextHDIndex(ctx context.Context) (int64, error) {
@@ -60,8 +60,7 @@ func (s *Store) SetCursor(ctx context.Context, network, asset string, next int64
 	return err
 }
 
-// RecordChainTx stores an observed on-chain deposit at its real block height.
-// Idempotent on (network, tx_hash, log_index).
+// RecordChainTx 按真实区块高度记下观察到的充值。按 (network, tx_hash, log_index) 幂等。
 func (s *Store) RecordChainTx(ctx context.Context, network, address, asset string, amount decimal.Decimal, txHash string, logIndex, height int64) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO chain_txs (network, address, asset, amount, tx_hash, log_index, block_height)
@@ -84,9 +83,8 @@ func (s *Store) SetChainHeight(ctx context.Context, network string, height int64
 	return err
 }
 
-// ClaimForBroadcast moves approved -> processing with an empty tx hash BEFORE
-// anything is sent, so a crash between send and SetWithdrawalTx can never cause
-// a second payout (an empty-hash processing row is left for manual review).
+// ClaimForBroadcast 在任何发送之前把 approved 改成 processing，tx hash 先空着。
+// 发送和 SetWithdrawalTx 之间崩溃也不会付第二次；空 hash 的 processing 留给人工对账。
 func (s *Store) ClaimForBroadcast(ctx context.Context, id int64) (bool, error) {
 	return s.MarkProcessing(ctx, id, "", 0)
 }

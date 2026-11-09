@@ -1,5 +1,7 @@
 package main
 
+// 改未完成限价单的价格和/或数量。空字段不变。qty 是新的订单总量，必须大于已成交量。
+
 import (
 	"context"
 	"database/sql"
@@ -12,19 +14,18 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// AmendReq changes price and/or qty of an open limit order. Empty = unchanged.
-// qty is the new total order quantity and must stay above the filled amount.
+// AmendReq 只接受用户自己的限价挂单；系统单、跟单、触发单不能改。
 type AmendReq struct {
 	Price string `json:"price"`
 	Qty   string `json:"qty"`
 }
 
-// losesPriority: a new price or a larger quantity re-queues the order (new seq);
-// reducing quantity at the same price keeps its time priority.
+// 改价或加大数量会重新排队（新 seq）；同价减量保留时间优先。
 func losesPriority(oldPx, newPx, oldQty, newQty decimal.Decimal) bool {
 	return !oldPx.Equal(newPx) || newQty.GreaterThan(oldQty)
 }
 
+// AmendOrder 只改未完成的用户限价单。改价或加量会重新撮合；同价减量保留时间优先。
 func (s *Server) AmendOrder(ctx context.Context, uid string, id int64, r AmendReq) (Order, []Trade, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

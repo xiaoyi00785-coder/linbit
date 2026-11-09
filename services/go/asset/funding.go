@@ -1,5 +1,11 @@
 package main
 
+// funding.go：资金账户。每个用户有现货和资金两个钱包。
+// 现货表 balances，分录 user:<id>:free|locked。
+// 资金账户表 funding_balances，分录 user:<id>:funding_free|funding_locked。
+// 链上充值进 deposit_account（默认 funding），提现从 withdraw_account（默认 funding）冻结。
+// 现货和资金账户互转是用户自己两个桶之间的一笔平衡分录。对外金额 StringFixed(8)。
+
 import (
 	"context"
 	"database/sql"
@@ -12,13 +18,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// funding.go: the funding wallet. Every user has two asset-service wallets:
-// spot (table balances, ledger user:<id>:free|locked) and funding (table
-// funding_balances, ledger user:<id>:funding_free|funding_locked). On-chain
-// deposits credit the deposit_account setting (default funding) and
-// withdrawals freeze from withdraw_account (default funding). Spot <-> funding
-// moves are a single balanced journal between the user's own buckets.
 
 const (
 	AcctSpot    = "spot"
@@ -433,6 +432,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"before": settingsDTO(before), "after": settingsDTO(after)})
 }
 
+// toBalanceDTO 把余额收成固定 8 位小数的十进制字符串。不用 float。
 func toBalanceDTO(b Balance) balanceDTO {
 	return balanceDTO{Asset: b.Asset, Free: b.Free.StringFixed(8), Locked: b.Locked.StringFixed(8), Total: b.Total().StringFixed(8)}
 }

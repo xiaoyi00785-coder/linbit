@@ -1,5 +1,8 @@
 package main
 
+// 持仓模式 ONE_WAY / HEDGE、只做 Maker，以及后台可调的下单限制（fut_order_config）。
+// 有仓或有挂单时不能切换持仓模式。
+
 import (
 	"context"
 	"database/sql"
@@ -11,9 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// posmode.go: position mode (ONE_WAY / HEDGE), POST_ONLY helper, and the
-// admin-tunable order rules (fut_order_config).
-
+// OrderConfig 来自 fut_order_config。HedgeModeEnabled 为假时拒绝切到 HEDGE。
 type OrderConfig struct {
 	MaxAlgoPerSymbol   int             `json:"maxAlgoOrdersPerSymbol"`
 	MaxAmendsPerOrder  int             `json:"maxAmendsPerOrder"`
@@ -103,9 +104,7 @@ func positionMode(ctx context.Context, q queryer, uid string) (string, error) {
 	return m, err
 }
 
-// resolvePosSide validates positionSide against the user's mode. In hedge mode an
-// order that reduces its side (sell LONG / buy SHORT) is always reduce-only, and
-// reduceOnly=true on an opening order is rejected.
+// resolvePosSide 按持仓模式校验 positionSide。对冲模式下卖 LONG / 买 SHORT 一律只减仓；开仓单带 reduceOnly 则拒绝。单向只接受 BOTH。
 func (s *Server) resolvePosSide(ctx context.Context, q queryer, uid, req, side string, reduceOnly bool) (string, bool, error) {
 	req = strings.ToUpper(strings.TrimSpace(req))
 	mode, err := positionMode(ctx, q, uid)
@@ -132,8 +131,7 @@ func hedgeSide(req, side string, reduceOnly bool) (string, bool, error) {
 	return req, closing, nil
 }
 
-// defaultCloseSide picks the side to close when the caller gave none: BOTH in
-// one-way mode, or the only open side in hedge mode.
+// defaultCloseSide：单向返回 BOTH。对冲只有一侧有仓时返回那一侧；两侧都有则 POSITION_SIDE_REQUIRED。
 func (s *Server) defaultCloseSide(ctx context.Context, uid, sym string) (string, error) {
 	mode, err := positionMode(ctx, s.db, uid)
 	if err != nil || mode != "HEDGE" {
@@ -160,8 +158,8 @@ func (s *Server) defaultCloseSide(ctx context.Context, uid, sym string) (string,
 	return "", bad("POSITION_SIDE_REQUIRED", "双向持仓需指定 positionSide（LONG 或 SHORT）")
 }
 
-// SetPositionMode switches ONE_WAY <-> HEDGE. Only allowed with no open
-// positions, open orders or active TP/SL / plan orders on any contract.
+// SetPositionMode 在 ONE_WAY 与 HEDGE 之间切换。任一合约有持仓、挂单或 active 条件单都不允许。
+// 对冲未开放返回 HEDGE_MODE_DISABLED。带单交易员只能单向，返回 COPY_TRADER_ONE_WAY。
 func (s *Server) SetPositionMode(ctx context.Context, uid, mode string) error {
 	mode = strings.ToUpper(strings.TrimSpace(mode))
 	if mode != "ONE_WAY" && mode != "HEDGE" {

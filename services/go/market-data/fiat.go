@@ -14,11 +14,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// GET /market/fiat-rates?base=USDT — fiat-per-USD rates from a live FX source.
-// rates are per 1 USD, not per 1 USDT. USDT is not pegged to USD here.
-// Sources (FIAT_RATES_URLS) are tried in order and cached 10 minutes. If every
-// source fails we keep the last good value (stale:true). If none has ever
-// succeeded, rates is null and available is false. There is no static table.
+// GET /market/fiat-rates?base=USDT。汇率是每 1 USD 的法币数量，这里不把 USDT 当成 1 USD。
+// FIAT_RATES_URLS 按顺序尝试，缓存 10 分钟。全部失败则沿用上次成功值（stale:true）。
+// 从未成功则 rates 为 null、available 为 false。没有静态汇率表。
 
 const fiatTTL = 10 * time.Minute
 

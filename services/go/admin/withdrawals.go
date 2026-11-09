@@ -56,9 +56,8 @@ func (s *Server) walletList(ctx context.Context, status string) ([]walletWithdra
 	return body.Items, u, nil
 }
 
-// needsSecond decides whether a withdrawal needs a second reviewer: amount at
-// or above the USDT threshold, risk above the risk threshold, or no price
-// (fail closed).
+// 要复审：风险分 > ADMIN_WITHDRAW_SECOND_REVIEW_RISK（默认 40），或 USDT 估值 >= ADMIN_WITHDRAW_SECOND_REVIEW_USDT（默认 5000），或没有价格。
+// 本文件没有提现次数窗口。用户侧发码限流在 account 的 purpose=withdraw。
 func (s *Server) needsSecond(ctx context.Context, wd walletWithdrawal) (bool, string) {
 	if wd.RiskScore > s.cfg.WithdrawSecondRisk {
 		return true, ""
@@ -129,10 +128,9 @@ func (s *Server) findPending(ctx context.Context, id string) (*walletWithdrawal,
 	return nil, nil
 }
 
-// handleWithdrawApprove runs the two-stage review. Stage 1 needs
-// withdraw:first; when a second review is required the request is parked and
-// stage 2 needs withdraw:second by a different admin. Every approval needs a
-// comment and a fresh 2FA code.
+// 路由权限只是 withdraw:view，阶段在这里再查。初审要 withdraw:first；需要复审时停在 awaiting_second。
+// 复审要 withdraw:second，且不能是初审人（SAME_REVIEWER）。每次通过都要意见和当前 TOTP。
+// verify2FA：未绑定且 ADMIN_REQUIRE_2FA=false 时可以不交验证码。这和调账的 require2FA 不同。
 func (s *Server) handleWithdrawApprove(w http.ResponseWriter, r *http.Request) {
 	a := actorOf(r)
 	id := r.PathValue("id")

@@ -1,5 +1,8 @@
 package common
 
+// network.go：部署开关。NETWORK（或旧的 APP_ENV）= mainnet | testnet | dev。空值按开发/测试网。
+// 主网禁止虚拟入金和测试开关。DBSSLProblems 只报变量名，不报值。
+
 import (
 	"log"
 	"net"
@@ -8,8 +11,7 @@ import (
 	"strings"
 )
 
-// Network is the single deployment switch: NETWORK (or legacy APP_ENV) =
-// mainnet | testnet | dev. Empty means dev/testnet behaviour (unchanged).
+// Network 读取部署开关：NETWORK，没有则用旧的 APP_ENV。空值不当成 mainnet。
 func Network() string {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("NETWORK")))
 	if v == "" {
@@ -18,8 +20,7 @@ func Network() string {
 	return v
 }
 
-// IsMainnet reports NETWORK=mainnet (or APP_ENV=mainnet). Mainnet implies
-// production hardening (IsProduction) and forbids every virtual/test path.
+// IsMainnet 表示 NETWORK 或 APP_ENV 为 mainnet。主网视为生产，并禁止一切虚拟/测试路径。
 func IsMainnet() bool { return Network() == "mainnet" }
 
 // mainnetForbiddenTrue lists flags that must not be truthy on mainnet.

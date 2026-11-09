@@ -1,5 +1,8 @@
 package main
 
+// config.go：钱包运行时配置，全部来自环境变量。
+// 金额是十进制字符串（shopspring/decimal），不用 float。
+
 import (
 	"encoding/json"
 	"strings"
@@ -8,72 +11,60 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Config holds the wallet service runtime configuration, sourced from env.
+// Config 是钱包进程的运行时配置。
 type Config struct {
 	Port          string
 	DatabaseURL   string
 	InternalToken string
 	RedisURL      string
-	// DevMode exposes the dev-only mock-chain endpoints (inject deposit, advance
-	// blocks, trigger scan/process). Never enable in production.
+	// DevMode 打开仅开发用的 mock 链接口（注入充值、推进区块、触发扫描）。生产环境禁止。
 	DevMode bool
 
-	// AccountInternalURL / AssetInternalURL are the service-to-service base URLs
-	// used for 2FA/whitelist checks and double-entry bookkeeping respectively.
+	// AccountInternalURL 走账户服务（2FA、白名单）；AssetInternalURL 走资产服务复式记账。
 	AccountInternalURL string
 	AssetInternalURL   string
 
-	// FeeAccount is the ledger account that the withdrawal's on-chain gas is
-	// booked into on completion (chain cost / platform account).
+	// FeeAccount 是提现完成时链上 Gas 记入的平台账户，默认 platform:gas（WALLET_FEE_ACCOUNT）。
 	FeeAccount string
 
-	// GasDeductMode decides where the on-chain gas comes from:
-	//   "extra"  — charged on top of the amount (frozen from the user's balance).
-	//   "amount" — deducted from the withdrawal amount (the user receives amount-gas).
-	// Confirmed product rule: default "amount" — the user receives amount-gas,
-	// only the amount is frozen, and the amount must exceed gas.
+	// GasDeductMode 决定链上 Gas 从哪扣（WALLET_GAS_DEDUCT_MODE）：
+	//   "extra"  — 在提现金额之外再冻一笔 Gas。
+	//   "amount" — 从提现金额里扣，用户实收 amount-gas。
+	// 产品规则默认 "amount"：只冻结 amount，且 amount 必须大于 gas。
 	GasDeductMode string
 
-	// MarketURL is the market-data service used for real-time USDT prices when
-	// converting non-stablecoin withdrawals for the KYC limit.
+	// MarketURL 是 market-data 地址，非稳定币提现按 {ASSET}USDT 实时价折 USDT。
 	MarketURL string
 
-	// Risk-based release thresholds (amounts in USD-equivalent / the asset's own
-	// units for non-USDT assets). See risk.go for the decision function.
+	// 提现自动放行 / 人工审核的阈值。比较时用 USDT 等值；没有价格则失败关闭，转人工。见 risk.go、withdraw.go。
 	Risk RiskThresholds
 
-	// CreditBelowMinDeposit decides whether deposits below a network's MinDeposit
-	// are still credited. The rules file only says sub-minimum deposits do not
-	// satisfy withdrawal conditions (not that they are dropped), so the default is
-	// true — credit anyway (see summary).
+	// CreditBelowMinDeposit：低于 MinDeposit 的充值是否仍入账。
+	// 规则只说不够最小额不满足提现条件，并没有说丢弃，所以默认 true（WALLET_CREDIT_BELOW_MIN_DEPOSIT 非 false）。
 	CreditBelowMinDeposit bool
 
-	// Networks is the per-asset network registry (confirmations, min/max, gas).
+	// Networks 是按币种的网络注册表（确认数、最小/最大、Gas）。
 	Networks NetworkRegistry
 
-	// KYC holds the KYC-tiered daily withdrawal limits. It is populated by
-	// LoadConfig; a zero value (as in unit tests that build Config by hand) leaves
-	// the limit check inert.
+	// KYC 是按认证等级的 24 小时提现额度。LoadConfig 填充；
+	// 手写的零值（单测）让额度检查不生效。
 	KYC KYCLimitConfig
 }
 
-// KYCLimitConfig parameterises the per-KYC-level rolling-24h withdrawal limits,
-// expressed in USDT-equivalent. Non-USDT amounts are converted via Prices; assets
-// without a configured price are not counted toward the limit.
+// KYCLimitConfig 是按 KYC 等级的滚动 24h 提现上限，单位 USDT 等值。
+// 非稳定币用 Prices 或行情折算。没有可用价格时提现直接拒绝（PRICE_UNAVAILABLE），不按 0 计入。
 type KYCLimitConfig struct {
-	// DailyUSDT maps a KYC level (0, 1, 2) to its rolling-24h withdrawal cap in
-	// USDT-equivalent. A non-positive cap means "unlimited" for that level.
+	// DailyUSDT：等级 0/1/2 → 滚动 24h 提现上限（USDT 等值）。上限 ≤ 0 表示该等级不限额。
 	DailyUSDT map[int]decimal.Decimal
-	// MinLevel is the lowest KYC level allowed to withdraw at all (default 1:
-	// unverified users get KYC_REQUIRED). 0 disables the gate; level 0 then
-	// falls back to its DailyUSDT cap.
+	// MinLevel 是允许提现的最低 KYC 等级（默认 1，未认证返回 KYC_REQUIRED）。
+	// 0 关掉这道门，等级 0 再走自己的 DailyUSDT。
 	MinLevel int
-	// Prices maps an asset to its USDT price for limit conversion (USDT = 1).
+	// Prices 是额度折算用的固定 USDT 价。USDT、USDC 默认钉在 1；WALLET_KYC_PRICES_JSON 可覆盖。
 	Prices map[string]decimal.Decimal
 }
 
-// limit returns the daily USDT cap for a level (and whether the feature is on),
-// clamping levels above the highest configured tier down to it.
+// limit 返回该等级的每日 USDT 上限，以及额度功能是否打开。
+// 高于已配置最高档的等级，落到不超过它的最高一档。
 func (k KYCLimitConfig) limit(level int) (decimal.Decimal, bool) {
 	if len(k.DailyUSDT) == 0 {
 		return decimal.Zero, false
@@ -90,24 +81,25 @@ func (k KYCLimitConfig) limit(level int) (decimal.Decimal, bool) {
 	return best, found
 }
 
-// price returns an asset's USDT price and whether it is configured.
+// price 返回配置里钉死的 USDT 价。没有则 ok=false，调用方再去行情。
 func (k KYCLimitConfig) price(asset string) (decimal.Decimal, bool) {
 	p, ok := k.Prices[asset]
 	return p, ok
 }
 
-// RiskThresholds parameterises the auto-release / manual-review decision.
+// RiskThresholds 决定提现自动放行还是人工审核。金额按 USDT 等值比。
+// 默认：≤ WALLET_RISK_AUTO_MAX_AMOUNT（1000）且分数 ≤ WALLET_RISK_AUTO_MAX_SCORE（20）自动放行；
+// ≥ WALLET_RISK_REVIEW_MIN_AMOUNT（主网 1000，否则 5000）或分数 > WALLET_RISK_REVIEW_MAX_SCORE（40）人工审核。
 type RiskThresholds struct {
 	AutoMaxAmount   decimal.Decimal // ≤ this (and score ≤ AutoMaxScore) auto-releases
 	AutoMaxScore    int
 	ReviewMinAmount decimal.Decimal // ≥ this (or score > ReviewMaxScore) forces review
 	ReviewMaxScore  int
-	// MiddleAction is applied to the in-between band the rules file leaves blank:
-	// "review" (default) or "auto".
+	// MiddleAction 填规则没写的中间带：WALLET_RISK_MIDDLE_ACTION，默认 "review"，也可 "auto"。
 	MiddleAction string
 }
 
-// LoadConfig reads configuration from the environment.
+// LoadConfig 从环境变量组装 Config。主网 ReviewMinAmount 默认 1000，其余环境 5000。
 func LoadConfig() Config {
 	return Config{
 		Port:               common.Env("PORT", "8086"),
@@ -133,12 +125,11 @@ func LoadConfig() Config {
 	}
 }
 
-// loadKYCLimits builds the KYC-tiered daily withdrawal limit config from env.
-// Confirmed product rule: users below level 1 (no KYC) cannot withdraw at all
-// (KYC_REQUIRED); level 1 = 50000, level 2 = 200000 USDT/24h.
-// Non-stablecoins are converted at market-data's real-time {ASSET}USDT last
-// price; if no price is available the withdrawal is rejected (PRICE_UNAVAILABLE).
-// WALLET_KYC_PRICES_JSON pins fixed prices (default {"USDT":"1","USDC":"1"}).
+// loadKYCLimits 从环境变量读 KYC 分档的 24h 提现额度。
+// 产品规则：低于等级 1（未 KYC）不能提现（KYC_REQUIRED）；
+// 等级 1 默认 50000、等级 2 默认 200000 USDT/24h（WALLET_KYC_LEVEL0/1/2_DAILY_USDT，等级 0 默认 1000）。
+// 非稳定币按 market-data 的 {ASSET}USDT 最新价折算；没有价格则拒绝（PRICE_UNAVAILABLE）。
+// WALLET_KYC_PRICES_JSON 钉死固定价；未设置时 USDT、USDC 为 "1"。
 func loadKYCLimits() KYCLimitConfig {
 	return KYCLimitConfig{
 		MinLevel: common.EnvInt("WALLET_KYC_MIN_LEVEL", 1),

@@ -11,9 +11,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Product management for the admin console (internal token only). Rates are
-// written only through the dedicated /rate endpoints, which the admin service
-// calls once a rate change has passed dual approval and its notice period.
+// 给后台管产品，只认内部令牌。
+// 利率只走专用的 /rate 接口，admin 在双人审批和公示期过后才调。
+// 启动时用环境变量补尚未有行的期限和质押物，不覆盖已有的后台修改。
 
 var loanTermOrder = []string{"flexible", "7d", "30d"}
 

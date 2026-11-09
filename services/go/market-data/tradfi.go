@@ -17,21 +17,18 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// tradfi.go: tokenized stocks (xStocks / Ondo) and metals (PAXG, XAUT spot;
-// XAG, WTI perps). See docs/tradfi.md.
+// 代币化股票（xStocks / Ondo）和金属（现货 PAXG、XAUT；永续 XAG、WTI）。见 docs/tradfi.md。
 //
-//	public   GET /tradfi/assets                   flag-filtered catalogue + reference/deviation
-//	internal GET /internal/tradfi/assets          everything (admin)
-//	internal PUT /internal/tradfi/assets/{asset}  {status?, deviationBps?, refBinance?, refOkx?, name?, updatedBy}
-//	internal PUT /internal/tradfi/tokens          {asset, issuer, network, contractAddress?, decimals?, depositEnabled?, withdrawEnabled?, updatedBy}
-//	internal GET/PUT /internal/tradfi/settings    {restrictedCountries, deviationBps, widenFactor, alertCooldownSec}
-//	internal GET /internal/tradfi/gate            gateway snapshot: flags, restricted countries, symbol/asset kinds
-//	internal GET /internal/tradfi/deviation       monitor state per spot symbol
+//	公开   GET /tradfi/assets                      按功能开关过滤的目录，带参考价和偏离
+//	内部   GET /internal/tradfi/assets             全部（admin）
+//	内部   PUT /internal/tradfi/assets/{asset}     status、deviationBps、refBinance、refOkx、name、updatedBy
+//	内部   PUT /internal/tradfi/tokens             asset、issuer、network、contractAddress、decimals、充提开关、updatedBy
+//	内部   GET/PUT /internal/tradfi/settings       restrictedCountries、deviationBps、widenFactor、alertCooldownSec
+//	内部   GET /internal/tradfi/gate               gateway 快照：开关、受限国家、symbol/asset 种类
+//	内部   GET /internal/tradfi/deviation          每个现货符号的监控状态
 //
-// The deviation monitor compares the spot last price with the TradFi
-// reference; beyond the threshold it sets widened (the market maker reads
-// widenFactor from /market/index and multiplies its spread) and sends a
-// Telegram alert (cooldown per symbol), plus a recovery alert.
+// 偏离监控拿现货最新价对比 TradFi 参考价。超过阈值则标记 widened
+// （做市从 /market/index 读 widenFactor 去乘点差），并按符号冷却发 Telegram，恢复时再发一条。
 
 type TradFiToken struct {
 	Asset           string `json:"asset"`
@@ -45,6 +42,7 @@ type TradFiToken struct {
 	WithdrawFee     string `json:"withdrawFee"`
 }
 
+// TradFiAsset 是代币化股票、金属或商品的一条目录。
 type TradFiAsset struct {
 	Asset        string        `json:"asset"`
 	Kind         string        `json:"kind"` // stock | metal | commodity
@@ -60,6 +58,7 @@ type TradFiAsset struct {
 	Tokens       []TradFiToken `json:"tokens"`
 }
 
+// TradFiSettings 是受限国家、偏离阈值、扩价倍数和告警冷却。
 type TradFiSettings struct {
 	RestrictedCountries []string `json:"restrictedCountries"`
 	DeviationBps        int      `json:"deviationBps"`
@@ -101,6 +100,7 @@ type TradFi struct {
 	alert    func(string)
 }
 
+// NewTradFi 建立目录缓存和偏离监控，告警走 Telegram。
 func NewTradFi(db *sql.DB, feed *IndexFeed, last func(string) (decimal.Decimal, bool)) *TradFi {
 	return &TradFi{db: db, feed: feed, last: last, state: map[string]*devState{}, alert: common.AlertTelegram,
 		settings: TradFiSettings{RestrictedCountries: []string{}, DeviationBps: 200, WidenFactor: "3", AlertCooldownSec: 900}}

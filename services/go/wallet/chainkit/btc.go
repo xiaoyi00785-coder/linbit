@@ -1,5 +1,7 @@
 package chainkit
 
+// btc.go：Esplora REST（blockstream / mempool / 自建 electrs）。只支持原生隔离见证 v0（P2WPKH/P2WSH）。
+
 import (
 	"bytes"
 	"context"
@@ -13,9 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// BTCClient talks to an Esplora REST API (blockstream.info/testnet/api,
-// mempool.space/testnet/api, or a self-hosted electrs). Only native segwit
-// v0 (P2WPKH/P2WSH) destinations are supported.
+// BTCClient 对接 Esplora REST。只支持原生隔离见证 v0 目标地址。amount==0 表示扫光已确认 UTXO（扣除手续费），找零回到发送地址。
 type BTCClient struct {
 	base string
 	HRP  string // "tb" testnet, "bc" mainnet

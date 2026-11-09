@@ -15,22 +15,23 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Points carnival (积分嘉年华). Users enroll in a period; daily tasks (reset
-// 00:00 UTC) earn points only after enrollment and inside the period; points
-// are redeemed for vouchers, each tier once per user per period. Points are
-// scoped to the period, so they lapse when it ends.
+// 积分嘉年华。用户报名参加一期；每日任务在 00:00 UTC 重置。
+// 只有报名之后、活动期内的行为才计积分。积分兑换卡券，每档每人每期一次。
+// 积分属于这一期，结束即失效。
 
 type VolumeTier struct {
 	Volume decimal.Decimal `json:"volume"`
 	Points int             `json:"points"`
 }
 
+// RedeemTier 是一档积分兑换：所需积分、卡券种类和面额。
 type RedeemTier struct {
 	Points int             `json:"points"`
 	Kind   string          `json:"kind"` // trial | deduction
 	Amount decimal.Decimal `json:"amount"`
 }
 
+// PointsRules 是一期嘉年华的交易量档、充值积分、邀请积分和兑换档。
 type PointsRules struct {
 	VolumeTiers  []VolumeTier    `json:"volumeTiers"`
 	DepositUnit  decimal.Decimal `json:"depositUnit"`
@@ -130,6 +131,7 @@ func (p PointsRules) dailyMax() int {
 	return p.volumePoints(decimal.New(1, 30)) + p.DepositCap + p.InviteCap
 }
 
+// Campaign 是一期积分嘉年华。积分只在报名之后、活动期内累计。
 type Campaign struct {
 	ID       int64       `json:"id"`
 	Key      string      `json:"key"`

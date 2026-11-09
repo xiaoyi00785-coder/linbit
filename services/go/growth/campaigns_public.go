@@ -6,9 +6,8 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// Public campaign shells for the Android profile pages.
-// No campaign row is seeded. Unconfigured responses contain no prizes, winners,
-// tiers or personal entries, and join does not insert a participation record.
+// 给安卓个人页的活动壳。不预置活动行。
+// 未配置时不返回奖品、中奖名单、档位或个人记录，参加接口也不写入参与记录。
 
 func (s *Server) campaignRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /campaigns/deposit-cashback", s.handleDepositCashback)

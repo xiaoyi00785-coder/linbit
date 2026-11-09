@@ -7,11 +7,9 @@ import (
 	"strings"
 )
 
-// seedRestrictedCountries applies TRADFI_RESTRICTED_COUNTRIES (ISO alpha-2,
-// comma separated) to tradfi_settings only while the row has never been
-// edited by an admin (updated_by=”), so admin changes always win. On
-// mainnet the default is "US" (owner decision); elsewhere unset = keep the
-// migration default.
+// seedRestrictedCountries 在 tradfi_settings 从未被管理员改过（updated_by 为空）时，
+// 用 TRADFI_RESTRICTED_COUNTRIES（ISO alpha-2，逗号分隔）写受限国家，后台修改始终优先。
+// 环境变量未设置则不动，沿用迁移默认（US、属地和 OFAC 全面制裁名单）。
 func seedRestrictedCountries(db *sql.DB) {
 	v, set := os.LookupEnv("TRADFI_RESTRICTED_COUNTRIES")
 	if !set {

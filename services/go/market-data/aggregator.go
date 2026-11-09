@@ -1,5 +1,7 @@
 package main
 
+// 内存聚合 K 线、深度、24h ticker 和最近成交，并异步把 K 线写入数据库。
+
 import (
 	"context"
 	"log"
@@ -26,6 +28,7 @@ const (
 // Broadcaster delivers a data frame on a channel to interested subscribers. The
 // hub implements it; the aggregator stays transport-agnostic.
 type Broadcaster interface {
+	// Broadcast 把一帧数据推给订阅了该频道的连接。
 	Broadcast(channel string, data any)
 }
 

@@ -17,8 +17,7 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// Home placements: one model for every operations slot on the home page.
-// "Banners" are slot=carousel; GET /home/banners stays as a compatible alias.
+// 首页运营位的统一模型。Banner 就是 slot=carousel；GET /home/banners 保留为兼容别名。
 
 var placementSlots = []string{"popup", "splash", "grid", "carousel", "promo_bar", "search_hint"}
 
@@ -31,6 +30,7 @@ func isSlot(s string) bool {
 	return false
 }
 
+// Placement 是首页的一条运营位。Banner 用 slot=carousel。
 type Placement struct {
 	ID             int64           `json:"id"`
 	Slot           string          `json:"slot"`
@@ -305,10 +305,12 @@ func (s *Store) Placements(ctx context.Context, slot string) ([]Placement, error
 	return out, rows.Err()
 }
 
+// Placement 按 id 读取一条运营位。
 func (s *Store) Placement(ctx context.Context, id int64) (Placement, error) {
 	return scanPlacement(s.db.QueryRowContext(ctx, `SELECT `+placementCols+` FROM home_placements WHERE id=$1`, id))
 }
 
+// SavePlacement 在 id 为 0 时新建，否则按 id 更新。
 func (s *Store) SavePlacement(ctx context.Context, id int64, in placementInput) (Placement, error) {
 	enabled := in.Enabled == nil || *in.Enabled
 	args := []any{in.Slot, in.Title, in.ImageURL, in.ImageDarkURL, in.LinkURL, in.Platform, in.Locale, in.Audience,
@@ -329,6 +331,7 @@ func (s *Store) SavePlacement(ctx context.Context, id int64, in placementInput) 
 	return scanPlacement(row)
 }
 
+// DeletePlacement 按 id 删除运营位。
 func (s *Store) DeletePlacement(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM home_placements WHERE id=$1`, id)
 	return err

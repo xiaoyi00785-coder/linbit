@@ -1,5 +1,9 @@
 package main
 
+// tradfi.go：TradFi 代币（xStocks / Ondo / PAXG / XAUT）由管理端配置，market-data 写在 tradfi_tokens。
+// 启动时把有合约地址且开了充值或提现的行并进网络注册表，新开币要重启钱包才进注册表。
+// 关闭立即生效：tradfiAllowed 每次现读。主网只加载 contract_verified 的合约。
+
 import (
 	"context"
 	"database/sql"
@@ -11,12 +15,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// TradFi tokens (xStocks / Ondo / PAXG / XAUT) are configured in admin and
-// stored by market-data in tradfi_tokens (same Postgres database). At startup
-// every row with a contract address and deposit or withdraw enabled is merged
-// into the network registry; enabling a new token therefore needs a wallet
-// restart. Disabling takes effect immediately via tradfiAllowed (live read).
 
 // tradfiTokenSpecs maps pairKey(asset, network) -> "contract:decimals"; used by
 // RealChain when no WALLET_TOKEN_<ASSET>_<NET> env override is set.

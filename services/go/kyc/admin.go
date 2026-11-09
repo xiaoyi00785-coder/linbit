@@ -1,5 +1,7 @@
 package main
 
+// 管理端审核队列。通过 pending 申请后同步 kycLevel；拒绝必须带原因。
+
 import (
 	"log"
 	"net/http"

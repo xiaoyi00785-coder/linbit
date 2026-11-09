@@ -1,5 +1,8 @@
 package main
 
+// depositpref.go：用户自己的默认充值账户。没有记录就用平台设置。
+// 改这个偏好不搬余额，也不给任何一笔充值入账。合约保证金不在选项里。
+
 import (
 	"context"
 	"database/sql"
@@ -9,9 +12,6 @@ import (
 
 	"github.com/linbit/platform/services/go/common"
 )
-
-// Per-user default deposit account. Missing row means the platform setting.
-// Changing it does not move balances and does not credit a deposit.
 
 func resolveDepositAccount(pref, platform string) (account, source string) {
 	if validAcct(pref) {
@@ -68,11 +68,8 @@ func (s *Server) handlePutDepositAccount(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.Account == "futures" {
-		// On-chain credit posts the asset ledger (funding/spot) only. Futures
-		// margin is a separate fut_accounts balance, reached today by an explicit
-		// transfer that first debits funding/spot. There is no single idempotent
-		// transaction that credits available margin without that debit, so futures
-		// is not offered. A silent fallback into funding would book the wrong wallet.
+		// 链上入账只记资金账户或现货。合约保证金在 fut_accounts，今天要先从资金/现货扣再转入。
+		// 没有一笔幂等交易能只加保证金、不扣这边的余额，所以不提供合约。静默落到资金账户会记错钱包。
 		common.WriteJSON(w, http.StatusConflict, map[string]any{
 			"code": "DEPOSIT_ACCOUNT_UNSUPPORTED", "message": "链上充值还不能直接进入合约账户",
 			"supported": []string{AcctFunding, AcctSpot}, "account": req.Account, "requestId": common.RequestID(),

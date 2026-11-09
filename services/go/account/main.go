@@ -1,5 +1,6 @@
-// Command account is the Linbit account service: registration, login (JWT),
-// token refresh/logout and TOTP-based 2FA.
+// Command account：注册、登录、刷新、登出和 TOTP。
+// 登出把 unix 毫秒写到 Redis auth:revoked_before:{uid}，网关和本服务用 iat 比较。
+// 密码错误不计次。登录二次验证码的限流键是 vc:int:login:{target} 与 vc:hr:login:{target}。
 package main
 
 import (
@@ -32,7 +33,7 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	// Redis is an optional dependency (used for verification-code rate limiting).
+	// Redis 可选：验证码限流，以及 access 吊销截止时间。连不上则为 nil，限流改查库，吊销检查放行。
 	rdb := common.MaybeRedis(cfg.RedisURL)
 	if rdb != nil {
 		defer rdb.Close()

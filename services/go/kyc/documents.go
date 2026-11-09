@@ -1,5 +1,7 @@
 package main
 
+// 证件上传。校验大小和内容嗅探后写入 ObjectStorage，只返回 fileId，不公开读。
+
 import (
 	"crypto/rand"
 	"encoding/hex"

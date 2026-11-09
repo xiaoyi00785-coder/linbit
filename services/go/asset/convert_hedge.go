@@ -1,28 +1,20 @@
 package main
 
-// convert_hedge.go: automatic hedging of the 闪兑 (convert) book on the spot
-// order book.
+// convert_hedge.go：在现货盘上自动对冲闪兑敞口。
 //
-// Accounts:
-//   - system:convert (ledger-only) is the counterparty of every user convert;
-//     its per-asset ledger net is the "convert position".
-//   - CONVERT_HEDGE_USER_ID (default system:hedge) is a real spot trading
-//     account owned by the platform. It is separate from the market maker
-//     (MM_USER_ID, mm:main) so hedge fills never self-trade against the
-//     maker's quotes being attributed to the same account, and P&L is
-//     attributable. Funding moves platform-owned assets from the convert
-//     position into the hedge account with a balanced journal entry
-//     (system:convert credit / user:<hedge>:free debit), so no money is
-//     created: net exposure per asset = convert position + hedge balance.
+// 账户：
+//   - system:convert 只是账本对手方，按币种的净额是「闪兑头寸」。
+//   - CONVERT_HEDGE_USER_ID（默认 system:hedge）是平台自己的现货账户，和做市
+//     MM_USER_ID（mm:main）分开，避免对冲成交和做市报价算到同一账户，盈亏也能拆开。
+//     从闪兑头寸划到对冲账户的分录是贷 system:convert、借 user:<hedge>:free，不凭空造币。
+//     单币净敞口 = 闪兑头寸 + 对冲账户余额。
 //
-// Loop (every CONVERT_HEDGE_INTERVAL_SECONDS, one sequential worker):
-//   net = position + hedge balance; if |net| ≥ per-asset min, place one
-//   IOC limit at index ± slippageBps (buy when short, sell when long) capped
-//   by maxOrderUsdt, the remaining maxHourUsdt budget and available funding.
-//   Thin depth: whatever fills is kept, the rest stays unhedged and is retried
-//   with exponential backoff. If the unhedged notional stays above
-//   unhedgedAlertUsdt for more than unhedgedAlertMinutes a Telegram alert
-//   fires (once per episode). Rejections / failures alert (rate-limited).
+// 循环（CONVERT_HEDGE_INTERVAL_SECONDS，单线程）：
+//   |净敞口| 达到该币最小量就下一张 IOC，价格为指数 ± slippageBps（缺则买、多则卖）。
+//   数量受 maxOrderUsdt、剩余 maxHourUsdt 和可用资金限制。
+//   深度不够就吃到多少算多少，剩下的按指数退避重试。
+//   未对冲名义价值超过 unhedgedAlertUsdt 且持续超过 unhedgedAlertMinutes，发一次 Telegram。
+//   拒单和失败也告警，但限频。fundHedge 按 ref 幂等，头寸不够就 ErrInsufficient，对冲不造余额。
 
 import (
 	"bytes"

@@ -1,5 +1,9 @@
 package main
 
+// client.go：钱包依赖的内网客户端。
+// AssetClient 调资产服务复式记账（/internal/*）；AccountClient 调 2FA 和白名单。
+// 都带共享内部令牌，网关不转发这些路径。金额字段是十进制字符串。
+
 import (
 	"bytes"
 	"context"
@@ -14,20 +18,14 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// client.go holds the service-to-service clients the wallet depends on:
-//   - AssetClient  -> asset service double-entry bookkeeping (/internal/*)
-//   - AccountClient -> account service 2FA + whitelist checks (/internal/*)
-// Both authenticate with the shared internal token and are never reachable
-// through the gateway.
-
-// AssetClient calls the asset service's internal bookkeeping endpoints.
+// AssetClient 调资产服务的内部记账接口。baseURL 为空时调用直接失败。
 type AssetClient struct {
 	baseURL string
 	token   string
 	http    *http.Client
 }
 
-// NewAssetClient builds an AssetClient (nil-safe: a zero baseURL disables calls).
+// NewAssetClient 构造客户端。baseURL 为空时 post 会失败，调用方自己处理。
 func NewAssetClient(baseURL, token string) *AssetClient {
 	return &AssetClient{baseURL: strings.TrimRight(baseURL, "/"), token: token,
 		http: &http.Client{Timeout: 5 * time.Second}}
@@ -56,23 +54,22 @@ func (c *AssetClient) post(ctx context.Context, path string, body any) error {
 	return nil
 }
 
-// Freeze moves amount from free to locked.
+// Freeze 把 amount 从可用划到冻结。amount 用十进制字符串传给资产服务。
 func (c *AssetClient) Freeze(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return c.post(ctx, "/internal/freeze", movement{UserID: userID, Asset: asset, Amount: amount.String(), Ref: ref})
 }
 
-// Unfreeze moves amount from locked back to free.
+// Unfreeze 把 amount 从冻结划回可用。
 func (c *AssetClient) Unfreeze(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return c.post(ctx, "/internal/unfreeze", movement{UserID: userID, Asset: asset, Amount: amount.String(), Ref: ref})
 }
 
-// Deposit credits a confirmed deposit. Idempotent on ref (network:tx:logIndex).
+// Deposit 入账已确认充值。按 ref 幂等，键形如 dep:<network>:<tx>:<logIndex>。
 func (c *AssetClient) Deposit(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return c.post(ctx, "/internal/deposit", movement{UserID: userID, Asset: asset, Amount: amount.String(), Ref: ref})
 }
 
-// WithdrawComplete debits a confirmed withdrawal from locked and books the gas to
-// the platform account. Idempotent on ref (the withdrawal id).
+// WithdrawComplete 从冻结扣掉已确认提现，并把 Gas 记到平台账户。按 ref 幂等，提现侧用 withdraw:<id>。
 func (c *AssetClient) WithdrawComplete(ctx context.Context, userID, asset string, amount, gas decimal.Decimal, feeAccount, ref string) error {
 	return c.post(ctx, "/internal/withdraw-complete", withdrawComplete{
 		UserID: userID, Asset: asset, Amount: amount.String(), Gas: gas.String(),
@@ -90,15 +87,13 @@ type movement struct {
 	ToUser  string `json:"toUserId,omitempty"`
 }
 
-// FreezeWithdraw freezes withdrawal funds in the admin-configured withdraw
-// account (funding by default). The asset service remembers the account per
-// ref so Unfreeze / WithdrawComplete hit the same bucket.
+// FreezeWithdraw 在管理端配置的提现账户里冻结（默认资金账户）。
+// 资产服务按 ref 记住账户，解冻和提现完成打到同一个桶。
 func (c *AssetClient) FreezeWithdraw(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return c.post(ctx, "/internal/freeze", movement{UserID: userID, Asset: asset, Amount: amount.String(), Ref: ref, Purpose: "withdraw"})
 }
 
-// UserTransfer moves funds between two users' accounts (funding by default),
-// idempotent on ref.
+// UserTransfer 在两个用户的资金账户之间划转，按 ref 幂等。默认账户 funding。
 func (c *AssetClient) UserTransfer(ctx context.Context, fromUser, toUser, asset string, amount decimal.Decimal, ref string) error {
 	return c.post(ctx, "/internal/user-transfer", movement{UserID: fromUser, ToUser: toUser, Asset: asset,
 		Amount: amount.String(), Ref: ref, Account: "funding"})
@@ -113,35 +108,33 @@ type withdrawComplete struct {
 	Ref        string `json:"ref"`
 }
 
-// AccountClient calls the account service's internal 2FA + whitelist endpoints.
+// AccountClient 调账户服务的 2FA、白名单、KYC 等级和用户查找。
 type AccountClient struct {
 	baseURL string
 	token   string
 	http    *http.Client
 }
 
-// NewAccountClient builds an AccountClient.
+// NewAccountClient 构造账户内网客户端。
 func NewAccountClient(baseURL, token string) *AccountClient {
 	return &AccountClient{baseURL: strings.TrimRight(baseURL, "/"), token: token,
 		http: &http.Client{Timeout: 5 * time.Second}}
 }
 
-// VerifyResult is the outcome of a withdrawal 2FA check.
+// VerifyResult 是提现二次验证的结果。OK 为假时看 Reason。
 type VerifyResult struct {
 	OK          bool    `json:"ok"`
 	Reason      string  `json:"reason"`
 	LockedUntil *string `json:"lockedUntil"`
 }
 
-// OutflowOpts adds the security-settings checks (withdrawal lock + fund
-// password) to Verify2FA. Action: "withdraw" | "internal_transfer".
+// OutflowOpts 加上安全设置检查（提现锁定、资金密码）。Action 取 "withdraw" 或 "internal_transfer"。
 type OutflowOpts struct {
 	Action       string
 	FundPassword string
 }
 
-// Verify2FA validates the withdrawal's second factor (TOTP when enabled, else an
-// email/SMS code with purpose=withdraw) for the user.
+// Verify2FA 校验二次因素：开了 TOTP 用 TOTP，否则用 purpose=withdraw 的邮箱/短信码。
 func (c *AccountClient) Verify2FA(ctx context.Context, uid, totpCode, code string, opts ...OutflowOpts) (VerifyResult, error) {
 	if c.baseURL == "" {
 		return VerifyResult{}, fmt.Errorf("account internal url not configured")
@@ -170,15 +163,13 @@ func (c *AccountClient) Verify2FA(ctx context.Context, uid, totpCode, code strin
 	return out, nil
 }
 
-// WhitelistResult reports the user's whitelist switch and whether a destination
-// address is permitted under it.
+// WhitelistResult 报告提现白名单是否打开，以及该地址是否允许。
 type WhitelistResult struct {
 	Enabled bool `json:"enabled"`
 	Allowed bool `json:"allowed"`
 }
 
-// WhitelistCheck returns whether the whitelist is on and whether the (asset,
-// network, address) is a whitelisted destination for the user.
+// WhitelistCheck 查询白名单开关，以及 (asset, network, address) 是否在该用户白名单里。
 func (c *AccountClient) WhitelistCheck(ctx context.Context, uid, asset, network, address string) (WhitelistResult, error) {
 	if c.baseURL == "" {
 		return WhitelistResult{}, fmt.Errorf("account internal url not configured")
@@ -209,9 +200,7 @@ func (c *AccountClient) WhitelistCheck(ctx context.Context, uid, asset, network,
 	return out, nil
 }
 
-// KYCLevel returns the user's current KYC level from the account service (the
-// source of truth, raised by the KYC service on approval). Used to apply the
-// KYC-tiered daily withdrawal limit.
+// KYCLevel 向账户服务取当前 KYC 等级（审核通过后由 KYC 服务抬升）。用来套 24h 提现额度。
 func (c *AccountClient) KYCLevel(ctx context.Context, uid string) (int, error) {
 	if c.baseURL == "" {
 		return 0, fmt.Errorf("account internal url not configured")
@@ -241,7 +230,7 @@ func (c *AccountClient) KYCLevel(ctx context.Context, uid string) (int, error) {
 	return out.Level, nil
 }
 
-// UserLookup is the account service's recipient lookup result.
+// UserLookup 是账户服务的收款人查找结果。
 type UserLookup struct {
 	UID          string `json:"uid"`
 	Status       string `json:"status"`
@@ -249,10 +238,10 @@ type UserLookup struct {
 	MaskedEmail  string `json:"maskedEmail"`
 }
 
-// ErrUserNotFound is returned by LookupUser for an unknown uid/email.
+// ErrUserNotFound 表示 uid 或邮箱在账户服务里不存在。
 var ErrUserNotFound = fmt.Errorf("user not found")
 
-// LookupUser resolves a user by uid or email via the account service.
+// LookupUser 用 uid 或邮箱向账户服务解析用户。
 func (c *AccountClient) LookupUser(ctx context.Context, uid, email string) (UserLookup, error) {
 	if c.baseURL == "" {
 		return UserLookup{}, fmt.Errorf("account internal url not configured")
@@ -286,9 +275,10 @@ func (c *AccountClient) LookupUser(ctx context.Context, uid, email string) (User
 	return out, nil
 }
 
-// verifyError maps an account verify reason to the public API error.
-// TWOFA_REQUIRED (403): no second factor supplied or none bound.
-// INVALID_TOTP (401): a TOTP / verification code was supplied but is wrong.
+// verifyError 把账户服务的 reason 映射成对外错误。
+// TWOFA_REQUIRED（403）：没提供二次因素，或没绑定。
+// INVALID_TOTP（401）：提供了 TOTP / 验证码但错误。
+// WITHDRAW_LOCKED（403）、FUND_PASSWORD_* 见下面的分支。
 func verifyError(vr VerifyResult) *apiError {
 	switch vr.Reason {
 	case "totp_invalid", "code_invalid":

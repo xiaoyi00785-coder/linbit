@@ -1,5 +1,7 @@
 package main
 
+// 公开合约行情。ticker 的最新价只在 LastTradeFresh 内用本地成交，否则不把过期成交当成最新价。
+
 import (
 	"context"
 	"net/http"
@@ -10,8 +12,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// marketdata.go: public futures market data.
 
 func (s *Server) hContracts(w http.ResponseWriter, r *http.Request) {
 	tags := loadSymbolTags(r.Context(), s.db)

@@ -9,20 +9,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// settle.go computes partner / referral commissions from unsettled fee events
-// and pays them into the funding account once per day.
+// 按未结算手续费算合伙人佣金和邀请返佣，每天打进资金账户一次（asset 账户名 rebate）。
 //
-// Rules:
-//   - Rebate base = fee - trial-bonus-paid fee - fee-coupon-covered fee (USDT).
-//   - If the trader's inviter is an ACTIVE partner, the partner earns
-//     base x tier rate (futures / spot). Otherwise the inviter earns the
-//     regular referral rate for ReferralPeriod after the invitee registered.
-//     The two never stack; only one level of invitees counts.
-//   - Override: the partner's own inviter, if an active partner, receives
-//     OverrideRate x the direct commission (platform-funded, not deducted
-//     from the sub-partner), up to OverrideDepth levels above
-//     the direct partner (default 2).
-//   - Copy-trading profit share is not a fee and never enters this pipeline.
+// 返佣基数 = max(手续费 - 体验金承担的手续费 - 抵扣券承担的手续费, 0)，单位 USDT。
+// 交易者的邀请人若是有效合伙人，拿基数 × 档位费率（合约用 futures、现货用 spot）。
+// 否则邀请人在被邀请人注册后的 ReferralPeriod 内拿普通返佣比例。两者不叠加，只算一层邀请。
+// 覆盖：该合伙人的邀请人若也是有效合伙人，拿 OverrideRate × 这笔直接佣金，
+// 平台出，不从下级佣金里扣，向上最多 OverrideDepth 层（默认 2），遇到非有效合伙人或成环即停。
+// 跟单分润不进这条佣金流水。
+// 明细的 base 和 amount 以 12 位四舍五入入库；按受益人合计后向零截到 8 位再打款。
+// 打款 ref 为 growth_comm_{settlementId}_{uid}，asset 按 ref 幂等。同一 cutoff 已有结算则直接返回。
 
 type commKey struct {
 	Ben, Src, Kind, Day string
@@ -196,6 +192,7 @@ func (s *Server) Settle(ctx context.Context, cutoff time.Time) (int64, error) {
 	}
 	totals := map[string]decimal.Decimal{}
 	for _, c := range comms {
+		// 明细的 base、amount 以 12 位四舍五入入库。
 		if _, err := tx.ExecContext(ctx, `INSERT INTO g_commissions (settlement_id, beneficiary, source_uid, kind, tier, rate, base, amount, day)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, sid, c.Ben, c.Src, c.Kind, c.Tier, c.Rate, c.Base.Round(12), c.Amount.Round(12), c.Day); err != nil {
 			return 0, err
@@ -211,6 +208,7 @@ func (s *Server) Settle(ctx context.Context, cutoff time.Time) (int64, error) {
 		return 0, err
 	}
 	for uid, amt := range totals {
+		// 受益人合计后向零截到 8 位再生成打款。
 		amt = trunc(amt, 8)
 		if amt.Sign() <= 0 {
 			continue

@@ -1,5 +1,8 @@
 package main
 
+// 现货 HTTP。/spot/* 对齐 docs/api/openapi.yaml，用户 id 来自网关注入的 X-User-Id。
+// 价格和数量超出交易对精度直接拒绝，不截断。撮合回报按 tradeId 幂等结算。
+
 import (
 	"context"
 	"errors"
@@ -12,8 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Server wires configuration, storage, the asset client and the matching engine
-// into the order service HTTP handlers.
+// Server 把配置、存储、资产客户端和撮合接成 HTTP。fees 为 nil 时用环境变量费率。
 type Server struct {
 	cfg    Config
 	store  *Store
@@ -23,13 +25,12 @@ type Server struct {
 	ufees  *userFeeCache
 }
 
-// NewServer constructs a Server.
+// NewServer 只组装依赖，不连库、不探活撮合。
 func NewServer(cfg Config, store *Store, asset *AssetClient, engine Matching) *Server {
 	return &Server{cfg: cfg, store: store, asset: asset, engine: engine, fees: &feeOverrides{}, ufees: &userFeeCache{m: map[string]userFee{}}}
 }
 
-// Routes returns the order service HTTP handler. The /spot/* paths mirror
-// docs/api/openapi.yaml and expect the X-User-Id header injected by the gateway.
+// Routes 的 /spot/* 对齐 openapi，并且要求网关注入的 X-User-Id。没有这个头按未登录拒绝。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
@@ -50,7 +51,7 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
-// withUser extracts the gateway-injected user id and rejects anonymous callers.
+// withUser 只认 X-User-Id。空则 401。本服务不解析登录态。
 func (s *Server) withUser(next func(w http.ResponseWriter, r *http.Request, userID string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := r.Header.Get("X-User-Id")
@@ -130,7 +131,7 @@ func (s *Server) handlePlace(w http.ResponseWriter, r *http.Request, userID stri
 	common.WriteJSON(w, http.StatusCreated, dto)
 }
 
-// placeError is a placement failure mapped to an HTTP error.
+// placeError 是下单失败，Code 原样返回，不把校验错误改成 500。
 type placeError struct {
 	status int
 	code   string
@@ -139,8 +140,7 @@ type placeError struct {
 
 func perrf(status int, code, msg string) *placeError { return &placeError{status, code, msg} }
 
-// placeOrder validates, freezes, persists, submits and settles one order. It is
-// shared by POST /spot/orders and the conditional-order trigger worker.
+// placeOrder 校验、冻结、落库、提交撮合、结算。POST /spot/orders 和条件单触发共用。冻结成功但撮合失败要解冻。
 func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRequest) (*orderDTO, *placeError) {
 	o, sym, errCode, errMsg := s.buildOrder(ctx, userID, req)
 	if errCode != "" {
@@ -153,8 +153,7 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 		return nil, perrf(http.StatusBadRequest, errCode, errMsg)
 	}
 
-	// Freeze funds before the order can match, so a fill can never settle against
-	// money the user does not have. Reject on insufficient balance.
+	// 先冻结再撮合，成交不能动用户没有的钱。可用不足直接拒单。
 	if err := s.asset.Freeze(ctx, userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID); err != nil {
 		if errors.Is(err, ErrInsufficient) {
 			return nil, perrf(http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")
@@ -165,16 +164,16 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 
 	if err := s.store.InsertOrder(ctx, o); err != nil {
 		log.Printf("place: insert order: %v", err)
-		// Best-effort release of the funds we just froze.
+		// 落库失败则尽力解冻刚冻的资金，ref 与冻结相同。
 		_ = s.asset.Unfreeze(ctx, userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID)
 		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
 
-	// Submit to the matching engine and settle whatever it reports.
+	// 交给撮合。引擎没看到订单或我们没拿到回报时，把订单标 rejected 并释放冻结。
 	rep, err := s.engine.Submit(ctx, s.placeCommand(o))
 	if err != nil {
 		log.Printf("place: engine submit: %v", err)
-		// The engine never saw the order (or we never saw its reply): unwind.
+		// 引擎没接到，或应答丢失：撤掉本地订单并释放冻结。不应答当成已成交。
 		_ = s.store.UpdateFill(ctx, o.OrderID, decimal.Zero, "rejected")
 		s.releaseLeftover(ctx, o)
 		return nil, perrf(http.StatusBadGateway, "ENGINE_UNAVAILABLE", "撮合引擎不可用")
@@ -207,8 +206,7 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 	return &dto, nil
 }
 
-// buildOrder validates the request against the symbol rules and computes the
-// order's frozen asset/amount. On validation failure it returns a code+message.
+// buildOrder 按交易对规则校验并算出冻结资产和金额。价格、数量多出来的小数返回 VALIDATION_ERROR，不截断。
 func (s *Server) buildOrder(ctx context.Context, userID string, req placeOrderRequest) (*Order, *SymbolConfig, string, string) {
 	side := strings.ToLower(req.Side)
 	typ := strings.ToLower(req.Type)
@@ -269,7 +267,7 @@ func (s *Server) buildOrder(ctx context.Context, userID string, req placeOrderRe
 	}
 
 	if typ == "market" && side == "buy" {
-		// Market buy by quote budget: freeze the quote amount.
+		// 按计价币预算的市价买：整笔 quoteOrderQty 冻结。这里不按 price_precision 截断，也不拒绝多余小数，只要求大于 0 且不低于最小名义额。
 		if req.QuoteOrderQty == nil || *req.QuoteOrderQty == "" {
 			if req.Quantity == nil || *req.Quantity == "" {
 				return nil, nil, "VALIDATION_ERROR", "市价买单需提供 quantity 或 quoteOrderQty"
@@ -289,7 +287,7 @@ func (s *Server) buildOrder(ctx context.Context, userID string, req placeOrderRe
 		o.FrozenAsset = sym.Quote
 		o.FrozenAmount = budget
 	} else {
-		// Everything else is driven by base quantity.
+		// 其余订单按基础币数量。限价买冻结 price×qty，卖单冻结数量本身。
 		if req.Quantity == nil {
 			return nil, nil, "VALIDATION_ERROR", "quantity 为必填"
 		}
@@ -297,6 +295,7 @@ func (s *Server) buildOrder(ctx context.Context, userID string, req placeOrderRe
 		if err != nil || qty.Sign() <= 0 {
 			return nil, nil, "VALIDATION_ERROR", "quantity 不合法"
 		}
+		// 数量小数位超过 quantity_precision 则拒绝，不截断。
 		if !precisionOK(qty, sym.QuantityPrecision) {
 			return nil, nil, "VALIDATION_ERROR", "数量精度超出限制"
 		}
@@ -313,6 +312,7 @@ func (s *Server) buildOrder(ctx context.Context, userID string, req placeOrderRe
 			if err != nil || price.Sign() <= 0 {
 				return nil, nil, "VALIDATION_ERROR", "price 不合法"
 			}
+			// 价格小数位超过 price_precision 则拒绝，不截断。
 			if !precisionOK(price, sym.PricePrecision) {
 				return nil, nil, "VALIDATION_ERROR", "价格精度超出限制"
 			}
@@ -357,9 +357,7 @@ func (s *Server) placeCommand(o *Order) EngineCommand {
 		Quantity:    o.Quantity.String(),
 	}
 	if o.Type == "market" && o.Side == "buy" && !o.HasQuoteQty && o.HasPrice {
-		// Market buy by base quantity: the engine prices market buys by quote
-		// budget only, so it is sent as an IOC limit capped at the protection
-		// price (best ask + slippage). Unfilled remainder is released.
+		// 按基础币数量的市价买：引擎只按计价币预算定价，所以改成 IOC 限价，价格上限是最优卖价加滑点。未成交部分释放。
 		cmd.Type = "limit"
 		cmd.TimeInForce = "IOC"
 	}
@@ -482,8 +480,7 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request, userID str
 	common.WriteJSON(w, http.StatusOK, paginated{Items: items, Page: page, PageSize: size, Total: total})
 }
 
-// symbolMap loads all trading-pair configs keyed by symbol, so list responses
-// can format each row's price/quantity to that pair's precision.
+// symbolMap 按交易对取出精度，列表里的价格和数量按各自的 price_precision / quantity_precision 格式化。
 func (s *Server) symbolMap(ctx context.Context) (map[string]*SymbolConfig, error) {
 	syms, err := s.store.Symbols(ctx)
 	if err != nil {
@@ -498,9 +495,8 @@ func (s *Server) symbolMap(ctx context.Context) (map[string]*SymbolConfig, error
 
 // ---- settlement ----
 
-// applyReport settles every fill in the engine report and updates order state.
-// Each trade is settled atomically by the asset service and recorded locally;
-// both steps are idempotent on tradeId so re-delivery is harmless.
+// applyReport 结算回报里的每笔成交并改订单状态。
+// 资产服务按 tradeId 原子结算；本地 trades 按 (trade_id, order_id) 冲突则跳过。同一笔回报再投递不会划第二次。
 func (s *Server) applyReport(ctx context.Context, taker *Order, sym *SymbolConfig, rep *ExecReport) error {
 	for _, t := range rep.Trades {
 		price, err := decimal.NewFromString(t.Price)
@@ -541,7 +537,7 @@ func (s *Server) applyReport(ctx context.Context, taker *Order, sym *SymbolConfi
 			return err
 		}
 
-		// Record both sides of the trade (idempotent on (trade_id, order_id)).
+		// 买卖双方各记一行，(trade_id, order_id) 冲突则跳过。
 		if err := s.store.InsertTrade(ctx, TradeRow{
 			TradeID: t.TradeID, OrderID: buyerOrder, UserID: buyerUser, Symbol: sym.Symbol,
 			Side: "buy", Price: price, Quantity: qty, Fee: buyerFeeBase, FeeAsset: sym.Base, Role: buyerRole,
@@ -556,7 +552,7 @@ func (s *Server) applyReport(ctx context.Context, taker *Order, sym *SymbolConfi
 		}
 	}
 
-	// Update resting maker orders touched by this match.
+	// 这次成交碰到的 maker 挂单，按引擎给的已成交量和状态回写。
 	for _, u := range rep.MakerUpdates {
 		filled, err := decimal.NewFromString(u.FilledQuantity)
 		if err != nil {
@@ -567,7 +563,7 @@ func (s *Server) applyReport(ctx context.Context, taker *Order, sym *SymbolConfi
 		}
 	}
 
-	// Update the taker order and release leftover frozen funds if it is terminal.
+	// taker 终态（filled/canceled/rejected）时释放未用完的冻结。部分成交的买单若价格更好，差额在这里退。
 	takerFilled, err := decimal.NewFromString(rep.FilledQuantity)
 	if err != nil {
 		return err
@@ -581,9 +577,8 @@ func (s *Server) applyReport(ctx context.Context, taker *Order, sym *SymbolConfi
 	return nil
 }
 
-// releaseLeftover unfreezes the unspent part of an order's frozen funds, exactly
-// once. The leftover is the frozen amount minus what the order actually consumed
-// across its fills (so a buy that filled at a better price releases the excess).
+// releaseLeftover 只解冻一次未花掉的冻结。余额 = 冻结额 - 成交实际消耗（买单是 Σ价格×数量，卖单是 Σ数量）。
+// 先 ClaimUnfreeze，没抢到就返回，避免重复解冻。
 func (s *Server) releaseLeftover(ctx context.Context, o *Order) {
 	won, err := s.store.ClaimUnfreeze(ctx, o.OrderID)
 	if err != nil {
@@ -607,7 +602,7 @@ func (s *Server) releaseLeftover(ctx context.Context, o *Order) {
 	}
 }
 
-// feeRate returns the configured spot fee rate for a maker/taker role.
+// feeRate 返回当前现货费率。taker 用 taker，其余用 maker。用户级覆盖不在这里。
 func (s *Server) feeRate(role string) decimal.Decimal {
 	maker, taker := s.currentFees()
 	if role == "taker" {
@@ -618,7 +613,7 @@ func (s *Server) feeRate(role string) decimal.Decimal {
 
 // ---- helpers ----
 
-// normalizeTIF maps aliases onto the engine's TIF names (GTX = PostOnly).
+// normalizeTIF 把别名收成引擎的 TIF。GTX、POSTONLY、POST_ONLY 都是 PostOnly。
 func normalizeTIF(tif string) string {
 	switch strings.ToUpper(strings.TrimSpace(tif)) {
 	case "GTX", "POSTONLY", "POST_ONLY":
@@ -645,6 +640,7 @@ func terminal(status string) bool {
 	return false
 }
 
+// precisionOK：小数位不超过 places 才为真。Truncate 后不相等说明有多余小数，调用方必须拒绝，不能改成截断后的值。
 func precisionOK(d decimal.Decimal, places int) bool {
 	return d.Equal(d.Truncate(int32(places)))
 }
@@ -668,11 +664,8 @@ func atoiDefault(s string, def, min, max int) int {
 	return n
 }
 
-// Price/quantity amounts are rendered as fixed-precision decimal strings scaled
-// to the trading pair's rules (never floats): prices and quote-denominated
-// amounts to price_precision, base quantities to quantity_precision. When the
-// symbol config is unavailable (should not happen for a valid order) the raw
-// decimal string is used so no information is lost.
+// 价格和数量渲染成定长小数字符串，不用浮点。价格和计价币金额用 price_precision，基础币数量用 quantity_precision。
+// 交易对配置缺失时退回原始十进制字符串，避免把精度弄丢。展示用 StringFixed，和校验用的拒绝多余小数不是一回事。
 
 func fmtQty(d decimal.Decimal, sym *SymbolConfig) string {
 	if sym == nil {
@@ -688,10 +681,8 @@ func fmtPrice(d decimal.Decimal, sym *SymbolConfig) string {
 	return d.StringFixed(int32(sym.PricePrecision))
 }
 
-// fmtFee scales a fee to the precision of its charging asset: base fees to
-// quantity_precision, quote fees to price_precision. A non-zero fee is never
-// rounded away: when it has more decimals than the asset precision (e.g. a
-// 0.000000065 BTC fee on a tiny fill) the exact value is returned instead.
+// fmtFee 按收费资产的精度格式化：基础币用 quantity_precision，计价币用 price_precision。
+// 非零手续费如果比该精度更长（例如极小成交的 0.000000065 BTC），返回原值，不四舍五入成 0。这不是固定 8 位。
 func fmtFee(d decimal.Decimal, feeAsset string, sym *SymbolConfig) string {
 	prec := int32(-1)
 	switch {
@@ -765,14 +756,11 @@ func toTradeDTO(t TradeRow, sym *SymbolConfig) tradeDTO {
 	return d
 }
 
-// marketBuySlippage caps how far above the best ask a market buy placed by base
-// quantity may fill (slippage protection). Overridable via MARKET_BUY_SLIPPAGE.
+// marketBuySlippage 是按基础币数量市价买相对最优卖价的上限，默认 0.05，可用 MARKET_BUY_SLIPPAGE 覆盖。
 var marketBuySlippage = decimal.RequireFromString(common.Env("MARKET_BUY_SLIPPAGE", "0.05"))
 
-// marketBuyByQty completes a market buy given in base quantity: it freezes
-// qty × protectionPrice of quote, where protectionPrice = bestAsk × (1+slippage)
-// rounded up to the pair's price precision. The order is stored as type=market
-// with that protection price, and submitted to the engine as IOC limit.
+// marketBuyByQty 按基础币数量市价买：冻结 qty×保护价 的计价币。保护价 = 最优卖价×(1+滑点)，向价格精度进位。
+// 订单类型仍记 market，提交给引擎时改成 IOC 限价。数量精度超出则拒绝，不截断。卖盘为空返回 NO_LIQUIDITY。
 func (s *Server) marketBuyByQty(ctx context.Context, o *Order, sym *SymbolConfig, qtyStr string) (*Order, *SymbolConfig, string, string) {
 	qty, err := decimal.NewFromString(qtyStr)
 	if err != nil || qty.Sign() <= 0 {

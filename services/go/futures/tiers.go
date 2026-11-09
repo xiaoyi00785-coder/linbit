@@ -1,13 +1,14 @@
 package main
 
+// 分档维持保证金，档位来自 fut_risk_tiers。名义价值越大，维持保证金率越高、最大杠杆越低。
+
 import (
 	"context"
 
 	"github.com/shopspring/decimal"
 )
 
-// tiers.go: tiered maintenance margin. Brackets come from fut_risk_tiers.
-
+// Tier 的 MaxNotional 是该档名义价值上限。MaintAmount 是速算额，强平价公式会加回去。
 type Tier struct {
 	Tier        int             `json:"tier"`
 	MaxNotional decimal.Decimal `json:"maxNotional"`

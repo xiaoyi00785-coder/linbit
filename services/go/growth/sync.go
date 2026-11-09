@@ -13,8 +13,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// sync.go pulls the cursor feeds of account (users), order (spot fills),
-// futures (fills) and asset (wallet ops) into growth's own tables.
+// 用游标把 account 用户、order 现货成交、futures 成交和 asset 钱包流水拉进增长自己的表。
+// 现货只计 GROWTH_USD_QUOTES 计价的成交，并跳过 system: 用户。名义金额四舍五入到 8 位，手续费到 12 位。
+// 插入按 src 冲突忽略，游标重放不重复计费。
 
 func (s *Server) cursor(ctx context.Context, name string) int64 {
 	var pos int64
@@ -139,6 +140,7 @@ func (s *Server) syncSpot(ctx context.Context) (int, error) {
 		if !s.cfg.USDQuotes[strings.ToUpper(t.Quote)] || strings.HasPrefix(t.UserID, "system:") {
 			continue // only USD-quoted pairs are valued (GROWTH_USD_QUOTES)
 		}
+		// 名义金额 price×qty 四舍五入到 8 位。手续费若以 base 收取，先乘成交价换成计价币，再四舍五入到 12 位。
 		fee := t.Fee
 		if strings.EqualFold(t.FeeAsset, t.Base) {
 			fee = t.Fee.Mul(t.Price)
@@ -182,6 +184,7 @@ func (s *Server) syncFutures(ctx context.Context) (int, error) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	for _, t := range out.Items {
+		// 名义金额四舍五入到 8 位，手续费和体验金手续费到 12 位。
 		if _, err := tx.ExecContext(ctx, `INSERT INTO g_fee_events (src, src_id, uid, product, notional, fee, bonus_fee, copy, at)
 			VALUES ('futures',$1,$2,'futures',$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
 			fmt.Sprintf("%d:%s", t.TradeID, t.Role), t.UserID, t.Notional.Round(8), t.Fee.Round(12), t.BonusFee.Round(12), t.Copy, time.UnixMilli(t.Time)); err != nil {

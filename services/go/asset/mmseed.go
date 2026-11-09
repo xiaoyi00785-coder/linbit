@@ -1,5 +1,11 @@
 package main
 
+// mmseed.go：做市测试资金和偿付数字。
+// mm_testnet_seed 给做市账户记虚拟资金。能否使用看 common.TestnetSeedAllowed：
+// WALLET_CHAIN=testnet 即使 LINBIT_ENV=production 也允许；WALLET_CHAIN=mock 仅非生产；
+// mainnet 或未知一律拒绝。只允许 MM_USER_ID，单次不超过 MM_SEED_MAX，按 ref 幂等。
+// 对手账户 system:mm_testnet_virtual，虚拟金额留在账本里，但不算进有背书的负债。
+
 import (
 	"context"
 	"errors"
@@ -10,16 +16,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// mmseed.go: market-maker test funding and solvency figures.
-//
-// mm_testnet_seed credits the market-maker account with VIRTUAL funds. It is
-// only possible when common.TestnetSeedAllowed() (not production, and
-// WALLET_CHAIN=mock|testnet); otherwise the endpoint refuses and the market
-// maker can only use assets really deposited to it. Only MM_USER_ID can be
-// seeded, at most MM_SEED_MAX per call, idempotent on ref. The counterparty
-// is system:mm_testnet_virtual so the virtual amount is visible in the ledger
-// and excluded from the backed-liabilities figure.
 
 // MMSeedAccount is the ledger counterparty for virtual seed funds.
 const MMSeedAccount = "system:mm_testnet_virtual"

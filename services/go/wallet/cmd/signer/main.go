@@ -1,21 +1,19 @@
-// Command signer is the Linbit hot-wallet signer. It holds the only copy of the
-// hot/deposit key seed in an encrypted keystore (scrypt + AES-GCM) and signs
-// over an authenticated HTTP API; the wallet service only ever sees public
-// keys and signatures. It runs as its own container today and can be moved to
-// a dedicated host later by pointing WALLET_SIGNER_URL at it.
+// Command signer 是热钱包签名进程，独立容器。它持有热钱包/充值地址的唯一种子
+// （keystore：scrypt + AES-GCM），经带鉴权的 HTTP 签名。钱包进程只见公钥和签名。
+// 换机器时把 WALLET_SIGNER_URL 指过来即可。日志不打印密钥。
 //
-//	signer init            create the keystore (refuses to overwrite)
-//	signer xpub            print the public account keys as env lines
-//	signer sol-addresses   write N public SOL deposit addresses to a file
-//	signer serve           serve /v1/pubkey and /v1/sign
+//	signer init            创建 keystore（拒绝覆盖）
+//	signer xpub            把账户公钥打成环境变量行
+//	signer sol-addresses   把 N 个 SOL 充值地址写到文件
+//	signer serve           提供 /v1/pubkey 和 /v1/sign
 //
-// Key material is never printed. Configuration (env):
+// 环境变量：
 //
-//	WALLET_KEYSTORE                  keystore path (default /data/hot-keystore.json)
-//	WALLET_KEYSTORE_PASSPHRASE_FILE  file holding the passphrase (preferred)
-//	WALLET_KEYSTORE_PASSPHRASE       passphrase (fallback)
-//	WALLET_SIGNER_TOKEN              bearer token the wallet service presents (>= 24 chars)
-//	WALLET_SIGNER_ADDR               listen address (default :8095)
+//	WALLET_KEYSTORE                  keystore 路径（默认 /data/hot-keystore.json）
+//	WALLET_KEYSTORE_PASSPHRASE_FILE  口令文件（优先）
+//	WALLET_KEYSTORE_PASSPHRASE       口令（回退）
+//	WALLET_SIGNER_TOKEN              钱包服务出示的 bearer（>= 24 字符）
+//	WALLET_SIGNER_ADDR               监听地址（默认 :8095）
 package main
 
 import (

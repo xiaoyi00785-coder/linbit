@@ -1,5 +1,9 @@
 package main
 
+// systemops.go：用户可用余额和具名平台账户 system:<account> 之间的幂等划转。
+// growth（返佣、营销返还）和 earn（理财本金、借贷、抵押）用它。
+// 平台账户是纯账本负债，分录仍然平衡。扣款时可用不足返回 INSUFFICIENT_BALANCE。
+
 import (
 	"context"
 	"errors"
@@ -12,12 +16,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// systemops.go: generic, idempotent transfers between a user's free balance
-// and a named platform account (system:<account>), used by growth (rebates,
-// marketing cashback) and earn (savings principal, loans, collateral).
-// Platform accounts are ledger-only liabilities, so the journal still
-// balances. Debits fail with INSUFFICIENT_BALANCE when free is too low.
 
 var systemAccounts = map[string]bool{
 	"rebate": true, "marketing": true, "earn": true, "earn_interest": true,

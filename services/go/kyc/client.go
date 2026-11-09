@@ -11,9 +11,8 @@ import (
 	"time"
 )
 
-// AccountClient calls the account service's internal endpoint to sync a user's
-// kycLevel after approval. It authenticates with the shared internal token and is
-// never reachable through the gateway.
+// AccountClient 在审核通过后调 account 内部接口同步 kycLevel。
+// 用共享内部令牌，不经 gateway。account 只升不降。
 type AccountClient struct {
 	baseURL string
 	token   string

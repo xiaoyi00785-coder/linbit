@@ -1,5 +1,8 @@
 package main
 
+// 价格预警触发。gte/lte 必须从阈值另一侧穿过来才算，已经在阈值同侧不算。
+// 触发后 status 从 active 到 triggering 再到 triggered，enabled 置 false，同一条只触发一次。
+
 import (
 	"context"
 	"database/sql"
@@ -12,6 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// crossed：gte 要求当前 >= 阈值且上一笔 < 阈值（没有上一笔也算穿过）。lte 相反：当前 <= 阈值且上一笔 > 阈值。停在阈值同侧返回 false。
 func crossed(condition string, previous *decimal.Decimal, threshold, current decimal.Decimal) bool {
 	if condition == "gte" {
 		return current.GreaterThanOrEqual(threshold) && (previous == nil || previous.LessThan(threshold))
@@ -33,13 +37,12 @@ func (s *Server) evaluateSymbol(ctx context.Context, symbol string) error {
 	if err != nil {
 		var api *apiError
 		if errors.As(err, &api) {
+			// 指数过期或不可用时不推进穿越基线，避免下一笔被当成已经穿过。
 			return nil // stale/unavailable: do not advance the crossing baseline
 		}
 		return err
 	}
-	// Advance through a stable keyset until no active alerts remain. A single
-	// page is still bounded, but IDs after 500 are evaluated in this same round;
-	// the next round never restarts a symbol at only its first 500 records.
+	// 按 alert_id 键集翻到没有 active 为止。单页 500，本轮会接着评后面的 id，下轮不会只从该交易对的前 500 条重来。
 	const pageSize = 500
 	after := ""
 	for {
@@ -249,8 +252,7 @@ func (s *Server) deliverAlerts(ctx context.Context) error {
 			return err
 		}
 		if state != "delivering" || status != "triggered" || enabledFlag || currentEpoch != j.epoch {
-			// Do not roll back a delivered account inbox notification after a
-			// client read; mark the audit as superseded and never retry it.
+			// 已经送达的站内信不回滚。这条投递标成 expired，不再重试。
 			_, err = tx.ExecContext(ctx, `UPDATE price_alert_outbox SET state='expired',updated_at=now() WHERE alert_id=$1 AND evaluation_epoch=$2`, j.id, j.epoch)
 			if err != nil {
 				tx.Rollback()

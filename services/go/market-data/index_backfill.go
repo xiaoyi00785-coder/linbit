@@ -11,11 +11,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// BackfillIndex seeds the index-candle series from Binance public spot klines
-// so a symbol with few or no local trades shows real price history right after
-// a restart (instead of a couple of candles sampled since boot). Candles are
-// marked source "index" with volume 0; they never feed trade data or the 24h
-// volume. Best-effort: failures are logged and ignored.
+// BackfillIndex 用 Binance 公共现货 K 线灌指数蜡烛，让几乎没有本地成交的符号在重启后马上有价格历史。
+// 蜡烛 source 为 index、volume 为 0，不进成交数据和 24h 成交量。尽力而为，失败只打日志。
 func (a *Aggregator) BackfillIndex(ctx context.Context, base string) {
 	if base == "" {
 		return

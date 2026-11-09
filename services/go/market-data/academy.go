@@ -15,7 +15,7 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// Academy content. Public reads return only published articles. Nothing is seeded.
+// 学院内容。公开接口只返回已发布文章。不预置数据。
 
 var academyIDRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,31})$`)
 

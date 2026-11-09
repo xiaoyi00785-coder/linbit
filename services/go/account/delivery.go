@@ -23,8 +23,7 @@ func (e *DeliveryError) Error() string {
 	return fmt.Sprintf("%s delivery failed: reason=%s status=%d detail=%s", e.Channel, e.Reason, e.Status, e.Detail)
 }
 
-// sendRetryAfterSeconds is the Retry-After hint on RATE_LIMITED (matches the
-// CodeService min interval between two sends).
+// RATE_LIMITED 的 Retry-After。写死 60，对应 CodeService 默认 minInterval；DevMode 把间隔改成 0 时响应头仍是 60。
 const sendRetryAfterSeconds = 60
 
 // writeSendCodeError maps a CodeService.Send error to an API response and logs

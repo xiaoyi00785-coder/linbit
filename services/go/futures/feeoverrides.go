@@ -1,5 +1,8 @@
 package main
 
+// 用户级合约费率（fut_fee_overrides）。NULL 列回退到合约费率。缓存最多 30 秒，后台写入后立刻刷新。
+// 冻结保证金用的 taker 费率不低于合约费率，覆盖不能把预冻做小。
+
 import (
 	"context"
 	"database/sql"
@@ -12,10 +15,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// Per-user futures fee overrides (fut_fee_overrides). A NULL column falls back
-// to the contract's rate. The cache refreshes at most every 30s and immediately
-// after admin writes.
 
 type futFeeOv struct {
 	Maker, Taker *decimal.Decimal
@@ -68,7 +67,7 @@ func (s *Server) reloadFeeOverrides(ctx context.Context) error {
 	return nil
 }
 
-// userFees returns the effective maker/taker fee for uid on contract c.
+// userFees 返回该用户在合约 c 上的实际 maker/taker 费率。没有覆盖时用合约费率。
 func (s *Server) userFees(uid string, c Contract) (maker, taker decimal.Decimal, overridden bool) {
 	maker, taker = c.MakerFee, c.TakerFee
 	futFees.mu.RLock()
@@ -96,8 +95,7 @@ func (s *Server) userFees(uid string, c Contract) (maker, taker decimal.Decimal,
 	return
 }
 
-// reserveTaker is the taker rate used for margin reservation (never below the
-// contract rate, so an override can't under-reserve).
+// reserveTaker 是冻结保证金用的 taker 费率，不低于合约费率，避免覆盖把预冻做小。
 func (s *Server) reserveTaker(uid string, c Contract) decimal.Decimal {
 	_, t, _ := s.userFees(uid, c)
 	return decimal.Max(t, c.TakerFee)
@@ -110,8 +108,8 @@ func (s *Server) feeOverrideRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /internal/admin/fee-overrides/{userId}", s.internalOnly(s.hDeleteFeeOverride))
 }
 
-// GET /internal/fee-rates?userId=&symbol= → {symbol, maker, taker, overridden}.
-// Without symbol, the first listed contract's default rate is used as the base.
+// GET /internal/fee-rates?userId=&symbol= → {symbol, maker, taker, overridden}。
+// 不带 symbol 时用列表里第一个合约的默认费率做基准。
 func (s *Server) hInternalFeeRates(w http.ResponseWriter, r *http.Request) {
 	uid := r.URL.Query().Get("userId")
 	sym := strings.ToUpper(r.URL.Query().Get("symbol"))

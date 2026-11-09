@@ -1,5 +1,5 @@
-// Command asset is the Linbit asset service: balances, freeze/unfreeze and a
-// double-entry ledger backed by PostgreSQL.
+// Command asset 是资产服务：余额、冻结/解冻，以及 PostgreSQL 上的复式记账。
+// 金额在库里和接口上都是十进制字符串，不用 float。
 package main
 
 import (

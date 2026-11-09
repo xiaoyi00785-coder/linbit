@@ -1,27 +1,15 @@
 package main
 
-// Copy trading (futures only).
-//
-// A trader is an ordinary futures user with a fut_copy_traders row. Each
-// follow owns a sub-account "copy:<follow id>" funded from the follower's
-// futures wallet. Every fill that changes an active trader's position records
-// a fut_copy_events row in the same transaction; processCopy (run after each
-// order, close and tick, under s.mu) mirrors it into each live follow:
-//
-//   - position grows (open/add): margin = trader margin share of trader equity
-//     × follower equity × ratio (mode=ratio) or fixed_margin (mode=fixed),
-//     capped by max_per_trade and by what the sub-account can afford;
-//     qty = margin × leverage / price, floored to the lot size. Leverage and
-//     margin mode follow the trader. Optional TP/SL are ROE ratios.
-//   - position shrinks: the follower closes the same fraction (all of it when
-//     the trader goes flat or flips, then the flip is opened as a new open).
-//
-// Profit share: once per day (FUTURES_COPY_SETTLE_HOUR_UTC, default 16:00 UTC
-// = 00:00 UTC+8) and on unfollow, realized net of the sub-account (realized
-// PnL, fees, funding, liquidation fees) above its high-water mark is charged
-// at the trader's rate (0–50%) and paid to the trader's spot account. Losses
-// are never charged; earlier losses must be recovered before a new charge.
-// The payout is booked as copy_profit_share and is not rebate-eligible.
+// 合约跟单。交易员是带 fut_copy_traders 行的普通合约用户。每笔跟随有子账户
+// "copy:<follow id>"，资金从跟随者合约钱包划入。活跃交易员仓位变化的成交在同一事务写
+// fut_copy_events；processCopy 在每次下单、平仓和 tick 之后、持有 s.mu 时镜像到仍有效的跟随。
+// 加仓：保证金 = 交易员保证金占其权益的比例 × 跟随者权益 × ratio（mode=ratio），或 fixed_margin（mode=fixed），
+// 不超过 max_per_trade，也不超过子账户能负担的量；数量 = 保证金 × 杠杆 / 价格，按步长向下取整。
+// 杠杆与保证金模式跟随交易员。可选止盈止损是 ROE 比例。
+// 减仓：跟随者按相同比例平仓；交易员平完或翻向时全平，翻向部分再按新开仓处理。
+// 分润：每天一次（FUTURES_COPY_SETTLE_HOUR_UTC，默认 16:00 UTC，即 UTC+8 00:00）以及取消跟随时，
+// 子账户已实现净额（已实现盈亏、手续费、资金费、强平费）高出水位的部分按交易员费率（0–50%）收取，
+// 打入交易员现货账户。亏损不收费，须先弥补此前亏损才再次计提。账记 copy_profit_share，不参与返佣。
 
 import (
 	"context"
@@ -45,10 +33,10 @@ const maxProfitShare = "0.5"
 
 func copyAcct(id int64) string { return "copy:" + strconv.FormatInt(id, 10) }
 
-// rebate-relevant: none of the copy kinds generate fee rebates; copy_profit_share
-// is a transfer between users, not a trading fee.
+// 这些账单种类都不产生手续费返佣。copy_profit_share 是用户之间的划转，不是交易手续费。
 var copyNetKinds = `('realized_pnl','fee','funding','liquidation_fee','insurance_cover')`
 
+// Trader 的分润比例在 0–50%。新费率从下一次结算起生效，不追溯。
 type Trader struct {
 	UserID      string          `json:"traderId"`
 	Nickname    string          `json:"nickname"`
@@ -59,6 +47,7 @@ type Trader struct {
 	CreatedAt   time.Time       `json:"createdAt"`
 }
 
+// Follow 的子账户是 copy:<id>。mode=ratio 用 Ratio，mode=fixed 用 FixedMargin，单笔不超过 MaxPerTrade。
 type Follow struct {
 	ID          int64           `json:"id"`
 	Follower    string          `json:"-"`
@@ -154,6 +143,8 @@ type traderReq struct {
 	ProfitShare *string `json:"profitShare"`
 }
 
+// ApplyTrader 要求合约权益不低于 CopyTraderMinEquity。已有非 closed/rejected 记录返回 ALREADY_TRADER。
+// CopyAutoApprove 为假时状态是 pending，为真时直接 active。
 func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trader, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -199,6 +190,7 @@ func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trad
 	return s.getTrader(ctx, uid)
 }
 
+// UpdateTrader 拒绝已关闭的带单。分润比例只影响之后的结算。
 func (s *Server) UpdateTrader(ctx context.Context, uid string, r traderReq) (Trader, error) {
 	t, err := s.getTrader(ctx, uid)
 	if err != nil {
@@ -230,6 +222,7 @@ func (s *Server) UpdateTrader(ctx context.Context, uid string, r traderReq) (Tra
 	return t, err
 }
 
+// SetTraderStatus 把 status=closed 的交易员名下 active 跟随标成 stopping，并立刻做收尾结算。
 func (s *Server) SetTraderStatus(ctx context.Context, uid, status string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -314,6 +307,7 @@ func (s *Server) applyParams(f *Follow, r followReq, create bool) error {
 	return nil
 }
 
+// Follow 不能跟随自己。金额最多 8 位小数且不低于 CopyMinAmount，人数不超过 CopyMaxFollowers。
 func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -370,6 +364,7 @@ func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, e
 	return f, err
 }
 
+// UpdateFollow 只改仍为 active 的跟随参数，不划转本金。
 func (s *Server) UpdateFollow(ctx context.Context, uid string, id int64, r followReq) (Follow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -392,8 +387,7 @@ func (s *Server) UpdateFollow(ctx context.Context, uid string, id int64, r follo
 	return f, err
 }
 
-// Unfollow closes the mirrored positions, settles the final profit share and
-// returns the remaining balance to the follower's futures wallet.
+// Unfollow 先把跟随标为 stopping：平掉镜像仓、结清最后一笔分润，剩余余额退回跟随者合约钱包。
 func (s *Server) Unfollow(ctx context.Context, uid string, id int64) (Follow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -788,6 +782,7 @@ type TraderStats struct {
 	Curve          []CurvePoint    `json:"curve,omitempty"`
 }
 
+// CurvePoint 的 PnL 来自 fut_bills 里 copyNetKinds，不是未实现盈亏。
 type CurvePoint struct {
 	Day string          `json:"day"`
 	PnL decimal.Decimal `json:"pnl"`

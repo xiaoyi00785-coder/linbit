@@ -1,10 +1,6 @@
-// Command market-data is the Linbit market-data service. It consumes the
-// matching engine's trade and depth events over a replaceable inbound-messaging
-// interface (locally: an HTTP ingest endpoint fed by the engine's HttpSink),
-// aggregates K-lines (multiple intervals), order-book depth, 24h tickers and
-// recent trades, serves them over REST (consistent with docs/api/openapi.yaml)
-// and pushes them over WebSocket (docs/api/websocket.md). K-lines are persisted
-// to PostgreSQL (goose migrations) so the service recovers its state on restart.
+// market-data 消费撮合的成交和深度。本地由引擎 HttpSink 打到可替换的 HTTP ingest。
+// 聚合多周期 K 线、深度、24h ticker 和最近成交；REST 对齐 docs/api/openapi.yaml，
+// WebSocket 对齐 docs/api/websocket.md。K 线进 PostgreSQL（goose），重启后恢复。
 package main
 
 import (

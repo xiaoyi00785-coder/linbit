@@ -271,7 +271,7 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
-// auth validates the Bearer access token and injects the uid into context.
+// 校验 Bearer access。签发时间早于该用户的吊销截止时间则 AUTH_UNAUTHORIZED。
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearer(r)
@@ -292,7 +292,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 	})
 }
 
-// accessRevoked reports whether the user logged out after claims were issued.
+// 与网关同一条规则：IssuedAtMs <= auth:revoked_before:{uid}。rdb 为空或 Redis 出错视为未吊销。
 func (s *Server) accessRevoked(r *http.Request, c *common.AccessClaims) bool {
 	revoked, err := common.AccessTokenRevoked(r.Context(), s.rdb, c)
 	if err != nil {
@@ -322,8 +322,7 @@ func bearer(r *http.Request) string {
 	return ""
 }
 
-// clientIP returns the best-effort client IP (honouring X-Forwarded-For set by
-// the gateway), used only for device bookkeeping.
+// 设备记录用。取 X-Forwarded-For 第一段，不在这里核对 CIDR；网关已把不可信头收成单一 IP。没有该头则用 RemoteAddr。
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if i := strings.IndexByte(xff, ','); i >= 0 {

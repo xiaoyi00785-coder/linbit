@@ -1,5 +1,7 @@
 package main
 
+// 经 order 下单和撤单，用 market-data 最新价作为启动价和止盈止损的参照。
+
 import (
 	"bytes"
 	"context"
@@ -55,6 +57,7 @@ func (s *Server) call(ctx context.Context, method, u string, hdr map[string]stri
 	return nil
 }
 
+// SymbolInfo 是 order 服务返回的交易对精度、最小数量和最小名义金额。
 type SymbolInfo struct {
 	Symbol            string          `json:"symbol"`
 	Base              string          `json:"base"`

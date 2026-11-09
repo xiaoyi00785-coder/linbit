@@ -1,5 +1,9 @@
 package main
 
+// futuresops.go：在用户现货或资金账户和合约服务之间划转。
+// 这边的对手账户是 system:futures，所以全部合约钱包之和等于这里的 system:futures 负债。
+// 按 ref 幂等。
+
 import (
 	"context"
 	"errors"
@@ -11,12 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// futuresops.go moves funds between a user's spot (funding) balance and the
-// futures service, which keeps its own margin ledger. The counterparty on this
-// side is system:futures, so the sum of all futures wallets always equals the
-// system:futures liability here. Idempotent on ref.
-
-// FuturesAccount is the platform account mirroring funds held by the futures service.
+// FuturesAccount 是镜像合约服务持仓资金的平台账户。
 const FuturesAccount = "system:futures"
 
 // FuturesTransfer moves amount out of (toFutures=true) or back into the user's free balance.

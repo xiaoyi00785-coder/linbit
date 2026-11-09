@@ -1,5 +1,7 @@
 package main
 
+// 模拟合约 HTTP。账户、下单、强平都走 Store 的 paper_fut_*，FutSource 只读真实行情。
+
 import (
 	"bytes"
 	"context"
@@ -289,6 +291,7 @@ func (s *Server) handleFutPositions(w http.ResponseWriter, r *http.Request) {
 
 type sqlNull struct{ String string }
 
+// Scan 把 NULL 和无法识别的驱动类型收成空串，不把扫描失败往上抛。
 func (n *sqlNull) Scan(v any) error {
 	if v == nil {
 		n.String = ""

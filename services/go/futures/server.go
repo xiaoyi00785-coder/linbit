@@ -1,5 +1,7 @@
 package main
 
+// HTTP：公开 /futures/market/*，私有 /futures/*（网关注入 X-User-Id），内部 /internal/dev/*（X-Internal-Token 且 DEV_MODE）。
+
 import (
 	"log"
 	"net/http"
@@ -11,11 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Routes:
-//
-//	public   /futures/market/*            (gateway: no auth)
-//	private  /futures/*                   (gateway injects X-User-Id)
-//	internal /internal/dev/*              (X-Internal-Token + DEV_MODE)
+// Routes 挂上公开行情、登录后的交易接口，以及 DEV_MODE 下的内部调试接口。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	s.feeOverrideRoutes(mux)
@@ -540,8 +538,7 @@ func (s *Server) hDevFunding(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "rate": rate, "markPrice": ps.Mark})
 }
 
-// hDevAudit checks conservation: Σ equity over every account (system ones
-// included) must equal net spot↔futures transfers (pending outs already left).
+// hDevAudit 核对守恒：所有账户（含系统账户）权益之和应等于现货↔合约净划转。转出只要不是 failed 就算已离开。
 func (s *Server) hDevAudit(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -577,7 +574,7 @@ func (s *Server) hDevAudit(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"totalEquity": money(total), "netTransfers": money(net), "diff": total.Sub(net).Round(8), "feeBalance": money(fee), "accounts": len(users)})
 }
 
-// sideParam returns positionSide from the body value or the ?positionSide= query.
+// sideParam 优先用请求体里的 positionSide，空则用查询参数。
 func sideParam(r *http.Request, body string) string {
 	if body != "" {
 		return body
@@ -585,9 +582,8 @@ func sideParam(r *http.Request, body string) string {
 	return r.URL.Query().Get("positionSide")
 }
 
-// feeStr renders a fee/bill amount as an exact decimal string with a fixed 8
-// decimal places (the column scale), so -0.0038384 and -0.00383384 render as
-// -0.00383840 and -0.00383384. Values with more than 8 places stay exact.
+// feeStr 把手续费/账单渲染成固定 8 位小数字符串（列精度）。
+// -0.0038384 与 -0.00383384 分别显示为 -0.00383840 与 -0.00383384。超过 8 位的非零尾数保持原值，不四舍五入成 0。
 func feeStr(d decimal.Decimal) string {
 	if !d.Equal(d.Round(8)) {
 		return d.String()

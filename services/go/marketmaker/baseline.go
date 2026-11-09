@@ -1,5 +1,7 @@
 package main
 
+// 现货 base 底仓。max_position 只约束扣除底仓之后的净头寸。
+
 import (
 	"context"
 	"errors"

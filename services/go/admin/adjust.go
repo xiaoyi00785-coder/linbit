@@ -16,21 +16,18 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// adjust.go: manual balance adjustments (人工调账), mainnet-safe.
+// 人工调账。
 //
-//   - POST /admin/v1/adjustments (fund:adjust): uid, asset, account
-//     (spot|funding), signed amount (>0 credit, <0 debit), reason, totpCode,
-//     optional ref (idempotency key; generated when absent). A fresh 2FA code
-//     is ALWAYS required, even when ADMIN_REQUIRE_2FA=false.
-//   - |amount| valued in USDT >= the threshold (admin setting
-//     adjust_second_review_usdt, default ADMIN_ADJUST_SECOND_REVIEW_USDT=1000)
-//     or unpriceable (fail closed) -> pending_approval; a DIFFERENT admin with
-//     fund:adjust:approve approves (2FA) or rejects. Below it applies at once.
-//   - Applied through asset POST /internal/admin/adjust (tx_type admin_adjust,
-//     counterparty system:admin_adjust, idempotent on ref, debit never below
-//     zero, one DB transaction). Reconciliation reports the net per asset as
-//     adminAdjustNet / unbackedAdjust.
-//   - Every step is audited (level high) with IP, reason and before/after.
+// POST /admin/v1/adjustments 需要 fund:adjust：uid、asset、account（spot|funding）、
+// 带符号金额（正数入账，负数扣减）、reason、totpCode，ref 可选（幂等键，缺省生成）。
+// 创建、通过、驳回、改阈值都要当场 totp.Validate。未绑定直接 TWO_FACTOR_REQUIRED，不看 ADMIN_REQUIRE_2FA。
+// 不保存已用验证码。
+// |金额| 的 USDT 估值 >= admin_settings.adjust_second_review_usdt
+// （没有或非正数则用 ADMIN_ADJUST_SECOND_REVIEW_USDT，默认 1000），或定不了价，则 pending_approval。
+// 复核要另一个持有 fund:adjust:approve 的管理员（SELF_REVIEW）。低于阈值当场入账。
+// 入账走 asset POST /internal/admin/adjust（tx_type admin_adjust，对手方 system:admin_adjust，
+// 按 ref 幂等，扣减不低于零，单笔数据库事务）。对账按资产记净值 adminAdjustNet / unbackedAdjust。
+// 每步审计 level high，带 IP、原因和前后余额。
 
 func dbErr(w http.ResponseWriter, where string, err error) {
 	log.Printf("%s: %v", where, err)
@@ -208,7 +205,7 @@ func (s *Server) handleAdjustGet(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, x)
 }
 
-// require2FA: adjustments always need a bound authenticator and a valid code.
+// 必须已绑定 TOTP 且 totp.Validate 通过。未绑定 403 TWO_FACTOR_REQUIRED，错码走 verify2FA 的 401 TOTP_INVALID。
 func (s *Server) require2FA(w http.ResponseWriter, a *actor, code string) bool {
 	if a == nil || a.TOTP == "" {
 		common.WriteError(w, http.StatusForbidden, "TWO_FACTOR_REQUIRED", "账号未绑定 2FA，不能调账")
@@ -303,6 +300,7 @@ func (s *Server) handleAdjustCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	usdt, priced := s.usdtValue(r.Context(), req.Asset, amt.Abs())
 	threshold := s.adjustThreshold(r.Context())
+	// 无价格按需要复核处理。估值用绝对值，与阈值同为 USDT。
 	needs := !priced || usdt.GreaterThanOrEqual(threshold)
 	var usdtArg any
 	if priced {
@@ -439,6 +437,7 @@ func (s *Server) handleAdjustDecision(approve bool) http.HandlerFunc {
 			dbErr(w, "adjust load", err)
 			return
 		}
+		// 创建人不能复核，即使角色同时有 fund:adjust 和 fund:adjust:approve。
 		if x.CreatedBy == a.ID {
 			s.audit(r, a, "ledger", "adjust_review", "user:"+x.UID, levelHigh, "refused:SELF_REVIEW", nil, map[string]any{"id": id}, note)
 			common.WriteError(w, http.StatusForbidden, "SELF_REVIEW", "不能复核自己提交的调账单")

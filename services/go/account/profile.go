@@ -110,12 +110,10 @@ func (s *Server) handleSendCodeAuthed(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"sent": true, "channel": channel, "ttlSeconds": int(s.codes.ttl.Seconds())})
 }
 
-// requireSensitiveAuth gates a sensitive change behind TOTP (when enabled) or an
-// emailed/texted code with the given purpose. It writes an API error and returns
-// false when the check fails.
+// 已开 TOTP 只认 totpCode：没给 403 TWOFA_REQUIRED，给错 401 INVALID_TOTP。
+// 未开 TOTP 则校验 purpose 对应的邮箱/短信码。没有联系方式 403 TWOFA_REQUIRED；没带 code 是 400 VALIDATION_ERROR。
+// 验证码错或超次：400 CODE_INVALID / CODE_TOO_MANY_ATTEMPTS。
 func (s *Server) requireSensitiveAuth(w http.ResponseWriter, r *http.Request, u *User, totpCode, code, purpose string) bool {
-	// Error split: TWOFA_REQUIRED (403) = no second factor supplied / bound;
-	// INVALID_TOTP (401) = a TOTP was supplied but is wrong.
 	if u.TOTPEnabled {
 		return requireTOTPIfEnabled(w, u, totpCode)
 	}

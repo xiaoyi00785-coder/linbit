@@ -14,14 +14,14 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// App feature switches.
+// App 功能开关。
 //
-//	public   GET /app/features            {features:{key:bool}, updatedAt}   (cached 30s)
-//	internal GET /internal/app/features   same + overrides
-//	internal PUT /internal/app/features   {features:{key:bool}, updatedBy} -> {features, before, after}
+//	公开 GET /app/features          {features, comingSoon, network, updatedAt}，内存缓存 30s，Cache-Control max-age=30
+//	内部 GET /internal/app/features 同上，另附 keys 和 defaults
+//	内部 PUT /internal/app/features {features, updatedBy}，只改请求里出现的 key，返回 before 和 after
 //
-// Known keys and defaults: only convert is shipped; everything else is off
-// until built. Unknown keys are rejected so a typo can't create a dead flag.
+// 已知 key 在 featureDefaults：convert、supportTickets 默认开，其余关。未知 key 拒绝。
+// 库不可用且没有缓存时，公开接口退回默认值。主网额外默认见 mainnetDefaults，库内覆盖运行时优先。
 var featureDefaults = map[string]bool{
 	"convert":         true,
 	"tokenizedStocks": false,

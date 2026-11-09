@@ -1,11 +1,6 @@
-// Command futures is the Linbit USDT-margined perpetual futures service: contracts,
-// a futures wallet funded from spot, leverage + cross/isolated margin, a price-time
-// priority order book, one-way positions, index/mark prices, 8h funding,
-// liquidation into the insurance fund, position TP/SL and futures market data.
-//
-// All state mutations are serialized by a single engine lock and committed in one
-// database transaction each, so the order book, positions and balances never
-// disagree (the book itself lives in fut_orders).
+// USDT 本位永续：合约、从现货划入的合约钱包、杠杆、全仓/逐仓、价时优先订单簿、
+// 单向(BOTH)与对冲(LONG/SHORT)、指数价/标记价、默认 8 小时资金费、强平进保险基金、仓位止盈止损与行情。
+// 状态变更由引擎单锁串行，每次一个数据库事务；订单簿在 fut_orders，与仓位、余额一起提交。
 package main
 
 import (

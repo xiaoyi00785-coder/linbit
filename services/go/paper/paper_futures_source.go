@@ -1,5 +1,8 @@
 package main
 
+// LiveFutures 只 GET 真实合约的公开行情：/futures/market/contracts、risk-tiers、ticker、funding-history。
+// 不下单，不写 fut_accounts，也不读用户余额。
+
 import (
 	"context"
 	"encoding/json"
@@ -13,13 +16,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// LiveFutures reads contract specs, mark/index and funding history from the
-// futures service. It does not place live orders or touch fut_accounts.
+// LiveFutures 的 get 只用 HTTP GET。base 为空直接失败，不回落到本地价。
 type LiveFutures struct {
 	base   string
 	client *http.Client
 }
 
+// NewLiveFutures 去掉地址末尾斜杠，超时 5 秒。空地址留到请求时失败。
 func NewLiveFutures(base string) *LiveFutures {
 	return &LiveFutures{base: strings.TrimRight(base, "/"), client: &http.Client{Timeout: 5 * time.Second}}
 }
@@ -43,6 +46,7 @@ func (l *LiveFutures) get(ctx context.Context, path string, out any) error {
 	return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(out)
 }
 
+// Specs 只映射 BTC/ETH/BNB/ARB/XRP/SOL。真实合约 halted、行情不可达或标记价不可用则 Available=false，不编价格。
 func (l *LiveFutures) Specs(ctx context.Context) ([]FutSpec, error) {
 	var contracts struct {
 		Contracts []struct {
@@ -115,6 +119,7 @@ func (l *LiveFutures) Specs(ctx context.Context) ([]FutSpec, error) {
 	return out, nil
 }
 
+// Quote 读真实 ticker 的 markPrice 和 indexPrice。priceAvailable 为假或标记价不是正数则 ok=false。资金费取历史最近一条，失败不影响标记价。
 func (l *LiveFutures) Quote(ctx context.Context, liveSymbol string) (mark, index decimal.Decimal, funding *decimal.Decimal, ok bool, err error) {
 	var tk struct {
 		Mark           decimal.Decimal `json:"markPrice"`
@@ -140,6 +145,7 @@ func (l *LiveFutures) Quote(ctx context.Context, liveSymbol string) (mark, index
 	return tk.Mark, tk.Index, funding, true, nil
 }
 
+// Settlements 读真实资金费历史，最多 50 条。非法费率或时间戳丢掉，不补一条。
 func (l *LiveFutures) Settlements(ctx context.Context, liveSymbol string) ([]FundingSettlement, error) {
 	var hist struct {
 		History []struct {

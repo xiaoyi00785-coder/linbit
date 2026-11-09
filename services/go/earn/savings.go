@@ -16,21 +16,20 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Savings products. Money moves between the user's spot balance and the
-// system "earn" account (principal) and "earn_interest" (yield).
+// 理财。本金在用户现货和系统账户 earn 之间划，利息走 earn_interest。
 //
-//   simple   flexible, subscribe/redeem any time; interest from the next UTC
-//            day, paid daily; bonus_apr on the first bonus_quota, apr above it;
-//            optional auto-earn sweeps idle spot balance at each daily run.
-//   fixed    理财宝: locked for term_days, no early redemption; principal +
-//            interest (amount × apr × days / 365) returned at maturity.
-//   onchain  staking: daily interest like simple; redemption waits
-//            unlock_days (no interest while unlocking) unless it is 0.
+//	simple  活期，随时申购赎回。利息从下一个 UTC 日开始，按日发放。
+//	        bonus_apr 覆盖额度内的第一段 bonus_quota，超出部分用 apr。每日运行可把闲置现货自动转入。
+//	fixed   理财宝：锁定 term_days，不能提前赎回。到期返还本金加利息，利息 = amount × apr × days / 365。
+//	onchain 质押：日息算法同 simple。赎回等待 unlock_days，等待期间不计息；unlock_days 为 0 则立即到账。
+//
+// 日息和定期利息都向下取整到 8 位。
 
 const day = 24 * time.Hour
 
 var days365 = decimal.NewFromInt(365)
 
+// floor8 向下取整到 8 位。活期日息和定期利息按此入账。
 func floor8(d decimal.Decimal) decimal.Decimal { return d.RoundFloor(dp) }
 
 type product struct {
@@ -304,6 +303,7 @@ func (s *Server) subscribe(ctx context.Context, uid, id, raw string, auto bool) 
 		}
 	}
 	now := s.now()
+	// 申购 ref 带纳秒，每次请求都新划一笔。
 	ref := fmt.Sprintf("earn:sub:%s:%s:%d", id, uid, time.Now().UnixNano())
 	out := map[string]any{"productId": p.ID, "asset": p.Asset, "amount": amount}
 	if p.Kind == "fixed" {

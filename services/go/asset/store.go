@@ -1,5 +1,7 @@
 package main
 
+// store.go：资产库。余额是 decimal，禁止负的可用或冻结。每笔变动在同一事务里写复式分录。
+
 import (
 	"context"
 	"database/sql"
@@ -10,26 +12,26 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ErrInsufficient is returned when an operation would drive a balance negative.
+// ErrInsufficient 表示这笔操作会把余额打成负数。
 var ErrInsufficient = errors.New("insufficient balance")
 
-// ErrInvalidAmount is returned for non-positive amounts.
+// ErrInvalidAmount 表示金额不是正数。
 var ErrInvalidAmount = errors.New("amount must be positive")
 
-// ErrUnbalanced indicates a programming error: ledger entries do not balance.
+// ErrUnbalanced 表示分录借贷不平衡，这是程序错误，不是用户输入错误。
 var ErrUnbalanced = errors.New("ledger transaction does not balance")
 
-// Balance is a per-asset balance snapshot.
+// Balance 是某个币种的余额快照。金额是 decimal，不是 float。
 type Balance struct {
 	Asset  string
 	Free   decimal.Decimal
 	Locked decimal.Decimal
 }
 
-// Total returns free + locked.
+// Total 返回可用加冻结。
 func (b Balance) Total() decimal.Decimal { return b.Free.Add(b.Locked) }
 
-// ledgerLine is one leg of a double-entry transaction.
+// ledgerLine 是复式分录的一条腿。Direction 为 debit 或 credit，同一币种借贷必须相等。
 type ledgerLine struct {
 	Account   string // e.g. user:80000001:free, system:external
 	Asset     string
@@ -37,16 +39,15 @@ type ledgerLine struct {
 	Amount    decimal.Decimal
 }
 
-// Store wraps the asset database.
+// Store 封装资产库。余额表是账本的物化结果，以借贷分录为准。
 type Store struct {
 	db *sql.DB
 }
 
-// NewStore constructs a Store.
+// NewStore 构造 Store。
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-// EnsureAccount creates the asset account and seeds default zero balances.
-// Idempotent: safe to call on every register and lazily on first read.
+// EnsureAccount 建立资产账户并种入默认的零余额。可重复调用：注册时调一次，第一次查询时再补一次也可以。
 func (s *Store) EnsureAccount(ctx context.Context, userID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -68,7 +69,7 @@ func (s *Store) EnsureAccount(ctx context.Context, userID string) error {
 	return tx.Commit()
 }
 
-// Balances returns a page of balances plus the total asset count.
+// Balances 返回一页余额，以及币种总数。
 func (s *Store) Balances(ctx context.Context, userID string, page, pageSize int) ([]Balance, int, error) {
 	var total int
 	if err := s.db.QueryRowContext(ctx,
@@ -99,7 +100,7 @@ func (s *Store) Balances(ctx context.Context, userID string, page, pageSize int)
 	return out, total, rows.Err()
 }
 
-// Credit increases a user's free balance (counterparty: system:external).
+// Credit 增加用户可用余额，对手方是 system:external。
 func (s *Store) Credit(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return s.post(ctx, userID, asset, "credit", ref, amount, decimal.Zero, []ledgerLine{
 		{Account: userAcct(userID, "free"), Asset: asset, Direction: "debit", Amount: amount},
@@ -107,7 +108,7 @@ func (s *Store) Credit(ctx context.Context, userID, asset string, amount decimal
 	})
 }
 
-// Freeze moves funds from free to locked.
+// Freeze 把金额从可用划到冻结。
 func (s *Store) Freeze(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return s.post(ctx, userID, asset, "freeze", ref, amount.Neg(), amount, []ledgerLine{
 		{Account: userAcct(userID, "locked"), Asset: asset, Direction: "debit", Amount: amount},
@@ -115,7 +116,7 @@ func (s *Store) Freeze(ctx context.Context, userID, asset string, amount decimal
 	})
 }
 
-// Unfreeze moves funds from locked back to free.
+// Unfreeze 把金额从冻结划回可用。
 func (s *Store) Unfreeze(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return s.post(ctx, userID, asset, "unfreeze", ref, amount, amount.Neg(), []ledgerLine{
 		{Account: userAcct(userID, "free"), Asset: asset, Direction: "debit", Amount: amount},
@@ -123,9 +124,8 @@ func (s *Store) Unfreeze(ctx context.Context, userID, asset string, amount decim
 	})
 }
 
-// post applies a single balanced transaction: it locks the user's balance row,
-// updates free/locked, enforces the non-negative invariant, and writes the
-// double-entry journal — all inside one DB transaction.
+// post 在一个数据库事务里做一笔借贷平衡的记账：锁住用户余额行，改可用/冻结，
+// 拒绝把任一桶打成负数，并写下复式分录。
 func (s *Store) post(ctx context.Context, userID, asset, txType, ref string, freeDelta, lockedDelta decimal.Decimal, lines []ledgerLine) error {
 	if err := validateBalanced(lines); err != nil {
 		return err
@@ -180,14 +180,14 @@ func (s *Store) post(ctx context.Context, userID, asset, txType, ref string, fre
 	return tx.Commit()
 }
 
-// ErrAlreadySettled indicates the trade was already settled (idempotent no-op).
+// ErrAlreadySettled 表示这笔成交已经结算过。调用方当成成功，用来做幂等。
 var ErrAlreadySettled = errors.New("trade already settled")
 
-// SettleRequest describes a single matched trade to settle atomically.
+// SettleRequest 描述一笔要原子结算的成交。
 //
-// Buyer pays QuoteAmount from locked quote and receives BaseQty of base (minus
-// BuyerFeeBase). Seller delivers BaseQty from locked base and receives
-// QuoteAmount of quote (minus SellerFeeQuote). Both fees go to FeeAccount.
+// 买方从冻结的报价资产付出 QuoteAmount，收到 BaseQty 的基础资产再扣 BuyerFeeBase。
+// 卖方从冻结的基础资产交出 BaseQty，收到 QuoteAmount 的报价资产再扣 SellerFeeQuote。
+// 两边手续费都进 FeeAccount。
 type SettleRequest struct {
 	TradeID        string
 	Base           string
@@ -210,9 +210,8 @@ type balanceDelta struct {
 	acct   string // "" / "spot" = balances, "funding" = funding_balances
 }
 
-// Settle applies one matched trade in a single transaction with double-entry
-// bookkeeping, idempotent on TradeID. It returns ErrAlreadySettled (which
-// callers treat as success) if the trade was settled before.
+// Settle 在一个事务里用复式记账结算一笔成交，以 TradeID 幂等。
+// 已经结算过则返回 ErrAlreadySettled，调用方当作成功。
 func (s *Store) Settle(ctx context.Context, req SettleRequest) error {
 	if req.QuoteAmount.Sign() <= 0 || req.BaseQty.Sign() <= 0 {
 		return ErrInvalidAmount
@@ -286,9 +285,8 @@ func (s *Store) Settle(ctx context.Context, req SettleRequest) error {
 	return tx.Commit()
 }
 
-// applyDeltas locks and updates each (user, asset) balance row inside tx. Rows
-// are touched in a deterministic order (user, then asset) to avoid deadlocks,
-// and the non-negative invariant is enforced per bucket.
+// applyDeltas 在事务里锁住并更新每个 (user, asset) 余额行。
+// 按用户再按币种的固定顺序加锁，避免死锁。每个可用/冻结桶都不能变成负数。
 func (s *Store) applyDeltas(ctx context.Context, tx *sql.Tx, deltas []balanceDelta) error {
 	// Merge duplicates and sort for a stable lock order.
 	merged := map[string]*balanceDelta{}
@@ -347,9 +345,8 @@ func (s *Store) applyDeltas(ctx context.Context, tx *sql.Tx, deltas []balanceDel
 	return nil
 }
 
-// LedgerBalance recomputes a user's net position for an asset directly from the
-// journal (debits - credits over the user's buckets). Used to assert that the
-// materialised balances table stays consistent with the ledger.
+// LedgerBalance 按分录重算用户在某个币种上的净头寸（该用户各桶的借方减贷方）。
+// 用来核对物化的余额表没有和账本分叉。
 func (s *Store) LedgerBalance(ctx context.Context, userID, asset string) (decimal.Decimal, error) {
 	var sum sql.NullString
 	err := s.db.QueryRowContext(ctx,
@@ -366,7 +363,7 @@ func (s *Store) LedgerBalance(ctx context.Context, userID, asset string) (decima
 	return decimal.RequireFromString(sum.String), nil
 }
 
-// validateBalanced ensures sum(debit) == sum(credit) for each asset.
+// validateBalanced 要求每个币种的借方合计等于贷方合计。
 func validateBalanced(lines []ledgerLine) error {
 	perAsset := map[string]decimal.Decimal{}
 	for _, l := range lines {

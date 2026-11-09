@@ -1,8 +1,6 @@
-// Command wsprobe is a tiny, dependency-free WebSocket client used by
-// scripts/smoke-market.sh to verify the market-data push pipeline end to end: it
-// connects (optionally through the gateway), subscribes to a set of channels, and
-// exits 0 once it has received a data frame for every required channel (or 1 on
-// timeout). It speaks just enough of RFC 6455 for text frames.
+// wsprobe 是无第三方依赖的 WebSocket 客户端，给 scripts/smoke-market.sh 做行情推送的端到端检查。
+// 连接（可经 gateway），订阅一组频道；每个必需频道都收到一帧数据则退出 0，超时退出 1。
+// 只实现 RFC 6455 里文本帧要用的部分。
 package main
 
 import (

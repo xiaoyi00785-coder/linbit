@@ -1,5 +1,7 @@
 package main
 
+// 合伙人申请、团队和佣金查询。返佣基数和覆盖规则的计算在 settle.go。
+
 import (
 	"context"
 	"database/sql"

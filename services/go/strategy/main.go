@@ -1,9 +1,6 @@
-// Command strategy runs Linbit's spot grid trading bots. A bot splits a price
-// range into N levels (arithmetic or geometric), buys the base needed for the
-// sell side with one market order, then keeps one limit order per level: a buy
-// filled at level i is answered with a sell at i+1 and vice versa. All orders go
-// through the order service under the bot owner's account; the bot's own
-// sub-ledger (quote balance / base held) is derived only from reported fills.
+// strategy 跑现货网格。区间分成 N 档（等差或等比），先用一笔市价买入卖侧所需的 base，
+// 再每档挂一笔限价：i 档买单成交后在 i+1 挂卖，i 档卖单成交后在 i-1 挂买。
+// 订单经 order 服务，挂在机器人所属用户名下；子账（报价余额、持有 base）只按回报的成交推导。
 package main
 
 import (

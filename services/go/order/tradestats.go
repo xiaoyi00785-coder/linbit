@@ -1,5 +1,8 @@
 package main
 
+// GET /spot/pnl/history：按日现货成交统计。现货成交没有成本，已实现盈亏固定为不可用，不拿成交额冒充。
+// 计价成交额只计 USDT 交易对。USDT 手续费和成交额用 Round(8).StringFixed(8)；非 USDT 手续费的那一天 feeAvailable=false，不混进合计。
+
 import (
 	"log"
 	"net/http"
@@ -9,10 +12,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// GET /spot/pnl/history — daily spot trade statistics.
-// Realised PnL is unavailable: spot fills do not store a cost basis, so the
-// curve does not invent one. Quote volume counts USDT-quoted fills only.
 
 func parseSpotRange(fromS, toS string, now time.Time) (time.Time, time.Time, error) {
 	now = now.UTC()
@@ -109,6 +108,7 @@ func (s *Server) handleSpotPnlHistory(w http.ResponseWriter, r *http.Request, ui
 			feeOK = false
 		}
 		var fee any
+		// USDT 手续费四舍五入到 8 位再固定 8 位展示。非 USDT 手续费不折算，整天标 feeAvailable=false。
 		if ok {
 			fee = row.fee.Round(8).StringFixed(8)
 			feeSum = feeSum.Add(row.fee)

@@ -1,5 +1,8 @@
 package main
 
+// 自动减仓：强平后权益按标记价仍为负，且保险基金盖不住的缺口，按盈利高、杠杆高的对手仓
+// 在破产价承接，而不是由基金按标记价全额接管。
+
 import (
 	"context"
 	"database/sql"
@@ -9,14 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// adl.go: auto-deleveraging. When a liquidated position is bankrupt (equity < 0
-// at mark) and the insurance fund cannot absorb the deficit, the part the fund
-// cannot cover is shifted onto the most profitable, most leveraged opposing
-// positions: the bankrupt position is closed against them at the bankruptcy
-// price instead of being taken over by the fund at mark.
-
-// adlScore ranks a position for deleveraging: ROE*leverage when in profit,
-// ROE/leverage when losing (higher = deleveraged first).
+// adlScore：盈利按 ROE×杠杆，亏损按 ROE/杠杆，分高的先被减仓。
 func adlScore(q, e, mark decimal.Decimal, lev int) decimal.Decimal {
 	if q.IsZero() || e.Sign() <= 0 {
 		return dZero

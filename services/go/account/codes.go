@@ -99,12 +99,11 @@ func (s logSmsSender) SendSMSCode(_ context.Context, phone, code, purpose string
 	return nil
 }
 
-// ErrRateLimited is returned when a target requests codes too frequently.
+// 同一 purpose+target 发码过频。登录、提现、注册、重置共用这套窗口，键不同。
 var ErrRateLimited = errors.New("verification code requested too frequently")
 
-// CodeService issues and verifies hashed verification codes with per-target
-// rate limiting. Rate limiting uses Redis when available and falls back to the
-// database counters otherwise.
+// 签发并校验哈希验证码。限流按 purpose+target，不按 IP。
+// 有 Redis 用固定窗口；否则数 verification_codes。DevMode 把 minInterval 置 0、hourlyMax 置 1<<30。
 type CodeService struct {
 	store       *Store
 	email       EmailSender
@@ -188,7 +187,7 @@ func (c *CodeService) Verify(ctx context.Context, target, purpose, code string) 
 	return c.store.VerifyAndConsumeCode(ctx, target, purpose, hashToken(code))
 }
 
-// allowSend enforces the min-interval and hourly-cap limits.
+// 间隔内已有 1 条，或一小时内达到 hourlyMax，拒绝。默认间隔 60s、每小时 5 次。
 func (c *CodeService) allowSend(ctx context.Context, target, purpose string) (bool, error) {
 	if c.redis != nil {
 		return c.allowSendRedis(ctx, target, purpose)
@@ -209,7 +208,9 @@ func (c *CodeService) allowSend(ctx context.Context, target, purpose string) (bo
 	return hourly < c.hourlyMax, nil
 }
 
-// allowSendRedis implements the rate limits with Redis counters (fixed window).
+// 固定窗口。vc:int:{purpose}:{target} 用 SetNX，TTL=minInterval。
+// vc:hr:{purpose}:{target} 用 INCR，首次过期 1 小时，超过 hourlyMax 则拒绝并删掉间隔键。
+// purpose 含 login、withdraw、register、reset_password、address、bind、security。
 func (c *CodeService) allowSendRedis(ctx context.Context, target, purpose string) (bool, error) {
 	intervalKey := "vc:int:" + purpose + ":" + target
 	if c.minInterval > 0 {

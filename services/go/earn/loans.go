@@ -15,18 +15,19 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// 质押借币. LTV = (principal + unpaid interest) / (collateral × index price).
-// Interest accrues per started hour on the outstanding principal (rounded up
-// to 8 dp); after the due date of a fixed term the rate is multiplied by the
-// overdue multiplier, and a loan overdue for more than OverdueDays, or whose
-// LTV reaches the liquidation line, is liquidated with a fee.
+// 质押借币。LTV = (本金 + 未付利息) / (质押物 × 指数价)。
+// 利息按已开始的小时、对未还本金计提，向上取整到 8 位。
+// 定期逾期后利率乘 OverdueMult；逾期超过 OverdueDays，或 LTV 到强平线，则强平并收强平费。
+// 没有指数价则不强平。
 
 const dp = 8
 
 var hour = time.Hour
 
+// ceil8 向上取整到 8 位。借币利息、罚金和强平费按此入账。
 func ceil8(d decimal.Decimal) decimal.Decimal { return d.RoundCeil(dp) }
 
+// Loan 是一笔质押借币。
 type Loan struct {
 	ID                int64           `json:"id"`
 	UID               string          `json:"-"`
@@ -282,6 +283,7 @@ func (s *Server) handleBorrow(w http.ResponseWriter, r *http.Request, uid string
 		writeErr(w, err)
 		return
 	}
+	// 划转 ref 固定为 loan:{id}:collateral 和 loan:{id}:disburse，同一笔借据重试不会重复划。
 	ref := fmt.Sprintf("loan:%d", id)
 	fail := func(e error) {
 		_, _ = s.db.ExecContext(ctx, `UPDATE e_loans SET status='failed', closed_at=now() WHERE id=$1`, id)
@@ -568,6 +570,7 @@ func (s *Server) handleRepay(w http.ResponseWriter, r *http.Request, uid string)
 	if l.DueAt != nil && s.now().Before(*l.DueAt) {
 		penRate = s.cfg.Loan.EarlyPenalty
 	}
+	// 提前还款罚金 = 本金 × 罚金率，向上取整到 8 位。部分还款超过 8 位小数直接拒绝；拆出的本金向下取整到 8 位。
 	fullPenalty := ceil8(l.Principal.Mul(penRate))
 	full := l.Interest.Add(l.Principal).Add(fullPenalty)
 	var amount decimal.Decimal
@@ -589,6 +592,7 @@ func (s *Server) handleRepay(w http.ResponseWriter, r *http.Request, uid string)
 		prin = rest.Div(decimal.NewFromInt(1).Add(penRate)).RoundFloor(dp)
 		pen = rest.Sub(prin)
 	}
+	// 还款 ref 带纳秒，客户端重试会变成另一笔还款。
 	n := time.Now().UnixNano()
 	ref := fmt.Sprintf("loan:%d:repay:%d", l.ID, n)
 	// Principal first (largest leg); if the interest leg then fails, the
@@ -678,6 +682,7 @@ func (s *Server) handleAddCollateral(w http.ResponseWriter, r *http.Request, uid
 		writeErr(w, bad("COLLATERAL_LIMIT_EXCEEDED", "超过个人质押上限 "+c.Cap.String()+" "+l.CollateralAsset))
 		return
 	}
+	// 追加质押的 ref 带纳秒，重试会再划一笔。
 	n := time.Now().UnixNano()
 	if err := s.systemTransfer(ctx, uid, l.CollateralAsset, "loan_collateral", "debit", amt, fmt.Sprintf("loan:%d:add:%d", l.ID, n)); err != nil {
 		writeErr(w, err)
@@ -731,6 +736,7 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request, uid string)
 	}
 	paid := l.Interest
 	if paid.Sign() > 0 {
+		// 续借付息的 ref 带纳秒，重试会再划一笔。
 		n := time.Now().UnixNano()
 		if err := s.systemTransfer(ctx, uid, l.Asset, "loan_interest", "debit", paid, fmt.Sprintf("loan:%d:renew:%d", l.ID, n)); err != nil {
 			writeErr(w, err)

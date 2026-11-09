@@ -1,5 +1,7 @@
 package main
 
+// 启动迁移。版本表 goose_paper_version，并关掉 goose 全局注册，避免和其他服务抢版本。
+
 import (
 	"context"
 	"database/sql"
@@ -13,6 +15,7 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// Migrate 只跑嵌入的 migrations。版本表 goose_paper_version，WithDisableGlobalRegistry 避免和别的服务串版本。
 func Migrate(db *sql.DB) error {
 	store, err := database.NewStore(database.DialectPostgres, "goose_paper_version")
 	if err != nil {

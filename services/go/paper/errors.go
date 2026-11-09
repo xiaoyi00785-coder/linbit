@@ -1,5 +1,7 @@
 package main
 
+// 模拟盘错误。业务错误带 HTTP 状态和 code；价格预警写限流单独带 Retry-After。
+
 import (
 	"errors"
 	"github.com/linbit/platform/services/go/common"

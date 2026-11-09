@@ -1,5 +1,7 @@
 package main
 
+// 合约配置。业务规则写死的值不在这里；其余是环境变量默认，详见 docs/api/futures.md。
+
 import (
 	"strings"
 	"time"
@@ -8,8 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Config holds futures settings. Every value not fixed by the business rules is
-// an env-configurable default (see docs/api/futures.md).
+// Config 的默认保证金模式只接受 cross 或 isolated，其他值在 LoadConfig 里改回 cross。
 type Config struct {
 	Port          string
 	DatabaseURL   string
@@ -69,7 +70,7 @@ func decEnv(key, def string) decimal.Decimal {
 	return d
 }
 
-// LoadConfig reads the configuration from the environment.
+// LoadConfig 从环境变量读配置。FUTURES_DEFAULT_MARGIN_MODE 不是 isolated 时一律按 cross。
 func LoadConfig() Config {
 	mode := strings.ToLower(common.Env("FUTURES_DEFAULT_MARGIN_MODE", "cross"))
 	if mode != "isolated" {

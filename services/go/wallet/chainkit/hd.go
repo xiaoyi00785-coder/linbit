@@ -1,5 +1,7 @@
 package chainkit
 
+// hd.go：BIP32 扩展密钥。充值地址只从 xpub 派生。String 可能打出 xprv，调用方不得把私钥形式写进日志。
+
 import (
 	"bytes"
 	"crypto/hmac"
@@ -138,8 +140,7 @@ func (k *ExtKey) Neuter() *ExtKey {
 	return &c
 }
 
-// String serialises the key (xpub/tpub, or xprv/tprv when private).
-// Callers must never log the private form.
+// String 序列化扩展密钥。有私钥时是 xprv/tprv，调用方不得把这种形式写进日志。
 func (k *ExtKey) String() string {
 	var ver []byte
 	switch {

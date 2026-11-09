@@ -1,5 +1,7 @@
 package main
 
+// 调 account、asset、order、futures 的内部接口。奖励划转按 ref 幂等。
+
 import (
 	"bytes"
 	"context"

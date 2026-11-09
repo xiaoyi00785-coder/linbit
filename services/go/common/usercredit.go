@@ -1,18 +1,19 @@
 package common
 
+// usercredit.go：管理员给普通用户资金账户记虚拟测试网资金的开关。只允许测试网。
+
 import (
 	"os"
 	"strings"
 )
 
-// UserCreditAllowed gates the admin testnet credit to a normal user's funding
-// account (admin_testnet_credit). It is HARD testnet-only:
-//   - WALLET_CHAIN must be exactly "testnet" (mock/mainnet/unknown refused);
-//   - ADMIN_USER_CREDIT_ENABLED must be "true";
-//   - any mainnet signal refuses even when the flag is set: LINBIT_NETWORK,
-//     NETWORK or APP_ENV = mainnet, or LINBIT_MAINNET/MAINNET = true.
+// UserCreditAllowed 判断能否做 admin_testnet_credit。硬限制只允许测试网：
+//   - WALLET_CHAIN 必须正好是 "testnet"（mock、mainnet、未知都拒绝）；
+//   - ADMIN_USER_CREDIT_ENABLED 必须是 "true"；
+//   - 任一主网信号都拒绝，即使开关开着：LINBIT_NETWORK、NETWORK 或 APP_ENV = mainnet，
+//     或 LINBIT_MAINNET / MAINNET = true。
 //
-// The reason never contains secret values.
+// 返回的原因不含密钥。
 func UserCreditAllowed() (bool, string) {
 	low := func(k string) string { return strings.ToLower(strings.TrimSpace(os.Getenv(k))) }
 	for _, k := range []string{"LINBIT_NETWORK", "NETWORK", "APP_ENV"} {

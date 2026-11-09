@@ -7,9 +7,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// GET /growth/config — public, read-only program numbers so marketing copy
-// (invite rebate %, newcomer gift total, invite KYC reward) is rendered from
-// the same config the settlement uses instead of hardcoded strings.
+// GET /growth/config。公开只读的活动数字，邀请返佣比例、新人礼包总额、邀请 KYC 奖励
+// 都从结算用的同一份配置渲染，不写死在文案里。
 func (s *Server) handlePublicConfig(w http.ResponseWriter, r *http.Request) {
 	maxFut, maxSpot := decimal.Zero, decimal.Zero
 	for _, t := range s.cfg.Tiers {

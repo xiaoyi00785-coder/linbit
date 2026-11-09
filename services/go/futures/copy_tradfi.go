@@ -1,5 +1,9 @@
 package main
 
+// 跟单镜像开仓不经过网关，所以这里自己查 TradFi 门禁（docs/tradfi.md）。
+// 开关关闭 → FEATURE_DISABLED；跟随者 KYC 国家受限 → REGION_RESTRICTED；门禁或 KYC 查询失败 → TRADFI_UNAVAILABLE（失败即拒绝）。
+// 跳过原因写入 fut_copy_trades。减仓和平仓不设门禁。标的如 XAG、WTI。
+
 import (
 	"context"
 	"encoding/json"
@@ -11,15 +15,6 @@ import (
 	"sync"
 	"time"
 )
-
-// copy_tradfi.go: TradFi gate for copy-trading mirrors (docs/tradfi.md).
-//
-// Mirrored opens happen server-side, so the gateway gate never sees them. Before
-// opening / adding a TradFi perp (XAG, WTI, ...) for a follower we check the
-// same market-data gate the gateway uses: flag off -> FEATURE_DISABLED,
-// follower KYC country restricted -> REGION_RESTRICTED, gate or KYC lookup
-// failing -> TRADFI_UNAVAILABLE (fail closed). The skip is recorded in
-// fut_copy_trades. Reduces / closes are never gated.
 
 type copyGate struct {
 	Features            map[string]bool   `json:"features"`
@@ -113,10 +108,10 @@ func (t *copyTradFi) country(ctx context.Context, uid string) (string, error) {
 	return c, nil
 }
 
-// copySeededTradFi: TradFi perps seeded by migration (fallback when no gate ever loaded).
+// copySeededTradFi：迁移种下的 TradFi 永续，门禁从未加载时的兜底列表。
 var copySeededTradFi = map[string]bool{"XAGUSDT": true, "WTIUSDT": true}
 
-// blocked returns "" when the follower may open sym, else the skip reason.
+// blocked：跟随者可以开该合约时返回空串，否则返回跳过原因。
 func (t *copyTradFi) blocked(ctx context.Context, sym, follower string) string {
 	if t == nil {
 		return ""

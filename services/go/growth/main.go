@@ -1,8 +1,5 @@
-// Command growth runs Linbit's user-growth programs: invite attribution, the
-// partner (agent) commission program, the regular referral rebate, points,
-// the newbie gift package / activity center and coupons. It follows the other
-// services through internal cursor feeds (users, spot and futures fills,
-// wallet ops) and pays rewards through the asset service.
+// growth 做邀请归因、合伙人佣金、普通邀请返佣、积分、新人礼包/活动中心和卡券。
+// 用内部游标跟上用户、现货成交、合约成交和钱包流水，奖励经 asset 入账。
 package main
 
 import (

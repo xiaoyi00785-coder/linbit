@@ -1,5 +1,7 @@
 package main
 
+// 理财 HTTP。所有动账共用一把锁。
+
 import (
 	"context"
 	"database/sql"
@@ -13,6 +15,7 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
+// Server 提供理财接口。动账全部串行在 mu 上。
 type Server struct {
 	cfg    Config
 	db     *sql.DB
@@ -20,6 +23,7 @@ type Server struct {
 	offset atomic.Int64 // dev clock offset (ns)
 }
 
+// NewServer 创建理财服务。
 func NewServer(cfg Config, db *sql.DB) *Server { return &Server{cfg: cfg, db: db} }
 
 func (s *Server) now() time.Time { return time.Now().Add(time.Duration(s.offset.Load())) }
@@ -88,6 +92,7 @@ func (s *Server) dev(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+// Routes 注册借币、理财、后台和 dev 时钟。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
@@ -107,6 +112,7 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
+// Run 按 TickEvery 调用 Tick，直到 ctx 取消。
 func (s *Server) Run(ctx context.Context) {
 	t := time.NewTicker(s.cfg.TickEvery)
 	defer t.Stop()
@@ -120,6 +126,7 @@ func (s *Server) Run(ctx context.Context) {
 	}
 }
 
+// Tick 先跑借币定时任务，再跑理财计息、自动申购和到期返还。
 func (s *Server) Tick(ctx context.Context) {
 	if err := s.loanTick(ctx); err != nil {
 		log.Printf("earn loan tick: %v", err)

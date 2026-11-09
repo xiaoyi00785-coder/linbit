@@ -1,5 +1,7 @@
 package main
 
+// 下单与改单共用的参数校验，错误码和文案保持一致。价格、数量不符合步长则拒绝，不截断。
+
 import (
 	"fmt"
 	"strings"
@@ -7,12 +9,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Pure order-parameter checks against a contract's trading rules (tick size,
-// min/max quantity, leverage). Shared by place / amend so every entry point
-// returns the same error codes and messages.
-
-// checkQty parses and validates an order quantity: > 0, >= minQty, a multiple
-// of minQty (minQty doubles as the step), <= maxQty.
+// checkQty：数量 > 0、>= minQty、<= maxQty，且是 minQty 的整数倍（minQty 即步长）。
+// 多出来的小数或不足一步返回 INVALID_QTY，不截断。
 func checkQty(c Contract, raw string) (decimal.Decimal, error) {
 	q, err := decimal.NewFromString(strings.TrimSpace(raw))
 	if err != nil || q.Sign() <= 0 {
@@ -30,8 +28,8 @@ func checkQty(c Contract, raw string) (decimal.Decimal, error) {
 	return q, nil
 }
 
-// checkPrice parses and validates a price: > 0 and a multiple of tickSize.
-// field names the parameter in the message (价格 / 止盈价 / 止损价 / 触发价).
+// checkPrice：价格 > 0 且是 tickSize 的整数倍，否则 INVALID_PRICE，不截断。
+// field 写入文案，取 价格 / 止盈价 / 止损价 / 触发价。
 func checkPrice(c Contract, raw, field string) (decimal.Decimal, error) {
 	p, err := decimal.NewFromString(strings.TrimSpace(raw))
 	if err != nil || p.Sign() <= 0 {
@@ -43,7 +41,7 @@ func checkPrice(c Contract, raw, field string) (decimal.Decimal, error) {
 	return p, nil
 }
 
-// checkOptPrice is checkPrice for optional TP/SL ("" or "0" = unset).
+// checkOptPrice：空或 "0" 表示不设置止盈/止损，其余走 checkPrice。
 func checkOptPrice(c Contract, raw, field string) (decimal.NullDecimal, error) {
 	if v := strings.TrimSpace(raw); v == "" || v == "0" {
 		return decimal.NullDecimal{}, nil
@@ -55,7 +53,7 @@ func checkOptPrice(c Contract, raw, field string) (decimal.NullDecimal, error) {
 	return decimal.NullDecimal{Decimal: p, Valid: true}, nil
 }
 
-// checkLeverage validates 1 <= lev <= contract max leverage (e.g. 200x).
+// checkLeverage：杠杆必须在 1 与合约 MaxLeverage 之间，否则 INVALID_LEVERAGE。
 func checkLeverage(c Contract, lev int) error {
 	if lev < 1 || lev > c.MaxLeverage {
 		return bad("INVALID_LEVERAGE", fmt.Sprintf("杠杆倍数范围 1-%d", c.MaxLeverage))

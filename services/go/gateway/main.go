@@ -1,5 +1,6 @@
-// Command gateway is the Linbit API gateway: JWT authentication plus reverse
-// proxying to the account and asset services.
+// Command gateway：校验 JWT 后按路径反代。
+// 上游是 account、asset、wallet、order、market、kyc、futures、strategy、growth、earn、paper。
+// admin 只放行公告和 /site/social 的匿名 GET/HEAD；/internal 与 /admin 在网关直接 404。
 package main
 
 import (

@@ -8,12 +8,9 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// GET /home/newcomer — compact newcomer task bar for the home page.
-// Public through the gateway with optional auth: anonymous callers get the
-// template (every task locked, cta=login); signed-in callers get their live
-// state. With no configured tasks, or if the state lookup fails, it degrades
-// to {available:false, tasks:[]} (or the template) instead of erroring, so the
-// home page never breaks on growth.
+// GET /home/newcomer，首页上的新人任务条。经 gateway 公开，登录可选。
+// 未登录返回模板：每项 locked，cta=login。已登录返回本人进度。
+// 没有配置任务，或查进度失败，则退成 {available:false, tasks:[]} 或模板，不把首页打挂。
 func (s *Server) handleHomeNewcomer(w http.ResponseWriter, r *http.Request) {
 	uid := r.Header.Get("X-User-Id")
 	rules := s.cfg.Newcomer

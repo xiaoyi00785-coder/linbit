@@ -11,26 +11,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// feed_usd.go: USD-quoted index sources (Coinbase, Kraken) for symbols that no
-// USDT venue lists (e.g. TONUSDT: Binance BREAK, OKX/Bybit/Gate do not list it).
-//
-// Design: "coinbase" and "kraken" are ordinary INDEX_FEED entries (so failover
-// order, staleness, status filtering and the unchanged-price guard apply as for
-// every other source), but they only ever quote the symbols listed in
-// INDEX_USD_FALLBACK_SYMBOLS (default TONUSDT): BASEUSDT is read from the
-// venue's BASE/USD pair. Other symbols are never quoted from a USD venue.
-//
-// USD -> USDT: the index is denominated in USDT, so each venue's own live
-// USDT/USD rate (Coinbase USDT-USD, Kraken USDTUSD) is fetched in the same poll
-// and applied as price_usdt = price_usd / usdt_usd (USDT trades slightly below
-// 1 USD, so the USDT price is slightly higher than the USD price). A missing,
-// unparsable, non-positive or out-of-bounds rate (INDEX_USDT_USD_MIN/MAX,
-// default 0.97..1.03), or an USDT/USD pair that is not online, makes the whole
-// venue fail (no quotes), so the converted components are not fresh and the
-// index fails closed. The rate is never cached across polls.
-//
-// The unchanged-price guard watches the venue's raw USD price, not the
-// converted one: otherwise the moving USDT/USD rate would hide a frozen TON/USD.
+// USD 计价的指数源（Coinbase、Kraken），给没有任何 USDT 所上市的符号
+// （如 TONUSDT：Binance 为 BREAK，OKX、Bybit、Gate 未上市）。
+// coinbase、kraken 是普通的 INDEX_FEED 项，故障切换、过期、状态过滤和价格不变保护与其他源相同。
+// 只报 INDEX_USD_FALLBACK_SYMBOLS（默认 TONUSDT）：BASEUSDT 读该所 BASE/USD。其他符号不从 USD 所报价。
+// 指数以 USDT 计价。同一次轮询取该所自己的 USDT/USD（Coinbase USDT-USD、Kraken USDTUSD），
+// price_usdt = price_usd / usdt_usd。USDT 略低于 1 USD，所以 USDT 价略高于 USD 价。
+// 汇率缺失、解析失败、非正、超出 INDEX_USDT_USD_MIN/MAX（默认 0.97 到 1.03），或 USDT/USD 对不在线，
+// 则整所失败、不报价，指数失败关闭。汇率不跨轮询缓存。
+// 价格不变保护看原始 USD 价，不看折算后的价，否则 USDT/USD 的波动会盖住冻住的 BASE/USD。
 
 // quoteMeta describes how a quote was derived (USD venues only).
 type quoteMeta struct {
@@ -356,7 +345,6 @@ func newUSDSources(name string, cfg Config) *indexSource {
 	}
 	return nil
 }
-
 
 // usdtUSDBounds parses INDEX_USDT_USD_MIN/MAX (defaults 0.97..1.03).
 func (c Config) usdtUSDBounds() (decimal.Decimal, decimal.Decimal) {

@@ -1,5 +1,7 @@
 package main
 
+// store.go：钱包库。提现状态机、充值记录、模拟链注入。金额列用 decimal，接口侧再格式化成 8 位。
+
 import (
 	"context"
 	"database/sql"
@@ -9,11 +11,11 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ErrNotFound is returned when a row lookup misses.
+// ErrNotFound 表示按主键没找到行。
 var ErrNotFound = errors.New("not found")
 
-// Internal withdrawal statuses (the state machine). The API maps these onto the
-// openapi enum via apiStatus().
+// 提现内部状态。apiStatus 把它们映射成对外枚举 pending/processing/completed/failed/canceled。
+// pending_review 对外是 pending；approved 和 processing 对外都是 processing。
 const (
 	wStatusReview     = "pending_review" // awaiting manual review
 	wStatusApproved   = "approved"       // released (auto or admin); ready to sign+broadcast
@@ -24,23 +26,23 @@ const (
 	wStatusFailed     = "failed"         // broadcast failed; funds unfrozen
 )
 
-// Deposit statuses.
+// 充值状态：确认中，或已入账。
 const (
 	depConfirming = "confirming"
 	depCompleted  = "completed"
 )
 
-// Store wraps the wallet database.
+// Store 包住钱包库。
 type Store struct {
 	db *sql.DB
 }
 
-// NewStore constructs a Store.
+// NewStore 用已打开的库构造 Store。
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
 // ---- types ----
 
-// DepositAddress is an allocated, reusable deposit address.
+// DepositAddress 是已分配、可复用的充值地址。同一用户同一条链共用一个地址。
 type DepositAddress struct {
 	UserID  string
 	Asset   string
@@ -49,7 +51,7 @@ type DepositAddress struct {
 	Memo    string
 }
 
-// Deposit is a credited (or confirming) deposit record.
+// Deposit 是一笔充值记录，可能还在确认，也可能已入账。Amount 是 decimal。
 type Deposit struct {
 	ID            int64
 	UserID        string
@@ -64,7 +66,7 @@ type Deposit struct {
 	CreatedAt     time.Time
 }
 
-// Withdrawal is a withdrawal request and its state-machine row.
+// Withdrawal 是一笔提现和它的状态机行。FrozenAmount 是实际冻住的数量。
 type Withdrawal struct {
 	ID            int64
 	UserID        string
@@ -97,10 +99,8 @@ type scanTx struct {
 
 // ---- deposit addresses ----
 
-// UpsertDepositAddress allocates (or returns the existing) reusable deposit
-// address for a (user, asset, network). If the user already holds an address on
-// the same network (another token on that chain) it is reused; generate is only
-// called when the user has no address on the network yet.
+// UpsertDepositAddress 分配或返回 (user, asset, network) 的充值地址。
+// 同一用户在同一条链上已有地址（别的代币）就复用，最早分配的那个优先。没有时才调用 generate。
 func (s *Store) UpsertDepositAddress(ctx context.Context, userID, asset, network string, generate func() (addr, memo string, hdIndex *int64, err error)) (DepositAddress, error) {
 	var out DepositAddress
 	sel := func() error {
@@ -113,8 +113,7 @@ func (s *Store) UpsertDepositAddress(ctx context.Context, userID, asset, network
 	if err == nil || !errors.Is(err, sql.ErrNoRows) {
 		return out, err
 	}
-	// Reuse the user's existing address on this network (one address per user
-	// per chain, shared across tokens). Earliest-issued address wins.
+	// 同一用户同一条链一个地址，各代币共用。最早发出的那个优先。
 	var (
 		addr, memo string
 		idx        *int64
@@ -178,9 +177,8 @@ func (s *Store) AdvanceChain(ctx context.Context, network string, blocks int64) 
 	return h, err
 }
 
-// InjectChainTx records a simulated incoming deposit, mining it into a new block.
-// Idempotent on (network, tx_hash, log_index): a duplicate injection is a no-op
-// and does not mine a block. Returns whether a new tx was inserted.
+// InjectChainTx 记一笔模拟充值并挖进新块。按 (network, tx_hash, log_index) 幂等：
+// 重复注入什么都不做，也不再挖块。返回是否插入了新交易。
 func (s *Store) InjectChainTx(ctx context.Context, network, address, asset string, amount decimal.Decimal, txHash string, logIndex int64) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -417,8 +415,8 @@ func (s *Store) GetWithdrawal(ctx context.Context, id int64) (*Withdrawal, error
 		`SELECT `+withdrawalColumns+` FROM withdrawals WHERE id = $1`, id))
 }
 
-// transition atomically moves a withdrawal from one of `from` statuses to `to`,
-// optionally setting tx_hash / reject_reason. Returns true if it applied.
+// transition 原子地把提现从 from 中的某一状态改到 to，可顺带写 tx_hash 或驳回原因。
+// 状态已经变了则返回 false，调用方不得据此再动冻结。
 func (s *Store) transition(ctx context.Context, id int64, from []string, to string, txHash, rejectReason *string, broadcastHeight *int64) (bool, error) {
 	// Build "status = ANY($2)" using a small helper array literal.
 	res, err := s.db.ExecContext(ctx,
@@ -467,8 +465,7 @@ func (s *Store) MarkFailed(ctx context.Context, id int64, reason string) (bool, 
 	return s.transition(ctx, id, []string{wStatusApproved, wStatusProcessing}, wStatusFailed, nil, &reason, nil)
 }
 
-// FailSubmit moves pending_review -> failed (used when the freeze at submit time
-// could not be applied). No funds were frozen so there is nothing to release.
+// FailSubmit 把 pending_review 打成 failed。提交时冻结没成功才用，没有冻结可退。
 func (s *Store) FailSubmit(ctx context.Context, id int64, reason string) (bool, error) {
 	return s.transition(ctx, id, []string{wStatusReview}, wStatusFailed, nil, &reason, nil)
 }
@@ -549,9 +546,8 @@ type AssetAmount struct {
 	Amount decimal.Decimal
 }
 
-// WithdrawnSince returns the (asset, amount) of the user's withdrawals created at
-// or after `since` that count toward the KYC daily limit — i.e. everything except
-// those that released their funds (rejected / canceled / failed).
+// WithdrawnSince 返回 since 之后计入 KYC 24h 额度的提现（币种, 数量）。
+// 已解冻的不算：rejected、canceled、failed。
 func (s *Store) WithdrawnSince(ctx context.Context, userID string, since time.Time) ([]AssetAmount, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT asset, amount::text FROM withdrawals

@@ -1,5 +1,7 @@
 package main
 
+// K 线周期。1w 对齐到周一，其余周期对齐 UTC 纪元。
+
 import "github.com/shopspring/decimal"
 
 // Interval is a supported K-line period.

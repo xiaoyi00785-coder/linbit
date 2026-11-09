@@ -1,5 +1,8 @@
 package main
 
+// 价格预警写限流。固定窗口，行锁在副本和重启之间共享，和 300 秒的触发冷却不是同一套计数。
+// 超限只返回剩余等待，不增加计数。准入在校验请求之前提交，畸形、冲突、重复、不存在的写也占额度。
+
 import (
 	"context"
 	"database/sql"
@@ -7,13 +10,7 @@ import (
 	"time"
 )
 
-// ConsumeAlertWrite applies one durable fixed-window bucket to every admitted
-// alert CRUD write, including duplicate and missing-resource attempts. The row
-// lock shares the counter across service replicas and restarts; it is
-// deliberately independent of the 300-second once-alert trigger cooldown.
-// An over-limit attempt returns its remaining wait without increasing the
-// stored count. Admission commits independently before request validation so
-// malformed, conflicting, duplicate and missing-resource writes are throttled too.
+// ConsumeAlertWrite 对一次已准入的预警写操作记一格。超限返回剩余等待且不增加计数。limit<1 或 window<=0 直接报配置错误。
 func (s *Store) ConsumeAlertWrite(ctx context.Context, tx *sql.Tx, userID string, now time.Time, limit int, window time.Duration) (time.Duration, error) {
 	if limit < 1 || window <= 0 {
 		return 0, fmt.Errorf("invalid alert write limit configuration")
@@ -44,8 +41,7 @@ func (s *Store) ConsumeAlertWrite(ctx context.Context, tx *sql.Tx, userID string
 	return 0, nil
 }
 
-// AdmitAlertWrite durably accounts for one authenticated CRUD attempt. A 404 or
-// idempotent replay consumes the same budget as a successful mutation.
+// AdmitAlertWrite 给一次已登录的写操作入账并提交。404 和幂等重放与成功修改占同样额度。
 func (s *Store) AdmitAlertWrite(ctx context.Context, userID string, now time.Time, limit int, window time.Duration) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

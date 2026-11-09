@@ -1,5 +1,10 @@
 package main
 
+// realchain.go：WALLET_CHAIN=testnet|mainnet 时的 ChainAdapter。
+// 充值地址只从账户 xpub 派生，钱包进程不持有私钥。签名一律来自独立的 wallet-signer（HTTP）。
+// 种子在签名进程的 keystore 里。Sync 把看到的转入写进 chain_txs（真实高度）和 chain_state，
+// 现有 Scanner 按和 mock 相同的方式入账。
+
 import (
 	"bufio"
 	"context"
@@ -16,39 +21,27 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// realchain.go is the ChainAdapter for real networks (WALLET_CHAIN=testnet or
-// mainnet). Deposit addresses are derived from account xpubs only (the wallet
-// service never holds a private key); every signature comes from the hot
-// signer, which runs as a separate container (wallet-signer) behind an HTTP
-// interface so it can later move to its own host unchanged.
-//
-// Deposit discovery (Sync) writes observed transfers into chain_txs at their
-// real block heights and the tip into chain_state, so the existing Scanner
-// credits them exactly as it does for the mock chain.
-
-// AddressAllocator is implemented by adapters that allocate HD-indexed
-// addresses (needs a context and can fail, unlike ChainAdapter.NewAddress).
+// AddressAllocator 分配 HD 序号地址。需要 context，并且可能失败；ChainAdapter.NewAddress 做不到这两点。
 type AddressAllocator interface {
 	AllocateAddress(ctx context.Context, net Network) (addr, memo string, hdIndex *int64, err error)
 }
 
-// ChainSender is implemented by adapters that build, sign and broadcast a
-// withdrawal themselves (instead of Signer + Broadcast).
+// ChainSender 自己拼交易、签名并广播提现，不走 Signer + Broadcast。
 type ChainSender interface {
 	SendWithdrawal(ctx context.Context, net Network, to string, amount decimal.Decimal) (string, error)
 }
 
-// TxConfirmer reports confirmations of a broadcast tx by hash.
+// TxConfirmer 按交易哈希查确认数，以及链上是否失败。
 type TxConfirmer interface {
 	TxConfirmations(ctx context.Context, network, txHash string) (confs int64, failed bool, err error)
 }
 
-// AddressValidator checks a withdrawal destination for a network.
+// AddressValidator 检查提现目标地址是否属于该网络。
 type AddressValidator interface {
 	ValidateAddress(network, addr string) error
 }
 
-// chainNet is one configured network (e.g. ERC20 = Sepolia in testnet mode).
+// chainNet 是一条已配置的网络。测试网下 ERC20 默认 Sepolia；主网不用测试网默认 RPC 和合约。
 type chainNet struct {
 	name    string // registry network name (TRC20, ERC20, ...)
 	chain   chainkit.Chain
@@ -62,7 +55,7 @@ type chainNet struct {
 	solList []string         // SOL deposit addresses by index
 }
 
-// RealChain implements ChainAdapter against real networks.
+// RealChain 用真实 RPC 实现 ChainAdapter。mode 为 testnet 或 mainnet。
 type RealChain struct {
 	mode   string
 	store  *Store
@@ -80,15 +73,14 @@ type netDefaults struct {
 	nativeAssetName string            // registry asset that is the native coin, if any
 }
 
-// Testnet defaults: TRON Nile, Sepolia, BSC testnet, Arbitrum Sepolia, BTC
-// testnet and Solana devnet. Everything can be overridden from env.
+// 测试网默认：TRON Nile、Sepolia、BSC testnet、Arbitrum Sepolia、BTC testnet、Solana devnet。环境变量可覆盖。
 var realNetDefaults = map[string]netDefaults{
 	"TRC20": {chain: chainkit.ChainTron, native: "TRX", testRPC: "https://nile.trongrid.io",
 		testnetTokens: map[string]string{"USDT": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf:6"}},
 	"ERC20": {chain: chainkit.ChainEVM, native: "ETH", testRPC: "https://ethereum-sepolia-rpc.publicnode.com",
 		chainID: 11155111, mainChainID: 1, nativeAssetName: "ETH",
 		testnetTokens: map[string]string{"USDC": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238:6",
-			// Aave V3 Sepolia test USDT (mintable at app.aave.com testnet faucet).
+			// Aave V3 Sepolia 测试 USDT。
 			"USDT": "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0:6"}},
 	"BEP20": {chain: chainkit.ChainEVM, native: "BNB", testRPC: "https://bsc-testnet-rpc.publicnode.com",
 		chainID: 97, mainChainID: 56,
@@ -115,12 +107,9 @@ func parseToken(asset, spec string) (*chainkit.Token, error) {
 	return &chainkit.Token{Symbol: asset, Contract: spec[:i], Decimals: int32(d)}, nil
 }
 
-// NewRealChain configures every registry network from env. A network whose
-// asset has no token contract (e.g. Sepolia USDT) is left disabled: addresses
-// cannot be allocated and withdrawals fail with unknown network.
+// NewRealChain 按环境变量配置注册表里的每个网络。没有代币合约的网络保持关闭：不能分配地址，提现报未知网络。
 func NewRealChain(ctx context.Context, mode string, store *Store, reg NetworkRegistry, signer chainkit.HotSigner) (*RealChain, error) {
-	// On mainnet testnet defaults (RPCs, chain IDs, token contracts) are never
-	// used, whatever WALLET_CHAIN says.
+	// 主网绝不用测试网默认值（RPC、chain id、代币合约），不论 WALLET_CHAIN 怎么写。
 	testnet := mode == "testnet" && !common.IsMainnet()
 	rc := &RealChain{mode: mode, store: store, signer: signer, nets: map[string]*chainNet{}}
 	xpubs := map[chainkit.Chain]*chainkit.ExtKey{}
@@ -199,7 +188,7 @@ func NewRealChain(ctx context.Context, mode string, store *Store, reg NetworkReg
 				return nil, fmt.Errorf("WALLET_COLD_ADDRESS_%s: %w", name, err)
 			}
 		}
-		// Deposit key source: account xpub (EVM/TRON/BTC) or address list (SOL).
+		// 充值密钥来源：EVM/TRON/BTC 用账户 xpub；SOL 用地址列表（ed25519 不能从公钥派生子地址）。
 		if d.chain == chainkit.ChainSol {
 			if solList == nil {
 				l, err := readSolList(common.Env("WALLET_SOL_ADDRESSES_FILE", ""))
@@ -258,9 +247,8 @@ func readSolList(path string) ([]string, error) {
 	return out, sc.Err()
 }
 
-// bindSigner resolves hot addresses and checks the xpub / SOL list matches the
-// signer's keystore (index 0), so a mismatched config can never hand out
-// addresses whose keys nobody holds.
+// bindSigner 解析热钱包地址，并核对 xpub / SOL 列表和签名进程 keystore 的 index 0 一致。
+// 对不上就拒绝启动，避免发出没人持有私钥的地址。
 func (rc *RealChain) bindSigner(ctx context.Context) error {
 	for _, cn := range rc.nets {
 		hotPub, err := rc.signer.PublicKey(ctx, cn.chain, chainkit.BranchHot, 0)
@@ -283,10 +271,8 @@ func (rc *RealChain) bindSigner(ctx context.Context) error {
 		if got != want {
 			return fmt.Errorf("%s: deposit key source (xpub / SOL list) does not match the signer keystore", cn.name)
 		}
-		// No multisig for now: unless an explicit WALLET_COLD_ADDRESS_<NET> is
-		// set, excess above the hot cap goes to a reserve address derived from
-		// the same HD seed (branch 2, index 0). WALLET_COLD_FROM_HD=false
-		// disables it (everything stays in the hot wallet).
+		// 目前没有多签冷钱包。没设 WALLET_COLD_ADDRESS_<NET> 时，超过热钱包上限的归到
+		// 同一 HD 种子的储备地址（branch 2, index 0）。WALLET_COLD_FROM_HD=false 则全部留在热钱包。
 		if cn.cold == "" && !common.IsMainnet() && !strings.EqualFold(common.Env("WALLET_COLD_FROM_HD", "true"), "false") {
 			rp, err := rc.signer.PublicKey(ctx, cn.chain, chainkit.BranchReserve, 0)
 			if err != nil {
@@ -330,13 +316,13 @@ func (rc *RealChain) lookup(network, asset string) (*chainNet, *chainkit.Token, 
 	return cn, t, nil
 }
 
-// Kind implements ChainAdapter.
+// Kind 返回 testnet 或 mainnet。
 func (rc *RealChain) Kind() string { return rc.mode }
 
-// NewAddress implements ChainAdapter; real addresses go through AllocateAddress.
+// NewAddress 满足 ChainAdapter；真实地址请走 AllocateAddress，这里不能失败也不能带 context。
 func (rc *RealChain) NewAddress(Network, string) (string, string) { return "", "" }
 
-// AllocateAddress implements AddressAllocator.
+// AllocateAddress 分配下一个 HD 序号的充值地址。同一用户同一条链复用已有地址。
 func (rc *RealChain) AllocateAddress(ctx context.Context, net Network) (string, string, *int64, error) {
 	cn, _, err := rc.lookup(net.Network, net.Asset)
 	if err != nil {
@@ -350,17 +336,17 @@ func (rc *RealChain) AllocateAddress(ctx context.Context, net Network) (string, 
 	return addr, "", &idx, err
 }
 
-// EstimateGas implements ChainAdapter: the configured user-facing gas charge.
+// EstimateGas 返回配置里给用户看的 Gas，不是节点的实时报价。
 func (rc *RealChain) EstimateGas(_ context.Context, net Network) (decimal.Decimal, error) {
 	return net.GasFeeEstimate, nil
 }
 
-// Broadcast is not used for real chains (see SendWithdrawal).
+// Broadcast 真实链不用，提现走 SendWithdrawal。
 func (rc *RealChain) Broadcast(context.Context, Network, SignedTx) (string, int64, error) {
 	return "", 0, errors.New("real chain: use SendWithdrawal")
 }
 
-// Confirmations implements ChainAdapter from the synced tip.
+// Confirmations 用已同步的链尖计算确认数。
 func (rc *RealChain) Confirmations(ctx context.Context, network string, since int64) (int64, error) {
 	h, err := rc.store.ChainHeight(ctx, network)
 	if err != nil || since <= 0 || h < since {
@@ -369,12 +355,12 @@ func (rc *RealChain) Confirmations(ctx context.Context, network string, since in
 	return h - since + 1, nil
 }
 
-// Scan implements ChainAdapter.
+// Scan 从已写入的 chain_txs 里取达到确认数的充值。发现本身在 Sync。
 func (rc *RealChain) Scan(ctx context.Context, network string, confirmations int) ([]ChainDeposit, error) {
 	return rc.store.ConfirmableChainTxs(ctx, network, confirmations)
 }
 
-// ValidateAddress implements AddressValidator.
+// ValidateAddress 按网络检查提现地址格式。
 func (rc *RealChain) ValidateAddress(network, addr string) error {
 	cn := rc.nets[network]
 	if cn == nil {
@@ -383,7 +369,7 @@ func (rc *RealChain) ValidateAddress(network, addr string) error {
 	return chainkit.ValidateAddress(cn.chain, addr, cn.hrp)
 }
 
-// SendWithdrawal implements ChainSender: pays from the hot wallet.
+// SendWithdrawal 从热钱包打出提现。金额是十进制，上链前按代币精度收成整数单位。
 func (rc *RealChain) SendWithdrawal(ctx context.Context, net Network, to string, amount decimal.Decimal) (string, error) {
 	cn, tok, err := rc.lookup(net.Network, net.Asset)
 	if err != nil {
@@ -398,7 +384,7 @@ func (rc *RealChain) SendWithdrawal(ctx context.Context, net Network, to string,
 	return cn.client.Send(ctx, rc.signer, cn.hot, to, tok, amount)
 }
 
-// TxConfirmations implements TxConfirmer.
+// TxConfirmations 按哈希查确认数。链上失败时 failed=true，调用方解冻，不重发。
 func (rc *RealChain) TxConfirmations(ctx context.Context, network, txHash string) (int64, bool, error) {
 	cn := rc.nets[network]
 	if cn == nil {
@@ -418,8 +404,7 @@ func (rc *RealChain) TxConfirmations(ctx context.Context, network, txHash string
 	return tip - st.Height + 1, false, nil
 }
 
-// Sync discovers incoming deposits on every enabled (network, asset) and
-// records them plus the current tip. Errors on one network do not stop others.
+// Sync 发现每条已启用 (network, asset) 的转入，记下交易和当前链尖。一个网络出错不挡住其他网络。
 func (rc *RealChain) Sync(ctx context.Context) (int, error) {
 	found := 0
 	var firstErr error
@@ -482,8 +467,7 @@ func (rc *RealChain) syncAsset(ctx context.Context, cn *chainNet, asset string, 
 
 // ---- sweeps ----
 
-// sweepDestination returns the hot address, or the cold address once the hot
-// wallet already holds more than WALLET_HOT_CAP_<ASSET>_<NETWORK>.
+// sweepDestination 默认归到热钱包。热钱包已超过 WALLET_HOT_CAP_<ASSET>_<NETWORK> 时改归冷/储备地址。
 func (rc *RealChain) sweepDestination(ctx context.Context, cn *chainNet, asset string, tok *chainkit.Token) string {
 	if cn.cold == "" {
 		return cn.hot.Address
@@ -510,10 +494,9 @@ func (rc *RealChain) balance(ctx context.Context, cn *chainNet, tok *chainkit.To
 	return cn.client.TokenBalance(ctx, *tok, addr)
 }
 
-// Sweep advances active sweeps and starts new ones for credited deposit
-// addresses. Token sweeps on EVM/TRON first top up the deposit address with
-// native gas from the hot wallet; SOL sweeps are fee-sponsored by the hot
-// wallet; native BTC/ETH/TRX/SOL sweep the whole balance net of fees.
+// Sweep 推进进行中的归集，并为已入账的充值地址开新的。
+// EVM/TRON 代币先从热钱包给充值地址打原生币当 Gas；SOL 由热钱包代付手续费；
+// BTC/ETH/TRX/SOL 原生币归集时打出扣除手续费后的全部余额。
 func (rc *RealChain) Sweep(ctx context.Context, minFor func(asset, network string) decimal.Decimal) (int, error) {
 	active, err := rc.store.ActiveSweeps(ctx, 100)
 	if err != nil {
@@ -573,7 +556,7 @@ func (rc *RealChain) startSweep(ctx context.Context, cn *chainNet, tok *chainkit
 			return err
 		}
 	}
-	// Reserve the row first (unique active index) so two workers cannot both send.
+	// 先占行（活跃序号唯一），两个 worker 不能同时打出。
 	sw.Stage = sweepSent
 	id, err := rc.store.InsertSweep(ctx, sw)
 	if err != nil {
@@ -631,7 +614,7 @@ func (rc *RealChain) advanceSweep(ctx context.Context, sw Sweep) {
 		}
 	case sweepSent:
 		if sw.SweepTx == "" {
-			// Claimed but the send result was never recorded; leave for ops after 1h.
+			// 已占单但没记下发送结果。超过 1 小时留给人工，不自动重发。
 			if time.Since(sw.UpdatedAt) > time.Hour {
 				_ = rc.store.UpdateSweep(ctx, sw.ID, sweepFailed, "", "no tx recorded; check on chain", decimal.Zero, "")
 			}
@@ -649,7 +632,7 @@ func (rc *RealChain) advanceSweep(ctx context.Context, sw Sweep) {
 	}
 }
 
-// HotWallets reports hot/cold addresses and hot balances (admin/ops view).
+// HotWallets 给管理端看热/冷地址和热钱包余额。只读，不签名。
 func (rc *RealChain) HotWallets(ctx context.Context) []map[string]string {
 	var out []map[string]string
 	for _, cn := range rc.nets {

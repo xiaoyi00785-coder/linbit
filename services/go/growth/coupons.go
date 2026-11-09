@@ -13,8 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Coupon center (卡券中心). Every reward program issues vouchers here; the
-// user activates a voucher, which grants the bonus in the futures service.
+// 卡券中心。各奖励计划都在这里发卡券；用户激活后，由合约服务发放赠金。
 type Coupon struct {
 	ID          int64      `json:"id"`
 	Kind        string     `json:"kind"` // trial (体验金) | deduction (抵扣金)

@@ -1,5 +1,7 @@
 package chainkit
 
+// address.go：各链地址编码和校验。提现目标地址在广播前走 ValidateAddress。
+
 import (
 	"crypto/ed25519"
 	"encoding/hex"

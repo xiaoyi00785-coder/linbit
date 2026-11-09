@@ -1,5 +1,9 @@
 package main
 
+// deposit.go：扫 chain_txs 并入账。mock 注入和真实链 Sync 都写这张表。
+// 确认数够了才入账，且只入一次。幂等两层：(network, tx_hash, log_index)，
+// 以及资产服务 /internal/deposit，键为 dep:<network>:<tx>:<logIndex>。
+
 import (
 	"github.com/linbit/platform/services/go/common"
 
@@ -8,17 +12,10 @@ import (
 	"log"
 )
 
-// deposit.go implements deposit scanning and crediting. The scanner reads the
-// simulated chain, refreshes confirmation counts, and credits a deposit exactly
-// once it has enough confirmations. Idempotency is guaranteed on two levels:
-// the (network, tx_hash, log_index) unique key locally, and the idempotent
-// asset /internal/deposit endpoint (keyed on the same ref).
-
-// defaultDepositConfirmations is used when a (asset, network) pair has no entry
-// in the registry (should not happen for allocated addresses).
+// defaultDepositConfirmations：注册表没有该 (asset, network) 时用的确认数。已分配地址不应走到这里。
 const defaultDepositConfirmations = 12
 
-// Scanner credits confirmed deposits.
+// Scanner 给确认数够了的充值入账。creditBelowMin 为假时，低于 MinDeposit 的只记账不入账。
 type Scanner struct {
 	store          *Store
 	nets           NetworkRegistry
@@ -26,18 +23,17 @@ type Scanner struct {
 	creditBelowMin bool
 }
 
-// NewScanner builds a deposit Scanner.
+// NewScanner 组装扫块入账器。creditBelowMin 对应 WALLET_CREDIT_BELOW_MIN_DEPOSIT。
 func NewScanner(store *Store, nets NetworkRegistry, asset *AssetClient, creditBelowMin bool) *Scanner {
 	return &Scanner{store: store, nets: nets, asset: asset, creditBelowMin: creditBelowMin}
 }
 
-// depositRef is the idempotency key shared with the asset service.
+// depositRef 是和资产服务共用的幂等键：dep:<network>:<txHash>:<logIndex>。
 func depositRef(network, txHash string, logIndex int64) string {
 	return fmt.Sprintf("dep:%s:%s:%d", network, txHash, logIndex)
 }
 
-// ScanAll scans every network that currently has simulated transactions and
-// returns the number of deposits credited this pass.
+// ScanAll 扫当前有链上交易的每个网络，返回本轮新入账笔数。
 func (sc *Scanner) ScanAll(ctx context.Context) (int, error) {
 	networks, err := sc.store.ActiveChainNetworks(ctx)
 	if err != nil {
@@ -55,8 +51,7 @@ func (sc *Scanner) ScanAll(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// ScanNetwork refreshes confirmations and credits any newly-confirmed deposits on
-// one network. Returns the number credited this pass.
+// ScanNetwork 刷新一个网络的确认数，把新达到确认数的充值入账。返回本轮入账笔数。
 func (sc *Scanner) ScanNetwork(ctx context.Context, network string) (int, error) {
 	txs, err := sc.store.MatchedChainTxs(ctx, network)
 	if err != nil {
@@ -72,7 +67,7 @@ func (sc *Scanner) ScanNetwork(ctx context.Context, network string) (int, error)
 			continue // already credited; nothing to do
 		}
 
-		// Always record/refresh the confirming row so records show progress.
+		// 先记下确认中，充值记录才能看到进度。已完成的行不会被降级。
 		if err := sc.store.UpsertDepositConfirming(ctx, Deposit{
 			UserID: t.UserID, Asset: t.Asset, Network: network, Address: t.Address,
 			Amount: t.Amount, TxHash: t.TxHash, LogIndex: t.LogIndex, Confirmations: t.Confirmations,
@@ -93,7 +88,7 @@ func (sc *Scanner) ScanNetwork(ctx context.Context, network string) (int, error)
 			continue
 		}
 
-		// Credit via the asset service's idempotent double-entry endpoint.
+		// 经资产服务幂等入账。失败留到下一轮，同一 ref 不会记两次。
 		ref := depositRef(network, t.TxHash, t.LogIndex)
 		if err := sc.asset.Deposit(ctx, t.UserID, t.Asset, t.Amount, ref); err != nil {
 			log.Printf("credit deposit %s: %v", ref, err)

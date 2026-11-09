@@ -1,5 +1,14 @@
 package main
 
+// usercredit.go：admin_testnet_credit，管理员给普通用户的资金账户记一笔虚拟测试网资金。
+// 硬限制只允许测试网（common.UserCreditAllowed）：WALLET_CHAIN 必须是 testnet，
+// 且 ADMIN_USER_CREDIT_ENABLED=true。LINBIT_NETWORK / NETWORK / APP_ENV=mainnet，
+// 或 LINBIT_MAINNET / MAINNET=true，即使开关开着也拒绝。mock 和 mainnet 都不行。
+// 复式：借 user:<uid>:funding_free，贷 system:testnet_treasury，不经做市账户。
+// 单笔不超过 ADMIN_USER_CREDIT_MAX，UTC 日累计不超过 ADMIN_USER_CREDIT_DAILY_MAX。
+// 只收 USDT/USDC，按 1:1 当 USDT 等值，上限才是精确的。金额最多 8 位小数。
+// 幂等：同 ref 同参数回放原结果，参数不同 → ErrRefConflict。
+
 import (
 	"context"
 	"database/sql"
@@ -13,24 +22,12 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// usercredit.go: admin_testnet_credit — an admin credits VIRTUAL testnet funds
-// to a normal user's FUNDING account (e.g. for acceptance testing).
-//
-// HARD testnet-only (common.UserCreditAllowed): WALLET_CHAIN=testnet and
-// ADMIN_USER_CREDIT_ENABLED=true, refused on any mainnet signal even when the
-// flag is set. Double entry: debit user:<uid>:funding_free, credit the
-// dedicated system:testnet_treasury account (never the market maker). Each
-// credit is at most ADMIN_USER_CREDIT_MAX and the UTC-day total at most
-// ADMIN_USER_CREDIT_DAILY_MAX (USDT-equivalent; only stablecoins accepted so
-// the cap is exact). Idempotent on ref: the same ref with the same params
-// returns the original result; with different params -> ErrRefConflict.
-
-// TestnetTreasuryAccount is the ledger counterparty for admin testnet credits.
+// TestnetTreasuryAccount 是管理员测试网入金的对手账户，不和做市账户混用。
 const TestnetTreasuryAccount = "system:testnet_treasury"
 
 const userCreditOp = "admin_testnet_credit"
 
-// userCreditAssets are accepted 1:1 as USDT-equivalent for the caps.
+// userCreditAssets 只收这些币，按 1:1 计入 USDT 等值上限。
 var userCreditAssets = map[string]bool{"USDT": true, "USDC": true}
 
 var (
@@ -42,7 +39,7 @@ var (
 	ErrCreditMMAccount = errors.New("cannot credit system or market-maker account")
 )
 
-// UserCredit is the stored result of one credit.
+// UserCredit 是一笔测试网入金的结果。Amount 是十进制字符串。
 type UserCredit struct {
 	Ref       string `json:"ref"`
 	UserID    string `json:"userId"`
@@ -84,7 +81,7 @@ func (s *Store) fundingFree(ctx context.Context, q interface {
 	return decimal.RequireFromString(v), nil
 }
 
-// AdminTestnetCredit credits amount of asset to userID's funding free balance.
+// AdminTestnetCredit 把 amount 记到该用户资金账户的可用余额。
 func (s *Store) AdminTestnetCredit(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) (UserCredit, error) {
 	if ok, why := common.UserCreditAllowed(); !ok {
 		log.Printf("!!! REFUSED %s user=%s asset=%s amount=%s: %s", userCreditOp, userID, asset, amount, why)
@@ -92,6 +89,7 @@ func (s *Store) AdminTestnetCredit(ctx context.Context, userID, asset string, am
 	}
 	asset = strings.ToUpper(strings.TrimSpace(asset))
 	ref = strings.TrimSpace(ref)
+	// 金额是十进制。非正数或超过 8 位小数拒绝。ref 最长 128，作幂等键。
 	if amount.Sign() <= 0 || amount.Exponent() < -8 || ref == "" || len(ref) > 128 || userID == "" {
 		return UserCredit{}, ErrInvalidAmount
 	}
@@ -109,7 +107,7 @@ func (s *Store) AdminTestnetCredit(ctx context.Context, userID, asset string, am
 		return UserCredit{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	// Serialise credits so the ref check and the daily cap are race-free.
+	// 串行化入金，ref 冲突检查和日累计上限才不会被并发打穿。
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('admin_testnet_credit'))`); err != nil {
 		return UserCredit{}, err
 	}

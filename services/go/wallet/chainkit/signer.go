@@ -1,5 +1,8 @@
 package chainkit
 
+// signer.go：热钱包签名边界。钱包侧是 RemoteHotSigner（HTTP）；签名进程持有种子。
+// 签名进程自己对 payload 做哈希，便于以后在签名前解码并做策略检查。
+
 import (
 	"bytes"
 	"context"
@@ -17,14 +20,12 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
-// SignRequest asks the hot signer to sign a chain-specific payload with the
-// key at (Branch, Index). The signer hashes the payload itself, so a future
-// standalone signer can decode and policy-check the transaction before
-// signing:
-//   - evm:  payload = EIP-155 unsigned RLP; digest keccak256;     sig r||s||recid
-//   - tron: payload = raw_data bytes;       digest sha256;        sig r||s||(27+recid)
-//   - btc:  payload = BIP143 preimage;      digest double-sha256; sig DER
-//   - sol:  payload = message bytes;        ed25519 signature
+// SignRequest 让热签名进程用 (Branch, Index) 上的密钥签一段链相关 payload。
+// 哈希在签名进程里做：
+//   - evm：payload 是 EIP-155 未签名 RLP；摘要 keccak256；签名 r||s||recid
+//   - tron：payload 是 raw_data；摘要 sha256；签名 r||s||(27+recid)
+//   - btc：payload 是 BIP143 preimage；摘要 double-sha256；签名 DER
+//   - sol：payload 是消息字节；ed25519 签名
 type SignRequest struct {
 	Chain   Chain  `json:"chain"`
 	Branch  uint32 `json:"branch"`
@@ -32,9 +33,8 @@ type SignRequest struct {
 	Payload []byte `json:"payload"`
 }
 
-// HotSigner is the hot-wallet signing boundary. Today it runs as a separate
-// container next to the wallet (RemoteHotSigner over HTTP); the same interface
-// can move to a dedicated host or an MPC/HSM implementation later.
+// HotSigner 是热钱包签名边界。现在是钱包旁边的独立容器（RemoteHotSigner over HTTP），
+// 以后可以原样迁到专机或换成 MPC/HSM。
 type HotSigner interface {
 	// PublicKey returns the public key at (chain, branch, index):
 	// 33-byte compressed secp256k1, or 32-byte ed25519 for sol.

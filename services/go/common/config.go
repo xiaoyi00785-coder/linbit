@@ -1,5 +1,4 @@
-// Package common holds helpers shared by the Linbit Go services: JWT handling,
-// JSON/error responses, env configuration and an optional Redis dependency.
+// Package common 是各 Go 服务共用的小工具：JWT、JSON/错误响应、环境变量，以及可选的 Redis。
 package common
 
 import (
@@ -8,7 +7,7 @@ import (
 	"strconv"
 )
 
-// Env returns the environment variable or the provided default.
+// Env 返回环境变量；空则用 def。
 func Env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -16,7 +15,7 @@ func Env(key, def string) string {
 	return def
 }
 
-// MustEnv returns the environment variable or terminates the process.
+// MustEnv 返回环境变量。没设置就退出进程。
 func MustEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
@@ -25,7 +24,7 @@ func MustEnv(key string) string {
 	return v
 }
 
-// EnvInt returns the integer env var or the provided default.
+// EnvInt 把环境变量解析成整数。空或非法则用 def。
 func EnvInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

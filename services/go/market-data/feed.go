@@ -15,39 +15,30 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// feed.go: external index prices. The index for a symbol (e.g. BTCUSDT) is the
-// latest spot price from an external public market-data source: Binance first,
-// then OKX, Bybit, Gate.io, and (for INDEX_USD_FALLBACK_SYMBOLS such as TONUSDT)
-// Coinbase / Kraken BASE/USD converted via that venue's live USDT/USD rate
-// (INDEX_FEED order = failover order; the active source has weight 1). All are
-// polled over REST (public endpoints, no API key). A quote is only usable when:
-//   - the venue lists the symbol as trading (Binance status TRADING, OKX state
-//     live, Bybit status Trading, Gate trade_status tradable, Coinbase product
-//     online, Kraken AssetPairs status online): last-price tickers keep
-//     answering for halted pairs, e.g. Binance TONUSDT (BREAK);
-//   - it was fetched within IndexStale; and
-//   - its price changed within IndexUnchangedStale (a venue that keeps serving
-//     the same frozen price is treated as stale; INDEX_UNCHANGED_EXEMPT lists
-//     pegged pairs that legitimately stay flat; for USD venues the guard watches
-//     the raw USD price so a moving USDT/USD rate cannot hide a frozen BASE/USD).
-// When every source is unusable the index is unavailable and callers (futures
-// mark price, KYC/admin USD conversion, market maker) fail closed.
-//
-// INDEX_FEED=off disables the external feed and serves the local spot last
-// price instead (dev/tests only; refused in production).
+// 外部指数。某交易对（如 BTCUSDT）的指数是外部公开现货的最新价。
+// INDEX_FEED 的顺序就是故障切换顺序，当前源权重为 1。默认 binance、okx、bybit、gateio、coinbase、kraken。
+// coinbase、kraken 只覆盖 INDEX_USD_FALLBACK_SYMBOLS（默认 TONUSDT）：读该所 BASE/USD，再用当次 USDT/USD 换成 USDT。
+// 全部走公开 REST，不带 API key。报价可用要同时满足：
+//   - 所内状态为交易中：Binance TRADING、OKX live、Bybit Trading、Gate trade_status tradable、Coinbase online、Kraken online。
+//     最新价接口对停牌对仍会返回，例如 Binance TONUSDT（BREAK）。
+//   - 拉取时间在 IndexStale 内。
+//   - 价格在 IndexUnchangedStale 内变过（一直吐同一冻结价视为过期；0 表示关闭这道检查）。
+//     INDEX_UNCHANGED_EXEMPT 里的锚定对可以长期不动。USD 所看原始 USD 价，USDT/USD 的波动不能把冻住的 BASE/USD 当成新鲜。
+// 所有源都不可用时指数不可用，调用方（合约标记价、KYC 和后台的 USD 折算、做市）失败关闭。
+// INDEX_FEED=off 改用本地现货最新价，只给开发和测试；生产拒绝。
 
 type indexQuote struct {
 	price     decimal.Decimal
-	at        time.Time // last successful fetch containing the symbol
-	changedAt time.Time // last time the watched price differed from the previous fetch
+	at        time.Time       // last successful fetch containing the symbol
+	changedAt time.Time       // last time the watched price differed from the previous fetch
 	raw       decimal.Decimal // USD venues: raw BASE/USD used by the unchanged guard
 }
 
 type indexSource struct {
 	name      string
 	fetch     func(ctx context.Context) (map[string]decimal.Decimal, error) // nil when fetchMeta is set
-	fetchMeta metaFetch                                                       // USD venues: prices + derivation
-	usd       bool                                                            // unchanged guard watches raw USD
+	fetchMeta metaFetch                                                     // USD venues: prices + derivation
+	usd       bool                                                          // unchanged guard watches raw USD
 	mu        sync.Mutex
 	quotes    map[string]indexQuote
 	lastOK    time.Time

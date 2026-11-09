@@ -1,5 +1,7 @@
 package main
 
+// 增长 HTTP。同步、日结和发奖共用一把锁。
+
 import (
 	"context"
 	"database/sql"
@@ -14,6 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Server 提供增长接口。同步、结算和发奖共用 mu。
 type Server struct {
 	cfg Config
 	db  *sql.DB
@@ -21,6 +24,7 @@ type Server struct {
 	now func() time.Time
 }
 
+// NewServer 创建服务，时钟为 time.Now。
 func NewServer(cfg Config, db *sql.DB) *Server {
 	return &Server{cfg: cfg, db: db, now: time.Now}
 }
@@ -89,6 +93,7 @@ func (s *Server) dev(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+// Routes 注册合伙人、邀请、卡券、积分、新人任务和活动壳。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
@@ -199,4 +204,5 @@ func pageArgs(r *http.Request) (page, size int) {
 	return
 }
 
+// trunc 向零截断。佣金展示和打款用 8 位，尾差不入账。
 func trunc(d decimal.Decimal, places int32) decimal.Decimal { return d.Truncate(places) }

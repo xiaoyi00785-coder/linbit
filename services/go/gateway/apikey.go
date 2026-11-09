@@ -107,6 +107,7 @@ func apiKeyAllowed(perms []string, method, raw string) bool {
 	return false
 }
 
+// 身份头已由 withClientIdentity 收成单一地址。配置头为空时退回 RemoteAddr，交给 account 做 API key IP 白名单。
 func (g *Gateway) clientIP(r *http.Request) string {
 	if h := g.cfg.ClientIPHeader; h != "" {
 		if v := strings.TrimSpace(r.Header.Get(h)); v != "" {

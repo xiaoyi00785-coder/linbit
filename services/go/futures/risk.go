@@ -1,5 +1,8 @@
 package main
 
+// 每个 tick：刷新价格、推送、采样、资金费、强平、止盈止损、条件单、负余额覆盖、跟单。
+// 强平用标记价。逐仓按仓；全仓按该用户全部全仓一起。标记价缺失不强平。
+
 import (
 	"context"
 	"database/sql"
@@ -9,9 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// risk.go: the tick loop — prices, funding, TP/SL triggers, liquidation into the
-// insurance fund and negative-balance cover.
-
+// RunTicker 按 TickInterval 调用 Tick。采样间隔不在这里强制，forceSample 固定为 false。
 func (s *Server) RunTicker(ctx context.Context) {
 	t := time.NewTicker(s.cfg.TickInterval)
 	defer t.Stop()
@@ -25,6 +26,8 @@ func (s *Server) RunTicker(ctx context.Context) {
 	}
 }
 
+// Tick 先刷新指数/标记价，再在 s.mu 内做资金费、强平、止盈止损、条件单和负余额覆盖。
+// forceSample 为真时忽略采样间隔，立刻写标记价与保险基金快照。
 func (s *Server) Tick(ctx context.Context, forceSample bool) {
 	s.tickMu.Lock()
 	defer s.tickMu.Unlock()
@@ -50,7 +53,7 @@ func (s *Server) liqFeeRate(c Contract) decimal.Decimal {
 	return c.MMR
 }
 
-// liquidations scans every user with open positions. Caller holds s.mu.
+// liquidations 扫所有非 system: 的持仓用户。调用方持有 s.mu。
 func (s *Server) liquidations(ctx context.Context) {
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT user_id FROM fut_positions WHERE qty <> 0 AND user_id NOT LIKE 'system:%'`)
 	if err != nil {
@@ -71,6 +74,8 @@ func (s *Server) liquidations(ctx context.Context) {
 	}
 }
 
+// checkUser：逐仓在 Iso+未实现盈亏 <= 维持保证金时只强平该仓，标记价缺失则跳过该仓。
+// 全仓在钱包余额+全部全仓未实现盈亏 <= 全部全仓维持保证金时一起强平；任一全仓标记价缺失则整户跳过。
 func (s *Server) checkUser(ctx context.Context, uid string) error {
 	st, err := s.state(ctx, s.db, uid)
 	if err != nil {
@@ -98,9 +103,8 @@ func (s *Server) checkUser(ctx context.Context, uid string) error {
 	return nil
 }
 
-// takeover closes uid's position at px. When px differs from mark (a bankrupt
-// position the fund cannot cover) it is first auto-deleveraged against opposing
-// positions; whatever is left is handed to the insurance fund.
+// takeover 按 px 平掉 uid 的仓位。px 不等于标记价（破产且基金盖不住）时先 ADL，
+// 剩下的仓位与 system:insurance 对倒。历史状态记 liquidated。
 func (s *Server) takeover(ctx context.Context, tx *sql.Tx, uid, posSide string, c Contract, mark, px decimal.Decimal) (Position, error) {
 	s.histStatus = "liquidated"
 	defer func() { s.histStatus = "" }()
@@ -132,6 +136,9 @@ func (s *Server) takeover(ctx context.Context, tx *sql.Tx, uid, posSide string, 
 	return p, err
 }
 
+// liquidateIsolated 先撤该合约挂单。权益 = Iso + 按标记价的未实现盈亏。
+// ADL 开启且权益为负时，成交价改为破产价（按保险基金盖不住的缺口偏移），否则按标记价接管。
+// 平仓退回的正权益里，最多扣 |qty|*mark*强平费率（FUTURES_LIQUIDATION_FEE_RATE 为空则用合约 MMR）给保险基金；缺口由保险基金补。
 func (s *Server) liquidateIsolated(ctx context.Context, tx *sql.Tx, uid, sym, posSide string, mark decimal.Decimal) error {
 	c := s.contracts[sym]
 	bal0, _, err := lockAccount(ctx, tx, uid)
@@ -165,6 +172,8 @@ func (s *Server) liquidateIsolated(ctx context.Context, tx *sql.Tx, uid, sym, po
 	return s.settleLiq(ctx, tx, uid, c, p, mark, fee, shortfall)
 }
 
+// liquidateCross 撤掉该用户全部挂单，再按标记价接管每笔全仓。任一全仓没有标记价则整笔放弃。
+// 账户权益为负且 ADL 开启时，缺口按各仓名义价值分摊进破产价。强平费和穿仓只在第一笔合约上记一次。
 func (s *Server) liquidateCross(ctx context.Context, tx *sql.Tx, uid string) error {
 	if _, _, err := lockAccount(ctx, tx, uid); err != nil {
 		return err
@@ -273,7 +282,7 @@ func (s *Server) settleLiq(ctx context.Context, tx *sql.Tx, uid string, c Contra
 	return err
 }
 
-// triggerTPSL closes positions whose mark crossed TP or SL. Caller holds s.mu.
+// triggerTPSL 按仓位上记录的触发价类型（缺省 MARK）比较。未成交的平仓在 TPSLRetry 内不重复提交。调用方持有 s.mu。
 func (s *Server) triggerTPSL(ctx context.Context) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+posCols+` FROM fut_positions WHERE qty <> 0 AND (tp_price IS NOT NULL OR sl_price IS NOT NULL)`)
 	if err != nil {
@@ -314,8 +323,7 @@ func (s *Server) triggerTPSL(ctx context.Context) {
 	}
 }
 
-// coverNegative lets the insurance fund absorb negative wallet balances of users
-// with no open cross positions (e.g. after rounding or funding on a closed book).
+// coverNegative 由保险基金补上没有全仓持仓的负钱包余额（例如舍入或空仓后的资金费）。仍有全仓的负余额留给强平处理。
 func (s *Server) coverNegative(ctx context.Context) {
 	rows, err := s.db.QueryContext(ctx, `SELECT a.user_id FROM fut_accounts a WHERE a.balance < 0 AND a.user_id NOT LIKE 'system:%'
 		AND NOT EXISTS (SELECT 1 FROM fut_positions p WHERE p.user_id=a.user_id AND p.qty<>0 AND p.margin_mode='cross')`)

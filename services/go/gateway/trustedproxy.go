@@ -7,9 +7,8 @@ import (
 	"strings"
 )
 
-// DefaultTrustedProxyCIDRs: Cloudflare edge ranges (https://www.cloudflare.com/ips/).
-// CF-IPCountry is only trusted when the direct TCP peer is inside
-// TRUSTED_PROXY_CIDRS; any other peer could forge the header.
+// Cloudflare 边缘网段（https://www.cloudflare.com/ips/）。TRUSTED_PROXY_CIDRS 空时用这份。
+// 对端不在网段内时，仍可由 X-Linbit-Edge-Auth 取得同样的信任，见 clientident.go。
 const DefaultTrustedProxyCIDRs = "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18," +
 	"108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15," +
 	"104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22," +
@@ -46,8 +45,7 @@ func peerIP(r *http.Request) net.IP {
 	return net.ParseIP(strings.Trim(h, "[]"))
 }
 
-// trustedCountry returns the CF-IPCountry value only when the direct peer is
-// a trusted proxy; "" means unknown (untrusted peer, missing, XX or T1/Tor).
+// 已信任时返回两位大写 CF-IPCountry。未信任、缺头、XX、T1（Tor）返回空。
 func trustedCountry(r *http.Request, trusted []*net.IPNet) string {
 	ok, set := requestTrusted(r) // set by withClientIdentity (peer CIDR or edge secret)
 	if !set {

@@ -1,15 +1,12 @@
 package main
 
-// convert_risk.go: 闪兑 risk controls.
+// convert_risk.go：闪兑风控。
 //
-//  1. USDC depeg guard: when the USDC index moves more than depegBps
-//     (default 50 = 0.5%) away from 1 — or the USDC index is missing/stale —
-//     USDC↔USDT convert is paused (quote and accept return
-//     503 PAIR_PAUSED_DEPEG). It resumes automatically once the price is back
-//     in range. Every pause/resume writes a convert_events row (audit) and
-//     sends a Telegram alert.
+//  1. USDC 脱锚：USDC 指数偏离 1 超过 depegBps（默认 50，即 0.5%），
+//     或指数缺失/过期，就暂停 USDC↔USDT。报价和接受都返回 503 PAIR_PAUSED_DEPEG。
+//     价格回到区间内自动恢复。每次暂停/恢复写 convert_events，并发 Telegram。
 //
-//  2. Automatic hedging (convert_hedge.go).
+//  2. 自动对冲见 convert_hedge.go。
 
 import (
 	"context"

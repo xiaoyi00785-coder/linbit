@@ -26,12 +26,9 @@ type Config struct {
 	// ClientIPHeader names the trusted header carrying the real client IP (set by
 	// nginx); used for API-key IP allowlists. Empty = TCP peer address.
 	ClientIPHeader string
-	// TrustedProxyCIDRs: peers whose CF-IPCountry header is trusted (TradFi
-	// region gate). Default Cloudflare ranges; anything else = country unknown.
+	// TRUSTED_PROXY_CIDRS。对端在这些网段内才采信身份头。默认 Cloudflare 段。边缘密钥是另一条信任路径。
 	TrustedProxyCIDRs string
-	// EdgeSecret (GATEWAY_EDGE_SECRET, >=32 chars): the web/partner Next servers
-	// send it as X-Linbit-Edge-Auth when calling the gateway directly; such
-	// requests may assert X-Real-IP / CF-IPCountry like a trusted proxy peer.
+	// GATEWAY_EDGE_SECRET，至少 32 字符。直连方放在 X-Linbit-Edge-Auth，可声明 X-Real-IP / CF-IPCountry。更短则忽略。
 	EdgeSecret string
 	// AllowedOrigins is the CORS allow-list (empty = dev default: localhost/127.0.0.1).
 	AllowedOrigins []string

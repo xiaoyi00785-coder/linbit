@@ -1,5 +1,7 @@
 package storage
 
+// local.go：把对象写成 BaseDir 下的文件，经受控 HTTP 读回。key 在读写时都清洗，".." 不能逃出根目录。
+
 import (
 	"context"
 	"fmt"
@@ -11,13 +13,9 @@ import (
 	"strings"
 )
 
-// LocalStorage stores objects as files under BaseDir and exposes them through a
-// controlled HTTP route rooted at PublicBase.
-//
-// A stored key "avatars/80000001/ab12cd.png" becomes the file
-// <BaseDir>/avatars/80000001/ab12cd.png and the URL
-// <PublicBase>/avatars/80000001/ab12cd.png. Keys are sanitised on both write
-// and read so a request can never escape BaseDir via "..".
+// LocalStorage 把对象存成 BaseDir 下的文件，并用 PublicBase 拼出访问 URL。
+// key "avatars/80000001/ab12cd.png" 对应文件 <BaseDir>/avatars/80000001/ab12cd.png，
+// URL 是 <PublicBase>/avatars/80000001/ab12cd.png。读写都清洗 key，请求不能用 ".." 逃出 BaseDir。
 type LocalStorage struct {
 	baseDir    string // filesystem root (created if missing)
 	publicBase string // URL prefix for retrieval, e.g. "/account/avatars" or "https://cdn/x"

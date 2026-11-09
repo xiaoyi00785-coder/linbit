@@ -1,5 +1,8 @@
 package storage
 
+// s3.go：S3 兼容存储（AWS / MinIO / R2）。path-style，自己做 SigV4，不依赖 AWS SDK。
+// 凭证空着时读 S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY，再回退 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY。
+
 import (
 	"bytes"
 	"context"
@@ -15,8 +18,7 @@ import (
 	"time"
 )
 
-// S3Config holds the settings for an S3 (or S3-compatible, e.g. MinIO, R2)
-// backend. Requests use path-style addressing and AWS Signature V4.
+// S3Config 是 S3 或兼容实现（MinIO、R2）的配置。请求用 path-style 和 AWS Signature V4。
 type S3Config struct {
 	Bucket     string // target bucket
 	Region     string // AWS region (or endpoint region for compatibles; default us-east-1)
@@ -30,8 +32,7 @@ type S3Config struct {
 	now             func() time.Time
 }
 
-// S3Storage is an ObjectStorage backed by S3-compatible object storage,
-// implemented without the AWS SDK (PUT/GET object with SigV4).
+// S3Storage 用 S3 兼容存储实现 ObjectStorage。PUT/GET 自己签 SigV4，没有 AWS SDK。
 type S3Storage struct {
 	cfg S3Config
 }

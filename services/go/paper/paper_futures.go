@@ -1,5 +1,8 @@
 package main
 
+// 模拟 USDX 永续。行情和合约规格只从 FutSource 读真实合约服务。账本、仓位、订单都在 paper_fut_*。
+// 不写生产 fut_accounts，不调用资产账本，也不向真实撮合下单。
+
 import (
 	"context"
 	"database/sql"
@@ -10,10 +13,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Paper USDX perpetuals. Prices and contract specs are supplied by FutSource,
-// which must read the live futures service. This file never writes fut_accounts,
-// the asset ledger, or the live matcher.
-
 var paperFutBases = []string{"BTC", "ETH", "BNB", "ARB", "XRP", "SOL"}
 
 const (
@@ -23,6 +22,7 @@ const (
 	paperFutClaimWait = time.Minute
 )
 
+// FutSpec 把真实 USDT 永续映射成模拟 USDX（BTCUSDT → BTCUSDX）。Available 为假时拒绝开仓。
 type FutSpec struct {
 	Symbol            string          `json:"symbol"`
 	LiveSymbol        string          `json:"liveSymbol"`
@@ -46,13 +46,13 @@ type FutSpec struct {
 	PriceSource       string          `json:"priceSource"`
 }
 
-// FundingSettlement is one real futures funding-history row. Paper applies it
-// once per position side; it does not invent a time or a rate.
+// FundingSettlement 是真实合约资金费历史的一行。模拟盘按仓位方向套用，不自己编时间和费率。
 type FundingSettlement struct {
 	Time time.Time
 	Rate decimal.Decimal
 }
 
+// FutSource 只读真实合约的规格、标记价/指数和资金费历史。实现不得下真实单或写 fut_accounts。
 type FutSource interface {
 	Specs(ctx context.Context) ([]FutSpec, error)
 	Quote(ctx context.Context, liveSymbol string) (mark, index decimal.Decimal, funding *decimal.Decimal, ok bool, err error)
@@ -80,11 +80,14 @@ type futOrderIn struct {
 	ClientOrderID string
 }
 
+// ensureFutAccount 只在 paper_fut_accounts 插入初始虚拟余额，冲突则跳过。不碰 fut_accounts。
 func (s *Store) ensureFutAccount(ctx context.Context, tx *sql.Tx, uid string) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO paper_fut_accounts (user_id, balance) VALUES ($1, $2) ON CONFLICT DO NOTHING`, uid, paperFutInitial)
 	return err
 }
 
+// FutAccountView 读 paper_fut_accounts。没有行就种 10000 虚拟 USDX。未实现盈亏用 FutSource 的标记价，标记价不可用则该仓不计。
+// 余额、可用、冻结、未实现盈亏用 StringFixed(8) 展示。
 func (s *Store) FutAccountView(ctx context.Context, uid string, src FutSource) (map[string]any, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -135,6 +138,7 @@ func (s *Store) FutAccountView(ctx context.Context, uid string, src FutSource) (
 	}, rows.Err()
 }
 
+// FutClaim 只给 paper_fut_accounts 加虚拟 USDX。金额须为正且不超过 paperFutClaimCap，加完不超过 paperFutMaxBal，两次至少隔 paperFutClaimWait。不划真实余额。
 func (s *Store) FutClaim(ctx context.Context, uid string, amount decimal.Decimal) (map[string]any, error) {
 	capD := decimal.RequireFromString(paperFutClaimCap)
 	maxD := decimal.RequireFromString(paperFutMaxBal)
@@ -178,6 +182,7 @@ func (s *Store) FutClaim(ctx context.Context, uid string, amount decimal.Decimal
 	return map[string]any{"balance": next.StringFixed(8), "credited": amount.StringFixed(8), "asset": "USDX"}, nil
 }
 
+// FutReset 要求 confirmation=RESET_PAPER_FUTURES。删掉该用户模拟挂单和仓位，余额回到 paperFutInitial，generation+1。不改真实账户。
 func (s *Store) FutReset(ctx context.Context, uid, confirm string) error {
 	if confirm != "RESET_PAPER_FUTURES" {
 		return apiErr(400, "VALIDATION_ERROR", "请传入 confirmation=RESET_PAPER_FUTURES")
@@ -210,9 +215,9 @@ func (s *Store) FutReset(ctx context.Context, uid, confirm string) error {
 	return tx.Commit()
 }
 
-// liqPrice is the mark where position equity equals maintenance margin.
-// Long: (entry*qty - margin) / (qty*(1-mmr)). Short: (entry*qty + margin) / (qty*(1+mmr)).
-// Isolated passes isolated margin. Cross passes the USDX wallet balance.
+// liqPrice 是仓位权益等于维持保证金时的标记价。
+// 多：(entry*qty - margin) / (qty*(1-mmr))。空：(entry*qty + margin) / (qty*(1+mmr))。
+// 逐仓的 margin 传 isolated_margin，全仓传 USDX 钱包余额。分母不是正数则返回 0。
 func liqPrice(entry, margin, qty, mmr decimal.Decimal) decimal.Decimal {
 	q := qty.Abs()
 	if !entry.IsPositive() || q.IsZero() || !margin.IsPositive() {
@@ -246,6 +251,8 @@ func (s *Store) specBySymbol(ctx context.Context, src FutSource, symbol string) 
 	return FutSpec{}, apiErr(404, "SYMBOL_UNAVAILABLE", "该模拟合约没有真实行情源")
 }
 
+// PlaceFutOrder 用真实标记价在模拟账本成交。标记价不可用返回 MARK_UNAVAILABLE，不改任何余额。
+// 同一 user+clientOrderId 已存在则直接返回原 orderId（replayed），不再成交一次。10 秒内超过 30 笔返回 RATE_LIMITED。
 func (s *Store) PlaceFutOrder(ctx context.Context, uid string, in futOrderIn, src FutSource) (map[string]any, error) {
 	in.Symbol = strings.ToUpper(in.Symbol)
 	in.Side = strings.ToLower(in.Side)
@@ -375,6 +382,8 @@ func (s *Store) PlaceFutOrder(ctx context.Context, uid string, in futOrderIn, sr
 	return map[string]any{"orderId": id, "status": status, "symbol": in.Symbol, "markPrice": mark.String(), "priceSource": "futures_mark"}, nil
 }
 
+// sizeToQty 把 quantity / notional / cost 换成数量。MinQty>0 时按步长向下取整，不是拒绝多余小数。
+// 取整后不足最小量或仍超过 MaxQty 才返回 VALIDATION_ERROR。
 func sizeToQty(in futOrderIn, mark decimal.Decimal, sp FutSpec) (decimal.Decimal, error) {
 	var qty decimal.Decimal
 	switch in.SizeMode {
@@ -464,9 +473,7 @@ func (s *Store) fillLocked(ctx context.Context, tx *sql.Tx, uid, orderID string,
 	if err != nil {
 		return err
 	}
-	// One-way: an opposite open first closes the existing position and realizes
-	// PnL. Only the leftover quantity opens the new side. Hedge sides are
-	// separate rows, so they never take this path.
+	// 单向（BOTH）：反向开仓先平掉已有仓并实现盈亏，剩下的数量才开新方向。对冲的 LONG/SHORT 是不同行，不走这里。
 	if ps == "BOTH" && !haveQty.IsZero() && haveQty.Sign() != sideQty.Sign() {
 		closeQty := qty
 		if closeQty.GreaterThan(haveQty.Abs()) {
@@ -502,6 +509,7 @@ func (s *Store) fillLocked(ctx context.Context, tx *sql.Tx, uid, orderID string,
 		newEntry = haveQty.Abs().Mul(entry).Add(qty.Mul(px)).Div(newQty.Abs())
 	}
 	newIso := iso
+	// 逐仓：保证金从 paper_fut_accounts.balance 划进 isolated_margin。全仓：只增加 frozen，余额先不动。
 	if in.MarginMode == "isolated" {
 		newIso = iso.Add(margin)
 		if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_accounts SET balance=balance-$2, updated_at=now() WHERE user_id=$1`, uid, margin); err != nil {
@@ -562,9 +570,8 @@ func (s *Store) reduce(ctx context.Context, tx *sql.Tx, uid, orderID string, in 
 	if err := tx.QueryRowContext(ctx, `SELECT balance FROM paper_fut_accounts WHERE user_id=$1 FOR UPDATE`, uid).Scan(&bal); err != nil {
 		return err
 	}
-	// Isolated margin coming back and the market PnL are one cash delta.
-	// A loss can take at most the wallet; the rest is simulated bankruptcy
-	// so balance stays >= 0 and the close still commits.
+	// 逐仓退回的保证金和这笔盈亏合成一个现金变动。亏损最多扣到钱包为 0，超出部分记 bankruptcy，余额不为负，平仓仍提交。
+	// 全仓另按开仓价×平仓量/杠杆释放 frozen。只改 paper_fut_accounts。
 	delta := release.Add(pnl)
 	applied := delta
 	shortfall := decimal.Zero
@@ -597,6 +604,7 @@ func (s *Store) reduce(ctx context.Context, tx *sql.Tx, uid, orderID string, in 
 	return nil
 }
 
+// CancelFutOrder 只撤该用户 status 为 open 或 untriggered 的模拟单，并退回开仓单冻住的保证金。已结束返回 ORDER_CLOSED。
 func (s *Store) CancelFutOrder(ctx context.Context, uid, orderID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -626,6 +634,7 @@ func (s *Store) CancelFutOrder(ctx context.Context, uid, orderID string) error {
 	return tx.Commit()
 }
 
+// CancelAllFut 撤该用户全部 open/untriggered 模拟单。单笔失败不中断，返回成功撤掉的张数。
 func (s *Store) CancelAllFut(ctx context.Context, uid string) (int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT order_id FROM paper_fut_orders WHERE user_id=$1 AND status IN ('open','untriggered')`, uid)
 	if err != nil {
@@ -649,6 +658,7 @@ func (s *Store) CancelAllFut(ctx context.Context, uid string) (int, error) {
 	return n, rows.Err()
 }
 
+// ClosePosition 用真实标记价市价平掉指定模拟仓。没有标记价返回 MARK_UNAVAILABLE，不改余额。无仓返回 NO_POSITION。
 func (s *Store) ClosePosition(ctx context.Context, uid, symbol, positionSide string, src FutSource) error {
 	sp, err := s.specBySymbol(ctx, src, symbol)
 	if err != nil {
@@ -681,6 +691,7 @@ func (s *Store) ClosePosition(ctx context.Context, uid, symbol, positionSide str
 	return tx.Commit()
 }
 
+// CloseAll 逐仓调用 ClosePosition。标记价不可用或无仓的跳过，不使用过期价。返回成功平掉的仓数。
 func (s *Store) CloseAll(ctx context.Context, uid string, src FutSource) (int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT symbol, position_side FROM paper_fut_positions WHERE user_id=$1 AND qty <> 0`, uid)
 	if err != nil {
@@ -705,6 +716,7 @@ func (s *Store) CloseAll(ctx context.Context, uid string, src FutSource) (int, e
 	return n, rows.Err()
 }
 
+// SetTPSL 只改 paper_fut_positions 上的触发价。没有对应仓位则失败。不挂真实条件单。
 func (s *Store) SetTPSL(ctx context.Context, uid, symbol, positionSide string, tp, sl decimal.Decimal, hasTP, hasSL bool) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE paper_fut_positions SET tp_trigger=$4, sl_trigger=$5, version=version+1, updated_at=now() WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND qty <> 0`,
 		uid, strings.ToUpper(symbol), strings.ToUpper(positionSide), nullDecOpt(tp, hasTP), nullDecOpt(sl, hasSL))
@@ -718,6 +730,8 @@ func (s *Store) SetTPSL(ctx context.Context, uid, symbol, positionSide string, t
 	return nil
 }
 
+// SetFutLeverage 写入 paper_fut_settings，并把该交易对 qty<>0 的模拟仓杠杆一起改掉。杠杆须在 1 和真实 MaxLeverage 之间。
+// 新设置行的保证金模式写成 cross；已有设置行只更新杠杆，不改模式。
 func (s *Store) SetFutLeverage(ctx context.Context, uid, symbol string, lev int, src FutSource) error {
 	sp, err := s.specBySymbol(ctx, src, symbol)
 	if err != nil {
@@ -746,6 +760,7 @@ func (s *Store) SetFutLeverage(ctx context.Context, uid, symbol string, lev int,
 	return tx.Commit()
 }
 
+// SetMarginMode 只接受 cross 或 isolated。该交易对仍有仓时返回 HAS_POSITION，不改已有仓的模式。
 func (s *Store) SetMarginMode(ctx context.Context, uid, symbol, mode string) error {
 	mode = strings.ToLower(mode)
 	if mode != "cross" && mode != "isolated" {
@@ -772,6 +787,7 @@ func (s *Store) SetMarginMode(ctx context.Context, uid, symbol, mode string) err
 	return tx.Commit()
 }
 
+// SetPositionMode 只接受 one_way 或 hedge。有模拟持仓时返回 HAS_POSITION。只改 paper_fut_accounts.position_mode。
 func (s *Store) SetPositionMode(ctx context.Context, uid, mode string) error {
 	if mode != "one_way" && mode != "hedge" {
 		return apiErr(400, "VALIDATION_ERROR", "持仓模式只能是 one_way 或 hedge")
@@ -796,8 +812,9 @@ func (s *Store) SetPositionMode(ctx context.Context, uid, mode string) error {
 	return tx.Commit()
 }
 
-// LiquidateAt closes positions whose mark has crossed the liquidation price.
-// The event key includes the position version, so a second instance no-ops.
+// LiquidateAt 在标记价穿过强平价时平仓。多仓 mark<=liq，空仓 mark>=liq。
+// 逐仓用 isolated_margin，全仓用当时的 USDX 钱包余额算 liqPrice。
+// 幂等键 liq:uid:symbol:side:version 写入 paper_fut_events，冲突则不再平一次。只改模拟账本。
 func (s *Store) LiquidateAt(ctx context.Context, uid, symbol, positionSide string, mark, mmr decimal.Decimal) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -861,6 +878,8 @@ func (s *Store) LiquidateAt(ctx context.Context, uid, symbol, positionSide strin
 	return true, nil
 }
 
+// LiquidationSweep 用真实标记价扫模拟仓：先撮合挂单，再触发止盈止损，再强平，再套用资金费历史。
+// 规格不可用或没有标记价则跳过该仓。撮合或强平出错则整轮返回错误。
 func (s *Store) LiquidationSweep(ctx context.Context, src FutSource) error {
 	specs, err := src.Specs(ctx)
 	if err != nil {
@@ -1029,12 +1048,17 @@ type markSource struct {
 	symbol string
 }
 
+// Specs 是止盈止损平仓用的内存规格，不读真实合约。MMR 固定 0.004，最大杠杆 200。
 func (m markSource) Specs(context.Context) ([]FutSpec, error) {
 	return []FutSpec{{Symbol: m.symbol, LiveSymbol: strings.TrimSuffix(m.symbol, "USDX") + "USDT", Available: true, MMR: decimal.RequireFromString("0.004"), MaxLeverage: 200, MinQty: decimal.RequireFromString("0.0001"), MaxQty: decimal.RequireFromString("100")}}, nil
 }
+
+// Quote 把传入的标记价同时当作标记价和指数返回，资金费为空。
 func (m markSource) Quote(context.Context, string) (decimal.Decimal, decimal.Decimal, *decimal.Decimal, bool, error) {
 	return m.mark, m.mark, nil, true, nil
 }
+
+// Settlements 固定返回空，这条路径不会套用资金费。
 func (m markSource) Settlements(context.Context, string) ([]FundingSettlement, error) {
 	return nil, nil
 }
@@ -1069,6 +1093,7 @@ func (s *Store) futPushRows(ctx context.Context, uid string) (positions, orders 
 	return
 }
 
+// ApplyFunding 按真实资金费历史逐条套用。时间为零的行跳过。不自己计算资金费率。
 func (s *Store) ApplyFunding(ctx context.Context, uid, symbol, positionSide string, rows []FundingSettlement) error {
 	for _, row := range rows {
 		if err := s.applyOneFunding(ctx, uid, symbol, positionSide, row.Rate, row.Time); err != nil {
@@ -1078,6 +1103,8 @@ func (s *Store) ApplyFunding(ctx context.Context, uid, symbol, positionSide stri
 	return nil
 }
 
+// applyOneFunding 支付额 = 开仓价×|qty|×rate。空头取反（rate>0 时多头付、空头收）。名义用开仓价，不用标记价。
+// 幂等键 fund:uid:symbol:side:unix 冲突则跳过。扣款用 GREATEST(balance-pay,0)，余额不为负。只更新 paper_fut_accounts。
 func (s *Store) applyOneFunding(ctx context.Context, uid, symbol, positionSide string, rate decimal.Decimal, fundingTime time.Time) error {
 	if fundingTime.IsZero() {
 		return nil

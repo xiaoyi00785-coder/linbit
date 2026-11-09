@@ -1,5 +1,7 @@
 package main
 
+// 增长活动配置。合伙人档位按直推合约成交额晋升，结算时刻和费率来自环境变量。
+
 import (
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ type Tier struct {
 	SpotRate    decimal.Decimal `json:"spotRate"`
 }
 
+// Config 汇总结算时刻、合伙人档位、返佣比例、卡券期限和新人任务。
 type Config struct {
 	Port          string
 	DatabaseURL   string
@@ -89,6 +92,7 @@ func parseTiers(s string) []Tier {
 
 const defaultTiers = "normal:0:0.30:0.20,silver:5000000:0.40:0.25,gold:20000000:0.45:0.30,diamond:50000000:0.50:0.35"
 
+// LoadConfig 从环境变量读取。合伙人档位解析为空时用内置默认档。
 func LoadConfig() Config {
 	quotes := map[string]bool{}
 	for _, q := range strings.Split(common.Env("GROWTH_USD_QUOTES", "USDT,USDC"), ",") {

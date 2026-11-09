@@ -8,9 +8,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// MaybeRedis connects to Redis when url is non-empty and the ping succeeds.
-// Redis is an optional dependency: a nil client (url empty or unreachable)
-// is a valid, supported configuration and callers must handle it.
+// MaybeRedis 在 url 非空且 ping 成功时返回客户端。
+// url 为空、解析失败或 ping 失败都返回 nil 并记日志。这是允许的配置，调用方要处理 nil。
 func MaybeRedis(url string) *redis.Client {
 	if url == "" {
 		log.Printf("redis: REDIS_URL not set, running without redis")

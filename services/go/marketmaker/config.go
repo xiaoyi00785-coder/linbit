@@ -1,5 +1,7 @@
 package main
 
+// 做市进程配置。MM_ENABLED 未设置时主网默认停止，其他环境默认开启。
+
 import (
 	"os"
 	"strings"

@@ -1,15 +1,14 @@
-// Command devstack boots a local Linbit backend for development and testing
-// without Docker: a real embedded PostgreSQL (github.com/fergusstrange/embedded-postgres),
-// an in-memory Redis (miniredis), and the gateway/account/asset services built
-// and run as child processes.
+// devstack 不用 Docker 起本地后端：内嵌 PostgreSQL（github.com/fergusstrange/embedded-postgres）、
+// 内存 Redis（miniredis），编译并拉起 account、asset、gateway、order、market-data、wallet、kyc、
+// admin、futures、strategy、growth、earn、marketmaker、paper，以及 Rust matching-engine。
 //
-// Usage:
+//	go run ./tools/devstack               阻塞到 Ctrl-C
+//	go run ./tools/devstack -exec "<cmd>" 就绪后执行，拆栈，退出码跟命令
 //
-//	go run ./tools/devstack                 # boot and block until Ctrl-C
-//	go run ./tools/devstack -exec "<cmd>"   # boot, run <cmd>, tear down, exit with its code
-//
-// When -exec is used the following environment variables are exported to the
-// command: GATEWAY_URL, ACCOUNT_URL, ASSET_URL, DATABASE_URL, REDIS_URL.
+// -exec 注入 GATEWAY_URL、ACCOUNT_URL、ASSET_URL、WALLET_URL、ORDER_URL、ENGINE_URL、MARKET_URL、
+// ADMIN_URL、FUTURES_URL、FUTURES_INTERNAL_URL、MM_URL、KYC_URL、STRATEGY_URL、GROWTH_URL、EARN_URL、
+// PAPER_URL、DATABASE_URL、REDIS_URL、INTERNAL_TOKEN、DEVSTACK_TELEGRAM_API_URL，
+// 以及只给子进程、不打印的 ADMIN_BOOTSTRAP_USERNAME、ADMIN_BOOTSTRAP_PASSWORD、ADMIN_BOOTSTRAP_TOTP_SECRET。
 package main
 
 import (

@@ -14,14 +14,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// feed_sources.go: trading-status filtering and the Bybit / Gate.io spot
-// sources.
-//
-// Venue "last price" tickers keep answering for halted / delisted pairs (e.g.
-// Binance TONUSDT is status BREAK yet /ticker/price still returns the last
-// traded price). Every source therefore pairs its ticker call with a cached,
-// periodically refreshed instruments call and only quotes symbols whose
-// venue status is "trading".
+// 交易状态过滤，以及 Bybit、Gate.io 现货源。
+// 各所最新价对停牌或下架对仍会返回（Binance TONUSDT 状态 BREAK，/ticker/price 仍给最后成交价）。
+// 每个源都把 ticker 和定期刷新的 instruments 缓存配对，只报状态为交易中的符号。
+// 状态表第一次要同步加载完才报价；之后按 ttl 在后台刷新，避免数 MB 的合约列表卡住价格轮询。
 
 // statusCache holds the set of tradable symbols (in our BTCUSDT form) for one
 // venue. It is loaded synchronously on first use (so nothing is ever quoted
