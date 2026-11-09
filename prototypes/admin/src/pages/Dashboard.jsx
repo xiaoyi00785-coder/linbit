@@ -1,3 +1,4 @@
+// 数据看板：成交、手续费、用户、充提、持仓和强平，以及近日趋势。
 import { ApiState, BarChart, Empty, Kpi, LineChart, PageHead, Tabs, Tag, useApp } from '../ui.jsx'
 import { ft, num, useApi } from '../api.js'
 import { useState } from 'react'

@@ -1,3 +1,4 @@
+// 后台壳：按地址栏 hash 打开各页，并维持登录态。
 import { useEffect, useState } from 'react'
 import { FLAT, MENU } from './menu.js'
 import { Ctx } from './ui.jsx'
@@ -28,6 +29,7 @@ export default function App() {
   const go = (k) => { location.hash = '#/' + k }
   const say = (t) => { setToast(t); setTimeout(() => setToast(null), 1800) }
   const [me, setMe] = useState(null); const [authed, setAuthed] = useState(!!getToken())
+  // 接口 401 只收起登录态，不调用退出接口。
   useEffect(() => { setUnauthorizedHandler(() => { setAuthed(false); setMe(null) }) }, [])
   useEffect(() => { if (authed) api('me').then(setMe, () => {}) }, [authed])
   const logout = () => { api('auth/logout', { method: 'POST' }).catch(() => {}).finally(() => { setToken(null); setAuthed(false); setMe(null) }) }

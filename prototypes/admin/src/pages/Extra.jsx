@@ -1,3 +1,4 @@
+// 扩展页：热钱包与归集、强平记录，并转出合伙人、卡券和站内信。
 import { useState } from 'react'
 import { ApiState, DataTable, Empty, Kpi, PageHead, Tabs, Tag } from '../ui.jsx'
 import { ft, items, num, useApi } from '../api.js'

@@ -1,3 +1,4 @@
+// 社区链接：编辑各渠道地址，保存时一次提交验证码和原因。
 import { useEffect, useState } from 'react'
 import { ApiState, Confirm } from '../ui.jsx'
 import { api, useApi } from '../api.js'

@@ -1,3 +1,4 @@
+// 资金页：提现为初审加第二人复核；另有充值记录和复式记账流水。
 import { useState } from 'react'
 import { ApiState, Confirm, DataTable, Drawer, Kpi, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilter } from '../ui.jsx'
 import { Profile30d } from './Common.jsx'

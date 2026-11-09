@@ -1,3 +1,4 @@
+// 用户、KYC 与风险名单：冻结需原因和验证码；KYC 由当前管理员单人通过或驳回。
 import { useState } from 'react'
 import { DataTable, Drawer, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilter } from '../ui.jsx'
 import { ApiState } from '../ui.jsx'

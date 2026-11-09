@@ -1,3 +1,4 @@
+// 系统设置：安全策略、资产与内部转账、社区链接和 App 开关。
 import { useState } from 'react'
 import { PageHead, Tabs } from '../ui.jsx'
 import { ConfigCard } from './Common.jsx'

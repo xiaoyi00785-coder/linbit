@@ -1,3 +1,4 @@
+// 后台通用界面：页头、抽屉、表格、图表，以及带验证码的确认框。
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
 export const Ctx = createContext(null)
