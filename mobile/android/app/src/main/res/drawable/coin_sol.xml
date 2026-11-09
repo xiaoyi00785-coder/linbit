@@ -1,12 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 由 mobile/tools/gen_coin_icons.py 从 CC0 SVG 生成，请勿手改 -->
+<!-- Solana mark from 0xSequence/web3icons (MIT). Source: apps/web/public/coins/sol.svg
+     (token/solana.svg). Gradients + black disc match mainstream exchange branding.
+     Replaces wrong cryptocurrency-icons flat #66F9A1 SOL. Do not regenerate via gen_coin_icons.py. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="32dp" android:height="32dp"
-    android:viewportWidth="32" android:viewportHeight="32">
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
     <path
-        android:fillColor="#66F9A1"
-        android:pathData="M0,16a16,16 0 1 0 32,0a16,16 0 1 0 -32,0z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M9.925 19.687a.59.59 0 01.415-.17h14.366a.29.29 0 01.207.497l-2.838 2.815a.59.59 0 01-.415.171H7.294a.291.291 0 01-.207-.498l2.838-2.815zm0-10.517A.59.59 0 0110.34 9h14.366c.261 0 .392.314.207.498l-2.838 2.815a.59.59 0 01-.415.17H7.294a.291.291 0 01-.207-.497L9.925 9.17zm12.15 5.225a.59.59 0 00-.415-.17H7.294a.291.291 0 00-.207.498l2.838 2.815c.11.109.26.17.415.17h14.366a.291.291 0 00.207-.498l-2.838-2.815z" />
+        android:fillColor="#000000"
+        android:pathData="M16,0C7.163,0 0,7.163 0,16s7.163,16 16,16 16,-7.163 16,-16S24.837,0 16,0z" />
+    <path android:pathData="M 21.6114 12.4151 A 0.5425 0.5425 0.0000 0 1 21.2518 12.5586 L 8.6325 12.5586 C 8.1845 12.5586 7.9588 12.0467 8.2685 11.7458 L 10.3405 9.7481 A 0.5250 0.5250 0.0000 0 1 10.6992 9.6003 L 23.3684 9.6003 C 23.8208 9.6003 24.0421 10.1165 23.7271 10.4175 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="8.1259"
+                android:startY="19.7817"
+                android:endX="24.2521"
+                android:endY="19.1421">
+                <item android:offset="0" android:color="#599DB0" />
+                <item android:offset="1" android:color="#47F8C3" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M 21.6114 22.2624 A 0.5250 0.5250 0.0000 0 1 21.2518 22.3998 L 8.6325 22.3998 C 8.1845 22.3998 7.9588 21.8923 8.2685 21.5921 L 10.3405 19.5892 A 0.5250 0.5250 0.0000 0 1 10.6992 19.4466 L 23.3684 19.4466 C 23.8208 19.4466 24.0421 19.9585 23.7271 20.2586 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="8.1259"
+                android:startY="20.3514"
+                android:endX="24.1576"
+                android:endY="19.8203">
+                <item android:offset="0" android:color="#C44FE2" />
+                <item android:offset="1" android:color="#73B0D0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M 21.6114 14.6630 A 0.5250 0.5250 0.0000 0 0 21.2518 14.5248 L 8.6325 14.5248 C 8.1845 14.5248 7.9588 15.0322 8.2685 15.3315 L 10.3405 17.3353 A 0.5425 0.5425 0.0000 0 0 10.6992 17.4779 L 23.3684 17.4779 C 23.8208 17.4779 24.0421 16.9660 23.7271 16.6659 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="9.0306"
+                android:startY="16.0018"
+                android:endX="23.2643"
+                android:endY="16.0018">
+                <item android:offset="0" android:color="#778CBF" />
+                <item android:offset="1" android:color="#5DCDC9" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

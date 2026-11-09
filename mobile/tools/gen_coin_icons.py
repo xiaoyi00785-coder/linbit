@@ -98,14 +98,24 @@ def ios_imageset(source, directory):
     }, indent=2) + "\n", encoding="utf-8")
 
 
+# Symbols with handmade VectorDrawables (gradients / non-CC0 marks). Skip Android overwrite.
+HANDMADE_ANDROID = frozenset({"sol", "dot", "doge"})
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ios", action="store_true", help="同时生成 iOS SVG imageset")
     args = parser.parse_args()
     sources = sorted(SOURCES.glob("*.svg"))
+    skipped = []
     for source in sources:
         symbol = source.stem.lower()
+        if symbol in HANDMADE_ANDROID:
+            skipped.append(symbol)
+            if args.ios:
+                ios_imageset(source, IOS / f"Resources/Assets.xcassets/coin-{symbol}.imageset")
+            continue
         convert(source, ANDROID / f"coin_{symbol}.xml")
         if args.ios:
             ios_imageset(source, IOS / f"Resources/Assets.xcassets/coin-{symbol}.imageset")
@@ -115,7 +125,8 @@ def main():
             "import Foundation\n\n/// 由 mobile/tools/gen_coin_icons.py 生成；仅本地已打包图标。\n"
             f"enum CoinSymbols {{\n    static let bundled: [String: String] = [\n{body}\n    ]\n}}\n",
             encoding="utf-8")
-    print(f"已生成 {len(sources)} 个 Android VectorDrawable" + ("及 iOS imageset" if args.ios else ""))
+    skip_msg = (f"（跳过 handmade: {', '.join(skipped)}）" if skipped else "")
+    print(f"已生成 {len(sources) - len(skipped)} 个 Android VectorDrawable" + skip_msg + ("及 iOS imageset" if args.ios else ""))
 
 
 if __name__ == "__main__":

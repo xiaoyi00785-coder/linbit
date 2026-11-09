@@ -57,6 +57,7 @@ import click.cowa.linbit.core.generated.ApiConvertPairs
 import click.cowa.linbit.core.generated.ApiConvertQuote
 import click.cowa.linbit.core.generated.ApiConvertQuoteRequest
 import click.cowa.linbit.core.generated.ApiEarnProduct
+import click.cowa.linbit.core.generated.ApiLoanMarket
 import click.cowa.linbit.core.generated.ApiGridCreateRequest
 import click.cowa.linbit.core.generated.ApiEarnAutoRequest
 import click.cowa.linbit.core.generated.ApiEarnPositions200ResponseItemsInner
@@ -99,6 +100,9 @@ class SpotSubpagesViewModel @Inject constructor(
     val sessionVersion get() = tokens.sessionVersion
 
     var earnProducts by mutableStateOf<List<ApiEarnProduct>>(emptyList()); private set
+    var loanMarket by mutableStateOf<ApiLoanMarket?>(null); private set
+    var loanMarketError by mutableStateOf<String?>(null); private set
+    var loanMarketLoading by mutableStateOf(false); private set
     var earnSummary by mutableStateOf<ApiEarnSummary200Response?>(null); private set
     var earnPositions by mutableStateOf<List<ApiEarnPositions200ResponseItemsInner>>(emptyList()); private set
     var earnOrders by mutableStateOf<List<ApiEarnOrders200ResponseItemsInner>>(emptyList()); private set
@@ -193,7 +197,9 @@ class SpotSubpagesViewModel @Inject constructor(
         viewModelScope.launch {
             loading = true; error = null
             try {
-                earnProducts = apiCall { api.earnProducts() }.items ?: emptyList()
+                val raw = runCatching { apiCall { api.earnProductsRaw() } }.getOrNull()
+                earnProducts = if (raw != null) EarnCatalogue.itemsFrom(raw)
+                else apiCall { api.earnProducts() }.items ?: emptyList()
                 if (tokens.loggedIn.value) {
                     earnSummary = runCatching { apiCall { api.earnSummary() } }.getOrNull()
                     earnPositions = runCatching { apiCall { api.earnPositions() }.items ?: emptyList() }.getOrDefault(emptyList())
@@ -204,6 +210,16 @@ class SpotSubpagesViewModel @Inject constructor(
                 }
             } catch (e: Throwable) { error = e.message ?: "加载失败" }
             finally { loading = false }
+        }
+    }
+
+    /** 只读公开市场；不调用借款/还款/抵押写接口。 */
+    fun loadLoanMarket() {
+        viewModelScope.launch {
+            loanMarketLoading = true; loanMarketError = null
+            try { loanMarket = apiCall { api.loanMarket() } }
+            catch (e: Throwable) { loanMarketError = e.message ?: "加载失败"; loanMarket = null }
+            finally { loanMarketLoading = false }
         }
     }
 

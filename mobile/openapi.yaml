@@ -8008,6 +8008,9 @@ components:
               term: { type: string }
               hourlyRate: { type: string, description: 十进制字符串 }
               status: { type: string }
+              days: { type: integer, description: 固定期限天数；活期为 0 }
+              annualRate: { type: string, description: 由小时利率折算的年化展示，十进制字符串 }
+              outstanding: { type: string, description: 十进制字符串 }
         collaterals:
           type: array
           items:

@@ -125,12 +125,14 @@ data class ApiEarnProduct (
      *
      * Values: SIMPLE,FIXED,ONCHAIN,FLEXIBLE
      */
-    @Serializable
+    @Serializable(with = click.cowa.linbit.core.network.EarnProductKindSerializer::class)
     enum class Kind(val value: kotlin.String) {
         @SerialName(value = "simple") SIMPLE("simple"),
         @SerialName(value = "fixed") FIXED("fixed"),
         @SerialName(value = "onchain") ONCHAIN("onchain"),
-        @SerialName(value = "flexible") FLEXIBLE("flexible");
+        @SerialName(value = "flexible") FLEXIBLE("flexible"),
+        /** Wire value unknown to this client build — catalogue decode skips these rows. */
+        UNKNOWN("unknown");
     }
 
 }

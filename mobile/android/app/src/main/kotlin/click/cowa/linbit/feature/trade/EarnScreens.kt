@@ -82,6 +82,7 @@ fun EarnSubpage(
     var query by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showPositions by remember { mutableStateOf(false) }
+    var showLoans by remember { mutableStateOf(false) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadEarn() }
 
     val products = vm.earnProducts
@@ -105,8 +106,9 @@ fun EarnSubpage(
             .ifEmpty { products.sortedByDescending { Dec.parse(it.aprMax ?: it.apr) }.take(6) }
             .take(8)
     }
-    val hasSimple = products.any { it.kind == ApiEarnProduct.Kind.SIMPLE || it.kind == ApiEarnProduct.Kind.FLEXIBLE }
-    val hasFixed = products.any { it.kind == ApiEarnProduct.Kind.FIXED }
+    val hasSimpleEarn = products.any {
+        it.kind == ApiEarnProduct.Kind.SIMPLE || it.kind == ApiEarnProduct.Kind.FLEXIBLE || it.kind == ApiEarnProduct.Kind.FIXED
+    }
     val hasOnchain = products.any { it.kind == ApiEarnProduct.Kind.ONCHAIN }
 
     Column(Modifier.fillMaxSize().testTag("earn.hub")) {
@@ -133,14 +135,14 @@ fun EarnSubpage(
                 onLogin = onLogin,
             )
 
-            // 对照 028：Simple Earn / On-chain；定期在列表内展示。Wealth Hub 无契约；Loans 有 /loans/* 但 Android 尚未接客户端 → 不造无效入口。
-            if (hasSimple || hasOnchain || hasFixed) {
+            // 参考四入口：Simple Earn(=活期+定期) / On-chain / Wealth(无映射不造) / Loans(公开市场只读)。
+            if (hasSimpleEarn || hasOnchain) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 16.dp),
                     horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.Top,
                 ) {
-                    if (hasSimple) EarnKindChip(
+                    if (hasSimpleEarn) EarnKindChip(
                         title = "简单赚币",
                         icon = R.drawable.ic_g_earn_light,
                         selected = hubFilter == EarnHubFilter.SIMPLE,
@@ -150,11 +152,14 @@ fun EarnSubpage(
                         icon = R.drawable.ic_g_earn_dark,
                         selected = hubFilter == EarnHubFilter.ONCHAIN,
                     ) { hubFilter = if (hubFilter == EarnHubFilter.ONCHAIN) null else EarnHubFilter.ONCHAIN }
-                    if (hasFixed) EarnKindChip(
-                        title = "理财宝",
-                        icon = R.drawable.ic_g_earn_light,
-                        selected = hubFilter == EarnHubFilter.FIXED,
-                    ) { hubFilter = if (hubFilter == EarnHubFilter.FIXED) null else EarnHubFilter.FIXED }
+                    EarnKindChip(
+                        title = "质押借币",
+                        icon = R.drawable.ic_g_earn_dark,
+                        selected = showLoans,
+                    ) {
+                        showLoans = true
+                        vm.loadLoanMarket()
+                    }
                 }
             }
 
@@ -215,8 +220,8 @@ fun EarnSubpage(
                 filtered.isEmpty() -> EmptyState(if (products.isEmpty()) "暂无理财产品" else "无匹配产品")
                 else -> byAsset.forEach { (asset, list) ->
                     val open = asset in expanded
-                    val aprLo = list.minOf { Dec.parse(it.apr) }
-                    val aprHi = list.maxOf { Dec.parse(it.aprMax ?: it.bonusApr ?: it.apr) }
+                    val aprLo = list.minOf { EarnApr.base(it) }
+                    val aprHi = list.maxOf { EarnApr.ceiling(it) }
                     Column(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH)
@@ -307,6 +312,17 @@ fun EarnSubpage(
         }
     }
 
+    if (showLoans) {
+        EarnLoansMarketSheet(
+            market = vm.loanMarket,
+            loading = vm.loanMarketLoading,
+            error = vm.loanMarketError,
+            onRetry = { vm.loadLoanMarket() },
+            onDismiss = { showLoans = false },
+            onDialogWindow = onDialogWindow,
+        )
+    }
+
     earnAction?.let { act ->
         EarnActionSheet(
             act = act,
@@ -379,6 +395,64 @@ private fun EarnAssetHead(
     }
 }
 
+
+@Composable
+private fun EarnLoansMarketSheet(
+    market: click.cowa.linbit.core.generated.ApiLoanMarket?,
+    loading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    onDialogWindow: (android.view.Window?) -> Unit,
+) {
+    val p = LB.p
+    LbSheet("质押借币（只读）", onDismiss, showClose = true, onWindowReady = onDialogWindow) {
+        Column(
+            Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("仅展示公开市场条款与可质押币种，不提供借款/还款/追加抵押提交。", style = lb(FontSize.small), color = p.textSecondary)
+            when {
+                loading && market == null -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                error != null && market == null -> EmptyState(error!!) { ChipButton("重试", Modifier.height(32.dp), onClick = onRetry) }
+                market == null -> EmptyState("暂无借币市场")
+                else -> {
+                    KvRow("借款资产", market.asset ?: "--")
+                    KvRow("最低借款", "${market.minAmount ?: "--"} ${market.asset ?: ""}")
+                    KvRow("用户上限", market.userLimit ?: "--")
+                    KvRow("初始 LTV", market.initialLtv ?: "--")
+                    KvRow("预警 LTV", market.warnLtv ?: "--")
+                    KvRow("强平 LTV", market.liquidationLtv ?: "--")
+                    Text("期限", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+                    (market.terms ?: emptyList()).forEach { term ->
+                        Column(
+                            Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.md)).padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(term.term ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                            KvRow("状态", term.status ?: "--")
+                            KvRow("天数", (term.days ?: 0).toString())
+                            KvRow("小时利率", term.hourlyRate ?: "--")
+                            KvRow("年化利率", term.annualRate ?: "--")
+                        }
+                    }
+                    Text("可质押币种", style = lb(FontSize.label, FontWeight.Medium), color = p.textPrimary)
+                    (market.collaterals ?: emptyList()).forEach { c ->
+                        Column(
+                            Modifier.fillMaxWidth().background(p.fill, RoundedCornerShape(Radius.md)).padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(c.asset ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
+                            KvRow("单用户上限", c.cap ?: "--")
+                            KvRow("指数价", c.price ?: "--")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun EarnKindChip(title: String, icon: Int, selected: Boolean, onClick: () -> Unit) {
     val p = LB.p
@@ -423,7 +497,7 @@ private fun EarnFeatureCard(prod: ApiEarnProduct, onClick: () -> Unit) {
             )
         }
         Spacer(Modifier.weight(1f))
-        Text("${earnAprPct(Dec.parse(prod.aprMax ?: prod.bonusApr ?: prod.apr))}%", style = lbNum(FontSize.title, FontWeight.SemiBold), color = p.up)
+        Text(earnAprDisplay(prod), style = lbNum(FontSize.title, FontWeight.SemiBold), color = p.up)
         Text(
             earnKindSubtitle(prod),
             style = lb(FontSize.small),
@@ -457,8 +531,8 @@ private fun EarnProductRow(
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("${earnAprPct(Dec.parse(prod.aprMax ?: prod.bonusApr ?: prod.apr))}%", style = lbNum(FontSize.body, FontWeight.SemiBold), color = p.up)
-                Text("年化", style = lb(FontSize.small), color = p.textTertiary)
+                Text(earnAprDisplay(prod), style = lbNum(FontSize.body, FontWeight.SemiBold), color = p.up)
+                Text(if (EarnApr.hasTier(prod)) "档位年化" else "年化", style = lb(FontSize.small), color = p.textTertiary)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -601,13 +675,18 @@ private fun EarnFailureText(value: String?) {
 }
 
 
-private enum class EarnHubFilter { SIMPLE, FIXED, ONCHAIN }
+private enum class EarnHubFilter { SIMPLE, ONCHAIN }
 
 private fun earnMatchesHub(p: ApiEarnProduct, filter: EarnHubFilter?): Boolean = when (filter) {
     null -> true
-    EarnHubFilter.SIMPLE -> p.kind == ApiEarnProduct.Kind.SIMPLE || p.kind == ApiEarnProduct.Kind.FLEXIBLE
-    EarnHubFilter.FIXED -> p.kind == ApiEarnProduct.Kind.FIXED
+    EarnHubFilter.SIMPLE -> p.kind == ApiEarnProduct.Kind.SIMPLE || p.kind == ApiEarnProduct.Kind.FLEXIBLE || p.kind == ApiEarnProduct.Kind.FIXED
     EarnHubFilter.ONCHAIN -> p.kind == ApiEarnProduct.Kind.ONCHAIN
+}
+
+private fun earnAprDisplay(prod: ApiEarnProduct): String {
+    val lo = EarnApr.base(prod)
+    val hi = EarnApr.ceiling(prod)
+    return if (hi.compareTo(lo) == 0) "${earnAprPct(hi)}%" else "${earnAprPct(lo)}% ~ ${earnAprPct(hi)}%"
 }
 
 /** 标签只反映真实字段：hot→热销，newcomer→新手，bonusApr→加息；无活动契约不伪标 Flash Sale。 */
@@ -624,7 +703,7 @@ private fun earnKindSubtitle(prod: ApiEarnProduct): String = when (prod.kind) {
     ApiEarnProduct.Kind.FIXED -> "定期 · ${prod.termDays ?: "--"}天"
     ApiEarnProduct.Kind.ONCHAIN -> if ((prod.unlockDays ?: 0) > 0) "链上质押 · ${prod.unlockDays}天解锁" else "链上质押"
     ApiEarnProduct.Kind.SIMPLE, ApiEarnProduct.Kind.FLEXIBLE -> "活期"
-    null -> prod.kind?.value ?: ""
+    ApiEarnProduct.Kind.UNKNOWN, null -> prod.kind?.value ?: ""
 }
 
 private data class EarnAction(val product: ApiEarnProduct, val subscribe: Boolean)

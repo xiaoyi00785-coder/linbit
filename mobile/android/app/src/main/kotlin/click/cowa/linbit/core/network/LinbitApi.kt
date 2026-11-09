@@ -174,6 +174,15 @@ interface LinbitApi {
     @GET("earn/products")
     suspend fun earnProducts(): ApiEarnProducts200Response
 
+    /** Same path as earnProducts; JsonElement enables per-item resilient catalogue decode. */
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("earn/products")
+    suspend fun earnProductsRaw(): kotlinx.serialization.json.JsonElement
+
+    @Headers("${ApiHeaders.NO_AUTH}: 1")
+    @GET("loans/market")
+    suspend fun loanMarket(): click.cowa.linbit.core.generated.ApiLoanMarket
+
     @GET("assets/overview")
     suspend fun assetsOverview(): ApiAssetsOverview
 

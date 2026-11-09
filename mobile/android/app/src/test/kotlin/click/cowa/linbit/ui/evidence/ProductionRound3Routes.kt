@@ -9,6 +9,7 @@ internal fun earnRoutes(api: MockEvidenceApi, populated: Boolean = true) {
     api.route("GET", "/earn/summary", """{"totalValueUsdt":"1250","totalInterestUsdt":"2.5"}""")
     api.route("GET", "/earn/positions", if (populated) """{"items":[{"productId":"evidence-earn","kind":"simple","asset":"USDT","title":"USDT 活期理财","amount":"1250","totalInterest":"2.5"}]}""" else """{"items":[]}""")
     api.route("GET", "/earn/orders", """{"items":[]}"""); api.route("GET", "/earn/records", """{"items":[]}""")
+    api.route("GET", "/loans/market", """{"asset":"USDT","terms":[{"term":"flexible","days":0,"hourlyRate":"0.000003847","annualRate":"0.0337","status":"online"}],"collaterals":[{"asset":"BTC","cap":"10","price":"75030"}],"initialLtv":"0.8","warnLtv":"0.88","liquidationLtv":"0.95","userLimit":"1200000","minAmount":"10"}""")
 }
 internal fun strategyRoutes(api: MockEvidenceApi, populated: Boolean = true) {
     api.route("GET", "/strategy/config", """{"minGrids":2,"maxGrids":100,"minInvestment":"10","sellBaseOnStop":false}""")
