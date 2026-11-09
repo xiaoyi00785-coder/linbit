@@ -558,7 +558,22 @@ func (s *Store) reduce(ctx context.Context, tx *sql.Tx, uid, orderID string, in 
 	if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_positions SET qty=$4, isolated_margin=$5, realized_pnl=realized_pnl+$6, version=version+1, updated_at=now() WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND version=$7`, uid, in.Symbol, ps, newQty, iso, pnl, ver); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_accounts SET balance=balance+$2, updated_at=now() WHERE user_id=$1`, uid, release.Add(pnl)); err != nil {
+	var bal decimal.Decimal
+	if err := tx.QueryRowContext(ctx, `SELECT balance FROM paper_fut_accounts WHERE user_id=$1 FOR UPDATE`, uid).Scan(&bal); err != nil {
+		return err
+	}
+	// Isolated margin coming back and the market PnL are one cash delta.
+	// A loss can take at most the wallet; the rest is simulated bankruptcy
+	// so balance stays >= 0 and the close still commits.
+	delta := release.Add(pnl)
+	applied := delta
+	shortfall := decimal.Zero
+	if delta.IsNegative() && delta.Abs().GreaterThan(bal) {
+		shortfall = delta.Abs().Sub(bal)
+		applied = bal.Neg()
+	}
+	after := bal.Add(applied)
+	if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_accounts SET balance=$2, updated_at=now() WHERE user_id=$1`, uid, after); err != nil {
 		return err
 	}
 	if mode == "cross" {
@@ -567,13 +582,19 @@ func (s *Store) reduce(ctx context.Context, tx *sql.Tx, uid, orderID string, in 
 			return err
 		}
 	}
-	var after decimal.Decimal
-	_ = tx.QueryRowContext(ctx, `SELECT balance FROM paper_fut_accounts WHERE user_id=$1`, uid).Scan(&after)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO paper_fut_trades (trade_id, order_id, user_id, symbol, side, price, qty, realized_pnl) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, randomID("pt"), orderID, uid, in.Symbol, in.Side, px, closed, pnl); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO paper_fut_ledger (user_id, kind, amount, balance_after, ref) VALUES ($1,'close_pnl',$2,$3,$4)`, uid, pnl, after, randomID("led"))
-	return err
+	ref := randomID("led")
+	if _, err := tx.ExecContext(ctx, `INSERT INTO paper_fut_ledger (user_id, kind, amount, balance_after, ref) VALUES ($1,'close_pnl',$2,$3,$4)`, uid, applied, after, ref); err != nil {
+		return err
+	}
+	if shortfall.IsPositive() {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO paper_fut_ledger (user_id, kind, amount, balance_after, ref) VALUES ($1,'bankruptcy',$2,$3,$4)`, uid, shortfall, after, ref+":shortfall"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) CancelFutOrder(ctx context.Context, uid, orderID string) error {

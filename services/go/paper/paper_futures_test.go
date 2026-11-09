@@ -251,6 +251,91 @@ func TestPaperFuturesMarginReverseCancelFundingHedge(t *testing.T) {
 	}
 }
 
+func TestPaperFuturesBankruptcyCloseAndLiquidation(t *testing.T) {
+	store := migratedStore(t)
+	ctx := context.Background()
+	src := stubFut{mark: decimal.RequireFromString("100000")}
+
+	// Isolated manual close: released margin plus the market loss exceeds the wallet.
+	closeUser := "80000011"
+	if _, err := store.PlaceFutOrder(ctx, closeUser, futOrderIn{
+		Symbol: "BTCUSDX", Side: "buy", Action: "open", Type: "market", SizeMode: "quantity",
+		Quantity: decimal.RequireFromString("0.5"), Leverage: 10, MarginMode: "isolated", ClientOrderID: "bk-close",
+	}, src); err != nil {
+		t.Fatal(err)
+	}
+	src.mark = decimal.RequireFromString("1000")
+	if err := store.ClosePosition(ctx, closeUser, "BTCUSDX", "BOTH", src); err != nil {
+		t.Fatal(err)
+	}
+	assertBankruptClose(t, store, closeUser)
+	if err := store.ClosePosition(ctx, closeUser, "BTCUSDX", "BOTH", src); err == nil {
+		t.Fatal("second close should find no position")
+	}
+
+	// Cross liquidation: mark far through the liquidation price, loss larger than balance.
+	liqUser := "80000012"
+	src.mark = decimal.RequireFromString("100000")
+	if _, err := store.PlaceFutOrder(ctx, liqUser, futOrderIn{
+		Symbol: "BTCUSDX", Side: "buy", Action: "open", Type: "market", SizeMode: "quantity",
+		Quantity: decimal.RequireFromString("0.2"), Leverage: 10, MarginMode: "cross", ClientOrderID: "bk-liq",
+	}, src); err != nil {
+		t.Fatal(err)
+	}
+	src.mark = decimal.RequireFromString("1000")
+	if err := store.LiquidationSweep(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+	assertBankruptClose(t, store, liqUser)
+	var liqRows int
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_fut_ledger WHERE user_id=$1 AND kind='liquidation'`, liqUser).Scan(&liqRows); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.LiquidationSweep(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+	var liqRows2, qtyLeft int
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_fut_ledger WHERE user_id=$1 AND kind='liquidation'`, liqUser).Scan(&liqRows2); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_fut_positions WHERE user_id=$1 AND qty <> 0`, liqUser).Scan(&qtyLeft); err != nil {
+		t.Fatal(err)
+	}
+	if liqRows2 != liqRows || liqRows != 1 || qtyLeft != 0 {
+		t.Fatalf("second sweep changed state rows %d->%d open %d", liqRows, liqRows2, qtyLeft)
+	}
+}
+
+func assertBankruptClose(t *testing.T, store *Store, uid string) {
+	t.Helper()
+	var bal, deducted, shortfall decimal.Decimal
+	var open int
+	if err := store.db.QueryRow(`SELECT balance FROM paper_fut_accounts WHERE user_id=$1`, uid).Scan(&bal); err != nil {
+		t.Fatal(err)
+	}
+	if bal.IsNegative() {
+		t.Fatalf("balance %s", bal)
+	}
+	if !bal.IsZero() {
+		t.Fatalf("expected wallet floored at 0, got %s", bal)
+	}
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_fut_positions WHERE user_id=$1 AND qty <> 0`, uid).Scan(&open); err != nil || open != 0 {
+		t.Fatalf("position still open %d %v", open, err)
+	}
+	if err := store.db.QueryRow(`SELECT amount FROM paper_fut_ledger WHERE user_id=$1 AND kind='close_pnl'`, uid).Scan(&deducted); err != nil {
+		t.Fatal(err)
+	}
+	if !deducted.IsNegative() {
+		t.Fatalf("ledger deduction %s", deducted)
+	}
+	if err := store.db.QueryRow(`SELECT amount FROM paper_fut_ledger WHERE user_id=$1 AND kind='bankruptcy'`, uid).Scan(&shortfall); err != nil {
+		t.Fatal(err)
+	}
+	if !shortfall.IsPositive() {
+		t.Fatalf("shortfall %s", shortfall)
+	}
+}
+
 func TestLiqPriceUsesMaintenanceMargin(t *testing.T) {
 	entry := decimal.RequireFromString("100000")
 	qty := decimal.RequireFromString("0.01")
