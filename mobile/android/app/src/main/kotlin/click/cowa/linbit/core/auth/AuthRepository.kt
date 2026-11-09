@@ -1,3 +1,4 @@
+/** 账号仓库负责登录、二次验证、注册、找回密码，以及带刷新令牌的退出。 */
 package click.cowa.linbit.core.auth
 
 import click.cowa.linbit.core.generated.ApiLoginChallenge

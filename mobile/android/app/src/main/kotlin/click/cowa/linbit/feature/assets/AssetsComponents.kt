@@ -1,3 +1,4 @@
+/** 资产页共用的导航栏、提示条、卡片和选择框。 */
 package click.cowa.linbit.feature.assets
 
 import androidx.compose.foundation.background

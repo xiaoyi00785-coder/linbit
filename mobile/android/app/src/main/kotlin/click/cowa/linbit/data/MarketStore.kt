@@ -1,3 +1,4 @@
+/** 首页和行情页共用的行情仓库：REST 拉全量，WebSocket 更新现货与合约最新价。 */
 package click.cowa.linbit.data
 
 import click.cowa.linbit.core.generated.ApiMarketCategory

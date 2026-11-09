@@ -1,3 +1,4 @@
+/** 底部主导航：首页、行情、合约、现货、资产五个悬浮胶囊标签。 */
 package click.cowa.linbit.ui.components
 
 import androidx.annotation.DrawableRes

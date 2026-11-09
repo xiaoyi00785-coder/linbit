@@ -1,3 +1,4 @@
+/** 选币（充值或提现）以及充值页：按网络取地址并展示二维码。 */
 package click.cowa.linbit.feature.assets
 
 import android.content.ClipData

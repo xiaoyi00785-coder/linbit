@@ -1,3 +1,4 @@
+/** 应用进程入口，只用来启用 Hilt。 */
 package click.cowa.linbit.app
 
 import android.app.Application

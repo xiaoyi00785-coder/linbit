@@ -1,3 +1,4 @@
+/** 品牌绿启动动画约 1.2 秒后淡出，并与系统启动图使用同一枚符号。 */
 package click.cowa.linbit.ui.splash
 
 import androidx.compose.animation.core.Animatable

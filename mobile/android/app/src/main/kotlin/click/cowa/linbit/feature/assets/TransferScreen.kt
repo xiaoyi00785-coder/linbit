@@ -1,3 +1,4 @@
+/** 资金划转页：只在现货资金账户和合约账户之间划转 USDT。 */
 package click.cowa.linbit.feature.assets
 
 import androidx.activity.compose.BackHandler

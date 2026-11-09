@@ -1,3 +1,4 @@
+/** 站内信：按类型分页、标已读，并设置邮件通知偏好。 */
 package click.cowa.linbit.feature.more
 
 import androidx.compose.foundation.background

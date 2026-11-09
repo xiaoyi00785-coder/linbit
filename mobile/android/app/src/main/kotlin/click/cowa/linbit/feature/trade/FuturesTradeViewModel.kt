@@ -1,3 +1,4 @@
+/** 合约交易状态：行情与账户、下单撤单、杠杆和持仓模式、止盈止损及保证金。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.runtime.getValue

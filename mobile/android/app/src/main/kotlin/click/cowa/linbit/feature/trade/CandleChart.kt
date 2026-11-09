@@ -1,3 +1,4 @@
+/** 把现货或合约 K 线画成蜡烛图，并在本地推算开仓成本、强平价和目标盈亏。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.Canvas

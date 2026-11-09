@@ -1,3 +1,4 @@
+/** 客服工单页：列表、新建、回复和关闭都由点击触发，图片会先去掉元数据再上传。 */
 package click.cowa.linbit.feature.more
 
 import android.graphics.BitmapFactory

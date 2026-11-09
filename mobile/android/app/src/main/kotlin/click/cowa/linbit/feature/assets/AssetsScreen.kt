@@ -1,3 +1,4 @@
+/** 资产页：总览、资金、合约和现货；理财等页签尚未开放，可进入充值、提现和划转。 */
 package click.cowa.linbit.feature.assets
 
 import androidx.compose.foundation.background

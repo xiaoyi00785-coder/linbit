@@ -1,3 +1,4 @@
+/** 提现地址簿、新增地址和提现记录；改白名单需要谷歌验证码。 */
 package click.cowa.linbit.feature.assets
 
 import androidx.activity.compose.BackHandler

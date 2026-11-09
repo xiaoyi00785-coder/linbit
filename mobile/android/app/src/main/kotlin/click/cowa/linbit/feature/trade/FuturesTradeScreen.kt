@@ -1,3 +1,4 @@
+/** 合约主界面负责开平仓和盘口，顶栏可切到事件合约、TradFi 或尚未接入的模拟交易。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

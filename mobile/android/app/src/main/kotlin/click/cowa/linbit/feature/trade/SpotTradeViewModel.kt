@@ -1,3 +1,4 @@
+/** 现货交易状态：行情与余额、数量金额联动，以及限价、市价和计划委托的校验提交。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.runtime.getValue

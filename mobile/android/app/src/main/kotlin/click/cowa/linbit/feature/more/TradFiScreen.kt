@@ -1,3 +1,4 @@
+/** TradFi 列表按股票、贵金属和商品展示代币化资产，点击后进入现货或永续。 */
 package click.cowa.linbit.feature.more
 
 import androidx.compose.foundation.layout.*

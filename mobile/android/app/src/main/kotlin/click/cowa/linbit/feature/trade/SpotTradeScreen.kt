@@ -1,3 +1,4 @@
+/** 现货交易页：限价或市价表单、盘口，以及当前委托和条件单。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

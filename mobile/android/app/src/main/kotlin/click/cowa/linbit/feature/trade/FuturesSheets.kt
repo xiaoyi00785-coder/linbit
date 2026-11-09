@@ -1,3 +1,4 @@
+/** 合约底部弹层：盘口显示、常用功能、全仓或逐仓、合仓或分仓、杠杆，以及撤单和平仓确认。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

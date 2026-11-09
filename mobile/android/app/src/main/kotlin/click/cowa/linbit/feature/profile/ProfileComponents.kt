@@ -1,3 +1,4 @@
+/** 个人中心共用的导航栏、列表行、头像，以及加载和失败状态。 */
 package click.cowa.linbit.feature.profile
 
 import androidx.compose.foundation.background

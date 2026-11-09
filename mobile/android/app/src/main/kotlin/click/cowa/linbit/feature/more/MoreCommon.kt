@@ -1,3 +1,4 @@
+/** 「更多」菜单和功能页宿主，以及这些页面共用的卡片、统计和 JSON 读数。 */
 package click.cowa.linbit.feature.more
 
 import androidx.activity.compose.BackHandler

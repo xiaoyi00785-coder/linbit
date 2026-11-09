@@ -1,3 +1,4 @@
+/** 行情页展示自选与市场列表，点一行进入现货或合约交易。 */
 package click.cowa.linbit.feature.markets
 
 import androidx.compose.foundation.BorderStroke

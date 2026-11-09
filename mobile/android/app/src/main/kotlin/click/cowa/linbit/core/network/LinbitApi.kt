@@ -1,3 +1,4 @@
+/** Retrofit 接口按 OpenAPI 声明认证、行情、资产、交易和运营类请求。 */
 package click.cowa.linbit.core.network
 
 import click.cowa.linbit.core.generated.ApiAuthTokens

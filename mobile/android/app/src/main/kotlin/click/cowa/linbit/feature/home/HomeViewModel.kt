@@ -1,3 +1,4 @@
+/** 首页用的总资产、新人任务和理财产品，榜单则从行情仓库本地排序。 */
 package click.cowa.linbit.feature.home
 
 import androidx.lifecycle.ViewModel

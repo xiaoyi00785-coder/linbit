@@ -1,3 +1,4 @@
+/** 在加密存储里记住本机登录过的账号，切换失败时把令牌退回切换前。 */
 package click.cowa.linbit.feature.profile
 
 import click.cowa.linbit.core.generated.ApiAccount

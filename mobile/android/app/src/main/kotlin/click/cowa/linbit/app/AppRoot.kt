@@ -1,3 +1,4 @@
+/** 根界面按主题摆放五个主 Tab，并盖上登录、资产子页、个人中心、Toast 和启动动画。 */
 package click.cowa.linbit.app
 
 import androidx.compose.foundation.background

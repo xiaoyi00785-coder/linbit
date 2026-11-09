@@ -1,3 +1,4 @@
+/** 身份认证：查看审核状态，并提交基础或高级认证资料。 */
 package click.cowa.linbit.feature.profile
 
 import android.app.DatePickerDialog

@@ -1,3 +1,4 @@
+/** 合伙人计划页：公开返佣等级，以及登录后的申请、看板和团队返佣。 */
 package click.cowa.linbit.feature.more
 
 import androidx.compose.foundation.layout.*
