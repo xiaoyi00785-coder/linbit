@@ -106,20 +106,31 @@ fun FuturesRootScreen(
     vm: FuturesTradeViewModel = LocalFuturesTradeFactory.current.invoke(),
     onCoupons: () -> Unit = {},
     onFavorite: (String) -> Unit = {},
+    /** 模拟交易页的独立虚拟账户 VM；为空时由 Hilt 提供（离屏测试显式注入）。 */
+    paperVm: click.cowa.linbit.feature.assets.PaperAccountViewModel? = null,
 ) {
     val p = LB.p
     var top by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(initialTop.coerceIn(0, 3)) }
+    var welcome by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(welcome) { if (welcome != null) { kotlinx.coroutines.delay(900); welcome = null } }
+    fun goTop(i: Int) {
+        if (i == 3 && top != 3) welcome = "模拟交易" else if (i == 0 && top == 3) welcome = "实盘交易"
+        top = i
+    }
     val loggedIn by vm.loggedIn.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val nav by vm.symbolFlow.collectAsStateWithLifecycle()
-    DisposableEffect(nav, top) { if (top == 0 && autoStart) vm.start(); onDispose { vm.stop() } }
+    DisposableEffect(nav, top) { if ((top == 0 || top == 3) && autoStart) vm.start(); onDispose { vm.stop() } }
     val widthDp = LocalConfiguration.current.screenWidthDp
     val pageH = LayoutAdapt.pageH(widthDp)
     val tabSpace = LayoutAdapt.tabSpacing(widthDp)
-    Column(modifier.fillMaxSize().background(p.bg)) {
-        Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = pageH), verticalAlignment = Alignment.CenterVertically) {
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(p.bg)) {
+        // 参考：进入 Demo Trading 后顶部改为「Demo Trading / Go back」，不再显示实盘页签
+        if (top == 3) DemoTradingHeader({ goTop(0) }, Modifier.padding(horizontal = pageH))
+        else Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = pageH), verticalAlignment = Alignment.CenterVertically) {
             PrimaryTabs(
-                listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { top = it },
+                listOf("合约", "事件合约", "TradFi", "模拟交易"), top, { goTop(it) },
                 size = 16.sp, spacing = tabSpace, scrollable = LayoutAdapt.tabsScrollable(widthDp, 4),
             )
         }
@@ -127,7 +138,7 @@ fun FuturesRootScreen(
         when (top) {
             0 -> FuturesTradeContent(
                 vm, loggedIn, market.futures, bottomInset, themeMode, onTheme, onLogin, onDeposit, onTransfer, onHistory,
-                onSim = { top = 3 }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f), onCoupons = onCoupons, onFavorite = onFavorite,
+                onSim = { goTop(3) }, onCopy = onCopy, onPriceAlerts = onPriceAlerts, modifier = Modifier.weight(1f), onCoupons = onCoupons, onFavorite = onFavorite,
             )
             1 -> EventContractScreen(bottomInset = bottomInset, onLogin = onLogin, onTransfer = onTransfer)
             2 -> TradFiScreen(
@@ -139,10 +150,17 @@ fun FuturesRootScreen(
                 embedded = true,
                 bottomInset = bottomInset,
             )
-            else -> Box(Modifier.fillMaxSize().padding(bottom = bottomInset)) {
-                click.cowa.linbit.feature.assets.PaperAccountScreen(onBack = { top = 0 }, onLogin = onLogin)
+            else -> {
+                val paper = paperVm ?: hiltViewModel<click.cowa.linbit.feature.assets.PaperAccountViewModel>()
+                val feature by paper.featureState.collectAsStateWithLifecycle()
+                DemoTradingContent(
+                    vm, paper, loggedIn, feature.enabled, market.futures, bottomInset, themeMode, onTheme, onLogin,
+                    modifier = Modifier.weight(1f), onPriceAlerts = onPriceAlerts, onFavorite = onFavorite,
+                )
             }
         }
+    }
+    welcome?.let { DemoWelcomeOverlay(it) }
     }
 }
 
@@ -433,7 +451,7 @@ fun FuturesTradeContent(
 }
 
 @Composable
-private fun FuturesMid(last: BigDecimal, mark: BigDecimal, prec: Int, down: Boolean, onClick: () -> Unit) {
+internal fun FuturesMid(last: BigDecimal, mark: BigDecimal, prec: Int, down: Boolean, onClick: () -> Unit) {
     val p = LB.p
     Column(Modifier.fillMaxWidth().pressable(scale = 1f, onClick = onClick).padding(vertical = 6.dp)) {
         Text(if (last.signum() > 0) Fmt.price(last, prec) else "--", style = lbNum(20.sp, FontWeight.Bold), color = if (down) p.down else p.up, maxLines = 1)

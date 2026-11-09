@@ -79,11 +79,11 @@ private fun BookModeGlyph(mode: Int) {
 
 /** 常用功能（对照图 ref/13：4 列 × 3 行图标网格）。 */
 @Composable
-fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit, onTool: (String) -> Unit = {}) {
+fun ToolsSheet(toast: (String) -> Unit, onClose: () -> Unit, exclude: Set<String> = emptySet(), onTool: (String) -> Unit = {}) {
     val p = LB.p
     val items = listOf(
         "交易偏好", "计算器", "价格预警", "模拟交易", "仓位档位介绍", "历史资金费率", "历史标记价格", "风险准备金", "添加自选", "新手教学",
-    )
+    ).filterNot { it in exclude }
     LbSheet("常用功能", onClose) {
         Column(Modifier.padding(horizontal = Spacing.pageH).padding(top = 4.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             items.chunked(4).forEach { row ->

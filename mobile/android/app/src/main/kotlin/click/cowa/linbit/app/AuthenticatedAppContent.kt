@@ -146,6 +146,7 @@ internal fun AuthenticatedAppContent(vm: AppViewModel, badgeVm: NotificationBadg
                         onPriceAlerts = { if (loggedIn) morePage = MorePage.PRICE_ALERTS else auth = "login" },
                         onCoupons = { if (loggedIn) morePage = MorePage.COUPONS else auth = "login" },
                         onFavorite = { toolsMarketsVm.addToWatch(listOf(it)) },
+                        paperVm = routeVms.paper,
                     )
                     MainTab.SPOT -> {
                         val pendingSpotTop by vm.tradeNav.pendingSpotTop.collectAsStateWithLifecycle()
