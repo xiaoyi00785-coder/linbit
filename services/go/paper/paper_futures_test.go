@@ -11,8 +11,9 @@ import (
 )
 
 type stubFut struct {
-	mark decimal.Decimal
-	miss bool
+	mark  decimal.Decimal
+	miss  bool
+	funds []FundingSettlement
 }
 
 func (s stubFut) Specs(context.Context) ([]FutSpec, error) {
@@ -32,6 +33,10 @@ func (s stubFut) Specs(context.Context) ([]FutSpec, error) {
 		out = append(out, FutSpec{Symbol: base + "USDX", LiveSymbol: base + "USDT", Base: base, Quote: "USDX", Available: false, UnavailableReason: "真实永续合约源没有该交易对或行情服务不可达"})
 	}
 	return out, nil
+}
+
+func (s stubFut) Settlements(context.Context, string) ([]FundingSettlement, error) {
+	return s.funds, nil
 }
 
 func (s stubFut) Quote(context.Context, string) (decimal.Decimal, decimal.Decimal, *decimal.Decimal, bool, error) {
@@ -91,7 +96,7 @@ func TestPaperFuturesOrderLiquidationIsolation(t *testing.T) {
 	if _, err := store.FutClaim(ctx, uid, decimal.RequireFromString("100000.1")); err == nil {
 		t.Fatal("claim above cap accepted")
 	}
-	if err := store.ApplyFunding(ctx, uid, "BTCUSDX", decimal.RequireFromString("0.0001"), time.Unix(1, 0), false); err != nil {
+	if err := store.ApplyFunding(ctx, uid, "BTCUSDX", "BOTH", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.db.QueryRow(`SELECT count(*) FROM paper_fut_ledger WHERE kind='funding'`).Scan(&n); err != nil || n != 0 {
@@ -122,6 +127,146 @@ func TestPaperFuturesLimitRestsUntilMarkCrosses(t *testing.T) {
 	var status string
 	if err := store.db.QueryRow(`SELECT status FROM paper_fut_orders WHERE client_order_id='pf-limit'`).Scan(&status); err != nil || status != "filled" {
 		t.Fatalf("status %s %v", status, err)
+	}
+}
+
+func TestPaperFuturesMarginReverseCancelFundingHedge(t *testing.T) {
+	store := migratedStore(t)
+	ctx := context.Background()
+	if _, err := store.db.Exec(`CREATE TABLE fut_accounts (user_id TEXT PRIMARY KEY, balance NUMERIC NOT NULL DEFAULT 0)`); err != nil {
+		t.Fatal(err)
+	}
+	uid := "80000002"
+	src := stubFut{mark: decimal.RequireFromString("100000")}
+	out, err := store.PlaceFutOrder(ctx, uid, futOrderIn{
+		Symbol: "BTCUSDX", Side: "buy", Action: "open", Type: "limit", SizeMode: "quantity",
+		Quantity: decimal.RequireFromString("0.01"), Price: decimal.RequireFromString("90000"),
+		Leverage: 10, MarginMode: "isolated", ClientOrderID: "lim-1",
+	}, src)
+	if err != nil || out["status"] != "open" {
+		t.Fatalf("limit rest %#v %v", out, err)
+	}
+	var frozen, bal string
+	if err := store.db.QueryRow(`SELECT frozen::text, balance::text FROM paper_fut_accounts WHERE user_id=$1`, uid).Scan(&frozen, &bal); err != nil {
+		t.Fatal(err)
+	}
+	if frozen != "90.000000000000000000" || bal != "10000.000000000000000000" {
+		t.Fatalf("after rest frozen=%s balance=%s", frozen, bal)
+	}
+	sp, err := store.specBySymbol(ctx, src, "BTCUSDX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.matchResting(ctx, uid, "BTCUSDX", decimal.RequireFromString("89000"), sp); err != nil {
+		t.Fatal(err)
+	}
+	var iso, qty string
+	if err := store.db.QueryRow(`SELECT frozen::text, balance::text FROM paper_fut_accounts WHERE user_id=$1`, uid).Scan(&frozen, &bal); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.QueryRow(`SELECT isolated_margin::text, qty::text FROM paper_fut_positions WHERE user_id=$1 AND position_side='BOTH'`, uid).Scan(&iso, &qty); err != nil {
+		t.Fatal(err)
+	}
+	if frozen != "0.000000000000000000" || iso != "90.000000000000000000" || bal != "9910.000000000000000000" {
+		t.Fatalf("after fill frozen=%s margin=%s balance=%s qty=%s", frozen, iso, bal, qty)
+	}
+
+	plan, err := store.PlaceFutOrder(ctx, uid, futOrderIn{
+		Symbol: "BTCUSDX", Side: "buy", Action: "open", Type: "plan", SizeMode: "quantity",
+		Quantity: decimal.RequireFromString("0.01"), Trigger: decimal.RequireFromString("120000"),
+		Leverage: 10, MarginMode: "isolated", ClientOrderID: "plan-1",
+	}, src)
+	if err != nil || plan["status"] != "untriggered" {
+		t.Fatalf("plan %#v %v", plan, err)
+	}
+	if err := store.db.QueryRow(`SELECT frozen::text FROM paper_fut_accounts WHERE user_id=$1`, uid).Scan(&frozen); err != nil {
+		t.Fatal(err)
+	}
+	if frozen != "120.000000000000000000" {
+		t.Fatalf("plan freeze %s", frozen)
+	}
+	if err := store.CancelFutOrder(ctx, uid, plan["orderId"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.QueryRow(`SELECT frozen::text FROM paper_fut_accounts WHERE user_id=$1`, uid).Scan(&frozen); err != nil {
+		t.Fatal(err)
+	}
+	if frozen != "0.000000000000000000" {
+		t.Fatalf("cancel left frozen %s", frozen)
+	}
+
+	if _, err := store.PlaceFutOrder(ctx, uid, futOrderIn{
+		Symbol: "BTCUSDX", Side: "sell", Action: "open", Type: "market", SizeMode: "quantity",
+		Quantity: decimal.RequireFromString("0.03"), Leverage: 10, MarginMode: "isolated", ClientOrderID: "rev-1",
+	}, src); err != nil {
+		t.Fatal(err)
+	}
+	var entry, realized string
+	if err := store.db.QueryRow(`SELECT qty::text, entry_price::text, isolated_margin::text, realized_pnl::text FROM paper_fut_positions WHERE user_id=$1 AND position_side='BOTH'`, uid).Scan(&qty, &entry, &iso, &realized); err != nil {
+		t.Fatal(err)
+	}
+	if qty != "-0.020000000000000000" {
+		t.Fatalf("reverse qty %s", qty)
+	}
+	if realized == "0.000000000000000000" {
+		t.Fatal("reverse open booked no realized pnl")
+	}
+
+	if err := store.SetPositionMode(ctx, "80000003", "hedge"); err != nil {
+		t.Fatal(err)
+	}
+	hsrc := stubFut{mark: decimal.RequireFromString("100000"), funds: []FundingSettlement{{Time: time.Unix(1_700_000_000, 0).UTC(), Rate: decimal.RequireFromString("0.0001")}}}
+	for _, side := range []string{"LONG", "SHORT"} {
+		sd := "buy"
+		if side == "SHORT" {
+			sd = "sell"
+		}
+		if _, err := store.PlaceFutOrder(ctx, "80000003", futOrderIn{
+			Symbol: "BTCUSDX", Side: sd, PositionSide: side, Action: "open", Type: "market", SizeMode: "quantity",
+			Quantity: decimal.RequireFromString("0.01"), Leverage: 10, MarginMode: "isolated", ClientOrderID: "h-" + side,
+		}, hsrc); err != nil {
+			t.Fatal(side, err)
+		}
+	}
+	var sides int
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_fut_positions WHERE user_id='80000003' AND qty <> 0`).Scan(&sides); err != nil || sides != 2 {
+		t.Fatalf("hedge sides %d %v", sides, err)
+	}
+	if err := store.ApplyFunding(ctx, "80000003", "BTCUSDX", "LONG", hsrc.funds); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyFunding(ctx, "80000003", "BTCUSDX", "SHORT", hsrc.funds); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyFunding(ctx, "80000003", "BTCUSDX", "LONG", hsrc.funds); err != nil {
+		t.Fatal(err)
+	}
+	var funds int
+	if err := store.db.QueryRow(`SELECT count(*) FROM paper_fut_ledger WHERE user_id='80000003' AND kind='funding'`).Scan(&funds); err != nil || funds != 2 {
+		t.Fatalf("funding rows %d %v", funds, err)
+	}
+	var live int
+	if err := store.db.QueryRow(`SELECT count(*) FROM fut_accounts`).Scan(&live); err != nil || live != 0 {
+		t.Fatalf("live rows %d %v", live, err)
+	}
+}
+
+func TestLiqPriceUsesMaintenanceMargin(t *testing.T) {
+	entry := decimal.RequireFromString("100000")
+	qty := decimal.RequireFromString("0.01")
+	margin := decimal.RequireFromString("100")
+	mmr := decimal.RequireFromString("0.004")
+	long := liqPrice(entry, margin, qty, mmr)
+	den := qty.Mul(decimal.NewFromInt(1).Sub(mmr))
+	want := entry.Mul(qty).Sub(margin).Div(den)
+	if !long.Equal(want) {
+		t.Fatalf("long liq %s want %s", long, want)
+	}
+	short := liqPrice(entry, margin, qty.Neg(), mmr)
+	sden := qty.Mul(decimal.NewFromInt(1).Add(mmr))
+	swant := entry.Mul(qty).Add(margin).Div(sden)
+	if !short.Equal(swant) {
+		t.Fatalf("short liq %s want %s", short, swant)
 	}
 }
 

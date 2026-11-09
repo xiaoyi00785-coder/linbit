@@ -210,7 +210,7 @@ POST 体 `{label, permissions:["read"], ipWhitelist, totpCode}`。`permissions` 
 
 现有 `/paper/orders` 仍是现货 USDT 市价，行为不变。模拟永续是另一套表，登录后走 `/paper/futures/*`，不写真实余额、真实撮合或 `fut_accounts`。
 
-账户 `GET /paper/futures/account` 返回虚拟 USDX 的 `balance`、`available`、`frozen`、`unrealizedPnl`。`POST /paper/futures/account/claim` 领取资金，单笔不超过 `claimCap`（100000），余额不超过 `maxBalance`（1000000），60 秒一次。`POST /paper/futures/account/reset` 要 `confirmation:"RESET_PAPER_FUTURES"`。
+账户 `GET /paper/futures/account` 返回虚拟 USDX 的 `balance`、`available`、`frozen`、`unrealizedPnl`，以及 `generation`、`initialBalance` 和 `isolated:true`。合仓（`one_way`）下反向开仓先按标记价平掉原仓并结算已实现盈亏，只有超出的数量才开到另一边。分仓（`hedge`）的多空仓位互不影响。强平价：多仓 `(entry*qty - margin) / (qty*(1-mmr))`，空仓 `(entry*qty + margin) / (qty*(1+mmr))`。逐仓的 margin 是仓位保证金，全仓用钱包余额。资金费只按真实 funding-history 的结算时间和费率逐仓位入账，同一条记录重复执行不会再记。`POST /paper/futures/account/claim` 领取资金，单笔不超过 `claimCap`（100000），余额不超过 `maxBalance`（1000000），60 秒一次。`POST /paper/futures/account/reset` 要 `confirmation:"RESET_PAPER_FUTURES"`。
 
 `GET /paper/futures/contracts` 只列 BTC/ETH/BNB/ARB/XRP/SOL-USDX。tick、最小量、杠杆上限、维持保证金率和 `riskTiers` 来自真实 `GET /futures/market/contracts` 与 `/futures/market/risk-tiers`。标记价和指数价来自真实 ticker。没有合约或标记价时 `available:false`，并给出 `unavailableReason`。资金费率只在真实 `funding-history` 有记录时 `fundingAvailable:true`，否则不结算、不编造费率。
 

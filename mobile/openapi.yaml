@@ -8146,7 +8146,7 @@ paths:
   /paper/futures/orders:
     post:
       tags: [Paper Trading]
-      summary: 模拟永续下单。开仓和平仓分开。市价用真实标记价
+      summary: 模拟永续下单。开仓和平仓分开。市价用真实标记价。合仓下反向开仓先平掉原仓并结算已实现盈亏，超出的数量才开新仓。分仓两侧独立。
       operationId: paperFuturesPlaceOrder
       requestBody:
         required: true
@@ -8554,6 +8554,9 @@ components:
         frozen: { type: string }
         unrealizedPnl: { type: string }
         positionMode: { type: string, enum: [one_way, hedge] }
+        generation: { type: integer, format: int64 }
+        initialBalance: { type: string, description: 重置后的虚拟 USDX }
+        isolated: { type: boolean, description: 账户与真实合约账本隔离 }
         claimCap: { type: string }
         maxBalance: { type: string }
     PaperFuturesContract:

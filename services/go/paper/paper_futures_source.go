@@ -139,3 +139,24 @@ func (l *LiveFutures) Quote(ctx context.Context, liveSymbol string) (mark, index
 	}
 	return tk.Mark, tk.Index, funding, true, nil
 }
+
+func (l *LiveFutures) Settlements(ctx context.Context, liveSymbol string) ([]FundingSettlement, error) {
+	var hist struct {
+		History []struct {
+			Rate string `json:"fundingRate"`
+			At   int64  `json:"fundingTime"`
+		} `json:"history"`
+	}
+	if err := l.get(ctx, "/futures/market/funding-history?symbol="+url.QueryEscape(liveSymbol)+"&limit=50", &hist); err != nil {
+		return nil, err
+	}
+	out := make([]FundingSettlement, 0, len(hist.History))
+	for _, row := range hist.History {
+		rate, err := decimal.NewFromString(row.Rate)
+		if err != nil || row.At <= 0 {
+			continue
+		}
+		out = append(out, FundingSettlement{Time: time.UnixMilli(row.At).UTC(), Rate: rate})
+	}
+	return out, nil
+}

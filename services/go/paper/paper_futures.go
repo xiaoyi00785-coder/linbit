@@ -46,9 +46,17 @@ type FutSpec struct {
 	PriceSource       string          `json:"priceSource"`
 }
 
+// FundingSettlement is one real futures funding-history row. Paper applies it
+// once per position side; it does not invent a time or a rate.
+type FundingSettlement struct {
+	Time time.Time
+	Rate decimal.Decimal
+}
+
 type FutSource interface {
 	Specs(ctx context.Context) ([]FutSpec, error)
 	Quote(ctx context.Context, liveSymbol string) (mark, index decimal.Decimal, funding *decimal.Decimal, ok bool, err error)
+	Settlements(ctx context.Context, liveSymbol string) ([]FundingSettlement, error)
 }
 
 type futOrderIn struct {
@@ -202,23 +210,26 @@ func (s *Store) FutReset(ctx context.Context, uid, confirm string) error {
 	return tx.Commit()
 }
 
-func liqPrice(entry, margin, qty, mmr decimal.Decimal, lev int) decimal.Decimal {
-	if !entry.IsPositive() || qty.IsZero() || lev < 1 {
-		return decimal.Zero
-	}
+// liqPrice is the mark where position equity equals maintenance margin.
+// Long: (entry*qty - margin) / (qty*(1-mmr)). Short: (entry*qty + margin) / (qty*(1+mmr)).
+// Isolated passes isolated margin. Cross passes the USDX wallet balance.
+func liqPrice(entry, margin, qty, mmr decimal.Decimal) decimal.Decimal {
 	q := qty.Abs()
-	if margin.IsZero() {
-		margin = entry.Mul(q).Div(decimal.NewFromInt(int64(lev)))
+	if !entry.IsPositive() || q.IsZero() || !margin.IsPositive() {
+		return decimal.Zero
 	}
 	if qty.IsPositive() {
 		den := q.Mul(decimal.NewFromInt(1).Sub(mmr))
 		if !den.IsPositive() {
 			return decimal.Zero
 		}
-		// margin + (mark-entry)*q = q*mark*mmr
-		return margin.Sub(entry.Mul(q)).Div(q.Mul(mmr.Sub(decimal.NewFromInt(1))))
+		return entry.Mul(q).Sub(margin).Div(den)
 	}
-	return margin.Add(entry.Mul(q)).Div(q.Mul(decimal.NewFromInt(1).Add(mmr)))
+	den := q.Mul(decimal.NewFromInt(1).Add(mmr))
+	if !den.IsPositive() {
+		return decimal.Zero
+	}
+	return entry.Mul(q).Add(margin).Div(den)
 }
 
 func (s *Store) specBySymbol(ctx context.Context, src FutSource, symbol string) (FutSpec, error) {
@@ -323,7 +334,7 @@ func (s *Store) PlaceFutOrder(ctx context.Context, uid string, in futOrderIn, sr
 			if in.Type == "limit" {
 				fillPx = in.Price
 			}
-			if err := s.fillLocked(ctx, tx, uid, id, in, sp, qty, fillPx); err != nil {
+			if err := s.fillLocked(ctx, tx, uid, id, in, sp, qty, fillPx, decimal.Zero); err != nil {
 				return nil, err
 			}
 			status = "filled"
@@ -332,14 +343,20 @@ func (s *Store) PlaceFutOrder(ctx context.Context, uid string, in futOrderIn, sr
 	if status != "filled" {
 		margin := decimal.Zero
 		if in.Action == "open" {
-			margin = mark.Mul(qty).Div(decimal.NewFromInt(int64(in.Leverage)))
+			refPx := mark
+			if in.Type == "limit" && in.Price.IsPositive() {
+				refPx = in.Price
+			} else if in.Type == "plan" && in.Trigger.IsPositive() {
+				refPx = in.Trigger
+			}
+			margin = refPx.Mul(qty).Div(decimal.NewFromInt(int64(in.Leverage)))
 			if err := freeze(ctx, tx, uid, margin); err != nil {
 				return nil, err
 			}
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO paper_fut_orders (order_id, user_id, client_order_id, symbol, side, position_side, action, order_type, price, trigger_price, qty, leverage, margin_mode, status, reduce_only, tp_trigger, sl_trigger)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-			id, uid, in.ClientOrderID, in.Symbol, in.Side, in.PositionSide, in.Action, in.Type, nullDec(in.Price), nullDec(in.Trigger), qty, in.Leverage, in.MarginMode, status, in.Action == "close", nullDecOpt(in.TP, in.HasTP), nullDecOpt(in.SL, in.HasSL))
+		_, err = tx.ExecContext(ctx, `INSERT INTO paper_fut_orders (order_id, user_id, client_order_id, symbol, side, position_side, action, order_type, price, trigger_price, qty, leverage, margin_mode, status, reduce_only, tp_trigger, sl_trigger, frozen_margin)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+			id, uid, in.ClientOrderID, in.Symbol, in.Side, in.PositionSide, in.Action, in.Type, nullDec(in.Price), nullDec(in.Trigger), qty, in.Leverage, in.MarginMode, status, in.Action == "close", nullDecOpt(in.TP, in.HasTP), nullDecOpt(in.SL, in.HasSL), margin)
 		if err != nil {
 			return nil, err
 		}
@@ -424,22 +441,18 @@ func freeze(ctx context.Context, tx *sql.Tx, uid string, margin decimal.Decimal)
 	return err
 }
 
-func (s *Store) fillLocked(ctx context.Context, tx *sql.Tx, uid, orderID string, in futOrderIn, sp FutSpec, qty, px decimal.Decimal) error {
+func (s *Store) fillLocked(ctx context.Context, tx *sql.Tx, uid, orderID string, in futOrderIn, sp FutSpec, qty, px, priorFrozen decimal.Decimal) error {
+	if priorFrozen.IsPositive() {
+		if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_accounts SET frozen=GREATEST(frozen-$2,0), updated_at=now() WHERE user_id=$1`, uid, priorFrozen); err != nil {
+			return err
+		}
+	}
 	sideQty := qty
 	if in.Side == "sell" {
 		sideQty = qty.Neg()
 	}
 	if in.Action == "close" {
 		return s.reduce(ctx, tx, uid, orderID, in, qty, px)
-	}
-	notional := px.Mul(qty)
-	margin := notional.Div(decimal.NewFromInt(int64(in.Leverage)))
-	var bal, frozen decimal.Decimal
-	if err := tx.QueryRowContext(ctx, `SELECT balance, frozen FROM paper_fut_accounts WHERE user_id=$1 FOR UPDATE`, uid).Scan(&bal, &frozen); err != nil {
-		return err
-	}
-	if bal.Sub(frozen).LessThan(margin) {
-		return apiErr(409, "INSUFFICIENT_MARGIN", "虚拟 USDX 可用保证金不足")
 	}
 	ps := in.PositionSide
 	var haveQty, entry, iso decimal.Decimal
@@ -450,6 +463,38 @@ func (s *Store) fillLocked(ctx context.Context, tx *sql.Tx, uid, orderID string,
 	}
 	if err != nil {
 		return err
+	}
+	// One-way: an opposite open first closes the existing position and realizes
+	// PnL. Only the leftover quantity opens the new side. Hedge sides are
+	// separate rows, so they never take this path.
+	if ps == "BOTH" && !haveQty.IsZero() && haveQty.Sign() != sideQty.Sign() {
+		closeQty := qty
+		if closeQty.GreaterThan(haveQty.Abs()) {
+			closeQty = haveQty.Abs()
+		}
+		closeIn := in
+		closeIn.Action = "close"
+		if err := s.reduce(ctx, tx, uid, orderID, closeIn, closeQty, px); err != nil {
+			return err
+		}
+		qty = qty.Sub(closeQty)
+		if !qty.IsPositive() {
+			return nil
+		}
+		sideQty = qty
+		if in.Side == "sell" {
+			sideQty = qty.Neg()
+		}
+		haveQty, entry, iso = decimal.Zero, decimal.Zero, decimal.Zero
+	}
+	notional := px.Mul(qty)
+	margin := notional.Div(decimal.NewFromInt(int64(in.Leverage)))
+	var bal, frozen decimal.Decimal
+	if err := tx.QueryRowContext(ctx, `SELECT balance, frozen FROM paper_fut_accounts WHERE user_id=$1 FOR UPDATE`, uid).Scan(&bal, &frozen); err != nil {
+		return err
+	}
+	if bal.Sub(frozen).LessThan(margin) {
+		return apiErr(409, "INSUFFICIENT_MARGIN", "虚拟 USDX 可用保证金不足")
 	}
 	newQty := haveQty.Add(sideQty)
 	newEntry := px
@@ -537,10 +582,9 @@ func (s *Store) CancelFutOrder(ctx context.Context, uid, orderID string) error {
 		return err
 	}
 	defer tx.Rollback()
-	var status, action, symbol string
-	var qty, price decimal.Decimal
-	var lev int
-	err = tx.QueryRowContext(ctx, `SELECT status, action, symbol, qty, COALESCE(price,0), leverage FROM paper_fut_orders WHERE order_id=$1 AND user_id=$2 FOR UPDATE`, orderID, uid).Scan(&status, &action, &symbol, &qty, &price, &lev)
+	var status, action string
+	var frozenMargin decimal.Decimal
+	err = tx.QueryRowContext(ctx, `SELECT status, action, frozen_margin FROM paper_fut_orders WHERE order_id=$1 AND user_id=$2 FOR UPDATE`, orderID, uid).Scan(&status, &action, &frozenMargin)
 	if err == sql.ErrNoRows {
 		return apiErr(404, "NOT_FOUND", "订单不存在")
 	}
@@ -550,13 +594,8 @@ func (s *Store) CancelFutOrder(ctx context.Context, uid, orderID string) error {
 	if status != "open" && status != "untriggered" {
 		return apiErr(409, "ORDER_CLOSED", "订单已结束")
 	}
-	if action == "open" {
-		px := price
-		if !px.IsPositive() {
-			px = decimal.NewFromInt(1)
-		}
-		margin := px.Mul(qty).Div(decimal.NewFromInt(int64(lev)))
-		if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_accounts SET frozen=GREATEST(frozen-$2,0) WHERE user_id=$1`, uid, margin); err != nil {
+	if action == "open" && frozenMargin.IsPositive() {
+		if _, err := tx.ExecContext(ctx, `UPDATE paper_fut_accounts SET frozen=GREATEST(frozen-$2,0), updated_at=now() WHERE user_id=$1`, uid, frozenMargin); err != nil {
 			return err
 		}
 	}
@@ -748,6 +787,10 @@ func (s *Store) LiquidateAt(ctx context.Context, uid, symbol, positionSide strin
 	var lev int
 	var ver int64
 	var mode string
+	var wallet decimal.Decimal
+	if err := tx.QueryRowContext(ctx, `SELECT balance FROM paper_fut_accounts WHERE user_id=$1 FOR UPDATE`, uid).Scan(&wallet); err != nil {
+		return false, err
+	}
 	err = tx.QueryRowContext(ctx, `SELECT qty, entry_price, isolated_margin, leverage, version, margin_mode FROM paper_fut_positions WHERE user_id=$1 AND symbol=$2 AND position_side=$3 FOR UPDATE`, uid, symbol, positionSide).Scan(&qty, &entry, &iso, &lev, &ver, &mode)
 	if err == sql.ErrNoRows || qty.IsZero() {
 		return false, nil
@@ -755,7 +798,11 @@ func (s *Store) LiquidateAt(ctx context.Context, uid, symbol, positionSide strin
 	if err != nil {
 		return false, err
 	}
-	lp := liqPrice(entry, iso, qty, mmr, lev)
+	cushion := iso
+	if mode == "cross" {
+		cushion = wallet
+	}
+	lp := liqPrice(entry, cushion, qty, mmr)
 	hit := false
 	if qty.IsPositive() && lp.IsPositive() && mark.LessThanOrEqual(lp) {
 		hit = true
@@ -824,7 +871,7 @@ func (s *Store) LiquidationSweep(ctx context.Context, src FutSource) error {
 		if !ok || !sp.Available {
 			continue
 		}
-		mark, _, fund, qok, qerr := src.Quote(ctx, sp.LiveSymbol)
+		mark, _, _, qok, qerr := src.Quote(ctx, sp.LiveSymbol)
 		if qerr != nil || !qok {
 			continue
 		}
@@ -837,30 +884,32 @@ func (s *Store) LiquidationSweep(ctx context.Context, src FutSource) error {
 		if _, err := s.LiquidateAt(ctx, r.u, r.s, r.p, mark, sp.MMR); err != nil {
 			return err
 		}
-		if fund != nil {
-			if err := s.ApplyFunding(ctx, r.u, r.s, *fund, time.Now().UTC().Truncate(time.Hour), true); err != nil {
-				return err
-			}
+		settlements, serr := src.Settlements(ctx, sp.LiveSymbol)
+		if serr != nil {
+			return serr
+		}
+		if err := s.ApplyFunding(ctx, r.u, r.s, r.p, settlements); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func (s *Store) matchResting(ctx context.Context, uid, symbol string, mark decimal.Decimal, sp FutSpec) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT order_id, side, position_side, action, order_type, COALESCE(price,0), COALESCE(trigger_price,0), qty, leverage, margin_mode FROM paper_fut_orders WHERE user_id=$1 AND symbol=$2 AND status IN ('open','untriggered')`, uid, symbol)
+	rows, err := s.db.QueryContext(ctx, `SELECT order_id, side, position_side, action, order_type, COALESCE(price,0), COALESCE(trigger_price,0), qty, leverage, margin_mode, frozen_margin FROM paper_fut_orders WHERE user_id=$1 AND symbol=$2 AND status IN ('open','untriggered')`, uid, symbol)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	type pending struct {
 		id, side, ps, action, typ, mode string
-		price, trigger, qty             decimal.Decimal
+		price, trigger, qty, frozen     decimal.Decimal
 		lev                             int
 	}
 	var list []pending
 	for rows.Next() {
 		var p pending
-		if err := rows.Scan(&p.id, &p.side, &p.ps, &p.action, &p.typ, &p.price, &p.trigger, &p.qty, &p.lev, &p.mode); err != nil {
+		if err := rows.Scan(&p.id, &p.side, &p.ps, &p.action, &p.typ, &p.price, &p.trigger, &p.qty, &p.lev, &p.mode, &p.frozen); err != nil {
 			return err
 		}
 		list = append(list, p)
@@ -897,9 +946,15 @@ func (s *Store) matchResting(ctx context.Context, uid, symbol string, mark decim
 		}
 		in := futOrderIn{Symbol: symbol, Side: p.side, PositionSide: p.ps, Action: p.action, Type: p.typ, Leverage: p.lev, MarginMode: p.mode}
 		if p.action == "close" {
+			if p.frozen.IsPositive() {
+				if _, err = tx.ExecContext(ctx, `UPDATE paper_fut_accounts SET frozen=GREATEST(frozen-$2,0) WHERE user_id=$1`, uid, p.frozen); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
 			err = s.reduce(ctx, tx, uid, p.id, in, p.qty, px)
 		} else {
-			err = s.fillLocked(ctx, tx, uid, p.id, in, sp, p.qty, px)
+			err = s.fillLocked(ctx, tx, uid, p.id, in, sp, p.qty, px, p.frozen)
 		}
 		if err != nil {
 			tx.Rollback()
@@ -959,12 +1014,54 @@ func (m markSource) Specs(context.Context) ([]FutSpec, error) {
 func (m markSource) Quote(context.Context, string) (decimal.Decimal, decimal.Decimal, *decimal.Decimal, bool, error) {
 	return m.mark, m.mark, nil, true, nil
 }
+func (m markSource) Settlements(context.Context, string) ([]FundingSettlement, error) {
+	return nil, nil
+}
 
-func (s *Store) ApplyFunding(ctx context.Context, uid, symbol string, rate decimal.Decimal, fundingTime time.Time, available bool) error {
-	if !available {
+func (s *Store) futPushRows(ctx context.Context, uid string) (positions, orders []map[string]any) {
+	positions, orders = []map[string]any{}, []map[string]any{}
+	rows, err := s.db.QueryContext(ctx, `SELECT symbol, position_side, qty::text, entry_price::text, isolated_margin::text, leverage FROM paper_fut_positions WHERE user_id=$1 AND qty <> 0`, uid)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sym, side, qty, entry, margin string
+		var lev int
+		if rows.Scan(&sym, &side, &qty, &entry, &margin, &lev) != nil {
+			return
+		}
+		positions = append(positions, map[string]any{"symbol": sym, "positionSide": side, "quantity": qty, "entryPrice": entry, "margin": margin, "leverage": lev})
+	}
+	orows, err := s.db.QueryContext(ctx, `SELECT order_id, symbol, side, position_side, status, qty::text, frozen_margin::text FROM paper_fut_orders WHERE user_id=$1 AND status IN ('open','untriggered') ORDER BY created_at DESC`, uid)
+	if err != nil {
+		return
+	}
+	defer orows.Close()
+	for orows.Next() {
+		var id, sym, side, ps, status, qty, frozen string
+		if orows.Scan(&id, &sym, &side, &ps, &status, &qty, &frozen) != nil {
+			return
+		}
+		orders = append(orders, map[string]any{"orderId": id, "symbol": sym, "side": side, "positionSide": ps, "status": status, "quantity": qty, "frozenMargin": frozen})
+	}
+	return
+}
+
+func (s *Store) ApplyFunding(ctx context.Context, uid, symbol, positionSide string, rows []FundingSettlement) error {
+	for _, row := range rows {
+		if err := s.applyOneFunding(ctx, uid, symbol, positionSide, row.Rate, row.Time); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) applyOneFunding(ctx context.Context, uid, symbol, positionSide string, rate decimal.Decimal, fundingTime time.Time) error {
+	if fundingTime.IsZero() {
 		return nil
 	}
-	key := fmt.Sprintf("fund:%s:%s:%d", uid, symbol, fundingTime.UTC().Unix())
+	key := fmt.Sprintf("fund:%s:%s:%s:%d", uid, symbol, positionSide, fundingTime.UTC().Unix())
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -978,7 +1075,7 @@ func (s *Store) ApplyFunding(ctx context.Context, uid, symbol string, rate decim
 		return nil
 	}
 	var qty, entry decimal.Decimal
-	err = tx.QueryRowContext(ctx, `SELECT qty, entry_price FROM paper_fut_positions WHERE user_id=$1 AND symbol=$2 AND qty <> 0`, uid, symbol).Scan(&qty, &entry)
+	err = tx.QueryRowContext(ctx, `SELECT qty, entry_price FROM paper_fut_positions WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND qty <> 0`, uid, symbol, positionSide).Scan(&qty, &entry)
 	if err == sql.ErrNoRows {
 		return nil
 	}

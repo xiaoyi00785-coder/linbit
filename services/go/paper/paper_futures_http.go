@@ -263,7 +263,13 @@ func (s *Server) handleFutPositions(w http.ResponseWriter, r *http.Request) {
 					mmr = sp.MMR
 				}
 			}
-			item["liquidationPrice"] = liqPrice(entry, iso, qty, mmr, lev).StringFixed(8)
+			cushion := iso
+			if mode == "cross" {
+				var wallet decimal.Decimal
+				_ = s.store.db.QueryRowContext(r.Context(), `SELECT balance FROM paper_fut_accounts WHERE user_id=$1`, uid).Scan(&wallet)
+				cushion = wallet
+			}
+			item["liquidationPrice"] = liqPrice(entry, cushion, qty, mmr).StringFixed(8)
 			margin := iso
 			if margin.IsZero() {
 				margin = entry.Mul(qty.Abs()).Div(decimal.NewFromInt(int64(lev)))
@@ -488,9 +494,24 @@ func (s *Server) pushFut(uid string) {
 	if s.cfg.MarketURL == "" || s.cfg.InternalToken == "" {
 		return
 	}
-	body, _ := json.Marshal(map[string]any{"userId": uid, "channel": "paper:balances", "data": map[string]any{"userId": uid, "updated": true}})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	acct, err := s.store.FutAccountView(ctx, uid, s.futSource())
+	if err != nil {
+		log.Printf("paper futures snapshot: %v", err)
+		return
+	}
+	positions, orders := s.store.futPushRows(ctx, uid)
+	s.pushChannel(ctx, uid, "paper:balances", acct)
+	s.pushChannel(ctx, uid, "paper:positions", map[string]any{"items": positions})
+	s.pushChannel(ctx, uid, "paper:orders", map[string]any{"items": orders})
+}
+
+func (s *Server) pushChannel(ctx context.Context, uid, channel string, data any) {
+	body, err := json.Marshal(map[string]any{"userId": uid, "channel": channel, "data": data})
+	if err != nil {
+		return
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.cfg.MarketURL, "/")+"/internal/ws/push", bytes.NewReader(body))
 	if err != nil {
 		return
@@ -499,7 +520,7 @@ func (s *Server) pushFut(uid string) {
 	req.Header.Set("X-Internal-Token", s.cfg.InternalToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("paper futures push: %v", err)
+		log.Printf("paper futures push %s: %v", channel, err)
 		return
 	}
 	resp.Body.Close()
