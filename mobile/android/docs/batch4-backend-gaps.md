@@ -19,7 +19,7 @@
 - 杠杆弹层「最大仓位」取风险档位 `maxNotional`，缺档位时显示 `--`。
 
 ## 资产页
-- `GET /futures/account` 无体验金、抵扣金字段；`/futures/bonus.available` 已在 Batch8 福利中心按两字段展示。合约资产卡尚未串接该独立只读接口，仍显示 `--`，属于后续前端接入，不应说后端无赠金接口。
+- `GET /futures/account` 无体验金、抵扣金字段；`/futures/bonus.available` 已在 Batch8 福利中心按两字段展示。合约资产卡 Batch9 已串 `/futures/bonus`；空值 `--`，不计入余额。
 - 零余额币种列表：资金账户取 `/wallet/networks` 的 asset 去重，现货取行情 USDT 交易对 base；余额为真实 0。
 - 币种详情页：参考点币种进入详情（本轮未截到参考详情页），我们点币种进入充值页。
 
@@ -70,3 +70,9 @@
 - 通知 link→工单详情+精确已读：客户端已接 a6257c29 契约；迁移17/真实工单发送仍非本批。
 - 合约资产卡已串独立 `/futures/bonus`；不开放合约直充。
 - 真机/KVM 仍受限；远端 CI 对上一 head 已成功，本批推送后另查一次不轮询。
+
+
+## Batch10（2026-11-08 America/New_York）
+- 偏好：颜色/主题行与弹层按参考改为视觉结构；语言列表按参考展开但保留简体中文、不擅自改语言。
+- 精简剩余清单：`batch10-remaining-gaps.md`。
+- KVM：只读确认 `/dev/kvm` root:pulse-access、box 不在组；最小动作为加组或 ACL，不提权/全局 chmod。

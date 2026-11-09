@@ -24,6 +24,7 @@ import kotlinx.serialization.Serializable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.border
@@ -96,24 +97,68 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
         ProfileRow("语言", "简体中文") { sheet = "语言" }
         ProfileRow("计价货币", vm.preferences?.quoteCurrency ?: "USD") { sheet = "计价货币" }
         ProfileRow("主题", themeMode.title) { sheet = "主题" }
-        ProfileRow("颜色偏好", DisplayPrefs.color.title) { sheet = "颜色偏好" }
-        ProfileRow("主题设置", if (DisplayPrefs.classicTheme) "经典主题" else "新主题") { sheet = "主题设置" }
-        Spacer(Modifier.height(12.dp))
+        // 参考：颜色偏好行右侧为涨跌 K 线对，非纯文字。
+        ProfileRow("颜色偏好", trailing = {
+            ColorCandles(DisplayPrefs.color, size = 18.dp)
+        }) { sheet = "颜色偏好" }
+        // 参考：主题设置行右侧为涨/跌色块对。
+        ProfileRow("主题设置", trailing = {
+            val (up, down) = if (DisplayPrefs.classicTheme) TradeColors.CLASSIC_UP to TradeColors.CLASSIC_DOWN else TradeColors.NEW_UP to TradeColors.NEW_DOWN
+            Swatch(up, down)
+        }) { sheet = "主题设置" }
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).height(0.5.dp).background(LB.p.divider))
+        Spacer(Modifier.height(8.dp))
         ProfileRow("默认充值账户", depositVm.target?.title ?: (if (depositVm.unavailable) "暂未开放" else null) ?: depositVm.error?.let { "读取失败" } ?: "--") { if (depositVm.error != null) depositVm.load(); sheet = "默认充值账户" }
         ProfileRow("合约交易") { onTrading(true) }
         ProfileRow("现货交易") { onTrading(false) }
     }
     sheet?.let { title -> LbSheet(title, { sheet = null }, showClose = true) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
+        // LbSheet 本体已 verticalScroll；此处不可再嵌套滚动。
+        Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
             when (title) {
-                "语言" -> SheetOptionRow("简体中文", true) { sheet = null }
+                "语言" -> {
+                    // 参考语言列表结构（auth/044）；当前产品仅落地简体中文，其它项可点但不变语言。
+                    PrefLanguages.all.forEach { lang ->
+                        val selected = lang == PrefLanguages.SUPPORTED
+                        Row(
+                            Modifier.fillMaxWidth().pressable(scale = 1f) {
+                                if (selected) sheet = null
+                                else depositVm.toast.show("暂仅支持简体中文，未更改当前语言", ToastCenter.Kind.INFO)
+                            }.padding(vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(lang, Modifier.weight(1f), style = lb(FontSize.body, FontWeight.Medium), color = LB.p.textPrimary)
+                            if (selected) SheetCheck()
+                        }
+                    }
+                }
                 "主题" -> ThemeCards(themeMode) { onTheme(it); sheet = null }
-                "颜色偏好" -> UpDownColor.entries.forEach { c -> SheetOptionRow(c.title, DisplayPrefs.color == c) { DisplayPrefs.setColor(context, c); sheet = null } }
+                "颜色偏好" -> UpDownColor.entries.forEach { c ->
+                    // 参考弹层：左 K 线对 + 文案，右对勾。
+                    Row(
+                        Modifier.fillMaxWidth().pressable(scale = 1f) {
+                            DisplayPrefs.setColor(context, c); sheet = null
+                        }.padding(vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ColorCandles(c, size = 22.dp)
+                        Text(c.title, Modifier.weight(1f).padding(start = 12.dp), style = lb(FontSize.body, FontWeight.Medium), color = LB.p.textPrimary)
+                        if (DisplayPrefs.color == c) SheetCheck()
+                    }
+                }
                 "主题设置" -> listOf(false to "新主题", true to "经典主题").forEach { (classic, label) ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().pressable(scale = 1f) {
+                            DisplayPrefs.setClassicTheme(context, classic); sheet = null
+                        }.padding(vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         if (classic) Swatch(tc.CLASSIC_UP, tc.CLASSIC_DOWN) else Swatch(tc.NEW_UP, tc.NEW_DOWN)
-                        SheetOptionRow(label, DisplayPrefs.classicTheme == classic, Modifier.weight(1f).padding(start = 8.dp)) { DisplayPrefs.setClassicTheme(context, classic); sheet = null }
-                    } }
+                        Text(label, Modifier.weight(1f).padding(start = 12.dp), style = lb(FontSize.body, FontWeight.Medium), color = LB.p.textPrimary)
+                        if (DisplayPrefs.classicTheme == classic) SheetCheck()
+                    }
+                }
                 "计价货币" -> {
                     UsdRateInfo()
                     if (vm.preferences == null && vm.error == null) Text("正在读取账户偏好…", color = LB.p.textSecondary)
@@ -133,6 +178,38 @@ fun PreferencesContent(themeMode: ThemeMode, onTheme: (ThemeMode) -> Unit, onTra
     } }
 }
 
+
+
+/** 参考语言列表顺序（auth/044、guest/036）；仅简体中文为当前产品语言。 */
+internal object PrefLanguages {
+    const val SUPPORTED = "简体中文"
+    val all = listOf(
+        "English", "简体中文", "繁體中文", "Tiếng Việt", "日本語", "Bahasa Indonesia",
+        "Español (España)", "Português (Portugal)", "العربية", "Русский", "Italiano",
+        "Português (Brasil)", "العربية (السعودية)", "Français",
+    )
+}
+/** 参考颜色偏好：一对迷你蜡烛（左涨右跌，或红涨配色）。 */
+@Composable
+internal fun ColorCandles(color: UpDownColor, size: androidx.compose.ui.unit.Dp) {
+    val (up, down) = when (color) {
+        UpDownColor.GREEN_UP -> TradeColors.NEW_UP to TradeColors.NEW_DOWN
+        UpDownColor.RED_UP_GREEN_DOWN -> TradeColors.NEW_DOWN to TradeColors.NEW_UP
+        UpDownColor.RED_UP_BLUE_DOWN -> TradeColors.NEW_DOWN to TradeColors.BLUE_DOWN
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+        MiniCandle(Color(up), size)
+        MiniCandle(Color(down), size)
+    }
+}
+
+@Composable
+private fun MiniCandle(color: Color, size: androidx.compose.ui.unit.Dp) {
+    Box(Modifier.width(size * 0.45f).height(size), contentAlignment = Alignment.Center) {
+        Box(Modifier.width(1.5.dp).fillMaxHeight().background(color))
+        Box(Modifier.align(Alignment.Center).width(size * 0.38f).height(size * 0.55f).background(color, RoundedCornerShape(1.dp)))
+    }
+}
 
 /** 参考 Theme 弹层：三张主题预览卡（自动 / 日间 / 夜间）+ 下方单选。 */
 @androidx.compose.runtime.Composable

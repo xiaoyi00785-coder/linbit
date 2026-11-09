@@ -39,6 +39,8 @@ fun ProfileRow(
     title: String,
     value: String? = null,
     destructive: Boolean = false,
+    /** 参考偏好行右侧可放色块/K线图标，优先于纯文案 value。 */
+    trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val p = LB.p
@@ -48,7 +50,8 @@ fun ProfileRow(
     ) {
         Text(title, style = lb(FontSize.label), color = if (destructive) p.down else p.textPrimary)
         Spacer(Modifier.weight(1f))
-        if (value != null) Text(value, style = lb(FontSize.label), color = p.textSecondary, maxLines = 1)
+        if (trailing != null) trailing()
+        else if (value != null) Text(value, style = lb(FontSize.label), color = p.textSecondary, maxLines = 1)
         Spacer(Modifier.width(8.dp))
         LbIcon(R.drawable.ic_chevron_right, 13.dp, p.textTertiary)
     }
