@@ -68,6 +68,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /futures/positions/{symbol}/close", s.user(s.hClose))
 	mux.HandleFunc("GET /futures/bills", s.user(s.hBills))
 	mux.HandleFunc("GET /futures/pnl/today", s.user(s.hTodayPnl))
+	mux.HandleFunc("GET /futures/pnl/history", s.user(s.hPnlHistory))
 	mux.HandleFunc("GET /futures/trades", s.user(s.hMyTrades))
 	// dev
 	s.copyRoutes(mux)

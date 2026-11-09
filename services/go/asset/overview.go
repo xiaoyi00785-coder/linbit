@@ -170,11 +170,14 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		total = total.Add(decimal.RequireFromString(a.TotalValueUsdt))
 	}
 	settings, _ := s.store.Settings(ctx)
+	dep, depSource := s.store.effectiveDepositAccount(ctx, userID)
 	common.WriteJSON(w, http.StatusOK, map[string]any{
-		"totalValueUsdt":  total.StringFixed(2),
-		"accounts":        []overviewAccount{fa, sa, fu},
-		"depositAccount":  settings["deposit_account"],
-		"withdrawAccount": settings["withdraw_account"],
-		"transferable":    map[string]any{"funding": []string{"spot", "futures"}, "spot": []string{"funding", "futures"}, "futures": []string{"funding", "spot"}, "futuresAssets": []string{"USDT"}},
+		"totalValueUsdt":         total.StringFixed(2),
+		"accounts":               []overviewAccount{fa, sa, fu},
+		"depositAccount":         dep,
+		"depositAccountSource":   depSource,
+		"platformDepositAccount": settings["deposit_account"],
+		"withdrawAccount":        settings["withdraw_account"],
+		"transferable":           map[string]any{"funding": []string{"spot", "futures"}, "spot": []string{"funding", "futures"}, "futures": []string{"funding", "spot"}, "futuresAssets": []string{"USDT"}},
 	})
 }

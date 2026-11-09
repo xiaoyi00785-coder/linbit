@@ -127,23 +127,46 @@ func (s *Server) hDepth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := limitParam(r, 20, 200)
-	side := func(sd, ord string) [][2]decimal.Decimal {
-		rows, err := s.db.QueryContext(r.Context(), `SELECT price, sum(qty-filled) FROM fut_orders WHERE symbol=$1 AND side=$2 AND type='limit'
-			AND status IN ('new','partially_filled') GROUP BY price ORDER BY price `+ord+` LIMIT $3`, c.Symbol, sd, n)
-		out := [][2]decimal.Decimal{}
-		if err != nil {
-			return out
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var p, q decimal.Decimal
-			if rows.Scan(&p, &q) == nil {
-				out = append(out, [2]decimal.Decimal{p, q})
-			}
-		}
-		return out
+	bids, err := s.depthSide(r.Context(), c.Symbol, "buy", "DESC", n)
+	if err != nil {
+		writeErr(w, err)
+		return
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "bids": side("buy", "DESC"), "asks": side("sell", "ASC"), "time": s.now().UnixMilli()})
+	asks, err := s.depthSide(r.Context(), c.Symbol, "sell", "ASC", n)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if bids == nil {
+		bids = [][2]decimal.Decimal{}
+	}
+	if asks == nil {
+		asks = [][2]decimal.Decimal{}
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "bids": bids, "asks": asks, "time": s.now().UnixMilli()})
+}
+
+// depthSide reads resting limit orders. A query error is returned to the caller
+// instead of an empty book, so a database failure is not reported as "no depth".
+func (s *Server) depthSide(ctx context.Context, symbol, side, ord string, n int) ([][2]decimal.Decimal, error) {
+	if ord != "ASC" && ord != "DESC" {
+		return nil, bad("VALIDATION_ERROR", "盘口排序不合法")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT price, sum(qty-filled) FROM fut_orders WHERE symbol=$1 AND side=$2 AND type='limit'
+		AND status IN ('new','partially_filled') GROUP BY price ORDER BY price `+ord+` LIMIT $3`, symbol, side, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := [][2]decimal.Decimal{}
+	for rows.Next() {
+		var p, q decimal.Decimal
+		if err := rows.Scan(&p, &q); err != nil {
+			return nil, err
+		}
+		out = append(out, [2]decimal.Decimal{p, q})
+	}
+	return out, rows.Err()
 }
 
 func (s *Server) hTrades(w http.ResponseWriter, r *http.Request) {
@@ -168,10 +191,14 @@ func (s *Server) hTrades(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"trades": out})
 }
 
-var klineSec = map[string]int64{"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
+var klineSec = map[string]int64{
+	"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+	"1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
+	"1d": 86400, "1w": 604800,
+}
 
-// klineAlias accepts the chart's upper-case labels (1H/4H/1D/1W).
-var klineAlias = map[string]string{"1H": "1h", "4H": "4h", "1D": "1d", "1W": "1w"}
+// klineAlias accepts the chart's upper-case labels. "1M" is not a month.
+var klineAlias = map[string]string{"1H": "1h", "2H": "2h", "4H": "4h", "6H": "6h", "12H": "12h", "1D": "1d", "1W": "1w"}
 
 // klineAnchor aligns weekly buckets to Monday 00:00 UTC (same as market-data).
 func klineAnchor(sec int64) int64 {
@@ -196,7 +223,7 @@ func (s *Server) hKlines(w http.ResponseWriter, r *http.Request) {
 	}
 	sec, ok := klineSec[iv]
 	if !ok {
-		writeErr(w, bad("VALIDATION_ERROR", "interval 仅支持 1m/5m/15m/30m/1h/4h/1d/1w"))
+		writeErr(w, bad("VALIDATION_ERROR", "interval 仅支持 1m/3m/5m/15m/30m/1h/2h/4h/6h/12h/1d/1w"))
 		return
 	}
 	n := limitParam(r, 200, 1000)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestFiatRates(t *testing.T) {
+	resetUSDCache()
 	if r, _, ok := parseFiat([]byte(`{"base":"USD","date":"2026-11-02","rates":{"CNY":7.1,"EUR":0.9,"JPY":151}}`)); !ok || r["USD"] != 1 || r["CNY"] != 7.1 {
 		t.Fatal("frankfurter parse")
 	}
@@ -28,8 +29,8 @@ func TestFiatRates(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &m)
 		return w.Code, m
 	}
-	if c, m := get(""); c != 200 || m["source"] != "static" || m["base"] != "USDT" {
-		t.Fatalf("static fallback: %d %v", c, m)
+	if c, m := get(""); c != 200 || m["available"] != false || m["pegAssumed"] != false || m["rates"] != nil || m["base"] != "USDT" {
+		t.Fatalf("unavailable without a live source: %d %v", c, m)
 	}
 	if c, _ := get("?base=BTC"); c != 400 {
 		t.Fatal("bad base accepted")

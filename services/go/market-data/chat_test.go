@@ -61,7 +61,11 @@ func TestMaskUID(t *testing.T) {
 
 func TestHubChatChannel(t *testing.T) {
 	h := NewHub(nil)
-	c := &wsClient{hub: h}
+	anon := &wsClient{hub: h}
+	if code, _ := anon.validateChannel("chat:general"); code != "AUTH_REQUIRED" {
+		t.Fatalf("anonymous chat subscribe: %s", code)
+	}
+	c := &wsClient{hub: h, uid: "synth-user"}
 	if code, _ := c.validateChannel("chat:general"); code != "SUB_INVALID" {
 		t.Fatalf("no validator: %s", code)
 	}
@@ -76,6 +80,9 @@ func TestHubChatChannel(t *testing.T) {
 	}
 	if code, _ := c.validateChannel("chat:nope"); code == "" {
 		t.Fatal("unknown room accepted")
+	}
+	if code, _ := anon.validateChannel("chat:general"); code != "AUTH_REQUIRED" {
+		t.Fatalf("anonymous chat subscribe after validator: %s", code)
 	}
 }
 

@@ -19,10 +19,10 @@ type Server struct {
 	// hedgeBlocked != "" disables convert hedging (mainnet: no valid hedge
 	// account). Convert itself keeps working.
 	hedgeBlocked string
-	cfg    Config
-	store  *Store
-	prices PriceSource
-	now    func() time.Time
+	cfg          Config
+	store        *Store
+	prices       PriceSource
+	now          func() time.Time
 
 	depeg     depegGuard
 	hedge     *Hedger
@@ -45,6 +45,9 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /assets/balances", s.handleBalances)
 	mux.HandleFunc("GET /assets/overview", s.handleOverview)
+	mux.HandleFunc("GET /assets/deposit-account", s.handleGetDepositAccount)
+	mux.HandleFunc("PUT /assets/deposit-account", s.handlePutDepositAccount)
+	mux.HandleFunc("DELETE /assets/deposit-account", s.handleDeleteDepositAccount)
 
 	// Wallet user-facing endpoints (/wallet/*) live in the wallet service; this
 	// service exposes only the internal double-entry operations it drives.
@@ -244,7 +247,7 @@ func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
 	}
 	acct := req.Account
 	if acct == "" {
-		acct = s.store.depositAccount(r.Context())
+		acct, _ = s.store.effectiveDepositAccount(r.Context(), req.UserID)
 	}
 	if !validAcct(acct) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "account 不合法")

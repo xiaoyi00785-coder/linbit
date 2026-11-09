@@ -39,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /spot/orders/open", s.withUser(s.handleOpenOrders))
 	mux.HandleFunc("GET /spot/orders/history", s.withUser(s.handleHistory))
 	mux.HandleFunc("GET /spot/trades", s.withUser(s.handleTrades))
+	mux.HandleFunc("GET /spot/pnl/history", s.withUser(s.handleSpotPnlHistory))
 	mux.HandleFunc("POST /spot/orders/conditional", s.withUser(s.handleCondCreate))
 	mux.HandleFunc("GET /spot/orders/conditional", s.withUser(s.handleCondList))
 	mux.HandleFunc("DELETE /spot/orders/conditional/{id}", s.withUser(s.handleCondCancel))

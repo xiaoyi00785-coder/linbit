@@ -886,6 +886,9 @@ func (s *Server) handleInternalVerifyKey(w http.ResponseWriter, r *http.Request)
 	deny := func(reason string) { common.WriteJSON(w, http.StatusOK, map[string]any{"ok": false, "reason": reason}) }
 	k, err := s.store.SubKeyByAPIKey(r.Context(), req.APIKey)
 	if err != nil || k.RevokedAt.Valid || subtle.ConstantTimeCompare([]byte(k.SecretHash), []byte(sha256Hex(req.APISecret))) != 1 {
+		if s.verifyUserAPIKey(w, r, req.APIKey, req.APISecret, req.IP) {
+			return
+		}
 		deny("invalid")
 		return
 	}

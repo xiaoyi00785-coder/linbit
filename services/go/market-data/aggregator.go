@@ -154,6 +154,8 @@ type Aggregator struct {
 	// index returns the external index price (nil = none). Used only as a
 	// display fallback when there are no trades; never feeds trade data.
 	index func(symbol string) (decimal.Decimal, bool)
+	// usdAnn stamps tickers from memory only. Nil leaves usd omitted.
+	usdAnn func(tickerDTO) *usdQuoteDTO
 }
 
 type persistJob struct {
@@ -191,6 +193,14 @@ func newSymbolState(symbol string) *symbolState {
 
 // SetBroadcaster attaches the live-push transport (the WS hub).
 func (a *Aggregator) SetBroadcaster(bc Broadcaster) { a.bc = bc }
+
+// SetUSDAnnotator attaches a pure USD stamp for ticker frames. The function
+// runs on the trade/index hot path and must only read memory.
+func (a *Aggregator) SetUSDAnnotator(fn func(tickerDTO) *usdQuoteDTO) {
+	a.mu.Lock()
+	a.usdAnn = fn
+	a.mu.Unlock()
+}
 
 // SetPrecisions loads per-symbol rendering precision from the shared trading-pair
 // catalogue (the `symbols` table owned by the order service) so REST and WS
@@ -473,6 +483,26 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		QuoteVolume:        fmtPrec(decimal.Zero, p.pricePrec, p.ok),
 	}
 	if len(ss.window) == 0 {
+		// The live trade window is empty. If persisted 1m trade candles in the
+		// last 24h have volume, use that (restart recovered candles but not the
+		// trade window). Index candles are not a volume source.
+		if open, hi, lo, vol, quote, ok := a.tradeCandleStats24hLocked(ss); ok {
+			if last.GreaterThan(hi) {
+				hi = last
+			}
+			if lo.Sign() > 0 && last.LessThan(lo) {
+				lo = last
+			}
+			dto.High = fmtPrec(hi, p.pricePrec, p.ok)
+			dto.Low = fmtPrec(lo, p.pricePrec, p.ok)
+			dto.Volume = fmtPrec(vol, p.qtyPrec, p.ok)
+			dto.QuoteVolume = fmtPrec(quote, p.pricePrec, p.ok)
+			if open.Sign() > 0 && last.Sign() > 0 {
+				dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
+			}
+			a.applyUSD(&dto)
+			return dto
+		}
 		// No local trades in 24h: derive change/high/low from the index
 		// candles (5m preferred: its backfill spans >24h; 1m otherwise).
 		// Volume stays 0 — no fabricated volume.
@@ -489,6 +519,7 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 				dto.PriceChangePercent = last.Sub(open).Div(open).Mul(decimal.NewFromInt(100)).Round(2).String()
 			}
 		}
+		a.applyUSD(&dto)
 		return dto
 	}
 	high := ss.window[0].price
@@ -514,7 +545,45 @@ func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 		pct := last.Sub(open).Div(open).Mul(decimal.NewFromInt(100))
 		dto.PriceChangePercent = pct.Round(2).String()
 	}
+	a.applyUSD(&dto)
 	return dto
+}
+
+func (a *Aggregator) applyUSD(dto *tickerDTO) {
+	if a.usdAnn != nil {
+		dto.Usd = a.usdAnn(*dto)
+	}
+}
+
+// tradeCandleStats24hLocked sums 1m trade candles overlapping the last 24h.
+// Index candles live in idxSeries and are ignored. ok is false when there is
+// no positive base volume.
+func (a *Aggregator) tradeCandleStats24hLocked(ss *symbolState) (open, hi, lo, vol, quote decimal.Decimal, ok bool) {
+	s := ss.series["1m"]
+	if s == nil || len(s.candles) == 0 {
+		return
+	}
+	from := a.now().Add(-ticker24h).Unix()
+	for _, c := range s.candles {
+		if c.OpenTime+60 <= from || c.Volume.Sign() <= 0 {
+			continue
+		}
+		if !ok {
+			open, hi, lo, ok = c.Open, c.High, c.Low, true
+		}
+		if c.High.GreaterThan(hi) {
+			hi = c.High
+		}
+		if c.Low.LessThan(lo) {
+			lo = c.Low
+		}
+		vol = vol.Add(c.Volume)
+		quote = quote.Add(c.QuoteVolume)
+	}
+	if vol.Sign() <= 0 {
+		ok = false
+	}
+	return
 }
 
 // indexStats24hLocked returns open/high/low over the last 24h of index

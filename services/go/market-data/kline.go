@@ -17,11 +17,15 @@ const mondayAnchor = 345600 // 1970-01-05T00:00:00Z, the first Monday after the 
 // the openapi KlineInterval enum and the WebSocket kline channel docs.
 var Intervals = []Interval{
 	{Name: "1m", Seconds: 60},
+	{Name: "3m", Seconds: 180},
 	{Name: "5m", Seconds: 300},
 	{Name: "15m", Seconds: 900},
 	{Name: "30m", Seconds: 1800},
 	{Name: "1h", Seconds: 3600},
+	{Name: "2h", Seconds: 7200},
 	{Name: "4h", Seconds: 14400},
+	{Name: "6h", Seconds: 21600},
+	{Name: "12h", Seconds: 43200},
 	{Name: "1d", Seconds: 86400},
 	{Name: "1w", Seconds: 604800, anchor: mondayAnchor},
 }
@@ -94,7 +98,7 @@ func (c *Candle) add(price, qty decimal.Decimal) {
 
 // intervalAlias maps the chart's upper-case labels to interval names. "1M"
 // is deliberately absent (it would be ambiguous with 1m).
-var intervalAlias = map[string]string{"1H": "1h", "4H": "4h", "1D": "1d", "1W": "1w"}
+var intervalAlias = map[string]string{"1H": "1h", "2H": "2h", "4H": "4h", "6H": "6h", "12H": "12h", "1D": "1d", "1W": "1w"}
 
 // normInterval resolves an alias (1H/4H/1D/1W) to its canonical name.
 func normInterval(name string) string {

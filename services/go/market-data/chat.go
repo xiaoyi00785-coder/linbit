@@ -292,6 +292,10 @@ func (c *Chat) kycLevel(ctx context.Context, uid string, need int) (int, error) 
 // ---- public handlers ----
 
 func (c *Chat) gate(w http.ResponseWriter, r *http.Request) bool {
+	if r.Header.Get("X-User-Id") == "" {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "登录后查看聊天室")
+		return false
+	}
 	if !c.featureOn(r.Context()) {
 		common.WriteError(w, http.StatusForbidden, "FEATURE_DISABLED", "聊天室即将上线")
 		return false

@@ -172,6 +172,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/partner", proxy: growthProxy},
 			{prefix: "/referral", proxy: growthProxy},
 			{prefix: "/points", proxy: growthProxy},
+			{prefix: "/campaigns", proxy: growthProxy},
 			{prefix: "/rewards", proxy: growthProxy},
 			{prefix: "/activities", proxy: growthProxy},
 			{prefix: "/coupons", proxy: growthProxy},
@@ -188,6 +189,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/app/features", proxy: marketProxy},               // app feature switches (market-data)
 			{prefix: "/home", proxy: marketProxy},                       // home placements/banners + hot list (market-data)
 			{prefix: "/chat", proxy: marketProxy},                       // trading chat rooms (market-data)
+			{prefix: "/academy", proxy: marketProxy},                    // academy articles (market-data)
+			{prefix: "/cards", proxy: accountProxy},                     // card product / application (account)
+			{prefix: "/fiat", proxy: accountProxy},                      // fiat buy config (account)
 			{prefix: "/tradfi", proxy: marketProxy},                     // tokenized stocks / metals catalogue (market-data)
 		},
 		public: []publicRoute{
@@ -202,6 +206,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/password/reset"},
 			{method: http.MethodPost, path: "/auth/passkey/login/begin"},
 			{method: http.MethodPost, path: "/auth/passkey/login/finish"},
+			{method: http.MethodGet, path: "/auth/providers"},
+			{method: http.MethodPost, path: "/auth/google"},
 			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
 			{method: "", path: "/market/"},                      // public market data (prefix)
 			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
@@ -213,6 +219,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/partner/rules"},
 			{method: http.MethodGet, path: "/points/campaigns"},
 			{method: http.MethodGet, path: "/points/campaign"},
+			{method: http.MethodGet, path: "/campaigns/deposit-cashback", optionalAuth: true},
+			{method: http.MethodGet, path: "/campaigns/trade-lottery", optionalAuth: true},
 			{method: http.MethodGet, path: "/activities"},
 			{method: http.MethodGet, path: "/convert/pairs"},
 			{method: http.MethodGet, path: "/loans/market"},
@@ -223,13 +231,16 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
 			{method: http.MethodGet, path: "/home/newcomer", optionalAuth: true},
-			{method: http.MethodGet, path: "/spot/fee-schedule"},                 // public default fee rates (order)
-			{method: http.MethodGet, path: "/growth/config"},                     // invite/newcomer numbers (read-only)
-			{method: http.MethodGet, path: "/home/hot"},                          // home hot list (read-only)
-			{method: "", path: "/ws", optionalAuth: true},                        // market WebSocket; a token unlocks private channels (event:orders)
-			{method: http.MethodGet, path: "/event/products"},                    // event contract products (public)
-			{method: http.MethodGet, path: "/chat/rooms"},                        // chat: anyone can read
-			{method: http.MethodGet, path: "/chat/rooms/"},                       // chat history (prefix); posting needs auth
+			{method: http.MethodGet, path: "/spot/fee-schedule"}, // public default fee rates (order)
+			{method: http.MethodGet, path: "/growth/config"},     // invite/newcomer numbers (read-only)
+			{method: http.MethodGet, path: "/home/hot"},          // home hot list (read-only)
+			{method: "", path: "/ws", optionalAuth: true},        // market WebSocket; a token unlocks private channels (event:orders)
+			{method: http.MethodGet, path: "/event/products"},    // event contract products (public)
+			// Chat reads require login (2026-11-08). Market data stays public.
+			{method: http.MethodGet, path: "/academy/"},                          // academy categories and published articles
+			{method: http.MethodGet, path: "/cards/product"},                     // card intro; unconfigured until an issuer is approved
+			{method: http.MethodGet, path: "/fiat/buy"},                          // fiat buy availability; quotes stay authenticated
+			{method: http.MethodGet, path: "/support/guest"},                     // guest support config; tickets stay authenticated
 			{method: http.MethodGet, path: "/tradfi/assets", optionalAuth: true}, // TradFi catalogue (flag + region gated)
 		},
 	}, nil

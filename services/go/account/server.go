@@ -23,16 +23,17 @@ const ctxUID ctxKey = "uid"
 
 // Server wires configuration, storage and HTTP handlers for the account service.
 type Server struct {
-	cfg      Config
-	store    *Store
-	codes    *CodeService
-	mail     EmailSender   // notification email channel
-	recorder *CodeRecorder // non-nil only in dev mode (backs the dev last-code endpoint)
-	http     *http.Client
-	avatars  storage.ObjectStorage // pluggable blob store for avatar uploads
-	tickets  storage.ObjectStorage // private store for support-ticket attachments (local only)
-	now      func() time.Time
-	rdb      *redis.Client // nil = no access-token revocation on logout
+	cfg             Config
+	store           *Store
+	codes           *CodeService
+	mail            EmailSender   // notification email channel
+	recorder        *CodeRecorder // non-nil only in dev mode (backs the dev last-code endpoint)
+	http            *http.Client
+	avatars         storage.ObjectStorage // pluggable blob store for avatar uploads
+	tickets         storage.ObjectStorage // private store for support-ticket attachments (local only)
+	now             func() time.Time
+	rdb             *redis.Client // nil = no access-token revocation on logout
+	googleKeysCache *googleJWKCache
 }
 
 // NewServer constructs a Server. rdb may be nil (Redis is optional; the code
@@ -131,6 +132,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	mux.Handle("GET /account", s.auth(http.HandlerFunc(s.handleAccount)))
 	mux.Handle("PATCH /account/profile", s.auth(http.HandlerFunc(s.handleUpdateProfile)))
+	mux.Handle("GET /account/api-keys", s.auth(http.HandlerFunc(s.handleListAPIKeys)))
+	mux.Handle("POST /account/api-keys", s.auth(http.HandlerFunc(s.handleCreateAPIKey)))
+	mux.Handle("DELETE /account/api-keys/{id}", s.auth(http.HandlerFunc(s.handleDeleteAPIKey)))
 	mux.Handle("GET /account/preferences", s.auth(http.HandlerFunc(s.handleGetPreferences)))
 	mux.Handle("PUT /account/preferences", s.auth(http.HandlerFunc(s.handlePutPreferences)))
 	mux.Handle("POST /account/avatar", s.auth(http.HandlerFunc(s.handleUploadAvatar)))
@@ -218,6 +222,20 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /account/passkeys/{id}", a(s.handleDeletePasskey))
 	mux.HandleFunc("POST /auth/passkey/login/begin", s.handlePasskeyLoginBegin)
 	mux.HandleFunc("POST /auth/passkey/login/finish", s.handlePasskeyLoginFinish)
+	mux.HandleFunc("GET /auth/providers", s.handleAuthProviders)
+	mux.HandleFunc("POST /auth/google", s.handleGoogleLogin)
+	mux.HandleFunc("GET /support/guest", s.handleGuestSupport)
+	mux.HandleFunc("GET /fiat/buy", s.handleFiatBuyConfig)
+	mux.Handle("POST /fiat/buy/quotes", s.auth(http.HandlerFunc(s.handleFiatBuyUnavailable)))
+	mux.Handle("POST /fiat/buy/orders", s.auth(http.HandlerFunc(s.handleFiatBuyUnavailable)))
+	mux.HandleFunc("GET /cards/product", s.handleCardProduct)
+	mux.Handle("GET /cards/application", s.auth(http.HandlerFunc(s.handleCardApplication)))
+	mux.Handle("POST /cards/applications", s.auth(http.HandlerFunc(s.handleCardApply)))
+	mux.HandleFunc("GET /internal/cards/product", s.handleInternalCardGet)
+	mux.HandleFunc("PUT /internal/cards/product", s.handleInternalCardWrite("save"))
+	mux.HandleFunc("POST /internal/cards/product/submit", s.handleInternalCardWrite("submit"))
+	mux.HandleFunc("POST /internal/cards/product/approve", s.handleInternalCardWrite("approve"))
+	mux.HandleFunc("POST /internal/cards/product/reject", s.handleInternalCardWrite("reject"))
 	mux.HandleFunc("GET /internal/admin/security-settings", s.handleInternalGetSecuritySettings)
 	mux.HandleFunc("PUT /internal/admin/security-settings", s.handleInternalPutSecuritySettings)
 	mux.HandleFunc("DELETE /internal/admin/users/{uid}/withdraw-lock", s.handleInternalClearWithdrawLock)

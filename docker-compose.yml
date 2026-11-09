@@ -228,6 +228,13 @@ services:
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-}
       WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-${WEBAUTHN_ORIGINS:-}}
+      # Empty = the endpoint stays unconfigured. Do not invent values.
+      GOOGLE_OAUTH_CLIENT_IDS: ${GOOGLE_OAUTH_CLIENT_IDS:-}
+      GOOGLE_OAUTH_JWKS_URL: ${GOOGLE_OAUTH_JWKS_URL:-https://www.googleapis.com/oauth2/v3/certs}
+      SUPPORT_GUEST_PROVIDER: ${SUPPORT_GUEST_PROVIDER:-}
+      SUPPORT_GUEST_ENTRY_URL: ${SUPPORT_GUEST_ENTRY_URL:-}
+      FIAT_ONRAMP_PROVIDER: ${FIAT_ONRAMP_PROVIDER:-}
+      FIAT_ONRAMP_API_BASE: ${FIAT_ONRAMP_API_BASE:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       # Avatars persist on a named volume (survive container rebuilds).

@@ -23,6 +23,9 @@ func (s *Server) registerPorRoutes(a func(pattern, perm string, h http.HandlerFu
 		relay(w, u)
 	})
 	a("POST /admin/v1/proof-of-reserves", permContentEdit, s.porWrite(http.MethodPost))
+	a("POST /admin/v1/proof-of-reserves/{id}/submit", permContentEdit, s.porReview("submit"))
+	a("POST /admin/v1/proof-of-reserves/{id}/approve", permContentEdit, s.porReview("approve"))
+	a("POST /admin/v1/proof-of-reserves/{id}/reject", permContentEdit, s.porReview("reject"))
 	a("DELETE /admin/v1/proof-of-reserves/{id}", permContentEdit, s.porWrite(http.MethodDelete))
 }
 
@@ -75,6 +78,41 @@ func (s *Server) porWrite(method string) http.HandlerFunc {
 			}
 		}
 		s.audit(r, a, "por", action, target, levelHigh, resultOf(u), before, after, reason)
+		relay(w, u)
+	}
+}
+
+func (s *Server) porReview(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a := actorOf(r)
+		body, code, reason, err := writeReq(r)
+		if err != nil {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求格式错误")
+			return
+		}
+		reason = strings.TrimSpace(reason)
+		if reason == "" {
+			common.WriteError(w, http.StatusBadRequest, "REASON_REQUIRED", "请填写操作原因")
+			return
+		}
+		if !s.verify2FA(w, a, code) {
+			return
+		}
+		id := r.PathValue("id")
+		if n, err := strconv.ParseInt(id, 10, 64); err != nil || n <= 0 {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "id 不合法")
+			return
+		}
+		body["updatedBy"] = a.Username
+		if note, _ := body["note"].(string); strings.TrimSpace(note) == "" {
+			body["note"] = reason
+		}
+		u, err := s.call(r.Context(), http.MethodPost, s.cfg.MarketURL, "/internal/por/snapshots/"+id+"/"+action, body)
+		if err != nil {
+			upstreamErr(w, "por "+action, err)
+			return
+		}
+		s.audit(r, a, "por", "por_"+action, "por:"+id, levelHigh, resultOf(u), nil, nil, reason)
 		relay(w, u)
 	}
 }

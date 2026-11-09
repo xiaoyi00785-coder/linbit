@@ -25,7 +25,8 @@ func (s *Server) handleProofOfReserves(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.store.db.QueryContext(r.Context(), `SELECT snapshot_at, asset, liabilities::text, reserves::text
-		FROM por_snapshots WHERE snapshot_at = (SELECT MAX(snapshot_at) FROM por_snapshots) ORDER BY asset`)
+		FROM por_snapshots WHERE status='published' AND snapshot_at = (
+			SELECT MAX(snapshot_at) FROM por_snapshots WHERE status='published') ORDER BY asset`)
 	if err != nil {
 		log.Printf("proof-of-reserves: %v", err)
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")

@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -19,16 +20,23 @@ import (
 func (s *Server) porRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/por/snapshots", s.internal(s.iPorList))
 	mux.HandleFunc("POST /internal/por/snapshots", s.internal(s.iPorCreate))
+	mux.HandleFunc("POST /internal/por/snapshots/{id}/submit", s.internal(s.iPorReview("submit")))
+	mux.HandleFunc("POST /internal/por/snapshots/{id}/approve", s.internal(s.iPorReview("approve")))
+	mux.HandleFunc("POST /internal/por/snapshots/{id}/reject", s.internal(s.iPorReview("reject")))
 	mux.HandleFunc("DELETE /internal/por/snapshots/{id}", s.internal(s.iPorDelete))
 }
 
 type porSnapshot struct {
-	ID         int64     `json:"id"`
-	SnapshotAt string    `json:"snapshotAt"`
-	Note       string    `json:"note"`
-	CreatedBy  string    `json:"createdBy"`
-	CreatedAt  string    `json:"createdAt"`
-	Items      []porItem `json:"items"`
+	ID          int64     `json:"id"`
+	SnapshotAt  string    `json:"snapshotAt"`
+	Note        string    `json:"note"`
+	CreatedBy   string    `json:"createdBy"`
+	CreatedAt   string    `json:"createdAt"`
+	Status      string    `json:"status"`
+	SubmittedBy string    `json:"submittedBy"`
+	ReviewedBy  string    `json:"reviewedBy"`
+	ReviewNote  string    `json:"reviewNote"`
+	Items       []porItem `json:"items"`
 }
 
 func porErr(w http.ResponseWriter, err error) {
@@ -37,7 +45,8 @@ func porErr(w http.ResponseWriter, err error) {
 }
 
 func (s *Server) porLoad(r *http.Request, where string, args ...any) ([]porSnapshot, error) {
-	rows, err := s.store.db.QueryContext(r.Context(), `SELECT snapshot_at, asset, liabilities::text, reserves::text, note, created_by, created_at
+	rows, err := s.store.db.QueryContext(r.Context(), `SELECT snapshot_at, asset, liabilities::text, reserves::text, note, created_by, created_at,
+		status, submitted_by, reviewed_by, review_note
 		FROM por_snapshots `+where+` ORDER BY snapshot_at DESC, asset`, args...)
 	if err != nil {
 		return nil, err
@@ -46,8 +55,8 @@ func (s *Server) porLoad(r *http.Request, where string, args ...any) ([]porSnaps
 	out := []porSnapshot{}
 	for rows.Next() {
 		var at, ca time.Time
-		var a, l, rs, note, by string
-		if err := rows.Scan(&at, &a, &l, &rs, &note, &by, &ca); err != nil {
+		var a, l, rs, note, by, status, submitted, reviewed, reviewNote string
+		if err := rows.Scan(&at, &a, &l, &rs, &note, &by, &ca, &status, &submitted, &reviewed, &reviewNote); err != nil {
 			return nil, err
 		}
 		ld, _ := decimal.NewFromString(l)
@@ -57,7 +66,7 @@ func (s *Server) porLoad(r *http.Request, where string, args ...any) ([]porSnaps
 			it.Ratio = rd.Div(ld).Round(4).String()
 		}
 		if n := len(out); n == 0 || out[n-1].ID != at.UnixMilli() {
-			out = append(out, porSnapshot{ID: at.UnixMilli(), SnapshotAt: at.UTC().Format(time.RFC3339), Note: note, CreatedBy: by, CreatedAt: ca.UTC().Format(time.RFC3339)})
+			out = append(out, porSnapshot{ID: at.UnixMilli(), SnapshotAt: at.UTC().Format(time.RFC3339), Note: note, CreatedBy: by, CreatedAt: ca.UTC().Format(time.RFC3339), Status: status, SubmittedBy: submitted, ReviewedBy: reviewed, ReviewNote: reviewNote})
 		}
 		out[len(out)-1].Items = append(out[len(out)-1].Items, it)
 	}
@@ -128,7 +137,7 @@ func (s *Server) iPorCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seen[a] = true
-		if _, err := tx.ExecContext(r.Context(), `INSERT INTO por_snapshots (snapshot_at, asset, liabilities, reserves, note, created_by) VALUES ($1,$2,$3,$4,$5,$6)`,
+		if _, err := tx.ExecContext(r.Context(), `INSERT INTO por_snapshots (snapshot_at, asset, liabilities, reserves, note, created_by, status) VALUES ($1,$2,$3,$4,$5,$6,'draft')`,
 			at, a, l, rs, strings.TrimSpace(req.Note), req.UpdatedBy); err != nil {
 			porErr(w, err)
 			return
@@ -170,4 +179,81 @@ func (s *Server) iPorDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := json.Marshal(before[0])
 	common.WriteJSON(w, http.StatusOK, map[string]any{"deleted": true, "before": json.RawMessage(b)})
+}
+
+// porDecision is the two-person rule. The author and the submitter cannot approve.
+func porDecision(action, actor, createdBy, submittedBy, status string) error {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return errors.New("missing actor")
+	}
+	switch action {
+	case "submit":
+		if status != "draft" && status != "rejected" {
+			return errors.New("status")
+		}
+	case "approve":
+		if status != "pending_review" || createdBy == "" || submittedBy == "" || actor == createdBy || actor == submittedBy {
+			return errors.New("self or status")
+		}
+	case "reject":
+		if status != "pending_review" {
+			return errors.New("status")
+		}
+	default:
+		return errors.New("action")
+	}
+	return nil
+}
+
+func (s *Server) iPorReview(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil || id <= 0 {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "id 不合法")
+			return
+		}
+		var req struct {
+			UpdatedBy string `json:"updatedBy"`
+			Note      string `json:"note"`
+		}
+		if err := common.DecodeJSON(r, &req); err != nil {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求格式错误")
+			return
+		}
+		at := time.UnixMilli(id).UTC()
+		cur, err := s.porLoad(r, `WHERE snapshot_at=$1`, at)
+		if err != nil {
+			porErr(w, err)
+			return
+		}
+		if len(cur) == 0 {
+			common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "快照不存在")
+			return
+		}
+		if err := porDecision(action, req.UpdatedBy, cur[0].CreatedBy, cur[0].SubmittedBy, cur[0].Status); err != nil {
+			common.WriteError(w, http.StatusForbidden, "POR_REVIEW_DENIED", "不能审核自己的储备快照，或当前状态不可执行该操作")
+			return
+		}
+		var q string
+		switch action {
+		case "submit":
+			q = `UPDATE por_snapshots SET status='pending_review', submitted_by=$2, review_note=$3 WHERE snapshot_at=$1`
+		case "approve":
+			q = `UPDATE por_snapshots SET status='published', reviewed_by=$2, reviewed_at=now(), review_note=$3 WHERE snapshot_at=$1`
+		default:
+			q = `UPDATE por_snapshots SET status='rejected', reviewed_by=$2, reviewed_at=now(), review_note=$3 WHERE snapshot_at=$1`
+		}
+		if _, err := s.store.db.ExecContext(r.Context(), q, at, strings.TrimSpace(req.UpdatedBy), strings.TrimSpace(req.Note)); err != nil {
+			porErr(w, err)
+			return
+		}
+		out, err := s.porLoad(r, `WHERE snapshot_at=$1`, at)
+		if err != nil || len(out) == 0 {
+			porErr(w, err)
+			return
+		}
+		after, _ := json.Marshal(out[0])
+		common.WriteJSON(w, http.StatusOK, map[string]any{"snapshot": out[0], "after": json.RawMessage(after)})
+	}
 }
