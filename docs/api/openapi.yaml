@@ -4812,8 +4812,17 @@ paths:
                     items:
                       $ref: '#/components/schemas/FuturesBonus'
                   available:
-                    type: string
-                    description: 十进制字符串
+                    type: object
+                    additionalProperties: false
+                    description: 体验金 trial 与抵扣金 deduction 的剩余可用额。两项都是十进制字符串；没有赠金时为 "0"。不是单个合计数字。
+                    required: [trial, deduction]
+                    properties:
+                      trial:
+                        type: string
+                        description: 体验金剩余，十进制字符串
+                      deduction:
+                        type: string
+                        description: 抵扣金剩余，十进制字符串
         '401':
           $ref: '#/components/responses/Unauthorized'
   /earn/products:

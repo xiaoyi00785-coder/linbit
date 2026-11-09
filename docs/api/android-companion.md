@@ -212,7 +212,7 @@ K 线：`GET /market/klines` 与 `GET /futures/market/klines` 增加固定秒数
 
 `GET /home/newcomer` 的 `claimable` 是 JSON 字符串，值是可领取任务个数（无任务时为 `"0"`），不是 USDT 金额。金额仍看 `total` 和任务的 `amount`。类型以 OpenAPI `HomeNewcomer.claimable: string` 和安卓 `ApiHomeNewcomer.claimable: String` 为准。
 
-`GET /futures/bonus` 的 `available` 保持对象 `{"trial":"...","deduction":"..."}`，金额是十进制字符串。旧 OpenAPI 把它写成单个字符串，与两种赠金不符；客户端应按对象读取。没有赠金时两项为 `"0"`，不是伪造的体验金余额。
+`GET /futures/bonus` 的 `available` 在正式 OpenAPI（`docs/api/openapi.yaml`，并与 `mobile/openapi.yaml` 保持同一份）里是对象 `{trial, deduction}`，两项都是十进制字符串。实现返回同一对象，不把两种余额压成一个数。没有赠金时两项为 `"0"`。安卓 `ApiFuturesBonus200Response.available` 与 iOS `APIFuturesBonus200Response.available` 仍是已生成的 `String`，需要在各自移动端分支重新生成模型后才能按对象解析。本仓库不改那些生成文件。`ApiNotification` 同样还没有 `link`；正式响应已有可选 `link.type=support_ticket` 与 `link.ticketId`。
 
 `GET /announcements` 与 `GET /announcements/{id}` 已是公开公告。没有单独的「快讯」接口。币种全称没有元数据来源，不编造 Bitcoin/Ether。闪兑限额仍是 `minUsdt`/`maxUsdt`（USDT 名义），没有按币种的独立 `fromMin`/`fromMax`。策略账户没有单独保证金率接口。单币资金流水没有公开过滤接口。这些不在本轮猜测规则。
 

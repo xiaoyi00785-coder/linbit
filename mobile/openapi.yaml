@@ -4812,8 +4812,17 @@ paths:
                     items:
                       $ref: '#/components/schemas/FuturesBonus'
                   available:
-                    type: string
-                    description: 十进制字符串
+                    type: object
+                    additionalProperties: false
+                    description: 体验金 trial 与抵扣金 deduction 的剩余可用额。两项都是十进制字符串；没有赠金时为 "0"。不是单个合计数字。
+                    required: [trial, deduction]
+                    properties:
+                      trial:
+                        type: string
+                        description: 体验金剩余，十进制字符串
+                      deduction:
+                        type: string
+                        description: 抵扣金剩余，十进制字符串
         '401':
           $ref: '#/components/responses/Unauthorized'
   /earn/products:
@@ -9611,6 +9620,18 @@ components:
         time: { type: integer, format: int64, description: 毫秒时间戳 }
         read: { type: boolean }
         emailStatus: { type: string }
+        link:
+          type: object
+          nullable: true
+          description: >
+            可选的应用内定位。只在服务端已关联接收者本人资源时出现。
+            不是 URL，不含外链。缺省或 null 表示没有可靠定位，客户端不得从 title/body 推断。
+          properties:
+            type: { type: string, enum: [support_ticket] }
+            ticketId:
+              type: string
+              description: 接收者本人的工单 id，与 GET /support/tickets/{id} 的 id 相同。打开工单不会把本通知标为已读。
+          required: [type, ticketId]
     NotificationList:
       type: object
       properties:
