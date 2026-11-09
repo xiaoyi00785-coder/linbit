@@ -20,6 +20,7 @@ type Server struct {
 	features *FeatureGate
 	market   Market
 	notifier NotificationSender
+	futures  FutSource
 }
 
 func NewServer(cfg Config, store *Store, features *FeatureGate, market Market, notifier NotificationSender) *Server {
@@ -70,6 +71,24 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /paper/orders", s.handleListOrders)
 	mux.HandleFunc("GET /paper/orders/{orderId}", s.handleGetOrder)
 	mux.HandleFunc("GET /paper/trades", s.handleListTrades)
+	mux.HandleFunc("GET /paper/futures/account", s.handleFutAccount)
+	mux.HandleFunc("POST /paper/futures/account/claim", s.handleFutClaim)
+	mux.HandleFunc("POST /paper/futures/account/reset", s.handleFutReset)
+	mux.HandleFunc("GET /paper/futures/contracts", s.handleFutContracts)
+	mux.HandleFunc("POST /paper/futures/orders", s.handleFutPlace)
+	mux.HandleFunc("GET /paper/futures/orders", s.handleFutOrders)
+	mux.HandleFunc("DELETE /paper/futures/orders/{orderId}", s.handleFutCancel)
+	mux.HandleFunc("POST /paper/futures/orders/cancel-all", s.handleFutCancelAll)
+	mux.HandleFunc("GET /paper/futures/positions", s.handleFutPositions)
+	mux.HandleFunc("POST /paper/futures/positions/close-all", s.handleFutCloseAll)
+	mux.HandleFunc("POST /paper/futures/positions/{symbol}/close", s.handleFutClose)
+	mux.HandleFunc("POST /paper/futures/positions/{symbol}/tpsl", s.handleFutTPSL)
+	mux.HandleFunc("POST /paper/futures/positions/{symbol}/leverage", s.handleFutLeverage)
+	mux.HandleFunc("POST /paper/futures/positions/{symbol}/margin-mode", s.handleFutMarginMode)
+	mux.HandleFunc("POST /paper/futures/position-mode", s.handleFutPositionMode)
+	mux.HandleFunc("GET /paper/futures/trades", s.handleFutTrades)
+	mux.HandleFunc("GET /paper/futures/ledger", s.handleFutLedger)
+	mux.HandleFunc("GET /internal/paper/futures/snapshot", s.handleFutSnapshot)
 	mux.HandleFunc("GET /price-alerts", s.handleListAlerts)
 	mux.HandleFunc("POST /price-alerts", s.handleCreateAlert)
 	mux.HandleFunc("PATCH /price-alerts/{alertId}", s.handleUpdateAlert)

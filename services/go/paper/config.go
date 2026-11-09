@@ -22,6 +22,7 @@ type Config struct {
 	DevMode             bool
 	PaperTradingEnabled string
 	PriceAlertsEnabled  string
+	FuturesURL          string
 }
 
 func LoadConfig() Config {
@@ -38,5 +39,6 @@ func LoadConfig() Config {
 		DevMode:             common.Env("DEV_MODE", "false") == "true",
 		PaperTradingEnabled: strings.TrimSpace(common.Env("PAPER_TRADING_ENABLED", "")),
 		PriceAlertsEnabled:  strings.TrimSpace(common.Env("PRICE_ALERTS_ENABLED", "")),
+		FuturesURL:          strings.TrimRight(common.Env("FUTURES_URL", "http://localhost:8089"), "/"),
 	}
 }

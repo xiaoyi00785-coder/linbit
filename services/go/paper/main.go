@@ -38,6 +38,20 @@ func main() {
 	ctx := context.Background()
 	go srv.runAlertWorker(ctx)
 	go srv.runDeliveryWorker(ctx)
+	go func() {
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := store.LiquidationSweep(ctx, srv.futSource()); err != nil {
+					log.Printf("paper futures liquidation: %v", err)
+				}
+			}
+		}
+	}()
 	addr := ":" + cfg.Port
 	log.Printf("paper service listening on %s (features are remote and fail closed)", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

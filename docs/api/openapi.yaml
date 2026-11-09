@@ -8077,6 +8077,224 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/PaperFeatureDisabled'
+  /paper/futures/account:
+    get:
+      tags: [Paper Trading]
+      summary: 虚拟 USDX 永续保证金账户。不读写真实资金或 fut_accounts
+      operationId: paperFuturesAccount
+      responses:
+        '200':
+          description: balance/available/frozen/unrealizedPnl 为十进制字符串
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaperFuturesAccount'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/PaperFeatureDisabled' }
+  /paper/futures/account/claim:
+    post:
+      tags: [Paper Trading]
+      summary: 领取虚拟 USDX，有单笔上限、余额上限和频率限制
+      operationId: paperFuturesClaim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: string, description: 十进制 USDX，不超过 claimCap }
+      responses:
+        '200': { description: OK }
+        '409': { description: PAPER_FUTURES_CAP }
+        '429': { description: RATE_LIMITED }
+  /paper/futures/account/reset:
+    post:
+      tags: [Paper Trading]
+      summary: 重置虚拟 USDX 账户。不影响现货模拟账本和真实账户
+      operationId: paperFuturesReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmation]
+              properties:
+                confirmation: { type: string, enum: [RESET_PAPER_FUTURES] }
+      responses:
+        '200': { description: OK }
+  /paper/futures/contracts:
+    get:
+      tags: [Paper Trading]
+      summary: BTC/ETH/BNB/ARB/XRP/SOL-USDX。规格和标记价来自真实永续；没有源则 available=false
+      operationId: paperFuturesContracts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quoteAsset: { type: string, enum: [USDX] }
+                  copyTrading: { type: boolean, enum: [false] }
+                  contracts:
+                    type: array
+                    items: { $ref: '#/components/schemas/PaperFuturesContract' }
+  /paper/futures/orders:
+    post:
+      tags: [Paper Trading]
+      summary: 模拟永续下单。开仓和平仓分开。市价用真实标记价
+      operationId: paperFuturesPlaceOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaperFuturesOrderRequest' }
+      responses:
+        '201': { description: created }
+        '409': { description: INSUFFICIENT_MARGIN、POST_ONLY_REJECTED 或 SYMBOL_UNAVAILABLE }
+        '503': { description: MARK_UNAVAILABLE }
+    get:
+      tags: [Paper Trading]
+      summary: 当前委托或历史委托
+      operationId: paperFuturesListOrders
+      parameters:
+      - name: status
+        in: query
+        schema: { type: string, enum: [open, history] }
+      responses:
+        '200': { description: OK }
+  /paper/futures/orders/cancel-all:
+    post:
+      tags: [Paper Trading]
+      summary: 撤销全部未完成模拟合约委托
+      operationId: paperFuturesCancelAll
+      responses:
+        '200': { description: OK }
+  /paper/futures/orders/{orderId}:
+    delete:
+      tags: [Paper Trading]
+      summary: 撤销一笔模拟合约委托
+      operationId: paperFuturesCancelOrder
+      parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /paper/futures/positions:
+    get:
+      tags: [Paper Trading]
+      summary: 模拟仓位。标记价和强平价只在真实标记价可用时出现
+      operationId: paperFuturesPositions
+      responses:
+        '200': { description: OK }
+  /paper/futures/positions/close-all:
+    post:
+      tags: [Paper Trading]
+      summary: 按真实标记价一键平掉全部模拟仓位
+      operationId: paperFuturesCloseAll
+      responses:
+        '200': { description: OK }
+  /paper/futures/positions/{symbol}/close:
+    post:
+      tags: [Paper Trading]
+      summary: 平掉一个模拟仓位
+      operationId: paperFuturesClose
+      parameters:
+      - { name: symbol, in: path, required: true, schema: { type: string } }
+      - { name: positionSide, in: query, schema: { type: string, enum: [BOTH, LONG, SHORT] } }
+      responses:
+        '200': { description: OK }
+  /paper/futures/positions/{symbol}/tpsl:
+    post:
+      tags: [Paper Trading]
+      summary: 给已有模拟仓位设置止盈止损
+      operationId: paperFuturesTPSL
+      parameters:
+      - { name: symbol, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                positionSide: { type: string, enum: [BOTH, LONG, SHORT] }
+                tp: { type: string }
+                sl: { type: string }
+      responses:
+        '200': { description: OK }
+  /paper/futures/positions/{symbol}/leverage:
+    post:
+      tags: [Paper Trading]
+      summary: 调整杠杆，不能超过真实合约 maxLeverage
+      operationId: paperFuturesLeverage
+      parameters:
+      - { name: symbol, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leverage]
+              properties:
+                leverage: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: OK }
+  /paper/futures/positions/{symbol}/margin-mode:
+    post:
+      tags: [Paper Trading]
+      summary: 切换全仓或逐仓。有持仓时拒绝
+      operationId: paperFuturesMarginMode
+      parameters:
+      - { name: symbol, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [marginMode]
+              properties:
+                marginMode: { type: string, enum: [cross, isolated] }
+      responses:
+        '200': { description: OK }
+  /paper/futures/position-mode:
+    post:
+      tags: [Paper Trading]
+      summary: 合仓 one_way 或分仓 hedge。有持仓时拒绝
+      operationId: paperFuturesPositionMode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [positionMode]
+              properties:
+                positionMode: { type: string, enum: [one_way, hedge] }
+      responses:
+        '200': { description: OK }
+  /paper/futures/trades:
+    get:
+      tags: [Paper Trading]
+      summary: 模拟合约成交
+      operationId: paperFuturesTrades
+      responses:
+        '200': { description: OK }
+  /paper/futures/ledger:
+    get:
+      tags: [Paper Trading]
+      summary: 虚拟 USDX 资金流水，含强平和资金费
+      operationId: paperFuturesLedger
+      responses:
+        '200': { description: OK }
   /price-alerts:
     get:
       tags:
@@ -8327,6 +8545,55 @@ components:
           type: integer
           minimum: 1
           description: 建议等待秒数，与 Retry-After 响应头一致
+    PaperFuturesAccount:
+      type: object
+      properties:
+        asset: { type: string, enum: [USDX] }
+        balance: { type: string }
+        available: { type: string }
+        frozen: { type: string }
+        unrealizedPnl: { type: string }
+        positionMode: { type: string, enum: [one_way, hedge] }
+        claimCap: { type: string }
+        maxBalance: { type: string }
+    PaperFuturesContract:
+      type: object
+      properties:
+        symbol: { type: string, example: BTCUSDX }
+        liveSymbol: { type: string, example: BTCUSDT }
+        available: { type: boolean }
+        unavailableReason: { type: string }
+        tickSize: { type: string }
+        minQty: { type: string }
+        maxQty: { type: string }
+        maintenanceMarginRate: { type: string }
+        maxLeverage: { type: integer }
+        riskTiers: { type: array, items: { type: object }, description: 来自真实 fut_risk_tiers；没有源时为 null }
+        markPrice: { type: string }
+        indexPrice: { type: string }
+        fundingRate: { type: string, nullable: true }
+        fundingAvailable: { type: boolean }
+        priceSource: { type: string, enum: [futures_mark] }
+    PaperFuturesOrderRequest:
+      type: object
+      required: [symbol, side, action, type, marginMode, leverage]
+      properties:
+        symbol: { type: string }
+        side: { type: string, enum: [buy, sell] }
+        positionSide: { type: string, enum: [BOTH, LONG, SHORT] }
+        action: { type: string, enum: [open, close] }
+        type: { type: string, enum: [market, limit, plan, post_only] }
+        sizeMode: { type: string, enum: [quantity, cost, notional] }
+        quantity: { type: string }
+        cost: { type: string }
+        notional: { type: string }
+        price: { type: string }
+        triggerPrice: { type: string }
+        leverage: { type: integer, minimum: 1 }
+        marginMode: { type: string, enum: [cross, isolated] }
+        tp: { type: string }
+        sl: { type: string }
+        clientOrderId: { type: string }
     PaperAccount:
       type: object
       required: [accountId, mode, market, generation, quoteAsset, initialBalance, resetLimitPerUtcDay, resetsUsedToday, orderTypes, priceSource, feeModel, slippageModel, createdAt, updatedAt]

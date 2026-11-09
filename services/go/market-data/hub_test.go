@@ -97,6 +97,16 @@ func TestHubValidateChannel(t *testing.T) {
 			t.Fatalf("channel %s rejected: %s", ch, code)
 		}
 	}
+	if code, _ := c.validateChannel("paper:positions"); code != "AUTH_REQUIRED" {
+		t.Fatalf("anonymous paper channel: %s", code)
+	}
+	c.uid = "u1"
+	if code, _ := c.validateChannel("paper:positions"); code != "" {
+		t.Fatalf("authed paper channel: %s", code)
+	}
+	if code, _ := c.validateChannel("paper:nope"); code == "" {
+		t.Fatal("unknown paper channel accepted")
+	}
 	invalid := []string{"ticker:FOO", "kline:BTCUSDT:7m", "orders", "balances", "bogus:BTCUSDT", "kline:BTCUSDT"}
 	for _, ch := range invalid {
 		if code, _ := c.validateChannel(ch); code == "" {

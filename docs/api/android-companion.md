@@ -206,6 +206,18 @@ POST 体 `{label, permissions:["read"], ipWhitelist, totpCode}`。`permissions` 
 
 `ipWhitelist` 最多 20 条 IP 或 CIDR，空名单表示不限制。网关只在对等地址属于 `TRUSTED_PROXY_CIDRS` 或带有效 `X-Linbit-Edge-Auth` 时采信转发的客户端 IP，其余用 TCP 对等地址。撤销后下一次校验即失败。`read` 只能 GET/HEAD `/assets`、`/spot`、`/futures`，不能下单、划转或提币。
 
+## 13. 模拟永续（USDX）
+
+现有 `/paper/orders` 仍是现货 USDT 市价，行为不变。模拟永续是另一套表，登录后走 `/paper/futures/*`，不写真实余额、真实撮合或 `fut_accounts`。
+
+账户 `GET /paper/futures/account` 返回虚拟 USDX 的 `balance`、`available`、`frozen`、`unrealizedPnl`。`POST /paper/futures/account/claim` 领取资金，单笔不超过 `claimCap`（100000），余额不超过 `maxBalance`（1000000），60 秒一次。`POST /paper/futures/account/reset` 要 `confirmation:"RESET_PAPER_FUTURES"`。
+
+`GET /paper/futures/contracts` 只列 BTC/ETH/BNB/ARB/XRP/SOL-USDX。tick、最小量、杠杆上限、维持保证金率和 `riskTiers` 来自真实 `GET /futures/market/contracts` 与 `/futures/market/risk-tiers`。标记价和指数价来自真实 ticker。没有合约或标记价时 `available:false`，并给出 `unavailableReason`。资金费率只在真实 `funding-history` 有记录时 `fundingAvailable:true`，否则不结算、不编造费率。
+
+下单 `POST /paper/futures/orders`：`action` 为 `open` 或 `close`；`type` 为 `market`、`limit`、`plan`、`post_only`；`sizeMode` 为 `quantity`、`cost` 或 `notional`；`marginMode` 为 `cross` 或 `isolated`。合仓/分仓用 `POST /paper/futures/position-mode`。止盈止损可随单或 `POST /paper/futures/positions/{symbol}/tpsl`。平仓 `POST /paper/futures/positions/{symbol}/close`，一键平仓 `POST /paper/futures/positions/close-all`。委托、成交、流水分别是 `/paper/futures/orders`、`/trades`、`/ledger`。强平由标记价触发，同一仓位版本只记一次。
+
+WebSocket 私有频道 `paper:positions`、`paper:orders`、`paper:balances` 必须登录。快照来自 paper 服务；没配 `PAPER_URL` 时不推伪造余额。模拟跟单本轮不做。
+
 ## 12. 本轮补齐与仍阻塞
 
 K 线：`GET /market/klines` 与 `GET /futures/market/klines` 增加固定秒数周期 `3m`、`2h`、`6h`、`12h`，由成交按桶聚合，与 1m/5m 相同。不提供 `1M`（自然月，且与 `1m` 大小写易混）和事件合约的 `10m`。事件结算周期仍以 `ev_config.periods` 为准，默认 `5m,15m,30m,1h,4h,1d`。看涨看跌共用一个 `payoutRatio`。下单扣款是现货 USDT（`system:event`，幂等 ref `event:stake:{id}`），余额不足时订单 `rejected`，不从合约保证金扣。本轮不改扣款账户、不新增 10m、不分方向赔率。
