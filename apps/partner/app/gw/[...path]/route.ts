@@ -1,3 +1,4 @@
+// 合伙人站 /gw：把各 HTTP 方法交给网关代理。
 import { proxyGw, type GwEnv } from "@/lib/gwProxy";
 
 export const runtime = "nodejs";

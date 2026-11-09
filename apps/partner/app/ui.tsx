@@ -1,4 +1,5 @@
 "use client";
+// 合伙人站共用展示：数字、错误态、分段和每日佣金图。
 import Link from "next/link";
 import { useState } from "react";
 import type { Res } from "@/lib/api";

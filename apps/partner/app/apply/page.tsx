@@ -1,4 +1,5 @@
 "use client";
+// 合伙人规则与申请：展示档位和二级奖励，登录后提交入驻。
 import { useState } from "react";
 import { call, toast, useApi, useToken, type Me, type Rules } from "@/lib/api";
 import { ErrBox, Skel, num, pct } from "../ui";

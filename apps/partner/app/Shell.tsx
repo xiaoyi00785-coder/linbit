@@ -1,4 +1,5 @@
 "use client";
+// 合伙人站外壳：导航，并用主站账号登录；已开二次验证的账户须回主站完成。
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";

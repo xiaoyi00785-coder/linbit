@@ -1,4 +1,5 @@
 "use client";
+// 推广链接：展示邀请码、邀请链接和注册链接，并可复制。
 import { copy, useApi, type Links } from "@/lib/api";
 import { ErrBox, Skel } from "../ui";
 
