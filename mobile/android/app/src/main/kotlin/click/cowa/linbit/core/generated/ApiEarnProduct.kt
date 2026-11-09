@@ -120,14 +120,17 @@ data class ApiEarnProduct (
 ) {
 
     /**
-     * 
+     * Backend earn service: simple | fixed | onchain.
+     * flexible kept as alias for older fixtures / OpenAPI drafts.
      *
-     * Values: FLEXIBLE,FIXED
+     * Values: SIMPLE,FIXED,ONCHAIN,FLEXIBLE
      */
     @Serializable
     enum class Kind(val value: kotlin.String) {
-        @SerialName(value = "flexible") FLEXIBLE("flexible"),
-        @SerialName(value = "fixed") FIXED("fixed");
+        @SerialName(value = "simple") SIMPLE("simple"),
+        @SerialName(value = "fixed") FIXED("fixed"),
+        @SerialName(value = "onchain") ONCHAIN("onchain"),
+        @SerialName(value = "flexible") FLEXIBLE("flexible");
     }
 
 }

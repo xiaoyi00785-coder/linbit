@@ -78,16 +78,16 @@ fun EarnSubpage(
     val sessionVersion by vm.sessionVersion.collectAsStateWithLifecycle()
     var earnAction by remember { mutableStateOf<EarnAction?>(null) }
     var hideBal by remember { mutableStateOf(false) }
-    var kindFilter by remember { mutableStateOf<ApiEarnProduct.Kind?>(null) }
+    var hubFilter by remember { mutableStateOf<EarnHubFilter?>(null) }
     var query by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showPositions by remember { mutableStateOf(false) }
     LaunchedEffect(sessionVersion) { vm.clearAccountData(); vm.loadEarn() }
 
     val products = vm.earnProducts
-    val filtered = remember(products, kindFilter, query) {
+    val filtered = remember(products, hubFilter, query) {
         products.asSequence()
-            .filter { kindFilter == null || it.kind == kindFilter }
+            .filter { earnMatchesHub(it, hubFilter) }
             .filter {
                 val q = query.trim()
                 q.isEmpty() || (it.asset?.contains(q, true) == true) || (it.title?.contains(q, true) == true)
@@ -98,13 +98,16 @@ fun EarnSubpage(
         filtered.groupBy { it.asset ?: "--" }.toList().sortedBy { it.first }
     }
     // 对照 028：资产行默认折叠，点开再看产品；不自动展开拉稀密度。
+    // 精选：仅 hot/newcomer；不得因 bonusApr 把整表活期塞进推荐并伪标「热销」。
     val featured = remember(products) {
-        products.filter { it.hot == true || it.newcomer == true || !it.bonusApr.isNullOrBlank() }
-            .ifEmpty { products.sortedByDescending { Dec.parse(it.apr) }.take(6) }
+        products.filter { it.hot == true || it.newcomer == true }
+            .sortedBy { it.sort ?: Int.MAX_VALUE }
+            .ifEmpty { products.sortedByDescending { Dec.parse(it.aprMax ?: it.apr) }.take(6) }
             .take(8)
     }
-    val hasFlex = products.any { it.kind == ApiEarnProduct.Kind.FLEXIBLE }
+    val hasSimple = products.any { it.kind == ApiEarnProduct.Kind.SIMPLE || it.kind == ApiEarnProduct.Kind.FLEXIBLE }
     val hasFixed = products.any { it.kind == ApiEarnProduct.Kind.FIXED }
+    val hasOnchain = products.any { it.kind == ApiEarnProduct.Kind.ONCHAIN }
 
     Column(Modifier.fillMaxSize().testTag("earn.hub")) {
         // 参考为现货顶栏内嵌，无独立「理财」导航栏；仅深链残留 onBack 时给返回，不加标题栏占位。
@@ -130,23 +133,28 @@ fun EarnSubpage(
                 onLogin = onLogin,
             )
 
-            if (hasFlex || hasFixed) {
+            // 对照 028：Simple Earn / On-chain；定期在列表内展示。Wealth Hub 无契约；Loans 有 /loans/* 但 Android 尚未接客户端 → 不造无效入口。
+            if (hasSimple || hasOnchain || hasFixed) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 16.dp),
                     horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.Top,
                 ) {
-                    if (hasFlex) EarnKindChip(
-                        title = "活期理财",
+                    if (hasSimple) EarnKindChip(
+                        title = "简单赚币",
                         icon = R.drawable.ic_g_earn_light,
-                        selected = kindFilter == ApiEarnProduct.Kind.FLEXIBLE,
-                    ) { kindFilter = if (kindFilter == ApiEarnProduct.Kind.FLEXIBLE) null else ApiEarnProduct.Kind.FLEXIBLE }
-                    if (hasFixed) EarnKindChip(
-                        title = "定期理财",
+                        selected = hubFilter == EarnHubFilter.SIMPLE,
+                    ) { hubFilter = if (hubFilter == EarnHubFilter.SIMPLE) null else EarnHubFilter.SIMPLE }
+                    if (hasOnchain) EarnKindChip(
+                        title = "链上赚币",
                         icon = R.drawable.ic_g_earn_dark,
-                        selected = kindFilter == ApiEarnProduct.Kind.FIXED,
-                    ) { kindFilter = if (kindFilter == ApiEarnProduct.Kind.FIXED) null else ApiEarnProduct.Kind.FIXED }
-                    // 链上/财富/借贷无 API：不占位、不拉宽。
+                        selected = hubFilter == EarnHubFilter.ONCHAIN,
+                    ) { hubFilter = if (hubFilter == EarnHubFilter.ONCHAIN) null else EarnHubFilter.ONCHAIN }
+                    if (hasFixed) EarnKindChip(
+                        title = "理财宝",
+                        icon = R.drawable.ic_g_earn_light,
+                        selected = hubFilter == EarnHubFilter.FIXED,
+                    ) { hubFilter = if (hubFilter == EarnHubFilter.FIXED) null else EarnHubFilter.FIXED }
                 }
             }
 
@@ -208,7 +216,7 @@ fun EarnSubpage(
                 else -> byAsset.forEach { (asset, list) ->
                     val open = asset in expanded
                     val aprLo = list.minOf { Dec.parse(it.apr) }
-                    val aprHi = list.maxOf { Dec.parse(it.aprMax ?: it.apr) }
+                    val aprHi = list.maxOf { Dec.parse(it.aprMax ?: it.bonusApr ?: it.apr) }
                     Column(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH)
@@ -394,12 +402,7 @@ private fun EarnKindChip(title: String, icon: Int, selected: Boolean, onClick: (
 private fun EarnFeatureCard(prod: ApiEarnProduct, onClick: () -> Unit) {
     val p = LB.p
     val asset = prod.asset ?: "--"
-    val tag = when {
-        !prod.bonusApr.isNullOrBlank() || prod.hot == true -> "热销"
-        prod.newcomer == true -> "新手"
-        prod.kind == ApiEarnProduct.Kind.FIXED -> "定期"
-        else -> "活期"
-    }
+    val tag = earnFeatureTag(prod)
     Column(
         Modifier.width(126.dp).height(100.dp)
             .background(p.fill, RoundedCornerShape(Radius.md))
@@ -420,12 +423,9 @@ private fun EarnFeatureCard(prod: ApiEarnProduct, onClick: () -> Unit) {
             )
         }
         Spacer(Modifier.weight(1f))
-        Text("${earnAprPct(Dec.parse(prod.apr))}%", style = lbNum(FontSize.title, FontWeight.SemiBold), color = p.up)
+        Text("${earnAprPct(Dec.parse(prod.aprMax ?: prod.bonusApr ?: prod.apr))}%", style = lbNum(FontSize.title, FontWeight.SemiBold), color = p.up)
         Text(
-            when (prod.kind) {
-                ApiEarnProduct.Kind.FIXED -> "定期 · ${prod.termDays ?: "--"}天"
-                else -> "活期理财"
-            },
+            earnKindSubtitle(prod),
             style = lb(FontSize.small),
             color = p.textSecondary,
         )
@@ -451,17 +451,13 @@ private fun EarnProductRow(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(prod.title ?: prod.asset ?: "--", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
                 Text(
-                    when (prod.kind) {
-                        ApiEarnProduct.Kind.FIXED -> "定期 · ${prod.termDays ?: "--"}天"
-                        ApiEarnProduct.Kind.FLEXIBLE -> "活期"
-                        null -> prod.kind?.value ?: ""
-                    },
+                    earnKindSubtitle(prod),
                     style = lb(FontSize.small),
                     color = p.textSecondary,
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("${earnAprPct(Dec.parse(prod.apr))}%", style = lbNum(FontSize.body, FontWeight.SemiBold), color = p.up)
+                Text("${earnAprPct(Dec.parse(prod.aprMax ?: prod.bonusApr ?: prod.apr))}%", style = lbNum(FontSize.body, FontWeight.SemiBold), color = p.up)
                 Text("年化", style = lb(FontSize.small), color = p.textTertiary)
             }
         }
@@ -602,6 +598,33 @@ private fun EarnActionSheet(
 @Composable
 private fun EarnFailureText(value: String?) {
     value?.let { Text("操作未完成：$it", style = lb(FontSize.small), color = LB.p.down) }
+}
+
+
+private enum class EarnHubFilter { SIMPLE, FIXED, ONCHAIN }
+
+private fun earnMatchesHub(p: ApiEarnProduct, filter: EarnHubFilter?): Boolean = when (filter) {
+    null -> true
+    EarnHubFilter.SIMPLE -> p.kind == ApiEarnProduct.Kind.SIMPLE || p.kind == ApiEarnProduct.Kind.FLEXIBLE
+    EarnHubFilter.FIXED -> p.kind == ApiEarnProduct.Kind.FIXED
+    EarnHubFilter.ONCHAIN -> p.kind == ApiEarnProduct.Kind.ONCHAIN
+}
+
+/** 标签只反映真实字段：hot→热销，newcomer→新手，bonusApr→加息；无活动契约不伪标 Flash Sale。 */
+private fun earnFeatureTag(prod: ApiEarnProduct): String = when {
+    prod.hot == true -> "热销"
+    prod.newcomer == true -> "新手"
+    !prod.bonusApr.isNullOrBlank() -> "加息"
+    prod.kind == ApiEarnProduct.Kind.FIXED -> "定期"
+    prod.kind == ApiEarnProduct.Kind.ONCHAIN -> "质押"
+    else -> "活期"
+}
+
+private fun earnKindSubtitle(prod: ApiEarnProduct): String = when (prod.kind) {
+    ApiEarnProduct.Kind.FIXED -> "定期 · ${prod.termDays ?: "--"}天"
+    ApiEarnProduct.Kind.ONCHAIN -> if ((prod.unlockDays ?: 0) > 0) "链上质押 · ${prod.unlockDays}天解锁" else "链上质押"
+    ApiEarnProduct.Kind.SIMPLE, ApiEarnProduct.Kind.FLEXIBLE -> "活期"
+    null -> prod.kind?.value ?: ""
 }
 
 private data class EarnAction(val product: ApiEarnProduct, val subscribe: Boolean)

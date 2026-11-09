@@ -4824,9 +4824,11 @@ paths:
         required: false
         schema:
           enum:
-          - flexible
+          - simple
           - fixed
-        description: flexible / fixed
+          - onchain
+          - flexible
+        description: simple / fixed / onchain（flexible=simple 兼容别名）
       - name: asset
         in: query
         required: false
@@ -10078,8 +10080,13 @@ components:
         kind:
           type: string
           enum:
-          - flexible
+          - simple
           - fixed
+          - onchain
+          - flexible
+          description: |
+            后端种子/服务为 simple|fixed|onchain（见 earn 服务与 docs/api/earn.md）。
+            flexible 为历史/兼容别名（等同 simple）；客户端须能解析 simple/onchain，否则整表反序列化失败。
         asset:
           type: string
         title:
