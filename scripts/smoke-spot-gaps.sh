@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-#
-# Smoke for the iOS spot/asset gaps: funding vs spot accounts (/assets/overview,
-# /assets/transfer), /wallet/networks, post-only (GTX/postOnly), conditional spot
-# orders, /account/fee-rates (+ per-user override) and internal transfer.
-#
-#   bash scripts/smoke-spot-gaps.sh            # boots the devstack itself
-#   SMOKE_INNER=1 GATEWAY_URL=... bash scripts/smoke-spot-gaps.sh   # running stack
-#
-# When running several devstacks side by side, set DEVSTACK_*_PORT (e.g. +700:
-# DEVSTACK_GATEWAY_PORT=8780 ... DEVSTACK_PG_PORT=6133).
+# iOS 现货/资产缺口 smoke。
+# 资金账户 vs 现货（/assets/overview、/assets/transfer）、/wallet/networks、post-only（GTX/postOnly）、
+# 现货条件单、/account/fee-rates（含单用户覆盖）、内部划转。
+#   bash scripts/smoke-spot-gaps.sh            # 自己拉起 devstack
+#   SMOKE_INNER=1 GATEWAY_URL=... bash scripts/smoke-spot-gaps.sh   # 已有栈
+# 并排多套 devstack：设 DEVSTACK_*_PORT（例 +700：DEVSTACK_GATEWAY_PORT=8780 … DEVSTACK_PG_PORT=6133）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

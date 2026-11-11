@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Smoke for the market maker: admin RBAC + 2FA + audit; virtual testnet seed
-# (mm_testnet_seed, idempotent, mock chain only); multi-level two-sided quotes
-# around the external index on spot + futures (spread 0.1%); index outage ->
-# quotes cancelled, MM paused, Telegram alert; recovery; stop cancels all;
-# solvency reconciliation + Telegram alert on shortfall. Telegram is a local
-# fake server (no real token is ever used).
+# 做市 smoke：后台 RBAC + 2FA + 审计；测试网虚拟注资（mm_testnet_seed，幂等，仅 mock 链）；
+# 现货 + 合约按外部指数多档双边报价（价差 0.1%）；指数中断 → 撤单、做市暂停、Telegram 告警；
+# 恢复；停止撤销全部挂单；偿付对账，缺口发 Telegram。Telegram 用本地假服务，不用真实 token。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -1,5 +1,8 @@
 package main
 
+// networks.go：(asset, network) 注册表。金额字段全是 decimal，不用 float。
+// WALLET_NETWORKS_JSON 会整表替换内置默认。USDT 各网络默认最小提现 12、最大 20000。
+
 import (
 	"encoding/json"
 	"log"
@@ -11,9 +14,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Network describes one (asset, network) pair: how many confirmations a deposit
-// needs, the min/max amounts, and the on-chain gas estimate. All money fields
-// are exact decimals (never floats).
+// Network 描述一个 (asset, network)：确认数、最小/最大数量、链上 Gas 估计。
+// 金额是精确 decimal，不是 float。GasFeeEstimate 是唯一的提现成本，没有另外的平台手续费。
 type Network struct {
 	Asset                   string
 	Network                 string

@@ -1,3 +1,4 @@
+// 应用入口：五个主 Tab、启动动画，回到前台时连接行情。
 import SwiftUI
 
 @main

@@ -1,5 +1,10 @@
 package main
 
+// withdraw.go：提现状态机。
+// 提交后先冻结再打分。自动放行：pending_review → approved → 签名广播 → processing → completed。
+// 人工：停在 pending_review，管理端通过或驳回。用户撤销或广播失败则解冻。
+// 账本幂等键 withdraw:<id>。Gas 默认从金额内扣（amount），实收 sendAmount = amount-gas。
+
 import (
 	"github.com/linbit/platform/services/go/common"
 
@@ -13,14 +18,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// withdraw.go implements the withdrawal flow and state machine:
-//
-//   submit -> freeze(amount[+gas]) -> risk decision
-//     auto    -> approved -> (processor) sign + broadcast -> processing -> complete
-//     review  -> pending_review -> admin approve -> approved -> ...  (or reject)
-//   user cancel (while pending_review) / broadcast failure -> unfreeze.
-
-// apiError is a handler-level error carrying an HTTP status and business code.
+// apiError 带 HTTP 状态和业务码，由 handler 写成统一错误体。
 type apiError struct {
 	status int
 	code   string
@@ -29,7 +27,7 @@ type apiError struct {
 
 func errf(status int, code, msg string) *apiError { return &apiError{status, code, msg} }
 
-// withdrawInput is the validated submit payload.
+// withdrawInput 是校验过的提现提交。Amount 是十进制，不是 float。
 type withdrawInput struct {
 	Asset    string
 	Network  string
@@ -38,15 +36,14 @@ type withdrawInput struct {
 	Amount   decimal.Decimal
 	TOTPCode string
 	Code     string
-	// FundPassword is checked by account when the fund-password policy applies.
+	// FundPassword 在账户服务启用资金密码策略时才校验。
 	FundPassword string
 }
 
-// withdrawRef is the idempotency/bookkeeping key for a withdrawal's ledger ops.
+// withdrawRef 是这笔提现冻结、解冻、完成共用的幂等键：withdraw:<id>。
 func withdrawRef(id int64) string { return fmt.Sprintf("withdraw:%d", id) }
 
-// sendAmount is the amount that actually leaves to the destination. In "amount"
-// gas mode the gas is taken out of it; in "extra" mode the full amount is sent.
+// sendAmount 是实际打到链上的数量。amount 模式扣掉 Gas；extra 模式全额打出，Gas 另冻。
 func sendAmount(w *Withdrawal) decimal.Decimal {
 	if w.GasDeductMode == "amount" {
 		return w.Amount.Sub(w.GasFee)
@@ -54,8 +51,7 @@ func sendAmount(w *Withdrawal) decimal.Decimal {
 	return w.Amount
 }
 
-// submitWithdrawal validates, authorises, freezes, risk-scores and persists a
-// withdrawal. It returns the created record (re-read) or an apiError.
+// submitWithdrawal 校验、二次验证、冻结、打分并落库。先插 pending_review 再冻结，自动放行才改成 approved。
 func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdrawInput) (*Withdrawal, *apiError) {
 	net, ok := s.cfg.Networks.Lookup(in.Asset, in.Network)
 	if !ok {
@@ -86,12 +82,12 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		}
 	}
 
-	// KYC-tiered rolling-24h withdrawal limit (checked before any funds are frozen).
+	// KYC 分档的滚动 24h 额度。先于冻结，避免超限后还要解冻。
 	if apiErr := s.checkDailyLimit(ctx, userID, in.Asset, in.Amount); apiErr != nil {
 		return nil, apiErr
 	}
 
-	// Gas estimate and how much to freeze.
+	// 估算 Gas，并决定冻结多少。extra 冻 amount+gas；amount 只冻 amount，且必须大于 gas。
 	gas, err := s.chain.EstimateGas(ctx, net)
 	if err != nil {
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "Gas 估算失败")
@@ -100,11 +96,11 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 	if s.cfg.GasDeductMode == "extra" {
 		frozen = in.Amount.Add(gas)
 	} else if in.Amount.LessThanOrEqual(gas) {
-		// "amount" mode: the amount must exceed gas or nothing would be sent.
+		// amount 模式：金额不超过 Gas 就没有可打出的数量。
 		return nil, errf(http.StatusBadRequest, "MIN_WITHDRAW", "提现金额需大于链上 Gas")
 	}
 
-	// Second factor (reuses account's verification via the internal endpoint).
+	// 二次验证走账户服务内网接口。
 	vr, err := s.account.Verify2FA(ctx, userID, in.TOTPCode, in.Code, OutflowOpts{Action: "withdraw", FundPassword: in.FundPassword})
 	if err != nil {
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "二次验证服务不可用")
@@ -113,7 +109,7 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		return nil, verifyError(vr)
 	}
 
-	// Whitelist: when enabled, the destination must be a whitelisted address.
+	// 开了提现白名单时，目标地址必须在白名单里。
 	wl, err := s.account.WhitelistCheck(ctx, userID, in.Asset, in.Network, in.Address)
 	if err != nil {
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "白名单校验失败")
@@ -122,7 +118,7 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		return nil, errf(http.StatusForbidden, "WHITELIST_BLOCKED", "已开启提现白名单，只能提现到白名单地址")
 	}
 
-	// Risk scoring.
+	// 风控打分。NewDevice 用「24h 内第一笔」近似，没有独立设备指纹。
 	newAddr, err := notPriorAddress(ctx, s.store, userID, in.Asset, in.Network, in.Address)
 	if err != nil {
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
@@ -138,7 +134,7 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		WhitelistOn: wl.Enabled,
 		Count24h:    count24h,
 	})
-	// Thresholds are USDT-equivalent; an unknown price fails closed to review.
+	// 阈值按 USDT 等值。没有价格则把比较值抬到至少 ReviewMinAmount，失败关闭转人工。
 	riskValue := in.Amount
 	if p, ok := s.usdtPrice(ctx, in.Asset); ok {
 		riskValue = in.Amount.Mul(p)
@@ -147,7 +143,7 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 	}
 	decision := decide(s.cfg.Risk, riskValue, score)
 
-	// Persist as pending_review, then freeze, then (if auto) release to approved.
+	// 先落 pending_review，冻结成功后，自动放行才 Approve。冻结失败把单打成 failed，此时没有冻结可退。
 	w := Withdrawal{
 		UserID: userID, Asset: in.Asset, Network: in.Network, Address: in.Address, Memo: in.Memo,
 		Amount: in.Amount, GasFee: gas, GasFeeAsset: net.GasFeeAsset, GasDeductMode: s.cfg.GasDeductMode,
@@ -178,8 +174,7 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 	return wd, nil
 }
 
-// notPriorAddress returns true when the user has NOT withdrawn to this address
-// before (i.e. it is a new destination — a risk signal).
+// notPriorAddress 为真表示这个地址该用户没提现过，当作新地址风险信号。
 func notPriorAddress(ctx context.Context, store *Store, userID, asset, network, address string) (bool, error) {
 	prior, err := store.HasPriorWithdrawalTo(ctx, userID, asset, network, address)
 	if err != nil {
@@ -188,7 +183,7 @@ func notPriorAddress(ctx context.Context, store *Store, userID, asset, network, 
 	return !prior, nil
 }
 
-// adminReject rejects a pending_review withdrawal and releases the frozen funds.
+// adminReject 驳回 pending_review 的提现，并解冻。幂等键仍是 withdraw:<id>。
 func (s *Server) adminReject(ctx context.Context, id int64, reason string) (bool, error) {
 	w, err := s.store.GetWithdrawal(ctx, id)
 	if err != nil {
@@ -207,8 +202,7 @@ func (s *Server) adminReject(ctx context.Context, id int64, reason string) (bool
 	return true, nil
 }
 
-// userCancel cancels a pending_review withdrawal owned by userID and releases the
-// frozen funds.
+// userCancel 撤销本人仍在 pending_review 的提现并解冻。不是本人则当作不可撤销。
 func (s *Server) userCancel(ctx context.Context, id int64, userID string) (bool, error) {
 	w, err := s.store.GetWithdrawal(ctx, id)
 	if err != nil {
@@ -228,9 +222,7 @@ func (s *Server) userCancel(ctx context.Context, id int64, userID string) (bool,
 	return true, nil
 }
 
-// ProcessWithdrawals runs one pass of the withdrawal pipeline: sign+broadcast
-// approved withdrawals, then complete processing ones that have enough
-// confirmations. Returns (broadcast, completed) counts.
+// ProcessWithdrawals 跑一轮：已通过的签名并广播，确认数够了的 processing 做结算。返回（广播数, 完成数）。
 func (s *Server) ProcessWithdrawals(ctx context.Context) (int, int, error) {
 	broadcast := 0
 	approved, err := s.store.ListWithdrawalsByStatus(ctx, wStatusApproved, 50)
@@ -258,9 +250,8 @@ func (s *Server) ProcessWithdrawals(ctx context.Context) (int, int, error) {
 	return broadcast, completed, nil
 }
 
-// broadcastWithdrawal signs an approved withdrawal with the hot wallet and
-// broadcasts it, moving it to processing. On any failure it fails the withdrawal
-// and releases the frozen funds.
+// broadcastWithdrawal 用热钱包签名并广播，进入 processing。失败则打失败并解冻。
+// 真实链改走 sendRealWithdrawal：先占单再发送，避免打两次。
 func (s *Server) broadcastWithdrawal(ctx context.Context, w *Withdrawal) bool {
 	net, ok := s.cfg.Networks.Lookup(w.Asset, w.Network)
 	if !ok {
@@ -296,9 +287,7 @@ func (s *Server) broadcastWithdrawal(ctx context.Context, w *Withdrawal) bool {
 	return applied
 }
 
-// completeWithdrawal finalises a processing withdrawal once it has enough
-// confirmations: it debits the locked funds (gas to the platform account) via
-// the asset service and marks it completed.
+// completeWithdrawal 在确认数够了之后，经资产服务扣掉冻结（链上金额 + Gas），Gas 记到平台账户。
 func (s *Server) completeWithdrawal(ctx context.Context, w *Withdrawal) bool {
 	net, ok := s.cfg.Networks.Lookup(w.Asset, w.Network)
 	if !ok {
@@ -307,8 +296,7 @@ func (s *Server) completeWithdrawal(ctx context.Context, w *Withdrawal) bool {
 	var confs int64
 	if tc, ok := s.chain.(TxConfirmer); ok {
 		if w.TxHash.String == "" {
-			// Claimed but the send result was not recorded (crash/timeout): never
-			// resend automatically; ops must reconcile on chain.
+			// 已占单但没记下 tx hash（崩溃或超时）：绝不自动重发，等人工对链。
 			log.Printf("withdrawal %d: processing without tx hash; manual reconciliation required", w.ID)
 			return false
 		}
@@ -317,7 +305,7 @@ func (s *Server) completeWithdrawal(ctx context.Context, w *Withdrawal) bool {
 			return false
 		}
 		if failed {
-			// Reverted on chain: nothing left the hot wallet, so release the funds.
+			// 链上失败：热钱包没打出钱，解冻退回。
 			log.Printf("withdrawal %d: tx %s failed on chain; releasing funds", w.ID, w.TxHash.String)
 			s.failAndRelease(ctx, w, "tx_failed")
 			return false
@@ -351,7 +339,7 @@ func (s *Server) completeWithdrawal(ctx context.Context, w *Withdrawal) bool {
 	return applied
 }
 
-// failAndRelease fails a withdrawal and releases its frozen funds.
+// failAndRelease 把提现打成失败并解冻。状态没转成则不动余额。
 func (s *Server) failAndRelease(ctx context.Context, w *Withdrawal, reason string) {
 	applied, err := s.store.MarkFailed(ctx, w.ID, reason)
 	if err != nil || !applied {

@@ -1,3 +1,4 @@
+// 首页数据：运营位、理财、公告、新人任务，以及登录后的资产汇总。
 import Foundation
 
 @MainActor

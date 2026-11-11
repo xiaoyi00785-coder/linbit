@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
-#
-# End-to-end wallet smoke test for the Linbit wallet service:
-#
-#   register -> allocate deposit address -> inject a mock-chain deposit ->
-#   confirmations insufficient (no credit) -> advance blocks -> credited ->
-#   duplicate injection does not double-credit -> small withdrawal auto-released,
-#   broadcast, confirmed, settled (gas booked) -> large withdrawal held for manual
-#   review -> admin reject releases the freeze -> whitelist blocks a non-listed
-#   address -> final balances and ledger agree (decimal-exact).
-#
-# The chain is simulated: deposits and blocks are injected through the wallet
-# service's dev-only endpoints (DEV_MODE=true). Verification codes are read back
-# through the account service's dev endpoint.
-#
-# Two ways to run it (mirrors scripts/smoke-account.sh):
-#
-#   1. No stack running (default, no Docker): boots the devstack, re-runs itself
-#      inside it, tears everything down afterwards.
-#
-#        bash scripts/smoke-wallet.sh
-#
-#   2. Against a running stack: export GATEWAY_URL, ACCOUNT_URL, WALLET_URL,
-#      INTERNAL_TOKEN and set SMOKE_INNER=1.
-#
+# 钱包端到端 smoke。
+# 注册 → 分配充值地址 → 注入模拟链充值 → 确认数不足不入账 → 推进区块后入账 → 重复注入不双入账 →
+# 小额提现自动放行、广播、确认、结算（记 gas）→ 大额提现进人工审核 → 后台驳回释放冻结 →
+# 白名单拒绝未登记地址 → 余额与流水一致（小数精确）。
+# 链是模拟的：充值和区块经 wallet 开发接口注入（DEV_MODE=true）。验证码从 account 开发接口读回。
+# 无栈（默认，无 Docker）：拉起 devstack，在里面重跑本脚本，结束后拆掉。
+#   bash scripts/smoke-wallet.sh
+# 已有栈：导出 GATEWAY_URL、ACCOUNT_URL、WALLET_URL、INTERNAL_TOKEN，并设 SMOKE_INNER=1。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -105,9 +89,8 @@ TOKEN="$(printf '%s' "$REG" | jq -r '.accessToken // empty')"
 [ -n "$TOKEN" ] || fail "register did not return accessToken: $REG"
 ok "registered ($EMAIL)"
 
-# Withdrawals are capped per KYC level (level 0 = 1000 USDT/24h by default); this
-# smoke exercises >5000 USDT review, so lift the user to level 2 via the account
-# internal endpoint (the KYC flow itself is covered by smoke-kyc.sh).
+# 提现按 KYC 等级限额（level 0 默认 1000 USDT/24h）。本脚本要测 >5000 USDT 的人工审核，
+# 所以经 account 内部接口把用户提到 level 2（KYC 流程本身由 smoke-kyc.sh 覆盖）。
 UID_="$(api GET /account "$TOKEN" | jq -r '.uid // empty')"
 [ -n "$UID_" ] || fail "no uid from /account"
 curl -sS -X POST "$ACCOUNT_URL/internal/account/kyc-level" -H 'Content-Type: application/json' \

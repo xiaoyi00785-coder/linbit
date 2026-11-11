@@ -1,5 +1,7 @@
 package chainkit
 
+// evm.go：兼容以太坊的 JSON-RPC。交易是传统 EIP-155。金额进 toUnits 再上链。
+
 import (
 	"context"
 	"encoding/hex"
@@ -11,8 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// EVMClient talks to an Ethereum-compatible JSON-RPC node (Sepolia, BSC
-// testnet, Arbitrum Sepolia, ...). Transactions are legacy EIP-155.
+// EVMClient 对接兼容以太坊的 JSON-RPC（Sepolia、BSC 测试网、Arbitrum Sepolia 等）。交易是传统 EIP-155。
 type EVMClient struct {
 	rpc     jsonRPC
 	ChainID int64

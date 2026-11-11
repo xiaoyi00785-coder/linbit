@@ -1,11 +1,14 @@
 package main
 
+// 模拟盘配置。指数最大年龄、预警写限流必须为正，main 启动时会拒绝非正值。合约行情地址是 FUTURES_URL。
+
 import (
 	"github.com/linbit/platform/services/go/common"
 	"strings"
 	"time"
 )
 
+// Config 的 PaperTradingEnabled / PriceAlertsEnabled 非空时压过库里的功能开关。
 type Config struct {
 	Port                string
 	DatabaseURL         string
@@ -25,6 +28,7 @@ type Config struct {
 	FuturesURL          string
 }
 
+// LoadConfig 从环境变量读配置。DATABASE_URL、INTERNAL_TOKEN、JWT_SECRET 缺失会在 MustEnv 处失败。默认端口 8094。
 func LoadConfig() Config {
 	return Config{
 		Port: common.Env("PORT", "8094"), DatabaseURL: common.MustEnv("DATABASE_URL"),

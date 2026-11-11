@@ -1,5 +1,9 @@
 package main
 
+// internaltransfer.go：站内转账，资金账户到资金账户，即时、无手续费。
+// 要二次验证。幂等键是 (user, clientId)，账本 ref 为 itx:<id>。
+// 管理端可关停。滚动 24h 有 USDT 等值上限，插入时用用户级咨询锁，避免并发打穿。
+
 import (
 	"context"
 	"database/sql"
@@ -14,10 +18,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// Internal (off-chain) user-to-user transfers: funding -> funding, free and
-// instant, 2FA-gated, idempotent on (user, clientId), with an admin kill switch
-// and a rolling-24h USDT-equivalent cap.
 
 const (
 	itxPending   = "pending"
@@ -101,8 +101,7 @@ func (s *Store) itxByClient(ctx context.Context, uid, clientID string) (*interna
 
 var errITXLimit = errors.New("daily limit exceeded")
 
-// insertITX inserts a pending row after checking the rolling-24h cap under a
-// per-user advisory lock (so concurrent requests cannot overshoot the cap).
+// insertITX 在用户级咨询锁里检查滚动 24h 上限后再插 pending，并发请求不能打穿上限。
 func (s *Store) insertITX(ctx context.Context, t internalTransfer, limit decimal.Decimal) (*internalTransfer, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -112,7 +111,7 @@ func (s *Store) insertITX(ctx context.Context, t internalTransfer, limit decimal
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('itx:' || $1))`, t.UserID); err != nil {
 		return nil, err
 	}
-	// Re-check idempotency inside the lock.
+	// 锁内再查一次幂等，避免并发双插。
 	if ex, err := scanITX(tx.QueryRowContext(ctx, `SELECT `+itxCols+` FROM internal_transfers
 		WHERE user_id=$1 AND client_id=$2`, t.UserID, t.ClientID)); err == nil {
 		return ex, tx.Commit()
@@ -208,7 +207,7 @@ type internalTransferReq struct {
 	ToEmail  string `json:"toEmail"`
 	TOTPCode string `json:"totpCode"`
 	Code     string `json:"code"`
-	// FundPassword: required when set and the admin policy applies.
+	// 开了资金密码策略时必填。
 	FundPassword string `json:"fundPassword"`
 }
 
@@ -219,7 +218,7 @@ func (s *Server) itxPrice(ctx context.Context, asset string) (decimal.Decimal, b
 	return s.usdtPrice(ctx, asset)
 }
 
-// handleInternalTransfer: POST /wallet/internal-transfer.
+// handleInternalTransfer：POST /wallet/internal-transfer。
 func (s *Server) handleInternalTransfer(w http.ResponseWriter, r *http.Request) {
 	uid, ok := requireUser(w, r)
 	if !ok {
@@ -255,7 +254,7 @@ func (s *Server) internalTransfer(ctx context.Context, uid string, req internalT
 		return nil, errf(http.StatusBadRequest, "VALIDATION_ERROR", "toUid 与 toEmail 需且仅需提供一个")
 	}
 
-	// Idempotent replay: same clientId returns the original transfer.
+	// 同一用户同一 clientId 回放原单，不重复划转。
 	if ex, err := s.store.itxByClient(ctx, uid, req.ClientID); err == nil {
 		if ex.Asset != req.Asset || !ex.Amount.Equal(amt) || (req.ToUID != "" && ex.ToUserID != req.ToUID) {
 			return nil, errf(http.StatusConflict, "IDEMPOTENCY_CONFLICT", "clientId 已被其他请求使用")
@@ -332,8 +331,7 @@ func (s *Server) internalTransfer(ctx context.Context, uid string, req internalT
 	return &d, nil
 }
 
-// completeITX runs the (idempotent, balanced) asset leg and finalises the row.
-// Transient errors leave the row pending for the worker to retry.
+// completeITX 跑资产侧划转（按 itx:<id> 幂等、借贷平衡）并收口。瞬时失败留 pending，等 worker 重试。
 func (s *Server) completeITX(ctx context.Context, t *internalTransfer) {
 	err := s.asset.UserTransfer(ctx, t.UserID, t.ToUserID, t.Asset, t.Amount, itxRef(t.ID))
 	switch {
@@ -348,7 +346,7 @@ func (s *Server) completeITX(ctx context.Context, t *internalTransfer) {
 	}
 }
 
-// retryPendingITX re-drives pending transfers older than 15s (worker pass).
+// retryPendingITX 重放超过 15s 仍 pending 的站内转账。
 func (s *Server) retryPendingITX(ctx context.Context) {
 	rows, _, err := s.store.listITX(ctx, `status='pending' AND created_at < now() - interval '15 seconds'`, nil, 1, 100)
 	if err != nil {
@@ -360,7 +358,7 @@ func (s *Server) retryPendingITX(ctx context.Context) {
 	}
 }
 
-// handleInternalTransferList: GET /wallet/internal-transfers (sent + received).
+// handleInternalTransferList：GET /wallet/internal-transfers，发出和收到的都在。
 func (s *Server) handleInternalTransferList(w http.ResponseWriter, r *http.Request) {
 	uid, ok := requireUser(w, r)
 	if !ok {

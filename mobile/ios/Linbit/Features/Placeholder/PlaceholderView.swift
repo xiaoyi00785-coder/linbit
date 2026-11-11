@@ -1,3 +1,4 @@
+// 未完成页面的占位；资产占位可切换日间、夜间或跟随系统。
 import SwiftUI
 
 struct PlaceholderView: View {

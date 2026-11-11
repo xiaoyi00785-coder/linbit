@@ -1,10 +1,13 @@
 package main
 
+// 模拟盘对外结构。金额展示走 money()，按交易对精度 StringFixed，不改库里的原始小数。
+
 import (
 	"github.com/shopspring/decimal"
 	"time"
 )
 
+// Symbol 的精度用于拒绝多余小数。Status 不是 trading 时不能下模拟现货单。
 type Symbol struct {
 	Symbol            string
 	Base              string
@@ -16,6 +19,7 @@ type Symbol struct {
 	Status            string
 }
 
+// Quote 是指数价。Source 不是现货最新成交，模拟现货按它成交。
 type Quote struct {
 	Symbol     string          `json:"symbol"`
 	Price      decimal.Decimal `json:"indexPrice"`
@@ -23,6 +27,7 @@ type Quote struct {
 	ObservedAt time.Time       `json:"updatedAt"`
 }
 
+// PaperAccount 的 Generation 在重置时加一。旧 generation 的余额不再被新单使用。
 type PaperAccount struct {
 	AccountID           string     `json:"accountId"`
 	Mode                string     `json:"mode"`
@@ -41,6 +46,7 @@ type PaperAccount struct {
 	UpdatedAt           time.Time  `json:"updatedAt"`
 }
 
+// PaperBalance 的 Locked 在列表和重置里固定写成 "0"。现货模拟单即时全成，不冻结。Free/Total 用 8 位 StringFixed。
 type PaperBalance struct {
 	Asset        string  `json:"asset"`
 	Free         string  `json:"free"`
@@ -50,6 +56,7 @@ type PaperBalance struct {
 	PriceUSD     *string `json:"priceUsd"`
 }
 
+// PaperOrder 的 Mode 固定 paper。Price 在响应里为空，成交价在 ReferencePrice，来源 INDEX。
 type PaperOrder struct {
 	OrderID          string       `json:"orderId"`
 	ClientOrderID    string       `json:"clientOrderId"`
@@ -74,6 +81,7 @@ type PaperOrder struct {
 	Trades           []PaperTrade `json:"trades,omitempty"`
 }
 
+// PaperTrade 记在 paper_trades，不进生产 trades。
 type PaperTrade struct {
 	TradeID          string    `json:"tradeId"`
 	OrderID          string    `json:"orderId"`
@@ -90,6 +98,7 @@ type PaperTrade struct {
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
+// PriceAlert 触发一次后停用。冷却和写限流是两套计数。
 type PriceAlert struct {
 	AlertID       string   `json:"alertId"`
 	ClientAlertID string   `json:"clientAlertId"`
@@ -120,6 +129,7 @@ type PriceAlert struct {
 
 var noPrice any = nil
 
+// money 按给定精度固定小数位展示。现货余额调用处传 8。不改已入库的数值。
 func money(d decimal.Decimal, precision int) string { return d.StringFixed(int32(precision)) }
 func dptr(d decimal.Decimal) *string                { s := d.String(); return &s }
 func tptr(t time.Time) *time.Time                   { return &t }

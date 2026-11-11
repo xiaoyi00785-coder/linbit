@@ -1,35 +1,35 @@
-# Admin (back-office) API — `services/go/admin` (:8088)
+# 后台 API — `services/go/admin`（:8088）
 
-Not exposed through the public gateway. Auth: `POST /admin/v1/auth/login {username,password,totpCode}` → `{token}`;
-send `Authorization: Bearer <token>`. Sessions expire after `ADMIN_SESSION_IDLE_MINUTES` idle (`SESSION_EXPIRED`).
-Every write (and failed/forbidden attempts) is written to the append-only `audit_logs` table.
+不经公开 gateway。认证：`POST /admin/v1/auth/login {username,password,totpCode}` → `{token}`；
+请求带 `Authorization: Bearer <token>`。空闲超过 `ADMIN_SESSION_IDLE_MINUTES` 会话过期（`SESSION_EXPIRED`）。
+每次写操作（以及失败/禁止的尝试）写入只追加的 `audit_logs`。
 
-| Area | Endpoints | Permission |
+| 范围 | 接口 | 权限 |
 |---|---|---|
-| Auth | `POST auth/login`, `POST auth/logout`, `GET me` | — |
-| Admins | `GET/POST admins`, `PATCH admins/{id}` (roles/status + reason + 2FA; no delete) | admin:manage |
-| Users | `GET users`, `GET users/{uid}` (`?reveal=true` needs user:pii, audited), `POST users/{uid}/freeze\|unfreeze` (reason + 2FA) | user:view / user:edit |
-| KYC | `GET kyc/applications[/{id}]`, `POST …/{id}/approve\|reject`, `GET kyc/documents/{id}` (audited) | kyc:view / kyc:approve |
-| Withdrawals | `GET withdrawals`, `POST withdrawals/{id}/approve` (comment + 2FA), `…/reject` (reason + 2FA) | withdraw:first / withdraw:second |
-| Ledger | `GET users/{uid}/balances`, `GET ledger` | ledger:view |
-| Symbols | `GET/POST symbols`, `PATCH symbols/{symbol}` (reason) | symbol:view / symbol:edit |
-| Fees | `GET fees`, `GET/POST fee-changes`, `POST fee-changes/{id}/approve\|reject\|rollback` | fee:view / fee:edit / fee:approve |
-| Coupons | `GET/POST coupons`, `POST coupons/{id}/approve\|reject` | reward:edit / coupon:approve |
-| Rewards | `GET/POST rewards`, `POST rewards/{id}/approve\|reject` (2FA) | reward:edit / reward:approve |
-| Copy trading | `GET copy/applications?status=pending\|active\|rejected\|closed\|all&page&pageSize`, `POST copy/applications/{uid}/approve` (2FA), `…/reject` (reason + 2FA); proxied to futures `/internal/copy/applications`, audited as module `copy` (high) | copy:view / copy:review |
-| Referrals | `GET referrals/{uid}` – inviter, invite code, invited count, referral window end, partner record, commission totals by kind | user:view |
-| Points campaigns | `GET points/campaigns`; `POST points/campaigns {key,title,startsAt,endsAt,rules?,totpCode}` (2FA, high audit, overlap rejected) | reward:view / reward:edit |
-| User coupons | `GET users/{uid}/coupons` – vouchers with live bonus balance | user:view |
-| Partners | `GET partners?status=pending\|active\|rejected\|disabled&page&pageSize`, `POST partners/{uid}/approve` (2FA), `…/reject`, `…/disable` (reason + 2FA); proxied to growth `/internal/partners`, audited as module `partner` (high) | partner:view / partner:review |
-| Content | `GET/POST announcements`; public `GET /announcements` | content:edit |
-| Audit | `GET audit-logs?adminId&module&action&level&result&target&from&to&page&size` | audit:view |
+| 认证 | `POST auth/login`、`POST auth/logout`、`GET me` | — |
+| 管理员 | `GET/POST admins`、`PATCH admins/{id}`（角色/状态 + reason + 2FA；不删除） | admin:manage |
+| 用户 | `GET users`、`GET users/{uid}`（`?reveal=true` 要 user:pii，写审计）、`POST users/{uid}/freeze\|unfreeze`（reason + 2FA） | user:view / user:edit |
+| KYC | `GET kyc/applications[/{id}]`、`POST …/{id}/approve\|reject`、`GET kyc/documents/{id}`（写审计） | kyc:view / kyc:approve |
+| 提现 | `GET withdrawals`、`POST withdrawals/{id}/approve`（comment + 2FA）、`…/reject`（reason + 2FA） | withdraw:first / withdraw:second |
+| 流水 | `GET users/{uid}/balances`、`GET ledger` | ledger:view |
+| 交易对 | `GET/POST symbols`、`PATCH symbols/{symbol}`（reason） | symbol:view / symbol:edit |
+| 费率 | `GET fees`、`GET/POST fee-changes`、`POST fee-changes/{id}/approve\|reject\|rollback` | fee:view / fee:edit / fee:approve |
+| 卡券 | `GET/POST coupons`、`POST coupons/{id}/approve\|reject` | reward:edit / coupon:approve |
+| 奖励 | `GET/POST rewards`、`POST rewards/{id}/approve\|reject`（2FA） | reward:edit / reward:approve |
+| 跟单 | `GET copy/applications?status=pending\|active\|rejected\|closed\|all&page&pageSize`、`POST copy/applications/{uid}/approve`（2FA）、`…/reject`（reason + 2FA）；代理到 futures `/internal/copy/applications`，审计 module `copy`（high） | copy:view / copy:review |
+| 邀请 | `GET referrals/{uid}`：邀请人、邀请码、邀请人数、返佣窗口结束、合伙人记录、按 kind 的佣金合计 | user:view |
+| 积分活动 | `GET points/campaigns`；`POST points/campaigns {key,title,startsAt,endsAt,rules?,totpCode}`（2FA，high 审计，重叠拒绝） | reward:view / reward:edit |
+| 用户卡券 | `GET users/{uid}/coupons`：券及实时赠金余额 | user:view |
+| 合伙人 | `GET partners?status=pending\|active\|rejected\|disabled&page&pageSize`、`POST partners/{uid}/approve`（2FA）、`…/reject`、`…/disable`（reason + 2FA）；代理到 growth `/internal/partners`，审计 module `partner`（high） | partner:view / partner:review |
+| 内容 | `GET/POST announcements`；公开 `GET /announcements` | content:edit |
+| 审计 | `GET audit-logs?adminId&module&action&level&result&target&from&to&page&size` | audit:view |
 
-Workflows:
-- Withdrawal second review when amount ≥ `ADMIN_WITHDRAW_SECOND_REVIEW_USDT` (5000), risk > `ADMIN_WITHDRAW_SECOND_REVIEW_RISK` (40) or no USDT price; second reviewer must differ (`SAME_REVIEWER`).
-- Fee change: submitted by super_admin; needs approvals from a different super_admin **and** a finance_second; then scheduled ≥ `ADMIN_FEE_NOTICE_HOURS` (24h) out with a public announcement. Rollback creates a new change through the same flow.
-- Coupon template with budget (face × quantity) > `ADMIN_COUPON_FINANCE_THRESHOLD` (10000) waits for finance.
-- Copy-trading trader applications (`FUTURES_COPY_AUTO_APPROVE=false`, default) stay `pending` until reviewed; only pending ones can be decided (`NOT_PENDING`). A rejected applicant sees `reviewNote` on `GET /futures/copy/trader` and may re-apply. Roles: operations (view + review), risk/auditor (view), super_admin (all).
-- Manual reward > `ADMIN_REWARD_FINANCE_THRESHOLD` (1000 USDT) waits for finance_second; creator can never approve their own request (`SELF_APPROVAL`).
+流程：
+- 金额 ≥ `ADMIN_WITHDRAW_SECOND_REVIEW_USDT`（5000）、风险 > `ADMIN_WITHDRAW_SECOND_REVIEW_RISK`（40）或没有 USDT 价格时，提现进入二次复核；第二人必须是另一个人（`SAME_REVIEWER`）。
+- 费率变更：super_admin 提交；需要另一名 super_admin **和** 一名 finance_second 批准；然后排期至少 `ADMIN_FEE_NOTICE_HOURS`（24h）之后，并发公开公告。回滚走同一流程新建一条变更。
+- 卡券模板预算（面值 × 数量）> `ADMIN_COUPON_FINANCE_THRESHOLD`（10000）时等 finance。
+- 跟单带单申请（`FUTURES_COPY_AUTO_APPROVE=false`，默认）停在 `pending` 直到审核；只能处理 pending（`NOT_PENDING`）。被驳回的申请人在 `GET /futures/copy/trader` 上看到 `reviewNote`，可以再申请。角色：operations（查看 + 审核）、risk/auditor（查看）、super_admin（全部）。
+- 手工奖励 > `ADMIN_REWARD_FINANCE_THRESHOLD`（1000 USDT）等 finance_second；提交人不能批自己的单（`SELF_APPROVAL`）。
 
 ## 理财 / 借币产品管理
 

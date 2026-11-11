@@ -1,5 +1,7 @@
 package main
 
+// chainwire.go：把真实链接进服务。启动、后台循环（sync → 扫块 → 提现 → 归集）和管理端接口。
+
 import (
 	"context"
 	"errors"
@@ -16,10 +18,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// chainwire.go wires the real-chain adapter into the server: startup, the
-// background worker (sync -> scan -> withdrawals -> sweeps) and admin endpoints.
-
-// chainMode returns WALLET_CHAIN (mock | testnet | mainnet).
+// chainMode 读取 WALLET_CHAIN，只接受 mock、testnet、mainnet。别的值直接退出。
 func chainMode() string {
 	m := strings.ToLower(common.Env("WALLET_CHAIN", "mock"))
 	switch m {
@@ -30,8 +29,8 @@ func chainMode() string {
 	return ""
 }
 
-// UseRealChain replaces the mock chain with a RealChain talking to the hot
-// signer at WALLET_SIGNER_URL. It waits up to a minute for the signer.
+// UseRealChain 用 RealChain 换掉 mock。签名走 WALLET_SIGNER_URL，最多等约一分钟（30 次 × 2s）。
+// WALLET_SIGNER_URL 和 WALLET_SIGNER_TOKEN 缺一不可。
 func (s *Server) UseRealChain(ctx context.Context, mode string) error {
 	url := common.Env("WALLET_SIGNER_URL", "")
 	token := common.Env("WALLET_SIGNER_TOKEN", "")
@@ -57,8 +56,7 @@ func (s *Server) UseRealChain(ctx context.Context, mode string) error {
 	return nil
 }
 
-// isTransient reports network-level failures where the remote side may or may
-// not have acted (timeouts, connection resets) as opposed to explicit refusals.
+// isTransient 表示对端可能已经处理、也可能没有：超时、连接重置、EOF。明确拒绝不算。
 func isTransient(err error) bool {
 	var ne net.Error
 	return errors.As(err, &ne) || errors.Is(err, context.DeadlineExceeded) ||
@@ -66,8 +64,8 @@ func isTransient(err error) bool {
 		strings.Contains(err.Error(), "connection refused")
 }
 
-// sendRealWithdrawal claims the withdrawal (approved -> processing, no hash)
-// before sending so it can never be paid twice, then records the tx hash.
+// sendRealWithdrawal 先把 approved 占成 processing（还没有 hash），再发送，避免付两次。
+// 发送结果不明（瞬时错误且不是 connection refused）留在 processing，等人工对链，不自动重发。
 func (s *Server) sendRealWithdrawal(ctx context.Context, w *Withdrawal, n Network, sender ChainSender) bool {
 	claimed, err := s.store.ClaimForBroadcast(ctx, w.ID)
 	if err != nil || !claimed {
@@ -103,7 +101,7 @@ func (s *Server) sweepMin(asset, network string) decimal.Decimal {
 	return decimal.Zero
 }
 
-// RunWorker runs sync, scan, withdrawal processing and sweeps every interval.
+// RunWorker 按间隔跑 sync、扫块、提现处理和归集。
 func (s *Server) RunWorker(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()

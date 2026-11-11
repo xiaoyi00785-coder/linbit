@@ -1,3 +1,4 @@
+/** 行情列表中的一行和可排序表头；没有人民币汇率时不显示折合。 */
 package click.cowa.linbit.feature.markets
 
 import androidx.compose.foundation.layout.Arrangement

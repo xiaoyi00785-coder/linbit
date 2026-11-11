@@ -16,8 +16,8 @@ type porItem struct {
 	Ratio       string `json:"ratio"`       // reserves / liabilities, e.g. "1.0234"; "" if liabilities = 0
 }
 
-// GET /market/proof-of-reserves — latest published reserve snapshot.
-// {available:false, snapshotAt:null, items:[]} until operations publish one.
+// GET /market/proof-of-reserves，最新一份已发布的储备快照。
+// 运营尚未发布时为 {available:false, snapshotAt:null, items:[]}。
 func (s *Server) handleProofOfReserves(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"available": false, "snapshotAt": nil, "items": []porItem{}}
 	if s.store == nil || s.store.db == nil {

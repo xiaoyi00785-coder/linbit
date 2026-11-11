@@ -26,20 +26,20 @@ type internalVerifyRequest struct {
 	FundPassword string `json:"fundPassword,omitempty"`
 }
 
-// Reasons: user_not_found, account_frozen, totp_required, totp_invalid,
-// no_contact, code_required, code_invalid, withdraw_locked,
-// fund_password_required, fund_password_invalid, fund_password_locked,
-// fund_password_not_set, internal_error.
+// reason：user_not_found、account_frozen、sub_account_withdraw_forbidden、totp_required、totp_invalid、
+// no_contact、code_required、code_invalid（含超次）、withdraw_locked、
+// fund_password_required、fund_password_invalid、fund_password_locked、fund_password_not_set、internal_error。
 type internalVerifyResponse struct {
 	OK          bool    `json:"ok"`
 	Reason      string  `json:"reason,omitempty"`
 	LockedUntil *string `json:"lockedUntil,omitempty"`
 }
 
-// handleInternalWithdrawVerify validates a withdrawal's second factor. When the
-// user has TOTP enabled, totpCode must be valid; otherwise an email/SMS code with
-// purpose=withdraw must be valid. It always answers 200 with {ok, reason} so the
-// wallet can map the outcome to its own error codes.
+// 提现二次验证。已开 TOTP 必须 totpCode 通过 validateTOTP；否则校验 purpose=withdraw 的邮箱/短信码。
+// 发码限流键是 vc:int:withdraw:{target}、vc:hr:withdraw:{target}，本接口只做校验，不另设提现次数窗口。
+// 子账户直接 sub_account_withdraw_forbidden。始终 200，{ok, reason} 交给 wallet 映射。
+// reason：user_not_found、account_frozen、totp_required、totp_invalid、no_contact、code_required、code_invalid，
+// 以及 outflowCheck 的 withdraw_locked、fund_password_required、fund_password_invalid、fund_password_locked、fund_password_not_set、internal_error。
 func (s *Server) handleInternalWithdrawVerify(w http.ResponseWriter, r *http.Request) {
 	if !s.authedInternal(r) {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "内部令牌无效")

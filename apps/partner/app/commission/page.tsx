@@ -1,4 +1,5 @@
 "use client";
+// 佣金明细：按合约、现货、二级奖励和邀请分页查看。
 import { useState } from "react";
 import { useApi, type Comm } from "@/lib/api";
 import { Coin, ErrBox, Skel, Tabs, day, num, pct } from "../ui";

@@ -1,5 +1,8 @@
 package main
 
+// 指数价取行情服务的现货最新价，失败则沿用 IndexStale 内的旧值，超时后标记价清零（拒新单、不强平）。
+// 标记价由 markPrice 算完再对齐 tick。资金费默认 8 小时结算一次，按 (symbol, funding_time) 幂等。
+
 import (
 	"context"
 	"database/sql"
@@ -8,9 +11,6 @@ import (
 
 	"github.com/shopspring/decimal"
 )
-
-// prices.go: index price (spot last price from market-data, fail-closed), mark
-// price, premium sampling and 8-hourly funding settlement.
 
 type priceState struct {
 	Index    decimal.Decimal
@@ -37,7 +37,7 @@ func (s *Server) nextFunding(t time.Time) time.Time {
 	return time.Unix((s.bucket(t)+1)*sec, 0).UTC()
 }
 
-// mark returns the current mark price; ok=false when the index is unavailable.
+// mark 返回当前标记价。指数失效导致标记价 <= 0 时 ok=false，调用方不得强平或接新单。
 func (s *Server) mark(sym string) (decimal.Decimal, bool) {
 	s.pmu.RLock()
 	defer s.pmu.RUnlock()
@@ -48,7 +48,7 @@ func (s *Server) mark(sym string) (decimal.Decimal, bool) {
 	return ps.Mark, true
 }
 
-// setLast records a batch of fills: last price/time and the live kline bars.
+// setLast 用本批最后一笔成交更新最新价，并推进内存 K 线。空成交不改。
 func (s *Server) setLast(sym string, trades []Trade) {
 	if len(trades) == 0 {
 		return
@@ -79,7 +79,7 @@ func (s *Server) predictedRate(ps priceState) decimal.Decimal {
 	return fundingRate(avg, s.cfg.FundingInterest, s.cfg.FundingClamp, s.cfg.FundingCap)
 }
 
-// refreshPrices fetches the index for every contract and recomputes marks.
+// refreshPrices 拉每个合约的指数并重算标记价。DEV 覆盖优先于行情。溢价样本是 (最新价-指数)/指数，无成交则为 0。
 func (s *Server) refreshPrices(ctx context.Context) {
 	now := s.now()
 	idx := map[string]decimal.Decimal{}
@@ -120,7 +120,7 @@ func (s *Server) refreshPrices(ctx context.Context) {
 	}
 }
 
-// sampleMarks writes the mark-price history at MarkSampleEvery resolution.
+// sampleMarks 按 MarkSampleEvery 写 fut_mark_history，同一秒冲突则跳过。
 func (s *Server) sampleMarks(ctx context.Context, force bool) {
 	now := s.now().UTC().Truncate(time.Second)
 	if !force && now.Sub(s.lastMarkSample) < s.cfg.MarkSampleEvery {
@@ -136,8 +136,8 @@ func (s *Server) sampleMarks(ctx context.Context, force bool) {
 	}
 }
 
-// fundingDue settles every contract whose funding boundary has passed.
-// Caller holds s.mu.
+// fundingDue 结算已经跨过资金费边界的合约。没有标记价则本边界跳过并推进桶，不再补结；
+// settleFunding 失败则不推进桶，下次 tick 重试。调用方持有 s.mu。
 func (s *Server) fundingDue(ctx context.Context) {
 	b := s.bucket(s.now())
 	for _, sym := range s.symbols {
@@ -158,8 +158,9 @@ func (s *Server) fundingDue(ctx context.Context) {
 	}
 }
 
-// settleFunding moves q*mark*rate from longs to shorts (rate>0) or back.
-// Idempotent per (symbol, funding_time). Caller holds s.mu.
+// settleFunding 支付额 = qty*mark*rate（qty 带符号；rate>0 时多头付给空头）。
+// 逐仓从 Iso 扣，全仓从钱包余额扣；全仓且 pay>0 时可用体验金 trial 抵资金费，抵扣金不抵。
+// fut_funding_history 对 (symbol, funding_time) 冲突则整段不再划转。调用方持有 s.mu。
 func (s *Server) settleFunding(ctx context.Context, sym string, rate, mark decimal.Decimal, at time.Time) error {
 	err := s.txLocked(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `INSERT INTO fut_funding_history (symbol, funding_time, rate, mark_price) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`, sym, at, rate, mark)

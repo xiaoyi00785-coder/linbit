@@ -1,5 +1,7 @@
 package main
 
+// KYC 运行配置：最低年龄、证件大小、对象存储，以及同步 account 的退避。
+
 import (
 	"time"
 

@@ -1,5 +1,11 @@
 package main
 
+// 通用划转。网关把 /assets/transfer 和 /assets/transfers 转到这里，其余 /assets 仍在资产服务。
+// 可划账户是 funding、spot、futures。earn 走申购/赎回，margin/copy 也不能从这里划，都返回 ACCOUNT_NOT_SUPPORTED。
+// 金额最多 8 位小数；碰到合约一侧时不低于 FUTURES_MIN_TRANSFER，且资产只能是 USDT。
+// 复用 TransferIdem：每一腿在自己的库里原子提交，按划转 ref 幂等；跨服务那一腿由 RunTransferRetry 重试到完成。
+// 账本：资产服务流水（futures_in / futures_out 对 system:futures）加上 fut_bills（transfer_in/out）。
+
 import (
 	"context"
 	"database/sql"
@@ -15,19 +21,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// transfer.go: general account transfer (gateway routes /assets/transfer and
-// /assets/transfers here; the rest of /assets stays on the asset service).
-//
-// Accounts: spot (asset service free balance) and futures (USDT margin wallet).
-// earn is NOT a transfer account: flexible savings are per-product holdings
-// (e_holdings) with their own subscribe/redeem rules and interest accrual,
-// not a fungible wallet, so it answers ACCOUNT_NOT_SUPPORTED.
-//
-// It reuses the futures transfer saga (TransferIdem): each leg is atomic in
-// its own database and idempotent on the transfer ref; the cross-service leg
-// is retried by RunTransferRetry until done. Ledger: asset service journal
-// (futures_in / futures_out vs system:futures) + fut_bills (transfer_in/out).
-
 var (
 	transferAccounts = map[string]bool{"funding": true, "spot": true, "futures": true}
 	knownAccounts    = map[string]bool{"spot": true, "futures": true, "earn": true, "funding": true, "margin": true, "copy": true}
@@ -42,9 +35,8 @@ type transferReq struct {
 	ClientID string `json:"clientId"`
 }
 
-// validateTransfer checks the request and returns the direction: "in" =
-// spot|funding -> futures, "out" = futures -> spot|funding, "internal" =
-// spot <-> funding. Pure; unit tested.
+// validateTransfer 返回方向：spot|funding → futures 为 in，futures → spot|funding 为 out，spot ↔ funding 为 internal。
+// 超过 8 位小数直接拒绝，不截断。纯函数。
 func validateTransfer(req *transferReq, minAmt decimal.Decimal) (dir string, amt decimal.Decimal, err error) {
 	req.Asset = strings.ToUpper(strings.TrimSpace(req.Asset))
 	req.From = strings.ToLower(strings.TrimSpace(req.From))

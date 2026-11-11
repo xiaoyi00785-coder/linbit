@@ -836,7 +836,7 @@ struct TodayPnlCard: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border))
         .padding(.horizontal, Spacing.pageH).padding(.top, 10)
     }
-    /// 后端金额为固定 8 位小数字符串，原样展示（不截断、不去尾零），仅为正数补 "+"
+    /// 服务端金额是十进制字符串（固定 8 位小数）；原样展示并保留末尾的 0，仅为正数补 "+"
     private func raw(_ s: String?, _ d: Decimal) -> String {
         guard let s, !s.isEmpty else { return signed(d) }
         return (d > 0 && !s.hasPrefix("+") ? "+" : "") + s

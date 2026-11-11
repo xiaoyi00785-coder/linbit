@@ -1,3 +1,4 @@
+/** 社区外链。GET /site/social 匿名、不带登录态；失败或非法 URL 时用 NEXT_PUBLIC_SOCIAL_*，未配置则不展示。 */
 import { useEffect, useState } from "react";
 import { API_BASE } from "./api";
 

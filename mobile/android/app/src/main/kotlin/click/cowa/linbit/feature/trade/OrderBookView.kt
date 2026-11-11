@@ -1,3 +1,4 @@
+/** 交易页订单簿：买卖档、最新价、买卖占比，以及精度和买卖盘显示模式。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

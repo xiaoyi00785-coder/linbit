@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// TradFi feature-flag awareness. market-data still lists TradFi symbols as
-// "trading" when the tokenizedStocks/metals flag is off, so the MM must check
-// the flag itself and stand down (cancel + no quotes) on gated pairs.
+// TradFi 功能开关。market-data 在 tokenizedStocks 或 metals 关闭时仍把这些符号标成 trading，
+// 做市必须自己看开关：关闭或状态未知时撤单并且不再报价。
 
 type tradfiGate struct {
 	Features       map[string]bool   `json:"features"`

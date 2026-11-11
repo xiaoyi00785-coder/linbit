@@ -12,9 +12,8 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// chatadmin.go: internal moderation endpoints, called only by the admin
-// service (which enforces RBAC, 2FA, reason and audit). Every write returns
-// {before, after} for the audit log.
+// 聊天室内部审核，只给 admin 调（那边做 RBAC、2FA、原因和审计）。
+// 每次写操作都返回 {before, after} 供审计。
 
 func (c *Chat) adminRoutes(mux *http.ServeMux) {
 	in := c.srv.internal

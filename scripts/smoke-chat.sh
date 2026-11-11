@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-#
-# Smoke for the trading chat room (feature flag `chat`):
-#   flag off -> FEATURE_DISABLED; admin enables flag + config (2FA + reason + audit);
-#   GET /chat/rooms (general + spot.* + futures.*), anonymous history read,
-#   POST needs login + KYC (CHAT_KYC_REQUIRED), link/contact filters, max length,
-#   rate limit (CHAT_RATE_LIMITED), clientId idempotency, pagination, WS chat:{room}
-#   push (message + delete), report, admin delete/mute/ban/reports + audit.
-#
-#   bash scripts/smoke-chat.sh      # boots devstack (honours DEVSTACK_*_PORT)
-#
+# 交易聊天室 smoke（功能开关 `chat`）。
+# 开关关 → FEATURE_DISABLED；后台开开关和配置（2FA + reason + 审计）；
+# GET /chat/rooms（general + spot.* + futures.*），匿名可读历史；
+# POST 要登录 + KYC（CHAT_KYC_REQUIRED）；链接/联系方式过滤、长度上限、限流（CHAT_RATE_LIMITED）、
+# clientId 幂等、分页；WS chat:{room} 推送（message + delete）；举报；后台删除/禁言/封禁/举报 + 审计。
+#   bash scripts/smoke-chat.sh      # 拉起 devstack（认 DEVSTACK_*_PORT）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -1,5 +1,4 @@
-# This sandbox ships a `cc` shim on PATH that is not a real C compiler, which
-# breaks rustc's default linker invocation. Point the linker at the real gcc.
-# On a normal machine gcc is present too, so this is a safe, portable default.
+# 有的环境里 PATH 上的 cc 不是真正的 C 编译器，rustc 默认用它做链接会失败。
+# 这里固定用 gcc。正常机器上 gcc 也在，不改变链接结果。
 [target.x86_64-unknown-linux-gnu]
 linker = "gcc"

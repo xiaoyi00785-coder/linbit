@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-// attachPaperSnapshots loads private paper channel snapshots from the paper
-// service. When paperURL is empty, subscribe still requires login and sends
-// no snapshot rather than an invented balance.
+// attachPaperSnapshots 向 paper 服务要私有模拟盘频道的快照。
+// paperURL 为空时，订阅仍要求登录，并且不发快照，也不编造余额。
 func attachPaperSnapshots(h *Hub, paperURL, token string) {
 	paperURL = strings.TrimRight(strings.TrimSpace(paperURL), "/")
 	if h == nil || paperURL == "" || token == "" {

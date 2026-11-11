@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for futures copy trading: trader application (0–50% share),
-#   follow (ratio / fixed with per-trade cap, TP/SL), synchronized open,
-#   partial and full close, daily profit-share settlement (idempotent, paid
-#   to the trader's spot account), leaderboard / stats, unfollow, trader close,
-#   conservation audit and gateway access.
-#
-#   bash scripts/smoke-copy.sh                       # boots devstack
+# 合约跟单端到端 smoke。
+# 带单申请（分润 0–50%）、跟随（比例 / 固定且单笔上限、TP/SL）、同步开仓、部分与全部平仓、
+# 每日分润结算（幂等，打到带单员现货账户）、排行榜/统计、取消跟随、带单员关闭、守恒审计、网关访问。
+#   bash scripts/smoke-copy.sh                       # 拉起 devstack
 #   GATEWAY_URL=... ASSET_URL=... ACCOUNT_URL=... FUTURES_URL=... INTERNAL_TOKEN=... \
-#     SMOKE_INNER=1 bash scripts/smoke-copy.sh       # existing stack
-#
+#     SMOKE_INNER=1 bash scripts/smoke-copy.sh       # 已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

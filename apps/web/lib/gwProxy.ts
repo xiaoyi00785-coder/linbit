@@ -1,24 +1,23 @@
 /**
- * Server-only /gw/* proxy to the API gateway (replaces the next.config rewrite).
- * Shared verbatim by apps/web and apps/partner (scripts/check-gw-proxy.mjs asserts both copies match).
+ * 只在服务端使用的 /gw/* 反代，替代 next.config 里的 rewrite。
+ * apps/web 和 apps/partner 各有一份，内容必须逐字相同（scripts/check-gw-proxy.mjs 会比对）。
  *
- * Target: GATEWAY_INTERNAL_URL (e.g. http://gateway:8080, docker network, no Cloudflare hop),
- * falling back to API_PROXY_TARGET (legacy public URL). Neither is NEXT_PUBLIC.
+ * 目标地址：GATEWAY_INTERNAL_URL（例如 http://gateway:8080，docker 网络，不经 Cloudflare），
+ * 没有则用 API_PROXY_TARGET（旧的公网地址）。这两个都不是 NEXT_PUBLIC。
  *
- * Client identity: the browser's own X-Forwarded-For / X-Real-IP / Forwarded / CF-Connecting-IP and
- * any edge-auth header are dropped. The client IP is taken from CF-Connecting-IP (overwritten by
- * Cloudflare; the origin only accepts Cloudflare, web listens on loopback behind nginx), else
- * X-Real-IP set by nginx. It is sent as X-Real-IP / X-Forwarded-For together with CF-IPCountry and,
- * only on the internal hop, X-Linbit-Edge-Auth = GATEWAY_EDGE_SECRET. The gateway trusts those
- * headers only when that secret matches (or the TCP peer is in TRUSTED_PROXY_CIDRS).
+ * 客户端身份：浏览器自带的 X-Forwarded-For / X-Real-IP / Forwarded / CF-Connecting-IP
+ * 以及边缘鉴权头一律丢掉。客户端 IP 优先取 CF-Connecting-IP（Cloudflare 会覆盖；源站只收 Cloudflare，
+ * web 在 nginx 后面监听 loopback），否则用 nginx 写入的 X-Real-IP。
+ * 转给网关时带上 X-Real-IP / X-Forwarded-For 和 CF-IPCountry；只有内网这一跳才带
+ * X-Linbit-Edge-Auth = GATEWAY_EDGE_SECRET。网关只在密钥匹配，或 TCP 对端落在 TRUSTED_PROXY_CIDRS 时信任这些头。
  *
- * Failures: timeout → 504 GATEWAY_TIMEOUT, connect/other errors → 502 UPSTREAM_UNAVAILABLE (JSON).
+ * 失败：超时 504 GATEWAY_TIMEOUT，连接或其他错误 502 UPSTREAM_UNAVAILABLE（JSON）。
  */
 export const EDGE_AUTH_HEADER = "x-linbit-edge-auth";
 
 const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"]);
 const CLIENT_IDENTITY = new Set(["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "x-real-ip", "forwarded", "cf-connecting-ip", "true-client-ip", EDGE_AUTH_HEADER]);
-// fetch() already decoded the body, so the upstream encoding/length no longer apply.
+// fetch() 已经解开了 body，上游的 content-encoding 和 content-length 不再适用。
 const RESP_DROP = new Set([...HOP, "content-encoding"]);
 
 export type GwEnv = { GATEWAY_INTERNAL_URL?: string; API_PROXY_TARGET?: string; GATEWAY_EDGE_SECRET?: string; GATEWAY_PROXY_TIMEOUT_MS?: string; NODE_ENV?: string };

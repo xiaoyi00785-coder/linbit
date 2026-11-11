@@ -1,5 +1,8 @@
 package main
 
+// 提交身份认证。同一用户同时只能有一笔 pending（唯一索引兜住并发），拒绝后可再提。
+// level 2 必须已有通过的 level 1，并上传地址证明。同一证件号不能已被另一个用户通过。
+
 import (
 	"net/http"
 	"strings"

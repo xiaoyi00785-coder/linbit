@@ -3,7 +3,7 @@ package click.cowa.linbit.feature.trade
 import click.cowa.linbit.core.util.Dec
 import java.math.BigDecimal
 
-/** 历史与委托列表：金额/价格按 OpenAPI 字符串原样展示，空则占位。 */
+/** 列表中的金额和价格是服务端十进制字符串，原样显示并保留末尾的 0；空则占位。 */
 fun apiAmount(value: String?, empty: String = "--"): String =
     value?.takeIf { it.isNotBlank() } ?: empty
 

@@ -33,7 +33,8 @@ type Config struct {
 	MMSeedMax       string // ADMIN_MM_SEED_MAX (legacy MM_SEED_MAX): max single-asset testnet seed per call (default 10000000)
 	SolvencyHourUTC int    // SOLVENCY_HOUR_UTC: daily reconciliation hour (default 1); -1 disables
 
-	// Security.
+	// 登录锁定按用户名计 failed_attempts，不是 IP 窗口。调账不看 Require2FA。
+	// TrustProxy 只决定是否读 X-Forwarded-For，不核对 TRUSTED_PROXY_CIDRS。白名单空则全部放行。
 	Require2FA      bool          // ADMIN_REQUIRE_2FA (default true)
 	SessionIdle     time.Duration // ADMIN_SESSION_IDLE_MINUTES (default 30)
 	MaxFailedLogins int           // ADMIN_MAX_FAILED_LOGINS (default 5)
@@ -47,7 +48,8 @@ type Config struct {
 	BootstrapPass string
 	BootstrapTOTP string
 
-	// Approval rules.
+	// 复核阈值。提现：估值达到 WithdrawSecondAmount，或风险分高于 WithdrawSecondRisk，或没有价格。
+	// 调账：admin_settings.adjust_second_review_usdt 优先，否则 AdjustSecondAmount。无价格也要复核。
 	FeeNotice             time.Duration   // ADMIN_FEE_NOTICE_HOURS (default 24)
 	CouponBudgetThreshold decimal.Decimal // ADMIN_COUPON_FINANCE_THRESHOLD (default 10000 USDT)
 	RewardReviewThreshold decimal.Decimal // ADMIN_REWARD_FINANCE_THRESHOLD (default 1000 USDT)

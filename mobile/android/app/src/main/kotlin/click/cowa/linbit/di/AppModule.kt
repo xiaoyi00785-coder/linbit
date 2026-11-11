@@ -1,3 +1,4 @@
+/** 进程级依赖：加密存储、访问令牌、HTTP 客户端、行情长连接，以及登录和导航仓库。 */
 package click.cowa.linbit.di
 
 import android.content.Context

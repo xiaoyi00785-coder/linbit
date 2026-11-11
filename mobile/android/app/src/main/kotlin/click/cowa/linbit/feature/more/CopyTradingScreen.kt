@@ -1,3 +1,4 @@
+/** 跟单页：交易员榜单和详情、按金额跟随或停止，以及申请成为交易员。 */
 package click.cowa.linbit.feature.more
 
 import androidx.compose.foundation.Canvas

@@ -1,5 +1,7 @@
 package main
 
+// 订单服务看到的资产账本：冻结、解冻，以及按 tradeId 幂等结算成交。
+
 import (
 	"bytes"
 	"context"
@@ -14,19 +16,17 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ErrInsufficient is returned when the asset service rejects a freeze for lack
-// of available balance.
+// ErrInsufficient：资产服务因可用不足拒绝冻结。其他错误不是余额不足，不能当成拒单重试成功。
 var ErrInsufficient = errors.New("insufficient balance")
 
-// AssetClient calls the asset service's internal API to freeze/unfreeze funds
-// and settle matched trades. It is the order service's view of the asset ledger.
+// AssetClient 调资产服务内部接口。结算按 tradeId 幂等，同一笔成交重放不会划第二次。
 type AssetClient struct {
 	url   string
 	token string
 	http  *http.Client
 }
 
-// NewAssetClient constructs an asset client.
+// NewAssetClient 去掉 URL 末尾斜杠，超时 5 秒。
 func NewAssetClient(url, token string) *AssetClient {
 	return &AssetClient{
 		url:   strings.TrimRight(url, "/"),
@@ -35,12 +35,12 @@ func NewAssetClient(url, token string) *AssetClient {
 	}
 }
 
-// Freeze moves amount of asset from the user's free to locked balance.
+// Freeze 把 amount 从可用划到冻结。ref 由调用方给定，重放同一 ref 由资产服务认。
 func (a *AssetClient) Freeze(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return a.movement(ctx, "/internal/freeze", userID, asset, amount, ref)
 }
 
-// Unfreeze moves amount of asset from the user's locked back to free balance.
+// Unfreeze 把冻结退回可用。余额不足以外的失败不能当作已经退回。
 func (a *AssetClient) Unfreeze(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return a.movement(ctx, "/internal/unfreeze", userID, asset, amount, ref)
 }
@@ -55,8 +55,7 @@ func (a *AssetClient) movement(ctx context.Context, path, userID, asset string, 
 	return a.do(ctx, path, body)
 }
 
-// SettleParams describes one matched trade to settle atomically in the asset
-// service (double-entry, idempotent on TradeID).
+// SettleParams 描述一笔要在资产服务里原子结算的成交。复式记账，按 TradeID 幂等。
 type SettleParams struct {
 	TradeID        string
 	Base           string
@@ -70,8 +69,7 @@ type SettleParams struct {
 	SellerFeeQuote decimal.Decimal
 }
 
-// Settle applies one trade: buyer's locked quote is paid out, seller's locked
-// base is delivered, and both fees go to the fee account. Safe to retry.
+// Settle 结算一笔：买方冻结的计价币付出，卖方冻结的基础币交割，两边手续费进手续费账户。按 tradeId 可重试。
 func (a *AssetClient) Settle(ctx context.Context, p SettleParams) error {
 	body, _ := json.Marshal(map[string]string{
 		"tradeId":        p.TradeID,
@@ -88,7 +86,7 @@ func (a *AssetClient) Settle(ctx context.Context, p SettleParams) error {
 	return a.do(ctx, "/internal/settle", body)
 }
 
-// errorBody is the asset service's unified error envelope (see common.APIError).
+// errorBody 是资产服务的统一错误包，只取 code 判断余额不足。
 type errorBody struct {
 	Code string `json:"code"`
 }

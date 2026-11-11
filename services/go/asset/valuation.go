@@ -1,5 +1,10 @@
 package main
 
+// valuation.go：GET /internal/valuation?userId=。资金账户 + 现货 + 合约的 USDT 总资产，
+// 给必须拿这个数做决定的调用方（例如账户服务的 VIP 资格）。
+// 和 /assets/overview 不同，这里要求完整：任一持仓没有可用指数价，或合约钱包读不到，
+// complete 为 false，总额只是下界。下界已经超过阈值可以接受，否则必须失败关闭。
+
 import (
 	"context"
 	"log"
@@ -8,16 +13,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// valuation.go: GET /internal/valuation?userId= — the user's total assets in
-// USDT across funding + spot + futures, for callers that must decide on the
-// number (e.g. account's VIP eligibility check).
-//
-// Unlike GET /assets/overview (which shows what it can for display), this is
-// strict about completeness: when any held asset has no usable index price, or
-// the futures wallet could not be read, `complete` is false and the total is
-// only a lower bound. A caller may still accept a lower bound that already
-// clears its threshold, but must fail closed otherwise.
 
 // GET /internal/valuation?userId=
 func (s *Server) handleInternalValuation(w http.ResponseWriter, r *http.Request) {

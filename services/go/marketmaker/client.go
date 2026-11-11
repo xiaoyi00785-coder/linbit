@@ -1,5 +1,7 @@
 package main
 
+// 访问 order、futures、market-data、asset。指数取 /market/index，失败即该对不可用。
+
 import (
 	"bytes"
 	"context"

@@ -13,6 +13,7 @@ const IV={'1m':'1m','15m':'15m','1H':'1h','4H':'4h','1D':'1d','1W':'1w'}
 const KI={x:'<path d="M12 3v18M3 12h18"/>',h:'<path d="M3 12h18"/><circle cx="7" cy="12" r="1.6"/><circle cx="17" cy="12" r="1.6"/>',t:'<path d="M4 19 20 5"/><circle cx="4" cy="19" r="1.6"/><circle cx="20" cy="5" r="1.6"/>',c:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',fs:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',ex:'<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'};
 const kb=(f)=>e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();f()}}
 const KIcon=({n})=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{__html:KI[n]}}/>;
+// 价格轴标签：按 pricePrecision 定点后去尾零，不输出科学计数法
 const strip=(v,p)=>{const s=Number(v).toFixed(p);return s.includes('.')?s.replace(/\.?0+$/,''):s}
 const IDX={color:'rgba(140,140,140,.35)',wickColor:'rgba(140,140,140,.5)'}
 /** noPrice：lastPrice 为 0 或 priceSource=none 时隐藏最新价线，避免出现 0 价格线 */

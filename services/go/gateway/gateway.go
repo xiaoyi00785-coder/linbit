@@ -28,8 +28,7 @@ type publicRoute struct {
 	optionalAuth bool
 }
 
-// Gateway is the API gateway: it authenticates requests and reverse-proxies
-// them to the account/asset services, following docs/api/openapi.yaml paths.
+// 鉴权并反代到 NewGateway 里登记的上游，不限于 account 与 asset。路径以代码为准。
 type Gateway struct {
 	cfg    Config
 	routes []route
@@ -40,7 +39,7 @@ type Gateway struct {
 	// accessLog is nil when GATEWAY_ACCESS_LOG is off.
 	accessLog *slog.Logger
 	tradfi    *tradfiGuard
-	// rdb backs the logout revocation check (nil = no check).
+	// 登出吊销。nil 时不查 Redis，access 在过期前一直有效。
 	rdb *redis.Client
 }
 
@@ -312,6 +311,7 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		var err error
 		if token != "" {
 			claims, err = common.ParseAccessToken(g.cfg.JWTSecret, token)
+			// iat（毫秒优先 iatms）早于或等于 Redis 截止时间则作废。Redis 故障放行。
 			if err == nil && g.tokenRevoked(r, claims) {
 				claims, err = nil, common.ErrInvalidToken
 			}
@@ -368,8 +368,8 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-// tokenRevoked reports whether the user logged out after the token was issued.
-// A Redis error fails open (logged) so an outage does not lock users out.
+// 读 auth:revoked_before:{uid} 的 unix 毫秒，与 IssuedAtMs 比较。
+// 客户端为空、键不存在或 Redis 出错都返回 false，出错只打日志。
 func (g *Gateway) tokenRevoked(r *http.Request, c *common.AccessClaims) bool {
 	revoked, err := common.AccessTokenRevoked(r.Context(), g.rdb, c)
 	if err != nil {

@@ -1,5 +1,7 @@
 package main
 
+// 撮合输出的成交和深度。HTTP ingest 只是其中一种入站，传输可换。
+
 import (
 	"encoding/json"
 	"log"

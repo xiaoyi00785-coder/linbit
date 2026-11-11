@@ -1,5 +1,8 @@
 package main
 
+// signer.go：mock 签名桩。热钱包 MPC 和冷钱包 2/3 的接口在这里，实现是确定性的假签名。
+// 本文件不持有真实私钥，也不上链。真实签名在独立 signer 进程，种子在那边的 keystore。
+
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,11 +13,6 @@ import (
 
 	"github.com/shopspring/decimal"
 )
-
-// signer.go is the pluggable signing layer. Real deployments back these with a
-// hot-wallet MPC cluster and a cold-wallet 2/3 multisig; here only the interface
-// and deterministic mock implementations exist — no real private keys are held
-// and nothing is broadcast to a real chain.
 
 // SignRequest is an unsigned withdrawal transaction.
 type SignRequest struct {

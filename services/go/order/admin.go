@@ -1,5 +1,7 @@
 package main
 
+// 现货后台：运行时费率来自 fee_rates，空则用环境变量。写接口校验内部令牌。
+
 import (
 	"context"
 	"crypto/subtle"
@@ -13,7 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// feeOverrides holds runtime fee rates loaded from fee_rates (nil = env config).
+// feeOverrides 是库里的运行时费率。maker/taker 为 nil 时用环境变量默认，不把 nil 当成 0。
 type feeOverrides struct {
 	mu    sync.RWMutex
 	maker *decimal.Decimal
@@ -22,7 +24,7 @@ type feeOverrides struct {
 
 var errBadSymbol = errors.New("bad symbol")
 
-// LoadFees refreshes the runtime fee overrides from the database.
+// LoadFees 从 fee_rates 刷新运行时费率。查询失败不改缓存。只认识 spot_maker / spot_taker，缺行保持 nil（回退环境变量）。
 func (s *Server) LoadFees(ctx context.Context) error {
 	rows, err := s.store.db.QueryContext(ctx, `SELECT key, rate::text FROM fee_rates`)
 	if err != nil {
@@ -108,7 +110,7 @@ func parseRate(v string) (*decimal.Decimal, bool) {
 	return &d, true
 }
 
-// PUT /internal/admin/fees {spotMaker?, spotTaker?, by}
+// PUT /internal/admin/fees {spotMaker?, spotTaker?, by}。费率须在 [0, 0.1)。省略的一侧不写库，不变成 0。两边都空则拒绝。
 func (s *Server) handlePutFees(w http.ResponseWriter, r *http.Request) {
 	var req feesRequest
 	if err := common.DecodeJSON(r, &req); err != nil {

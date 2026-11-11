@@ -1,5 +1,8 @@
 package main
 
+// adminops.go：后台账本。读复式分录，以及把营销奖励记到用户可用余额。
+// 对手账户 system:marketing，活动支出在分录里看得见。按 ref 幂等。
+
 import (
 	"context"
 	"errors"
@@ -13,14 +16,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// adminops.go holds back-office ledger operations: reading the double-entry
-// journal and posting manual marketing rewards (reissues).
-
-// MarketingAccount is the platform account that funds rewards and reissues.
+// MarketingAccount 是奖励和补发的平台账户。
 const MarketingAccount = "system:marketing"
 
-// Reward credits a marketing reward to the user's free balance. Counterparty is
-// system:marketing so campaign spend is visible in the journal. Idempotent on ref.
+// Reward 把营销奖励记到用户可用余额。对手是 system:marketing。按 ref 幂等。
 func (s *Store) Reward(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	if amount.Sign() <= 0 {
 		return ErrInvalidAmount

@@ -1,3 +1,4 @@
+/** 简版个人中心只提供返回、外观（跟随系统、日间或夜间）和退出登录。 */
 package click.cowa.linbit.feature.user
 
 import androidx.activity.compose.BackHandler

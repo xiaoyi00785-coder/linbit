@@ -1,3 +1,4 @@
+/** 福利中心：展示新人任务的报名和领取，并列出已登录用户的合约体验金。 */
 package click.cowa.linbit.feature.more
 
 import androidx.compose.foundation.background

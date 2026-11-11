@@ -1,5 +1,8 @@
 package main
 
+// 事件合约后台内部接口，挂在 admin /admin/v1/event 后面。
+// 权限、2FA、原因和审计由 admin 服务做；写接口返回修改前后的值。
+
 import (
 	"fmt"
 	"net/http"
@@ -10,9 +13,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// event_admin.go: internal endpoints behind admin /admin/v1/event (the admin
-// service enforces RBAC, 2FA, reason and audit; writes return before/after).
 
 func (s *Server) evAdminState(r *http.Request) (map[string]any, error) {
 	cfg, err := loadEvConfig(r.Context(), s.db)
@@ -35,9 +35,8 @@ func (s *Server) hEvAdminConfig(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, v)
 }
 
-// PUT /internal/event/config {periods?, payoutRatio?, minStake?, maxStake?,
-// dailyLimit?, exposureLimit?, settleGraceSeconds?, updatedBy}. Changes apply
-// to new orders only; open orders keep their recorded payoutRatio.
+// PUT /internal/event/config {periods?, payoutRatio?, minStake?, maxStake?, dailyLimit?, exposureLimit?, settleGraceSeconds?, updatedBy}。
+// 只影响新订单；已开订单沿用当时记下的 payoutRatio。
 func (s *Server) hEvAdminConfigPut(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Periods        []string `json:"periods"`
@@ -104,8 +103,7 @@ func (s *Server) hEvAdminConfigPut(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"config": after, "before": before, "after": after})
 }
 
-// PUT /internal/event/symbols/{symbol} {paused?, exposureLimit? ("" or null =
-// use the global default), updatedBy}
+// PUT /internal/event/symbols/{symbol} {paused?, exposureLimit?（"" 或 null 表示用全局默认）, updatedBy}。
 func (s *Server) hEvAdminSymbolPut(w http.ResponseWriter, r *http.Request) {
 	sym := strings.ToUpper(r.PathValue("symbol"))
 	var in struct {
@@ -208,8 +206,7 @@ func (s *Server) hEvAdminOrders(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"orders": out, "nextBefore": next})
 }
 
-// GET /internal/event/exposure: unsettled stakes per symbol x period plus
-// today's realised platform P&L (stakes kept minus payouts above stake).
+// GET /internal/event/exposure：按标的×周期的未结算本金，加上今日平台已实现盈亏（留下的本金减去超出本金的赔付）。
 func (s *Server) hEvAdminExposure(w http.ResponseWriter, r *http.Request) {
 	cfg, err := loadEvConfig(r.Context(), s.db)
 	if err != nil {

@@ -1,5 +1,9 @@
 package main
 
+// overview.go：GET /assets/overview。资金账户、现货、合约各自的余额，加上 market-data 指数的 USDT 估值。
+// 某个币没有价格时，该币 valuationUsdt 为 null，并且不进合计，整次请求不失败。
+// 合约服务不可达时 futures.available=false。
+
 import (
 	"context"
 	"encoding/json"
@@ -13,12 +17,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// overview.go: GET /assets/overview — per-wallet balances (funding, spot,
-// futures) plus USDT valuations from the market-data index. A missing price
-// leaves valuationUsdt null for that asset (and out of the totals) rather than
-// failing the whole call; an unreachable futures service yields
-// futures.available=false.
 
 var overviewHTTP = &http.Client{Timeout: 3 * time.Second}
 

@@ -1,7 +1,5 @@
-// Command earn runs Linbit's 理财 products: crypto-collateralised loans
-// (质押借币) and savings (simple earn / fixed-term). Funds move through the
-// asset service's platform accounts (system:loan, system:loan_collateral,
-// system:loan_interest, system:earn, system:earn_interest).
+// earn 跑理财：质押借币，以及活期/定期储蓄。
+// 资金走 asset 的平台账户：system:loan、system:loan_collateral、system:loan_interest、system:earn、system:earn_interest。
 package main
 
 import (

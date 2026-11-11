@@ -1,5 +1,7 @@
 package main
 
+// 模拟现货订单和成交的分页查询。只读 paper_orders / paper_trades。generation 为 0 时用该用户当前代。
+
 import (
 	"context"
 	"net/http"
@@ -34,6 +36,8 @@ func optionalGeneration(raw string) (*int64, error) {
 	}
 	return &n, nil
 }
+
+// ListOrders 只查 paper_orders。status 不是空也不是 filled 时返回空列表：模拟现货单只有全成。
 func (s *Store) ListOrders(ctx context.Context, userID, symbol, status string, generation int64, page, pageSize int) (map[string]any, error) {
 	if generation == 0 {
 		if err := s.db.QueryRowContext(ctx, `SELECT generation FROM paper_accounts WHERE user_id=$1`, userID).Scan(&generation); err != nil {
@@ -90,6 +94,7 @@ type tradeFilter struct {
 	page, pageSize int
 }
 
+// ListTrades 只查 paper_trades。generation 为 0 时改用账户当前代，不读生产成交。
 func (s *Store) ListTrades(ctx context.Context, f tradeFilter) (map[string]any, error) {
 	if f.generation == 0 {
 		if err := s.db.QueryRowContext(ctx, `SELECT generation FROM paper_accounts WHERE user_id=$1`, f.userID).Scan(&f.generation); err != nil {

@@ -15,9 +15,9 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// security.go: account security settings — password change, email/phone
-// change, fund password, anti-phishing code, sessions, security overview, the
-// post-change withdrawal lock and admin-tunable security options.
+// 改密、换绑、资金密码、防钓鱼码、会话和安全变更后的提现锁定。
+// 提现锁默认 24 小时（withdraw_lock_hours，0 表示不加锁），只延长不缩短。
+// 资金密码错误计在 users.fund_pw_failed，默认 5 次后锁定 1440 分钟。这是提现侧的次数限制，不是登录限流。
 
 const purposeSecurity = "security" // code to the user's current contact
 const purposeBindNew = "bind_new"  // code to a new email/phone being bound
@@ -127,7 +127,7 @@ func (s *Store) setFundPassword(ctx context.Context, userID int64, hash string) 
 	return err
 }
 
-// fundFail records a wrong fund password and locks after max attempts.
+// fund_pw_failed 加一。达到 max 则写入 fund_pw_locked_until=now+lock，并把计数清零。
 func (s *Store) fundFail(ctx context.Context, userID int64, max int, lock time.Duration, now time.Time) (locked bool, err error) {
 	var n int
 	if err = s.db.QueryRowContext(ctx, `UPDATE users SET fund_pw_failed=fund_pw_failed+1 WHERE id=$1 RETURNING fund_pw_failed`, userID).Scan(&n); err != nil {
@@ -698,7 +698,7 @@ func (s *Server) checkFund(w http.ResponseWriter, ctx context.Context, u *User, 
 	return false
 }
 
-// fundVerdict returns "" when pw is correct, else a reason.
+// 空串表示密码正确。锁定中直接 fund_password_locked，不再加计数。阈值来自 account_settings，缺省见 defaultSecuritySettings。
 func (s *Server) fundVerdict(ctx context.Context, u *User, si secInfo, pw string) (string, *string) {
 	now := s.now()
 	if lu := timePtr(si.FundLocked, now); lu != nil {
@@ -820,6 +820,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 只把这一条 refresh token 标成 revoked，不写 access 截止时间。
 	done, err := s.store.revokeSession(r.Context(), u.ID, r.PathValue("id"))
 	if err != nil {
 		internalErr(w)
@@ -832,6 +833,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// 只吊销其他设备的 refresh token，不写 access 截止时间。
 func (s *Server) handleRevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.mustUser(w, r)
 	if !ok {
@@ -847,8 +849,9 @@ func (s *Server) handleRevokeOtherSessions(w http.ResponseWriter, r *http.Reques
 
 // ---- internal: outflow verification (wallet) ----
 
-// outflowCheck enforces the withdrawal lock and fund password for an outflow
-// action ("withdraw" | "internal_transfer"). Returns "" when allowed.
+// action 为 withdraw 或 internal_transfer。空 action 直接放行（旧调用方只做二次验证）。
+// 提现看 withdraw_locked_until；站内转账还要 lock_applies_to_internal_transfer 为真。
+// 资金密码按 fund_password_withdraw / fund_password_internal_transfer 决定是否必填。返回空串表示允许。
 func (s *Server) outflowCheck(ctx context.Context, u *User, action, fundPw string) (string, *string) {
 	if action == "" {
 		return "", nil // legacy callers: 2FA only

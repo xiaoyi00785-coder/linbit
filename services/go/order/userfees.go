@@ -1,5 +1,7 @@
 package main
 
+// 用户级现货费率覆盖（spot_fee_overrides）。nil 字段回退全局费率，不把缺省当成 0。
+
 import (
 	"context"
 	"database/sql"
@@ -16,7 +18,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// userFee is a per-user spot fee override; nil fields fall back to the global rate.
+// userFee 的 Maker/Taker 为 nil 时用全局费率。负费率或 >= 0.1 的写入会被拒绝。
 type userFee struct {
 	Maker     *decimal.Decimal
 	Taker     *decimal.Decimal
@@ -30,7 +32,7 @@ type userFeeCache struct {
 	m  map[string]userFee
 }
 
-// LoadUserFees refreshes the per-user override cache from spot_fee_overrides.
+// LoadUserFees 整表重载用户费率。查询失败返回错误且不换缓存；成功则整份替换，避免留下已删除的用户。
 func (s *Server) LoadUserFees(ctx context.Context) error {
 	rows, err := s.store.db.QueryContext(ctx, `SELECT user_id, maker::text, taker::text, note, updated_by, updated_at FROM spot_fee_overrides`)
 	if err != nil {
@@ -68,8 +70,7 @@ func (s *Server) LoadUserFees(ctx context.Context) error {
 	return nil
 }
 
-// userSpotFees returns the effective maker/taker rates for a user and whether
-// either is an override.
+// userSpotFees 返回该用户实际 maker/taker。任一侧有覆盖则 overridden 为真；nil 侧仍用全局费率。
 func (s *Server) userSpotFees(userID string) (maker, taker decimal.Decimal, overridden bool) {
 	maker, taker = s.currentFees()
 	if s.ufees == nil {
@@ -133,11 +134,8 @@ func (s *Server) handleFeeRates(w http.ResponseWriter, r *http.Request, userID s
 	common.WriteJSON(w, http.StatusOK, out)
 }
 
-// handleFeeSchedule is the public, user-independent fee schedule (fractions,
-// 0.001 = 0.1%): the single source the marketing copy ("taker fee as low as
-// …") must read instead of hardcoding. Futures comes from the futures service
-// default (no user override); per-contract rates are in
-// /futures/market/contracts.
+// handleFeeSchedule 是公开的、与用户无关的费率表（小数，0.001 = 0.1%）。文案里的“taker 低至 …”只能读这里，不能写死。
+// 合约费率是合约服务的默认值，不含用户覆盖；分合约费率在 /futures/market/contracts。Cache-Control 公开缓存 60 秒。
 func (s *Server) handleFeeSchedule(w http.ResponseWriter, r *http.Request) {
 	m, t := s.currentFees()
 	out := map[string]any{"spot": feePair{m.String(), t.String()}, "futures": nil}

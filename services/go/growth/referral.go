@@ -8,9 +8,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Regular referral: the inviter earns ReferralRate of each invitee's paid
-// fees for ReferralPeriod after the invitee registers; one level, never
-// stacked with partner commission (an active partner earns partner rates).
+// 普通邀请：邀请人在被邀请人注册后的 ReferralPeriod 内，按 ReferralRate 拿其实际手续费，只有一层。
+// 与合伙人佣金不叠加；邀请人已是有效合伙人时走合伙人费率。
 
 func (s *Server) referralRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /referral/me", s.user(s.handleReferralMe))

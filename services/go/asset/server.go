@@ -1,5 +1,8 @@
 package main
 
+// server.go：资产 HTTP。/assets/* 要网关注入的 X-User-Id；/internal/* 要 X-Internal-Token，网关不转发。
+// 余额对外是固定 8 位小数的十进制字符串（StringFixed(8)），不用 float。
+
 import (
 	"context"
 	"errors"
@@ -14,10 +17,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Server wires configuration, storage and HTTP handlers for the asset service.
+// Server 接上配置、存储和 HTTP。hedgeBlocked 非空时关掉闪兑对冲，闪兑本身继续。
 type Server struct {
-	// hedgeBlocked != "" disables convert hedging (mainnet: no valid hedge
-	// account). Convert itself keeps working.
+	// hedgeBlocked 非空则禁止闪兑对冲（主网没有合法对冲账户）。闪兑成交本身不受影响。
 	hedgeBlocked string
 	cfg          Config
 	store        *Store
@@ -29,16 +31,12 @@ type Server struct {
 	hedgeOnce sync.Once
 }
 
-// NewServer constructs a Server.
+// NewServer 组装资产服务。行情来自 MARKET_URL 的指数。
 func NewServer(cfg Config, store *Store) *Server {
 	return &Server{cfg: cfg, store: store, prices: marketIndexSource(cfg.MarketURL), now: time.Now}
 }
 
-// Routes returns the asset service HTTP handler.
-//
-// /assets/* are user-facing and expect the X-User-Id header injected by the
-// gateway after it validates the JWT. /internal/* are service-to-service and
-// require the shared X-Internal-Token; the gateway never proxies them.
+// Routes 返回资产服务的 HTTP 处理函数。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
@@ -49,8 +47,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /assets/deposit-account", s.handlePutDepositAccount)
 	mux.HandleFunc("DELETE /assets/deposit-account", s.handleDeleteDepositAccount)
 
-	// Wallet user-facing endpoints (/wallet/*) live in the wallet service; this
-	// service exposes only the internal double-entry operations it drives.
+	// 用户充提接口在钱包服务。这里只暴露它驱动的内部复式记账。
 
 	mux.HandleFunc("POST /internal/accounts", s.internal(s.handleInitAccount))
 	mux.HandleFunc("POST /internal/credit", s.internal(s.handleCredit))
@@ -79,7 +76,7 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
-// internal guards service-to-service endpoints with the shared token.
+// internal 用共享 X-Internal-Token 挡住服务间接口。令牌为空则拒绝。
 func (s *Server) internal(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.InternalToken == "" || r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
@@ -98,9 +95,8 @@ type balanceDTO struct {
 	Locked       string  `json:"locked"`
 	Total        string  `json:"total"`
 	ValuationUsd *string `json:"valuationUsd"`
-	// PriceUsd is the live market-data index price (USDT) used for the valuation;
-	// clients must show it as the unit price rather than valuationUsd/quantity,
-	// which is distorted for dust balances by the 2-decimal valuation rounding.
+	// PriceUsd 是估值用的实时指数价（USDT）。客户端应直接展示它。
+	// 用 valuationUsd/数量反推单价会被 2 位小数的估值四舍五入带偏，尘埃余额尤其明显。
 	PriceUsd *string `json:"priceUsd,omitempty"`
 }
 
@@ -112,7 +108,7 @@ type paginatedBalances struct {
 	Account  string       `json:"account"` // which wallet was listed: spot | funding
 }
 
-// balancesAccount normalises ?account= (case/space-insensitive; "" = spot).
+// balancesAccount 规范化 ?account=。忽略大小写和空白；空字符串是现货 spot。
 func balancesAccount(raw string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", AcctSpot:
@@ -142,8 +138,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "请先登录")
 		return
 	}
-	// Lazily ensure the account exists so a freshly-registered user always has
-	// balances even if the register-time init call did not reach this service.
+	// 懒创建账户。注册时的初始化若没打到本服务，第一次读余额仍能看到零余额。
 	if err := s.store.EnsureAccount(r.Context(), userID); err != nil {
 		log.Printf("balances: ensure account: %v", err)
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
@@ -233,7 +228,7 @@ type walletMovementRequest struct {
 	Account    string `json:"account"` // deposit only: spot|funding (default: deposit_account setting)
 }
 
-// handleDeposit credits a confirmed on-chain deposit (idempotent on ref).
+// handleDeposit 入账已确认的链上充值，按 ref 幂等。
 func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
 	var req walletMovementRequest
 	if err := common.DecodeJSON(r, &req); err != nil || req.UserID == "" || req.Asset == "" {
@@ -265,8 +260,7 @@ func (s *Server) handleDeposit(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleWithdrawComplete debits a confirmed withdrawal from locked and books the
-// gas to the platform account (idempotent on ref).
+// handleWithdrawComplete 从冻结扣掉已确认提现，Gas 记到平台账户。按 ref 幂等。
 func (s *Server) handleWithdrawComplete(w http.ResponseWriter, r *http.Request) {
 	var req walletMovementRequest
 	if err := common.DecodeJSON(r, &req); err != nil || req.UserID == "" || req.Asset == "" {
@@ -323,7 +317,7 @@ func (s *Server) handleMovement(w http.ResponseWriter, r *http.Request, fn movem
 	common.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// settleRequest is the internal settlement payload sent by the order service.
+// settleRequest 是订单服务送来的一笔成交结算。按 tradeId 幂等。
 type settleRequest struct {
 	TradeID        string `json:"tradeId"`
 	Base           string `json:"base"`
@@ -375,7 +369,7 @@ func (s *Server) handleSettle(w http.ResponseWriter, r *http.Request) {
 	err := s.store.Settle(r.Context(), sr)
 	switch {
 	case errors.Is(err, ErrAlreadySettled):
-		// Idempotent: already applied, report success without re-applying.
+		// 已经结算过：直接成功，不再动余额。
 		common.WriteJSON(w, http.StatusOK, map[string]string{"status": "already_settled"})
 	case errors.Is(err, ErrInsufficient):
 		common.WriteError(w, http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")

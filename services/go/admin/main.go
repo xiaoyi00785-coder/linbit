@@ -1,8 +1,7 @@
-// Command admin is the Linbit back-office API (prototypes/admin/DESIGN.md).
-// It owns admin accounts, sessions, RBAC, the append-only audit log and the
-// multi-party approval workflows (fee changes, large coupons / rewards,
-// two-person withdrawal review), and calls the other services' internal
-// endpoints with the shared X-Internal-Token. It never touches their tables.
+// Command admin：后台账号、会话、RBAC、只追加的审计，以及费用、大额卡券/奖励、提现双人复核、人工调账。
+// 调其他服务只用 X-Internal-Token，不写它们的表。
+// 登录失败记在 admin_users.failed_attempts，满 ADMIN_MAX_FAILED_LOGINS（默认 5）锁定 ADMIN_LOCKOUT_MINUTES（默认 15）。
+// ADMIN_IP_ALLOWLIST 为空则不限来源 IP。
 package main
 
 import (

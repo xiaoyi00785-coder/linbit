@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke test for the Linbit spot chain:
-#   register -> login -> query balances (all through the gateway).
-#
-# Two ways to run it:
-#
-#   1. No stack running (default, no Docker needed): this script boots the local
-#      devstack (embedded postgres + miniredis + the 3 services), re-runs itself
-#      inside it, and tears everything down afterwards.
-#
-#        bash scripts/smoke.sh
-#
-#   2. Against an already-running stack: export GATEWAY_URL and run it.
-#
-#        GATEWAY_URL=http://localhost:8080 SMOKE_INNER=1 bash scripts/smoke.sh
-#
+# 现货链路端到端 smoke：注册 → 登录 → 查余额（都走 gateway）。
+# 无栈（默认，不需要 Docker）：拉起 devstack（内嵌 postgres + miniredis + 3 个服务），
+# 在里面重跑本脚本，结束后拆掉。
+#   bash scripts/smoke.sh
+# 已有栈：
+#   GATEWAY_URL=http://localhost:8080 SMOKE_INNER=1 bash scripts/smoke.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -22,9 +12,8 @@ cd "$(dirname "$0")/.."
 if [ "${SMOKE_INNER:-}" != "1" ]; then
   echo "== booting devstack (embedded postgres + miniredis + services) =="
   ROOT="$(pwd)"
-  # devstack is its own Go module; run it from inside that module and point it
-  # back at the repo root. It boots the stack, re-runs this script inside it
-  # (SMOKE_INNER=1, cwd = repo root), then tears everything down.
+  # devstack 是独立 Go module：进该目录运行，并用 -root 指回仓库根。
+  # 它拉起栈，在其中重跑本脚本（SMOKE_INNER=1，cwd 为仓库根），然后拆掉。
   cd tools/devstack
   exec go run . -root "$ROOT" -exec "SMOKE_INNER=1 bash scripts/smoke.sh"
 fi
@@ -49,9 +38,7 @@ json_get() {
   fi
 }
 
-# Registration now requires an email/SMS verification code. The code is read
-# back via the account service's dev-only internal endpoint (DEV_MODE=true),
-# standing in for a real provider.
+# 注册需要邮箱或短信验证码。经 account 的 DEV_MODE 内部接口读回，代替真实服务商。
 [ -n "$INTERNAL_TOKEN" ] || fail "INTERNAL_TOKEN not set (needed to read dev verification code)"
 
 say "1/3 register $EMAIL (request code -> register)"

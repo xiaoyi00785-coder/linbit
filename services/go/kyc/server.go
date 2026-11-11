@@ -10,12 +10,9 @@ import (
 	"github.com/linbit/platform/services/go/common/storage"
 )
 
-// Server wires configuration, storage, the document object store and the account
-// client into the KYC HTTP handlers.
-//
-// /kyc/* are user-facing (the gateway injects X-User-Id after validating the JWT).
-// /admin/* are review endpoints guarded by the shared X-Internal-Token and, like
-// the wallet's admin review endpoints, are never proxied by the gateway.
+// Server 把配置、库、证件对象存储和 account 客户端接到 KYC 的 HTTP 上。
+// /kyc/* 面向用户（gateway 校验 JWT 后注入 X-User-Id）。
+// /admin/* 用 X-Internal-Token，gateway 不转发。
 type Server struct {
 	cfg     Config
 	store   *Store

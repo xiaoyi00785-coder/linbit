@@ -11,7 +11,7 @@ object Fmt {
     private val BIG_1 = BigDecimal.ONE
     private val BIG_001 = BigDecimal("0.01")
 
-    /** 服务端字符串原样显示（8 位小数的手续费 / 盈亏 / 账单；末尾的 0 也保留）。空值显示 "--"。 */
+    /** 服务端金额是十进制字符串；exact() 原样显示并保留末尾的 0（8 位小数的手续费、盈亏和账单）。空值显示 "--"。 */
     fun exact(s: String?): String = s?.trim()?.takeIf { it.isNotEmpty() } ?: "--"
 
     /** 在整数部分插入千分位。入参为 toPlainString() 的结果。 */

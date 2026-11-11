@@ -1,5 +1,8 @@
 package main
 
+// 模拟盘 HTTP。身份用 Bearer 访问令牌再验一次，不信任调用方自带的 X-User-Id。
+// 现货和合约模拟都不写生产余额。
+
 import (
 	"encoding/json"
 	"errors"
@@ -14,6 +17,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Server 的 futures 为空时，合约行情回落到 NewLiveFutures(FUTURES_URL)，仍然只读。
 type Server struct {
 	cfg      Config
 	store    *Store
@@ -23,12 +27,12 @@ type Server struct {
 	futures  FutSource
 }
 
+// NewServer 不连行情、不建模拟账户。futures 留空；请求时若仍为空，按 FUTURES_URL 只读真实行情。
 func NewServer(cfg Config, store *Store, features *FeatureGate, market Market, notifier NotificationSender) *Server {
 	return &Server{cfg: cfg, store: store, features: features, market: market, notifier: notifier}
 }
 
-// authenticate validates the Bearer access token again at the service rather
-// than trusting a caller-supplied X-User-Id. Gateway is the normal entry point.
+// authenticate 再验一次 Bearer 访问令牌，不信任 X-User-Id。子账户会话（Acct 非空）拒绝。网关是正常入口。
 func (s *Server) authenticate(r *http.Request) (string, error) {
 	parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
@@ -61,6 +65,8 @@ func (s *Server) feature(w http.ResponseWriter, r *http.Request, key string) (st
 	}
 	return uid, true
 }
+
+// Routes 挂模拟现货、价格预警和模拟合约。这些路径都不写生产余额。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
@@ -174,8 +180,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 			if items[i].Asset == "USDT" {
 				continue
 			}
-			// USDT-denominated index is optional display-only valuation. Missing
-			// market data must not fabricate a quote or affect stored balances.
+			// 非 USDT 的美元估值只用于展示。行情缺失不编价格，也不改 paper_balances。
 			quote, err := s.market.Index(r.Context(), items[i].Asset+"USDT")
 			if err == nil {
 				items[i].PriceUSD = dptr(quote.Price)

@@ -17,6 +17,7 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
     const r = await fetch(BASE + path, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(tok ? { Authorization: `Bearer ${tok}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const t = await r.text(); const j = t ? JSON.parse(t) : {};
     if (r.ok) return { ok: true, data: j, status: r.status, source: "api" };
+    // 401 清掉本地令牌，本站不做刷新重试。
     if (r.status === 401) setToken(null);
     if (r.status < 500) return { ok: false, error: j.message || `HTTP ${r.status}`, code: j.code, status: r.status, source: "api" };
   } catch { /* 不可达 */ }

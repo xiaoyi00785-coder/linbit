@@ -1,10 +1,7 @@
-// Command marketmaker quotes every spot and futures pair around the external
-// index price (market-data /market/index: Binance, OKX backup): a ladder of
-// limit orders on both sides with an inventory skew, refreshed every few
-// seconds, under one market-maker account (MM_USER_ID). When the index is
-// unavailable it cancels that pair's quotes, pauses it and sends a Telegram
-// alert. There is no stop-loss (owner decision). Parameters and start/stop are
-// driven by the admin service (RBAC + 2FA + audit) via /internal/mm/*.
+// marketmaker 用一个做市账户（MM_USER_ID）给每个现货和合约对挂买卖限价阶梯，
+// 价格围绕 market-data 的 /market/index，按库存偏移，每隔数秒刷新。
+// 指数不可用就撤掉该对报价、暂停，并发 Telegram。没有止损（产品决定）。
+// 参数和启停由 admin（RBAC、2FA、审计）经 /internal/mm/* 下发。
 package main
 
 import (

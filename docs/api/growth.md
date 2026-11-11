@@ -1,115 +1,101 @@
-# Growth service API (`services/go/growth`, :8091)
+# 增长服务 API（`services/go/growth`，:8091）
 
-User-growth programs. Routed by the gateway under `/partner`, `/referral`,
-`/points`, `/rewards`, `/activities` (JWT required unless marked public).
-The service follows other services through internal cursor feeds:
+用户增长。Gateway 挂在 `/partner`、`/referral`、`/points`、`/rewards`、`/activities`（未标 public 的要 JWT）。和其他服务一样跟内部游标 feed：
 
-| Feed | Source |
+| Feed | 来源 |
 |---|---|
-| `GET /internal/users/feed?after&limit`, `GET /internal/users/profile?uid=a,b` | account (registration invite code, KYC level) |
-| `GET /internal/trades/feed?after&limit` | order (spot fills, per side) |
-| `GET /internal/trades/feed?after&limit` | futures (fills per side; copy sub-accounts mapped to the follower; `bonusFee` = fee paid by trial bonus) |
-| `GET /internal/ops/feed?after&limit` | asset (wallet ops: deposit, futures_out, …) |
+| `GET /internal/users/feed?after&limit`、`GET /internal/users/profile?uid=a,b` | account（注册邀请码、KYC 等级） |
+| `GET /internal/trades/feed?after&limit` | order（现货成交，按边） |
+| `GET /internal/trades/feed?after&limit` | futures（按边的成交；跟单子账户映射到跟随者；`bonusFee` = 体验金支付的手续费） |
+| `GET /internal/ops/feed?after&limit` | asset（钱包操作：deposit、futures_out、…） |
 
-Payouts use asset `POST /internal/system-transfer` (platform accounts
-`rebate`, `marketing`, `earn`, `earn_interest`, `loan`, `loan_collateral`,
-`loan_interest`; idempotent on `ref`).
+派奖走 asset `POST /internal/system-transfer`（平台账户 `rebate`、`marketing`、`earn`、`earn_interest`、`loan`、`loan_collateral`、`loan_interest`；按 `ref` 幂等）。
 
-## Invite attribution
-`POST /auth/register` accepts `inviteCode`. Every user gets an 8-character
-code; the inviter is fixed at registration, one level only.
+## 邀请归属
 
-## Partner program (`/partner`)
+`POST /auth/register` 接受 `inviteCode`。每个用户有一个 8 位邀请码；邀请人在注册时定死，只有一级。
 
-| Method | Path | Notes |
+## 合伙人（`/partner`）
+
+| 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/partner/rules` | **public** – tiers, override, settlement |
-| POST | `/partner/apply` | `{contact, channel, scale}`; pending until admin review (`GROWTH_PARTNER_AUTO_APPROVE=false`); re-apply allowed after rejection. Errors `INVALID_APPLICATION`, `PARTNER_EXISTS` |
+| GET | `/partner/rules` | **public**。档位、级差、结算 |
+| POST | `/partner/apply` | `{contact, channel, scale}`；`GROWTH_PARTNER_AUTO_APPROVE=false` 时待后台审核；驳回后可再申请。错误 `INVALID_APPLICATION`、`PARTNER_EXISTS` |
 | GET | `/partner/me` | `{status: none\|pending\|active\|rejected\|disabled, tier, futuresRate, spotRate, partner{reviewNote…}}` |
-| GET | `/partner/summary` | tier, `volume30d`, `nextTier{gap}`, `directs`, `directPartners`, `unsettledEstimate`, `yesterday`, `month`, `total`, `overrideTotal`, `pendingPayout` |
-| GET | `/partner/commissions?kind=futures\|spot\|override\|referral&page&pageSize` | settled rows (per source user per day) |
-| GET | `/partner/commissions/daily?days=30` | per-day totals by kind |
-| GET | `/partner/team?type=all\|user\|partner&page&pageSize` | directs with 30-day volume, fees, commission |
+| GET | `/partner/summary` | tier、`volume30d`、`nextTier{gap}`、`directs`、`directPartners`、`unsettledEstimate`、`yesterday`、`month`、`total`、`overrideTotal`、`pendingPayout` |
+| GET | `/partner/commissions?kind=futures\|spot\|override\|referral&page&pageSize` | 已结算行（每个来源用户每天） |
+| GET | `/partner/commissions/daily?days=30` | 按日、按 kind 合计 |
+| GET | `/partner/team?type=all\|user\|partner&page&pageSize` | 直客，含 30 日成交量、手续费、佣金 |
 | GET | `/partner/links` | `{code, url, registerUrl}` |
 
-Non-partners get `403 NOT_PARTNER` on summary / commissions / team.
+非合伙人访问 summary / commissions / team 得到 `403 NOT_PARTNER`。
 
-Tiers (by directs' trailing-30-day futures notional, recomputed at each settlement):
+档位（按直客近 30 日合约名义，每次结算重算）：
 
-| Tier | Threshold (USDT) | Futures | Spot |
+| 档 | 阈值（USDT） | 合约 | 现货 |
 |---|---|---|---|
-| normal | approved | 30% | 20% |
+| normal | 已通过 | 30% | 20% |
 | silver | ≥ 5,000,000 | 40% | 25% |
 | gold | ≥ 20,000,000 | 45% | 30% |
 | diamond | ≥ 50,000,000 | 50% | 35% |
 
-Commission base = fee actually paid (minus trial-bonus and fee-coupon covered
-parts), in USDT. Spot fees in the base asset are valued at the fill price;
-only `GROWTH_USD_QUOTES` pairs count. Override: the partner's inviter, if an
-active partner, earns 10% of the direct commission, and that partner's inviter
-likewise (platform-funded, at most 2 override levels above the direct partner;
-each is 10% of the direct commission, level 3+ earns nothing). `/partner/rules`
-returns `overrideDepth` (2) and `overrideLevels` (3, total incl. direct). Settled daily at `GROWTH_SETTLE_HOUR_UTC` (16 = 00:00 UTC+8)
-into the funding account (`ref growth_comm_<settlement>_<uid>`); valid for life.
+佣金基数 = 实际支付的手续费（减去体验金和手续费券覆盖的部分），单位 USDT。基础币收取的现货手续费按成交价折算；只计 `GROWTH_USD_QUOTES` 交易对。级差：合伙人的邀请人若是活跃合伙人，拿直客佣金的 10%；该邀请人的邀请人同样（平台出资，直客合伙人往上最多 2 级；每级都是直客佣金的 10%，第 3 级及以上为 0）。`/partner/rules` 返回 `overrideDepth`（2）和 `overrideLevels`（3，含直客本人）。每日 `GROWTH_SETTLE_HOUR_UTC`（16 = 00:00 UTC+8）结算进资金账户（`ref growth_comm_<settlement>_<uid>`）；终身有效。
 
-## Referral (`/referral`)
+## 邀请返佣（`/referral`）
 
-| Method | Path | Notes |
+| 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/referral/me` | code, url, rate (10%), validDays (365), invited, verified, totalRewards, partnerStatus, invitedBy |
-| GET | `/referral/invitees` | masked uid, registeredAt, kycLevel, rewardUntil, active, rewards |
-| GET | `/referral/rewards` | settled referral rows |
+| GET | `/referral/me` | code、url、rate（10%）、validDays（365）、invited、verified、totalRewards、partnerStatus、invitedBy |
+| GET | `/referral/invitees` | 打码 uid、registeredAt、kycLevel、rewardUntil、active、rewards |
+| GET | `/referral/rewards` | 已结算的邀请行 |
 
-Inviters who are active partners earn partner rates instead – never both.
-Copy-trading profit share is not a fee and earns nothing.
+邀请人已是活跃合伙人时按合伙人比例计，两边不叠加。跟单分润不是手续费，不计佣。
 
-## Internal / dev
-- `GET /internal/referrals/{uid}` (admin lookup).
-- Dev (DEV_MODE): `POST /internal/dev/growth/backdate {uid, days}` shifts registration back (tests the 1-year window).
-- `GET /internal/partners`, `POST /internal/partners/{uid}/review {decision approve|reject|disable, reason, reviewer}` (admin service).
-- `POST /internal/dev/growth/sync`, `POST /internal/dev/growth/settle[?cutoff=RFC3339]` (DEV_MODE only).
+## 内部 / 开发
 
-## Configuration
-## Points carnival (积分嘉年华)
+- `GET /internal/referrals/{uid}`（后台查询）。
+- 开发（DEV_MODE）：`POST /internal/dev/growth/backdate {uid, days}` 把注册时间往前拨（测 1 年窗口）。
+- `GET /internal/partners`，`POST /internal/partners/{uid}/review {decision approve|reject|disable, reason, reviewer}`（admin 服务）。
+- `POST /internal/dev/growth/sync`，`POST /internal/dev/growth/settle[?cutoff=RFC3339]`（仅 DEV_MODE）。
 
-Public: `GET /points/campaigns`, `GET /points/campaign[?campaign=key]` (active, else next upcoming, else latest ended; includes rules and redeem table).
-User: `POST /points/enroll {campaign?}`, `GET /points/me` (balance, today's task progress, redeemed tiers; tasks reset 00:00 UTC),
-`GET /points/history`, `POST /points/redeem {points}`, `GET /points/redemptions`.
-Errors: CAMPAIGN_ENDED, CAMPAIGN_NOT_STARTED, NOT_ENROLLED, INVALID_TIER, ALREADY_REDEEMED (each tier once per period), INSUFFICIENT_POINTS.
-Points are earned only while enrolled and inside the period; balance shows 0 after the period ends.
-Internal: `GET|POST /internal/points/campaigns` (admin `points/campaigns`, reward:edit + 2FA).
+## 积分嘉年华
 
-## Coupon center (卡券中心)
+公开：`GET /points/campaigns`，`GET /points/campaign[?campaign=key]`（进行中，否则下一档即将开始，否则最近已结束；含规则和兑换表）。
+用户：`POST /points/enroll {campaign?}`，`GET /points/me`（余额、今日任务进度、已兑换档；任务 00:00 UTC 重置），`GET /points/history`，`POST /points/redeem {points}`，`GET /points/redemptions`。
+错误：CAMPAIGN_ENDED、CAMPAIGN_NOT_STARTED、NOT_ENROLLED、INVALID_TIER、ALREADY_REDEEMED（每期每档一次）、INSUFFICIENT_POINTS。
+只在已报名且处于活动期内计分；期结束后余额显示 0。
+内部：`GET|POST /internal/points/campaigns`（后台 `points/campaigns`，reward:edit + 2FA）。
 
-`GET /coupons[?status=issued|active|expired]` (active vouchers carry the live futures bonus `bonus.remaining`), `GET /coupons/summary`,
-`POST /coupons/{id}/activate` → futures `POST /internal/bonus/grant` (ref `coupon:<id>`). Trial vouchers need futures own funds ≥ amount (INSUFFICIENT_OWN_FUNDS).
-Errors: COUPON_NOT_FOUND, COUPON_NOT_ACTIVATABLE. Internal: `GET /internal/coupons?userId=`.
+## 卡券中心
 
-## Newcomer gift package (新人礼包) / invite KYC reward / activity center
+`GET /coupons[?status=issued|active|expired]`（激活中的券带合约赠金实时余额 `bonus.remaining`），`GET /coupons/summary`，`POST /coupons/{id}/activate` → futures `POST /internal/bonus/grant`（ref `coupon:<id>`）。体验金券要求合约自有资金 ≥ amount（`INSUFFICIENT_OWN_FUNDS`）。
+错误：COUPON_NOT_FOUND、COUPON_NOT_ACTIVATABLE。内部：`GET /internal/coupons?userId=`。
 
-`GET /rewards/newcomer` (KYC state, enrollment window, 8 tasks with `status` locked|in_progress|claimable|claimed|expired),
-`POST /rewards/newcomer/enroll` (KYC ≥ GROWTH_NEWCOMER_KYC_LEVEL, once per user; window GROWTH_NEWCOMER_DAYS from enrollment),
-`POST /rewards/newcomer/tasks/{key}/claim` → voucher in the coupon center (source `newcomer:<task>:<uid>`).
-Tasks: `bind` (email + phone verified → deduction), `first_deposit` (a USD deposit ≥ min inside the window followed by a transfer
-to futures → trial), `volume_1..6` (cumulative futures notional since enrollment, stackable → trial).
-Errors: KYC_REQUIRED (403), ALREADY_ENROLLED, NOT_ENROLLED, TASK_NOT_FOUND, TASK_NOT_COMPLETED, ALREADY_CLAIMED.
-Invite: when an invitee reaches GROWTH_INVITE_KYC_LEVEL within GROWTH_INVITE_KYC_DAYS of registering, inviter and invitee each
-get a GROWTH_INVITE_KYC_REWARD trial voucher (checked on every sync; idempotent).
-Public `GET /activities`: newcomer + invite (long-term) and every points period with its status (period 5 = ended).
-Dev (account): `POST /internal/dev/account/bind-phone {uid, phone}`.
+## 新人礼包 / 邀请 KYC 奖励 / 活动中心
 
-| Env | Default |
+`GET /rewards/newcomer`（KYC 状态、报名窗口、8 个任务，`status` 为 locked|in_progress|claimable|claimed|expired），
+`POST /rewards/newcomer/enroll`（KYC ≥ GROWTH_NEWCOMER_KYC_LEVEL，每用户一次；窗口为报名起 GROWTH_NEWCOMER_DAYS），
+`POST /rewards/newcomer/tasks/{key}/claim` → 卡券中心发券（source `newcomer:<task>:<uid>`）。
+任务：`bind`（邮箱 + 手机都已验证 → 抵扣金），`first_deposit`（窗口内一笔 USD 充值 ≥ min，随后划入合约 → 体验金），`volume_1..6`（报名后累计合约名义，可叠加 → 体验金）。
+错误：KYC_REQUIRED（403）、ALREADY_ENROLLED、NOT_ENROLLED、TASK_NOT_FOUND、TASK_NOT_COMPLETED、ALREADY_CLAIMED。
+邀请：被邀请人在注册后 GROWTH_INVITE_KYC_DAYS 内达到 GROWTH_INVITE_KYC_LEVEL 时，邀请人和被邀请人各得一张 GROWTH_INVITE_KYC_REWARD 体验金券（每次 sync 检查，幂等）。
+公开 `GET /activities`：新人 + 邀请（长期）以及每一期积分及其状态（第 5 期 = 已结束）。
+开发（account）：`POST /internal/dev/account/bind-phone {uid, phone}`。
+
+## 配置
+
+| 变量 | 默认 |
 |---|---|
 | GROWTH_SYNC_MS | 2000 |
 | GROWTH_SETTLE_HOUR_UTC | 16 |
 | GROWTH_DAY_UTC_OFFSET_HOURS | 8 |
 | GROWTH_PAYOUT_ASSET | USDT |
 | GROWTH_USD_QUOTES | USDT,USDC |
-| GROWTH_INVITE_BASE_URL | https://www.cowa.click/r/ (mainnet). Invite link = base + code; web serves /r/{code} → /register?inviteCode={code}, and registerUrl = base minus "r/" + "register?inviteCode=" |
-| GROWTH_PARTNER_TIERS | normal:0:0.30:0.20,silver:5000000:0.40:0.25,gold:20000000:0.45:0.30,diamond:50000000:0.50:0.35 (key:minFutures30dVolume:futuresRate:spotRate) |
+| GROWTH_INVITE_BASE_URL | https://www.cowa.click/r/（主网）。邀请链接 = base + code；web 的 `/r/{code}` → `/register?inviteCode={code}`；registerUrl = base 去掉 `r/` 再加 `register?inviteCode=` |
+| GROWTH_PARTNER_TIERS | normal:0:0.30:0.20,silver:5000000:0.40:0.25,gold:20000000:0.45:0.30,diamond:50000000:0.50:0.35（key:minFutures30dVolume:futuresRate:spotRate） |
 | GROWTH_TIER_WINDOW_DAYS | 30 |
 | GROWTH_PARTNER_OVERRIDE_RATE | 0.10 |
-| GROWTH_PARTNER_OVERRIDE_DEPTH | 2 (extra override levels above the direct partner; level 3+ earns nothing) |
+| GROWTH_PARTNER_OVERRIDE_DEPTH | 2（直客合伙人之上的额外级差层数；第 3 级及以上为 0） |
 | GROWTH_PARTNER_AUTO_APPROVE | false |
 | GROWTH_REFERRAL_RATE | 0.10 |
 | GROWTH_REFERRAL_DAYS | 365 |
@@ -125,10 +111,10 @@ Dev (account): `POST /internal/dev/account/bind-phone {uid, phone}`.
 | GROWTH_POINTS_REDEEM | 10:deduction:3,20:deduction:6,35:trial:10,50:deduction:10,75:trial:20,100:trial:30,200:deduction:75,300:trial:100 |
 | GROWTH_NEWCOMER_DAYS | 7 |
 | GROWTH_NEWCOMER_KYC_LEVEL | 1 |
-| GROWTH_NEWCOMER_BIND_REWARD | 5 (deduction) |
+| GROWTH_NEWCOMER_BIND_REWARD | 5（抵扣金） |
 | GROWTH_NEWCOMER_DEPOSIT_MIN | 50 |
-| GROWTH_NEWCOMER_DEPOSIT_REWARD | 5 (trial) |
-| GROWTH_NEWCOMER_VOLUME_TIERS | 10000:5,50000:10,100000:15,300000:30,500000:50,1000000:100 (trial) |
-| GROWTH_INVITE_KYC_REWARD | 20 (trial, each side) |
+| GROWTH_NEWCOMER_DEPOSIT_REWARD | 5（体验金） |
+| GROWTH_NEWCOMER_VOLUME_TIERS | 10000:5,50000:10,100000:15,300000:30,500000:50,1000000:100（体验金） |
+| GROWTH_INVITE_KYC_REWARD | 20（体验金，双方各一张） |
 | GROWTH_INVITE_KYC_LEVEL | 1 |
 | GROWTH_INVITE_KYC_DAYS | 30 |

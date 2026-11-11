@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Smoke for sub-accounts: parent 2FA gate, create/limit/dup, idempotent spot
-# transfers with ledger, asset + order visibility, API keys (permissions, IP
-# allowlist, never wallet/parent endpoints), sub login (off by default, own
-# password + 2FA, fenced session), freeze/unfreeze, admin list/settings/freeze,
-# sub excluded from withdraw verification.
+# 子账户 smoke：父账户 2FA 门槛、创建/上限/重复、现货划转幂等且记账、资产与订单可见性、
+# API key（权限、IP 白名单，不能打钱包/父账户接口）、子账户登录（默认关，自有密码 + 2FA，会话隔离）、
+# 冻结/解冻、后台列表/设置/冻结、子账户不参与提现验证。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

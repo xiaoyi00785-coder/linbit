@@ -1,5 +1,7 @@
 package main
 
+// 合约信息页的公开数据：风险限额档、逐仓参数、指数成分、标记价历史、资金费历史、保险基金余额历史。不需要登录。
+
 import (
 	"context"
 	"net/http"
@@ -11,11 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// publicdata.go: public (no auth) data for the futures info pages — risk-limit
-// tiers, isolated-margin parameters, index composition, mark-price history,
-// funding-rate history and the insurance-fund balance history.
-
-// timeRange reads startTime/endTime (unix ms, both optional).
+// timeRange 读 startTime/endTime（unix 毫秒，都可空）。非法数字返回错误，不截断成 0。
 func timeRange(r *http.Request) (start, end *time.Time, err error) {
 	parse := func(k string) (*time.Time, error) {
 		v := strings.TrimSpace(r.URL.Query().Get(k))

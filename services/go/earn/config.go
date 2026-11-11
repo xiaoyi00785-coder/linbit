@@ -1,5 +1,7 @@
 package main
 
+// 理财配置。借币按小时利率计提，LTV 和强平参数来自环境变量。
+
 import (
 	"strings"
 	"time"
@@ -8,11 +10,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Collateral 是可质押资产和单用户质押上限。
 type Collateral struct {
 	Asset string          `json:"asset"`
 	Cap   decimal.Decimal `json:"cap"` // per-user collateral cap
 }
 
+// LoanRules 是借币的小时利率、期限、LTV 线和强平参数。
 type LoanRules struct {
 	Asset        string                     `json:"asset"`
 	Rates        map[string]decimal.Decimal `json:"hourlyRates"` // term -> hourly rate
@@ -29,6 +33,7 @@ type LoanRules struct {
 	EarlyPenalty decimal.Decimal            `json:"earlyRepayPenaltyRate"`
 }
 
+// Config 是 earn 的运行配置。
 type Config struct {
 	Port          string
 	DatabaseURL   string
@@ -64,6 +69,7 @@ func parseCollaterals(s string) []Collateral {
 	return out
 }
 
+// LoadConfig 从环境变量读取借币规则和依赖服务地址。
 func LoadConfig() Config {
 	cols := parseCollaterals(common.Env("LOAN_COLLATERALS", "BTC:10,ETH:50"))
 	if len(cols) == 0 {

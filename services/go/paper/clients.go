@@ -1,5 +1,7 @@
 package main
 
+// 模拟盘的外部只读依赖：功能开关、指数价、站内通知。指数不走会回落到 LAST 的公开接口。
+
 import (
 	"context"
 	"crypto/sha256"
@@ -19,16 +21,19 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// FeatureGate reads the same app feature registry that backs /app/features.
-// Unknown keys, a missing row or a database error all keep the feature closed.
+// FeatureGate 读和 /app/features 同一张开关表。未知 key、缺行或数据库错误都保持关闭。
+// 环境变量 PAPER_TRADING_ENABLED / PRICE_ALERTS_ENABLED 为 true/false 时压过库。
 type FeatureGate struct {
 	store  *Store
 	direct map[string]string
 }
 
+// NewFeatureGate 只接 paperTrading 和 priceAlerts。其他 key 在 Enabled 里直接 false。
 func NewFeatureGate(cfg Config, store *Store) *FeatureGate {
 	return &FeatureGate{store: store, direct: map[string]string{"paperTrading": cfg.PaperTradingEnabled, "priceAlerts": cfg.PriceAlertsEnabled}}
 }
+
+// Enabled 对未知 key 返回 false 且 err=nil。库错误返回 err，调用方应按关闭处理。
 func (g *FeatureGate) Enabled(ctx context.Context, key string) (bool, error) {
 	if key != "paperTrading" && key != "priceAlerts" {
 		return false, nil
@@ -50,17 +55,19 @@ func (g *FeatureGate) Enabled(ctx context.Context, key string) (bool, error) {
 	return enabled, nil
 }
 
-// MarketClient only uses the privileged IndexNoLocal contract, never the
-// public /market/index endpoint (whose development mode can fall back to LAST).
+// Market 提供交易对和指数。Index 必须是外部指数，不能用现货最新成交顶上。
 type Market interface {
 	TradingSymbol(context.Context, string) (Symbol, error)
 	Symbol(context.Context, string) (Symbol, error)
 	Index(context.Context, string) (Quote, error)
 }
+
+// NotificationSender 只发站内信。邮件由实现显式关掉。
 type NotificationSender interface {
 	InApp(context.Context, string, string, string, string) (string, error)
 }
 
+// MarketClient 的指数走 GET /internal/index，不走公开 /market/index（开发模式会退回 LAST）。
 type MarketClient struct {
 	base      string
 	token     string
@@ -71,6 +78,7 @@ type MarketClient struct {
 	refreshed time.Time
 }
 
+// NewMarketClient 超时 5 秒。maxAge 是指数允许的最大年龄，超过则 PRICE_STALE。
 func NewMarketClient(base, token string, maxAge time.Duration) *MarketClient {
 	return &MarketClient{base: strings.TrimRight(base, "/"), token: token, maxAge: maxAge, client: &http.Client{Timeout: 5 * time.Second}, symbols: map[string]Symbol{}}
 }
@@ -102,6 +110,8 @@ func (m *MarketClient) do(ctx context.Context, path string, out any) error {
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(out)
 }
+
+// Index 只接受 source=INDEX 且符号匹配的报价。价格不是正数、时间为零、超前超过 5 秒或老于 maxAge 都拒绝。
 func (m *MarketClient) Index(ctx context.Context, symbol string) (Quote, error) {
 	var wire struct {
 		Symbol    string    `json:"symbol"`
@@ -129,6 +139,8 @@ func (m *MarketClient) Index(ctx context.Context, symbol string) (Quote, error) 
 	}
 	return q, nil
 }
+
+// Symbol 缓存 /market/symbols 一分钟。不在列表里返回 UNKNOWN_SYMBOL，不造一个零精度交易对。
 func (m *MarketClient) Symbol(ctx context.Context, symbol string) (Symbol, error) {
 	symbol = strings.ToUpper(symbol)
 	m.mu.Lock()
@@ -172,6 +184,8 @@ func (m *MarketClient) Symbol(ctx context.Context, symbol string) (Symbol, error
 	}
 	return info, nil
 }
+
+// TradingSymbol 在 Symbol 之上要求 status=trading 且计价币是 USDT。暂停或其他计价币不能下模拟现货单。
 func (m *MarketClient) TradingSymbol(ctx context.Context, symbol string) (Symbol, error) {
 	s, err := m.Symbol(ctx, symbol)
 	if err != nil {
@@ -186,15 +200,18 @@ func (m *MarketClient) TradingSymbol(ctx context.Context, symbol string) (Symbol
 	return s, nil
 }
 
-// Notifier delivers only in-app system notices; email is explicitly suppressed.
+// Notifier 只发站内系统通知。请求里 email=false，不发邮件。
 type Notifier struct {
 	base, token string
 	client      *http.Client
 }
 
+// NewNotifier 超时 5 秒。空地址会在发送时失败。
 func NewNotifier(base, token string) *Notifier {
 	return &Notifier{base: strings.TrimRight(base, "/"), token: token, client: &http.Client{Timeout: 5 * time.Second}}
 }
+
+// InApp 按 dedupKey 让通知服务去重。email 固定 false。
 func (n *Notifier) InApp(ctx context.Context, uid, title, body, dedupKey string) (string, error) {
 	payload := map[string]any{"uid": uid, "kind": "system", "title": title, "body": body, "email": false, "dedupKey": dedupKey}
 	bodyJSON, _ := json.Marshal(payload)

@@ -14,9 +14,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Internal (admin service only) management of manually entered
-// proof-of-reserves snapshots. A snapshot = all rows sharing snapshot_at;
-// its id is snapshot_at in Unix milliseconds.
+// 储备证明快照的内部管理（只给 admin）。一份快照是同一 snapshot_at 的全部行；
+// id 是 snapshot_at 的 Unix 毫秒。
 func (s *Server) porRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/por/snapshots", s.internal(s.iPorList))
 	mux.HandleFunc("POST /internal/por/snapshots", s.internal(s.iPorCreate))

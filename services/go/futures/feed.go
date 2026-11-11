@@ -1,5 +1,8 @@
 package main
 
+// GET /internal/trades/feed?after=<tradeId>&limit=：每笔合约成交的 maker、taker 各一行，给增长服务算返佣、积分、交易量。
+// 跟单子账户记到跟随者头上；system:* 跳过。bonusFee 是体验金支付的手续费，不参与返佣。
+
 import (
 	"net/http"
 	"strconv"
@@ -9,12 +12,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// feed.go: GET /internal/trades/feed?after=<tradeId>&limit= — one row per
-// side (maker, taker) of every futures fill, for the growth service
-// (rebates, points, volume tasks). Copy sub-accounts are reported as their
-// follower; platform accounts (system:*) are skipped. bonusFee is the part
-// of the fee paid from a trial bonus (not rebate-eligible).
 
 type feedItem struct {
 	TradeID  int64  `json:"tradeId"`

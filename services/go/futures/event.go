@@ -1,5 +1,12 @@
 package main
 
+// 事件合约：对指数价做涨/跌二元预测。周期 5m/15m/30m/1h/4h/1d（后台名单）；标的 BTC/ETH/SOL/BNB/TRX USDT。
+// 赢 = stake*(1+payoutRatio)（默认 0.8），输 = 输掉 stake，平（到期指数 == 开仓指数）退本金。
+// 单笔 5–1000 USDT，每用户每 UTC 日 10000 USDT。开仓价 = 下单时指数，结算价 = 到期后第一笔指数（与合约相同的 Binance/OKX 指数）。
+// 宽限窗口内没有样本则退本金。未结算的 |sum(up)-sum(down)| 按标的+周期封顶（默认 50000 USDT，可按标的改）→ EXPOSURE_LIMIT。
+// 资金：用户可用 ↔ system:event，经 /internal/system-transfer，ref 为 event:stake:<id> / event:payout:<id>。
+// 两个 ref 由资产服务只认一次；订单 pending → open → settling → settled，崩溃后由 RunEvents 续跑，不会付两次。
+
 import (
 	"bytes"
 	"context"
@@ -20,23 +27,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// event.go: event contracts (binary up/down predictions on the index price).
-//
-// Rules (approved): periods 5m/15m/30m/1h/4h/1d (admin list); BTC/ETH/SOL/BNB/
-// TRX USDT; win = stake * (1 + payoutRatio) (default 0.8), lose = stake, tie
-// (expiry index == open index) = refund; stake 5-1000 USDT, 10000 USDT per
-// user per UTC day; open price = index at order time, settle price = first
-// index sample at/after expiry (same Binance/OKX index as futures); if no
-// sample exists within the grace window the stake is refunded. Platform risk:
-// |sum(up) - sum(down)| of unsettled stakes per symbol+period is capped
-// (default 50000 USDT, admin per symbol) -> EXPOSURE_LIMIT.
-//
-// Money: user free <-> system:event in the asset ledger via
-// /internal/system-transfer with refs event:stake:<id> / event:payout:<id>.
-// Both refs are claimed once by the asset service, and the order row walks
-// pending -> open -> settling -> settled, so a crash at any point is resumed
-// by RunEvents and nothing is paid twice (exactly-once).
-
 var (
 	evSymbolRe  = regexp.MustCompile(`^[A-Z0-9]{2,15}USDT$`)
 	evPeriodRe  = regexp.MustCompile(`^([1-9][0-9]{0,3})([mhd])$`)
@@ -46,7 +36,7 @@ var (
 	errEvPaused = bad("SYMBOL_PAUSED", "该标的暂停交易")
 )
 
-// parsePeriod accepts Nm/Nh/Nd between 1 minute and 7 days.
+// parsePeriod 接受 1 分钟到 7 天之间的 Nm/Nh/Nd。
 func parsePeriod(p string) (time.Duration, bool) {
 	m := evPeriodRe.FindStringSubmatch(p)
 	if m == nil {
@@ -105,8 +95,7 @@ type evSymbol struct {
 	UpdatedAt     time.Time           `json:"updatedAt"`
 }
 
-// ensureEventConfig seeds ev_config from env on first start (later edits are
-// made in the admin and win over env).
+// ensureEventConfig 只在首次启动用环境变量种 ev_config。之后以后台修改为准，环境变量不再覆盖。
 func (s *Server) ensureEventConfig(ctx context.Context) error {
 	periods := splitList(common.Env("EVENT_PERIODS", "5m,15m,30m,1h,4h,1d"))
 	c := evConfig{Periods: periods, PayoutRatio: decEnv("EVENT_PAYOUT_RATIO", "0.8"), MinStake: decEnv("EVENT_MIN_STAKE", "5"),
@@ -130,7 +119,7 @@ func splitList(v string) []string {
 	return out
 }
 
-// textArray renders a Postgres text[] literal (values are validated tokens).
+// textArray 拼 Postgres text[] 字面量。值必须已是校验过的 token。
 func textArray(v []string) string { return "{" + strings.Join(v, ",") + "}" }
 
 func parseTextArray(v string) []string {
@@ -169,9 +158,7 @@ func loadEvSymbols(ctx context.Context, q queryer) ([]evSymbol, error) {
 
 // ---- index ----
 
-// eventIndex returns the current index of an event symbol: the futures dev
-// override when set (DEV_MODE), else market-data /market/index (Binance with
-// OKX backup), the same source futures uses.
+// eventIndex：DEV_MODE 下用合约的指数覆盖，否则用行情 /market/index（Binance，OKX 备用），与合约指数同一来源。
 func (s *Server) eventIndex(ctx context.Context, sym string) (decimal.Decimal, bool) {
 	s.pmu.RLock()
 	dev, ok := s.devIndex[sym]
@@ -279,7 +266,7 @@ func (o evOrder) dto(admin bool) map[string]any {
 	return m
 }
 
-// outcome decides won/lost/tie for a settled price. Pure; unit tested.
+// outcome 用结算价相对开仓指数决定 won/lost/tie。相等为 tie。纯函数。
 func evOutcome(dir string, open, settle, stake, ratio decimal.Decimal) (string, decimal.Decimal) {
 	c := settle.Cmp(open)
 	switch {
@@ -292,8 +279,7 @@ func evOutcome(dir string, open, settle, stake, ratio decimal.Decimal) (string, 
 	}
 }
 
-// exposureBreach reports whether adding stake on dir pushes the net
-// imbalance past limit (orders that reduce the imbalance always pass). Pure.
+// exposureBreach：加上该方向 stake 后 |多-空| 超过 limit 则为真。缩小敞口的单始终通过。纯函数。
 func exposureBreach(up, down, stake decimal.Decimal, dir string, limit decimal.Decimal) bool {
 	net := up.Sub(down)
 	next := net.Add(stake)
@@ -425,9 +411,7 @@ func (s *Server) evTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-// fundEvent debits the stake for a pending order (idempotent on
-// event:stake:<id>). Insufficient balance rejects the order; any other error
-// leaves it pending for RunEvents to retry.
+// fundEvent 按 event:stake:<id> 幂等扣本金。余额不足则拒绝订单；其他错误保持 pending，交给 RunEvents 重试。
 func (s *Server) fundEvent(ctx context.Context, o evOrder) (evOrder, error) {
 	err := s.asset.System(ctx, o.UserID, "USDT", "event", "debit", o.Stake, fmt.Sprintf("event:stake:%d", o.ID))
 	switch {
@@ -450,9 +434,7 @@ func (s *Server) fundEvent(ctx context.Context, o evOrder) (evOrder, error) {
 
 // ---- worker ----
 
-// RunEvents samples the index and drives pending/open/settling orders. Safe to
-// run in several replicas: rows are claimed with FOR UPDATE SKIP LOCKED and
-// every money movement is idempotent on its ref.
+// RunEvents 采样指数并推进 pending/open/settling。多副本安全：行用 FOR UPDATE SKIP LOCKED 认领，资金移动按 ref 幂等。
 func (s *Server) RunEvents(ctx context.Context) {
 	if err := s.ensureEventConfig(ctx); err != nil {
 		log.Printf("event: config: %v", err)
@@ -473,6 +455,7 @@ func (s *Server) RunEvents(ctx context.Context) {
 	}
 }
 
+// EventTick 采样指数，重试 pending 扣款，给到期订单定结果，再按 event:payout:<id> 发放。
 func (s *Server) EventTick(ctx context.Context) {
 	s.sampleEventIndex(ctx)
 	s.retryPending(ctx)
@@ -511,9 +494,8 @@ func (s *Server) retryPending(ctx context.Context) {
 	}
 }
 
-// settleDue fixes the outcome of expired open orders. The settle price is the
-// first index sample in [expiry, expiry+5s]; with none and the grace period
-// over, the order is refunded.
+// settleDue 给定到期的 open 订单。结算价是 [expiry, expiry+EventSettleTolerance] 内第一笔指数样本。
+// 窗口内没有样本且未过 SettleGraceSec 则继续等；过了宽限则退回 stake。
 func (s *Server) settleDue(ctx context.Context) {
 	cfg, err := loadEvConfig(ctx, s.db)
 	if err != nil {
@@ -577,8 +559,7 @@ func (s *Server) settleDue(ctx context.Context) {
 	}
 }
 
-// payoutSettling credits payouts (idempotent on event:payout:<id>) and
-// finalizes the orders.
+// payoutSettling 按 event:payout:<id> 幂等入账。资产调用失败保持 settling，下次再试；成功后才标 settled。
 func (s *Server) payoutSettling(ctx context.Context) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+evCols+` FROM ev_orders WHERE status='settling' ORDER BY id LIMIT 200`)
 	if err != nil {
@@ -603,8 +584,7 @@ func (s *Server) payoutSettling(ctx context.Context) {
 	s.pushSettled(ctx)
 }
 
-// pushSettled sends every newly settled order once over the user WebSocket
-// (best effort; the REST order list is the source of truth).
+// pushSettled 把新结算或拒绝的订单推一次用户 WS。推送失败不回滚 pushed；订单列表才是准的。
 func (s *Server) pushSettled(ctx context.Context) {
 	rows, err := s.db.QueryContext(ctx, `UPDATE ev_orders SET pushed=true WHERE status IN ('settled','rejected') AND NOT pushed RETURNING `+evCols)
 	if err != nil {
@@ -640,11 +620,9 @@ func (s *Server) pushWS(ctx context.Context, uid, channel string, data any) {
 	resp.Body.Close()
 }
 
-// pushMarks relays the current mark/index/funding of every contract to the
-// public WS channel "mark:{SYMBOL}" (market-data /internal/ws/broadcast; it
-// re-emits each as "index:{SYMBOL}"), plus "futures-ticker:{SYMBOL}" and
-// "futures-kline:{SYMBOL}:{interval}" (livefeed.go). Async, best effort, at
-// most one in flight; the ticker's DB reads run off the tick loop.
+// pushMarks 把每个合约的标记价/指数/资金费推到公开频道 "mark:{SYMBOL}"
+// （行情 /internal/ws/broadcast 会再发一份 "index:{SYMBOL}"），以及 "futures-ticker:{SYMBOL}" 和
+// "futures-kline:{SYMBOL}:{interval}"。异步、最多一笔在飞；ticker 的库查询不占 tick 循环。
 func (s *Server) pushMarks(ctx context.Context) {
 	if s.cfg.MarketURL == "" || s.cfg.InternalToken == "" || !s.markPushing.CompareAndSwap(false, true) {
 		return

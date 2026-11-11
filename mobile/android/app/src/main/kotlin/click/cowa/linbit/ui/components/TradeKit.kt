@@ -1,3 +1,4 @@
+/** 现货和合约共用的分段、选择框、数字输入、百分比滑杆和键值行。 */
 package click.cowa.linbit.ui.components
 
 import androidx.compose.foundation.BorderStroke

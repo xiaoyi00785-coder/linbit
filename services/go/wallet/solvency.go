@@ -1,5 +1,10 @@
 package main
 
+// solvency.go：每日偿付检查用的平台托管余额。
+// 真实链（testnet/mainnet）：热钱包、冷/储备地址和用户充值地址的链上余额，按币种跨网络相加。
+// 任一 RPC 失败放进 errors。调用方把不完整读数当成检查失败，不能当成充足。
+// MockChain 没有链：托管余额 = 已完成充值 − 已离开的提现（processing/completed）。
+
 import (
 	"context"
 	"log"
@@ -9,16 +14,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// solvency.go: platform custody holdings for the daily solvency check.
-//
-// Real chains (testnet/mainnet): live on-chain balances of every hot wallet,
-// cold/reserve address and user deposit address, per asset, summed across
-// networks. Any RPC failure is reported in "errors" (the caller treats an
-// incomplete reading as a failed check, never as solvent).
-//
-// MockChain: there is no chain, so holdings are the simulated custody
-// balance = completed deposits - withdrawals that left (processing/completed).
 
 type holdingsResult struct {
 	Mode     string            `json:"mode"`

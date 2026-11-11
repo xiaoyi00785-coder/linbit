@@ -1,3 +1,4 @@
+/** 合约持仓操作弹层：修改委托、止盈止损、逐仓增减保证金，以及本地计算器。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

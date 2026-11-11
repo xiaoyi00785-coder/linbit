@@ -1,5 +1,7 @@
 package main
 
+// 网格档位和首仓拆分。每格数量向下取整，初始买入报价向上取整到 8 位。
+
 import (
 	"errors"
 	"math"
@@ -7,8 +9,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Levels returns the n+1 grid prices p_0=lower .. p_n=upper, rounded to the
-// symbol's price precision. Arithmetic: equal price step; geometric: equal ratio.
+// Levels 返回 n+1 个价格，p_0=lower 到 p_n=upper，按价格精度四舍五入。
+// 等差是等宽价差，等比是等比例。四舍五入后若不再严格递增则失败。
 func Levels(mode string, lower, upper decimal.Decimal, n int, prec int32) ([]decimal.Decimal, error) {
 	if n < 1 || !upper.GreaterThan(lower) || lower.Sign() <= 0 {
 		return nil, errors.New("bad range")
@@ -37,7 +39,7 @@ func Levels(mode string, lower, upper decimal.Decimal, n int, prec int32) ([]dec
 	return out, nil
 }
 
-// Plan is the initial layout of a grid at start price P.
+// Plan 是启动价 P 上的初始布局。
 type Plan struct {
 	Qty        decimal.Decimal // base quantity per grid order
 	BuyLevels  []int           // levels below P (limit buys)
@@ -47,10 +49,11 @@ type Plan struct {
 
 func floorStep(v decimal.Decimal, prec int32) decimal.Decimal { return v.RoundFloor(prec) }
 
-// MakePlan sizes the grid so that the buy orders below P plus the initial
-// market buy for the sell side spend the investment:
+// MakePlan 在启动价 P 上拆投资额：P 以下挂限价买，P 以上的卖单靠一笔初始市价买入备货。
 //
 //	q = investment / (Σ_{p_i<P} p_i + count(p_i>P)·P·(1+fee+buffer))
+//
+// 每格数量按数量精度向下取整。初始买入的报价预算向上取整到 8 位。
 func MakePlan(levels []decimal.Decimal, p, invest, fee, buffer decimal.Decimal, qprec int32) Plan {
 	var pl Plan
 	sumBelow := decimal.Zero
@@ -63,8 +66,7 @@ func MakePlan(levels []decimal.Decimal, p, invest, fee, buffer decimal.Decimal, 
 			pl.SellLevels = append(pl.SellLevels, i)
 		}
 	}
-	// The top level can never hold a buy and the bottom never a sell; a level
-	// equal to P is left empty (it is the grid's "gap").
+	// 最高档不能挂买，最低档不能挂卖。价格等于 P 的那一档空着，当作网格缺口。
 	if n := len(pl.BuyLevels); n > 0 && pl.BuyLevels[n-1] == len(levels)-1 {
 		pl.BuyLevels = pl.BuyLevels[:n-1]
 	}
@@ -78,12 +80,13 @@ func MakePlan(levels []decimal.Decimal, p, invest, fee, buffer decimal.Decimal, 
 	}
 	pl.Qty = floorStep(invest.Div(den), qprec)
 	if len(pl.SellLevels) > 0 {
+		// 初始市价买入的报价预算向上取整到 8 位。
 		pl.InitQuote = decimal.NewFromInt(int64(len(pl.SellLevels))).Mul(pl.Qty).Mul(p).Mul(mult).RoundUp(8)
 	}
 	return pl
 }
 
-// GridProfitRange returns the min and max per-grid profit rate after fees.
+// GridProfitRange 返回扣双边手续费后的单格利润率区间：相邻档价比乘 (1-fee) 两次再减 1。
 func GridProfitRange(levels []decimal.Decimal, fee decimal.Decimal) (lo, hi decimal.Decimal) {
 	one := decimal.NewFromInt(1)
 	for i := 1; i < len(levels); i++ {

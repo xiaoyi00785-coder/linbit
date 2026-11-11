@@ -1,5 +1,7 @@
 package common
 
+// redact.go：日志里不能出现 URL/DSN 中的口令。本包被各服务导入，init 会把标准日志包一层。
+
 import (
 	"io"
 	"log"
@@ -7,8 +9,7 @@ import (
 	"regexp"
 )
 
-// Credentials embedded in URLs/DSNs (redis://:pw@h, postgres://u:pw@h,
-// amqp://..., key=value DSNs) must never reach the logs.
+// URL/DSN 里的口令不能进日志：redis://:pw@h、postgres://u:pw@h、amqp://，以及 key=value 形式的 password。
 var (
 	reURLCred = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*):[^\s/]*@`)
 	reKVPass  = regexp.MustCompile(`(?i)\b(password|passwd|pwd)=('[^']*'|[^\s&]*)`)
@@ -32,6 +33,5 @@ func (r redactWriter) Write(p []byte) (int, error) {
 // RedactingWriter wraps w so every write has URL/DSN passwords masked.
 func RedactingWriter(w io.Writer) io.Writer { return redactWriter{w} }
 
-// Every service imports common, so the standard logger is redacted
-// process-wide (including log.Fatalf of driver errors that echo a DSN).
+// 各服务都会导入 common，所以标准日志在整个进程里打码，包括驱动把 DSN 打进 log.Fatalf 的情况。
 func init() { log.SetOutput(RedactingWriter(os.Stderr)) }

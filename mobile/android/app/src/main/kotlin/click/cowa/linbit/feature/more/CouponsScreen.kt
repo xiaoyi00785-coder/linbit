@@ -1,3 +1,4 @@
+/** 卡券中心：按可使用、使用中、已失效列出，确认后激活。 */
 package click.cowa.linbit.feature.more
 
 import androidx.compose.foundation.background

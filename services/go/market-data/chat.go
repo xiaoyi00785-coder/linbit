@@ -17,15 +17,13 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// chat.go: trading chat rooms (feature flag `chat`).
-//
-// Rooms: "general" + "spot.{SYMBOL}" for every listed spot pair +
-// "futures.{SYMBOL}" for every futures contract. Anyone may read; posting needs
-// a logged-in user (gateway X-User-Id) with kycLevel >= cfg.minKycLevel, not
-// muted/banned, within the rate limit and free of links / contact info.
-// WS: subscribe "chat:{room}" on /ws; frames data = {type:"message",message} or
-// {type:"delete",id}. WS frames are broadcast and carry no `mine`; clients mark
-// their own messages by matching message.id with the id returned by POST.
+// 交易聊天室，功能开关 chat。
+// 房间：general，以及每个现货对的 spot.{SYMBOL}、每个合约的 futures.{SYMBOL}。
+// 谁都能看。发言要登录（gateway 的 X-User-Id），kycLevel 达到配置，且未被禁言或封禁，
+// 间隔内（MinIntervalMs，默认 3000）且不含链接和联系方式。超限返回 429 和 Retry-After。
+// 同一 uid+clientId 冲突不插新行，重试幂等。
+// WS 订阅 chat:{room}；帧 data 为 {type:message,message} 或 {type:delete,id}。
+// 推送不带 mine，客户端用 POST 返回的 message.id 认自己的消息。
 
 // ChatConfig is the admin-tunable chat configuration (stored as JSONB).
 type ChatConfig struct {

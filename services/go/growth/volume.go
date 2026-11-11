@@ -9,11 +9,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// volume.go: GET /internal/growth/volume?uid=&days=30 — a user's own trading
-// volume in USDT over the trailing window, for service-to-service decisions
-// (account's VIP eligibility check). It reads g_fee_events, the same table the
-// partner tiers and points use: spot fills of USD-quoted pairs
-// (GROWTH_USD_QUOTES) plus all futures fills, synced every GROWTH_SYNC_MS.
+// GET /internal/growth/volume?uid=&days=30。用户自己在窗口内的 USDT 成交额，给 account 判 VIP。
+// 读 g_fee_events，和合伙人档位、积分同一张表：GROWTH_USD_QUOTES 计价的现货，加上全部合约成交。
+// 数据按 GROWTH_SYNC_MS 同步。days 默认 30，允许 1 到 365。
 
 const (
 	volumeDefaultDays = 30

@@ -1,5 +1,9 @@
 package main
 
+// walletops.go：钱包驱动的内部记账，都按调用方给的 ref 最多入账一次（wallet_ops）。
+// 充值贷记用户可用，对手 system:external。提现完成把冻结整笔消耗掉：
+// amount 离开平台（借 system:external），gas 记到 feeAccount。
+
 import (
 	"context"
 	"database/sql"
@@ -8,16 +12,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// walletops.go implements the internal, idempotent ledger operations the wallet
-// service drives: crediting a confirmed on-chain deposit and finalising a
-// confirmed withdrawal. Both are keyed by a caller-supplied ref and applied at
-// most once (see the wallet_ops table).
-
-// ErrAlreadyApplied indicates the ref was already posted (idempotent no-op).
+// ErrAlreadyApplied 表示这个 ref 已经入过账，再调是幂等空操作。
 var ErrAlreadyApplied = errors.New("operation already applied")
 
-// claimRef inserts ref into wallet_ops inside tx. It returns ErrAlreadyApplied
-// when the ref already exists.
+// claimRef 在事务里占住 ref。已存在则 ErrAlreadyApplied。ref 为空表示调用方不要幂等。
 func claimRef(ctx context.Context, tx *sql.Tx, ref, op, userID, asset string, amount decimal.Decimal) error {
 	if ref == "" {
 		return nil // no idempotency requested
@@ -35,14 +33,12 @@ func claimRef(ctx context.Context, tx *sql.Tx, ref, op, userID, asset string, am
 	return nil
 }
 
-// Deposit credits a confirmed on-chain deposit to the user's free balance
-// (counterparty: system:external). Idempotent on ref.
+// Deposit 把已确认充值记到现货可用。对手账户 system:external。按 ref 幂等。
 func (s *Store) Deposit(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
 	return s.DepositTo(ctx, AcctSpot, userID, asset, amount, ref)
 }
 
-// DepositTo credits a confirmed on-chain deposit to the given wallet (spot or
-// funding). Idempotent on ref.
+// DepositTo 把已确认充值记到指定钱包（spot 或 funding 资金账户）。按 ref 幂等。
 func (s *Store) DepositTo(ctx context.Context, acct, userID, asset string, amount decimal.Decimal, ref string) error {
 	if amount.Sign() <= 0 {
 		return ErrInvalidAmount
@@ -69,13 +65,9 @@ func (s *Store) DepositTo(ctx context.Context, acct, userID, asset string, amoun
 	return tx.Commit()
 }
 
-// WithdrawComplete finalises a confirmed withdrawal. The user's locked balance is
-// reduced by amount (the full frozen withdrawal amount minus gas) plus gas — i.e.
-// the whole frozen balance is consumed: `amount` leaves as the on-chain transfer
-// and `gas` is booked to feeAccount (chain cost). Idempotent on ref.
-//
-// Ledger (per asset): credit user locked by (amount+gas); debit
-// system:external by amount (funds leave the platform) and feeAccount by gas.
+// WithdrawComplete 结算已确认提现。locked 减少 amount+gas，即整笔冻结用完：
+// amount 作为链上打出（借 system:external），gas 记到 feeAccount（默认 platform:gas）。按 ref 幂等。
+// 分录按币种平衡：贷用户 locked (amount+gas)；借 system:external amount；借 feeAccount gas。
 func (s *Store) WithdrawComplete(ctx context.Context, userID, asset string, amount, gas decimal.Decimal, feeAccount, ref string) error {
 	if amount.Sign() <= 0 {
 		return ErrInvalidAmount
@@ -124,7 +116,7 @@ func (s *Store) WithdrawComplete(ctx context.Context, userID, asset string, amou
 	return tx.Commit()
 }
 
-// writeJournal validates and writes a balanced double-entry journal inside tx.
+// writeJournal 在同一事务里校验并写入平衡的复式分录。借贷不平直接报错，不落库。
 func (s *Store) writeJournal(ctx context.Context, tx *sql.Tx, userID, txType, ref string, lines []ledgerLine) error {
 	if err := validateBalanced(lines); err != nil {
 		return err

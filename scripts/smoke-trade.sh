@@ -1,25 +1,13 @@
 #!/usr/bin/env bash
-#
-# End-to-end spot-trade smoke test for the Linbit matching chain:
-#
-#   two users register + login -> internal credit (deposit) -> a limit sell and a
-#   crossing limit buy match in the engine -> settlement moves funds with fees ->
-#   both users' balances and the platform fee account are checked to the exact
-#   decimal through the gateway / asset service.
-#
-# Two ways to run it (mirrors scripts/smoke.sh):
-#
-#   1. No stack running (default, no Docker): boots the devstack (embedded
-#      postgres + miniredis + matching-engine + all services), re-runs itself
-#      inside it, tears everything down afterwards.
-#
-#        bash scripts/smoke-trade.sh
-#
-#   2. Against a running stack: export GATEWAY_URL, ASSET_URL, INTERNAL_TOKEN.
-#
-#        GATEWAY_URL=... ASSET_URL=... INTERNAL_TOKEN=... SMOKE_INNER=1 \
-#            bash scripts/smoke-trade.sh
-#
+# 现货撮合端到端 smoke。
+# 两人注册登录 → 内部入账 → 限价卖与吃单限价买在引擎成交 → 结算含手续费 →
+# 经 gateway / asset 核对双方余额与平台手续费账户，小数精确。
+# 无栈（默认，无 Docker）：拉起 devstack（内嵌 postgres + miniredis + matching-engine + 全部服务），
+# 在里面重跑本脚本，结束后拆掉。
+#   bash scripts/smoke-trade.sh
+# 已有栈：
+#   GATEWAY_URL=... ASSET_URL=... INTERNAL_TOKEN=... SMOKE_INNER=1 \
+#       bash scripts/smoke-trade.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -55,9 +43,8 @@ print(json.loads(base64.urlsafe_b64decode(p)).get("sub", ""))
 PY
 }
 
-# register <email> -> echoes "accessToken userId"
-# Registration requires a verification code; it is read back through the account
-# service's dev-only internal endpoint (DEV_MODE=true).
+# register <email>：输出 "accessToken userId"。
+# 注册需要验证码，经 account 的 DEV_MODE 内部接口读回。
 register() {
   local email="$1" resp token sub code
   curl -sS -o /dev/null -X POST "$GATEWAY_URL/auth/code/send" \
@@ -156,12 +143,12 @@ expect "buy resp filledQuantity fmt" "$(printf '%s' "$BUY_RESP" | jq -r '.filled
 expect "buy resp price fmt"          "$(printf '%s' "$BUY_RESP" | jq -r '.price')"          "70000.00"
 
 say "5/6 verify balances (exact decimal)"
-# Trade: 0.01 BTC @ 70000 = 700 USDT. Both fees 0.1%.
-#   buyer (taker) fee: 0.01 * 0.001 = 0.00001 BTC
-#   seller (maker) fee: 700 * 0.001 = 0.7 USDT
-# buyer : USDT 1000-700 = 300 ; BTC 0.01-0.00001 = 0.00999
-# seller: USDT 700-0.7 = 699.3 ; BTC 0
-# fees  : USDT 0.7 ; BTC 0.00001
+# 成交：0.01 BTC @ 70000 = 700 USDT。双方手续费 0.1%。
+#   买方 taker：0.01 * 0.001 = 0.00001 BTC
+#   卖方 maker：700 * 0.001 = 0.7 USDT
+# 买方：USDT 1000-700 = 300；BTC 0.01-0.00001 = 0.00999
+# 卖方：USDT 700-0.7 = 699.3；BTC 0
+# 手续费：USDT 0.7；BTC 0.00001
 expect "buyer USDT free"   "$(free_balance "$BUYER_TOKEN"  USDT)" "300.00000000"
 expect "buyer BTC free"    "$(free_balance "$BUYER_TOKEN"  BTC)"  "0.00999000"
 expect "seller USDT free"  "$(free_balance "$SELLER_TOKEN" USDT)" "699.30000000"

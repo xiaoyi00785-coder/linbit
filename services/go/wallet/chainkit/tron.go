@@ -1,5 +1,8 @@
 package chainkit
 
+// tron.go：TRON 全节点 HTTP。充值发现走同一主机上 TronGrid 的 v1 账户历史。
+// 签名前核对 txID == sha256(raw_data)。
+
 import (
 	"bytes"
 	"context"
@@ -14,8 +17,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// TronClient talks to a TRON full node HTTP API (e.g. https://nile.trongrid.io).
-// Deposit discovery uses TronGrid's v1 account-history API on the same host.
+// TronClient 对接 TRON 全节点 HTTP（例如 https://nile.trongrid.io）。
+// 充值发现用同一主机上 TronGrid 的 v1 账户历史。apiKey 可选，头是 TRON-PRO-API-KEY。
 type TronClient struct {
 	base    string
 	headers map[string]string
@@ -111,8 +114,7 @@ type tronTx struct {
 	Signature  []string        `json:"signature,omitempty"`
 }
 
-// Send implements Client. The node builds the transaction; we verify that
-// txID == sha256(raw_data) before asking the signer.
+// Send 由节点拼未签名交易。请求签名之前核对 txID == sha256(raw_data)，对不上就不签。
 func (c *TronClient) Send(ctx context.Context, s HotSigner, from KeyRef, to string, token *Token, amount decimal.Decimal) (string, error) {
 	if _, err := ParseTronAddress(to); err != nil {
 		return "", err

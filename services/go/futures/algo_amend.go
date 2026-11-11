@@ -1,5 +1,7 @@
 package main
 
+// 改活动中的 plan 或止盈止损，algoId 不变。空字段保留原值。
+
 import (
 	"context"
 	"database/sql"
@@ -12,9 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// algo_amend.go: amend an active plan or TP/SL algo order in place (same algoId).
-// Omitted / empty fields keep their current value.
-
+// AlgoAmendReq 至少改一项。市价不能带 price；只改 status=active 的委托。
 type AlgoAmendReq struct {
 	TriggerPrice string `json:"triggerPrice"`
 	TriggerType  string `json:"triggerPriceType"` // LAST | MARK
@@ -23,6 +23,7 @@ type AlgoAmendReq struct {
 	Qty          string `json:"qty"`
 }
 
+// AmendAlgo 只改 active 委托。withTx 自己拿 s.mu，这里不能再锁，否则和触发扫描死锁。
 func (s *Server) AmendAlgo(ctx context.Context, uid string, id int64, kinds []string, r AlgoAmendReq) (AlgoOrder, error) {
 	r.TriggerPrice, r.TriggerType, r.OrderType = strings.TrimSpace(r.TriggerPrice), strings.TrimSpace(r.TriggerType), strings.ToLower(strings.TrimSpace(r.OrderType))
 	r.Price, r.Qty = strings.TrimSpace(r.Price), strings.TrimSpace(r.Qty)
@@ -35,9 +36,6 @@ func (s *Server) AmendAlgo(ctx context.Context, uid string, id int64, kinds []st
 	if r.OrderType == "market" && r.Price != "" {
 		return AlgoOrder{}, bad("VALIDATION_ERROR", "市价单不能填写 price")
 	}
-	// Same lock as the trigger watcher, so an order can't fire with stale values mid-amend.
-	// withTx takes s.mu itself; s.mu is not reentrant, so do not lock it here as well
-	// (double-locking deadlocked plan and TP/SL amend and froze the engine).
 	var out AlgoOrder
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		a, err := scanAlgo(tx.QueryRowContext(ctx, `SELECT `+algoCols+` FROM fut_algo_orders WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, uid))

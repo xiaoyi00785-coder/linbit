@@ -1,3 +1,4 @@
+/** openapi-fetch 客户端。附 Bearer 时，401（不含 /auth/）换票后用未消费的请求副本重试一次。 */
 import createClient, { type Client, type Middleware } from "openapi-fetch";
 import type { components, paths } from "./schema";
 

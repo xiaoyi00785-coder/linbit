@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for 闪兑 convert (asset service via gateway): pairs, quotes
-# by from/to amount, limits, atomic accept + idempotent replay, quote expiry,
-# PRICE_UNAVAILABLE, cross pairs, stable pairs, history, admin config and the
-# platform convert position in solvency.
-#
-#   bash scripts/smoke-convert.sh            # boots devstack
-#
+# 闪兑 convert 端到端 smoke（asset，经 gateway）。
+# 交易对、按 from/to 数量报价、限额、原子 accept 与幂等重放、报价过期、PRICE_UNAVAILABLE、
+# 交叉盘、稳定币对、历史、后台配置、偿付里的平台闪兑仓位。
+#   bash scripts/smoke-convert.sh            # 拉起 devstack
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

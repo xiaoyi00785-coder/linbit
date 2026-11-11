@@ -1,5 +1,8 @@
 package main
 
+// 绑定、确认启用、关闭 TOTP。关闭走 securityChanged 且 lock=true，按 withdraw_lock_hours 加提现锁。
+// 校验是 totp.Validate，不另存已用验证码。
+
 import (
 	"net/http"
 

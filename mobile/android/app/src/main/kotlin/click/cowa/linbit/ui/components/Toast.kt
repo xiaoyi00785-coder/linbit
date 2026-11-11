@@ -1,3 +1,4 @@
+/** 顶部黑色胶囊提示，约两秒后消失，成功和失败使用不同前缀。 */
 package click.cowa.linbit.ui.components
 
 import androidx.compose.animation.AnimatedVisibility

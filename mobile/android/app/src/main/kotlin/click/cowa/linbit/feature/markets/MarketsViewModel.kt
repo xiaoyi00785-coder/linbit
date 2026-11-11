@@ -1,3 +1,4 @@
+/** 行情页状态：复用行情仓库的列表，并维护自选。 */
 package click.cowa.linbit.feature.markets
 
 import androidx.lifecycle.ViewModel

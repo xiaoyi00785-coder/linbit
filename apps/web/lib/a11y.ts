@@ -1,3 +1,4 @@
+/** 键盘无障碍：Enter / 空格激活；选项卡用左右方向键在同组内移动焦点并选中。 */
 import type { KeyboardEvent } from "react";
 /** 键盘激活：Enter / 空格触发，等价于点击 */
 export const onActivate = (fn: () => void) => (e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } };

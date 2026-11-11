@@ -1,5 +1,8 @@
 package main
 
+// server.go：钱包 HTTP。/wallet/* 由网关注入 X-User-Id；/internal/* 校验 X-Internal-Token。
+// 开发用的 mock 链接口还要 DEV_MODE。对外金额一律 8 位小数字符串。
+
 import (
 	"log"
 	"net/http"
@@ -10,13 +13,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Server wires configuration, storage and the pluggable chain/signer/risk layers
-// into the wallet HTTP handlers.
-//
-// /wallet/* are user-facing (the gateway injects X-User-Id after validating the
-// JWT). /internal/* are service-to-service / admin and require the shared
-// X-Internal-Token; the gateway never proxies them. Dev-only mock-chain endpoints
-// additionally require DEV_MODE.
+// Server 把配置、存储、链、签名和风控接到 HTTP。
+// real 非空表示 WALLET_CHAIN=testnet|mainnet，此时 mock 为 nil。
 type Server struct {
 	cfg        Config
 	store      *Store
@@ -32,8 +30,7 @@ type Server struct {
 	real       *RealChain // non-nil when WALLET_CHAIN=testnet|mainnet
 }
 
-// NewServer constructs a Server with the mock chain, mock signers and local risk
-// scorer wired in.
+// NewServer 先接上 mock 链、mock 签名和本地风控。真实链由 UseRealChain 换上。
 func NewServer(cfg Config, store *Store) *Server {
 	mock := NewMockChain(store)
 	asset := NewAssetClient(cfg.AssetInternalURL, cfg.InternalToken)
@@ -52,12 +49,12 @@ func NewServer(cfg Config, store *Store) *Server {
 	}
 }
 
-// Routes returns the wallet service HTTP handler.
+// Routes 返回钱包 HTTP 路由。
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 
-	// User-facing (routed via the gateway under /wallet/*).
+	// 用户接口，经网关挂在 /wallet/*。
 	mux.HandleFunc("GET /wallet/deposit/address", s.handleDepositAddress)
 	mux.HandleFunc("GET /wallet/deposit/records", s.handleDepositRecords)
 	mux.HandleFunc("GET /wallet/withdraw/networks", s.handleWithdrawNetworks)
@@ -68,7 +65,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /wallet/withdraw", s.handleCreateWithdrawal)
 	mux.HandleFunc("POST /wallet/withdraw/{id}/cancel", s.handleCancelWithdrawal)
 
-	// Internal / admin.
+	// 内网 / 管理端。
 	mux.HandleFunc("POST /internal/scan", s.internal(s.handleScan))
 	mux.HandleFunc("POST /internal/process", s.internal(s.handleProcess))
 	mux.HandleFunc("GET /internal/solvency/holdings", s.internal(s.handleHoldings))
@@ -81,7 +78,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /internal/admin/internal-transfer/config", s.internal(s.handleAdminPutITConfig))
 	mux.HandleFunc("GET /internal/admin/internal-transfers", s.internal(s.handleAdminITList))
 
-	// Dev-only simulated-chain control.
+	// 仅开发：mock 链注入。真实链另有 sync / sweep。
 	if s.real != nil {
 		mux.HandleFunc("POST /internal/chain/sync", s.internal(s.handleChainSync))
 		mux.HandleFunc("POST /internal/chain/sweep", s.internal(s.handleChainSweep))
@@ -95,7 +92,7 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
-// internal guards service-to-service endpoints with the shared token.
+// internal 用共享的 X-Internal-Token 挡住服务间接口。令牌为空则一律拒绝。
 func (s *Server) internal(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.InternalToken == "" || r.Header.Get("X-Internal-Token") != s.cfg.InternalToken {
@@ -115,6 +112,8 @@ func requireUser(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return uid, true
 }
 
+// fmt8 把金额收成固定 8 位小数的十进制字符串。
+// 账本用 shopspring/decimal 运算，对外不用 float，避免二进制误差；接口统一 StringFixed(8)。
 func fmt8(d decimal.Decimal) string { return d.StringFixed(8) }
 
 func strptr(s string) *string {
@@ -134,7 +133,7 @@ type depositAddressDTO struct {
 	Address    string  `json:"address"`
 	Memo       *string `json:"memo"`
 	MinDeposit *string `json:"minDeposit"`
-	// Additive fields (backward compatible).
+	// 后加字段，旧客户端可忽略。
 	MemoRequired  bool `json:"memoRequired"`
 	Confirmations *int `json:"confirmations,omitempty"`
 }

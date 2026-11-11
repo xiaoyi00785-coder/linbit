@@ -243,8 +243,7 @@ func (s *Store) ConsumeRefreshToken(ctx context.Context, token string) (*Refresh
 	return &RefreshRecord{User: u, DeviceKey: deviceKey}, nil
 }
 
-// RevokeAllRefreshTokens revokes every active refresh token for a user (logout,
-// password reset).
+// 吊销该用户全部未撤销的 refresh token。登出还会另写 access 截止时间；重置密码只调用这里。
 func (s *Store) RevokeAllRefreshTokens(ctx context.Context, userID int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1 AND revoked = FALSE`, userID)

@@ -1,3 +1,4 @@
+/** 现货与合约历史：当前和历史委托、仓位、成交、资金流水、计划委托与止盈止损。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

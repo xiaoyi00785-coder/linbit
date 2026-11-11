@@ -12,9 +12,8 @@ envget() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | sed
 
 [ -f "$ENV_FILE" ] || { echo "FAIL ENV_FILE $ENV_FILE not found"; exit 1; }
 
-# 1) TRUSTED_PROXY_CIDRS vs geo-block. The gateway only trusts CF-IPCountry when
-#    its TCP peer is in TRUSTED_PROXY_CIDRS. Behind host nginx -> docker-proxy the
-#    peer is the docker bridge gateway (172.18.0.1), never a Cloudflare IP.
+# 1) TRUSTED_PROXY_CIDRS 与地理封锁。网关只在 TCP 对端落在 TRUSTED_PROXY_CIDRS 内时信任 CF-IPCountry。
+#    经宿主机 nginx 再到 docker-proxy 时，对端是 docker 网桥网关（172.18.0.1），不是 Cloudflare IP。
 geo=$(envget GEO_BLOCK_ENABLED); geo=${geo:-true}   # mainnet overlay forces true
 tpc=$(envget TRUSTED_PROXY_CIDRS)
 cf_re='^(173\.245\.48\.|103\.21\.244\.|103\.22\.200\.|103\.31\.4\.|141\.101\.64\.|108\.162\.192\.|190\.93\.240\.|188\.114\.96\.|197\.234\.240\.|198\.41\.128\.|162\.158\.|104\.16\.|104\.24\.|172\.64\.|131\.0\.72\.)'
@@ -31,7 +30,7 @@ elif [ "$geo" = "true" ]; then
   else fail "GEO_BLOCK_ENABLED=true but TRUSTED_PROXY_CIDRS ($tpc) has neither the docker bridge gateway nor Cloudflare ranges: CF-IPCountry ignored, geo-block inert"; fi
 fi
 
-# 2) Signer passphrase: host path for the docker secret, mode 0400.
+# 2) 签名机口令：docker secret 用宿主机路径，权限 0400。
 pf=$(envget WALLET_SIGNER_PASSPHRASE_FILE); pf=${pf:-./secrets/signer_passphrase}
 if [[ $pf == /run/secrets/* ]]; then
   fail "WALLET_SIGNER_PASSPHRASE_FILE=$pf is the in-container path; use the host path ./secrets/signer_passphrase"
@@ -41,7 +40,7 @@ else
   m=$(stat -c %a "$pf"); [ "$m" = 400 ] && ok "signer passphrase $pf mode 0400" || fail "signer passphrase $pf mode $m (want 0400)"
 fi
 
-# 3) tradfi_tokens: on-chain deposit/withdraw only for verified mainnet contracts.
+# 3) tradfi_tokens：链上充提只对已验证的主网合约开启。
 DBURL=${DATABASE_URL:-$(envget DATABASE_URL)}
 PSQL=${PSQL:-psql "$DBURL"}
 q() { $PSQL -XAtq -F'|' -c "$1"; }
@@ -58,12 +57,12 @@ else
   fi
 fi
 
-# Admin back office must not ship demo/mock data (every page reads admin/v1).
+# 后台不得带演示/Mock 数据（每个页面读 admin/v1）。
 root=$(cd "$(dirname "$0")/../.." && pwd)
 if out=$("$root/scripts/check-admin-no-demo.sh" "$root/prototypes/admin/src" 2>&1); then ok "admin frontend has no demo/mock data"
 else fail "admin frontend still references demo/mock data: $(echo "$out" | tail -n +2 | head -5 | tr '\n' ' ')"; fi
 
-# Web / partner frontends: real APIs only, no mock/demo fallback (POSIX sh script, no pipes needed).
+# web / partner 前端只用真实接口，不得有 mock/demo 回退（POSIX sh，不用管道）。
 if out=$(sh "$root/scripts/check-web-no-demo.sh" "$root" 2>&1); then ok "web/partner frontends have no demo/mock fallback"
 else fail "web/partner frontends still reference demo/mock fallbacks: $(echo "$out" | sed -n '2,6p' | tr '\n' ' ')"; fi
 

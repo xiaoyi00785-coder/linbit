@@ -1,3 +1,4 @@
+/** 账户安全：展示安全等级，并完成身份验证器的绑定与关闭。 */
 package click.cowa.linbit.feature.profile
 
 import androidx.activity.compose.BackHandler

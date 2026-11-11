@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-#
-# Smoke for account security settings: overview, 2FA error split
-# (TWOFA_REQUIRED 403 vs INVALID_TOTP 401), fund password (+lockout/reset),
-# anti-phishing, password change (revokes other sessions + withdrawal lock),
-# email/phone change (old + new codes), sessions, passkey ceremonies (begin)
-# and the admin security policy (/admin/v1, 2FA + reason + audit).
-#
-#   bash scripts/smoke-security.sh            # boots the devstack itself
-#   SMOKE_INNER=1 GATEWAY_URL=... bash scripts/smoke-security.sh   # running stack
-#
-# Side-by-side devstacks: set DEVSTACK_*_PORT (e.g. +900: DEVSTACK_GATEWAY_PORT=8980
-# ... DEVSTACK_PG_PORT=6333).
+# 账户安全设置 smoke。
+# 总览、2FA 错误拆分（TWOFA_REQUIRED 403 vs INVALID_TOTP 401）、资金密码（锁定/重置）、防钓鱼码、
+# 改密码（撤销其他会话 + 提现锁定）、改邮箱/手机（旧码 + 新码）、会话、passkey 仪式（begin）、
+# 后台安全策略（/admin/v1，2FA + reason + 审计）。
+#   bash scripts/smoke-security.sh            # 自己拉起 devstack
+#   SMOKE_INNER=1 GATEWAY_URL=... bash scripts/smoke-security.sh   # 已有栈
+# 并排多套 devstack：设 DEVSTACK_*_PORT（例 +900：DEVSTACK_GATEWAY_PORT=8980 … DEVSTACK_PG_PORT=6333）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

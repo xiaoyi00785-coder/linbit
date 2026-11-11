@@ -1,8 +1,7 @@
 package main
 
-// DTOs serialized by both the REST handlers and the WebSocket pushes. Field
-// names follow docs/api/openapi.yaml and docs/api/websocket.md so the same
-// shapes feed every client generator.
+// REST 和 WebSocket 共用的 DTO。字段名跟 docs/api/openapi.yaml 和 docs/api/websocket.md，
+// 同一形状喂给各个客户端生成器。
 
 // tickerDTO is the 24h rolling ticker (openapi Ticker).
 type tickerDTO struct {

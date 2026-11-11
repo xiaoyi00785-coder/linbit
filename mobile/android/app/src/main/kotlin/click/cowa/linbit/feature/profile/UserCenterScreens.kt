@@ -1,3 +1,4 @@
+/** 用户中心：资料与主题、切换已保存账号，并进入安全、身份认证和子账户。 */
 package click.cowa.linbit.feature.profile
 
 import androidx.activity.compose.BackHandler

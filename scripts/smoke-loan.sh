@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for crypto loans (earn service): market/quote, borrow
-# validation and limits, hourly interest, partial and full repay, adding
-# collateral, renewing a fixed term with the early-repay penalty, overdue
-# interest at 3x, and liquidation by price (LTV) and by 7-day overdue.
-#
-#   bash scripts/smoke-loan.sh            # boots devstack
-#
+# 加密借贷端到端 smoke（earn）。
+# 行情/报价、借款校验与限额、按小时计息、部分与全部还款、追加抵押、
+# 定期续借（含提前还款罚息）、逾期利息 3 倍、按价格（LTV）与逾期 7 天强平。
+#   bash scripts/smoke-loan.sh            # 拉起 devstack
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

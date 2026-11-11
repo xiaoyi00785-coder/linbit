@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Smoke for VIP applications: apply (UID implicit, channel + contact), one open
-# application at a time, server-side eligibility (VIP_NOT_ELIGIBLE until the
-# user holds >= 500,000 USDT), admin RBAC, 2FA-gated approve/reject with audit,
-# re-apply after rejection, ALREADY_VIP after approval, user notification.
+# VIP 申请 smoke：申请（UID 隐式，channel + contact）、同时只能有一笔待审、
+# 服务端资格（持有 < 500,000 USDT 时 VIP_NOT_ELIGIBLE）、后台 RBAC、2FA 审批/驳回并写审计、
+# 驳回后可再申请、通过后 ALREADY_VIP、用户通知。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

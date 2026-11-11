@@ -1,5 +1,7 @@
 package main
 
+// WebSocket 连接和频道订阅。合约推来的 mark:{SYMBOL} 会再广播一份相同的 index:{SYMBOL}。
+
 import (
 	"encoding/json"
 	"net/http"
@@ -79,11 +81,12 @@ func (h *Hub) Relay(channel string, data json.RawMessage) {
 	}
 }
 
-// NewHub builds a hub over the given snapshot source.
+// SetPaperSnapshot 设置私有模拟盘频道的快照函数。
 func (h *Hub) SetPaperSnapshot(fn func(uid, channel string) any) {
 	h.paperSnapshot = fn
 }
 
+// NewHub 按快照源创建 Hub。默认 15 秒 ping，60 秒无报文则断开。
 func NewHub(snap Snapshotter) *Hub {
 	return &Hub{
 		snap:         snap,

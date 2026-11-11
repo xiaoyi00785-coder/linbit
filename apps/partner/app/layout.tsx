@@ -1,3 +1,4 @@
+// 合伙人站根布局：套上导航外壳，页面标题为合伙人中心。
 import "@linbit/ui/tokens.css";
 import "./partner.css";
 import type { Metadata } from "next";

@@ -1,3 +1,4 @@
+// 把后台挂到页面根节点。
 import { createRoot } from 'react-dom/client'
 import './tokens.css'
 import './admin.css'

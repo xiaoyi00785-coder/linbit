@@ -1,4 +1,4 @@
-// Pure display helpers for the assets / deposit pages (acceptance r8).
+// 资产 / 充值页的纯展示函数（验收 r8），不含请求。
 
 /** 接口不可用（未登录 / 网关不可达）时按币种回退的充值网络；与主网 WALLET_NETWORKS_JSON 一致（USDT：TRC20、ERC20、BEP20、SOL，不含 ARBITRUM）；绝不把 USDT 的网络套到其他币种。 */
 export const DEP_NETS_FALLBACK: Record<string, string[]> = {

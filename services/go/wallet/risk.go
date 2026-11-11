@@ -2,11 +2,10 @@ package main
 
 import "github.com/shopspring/decimal"
 
-// risk.go is the pluggable risk layer. A RiskScorer assigns a 0–100 risk score to
-// a withdrawal; the score plus the amount decides whether the withdrawal is
-// auto-released or held for manual review (see decide).
+// risk.go：提现风控。RiskScorer 打 0–100 分，分数加金额决定自动放行还是人工审核（见 decide）。
+// 权重不在规则文件里，是代码里的默认值；阈值在 Config.Risk。
 
-// RiskInput carries the signals the scorer looks at.
+// RiskInput 是打分用的信号。金额本身不进分数，只在 decide 里和阈值比。
 type RiskInput struct {
 	Amount       decimal.Decimal
 	NewAddress   bool // destination never used by this user before
@@ -16,20 +15,19 @@ type RiskInput struct {
 	AmountUSD24h decimal.Decimal
 }
 
-// RiskScorer scores a withdrawal. Implementations must be side-effect free.
+// RiskScorer 给一笔提现打分。实现不得有副作用。
 type RiskScorer interface {
 	Score(in RiskInput) int
 }
 
-// LocalRiskScorer is a simple rule-based scorer. The weights are not in the rules
-// file and are configurable defaults (see summary); the thresholds that consume
-// the score live in Config.Risk.
+// LocalRiskScorer 是规则打分：新地址 +10，新设备 +10，
+// 24h 笔数 ≥3/5/10 分别 +5/+15/+30，开了提现白名单 -10，结果夹在 0–100。
 type LocalRiskScorer struct{}
 
-// NewLocalRiskScorer returns the default rule-based scorer.
+// NewLocalRiskScorer 返回上面这套默认打分。
 func NewLocalRiskScorer() *LocalRiskScorer { return &LocalRiskScorer{} }
 
-// Score returns a 0–100 risk score. Higher is riskier.
+// Score 返回 0–100，越高越险。
 func (LocalRiskScorer) Score(in RiskInput) int {
 	score := 0
 	if in.NewAddress {
@@ -38,7 +36,7 @@ func (LocalRiskScorer) Score(in RiskInput) int {
 	if in.NewDevice {
 		score += 10
 	}
-	// Frequent withdrawals in the last 24h ramp the score up.
+	// 近 24h 提现越密，分越高。
 	switch {
 	case in.Count24h >= 10:
 		score += 30
@@ -47,7 +45,7 @@ func (LocalRiskScorer) Score(in RiskInput) int {
 	case in.Count24h >= 3:
 		score += 5
 	}
-	// A whitelisted destination (when the whitelist is enabled) is lower risk.
+	// 开了提现白名单再往外打，风险低一档。
 	if in.WhitelistOn {
 		score -= 10
 	}
@@ -60,7 +58,7 @@ func (LocalRiskScorer) Score(in RiskInput) int {
 	return score
 }
 
-// reviewDecision is the outcome of the auto-release / manual-review gate.
+// reviewDecision 是自动放行还是转人工。
 type reviewDecision int
 
 const (
@@ -68,10 +66,10 @@ const (
 	decisionReview                       // hold for manual admin review
 )
 
-// decide applies the thresholds from the rules file:
-//   - amount ≤ AutoMaxAmount AND score ≤ AutoMaxScore            → auto-release
-//   - amount ≥ ReviewMinAmount OR score > ReviewMaxScore         → manual review
-//   - otherwise (the in-between band the rules leave blank)      → MiddleAction
+// decide 用 Config.Risk 的阈值（金额应为 USDT 等值，调用方负责折算）：
+//   - amount ≤ AutoMaxAmount 且 score ≤ AutoMaxScore     → 自动放行
+//   - amount ≥ ReviewMinAmount 或 score > ReviewMaxScore → 人工审核
+//   - 中间带（规则留空）                                  → MiddleAction
 func decide(t RiskThresholds, amount decimal.Decimal, score int) reviewDecision {
 	if amount.LessThanOrEqual(t.AutoMaxAmount) && score <= t.AutoMaxScore {
 		return decisionAuto

@@ -1,3 +1,4 @@
+/** 提现页支持链上或内部转账，最小额和预计到账时间都取后端网络配置。 */
 package click.cowa.linbit.feature.assets
 
 import androidx.activity.compose.BackHandler

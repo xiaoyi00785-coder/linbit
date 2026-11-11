@@ -9,10 +9,9 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// One-click copy from the strategy square: the copier's new bot reuses the
-// source bot's symbol, mode, price range and grid count; the copier chooses
-// the investment and optional stop-loss / take-profit. Each successful copy
-// bumps the source bot's copy_count, which the square shows as copyCount.
+// 从策略广场一键复制。新机器人沿用源机器人的交易对、模式、价格区间和网格数，
+// 投资额和可选的止盈止损由复制者填。复制成功给源机器人的 copy_count 加一，广场上显示为 copyCount。
+// 只有仍在运行且达到最短展示时间的机器人能被复制，不能复制自己的。
 
 type copyReq struct {
 	Investment string  `json:"investment"`

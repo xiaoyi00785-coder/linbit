@@ -1,10 +1,8 @@
-//! Per-symbol order book and matching loop.
+//! 单个交易对的订单簿和撮合循环。
 //!
-//! One [`SymbolEngine`] owns the full in-memory book for a single symbol and is
-//! driven by exactly one thread (the symbol's matching loop), so matching needs
-//! no locks. Orders rest in price→time (FIFO) priority: bids are matched from
-//! the highest price, asks from the lowest, and within a price level the oldest
-//! resting order fills first.
+//! 一个 [`SymbolEngine`] 持有该交易对的全部内存订单簿，并且只由它自己的撮合线程驱动，
+//! 所以撮合路径不加锁。挂单按价格优先、同价时间优先（FIFO）：买单从最高价吃起，
+//! 卖单从最低价吃起，同一价位上更早挂上的单先成交。
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -17,20 +15,19 @@ use crate::fixed;
 use crate::types::*;
 use crate::wal::{self, Wal, WalRecord};
 
-/// A resting (maker) order sitting in the book.
+/// 订单簿上的一笔挂单（maker）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestingOrder {
     pub order_id: String,
     pub user_id: String,
     pub price: i128,
-    /// Original base quantity.
+    /// 原始基础资产数量。
     pub quantity: i128,
-    /// Unfilled base quantity.
+    /// 尚未成交的基础资产数量。
     pub remaining: i128,
 }
 
-/// The serializable portion of a book — everything a snapshot needs. Runtime-
-/// only fields (sink, WAL handle) live on [`SymbolEngine`].
+/// 订单簿里需要写入快照的部分。运行时才有的字段（事件出口、WAL 句柄）留在 [`SymbolEngine`] 上。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookState {
     pub symbol: String,
@@ -39,12 +36,12 @@ pub struct BookState {
     pub seq: u64,
     pub trade_counter: u64,
     pub depth_seq: u64,
-    /// Price level -> FIFO queue of resting orders.
+    /// 价位 -> 该价位上按时间排队的挂单。
     pub bids: Vec<(i128, VecDeque<RestingOrder>)>,
     pub asks: Vec<(i128, VecDeque<RestingOrder>)>,
 }
 
-/// Matching engine for one symbol.
+/// 单个交易对的撮合引擎。
 pub struct SymbolEngine {
     pub symbol: String,
     symbol_index: u64,
@@ -54,7 +51,7 @@ pub struct SymbolEngine {
     depth_seq: u64,
     bids: BTreeMap<i128, VecDeque<RestingOrder>>,
     asks: BTreeMap<i128, VecDeque<RestingOrder>>,
-    /// order_id -> (is_bid, price) for O(1) cancel lookups.
+    /// order_id -> (是否买单, 价格)，撤单时 O(1) 定位。
     index: HashMap<String, (bool, i128)>,
 
     sink: Arc<dyn EventSink>,
@@ -65,8 +62,7 @@ pub struct SymbolEngine {
 }
 
 impl SymbolEngine {
-    /// Build an in-memory engine with no persistence (used by tests and the
-    /// benchmark, where WAL fsync would dominate the measurement).
+    /// 纯内存引擎，不落盘。测试和压测用，避免 WAL 的 fsync 盖过撮合本身的耗时。
     pub fn in_memory(symbol: &str, symbol_index: u64, qty_precision: u32, sink: Arc<dyn EventSink>) -> Self {
         Self {
             symbol: symbol.to_string(),
@@ -86,8 +82,7 @@ impl SymbolEngine {
         }
     }
 
-    /// Open a persistent engine rooted at `dir`, recovering from a snapshot and
-    /// replaying the WAL tail if present.
+    /// 打开以 `dir` 为根的持久化引擎：有快照就加载，再把快照之后的 WAL 尾部重放一遍。
     pub fn open(
         dir: PathBuf,
         symbol: &str,
@@ -103,8 +98,7 @@ impl SymbolEngine {
         if let Some(state) = wal::read_snapshot::<BookState>(&dir)? {
             engine.load_state(state);
         }
-        // Replay any WAL records newer than the snapshot. Replay uses `apply`
-        // directly: no WAL re-append, no event emission.
+        // 重放比快照新的 WAL。直接走 `apply`：不再追加 WAL，也不向外发事件。
         let snapshot_seq = engine.seq;
         for rec in Wal::read_all(&dir)? {
             if rec.seq > snapshot_seq {
@@ -139,7 +133,7 @@ impl SymbolEngine {
         }
     }
 
-    /// Snapshot-able view of the current state.
+    /// 当前状态的快照视图。
     pub fn snapshot_state(&self) -> BookState {
         BookState {
             symbol: self.symbol.clone(),
@@ -153,19 +147,17 @@ impl SymbolEngine {
         }
     }
 
-    /// Process a command with per-command durability: write-ahead to the WAL and
-    /// `fsync` it, then apply it, emit events, and snapshot if due. Returns the
-    /// authoritative execution report.
+    /// 单条命令的持久化路径：先写入 WAL 并 fsync，再改订单簿、发事件，到期则打快照。
+    /// 返回的执行报告是结算依据。
     ///
-    /// [`process_batch`](Self::process_batch) is the group-commit equivalent for
-    /// many commands at once; this single-command path remains for the
-    /// per-command fsync policy, tests, and recovery replay drivers.
+    /// 批量组提交走 [`process_batch`](Self::process_batch)。这条单命令路径留给
+    /// 逐条 fsync 策略、测试，以及恢复重放。
     pub fn process(&mut self, cmd: &Command) -> ExecReport {
         self.seq += 1;
         if let Some(wal) = self.wal.as_mut() {
             let rec = WalRecord { seq: self.seq, command: cmd.clone() };
             if let Err(e) = wal.append(&rec) {
-                // A durable WAL is a hard requirement; refuse the command.
+                // WAL 写失败就不能确认这笔单，序号回退，订单簿不动。
                 self.seq -= 1;
                 return reject(cmd, format!("wal append failed: {e}"));
             }
@@ -180,27 +172,20 @@ impl SymbolEngine {
         report
     }
 
-    /// Process a batch of commands under **group commit**: stage every command's
-    /// WAL record, issue a single `fsync` for the whole batch, and only then
-    /// apply the commands, emit their events, and build their reports. Reports
-    /// are returned in the same order as `cmds`.
+    /// 组提交：先把本批每条命令的 WAL 记录写进文件，整批只 fsync 一次，成功之后才改订单簿、
+    /// 发事件并生成报告。报告顺序与 `cmds` 一致。
     ///
-    /// Durability is identical to [`process`](Self::process): no command in the
-    /// batch is applied, emitted, or (by the caller) acknowledged until the one
-    /// `fsync` has made the entire batch durable. A crash before that `fsync`
-    /// loses the whole (unacknowledged) batch — the torn tail is dropped on
-    /// recovery; a crash after it recovers every command exactly.
+    /// 持久化语义和 [`process`](Self::process) 相同：这次 fsync 返回之前，批内任何命令都不会被应用、
+    /// 发出或由调用方确认。fsync 之前崩溃，整批（尚未确认）丢失，恢复时丢掉残缺的尾部；
+    /// fsync 之后崩溃，每条命令都能原样恢复。
     ///
-    /// If the WAL write or `fsync` fails, the batch is rejected as a unit: the
-    /// sequence counter is rolled back and every command gets a rejection
-    /// report, leaving the book untouched.
+    /// WAL 写入或 fsync 失败则整批拒绝：序号不前进，每条命令一份拒绝报告，订单簿保持原样。
     pub fn process_batch(&mut self, cmds: &[Command]) -> Vec<ExecReport> {
         if cmds.is_empty() {
             return Vec::new();
         }
 
-        // Phase 1 — stage all records, then one fsync. On any WAL error the
-        // batch never touches the book and seq is left unchanged.
+        // 第一阶段：全部记录先落文件，再一次 fsync。任何 WAL 错误都不会碰到订单簿，seq 保持不动。
         if let Some(wal) = self.wal.as_mut() {
             let base = self.seq;
             let mut err: Option<String> = None;
@@ -221,16 +206,15 @@ impl SymbolEngine {
             }
         }
 
-        // Phase 2 — the batch is durable: apply, emit, and report each command.
+        // 第二阶段：整批已经落盘，逐条应用、发事件、出报告。
         let mut reports = Vec::with_capacity(cmds.len());
         for cmd in cmds {
             self.seq += 1;
             reports.push(self.apply_and_emit(cmd));
         }
 
-        // One snapshot check per batch: it captures the effects of every command
-        // just applied (all already fsynced), so truncating the WAL afterwards is
-        // safe. The overshoot past `snapshot_every` is bounded by the batch size.
+        // 每批只检查一次快照。刚应用的命令都已经 fsync，之后截断 WAL 是安全的。
+        // 超出 `snapshot_every` 的部分不会超过本批的条数。
         self.since_snapshot += cmds.len() as u64;
         if self.snapshot_every > 0 && self.since_snapshot >= self.snapshot_every {
             self.maybe_snapshot();
@@ -238,10 +222,9 @@ impl SymbolEngine {
         reports
     }
 
-    /// Apply one already-durable command to the book and publish its events.
-    /// Shared by [`process`](Self::process) and
-    /// [`process_batch`](Self::process_batch); it assumes `self.seq` was already
-    /// advanced for this command and performs no WAL write or snapshot.
+    /// 把一条已经落盘的命令应用到订单簿并发布事件。
+    /// [`process`](Self::process) 和 [`process_batch`](Self::process_batch) 共用。
+    /// 调用前 `self.seq` 已经为这条命令前进过，这里不再写 WAL，也不打快照。
     fn apply_and_emit(&mut self, cmd: &Command) -> ExecReport {
         let mut touched = Vec::new();
         let report = self.apply(cmd, &mut touched);
@@ -252,7 +235,7 @@ impl SymbolEngine {
         report
     }
 
-    /// Force a snapshot now and truncate the WAL.
+    /// 立刻写快照并截断 WAL。快照写失败时不截断，避免只剩一段对不上的日志。
     pub fn maybe_snapshot(&mut self) {
         let Some(dir) = self.dir.clone() else { return };
         let state = self.snapshot_state();
@@ -268,7 +251,7 @@ impl SymbolEngine {
         self.since_snapshot = 0;
     }
 
-    // --- core matching (no WAL, no event emission) --------------------------
+    // --- 撮合本身：不写 WAL，也不发事件 ------------------------------------
 
     fn apply(&mut self, cmd: &Command, touched: &mut Vec<(bool, i128)>) -> ExecReport {
         match cmd {
@@ -313,8 +296,7 @@ impl SymbolEngine {
     }
 
     fn apply_place(&mut self, p: &PlaceCommand, touched: &mut Vec<(bool, i128)>) -> ExecReport {
-        // Parse amounts. Validation of precision/min-notional happens in Go; a
-        // parse error here means a malformed command and is rejected.
+        // 解析价格和数量。精度和最小名义金额在 Go 订单服务校验；这里解析失败就是畸形命令，直接拒绝。
         let price = if p.order_type == OrderType::Market || p.price.is_empty() {
             0
         } else {
@@ -325,7 +307,7 @@ impl SymbolEngine {
         };
         let is_market = p.order_type == OrderType::Market;
         let is_buy = p.side == Side::Buy;
-        // Market buys are driven by a quote budget; everything else by base qty.
+        // 市价买单按报价预算成交，其余订单按基础资产数量成交。
         let market_by_quote = is_market && is_buy;
 
         let (mut remaining, mut budget) = if market_by_quote {
@@ -339,16 +321,16 @@ impl SymbolEngine {
                 _ => return reject_place(p, &self.symbol, "bad quantity"),
             }
         };
-        let order_qty = remaining; // original target (i128::MAX for market buy)
+        let order_qty = remaining; // 原始目标数量；按报价的市价买单这里是 i128::MAX
 
-        // Market orders behave as IOC; otherwise honour the requested TIF.
+        // 市价单一律按 IOC 处理，限价单尊重请求里的有效期。
         let tif = if is_market { TimeInForce::IOC } else { p.time_in_force };
 
-        // PostOnly must not cross: reject outright if it would match.
+        // 只做 maker：会立刻成交就整单拒绝，不部分成交。
         if tif == TimeInForce::PostOnly && self.crosses(is_buy, price) {
             return reject_place(p, &self.symbol, "post_only_would_cross");
         }
-        // FOK must fill in full or not at all.
+        // FOK：不能一次全部成交就拒绝，订单簿不动。
         if tif == TimeInForce::FOK && !self.fully_fillable(is_buy, price, remaining) {
             return reject_place(p, &self.symbol, "fok_unfillable");
         }
@@ -358,11 +340,11 @@ impl SymbolEngine {
         let mut taker_filled = 0;
 
         loop {
-            // Best opposite price that still satisfies the taker's price bound.
+            // 对手盘里仍满足吃单方价格限制的最优价。市价单不设价格上限。
             let best = self.best_opposite(is_buy, price, is_market);
             let Some(level_price) = best else { break };
 
-            // Determine fill quantity against the front resting order.
+            // 与该价位队首挂单计算本次成交量。
             let opp = if is_buy { &mut self.asks } else { &mut self.bids };
             let level = opp.get_mut(&level_price).expect("level exists");
             let maker = level.front_mut().expect("non-empty level");
@@ -374,7 +356,7 @@ impl SymbolEngine {
                 remaining.min(maker.remaining)
             };
             if fill <= 0 {
-                break; // budget can no longer buy a whole step
+                break; // 剩余预算已经买不满一个数量步长
             }
 
             maker.remaining -= fill;
@@ -386,6 +368,8 @@ impl SymbolEngine {
             }
 
             self.trade_counter += 1;
+            // 成交号 = 交易对在 SYMBOLS 里的下标 * 10^12 + 该交易对自己的递增计数。
+            // 只能在列表末尾追加交易对，否则历史成交号会落到别的交易对上。
             let trade_id = self.symbol_index * 1_000_000_000_000 + self.trade_counter;
             trades.push(Trade {
                 trade_id: trade_id.to_string(),
@@ -419,18 +403,17 @@ impl SymbolEngine {
             }
             touched.push((!is_buy, level_price));
 
-            // Stop conditions for base-quantity orders.
+            // 按数量下的单：剩余数量吃完就停。按报价的市价买单停在预算买不满一步，或对手盘耗尽。
             if !market_by_quote && remaining == 0 {
                 break;
             }
         }
 
-        // Decide the final disposition of the taker order.
+        // 决定吃单方的最终状态。
         let status = if market_by_quote {
-            // Market buy: filled if the budget was effectively consumed (no more
-            // can be bought), otherwise the book ran dry with budget left over.
+            // 市价买单：预算已经买不满下一步视为全部成交；对手盘耗尽且预算还有剩余则取消，
+            // 剩余冻结由下游解冻。
             if self.best_opposite(true, 0, true).is_none() && budget > 0 {
-                // Book ran dry with budget left; leftover is unfrozen downstream.
                 OrderStatus::Canceled
             } else {
                 OrderStatus::Filled
@@ -438,10 +421,10 @@ impl SymbolEngine {
         } else if remaining == 0 {
             OrderStatus::Filled
         } else {
-            // Unfilled remainder.
+            // 还有未成交数量。
             match tif {
                 TimeInForce::GTC | TimeInForce::PostOnly => {
-                    // Rest the remainder as a maker.
+                    // 剩余部分挂成 maker。
                     self.rest(p, price, order_qty, remaining, is_buy, touched);
                     if taker_filled > 0 {
                         OrderStatus::PartiallyFilled
@@ -449,7 +432,7 @@ impl SymbolEngine {
                         OrderStatus::New
                     }
                 }
-                // IOC / market / FOK (FOK is guaranteed full above): discard rest.
+                // IOC、市价，以及上面已经保证能全部成交的 FOK：剩余部分丢掉，不挂单。
                 _ => OrderStatus::Canceled,
             }
         };
@@ -483,17 +466,18 @@ impl SymbolEngine {
         touched.push((is_buy, price));
     }
 
-    /// Best opposite price for a taker, or None if nothing is matchable.
+    /// 吃单方能碰到的最优对手价。没有可成交档位时返回 None。
+    /// 买单看最低卖价（BTreeMap 的首档），卖单看最高买价（末档）。
     fn best_opposite(&self, is_buy: bool, price: i128, is_market: bool) -> Option<i128> {
         if is_buy {
-            let (&ask, _) = self.asks.iter().next()?; // lowest ask
+            let (&ask, _) = self.asks.iter().next()?; // 最低卖价
             if is_market || ask <= price {
                 Some(ask)
             } else {
                 None
             }
         } else {
-            let (&bid, _) = self.bids.iter().next_back()?; // highest bid
+            let (&bid, _) = self.bids.iter().next_back()?; // 最高买价
             if is_market || bid >= price {
                 Some(bid)
             } else {
@@ -502,12 +486,12 @@ impl SymbolEngine {
         }
     }
 
-    /// Would a resting order at `price` on `is_buy`'s side cross the book now?
+    /// 在 `is_buy` 这一侧、价格为 `price` 的挂单现在会不会立刻碰到对手盘。
     fn crosses(&self, is_buy: bool, price: i128) -> bool {
         self.best_opposite(is_buy, price, false).is_some()
     }
 
-    /// Can `qty` be fully filled immediately within the price bound?
+    /// 在价格限制内，`qty` 能不能立刻全部成交。FOK 在改订单簿之前用它做预检。
     fn fully_fillable(&self, is_buy: bool, price: i128, qty: i128) -> bool {
         let mut need = qty;
         if is_buy {
@@ -550,6 +534,7 @@ impl SymbolEngine {
                 continue;
             }
             let book = if is_bid { &self.bids } else { &self.asks };
+            // 价位被吃空时数量记 0，下游用 0 删除这一档。
             let qty: i128 = book.get(&price).map(|q| q.iter().map(|o| o.remaining).sum()).unwrap_or(0);
             let level = Level { price: fixed::format(price), quantity: fixed::format(qty) };
             if is_bid {
@@ -568,7 +553,7 @@ impl SymbolEngine {
         }));
     }
 
-    /// Full depth snapshot of the current book (best prices first).
+    /// 当前订单簿的全量深度。买盘从高价到低价，卖盘从低价到高价。
     pub fn depth_snapshot(&self) -> DepthEvent {
         let bids = self
             .bids
@@ -679,7 +664,7 @@ mod tests {
         let mut e = eng();
         e.process(&place("s_high", "a", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70010", "1"));
         e.process(&place("s_low", "b", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
-        // A buy should hit the lowest ask (70000) first.
+        // 买单应先打到最低卖价 70000。
         let r = e.process(&place("b1", "c", Side::Buy, OrderType::Limit, TimeInForce::GTC, "70010", "1"));
         assert_eq!(r.trades[0].maker_order_id, "s_low");
         assert_eq!(r.trades[0].price, "70000");
@@ -691,7 +676,7 @@ mod tests {
         e.process(&place("s1", "a", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
         e.process(&place("s2", "b", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
         let r = e.process(&place("b1", "c", Side::Buy, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
-        // Oldest resting order (s1) fills first.
+        // 同一价位上更早的 s1 先成交。
         assert_eq!(r.trades.len(), 1);
         assert_eq!(r.trades[0].maker_order_id, "s1");
     }
@@ -703,7 +688,7 @@ mod tests {
         let r = e.process(&place("b1", "b", Side::Buy, OrderType::Limit, TimeInForce::GTC, "70000", "0.01"));
         assert_eq!(r.status, OrderStatus::PartiallyFilled);
         assert_eq!(r.filled_quantity, "0.004");
-        // Remainder 0.006 now rests on the bid side.
+        // 剩余 0.006 挂在买盘。
         let d = e.depth_snapshot();
         assert_eq!(d.bids.len(), 1);
         assert_eq!(d.bids[0].quantity, "0.006");
@@ -723,12 +708,12 @@ mod tests {
     fn fok_all_or_nothing() {
         let mut e = eng();
         e.process(&place("s1", "a", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "0.004"));
-        // Not enough liquidity -> rejected, no trades, book untouched.
+        // 流动性不够：拒绝，没有成交，订单簿不动。
         let r = e.process(&place("b1", "b", Side::Buy, OrderType::Limit, TimeInForce::FOK, "70000", "0.01"));
         assert_eq!(r.status, OrderStatus::Rejected);
         assert!(r.trades.is_empty());
         assert_eq!(e.depth_snapshot().asks[0].quantity, "0.004");
-        // Enough liquidity -> fully fills.
+        // 流动性够了就全部成交。
         e.process(&place("s2", "a", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "0.006"));
         let r = e.process(&place("b2", "b", Side::Buy, OrderType::Limit, TimeInForce::FOK, "70000", "0.01"));
         assert_eq!(r.status, OrderStatus::Filled);
@@ -739,10 +724,10 @@ mod tests {
     fn post_only_rejects_when_crossing() {
         let mut e = eng();
         e.process(&place("s1", "a", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
-        // Crosses -> rejected.
+        // 会吃单，拒绝。
         let r = e.process(&place("b1", "b", Side::Buy, OrderType::Limit, TimeInForce::PostOnly, "70000", "1"));
         assert_eq!(r.status, OrderStatus::Rejected);
-        // Does not cross -> rests.
+        // 不会吃单，挂上。
         let r = e.process(&place("b2", "b", Side::Buy, OrderType::Limit, TimeInForce::PostOnly, "69990", "1"));
         assert_eq!(r.status, OrderStatus::New);
     }
@@ -754,7 +739,7 @@ mod tests {
         let r = e.process(&Command::Cancel(CancelCommand { symbol: "BTCUSDT".into(), order_id: "s1".into() }));
         assert_eq!(r.status, OrderStatus::Canceled);
         assert!(e.asks.is_empty());
-        // Cancelling again reports not found.
+        // 再撤一次报 not_found。
         let r = e.process(&Command::Cancel(CancelCommand { symbol: "BTCUSDT".into(), order_id: "s1".into() }));
         assert_eq!(r.status, OrderStatus::Rejected);
     }
@@ -764,7 +749,7 @@ mod tests {
         let mut e = eng();
         e.process(&place("s1", "a", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "0.01"));
         e.process(&place("s2", "a", Side::Sell, OrderType::Limit, TimeInForce::GTC, "71000", "0.01"));
-        // 700 quote buys exactly 0.01 at 70000.
+        // 700 报价在 70000 正好买到 0.01。
         let r = e.process(&market_buy_quote("mb", "b", "700"));
         assert_eq!(r.status, OrderStatus::Filled);
         assert_eq!(r.trades.len(), 1);

@@ -1,7 +1,6 @@
-# Shared helpers for the growth smokes (sourced). Expects GATEWAY_URL,
-# ACCOUNT_URL, ASSET_URL, FUTURES_URL, GROWTH_URL, ADMIN_URL, INTERNAL_TOKEN,
-# PASSWORD, TS and SMOKE_NAME.
-
+# 增长类 smoke 的公共函数，由其他脚本 source。调用前需已设置
+# GATEWAY_URL、ACCOUNT_URL、ASSET_URL、FUTURES_URL、GROWTH_URL、ADMIN_URL、
+# INTERNAL_TOKEN、PASSWORD、TS、SMOKE_NAME。
 say()  { printf '\n\033[1;34m== %s ==\033[0m\n' "$1"; }
 fail() { printf '\033[1;31mSMOKE-%s FAILED: %s\033[0m\n' "$SMOKE_NAME" "$1" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || fail "jq is required"

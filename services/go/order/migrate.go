@@ -1,5 +1,7 @@
 package main
 
+// 启动时跑 goose。版本表 goose_order_version，避免和 account/asset 抢默认的 goose_db_version。
+
 import (
 	"database/sql"
 	"embed"
@@ -10,9 +12,7 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Migrate applies all pending goose migrations on startup. The order service
-// uses its own version table so it can share a database with account/asset
-// without racing on the default goose_db_version table.
+// Migrate 只执行尚未应用的迁移。版本表 goose_order_version。
 func Migrate(db *sql.DB) error {
 	goose.SetBaseFS(migrationsFS)
 	goose.SetTableName("goose_order_version")

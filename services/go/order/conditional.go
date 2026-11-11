@@ -1,5 +1,10 @@
 package main
 
+// 现货条件单：stop、take_profit、trigger。每个条件单带着限价或市价子单，最新成交价穿过 triggerPrice 后走普通下单。
+// up：last >= triggerPrice 才触发；down：last <= triggerPrice。
+// stop：买向上、卖向下。take_profit：买向下、卖向上。trigger：由最新价相对触发价推出，或用显式 triggerDirection。
+// 同一用户未触发的条件单最多 50 笔。触发前先把 pending 改成 triggering，多副本不会对同一行触发两次。
+
 import (
 	"context"
 	"database/sql"
@@ -13,17 +18,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// Conditional spot orders: stop (stop-loss), take_profit and generic trigger
-// orders. Each one carries a limit or market child order that is placed through
-// the normal placement path once the last traded price crosses triggerPrice.
-//
-// Direction semantics:
-//   up   = fire when last >= triggerPrice
-//   down = fire when last <= triggerPrice
-//   stop:        buy → up,   sell → down
-//   take_profit: buy → down, sell → up
-//   trigger:     derived from last price vs trigger (or explicit triggerDirection)
 
 const maxPendingConditional = 50
 
@@ -134,7 +128,7 @@ func (c *condRow) childRequest() placeOrderRequest {
 	return req
 }
 
-// lastPrice is the most recent spot trade price for a symbol.
+// lastPrice 是该交易对最近一笔现货成交价。没有成交则条件单不触发。
 func (s *Server) lastPrice(ctx context.Context, symbol string) (decimal.Decimal, bool) {
 	var p decimal.Decimal
 	err := s.store.db.QueryRowContext(ctx, `SELECT price FROM trades WHERE symbol=$1 ORDER BY id DESC LIMIT 1`, symbol).Scan(&p)
@@ -372,8 +366,7 @@ func (s *Server) releaseCond(ctx context.Context, c *condRow) error {
 	return err
 }
 
-// RunBackground drives the conditional-order trigger loop and periodic
-// fee-override refresh.
+// RunBackground 跑条件单触发循环，并定期刷新费率覆盖。
 func (s *Server) RunBackground(ctx context.Context) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
@@ -392,9 +385,7 @@ func (s *Server) RunBackground(ctx context.Context) {
 	}
 }
 
-// triggerPass fires every pending conditional order whose trigger has crossed.
-// A row is claimed (pending→triggering) before anything else, so concurrent
-// replicas never fire one twice.
+// triggerPass 触发已穿过价的 pending 条件单。先把行改成 triggering 再下子单，并发副本不会对同一行下两次。
 func (s *Server) triggerPass(ctx context.Context) {
 	rows, err := s.store.db.QueryContext(ctx, `SELECT DISTINCT symbol FROM spot_conditional_orders WHERE status IN ('pending','triggering')`)
 	if err != nil {
@@ -448,10 +439,8 @@ func (s *Server) fireCond(ctx context.Context, c *condRow) {
 		c.ID, dto.OrderID)
 }
 
-// recoverStaleCond handles rows stuck in triggering (process died mid-fire).
-// Re-placing could duplicate an order, so if a child order already exists for
-// the user/symbol since the claim we can't tell; we fail the row instead and
-// make sure its funds are released (the release ref is idempotent).
+// recoverStaleCond 处理卡在 triggering 的行（进程在触发中途挂了）。
+// 不能再下一张，否则可能重复。认领之后该用户该交易对已有子单时分不清是不是这张，于是把行标失败并释放资金；释放 ref 幂等。
 func (s *Server) recoverStaleCond(ctx context.Context) {
 	rows, err := s.store.db.QueryContext(ctx, `SELECT `+condCols+` FROM spot_conditional_orders
 		WHERE status='triggering' AND updated_at < now() - interval '60 seconds' LIMIT 50`)

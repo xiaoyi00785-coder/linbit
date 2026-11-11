@@ -1,3 +1,4 @@
+/** 资产数据：余额与合约账户，以及充值、提现、划转和地址簿。 */
 package click.cowa.linbit.feature.assets
 
 import androidx.lifecycle.ViewModel

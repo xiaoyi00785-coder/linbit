@@ -1,5 +1,9 @@
 package main
 
+// 体验金与抵扣金不进钱包余额，本金不能划出。只代付成本：手续费先扣抵扣金再扣体验金，
+// 全仓资金费只扣体验金。手续费接收方仍拿全额，差额由 system:bonus 出，守恒审计才成立。
+// 费用被抵掉期间产生的盈利是普通余额，可以划出。
+
 import (
 	"context"
 	"database/sql"
@@ -11,17 +15,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// bonus.go: trial bonus (体验金) and fee deduction coupons (抵扣金).
-//
-// A bonus is never part of the wallet balance, so its principal can never be
-// transferred out; it only pays costs on the user's behalf: trading fees
-// (deduction first, then trial) and cross-margin funding payments (trial
-// only). The fee receiver still gets the full fee; the platform account
-// system:bonus funds the covered part, so the conservation audit holds.
-// Profit made while fees were covered is ordinary balance and withdrawable.
-
 const bonusUser = "system:bonus"
 
+// Bonus 是体验金或抵扣金的剩余额度，Remaining 才是还能抵的部分，不是钱包余额。
 type Bonus struct {
 	ID        int64           `json:"id"`
 	Ref       string          `json:"ref"`
@@ -34,9 +30,8 @@ type Bonus struct {
 	CreatedAt int64           `json:"createdAt"`
 }
 
-// useBonus consumes up to amt from uid's active bonuses of the given kinds
-// and returns the covered amount (already debited from system:bonus and
-// credited back to uid with a bill of billKind).
+// useBonus 从 uid 未过期的指定 kind 里扣，最多扣 amt。返回已抵金额：已从 system:bonus 划出并记回 uid（账单类型 billKind）。
+// system: 与 copy: 账户不抵。抵扣金先于体验金。
 func useBonus(ctx context.Context, tx *sql.Tx, uid, symbol, billKind string, amt decimal.Decimal, kinds ...string) (decimal.Decimal, error) {
 	if amt.Sign() <= 0 || strings.HasPrefix(uid, "system:") || strings.HasPrefix(uid, "copy:") {
 		return dZero, nil
@@ -127,8 +122,7 @@ func (s *Server) writeBonuses(w http.ResponseWriter, r *http.Request, uid string
 }
 
 // POST /internal/bonus/grant {userId, ref, kind, amount, validDays, source, requireOwnFunds}
-// Idempotent on ref. A trial bonus with requireOwnFunds needs the futures
-// wallet balance (own funds) to be at least the bonus amount.
+// 按 ref 幂等。requireOwnFunds 的体验金要求合约钱包自有余额至少等于赠送额。
 func (s *Server) hBonusGrant(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		UserID          string          `json:"userId"`

@@ -1,8 +1,6 @@
-// Command order is the Linbit spot order service: order placement/cancel,
-// current/historical orders and trade queries. It validates against per-symbol
-// precision/minimum rules, freezes funds via the asset service, forwards
-// commands to the matching engine, and settles fills (with fees) back through
-// the asset service — all keyed for idempotency by trade id.
+// 现货订单服务：下单/撤单、当前与历史订单、成交查询。按交易对精度与最小量校验
+// （超出精度的价格/数量直接拒绝，不截断），经资产服务冻结后把指令交给撮合引擎，
+// 再按 tradeId 向资产服务幂等结算成交和手续费。
 package main
 
 import (

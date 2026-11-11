@@ -1,5 +1,8 @@
 package main
 
+// 价格预警存储。同一 clientAlertId 重复且请求哈希相同则返回原预警；哈希不同冲突。
+// 列表永远排除 status=deleted。更新按 revision 比较并交换，并作废更早 epoch 的 pending outbox。
+
 import (
 	"context"
 	"database/sql"
@@ -11,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// CreatePriceAlert 只接受 spot、INDEX、gte/lte、once、in_app。空 market 当成 spot。入库时 market 列写死 spot。
 type CreatePriceAlert struct {
 	ClientAlertID string   `json:"clientAlertId"`
 	Market        string   `json:"market"`
@@ -24,6 +28,7 @@ type CreatePriceAlert struct {
 	Note          string   `json:"note"`
 }
 
+// UpdatePriceAlert 必须带 revision。和库里的 revision 不一致返回 REVISION_CONFLICT。
 type UpdatePriceAlert struct {
 	Revision  *int64   `json:"revision"`
 	Threshold *string  `json:"threshold"`
@@ -63,6 +68,7 @@ func validateAlert(in CreatePriceAlert) (CreatePriceAlert, decimal.Decimal, erro
 	return in, threshold, nil
 }
 
+// CreateAlert 用用户级咨询锁串行同一 clientAlertId。哈希相同返回原预警，不插第二行；哈希不同返回 IDEMPOTENCY_CONFLICT。
 func (s *Store) CreateAlert(ctx context.Context, userID string, in CreatePriceAlert, market Market, clock time.Time) (PriceAlert, error) {
 	in, threshold, err := validateAlert(in)
 	if err != nil {
@@ -75,8 +81,7 @@ func (s *Store) CreateAlert(ctx context.Context, userID string, in CreatePriceAl
 		return PriceAlert{}, err
 	}
 	defer tx.Rollback()
-	// Serialize a user's idempotent creation and quota admission before reading
-	// an existing clientAlertId; concurrent replay must not become SQL 23505.
+	// 先对用户加事务级咨询锁再读 clientAlertId。并发重放不能变成 SQL 23505。
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1),918273)`, userID); err != nil {
 		return PriceAlert{}, err
 	}
@@ -100,6 +105,7 @@ func (s *Store) CreateAlert(ctx context.Context, userID string, in CreatePriceAl
 	if symbol.Status != "trading" {
 		return PriceAlert{}, apiErr(http.StatusBadRequest, "SYMBOL_PAUSED", "交易对已下线")
 	}
+	// threshold 按 price_precision 做 Round 后必须与原值相等，否则拒绝，不截断。
 	if !threshold.Equal(threshold.Round(int32(symbol.PricePrecision))) {
 		return PriceAlert{}, apiErr(http.StatusBadRequest, "INVALID_PRICE", "threshold 超出交易对价格精度")
 	}
@@ -174,6 +180,8 @@ func alertByIDTx(ctx context.Context, q interface {
 	}
 	return a, err
 }
+
+// ListAlerts 永远排除 deleted。status 只接受空、active、triggered、disabled，传 deleted 返回 VALIDATION_ERROR。
 func (s *Store) ListAlerts(ctx context.Context, userID, symbol, status string, page, pageSize int) (map[string]any, error) {
 	if status == "deleted" || (status != "" && status != "active" && status != "disabled" && status != "triggered") {
 		return nil, apiErr(http.StatusBadRequest, "VALIDATION_ERROR", "status 仅支持 active/triggered/disabled")
@@ -212,6 +220,7 @@ func (s *Store) ListAlerts(ctx context.Context, userID, symbol, status string, p
 	return map[string]any{"items": out, "page": page, "pageSize": pageSize, "total": total}, nil
 }
 
+// UpdateAlert 按 revision 做比较并交换。成功后 evaluation_epoch 加一，并作废更早 epoch 的 pending outbox，避免旧触发再发出。
 func (s *Store) UpdateAlert(ctx context.Context, userID, alertID string, in UpdatePriceAlert, market Market, now time.Time) (PriceAlert, error) {
 	if in.Revision == nil {
 		return PriceAlert{}, apiErr(http.StatusBadRequest, "REVISION_REQUIRED", "revision 必填")
@@ -225,7 +234,7 @@ func (s *Store) UpdateAlert(ctx context.Context, userID, alertID string, in Upda
 	if err != nil {
 		return PriceAlert{}, err
 	}
-	// Re-read with a row lock before applying the revision compare-and-set.
+	// 比较 revision 之前重新锁行，按 revision 做 CAS。
 	if _, err := tx.ExecContext(ctx, `SELECT alert_id FROM price_alerts WHERE alert_id=$1 FOR UPDATE`, alertID); err != nil {
 		return PriceAlert{}, err
 	}
@@ -260,6 +269,7 @@ func (s *Store) UpdateAlert(ctx context.Context, userID, alertID string, in Upda
 	if err != nil {
 		return PriceAlert{}, err
 	}
+	// 修改后的 threshold 按 price_precision 做 Round 后必须与原值相等，否则拒绝，不截断。
 	if !threshold.Equal(threshold.Round(int32(symbol.PricePrecision))) {
 		return PriceAlert{}, apiErr(http.StatusBadRequest, "INVALID_PRICE", "threshold 超出交易对价格精度")
 	}
@@ -291,7 +301,7 @@ func (s *Store) UpdateAlert(ctx context.Context, userID, alertID string, in Upda
 	if err != nil {
 		return PriceAlert{}, err
 	}
-	// Any older queued message is expired in the same revision transaction.
+	// 同一 revision 事务里把更老的 pending outbox 标成 expired。
 	if _, err := tx.ExecContext(ctx, `UPDATE price_alert_outbox SET state='expired',updated_at=$2 WHERE alert_id=$1 AND evaluation_epoch<(SELECT evaluation_epoch FROM price_alerts WHERE alert_id=$1) AND state='pending'`, alertID, now.UTC()); err != nil {
 		return PriceAlert{}, err
 	}
@@ -302,6 +312,7 @@ func (s *Store) UpdateAlert(ctx context.Context, userID, alertID string, in Upda
 	return a, tx.Commit()
 }
 
+// DeleteAlert 把 status 标成 deleted 并关掉未发出的 outbox。已经是 deleted 则直接成功，不再加 revision。
 func (s *Store) DeleteAlert(ctx context.Context, userID, alertID string, revision *int64, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

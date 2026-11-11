@@ -1,5 +1,7 @@
 package main
 
+// 服务间只读接口（策略机器人）。下单和撤单仍走普通 /spot/orders，调用方自己带 X-User-Id，和网关一样。
+
 import (
 	"errors"
 	"log"
@@ -11,17 +13,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Internal read endpoints for service-to-service callers (strategy bots).
-// Placing and cancelling go through the normal /spot/orders routes with the
-// caller-supplied X-User-Id, exactly like the gateway does.
-
 func (s *Server) internalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/orders/{orderId}", s.internal(s.handleInternalOrder))
 	mux.HandleFunc("GET /internal/symbols/{symbol}", s.internal(s.handleInternalSymbol))
 	mux.HandleFunc("GET /internal/trades/feed", s.internal(s.handleTradeFeed))
 }
 
-// handleInternalOrder returns one order of ?userId= plus its fill totals.
+// handleInternalOrder 返回 ?userId= 的一张订单及其成交合计。用户对不上则 404，不串单。
 func (s *Server) handleInternalOrder(w http.ResponseWriter, r *http.Request) {
 	uid := r.URL.Query().Get("userId")
 	o, err := s.store.GetOrder(r.Context(), uid, r.PathValue("orderId"))
@@ -72,8 +70,7 @@ func (s *Server) handleInternalSymbol(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleTradeFeed streams spot fills in id order for the growth service
-// (rebates, referral, points): GET /internal/trades/feed?after=<id>&limit=.
+// handleTradeFeed：GET /internal/trades/feed?after=<id>&limit=，按成交 id 顺序给出现货成交，给增长服务算返佣、推荐、积分。
 func (s *Server) handleTradeFeed(w http.ResponseWriter, r *http.Request) {
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))

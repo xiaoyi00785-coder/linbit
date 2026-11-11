@@ -1,3 +1,4 @@
+/** 登录注册共用控件：顶栏、账号输入、验证码方格、第三方按钮和主按钮。 */
 package click.cowa.linbit.feature.auth
 
 import androidx.compose.foundation.BorderStroke

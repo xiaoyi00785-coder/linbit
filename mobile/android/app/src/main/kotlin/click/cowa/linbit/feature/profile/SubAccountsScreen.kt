@@ -1,3 +1,4 @@
+/** 子账户列表与创建；切换须退出后用该子账户重新登录。 */
 package click.cowa.linbit.feature.profile
 
 import androidx.compose.foundation.background

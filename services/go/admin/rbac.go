@@ -49,7 +49,8 @@ const (
 	permMMView         = "mm:view"
 	permMMEdit         = "mm:edit"
 	permDashView       = "dash:view"
-	// 人工调账: create/list, and the second-person approval (maker-checker).
+	// 人工调账。fund:adjust 可创建和列表：super_admin、finance_first、finance_second。
+	// fund:adjust:approve 可复核和改阈值：super_admin、finance_second。创建人仍不能批自己的单。
 	permFundAdjust        = "fund:adjust"
 	permFundAdjustApprove = "fund:adjust:approve"
 )

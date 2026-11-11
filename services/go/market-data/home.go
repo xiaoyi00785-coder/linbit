@@ -14,13 +14,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// home.go: home-page operations slots.
+// 首页运营位。
 //
-//	public   GET /home/placements?slots=&platform=&locale=&appVersion=&region=&audience=
-//	public   GET /home/banners?platform=&locale=   (alias: active slot=carousel)
-//	public   GET /home/hot?type=hot|gainers|losers|new|volume&category=&limit=
-//	internal /internal/home/placements[/{id}], /internal/home/hot-pins
-//	         (X-Internal-Token; called by admin, which enforces 2FA+reason+audit)
+//	公开 GET /home/placements?slots=&platform=&locale=&appVersion=&region=&audience=
+//	公开 GET /home/banners?platform=&locale=   别名：生效中的 slot=carousel
+//	公开 GET /home/hot?type=hot|gainers|losers|new|volume&category=&limit=
+//	内部 /internal/home/placements[/{id}]、/internal/home/hot-pins
+//	     （X-Internal-Token；由 admin 调用，2FA、原因和审计在 admin）
 
 var hotTypes = map[string]bool{"hot": true, "gainers": true, "losers": true, "new": true, "volume": true}
 
@@ -31,6 +31,7 @@ type HotPin struct {
 	Sort   int    `json:"sort"`
 }
 
+// HotPins 返回首页热榜置顶，按榜单、排序和交易对。
 func (s *Store) HotPins(ctx context.Context) ([]HotPin, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT list_type, symbol, sort FROM home_hot_pins ORDER BY list_type, sort, symbol`)
 	if err != nil {

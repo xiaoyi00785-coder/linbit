@@ -1,5 +1,8 @@
 package main
 
+// market.go：向 market-data 取 {ASSET}USDT 指数价，给提现额度和风控折 USDT。
+// 没有可用价格时 ok=false，调用方失败关闭。
+
 import (
 	"context"
 	"encoding/json"
@@ -12,7 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// MarketClient reads real-time prices from the market-data service.
+// MarketClient 读 market-data 的实时指数。
 type MarketClient struct {
 	baseURL string
 	http    *http.Client
@@ -23,10 +26,8 @@ func NewMarketClient(baseURL string) *MarketClient {
 	return &MarketClient{baseURL: strings.TrimRight(baseURL, "/"), http: &http.Client{Timeout: 3 * time.Second}}
 }
 
-// LastPrice returns the index price of {asset}USDT from market-data's
-// /market/index (external Binance/OKX feed; local last price only when
-// INDEX_FEED=off). ok=false means no usable price (unknown pair, feed stale or
-// the service unreachable) and callers fail closed.
+// LastPrice 取 {asset}USDT 的指数价，来自 /market/index（外部 Binance/OKX；只有 INDEX_FEED=off 才用本地最新价）。
+// ok=false 表示没有可用价：未知交易对、行情过期或服务不可达。调用方应失败关闭。
 func (c *MarketClient) LastPrice(ctx context.Context, asset string) (decimal.Decimal, bool) {
 	if c == nil || c.baseURL == "" {
 		return decimal.Zero, false

@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for the points carnival + coupon center + futures bonus:
-#   ended period 5 rejects enroll/redeem, admin schedules a period (2FA +
-#   audit, overlap rejected), points only after enrollment (volume tiers,
-#   deposit cap, valid invitee), redeem rules (once per tier, balance, tier,
-#   enrollment), voucher activation (trial needs own futures funds), and the
-#   bonus paying futures fees (deduction first, then trial).
-#
-#   bash scripts/smoke-points.sh            # boots devstack
-#   SMOKE_INNER=1 ... bash scripts/smoke-points.sh   # existing stack
-#
+# 积分嘉年华 + 卡券中心 + 合约体验金/抵扣金端到端 smoke。
+# 已结束的第 5 期拒绝报名/兑换；后台排期（2FA + 审计，重叠拒绝）；仅报名后计积分（成交量档、充值上限、有效邀请）；
+# 兑换规则（每档一次、余额、档位、已报名）；券激活（体验金要自有合约资金）；赠金付合约手续费（先抵扣金，后体验金）。
+#   bash scripts/smoke-points.sh            # 拉起 devstack
+#   SMOKE_INNER=1 ... bash scripts/smoke-points.sh   # 已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

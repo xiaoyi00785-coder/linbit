@@ -1,5 +1,7 @@
 package common
 
+// jwt.go：HS256 access token。Subject 是 uid；子账户带 acct=sub 和 parent。
+
 import (
 	"errors"
 	"fmt"
@@ -8,32 +10,29 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// ErrInvalidToken is returned when an access token fails validation.
+// ErrInvalidToken 表示 access token 校验失败。签名算法不对、过期、typ 不是 access 都归这里。
 var ErrInvalidToken = errors.New("invalid token")
 
-// AccessClaims are the custom claims embedded in a Linbit access token.
-// Subject holds the public user id (uid).
+// AccessClaims 是 access token 里的自定义声明。Subject 是对外的用户 uid。
 type AccessClaims struct {
 	Email string `json:"email"`
 	Typ   string `json:"typ"`
-	// Acct is "sub" for a sub-account session (empty for a normal account);
-	// Parent is then the parent's uid. The gateway uses it to fence sub-account
-	// sessions off parent-only and withdrawal/deposit endpoints.
+	// Acct 为 "sub" 时这是子账户会话，Parent 是父账户 uid。普通账户这两项为空。
+	// 网关用它们拦住子账户访问仅父账户可用的接口，以及充值、提现。
 	Acct   string `json:"acct,omitempty"`
 	Parent string `json:"parent,omitempty"`
-	// IatMs is the issue time in unix milliseconds, compared against the
-	// per-user logout cutoff (see revoke.go).
+	// IatMs 是签发时间的 unix 毫秒，用来和该用户的登出截止时间比较（见 revoke.go）。
+	// 没有这个字段的旧令牌回退到秒级 iat。
 	IatMs int64 `json:"iatms,omitempty"`
 	jwt.RegisteredClaims
 }
 
-// SignAccessToken issues an HS256 access token for the given uid/email.
+// SignAccessToken 签发 HS256 access token。typ 固定为 access，iss 为 linbit。
 func SignAccessToken(secret, uid, email string, ttl time.Duration, now time.Time) (string, error) {
 	return SignAccessTokenFor(secret, uid, email, "", ttl, now)
 }
 
-// SignAccessTokenFor issues an access token; a non-empty parentUID marks the
-// session as a sub-account session (acct="sub").
+// SignAccessTokenFor 签发 access token。parentUID 非空时记成子账户会话（acct="sub"）。
 func SignAccessTokenFor(secret, uid, email, parentUID string, ttl time.Duration, now time.Time) (string, error) {
 	acct := ""
 	if parentUID != "" {
@@ -56,7 +55,7 @@ func SignAccessTokenFor(secret, uid, email, parentUID string, ttl time.Duration,
 	return tok.SignedString([]byte(secret))
 }
 
-// ParseAccessToken validates an HS256 access token and returns its claims.
+// ParseAccessToken 校验 HS256 access token。算法不是 HMAC，或 typ 不是 access，返回 ErrInvalidToken。
 func ParseAccessToken(secret, token string) (*AccessClaims, error) {
 	claims := &AccessClaims{}
 	parsed, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {

@@ -7,9 +7,8 @@ import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// POST /internal/ws/push {userId, channel, data}: private frame to one user's
-// sockets (event contract settlements). Best effort; answers how many sockets
-// received it.
+// POST /internal/ws/push {userId, channel, data}：给一个用户的连接推私有帧（事件合约结算）。
+// 尽力而为，返回实际送到的连接数。
 func (s *Server) hWSPush(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		UserID  string          `json:"userId"`
@@ -24,9 +23,8 @@ func (s *Server) hWSPush(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, map[string]any{"delivered": n})
 }
 
-// POST /internal/ws/broadcast {frames:[{channel, data}]}: public frames relayed
-// from the futures service (only mark:{SYMBOL}, futures-ticker:{SYMBOL} and
-// futures-kline:{SYMBOL}:{interval} are accepted; mark is re-emitted as index:{SYMBOL}).
+// POST /internal/ws/broadcast {frames:[{channel, data}]}：转发合约服务的公开帧。
+// 只收 mark:{SYMBOL}、futures-ticker:{SYMBOL}、futures-kline:{SYMBOL}:{interval}；mark 会再发一份 index:{SYMBOL}。
 func (s *Server) hWSBroadcast(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Frames []struct {

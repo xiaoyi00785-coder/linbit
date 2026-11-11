@@ -1,5 +1,7 @@
 package main
 
+// 现货订单库。成交按 (trade_id, order_id) 幂等插入。价格和数量以十进制字符串入库，不用浮点。
+
 import (
 	"context"
 	"database/sql"
@@ -9,13 +11,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ErrSymbolNotFound is returned when a symbol is not configured for trading.
+// ErrSymbolNotFound：交易对未配置。下单把它当成校验错误，不是 500。
 var ErrSymbolNotFound = errors.New("symbol not found")
 
-// ErrOrderNotFound is returned when an order does not exist for the user.
+// ErrOrderNotFound：该用户没有这张订单。不能用别人的订单 id 查到。
 var ErrOrderNotFound = errors.New("order not found")
 
-// SymbolConfig is a trading pair's admission rules.
+// SymbolConfig 是交易对准入。PricePrecision / QuantityPrecision 用来拒绝多余小数，不是用来截断入参。
 type SymbolConfig struct {
 	Symbol            string
 	Base              string
@@ -27,30 +29,29 @@ type SymbolConfig struct {
 	Status            string
 }
 
-// Order is a persisted spot order. Price and QuoteOrderQty are optional
-// (market orders have no price; only market-buy-by-quote carries a budget).
+// Order 是落库的现货订单。市价单没有价格；只有按预算的市价买才有 QuoteOrderQty。HasPrice/HasQuoteQty 为假时对应字段无效。
 type Order struct {
-	OrderID       string
-	ClientOrderID string
-	UserID        string
-	Symbol        string
-	Side          string // buy | sell
-	Type          string // limit | market
-	TimeInForce   string // GTC | IOC | FOK | PostOnly
-	Price         decimal.Decimal
-	HasPrice      bool
-	Quantity      decimal.Decimal
-	QuoteOrderQty decimal.Decimal
-	HasQuoteQty   bool
+	OrderID        string
+	ClientOrderID  string
+	UserID         string
+	Symbol         string
+	Side           string // buy | sell
+	Type           string // limit | market
+	TimeInForce    string // GTC | IOC | FOK | PostOnly
+	Price          decimal.Decimal
+	HasPrice       bool
+	Quantity       decimal.Decimal
+	QuoteOrderQty  decimal.Decimal
+	HasQuoteQty    bool
 	FilledQuantity decimal.Decimal
-	Status        string
-	FrozenAsset   string
-	FrozenAmount  decimal.Decimal
-	Unfrozen      bool
-	CreatedAt     time.Time
+	Status         string
+	FrozenAsset    string
+	FrozenAmount   decimal.Decimal
+	Unfrozen       bool
+	CreatedAt      time.Time
 }
 
-// TradeRow is one side (maker or taker) of a matched trade, as seen by one user.
+// TradeRow 是一笔成交在某一个用户侧的一行。同一 tradeId 有买方、卖方各一行，靠 order_id 区分。
 type TradeRow struct {
 	TradeID   string
 	OrderID   string
@@ -65,15 +66,15 @@ type TradeRow struct {
 	CreatedAt time.Time
 }
 
-// Store wraps the order database.
+// Store 包着订单库。不在这里开撮合，也不改资产余额。
 type Store struct {
 	db *sql.DB
 }
 
-// NewStore constructs a Store.
+// NewStore 不探活数据库。连接失败会在第一次查询时暴露。
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
-// Symbol returns the configuration for a trading pair.
+// Symbol 返回交易对配置。未配置返回 ErrSymbolNotFound，不返回零精度。
 func (s *Store) Symbol(ctx context.Context, symbol string) (*SymbolConfig, error) {
 	var c SymbolConfig
 	var minQty, minNotional string
@@ -94,7 +95,7 @@ func (s *Store) Symbol(ctx context.Context, symbol string) (*SymbolConfig, error
 	return &c, nil
 }
 
-// Symbols returns all configured trading pairs ordered by symbol.
+// Symbols 按交易对名字顺序列出全部已配置交易对，含暂停的。
 func (s *Store) Symbols(ctx context.Context) ([]SymbolConfig, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT symbol, base, quote, price_precision, quantity_precision,
@@ -265,9 +266,7 @@ func (s *Store) scanOrder(sc rowScanner) (*Order, error) {
 	return &o, nil
 }
 
-// Consumed returns how much of an order's frozen asset has been spent across its
-// recorded fills: quote spent (Σ price·qty) for a buy, base delivered (Σ qty)
-// for a sell. Used to release the exact over-frozen leftover when an order ends.
+// Consumed 是这张订单已记录成交花掉的冻结：买单 Σ价格×数量，卖单 Σ数量。订单结束时用它算该退的差额。
 func (s *Store) Consumed(ctx context.Context, orderID, side string) (decimal.Decimal, error) {
 	expr := `COALESCE(SUM(quantity), 0)::text`
 	if side == "buy" {
@@ -281,7 +280,7 @@ func (s *Store) Consumed(ctx context.Context, orderID, side string) (decimal.Dec
 	return decimal.RequireFromString(sum), nil
 }
 
-// InsertTrade records one side of a matched trade; idempotent on (trade_id, order_id).
+// InsertTrade 记成交的一侧。(trade_id, order_id) 冲突则跳过，重放回报不会插第二行。
 func (s *Store) InsertTrade(ctx context.Context, t TradeRow) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO trades (trade_id, order_id, user_id, symbol, side, price, quantity, fee, fee_asset, role)
@@ -292,7 +291,7 @@ func (s *Store) InsertTrade(ctx context.Context, t TradeRow) error {
 	return err
 }
 
-// MyTrades returns a page of the user's trade fills.
+// MyTrades 只返回该用户的成交，按页。symbol 空则不按交易对过滤。
 func (s *Store) MyTrades(ctx context.Context, userID, symbol string, page, size int) ([]TradeRow, int, error) {
 	where := `user_id = $1`
 	args := []any{userID}

@@ -1,17 +1,10 @@
-// Package storage is a pluggable binary object store shared by the Linbit Go
-// services. Avatars use it today; KYC document uploads are expected to reuse the
-// same interface later (just a different backend instance / key prefix).
+// Package storage 是各 Go 服务共用的对象存储。头像在用；KYC 文件复用同一接口，换后端或 key 前缀即可。
 //
-// An ObjectStorage persists a blob under a caller-chosen key and reports the
-// public URL at which it can be retrieved. Two backends ship here:
+// ObjectStorage 按调用方给的 key 存 blob，并返回可取回的 URL。两个后端：
 //
-//   - LocalStorage writes blobs to a configurable directory on disk and is read
-//     back through a controlled HTTP route (see LocalStorage.ServeHTTP), which
-//     maps a request path to a key, blocks path traversal, and sets the right
-//     Content-Type. This is the default for dev/self-hosted deployments.
-//   - S3Storage is a skeleton for an object-store backend (AWS S3 or
-//     compatible). The interface is wired up; the implementation is left as a
-//     stub so the credentials/SDK can be dropped in without touching callers.
+//   - LocalStorage 写到本地目录，经受控 HTTP（LocalStorage.ServeHTTP）读回：
+//     路径映射到 key，挡住 ".."，并按扩展名设 Content-Type。开发/自建默认用它。
+//   - S3Storage 走 S3 兼容存储（AWS / MinIO / R2），path-style + SigV4，不依赖 AWS SDK。
 package storage
 
 import (
@@ -21,30 +14,25 @@ import (
 	"io"
 )
 
-// ErrNotFound is returned by Open when a key does not exist.
+// ErrNotFound 表示 Open 时 key 不存在。
 var ErrNotFound = errors.New("storage: object not found")
 
-// ErrNotImplemented is returned by backends that do not support an operation
-// (e.g. the S3 skeleton, or Open on a backend that serves via its own URL).
+// ErrNotImplemented 表示该后端不做这个操作。S3 的 Open 已实现；接口仍保留这个错误给只靠自身 URL 对外的后端。
 var ErrNotImplemented = errors.New("storage: not implemented")
 
-// ErrUnsupportedImage is returned by DetectImageType for non-image or
-// unsupported-image payloads.
+// ErrUnsupportedImage 表示 DetectImageType 见到的不是支持的图片。只认 JPEG、PNG、WEBP。
 var ErrUnsupportedImage = errors.New("storage: unsupported image type")
 
-// ObjectStorage stores binary blobs behind a pluggable backend.
-//
-// key is a backend-relative path such as "avatars/80000001/ab12cd.png". Callers
-// own the key scheme; backends must treat it as an opaque, slash-separated path
-// and must reject attempts to escape their root.
+// ObjectStorage 把二进制对象放到可替换的后端。
+// key 是后端相对路径，例如 avatars/80000001/ab12cd.png。调用方定 key 规则；
+// 后端把它当成不透明的斜杠路径，并拒绝逃出根目录。
 type ObjectStorage interface {
 	// Put stores data under key with the given contentType and returns the
 	// public URL at which the object can be retrieved.
 	Put(ctx context.Context, key, contentType string, data []byte) (url string, err error)
 
-	// Open returns a reader for a previously stored object plus its content
-	// type. Backends that serve objects via their own URL (e.g. S3) may return
-	// ErrNotImplemented. Returns ErrNotFound when the key is unknown.
+	// Open 返回已存对象的读取器和 Content-Type。key 不存在则 ErrNotFound。
+	// 只靠自身 URL 对外的后端可以返回 ErrNotImplemented。当前 S3 实现会真正去取对象。
 	Open(ctx context.Context, key string) (body io.ReadCloser, contentType string, err error)
 }
 
@@ -65,9 +53,7 @@ var (
 
 var pngMagic = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}
 
-// DetectImageType sniffs data's magic bytes and returns the matching supported
-// image type. It never trusts a client-supplied Content-Type. Supported:
-// JPEG, PNG, WEBP. Returns ErrUnsupportedImage otherwise.
+// DetectImageType 看魔数，不信客户端给的 Content-Type。只支持 JPEG、PNG、WEBP，其余 ErrUnsupportedImage。
 func DetectImageType(data []byte) (ImageType, error) {
 	switch {
 	case len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF:

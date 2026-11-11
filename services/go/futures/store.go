@@ -1,5 +1,8 @@
 package main
 
+// 合约领域类型和行读写。保险基金账户 system:insurance，手续费账户 system:fee。
+// 标记价不可用是 MARK_PRICE_UNAVAILABLE，调用方应拒绝下单和强平。
+
 import (
 	"context"
 	"crypto/rand"
@@ -13,8 +16,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// store.go: domain types and row helpers.
-
 const (
 	insuranceUser = "system:insurance"
 	feeUser       = "system:fee"
@@ -26,7 +27,7 @@ type queryer interface {
 	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
 }
 
-// apiError is a typed business error surfaced to the client.
+// apiError 是返回给客户端的业务错误。Error() 含 code，HTTP 层用 Status 和 Code。
 type apiError struct {
 	Status        int
 	Code, Message string
@@ -55,6 +56,7 @@ func newRef(prefix string) string {
 	return prefix + "-" + hex.EncodeToString(b)
 }
 
+// Contract 的 Tick 是价格步长，MinQty 同时是数量步长。halted 时下单返回 CONTRACT_HALTED。
 type Contract struct {
 	Symbol      string          `json:"symbol"`
 	Base        string          `json:"baseAsset"`

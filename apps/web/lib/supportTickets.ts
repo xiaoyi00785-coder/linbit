@@ -28,6 +28,7 @@ export const createTicket = (b: { category: TicketCategory; subject: string; con
 export const replyTicket = (id: string, content: string, attachments: string[]) => rest<Ticket>("POST", `/support/tickets/${encodeURIComponent(id)}/messages`, { content, attachments });
 export const closeTicket = (id: string) => rest<Ticket>("POST", `/support/tickets/${encodeURIComponent(id)}/close`, {});
 
+/** 附件上传走原始 fetch（multipart）。401 时与 rest 共用一次 refreshAccess，只重试一次。 */
 async function authed(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
   const tok = useAuthStore.getState().accessToken;
   const r = await fetch(API_BASE + path, { ...init, headers: { ...(init.headers || {}), ...(tok ? { Authorization: `Bearer ${tok}` } : {}) } });

@@ -1,3 +1,4 @@
+/** 灰底圆角输入框，支持清除、密码显隐和错误描边，另有字段标题。 */
 package click.cowa.linbit.ui.components
 
 import androidx.compose.foundation.BorderStroke

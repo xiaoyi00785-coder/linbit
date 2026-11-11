@@ -1,5 +1,7 @@
 package chainkit
 
+// sol.go：Solana JSON-RPC。归集用 SendSponsored，手续费由热钱包付，充值地址不用先打 SOL。
+
 import (
 	"bytes"
 	"context"
@@ -10,7 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// SolClient talks to a Solana JSON-RPC node (devnet by default).
+// SolClient 对接 Solana JSON-RPC。确认级别用 confirmed。
 type SolClient struct{ rpc jsonRPC }
 
 // NewSolClient builds a client.
@@ -239,8 +241,7 @@ func (c *SolClient) Send(ctx context.Context, s HotSigner, from KeyRef, to strin
 	return c.SendSponsored(ctx, s, from, from, to, token, amount)
 }
 
-// SendSponsored transfers from `owner` while `payer` pays the fee; used for
-// sweeps so deposit addresses never need a SOL top-up.
+// SendSponsored 从 owner 转出，手续费由 payer 付。归集时充值地址不用先打 SOL。
 func (c *SolClient) SendSponsored(ctx context.Context, s HotSigner, payer, owner KeyRef, to string, token *Token, amount decimal.Decimal) (string, error) {
 	toB, err := ParseSolAddress(to)
 	if err != nil {

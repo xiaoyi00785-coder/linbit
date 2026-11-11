@@ -1,5 +1,7 @@
 package main
 
+// 目标报价。买价向下、卖价向上对齐到 tick，库存偏移不会把点差收得比配置更紧。
+
 import (
 	"github.com/shopspring/decimal"
 )

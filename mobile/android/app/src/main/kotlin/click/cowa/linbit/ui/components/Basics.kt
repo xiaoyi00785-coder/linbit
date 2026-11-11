@@ -1,3 +1,4 @@
+/** 通用控件：按压反馈、图标与按钮、涨跌色块、页签、币种图标和空状态。 */
 package click.cowa.linbit.ui.components
 
 import androidx.annotation.DrawableRes

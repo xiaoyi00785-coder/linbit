@@ -1,4 +1,5 @@
 "use client";
+// 合伙人总览：档位、佣金汇总、升级进度和每日佣金。
 import Link from "next/link";
 import { useState } from "react";
 import { useApi, type Daily, type Summary } from "@/lib/api";

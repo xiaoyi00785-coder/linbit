@@ -1,5 +1,8 @@
 package main
 
+// netsettings.go：管理端覆盖充提网络参数（最小额、手续费、开关、展示顺序），叠在注册表默认值上。
+// 金额仍是 decimal，对外用 fmt8 收成 8 位小数字符串。
+
 import (
 	"context"
 	"database/sql"

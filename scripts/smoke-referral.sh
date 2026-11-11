@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for the regular referral (invite) program:
-#   code attribution (case-insensitive, unknown code = nobody), 10% of the
-#   invitee's fees incl. copy-trading sub-account fees, copy profit share
-#   excluded, the 1-year window, no stacking once the inviter becomes a
-#   partner, invitee/reward views and the admin referral lookup.
-#
-#   bash scripts/smoke-referral.sh            # boots devstack
-#   SMOKE_INNER=1 ... bash scripts/smoke-referral.sh   # existing stack
-#
+# 普通邀请返佣端到端 smoke。
+# 邀请码归属（大小写不敏感，未知码无人）、被邀请人手续费的 10%（含跟单子账户手续费，不含跟单分润）、
+# 1 年窗口、邀请人成为合伙人后不叠加、被邀请人/奖励视图、后台邀请查询。
+#   bash scripts/smoke-referral.sh            # 拉起 devstack
+#   SMOKE_INNER=1 ... bash scripts/smoke-referral.sh   # 已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

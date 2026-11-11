@@ -1,5 +1,7 @@
 package main
 
+// 已平仓历史，对应币安仓位历史 / OKX 历史仓位。system: 账户不记。平仓状态来自 s.histStatus（强平/ADL 在 s.mu 下设置）。
+
 import (
 	"context"
 	"database/sql"
@@ -12,16 +14,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// history.go: closed-position history (Binance "Position History" / OKX "Positions history").
-
 func (p *Position) resetLifecycle(now time.Time) {
 	p.OpenedAt = sql.NullTime{}
 	p.OpenQty, p.OpenQuote, p.CloseQty, p.CloseQuote = dZero, dZero, dZero, dZero
 	p.MaxQty, p.Fees, p.Funding = dZero, dZero, dZero
 }
 
-// recordHistory writes the position that just ended (oldQ was its signed size).
-// The close status comes from s.histStatus (set by liquidation / ADL under s.mu).
+// recordHistory 写下刚结束的仓位。oldQ 是结束前的带符号数量。开仓价、平仓价按开/平成交额除以数量，空则退回 Entry。system: 不记。
 func (s *Server) recordHistory(ctx context.Context, tx *sql.Tx, p Position, oldQ decimal.Decimal) error {
 	if strings.HasPrefix(p.UserID, "system:") {
 		return nil
@@ -48,6 +47,7 @@ func (s *Server) recordHistory(ctx context.Context, tx *sql.Tx, p Position, oldQ
 	if status == "" {
 		status = "closed"
 	}
+	// 开仓价、平仓价 Round(8)；盈亏、手续费、资金费走 money()，也是 8 位。
 	maxQ := dmax(p.MaxQty, oldQ.Abs())
 	net := money(p.Realized.Sub(p.Fees).Add(p.Funding))
 	_, err := tx.ExecContext(ctx, `INSERT INTO fut_position_history (user_id, symbol, position_side, direction, margin_mode, leverage, entry_price, close_price,
@@ -57,6 +57,7 @@ func (s *Server) recordHistory(ctx context.Context, tx *sql.Tx, p Position, oldQ
 	return err
 }
 
+// PosHistory 的价格和金额是已落库的 8 位小数字符串。status 来自平仓当时的 histStatus，普通平仓不是 liquidated。
 type PosHistory struct {
 	ID        int64     `json:"id"`
 	Symbol    string    `json:"symbol"`
@@ -78,7 +79,7 @@ type PosHistory struct {
 }
 
 // GET /futures/positions/history?symbol=&startTime=&endTime=&cursor=&limit=
-// Newest first; nextCursor is the id to pass as cursor for the next page.
+// 按 id 从新到旧。nextCursor 是下一页要传的 id。
 func (s *Server) hPositionHistory(w http.ResponseWriter, r *http.Request, uid string) {
 	q := r.URL.Query()
 	qs := `SELECT id, symbol, position_side, direction, margin_mode, leverage, entry_price, close_price, max_qty, closed_qty, realized_pnl, fees, funding, net_pnl, status, opened_at, closed_at

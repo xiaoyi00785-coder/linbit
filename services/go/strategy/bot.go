@@ -1,5 +1,7 @@
 package main
 
+// 现货网格机器人。报价余额和持有 base 只根据成交回报变动。
+
 import (
 	"context"
 	"database/sql"
@@ -12,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Server 跑现货网格。轮询和 API 共用 mu 改机器人状态。
 type Server struct {
 	cfg      Config
 	db       *sql.DB
@@ -19,10 +22,12 @@ type Server struct {
 	lastSnap map[int64]time.Time
 }
 
+// NewServer 创建网格服务。
 func NewServer(cfg Config, db *sql.DB) *Server {
 	return &Server{cfg: cfg, db: db, lastSnap: map[int64]time.Time{}}
 }
 
+// Bot 是一个网格机器人。报价余额和持有 base 只来自成交回报。
 type Bot struct {
 	ID          int64
 	UserID      string
@@ -90,6 +95,7 @@ func (s *Server) bot(ctx context.Context, id int64) (Bot, error) {
 // Value is the bot's mark-to-market equity in quote.
 func (b Bot) Value(p decimal.Decimal) decimal.Decimal { return b.QuoteBal.Add(b.BaseQty.Mul(p)) }
 
+// GridOrder 是机器人在某一档的订单。
 type GridOrder struct {
 	ID       int64
 	BotID    int64
@@ -329,6 +335,7 @@ func (s *Server) validate(ctx context.Context, r createReq) (validated, error) {
 	return v, nil
 }
 
+// Create 在未超过每人同时运行上限时创建机器人。启动下单失败且没有任何订单时删掉这条记录。
 func (s *Server) Create(ctx context.Context, uid string, r createReq) (Bot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -503,11 +510,13 @@ func (s *Server) tickBot(ctx context.Context, b Bot) error {
 			if err := s.book(ctx, &b, g, info, nil); err != nil {
 				return err
 			}
+			// 下一档卖出数量 = 成交量减去 base 手续费，再按数量精度向下取整。
 			net := info.FilledQuantity.Sub(info.BaseFee)
 			qty := floorStep(net, sym.QuantityPrecision)
 			if g.Level+1 >= len(levels) || qty.LessThan(sym.MinQuantity) {
 				continue
 			}
+			// 成本按成交报价（含报价手续费）分摊到卖出数量，四舍五入到 18 位。
 			cost := info.FilledQuote.Add(info.QuoteFee).Mul(qty).Div(net).Round(18)
 			if err := s.placeLimit(ctx, b, g.Level+1, "sell", levels[g.Level+1], qty, cost); err != nil {
 				log.Printf("grid %d replace sell: %v", b.ID, err)
@@ -515,6 +524,7 @@ func (s *Server) tickBot(ctx context.Context, b Bot) error {
 				return nil
 			}
 		} else {
+			// 网格利润 = 卖出报价 - 报价手续费 - 买入成本 - base 手续费按该档价格折算。
 			profit := info.FilledQuote.Sub(info.QuoteFee).Sub(g.Cost).Sub(info.BaseFee.Mul(levels[g.Level]))
 			if err := s.book(ctx, &b, g, info, &profit); err != nil {
 				return err

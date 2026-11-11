@@ -1,5 +1,8 @@
 package main
 
+// 订单服务与撮合引擎的边界。本地实现是 HTTP；生产可以换成同一接口的 Kafka（命令主题进、成交回报出），调用点不用改。
+// 成交回报里的 tradeId 是结算幂等键。
+
 import (
 	"bytes"
 	"context"
@@ -11,16 +14,12 @@ import (
 	"time"
 )
 
-// Matching is the replaceable messaging boundary between the order service and
-// the matching engine. The local implementation ([HTTPMatching]) speaks HTTP;
-// a production deployment could implement the same interface over Kafka (submit
-// to a command topic, consume the exec report) without touching call sites.
+// Matching 提交一条命令并同步拿回成交回报。实现可以是 HTTP 或 Kafka，调用方只认这个接口。
 type Matching interface {
 	Submit(ctx context.Context, cmd EngineCommand) (*ExecReport, error)
 }
 
-// EngineCommand is the JSON command sent to the engine. Field names/tags match
-// the engine's serde contract (see services/rust/matching-engine/src/types.rs).
+// EngineCommand 的 json 字段名对齐撮合引擎的 serde（services/rust/matching-engine/src/types.rs）。cmd 是 place 或 cancel。
 type EngineCommand struct {
 	Cmd           string `json:"cmd"` // "place" | "cancel"
 	Symbol        string `json:"symbol"`
@@ -34,7 +33,7 @@ type EngineCommand struct {
 	QuoteOrderQty string `json:"quoteOrderQty,omitempty"`
 }
 
-// EngineTrade mirrors the engine's Trade event.
+// EngineTrade 对应引擎的 Trade。TradeID 交给资产服务做幂等结算，重放同一 id 不会划第二次。
 type EngineTrade struct {
 	TradeID      string `json:"tradeId"`
 	Symbol       string `json:"symbol"`
@@ -47,7 +46,7 @@ type EngineTrade struct {
 	TakerSide    string `json:"takerSide"`
 }
 
-// EngineOrderUpdate mirrors the engine's resting-order update.
+// EngineOrderUpdate 是引擎里仍挂着的 maker 单被这次成交改过的数量和状态。
 type EngineOrderUpdate struct {
 	OrderID        string `json:"orderId"`
 	UserID         string `json:"userId"`
@@ -55,7 +54,7 @@ type EngineOrderUpdate struct {
 	FilledQuantity string `json:"filledQuantity"`
 }
 
-// ExecReport is the engine's synchronous response to a command.
+// ExecReport 是命令的同步回报：taker 状态、成交列表、被碰到的 maker。结算只认这里的 tradeId。
 type ExecReport struct {
 	Symbol         string              `json:"symbol"`
 	OrderID        string              `json:"orderId"`
@@ -66,14 +65,14 @@ type ExecReport struct {
 	RejectReason   *string             `json:"rejectReason"`
 }
 
-// HTTPMatching is the local HTTP implementation of Matching.
+// HTTPMatching 把命令 POST 到引擎。超时或非 2xx 把错误返回给下单，不会在本地假装成交。
 type HTTPMatching struct {
 	url   string
 	token string
 	http  *http.Client
 }
 
-// NewHTTPMatching constructs an HTTP-backed matching client.
+// NewHTTPMatching 去掉 URL 末尾斜杠。空地址会在 Submit 时失败。
 func NewHTTPMatching(url, token string) *HTTPMatching {
 	return &HTTPMatching{
 		url:   strings.TrimRight(url, "/"),
@@ -82,7 +81,7 @@ func NewHTTPMatching(url, token string) *HTTPMatching {
 	}
 }
 
-// Submit posts a command to the engine and decodes the exec report.
+// Submit 把命令 POST 给引擎并解码成交回报。解码失败不当成空成交。
 func (m *HTTPMatching) Submit(ctx context.Context, cmd EngineCommand) (*ExecReport, error) {
 	body, err := json.Marshal(cmd)
 	if err != nil {
@@ -112,14 +111,12 @@ func (m *HTTPMatching) Submit(ctx context.Context, cmd EngineCommand) (*ExecRepo
 	return &report, nil
 }
 
-// BookTop is optionally implemented by a Matching backend that can report the
-// best ask of a symbol's book. It prices market buys placed by base quantity.
+// BookTop 是能报最优卖价的撮合后端。按基础币数量下的市价买单用它算保护价；没实现这个接口就不能这样下。
 type BookTop interface {
 	BestAsk(ctx context.Context, symbol string) (string, error)
 }
 
-// BestAsk reads the engine's depth snapshot and returns the lowest ask price
-// ("" when the ask side is empty).
+// BestAsk 返回深度快照卖盘第一条。空卖盘返回空串，调用方应拒单而不是用 0。
 func (m *HTTPMatching) BestAsk(ctx context.Context, symbol string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.url+"/engine/depth?symbol="+symbol, nil)
 	if err != nil {

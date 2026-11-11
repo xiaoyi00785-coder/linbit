@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// IsProduction reports whether LINBIT_ENV=production.
+// IsProduction 在 LINBIT_ENV=production，或被判定为主网时返回 true。主网见 IsMainnet。
 func IsProduction() bool {
 	if IsMainnet() {
 		return true
@@ -15,8 +15,8 @@ func IsProduction() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("LINBIT_ENV")), "production")
 }
 
-// ProductionProblems checks the named env vars for missing or known-default
-// values and returns a description of each problem (never the value itself).
+// ProductionProblems 检查列出的环境变量是否缺失或仍是已知的默认值。
+// 返回的是问题描述，不包含变量的值本身。
 func ProductionProblems(lookup func(string) string, vars ...string) []string {
 	var out []string
 	for _, k := range vars {
@@ -56,9 +56,8 @@ func redisHasPassword(u string) bool {
 	return cred != ""
 }
 
-// RequireProduction terminates the process when LINBIT_ENV=production and any
-// of the given env vars is missing or a known default. extra lists additional
-// service-specific problems. It is a no-op outside production.
+// RequireProduction 在生产环境（见 IsProduction）发现缺失或默认配置时直接退出进程。
+// extra 是各服务自己的额外问题。非生产环境什么都不做。
 func RequireProduction(service string, extra []string, vars ...string) {
 	if !IsProduction() {
 		return
@@ -71,7 +70,7 @@ func RequireProduction(service string, extra []string, vars ...string) {
 	log.Printf("%s: production configuration checks passed", service)
 }
 
-// ProblemIf returns a one-element slice with msg when cond holds.
+// ProblemIf 在 cond 为真时返回只含一条说明的切片，否则返回 nil。说明里不要放密钥。
 func ProblemIf(cond bool, format string, a ...any) []string {
 	if cond {
 		return []string{fmt.Sprintf(format, a...)}

@@ -20,7 +20,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Server is the admin HTTP API.
+// 后台 HTTP API。/admin/v1 先过 IP 白名单，再按 admin_sessions 的 token 哈希认会话。
 type Server struct {
 	cfg  Config
 	db   *sql.DB
@@ -188,7 +188,7 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
-// clientIP returns the caller IP (X-Forwarded-For only when trusted).
+// ADMIN_TRUST_PROXY 为真才取 X-Forwarded-For 第一段，否则只用 RemoteAddr。不解析 TRUSTED_PROXY_CIDRS。
 func (s *Server) clientIP(r *http.Request) string {
 	if s.cfg.TrustProxy {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -219,7 +219,7 @@ func (s *Server) ipAllowed(ip string) bool {
 	return false
 }
 
-// guard enforces the IP allowlist for every /admin/v1 route.
+// /admin/v1（含登录）都走白名单。名单空则全部放行。拒绝码 IP_NOT_ALLOWED。
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.ipAllowed(s.clientIP(r)) {
@@ -233,7 +233,8 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 
 func hashToken(t string) string { h := sha256.Sum256([]byte(t)); return hex.EncodeToString(h[:]) }
 
-// authed resolves the bearer session, applies the idle timeout and checks perm.
+// Bearer 是随机会话串，不是 JWT。按 sha256 查 admin_sessions。revoked 或 status 非 active 则 401。
+// last_seen 超过 SessionIdle 则把会话标 revoked 并回 SESSION_EXPIRED。perm 非空且角色没有该权限则 403 FORBIDDEN。
 func (s *Server) authed(perm string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -273,7 +274,8 @@ func (s *Server) authed(perm string, next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// verify2FA re-checks the operator's TOTP for a sensitive action.
+// 未绑定：Require2FA 为真则 403 TWO_FACTOR_REQUIRED，否则直接通过。已绑定则 totp.Validate，错则 401 TOTP_INVALID。
+// 调账不用这个空窗，见 require2FA。
 func (s *Server) verify2FA(w http.ResponseWriter, a *actor, code string) bool {
 	if a.TOTP == "" {
 		if s.cfg.Require2FA {
@@ -386,11 +388,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusForbidden, "ADMIN_DISABLED", "账号已停用")
 		return
 	}
+	// locked_until 还没到就回 423 ADMIN_LOCKED，这次不再增加 failed_attempts。
 	if locked.Valid && locked.Time.After(now) {
 		s.audit(r, a, "auth", "login", req.Username, levelSensitive, "failed", nil, nil, "locked")
 		common.WriteError(w, http.StatusLocked, "ADMIN_LOCKED", "登录失败次数过多，账号已临时锁定")
 		return
 	}
+	// 计数在 admin_users.failed_attempts，按用户名。未知用户名上面已经返回，不加计数。
+	// 达到 MaxFailedLogins 则 locked_until=now+LockoutDuration，并把 failed_attempts 置 0。
+	// 已有 totp_secret 必须通过 totp.Validate；未绑定且 Require2FA 则整次失败。
+	// 密码错 AUTH_INVALID_CREDENTIALS；密码对但 TOTP 错 TOTP_INVALID。
 	okPass := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) == nil
 	okTOTP := true
 	if secret.Valid && secret.String != "" {

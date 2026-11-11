@@ -1,10 +1,12 @@
 package main
 
+// config.go：资产服务运行时配置。金额相关的默认币种和闪兑参数见各自文件。
+
 import (
 	"github.com/linbit/platform/services/go/common"
 )
 
-// Config holds the asset service runtime configuration.
+// Config 是资产服务的运行时配置。
 type Config struct {
 	Port          string
 	DatabaseURL   string
@@ -16,7 +18,7 @@ type Config struct {
 	Convert       ConvertDefaults
 }
 
-// LoadConfig reads configuration from the environment.
+// LoadConfig 从环境变量组装 Config。端口默认 8082。
 func LoadConfig() Config {
 	return Config{
 		Port:          common.Env("PORT", "8082"),
@@ -30,9 +32,7 @@ func LoadConfig() Config {
 	}
 }
 
-// defaultAssets are seeded (at zero) when an asset account is initialised and
-// always listed by GET /assets/balances (spot and funding), so every listed
-// asset shows up even before the user holds any. Keep in sync with the
-// convert_assets seed (00005_convert.sql) and the wallet's deposit assets.
-// USDC is only removed from lending (earn); it stays a normal spot asset.
+// defaultAssets 在开户时种成零余额，GET /assets/balances（现货和资金账户）始终列出，
+// 用户还没有持仓也看得到。和 convert_assets 种子（00005_convert.sql）以及钱包充值币种保持一致。
+// USDC 只从借贷（earn）拿掉，现货里仍然是普通资产。
 var defaultAssets = []string{"USDT", "USDC", "BTC", "ETH", "SOL", "BNB", "TRX"}

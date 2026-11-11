@@ -1,5 +1,12 @@
 package main
 
+// adminadjust.go：人工调账 admin_adjust，改用户现货或资金账户的可用余额，主网可用。
+// 双人复核、2FA、阈值和审计在 admin；这里只做一笔原子复式记账。
+// 对手账户 system:admin_adjust。加钱：借用户 free、贷 system:admin_adjust；减钱相反。
+// 减钱不能把 free 打成负数（applyDeltas → ErrInsufficient）。
+// 幂等键 wallet_ops 主键 "admin_adjust:<ref>"：同 ref 同参数回放原结果，参数不同 → ErrRefConflict。
+// op 为 admin_adjust_credit / admin_adjust_debit，供 Liabilities.AdminAdjustNet 统计无链上充值支撑的净加款。
+
 import (
 	"context"
 	"database/sql"
@@ -13,20 +20,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// adminadjust.go: admin_adjust — a manual balance adjustment (人工调账) on a
-// user's spot or funding free balance, mainnet-capable. Maker-checker, 2FA,
-// threshold and audit live in the admin service; this is only the atomic
-// ledger write.
-//
-//   - Double entry against system:admin_adjust. Credit: debit the user's free
-//     bucket, credit system:admin_adjust. Debit: the reverse.
-//   - A debit can never make free negative (applyDeltas -> ErrInsufficient).
-//   - Idempotent on ref (wallet_ops PK "admin_adjust:<ref>"): the same ref and
-//     params replay the original result; different params -> ErrRefConflict.
-//   - wallet_ops op is admin_adjust_credit / admin_adjust_debit so
-//     reconciliation can report the net manual credit per asset (unbacked by
-//     any on-chain deposit) — see Liabilities.AdminAdjustNet.
-
+// AdminAdjustAccount 是人工调账的对手账户。净加款没有链上充值支撑，对账要单独看。
 const AdminAdjustAccount = "system:admin_adjust"
 
 const (
@@ -37,7 +31,7 @@ const (
 
 var ErrAdjustAccount = errors.New("adjust not allowed for this account")
 
-// AdjustResult is the outcome of one adjustment.
+// AdjustResult 是一笔调账的结果。Amount 为带符号的十进制字符串。
 type AdjustResult struct {
 	Ref      string `json:"ref"`
 	UserID   string `json:"userId"`
@@ -69,7 +63,7 @@ func (s *Store) acctFree(ctx context.Context, tx *sql.Tx, acct, userID, asset st
 	return decimal.RequireFromString(v), nil
 }
 
-// AdminAdjust applies a signed adjustment (amount > 0 credit, < 0 debit).
+// AdminAdjust 按带符号金额调账：>0 加可用，<0 扣可用。只动 free，不动 locked。
 func (s *Store) AdminAdjust(ctx context.Context, userID, asset, acct string, amount decimal.Decimal, ref string) (AdjustResult, error) {
 	asset = strings.ToUpper(strings.TrimSpace(asset))
 	ref = strings.TrimSpace(ref)
@@ -79,6 +73,7 @@ func (s *Store) AdminAdjust(ctx context.Context, userID, asset, acct string, amo
 	if !validAcct(acct) {
 		return AdjustResult{}, ErrInvalidAccount
 	}
+	// 金额用 decimal，不用 float。最多 8 位小数（Exponent < -8 拒绝）；ref 最长 128，作幂等键。
 	if amount.Sign() == 0 || amount.Exponent() < -8 || ref == "" || len(ref) > 128 || userID == "" || asset == "" || len(asset) > 16 {
 		return AdjustResult{}, ErrInvalidAmount
 	}
@@ -103,7 +98,7 @@ func (s *Store) AdminAdjust(ctx context.Context, userID, asset, acct string, amo
 		if pop != op || pu != userID || pa != asset || !decimal.RequireFromString(pamt).Equal(abs) {
 			return AdjustResult{}, ErrRefConflict
 		}
-		// Account is part of the journal, not wallet_ops: compare it there.
+		// 账户不在 wallet_ops 里，而在分录账户名上，回放时到分录里对。
 		var n int
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM ledger_entries e JOIN ledger_transactions t ON t.id=e.tx_id
 			WHERE t.ref=$1 AND e.account=$2`, key, acctBucket(userID, acct, "free")).Scan(&n); err != nil {
@@ -155,8 +150,7 @@ func (s *Store) AdminAdjust(ctx context.Context, userID, asset, acct string, amo
 		Before: before.String(), After: after.String(), At: time.Now().UTC().Format(time.RFC3339)}, nil
 }
 
-// AdminAdjustNet returns, per asset, credits minus debits of every manual
-// adjustment (positive = balance created without an on-chain deposit).
+// AdminAdjustNet 按币种返回人工调账净额（加款减扣款）。正数表示没有链上充值支撑的余额。
 func (s *Store) AdminAdjustNet(ctx context.Context) (map[string]decimal.Decimal, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT asset, COALESCE(SUM(CASE WHEN op=$1 THEN amount ELSE -amount END),0)::text
 		FROM wallet_ops WHERE op IN ($1,$2) GROUP BY asset`, adminAdjustCredit, adminAdjustDebit)
@@ -175,7 +169,7 @@ func (s *Store) AdminAdjustNet(ctx context.Context) (map[string]decimal.Decimal,
 	return out, rows.Err()
 }
 
-// POST /internal/admin/adjust {userId, asset, account, amount (signed), ref}
+// POST /internal/admin/adjust {userId, asset, account, amount（带符号十进制字符串）, ref}
 func (s *Server) handleAdminAdjust(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		UserID  string `json:"userId"`

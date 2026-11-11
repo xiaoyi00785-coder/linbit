@@ -1,14 +1,15 @@
 package common
 
+// mask.go：邮箱和手机号的平台统一打码，规则和网页端一致。
+
 import "strings"
 
-// MaskEmail is the platform-wide email mask, identical to the web client's
-// maskEmail (apps/web/lib/account.ts): keep min(3, max(1, len(local)-1))
-// leading characters of the local part, then "***@domain".
+// MaskEmail 是全平台邮箱打码，和网页 apps/web/lib/account.ts 的 maskEmail 一致：
+// 本地部分保留 min(3, max(1, len(local)-1)) 个字符，然后 "***@domain"。
 //
-//	alice@x.io -> ali***@x.io, ab@x.io -> a***@x.io, a@x.io -> a***@x.io
+//	alice@x.io -> ali***@x.io，ab@x.io -> a***@x.io，a@x.io -> a***@x.io
 //
-// A value without a local part is returned unchanged.
+// 没有本地部分的值原样返回。
 func MaskEmail(e string) string {
 	at := strings.IndexByte(e, '@')
 	if at <= 0 {
@@ -25,9 +26,8 @@ func MaskEmail(e string) string {
 	return string(name[:keep]) + "***" + e[at:]
 }
 
-// MaskPhone is the platform-wide phone mask, matching the web client:
-// >7 digits: first 3 + "****" + last 4; 5–7: first 2 + "***" + last 2;
-// shorter: "****".
+// MaskPhone 是全平台手机打码，和网页一致：
+// 超过 7 位：前 3 + "****" + 后 4；5–7 位：前 2 + "***" + 后 2；更短："****"。
 func MaskPhone(p string) string {
 	n := len(p)
 	switch {

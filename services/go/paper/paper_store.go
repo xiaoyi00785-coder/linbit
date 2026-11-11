@@ -1,5 +1,8 @@
 package main
 
+// 模拟现货账本。余额在 paper_balances，流水在 paper_ledger_entries，按 account_id+generation 隔离。
+// 不写生产 balances，也不调用订单或撮合。
+
 import (
 	"context"
 	"crypto/rand"
@@ -15,8 +18,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Store 只访问模拟盘自己的表。
 type Store struct{ db *sql.DB }
 
+// NewStore 不建表、不探活。迁移由 Migrate 做。
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
 func randomID(prefix string) string {
@@ -68,6 +73,7 @@ func ensureAccountTx(ctx context.Context, tx *sql.Tx, userID string, now time.Ti
 	return a, nil
 }
 
+// Account 没有账户就建一个，并种当前代的 10000 USDT（paper_balances）。不写生产余额。
 func (s *Store) Account(ctx context.Context, userID string) (PaperAccount, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -81,6 +87,7 @@ func (s *Store) Account(ctx context.Context, userID string) (PaperAccount, error
 	return a, tx.Commit()
 }
 
+// ResetResponse 是重置当时的快照。Generation 是新代，Balances 只有重置后的 10000 USDT，Locked 为 0。
 type ResetResponse struct {
 	AccountID  string         `json:"accountId"`
 	Mode       string         `json:"mode"`
@@ -89,6 +96,7 @@ type ResetResponse struct {
 	ResetAt    time.Time      `json:"resetAt"`
 }
 
+// Reset 要求 confirmation=RESET_PAPER_ACCOUNT。每 UTC 日一次。相同 Idempotency-Key 在 24 小时内返回第一次的响应，不把代再加一。
 func (s *Store) Reset(ctx context.Context, userID, key, confirmation string) (ResetResponse, error) {
 	if confirmation != "RESET_PAPER_ACCOUNT" {
 		return ResetResponse{}, apiErr(http.StatusBadRequest, "RESET_CONFIRMATION_REQUIRED", "请输入 RESET_PAPER_ACCOUNT 确认重置")
@@ -101,8 +109,7 @@ func (s *Store) Reset(ctx context.Context, userID, key, confirmation string) (Re
 	if err != nil {
 		return ResetResponse{}, err
 	}
-	// Check retained replay before rolling the UTC counter: a same-key retry
-	// remains successful even when a UTC boundary or that day's reset intervened.
+	// 先查幂等重放，再动 UTC 计数。同一把 key 即使跨过 UTC 日或当天已经重置过，仍然返回第一次的成功结果。
 	defer tx.Rollback()
 	if out, ok, err := resetReplayTx(ctx, tx, userID, key, hash); err != nil {
 		return ResetResponse{}, err
@@ -114,8 +121,7 @@ func (s *Store) Reset(ctx context.Context, userID, key, confirmation string) (Re
 	if err != nil {
 		return ResetResponse{}, err
 	}
-	// Re-read under the account lock: another identical concurrent reset may
-	// have completed while this transaction waited. Return its exact response.
+	// 锁住账户后再查一次。并发的同一把 key 可能已经提交，返回它的原响应。
 	if out, ok, err := resetReplayTx(ctx, tx, userID, key, hash); err != nil {
 		return ResetResponse{}, err
 	} else if ok {
@@ -147,6 +153,7 @@ func (s *Store) Reset(ctx context.Context, userID, key, confirmation string) (Re
 	return out, tx.Commit()
 }
 
+// Balances 只读当前代的 paper_balances。Free/Total 用 8 位 StringFixed，Locked 固定 "0"。只读事务，不改余额。
 func (s *Store) Balances(ctx context.Context, userID string, page, pageSize int) (map[string]any, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -204,6 +211,7 @@ func positiveDecimal(v string) (decimal.Decimal, bool) {
 	return d, err == nil && d.IsPositive()
 }
 
+// PlacePaperOrder 的 P0 只接受 market。quantity 与 quoteOrderQty 二选一。
 type PlacePaperOrder struct {
 	Symbol        string `json:"symbol"`
 	Side          string `json:"side"`
@@ -213,6 +221,8 @@ type PlacePaperOrder struct {
 	ClientOrderID string `json:"clientOrderId"`
 }
 
+// PlaceOrder 按指数价在 paper_balances 上成交，手续费记 0。同一 clientOrderId 且请求哈希相同则返回原订单，不二次扣款；哈希不同返回 IDEMPOTENCY_CONFLICT。
+// 数量和 quoteOrderQty 必须正好落在交易对精度上，多余小数拒绝，不截断。指数价本身超出价格精度则 INVALID_PRICE。
 func (s *Store) PlaceOrder(ctx context.Context, userID string, in PlacePaperOrder, market Market) (PaperOrder, error) {
 	in.Symbol, in.Side, in.Type = strings.ToUpper(strings.TrimSpace(in.Symbol)), strings.ToLower(in.Side), strings.ToLower(in.Type)
 	if in.Type != "market" {
@@ -356,8 +366,7 @@ func changePaperBalance(ctx context.Context, tx *sql.Tx, accountID string, gener
 	return nil
 }
 
-// Database rows deliberately retain their requested precision. Generated views
-// preserve immutable execution precision rather than re-rounding market prices.
+// 库里的数量和价格保持下单时的精度。读出来不再按行情重舍入。
 func scanOrder(scanner interface{ Scan(...any) error }) (PaperOrder, error) {
 	var o PaperOrder
 	var quantity, filled, reference, fee string
@@ -376,6 +385,7 @@ func scanOrder(scanner interface{ Scan(...any) error }) (PaperOrder, error) {
 
 const orderColumns = `order_id,client_order_id,account_id,generation,symbol,side,order_type,quantity::text,quote_order_qty::text,filled_quantity::text,status,reference_price::text,market_observed_at,fee::text,fee_asset,created_at,executed_at`
 
+// Order 只查该用户的 paper_orders。不存在返回 PAPER_ORDER_NOT_FOUND。成交从 paper_trades 带出。
 func (s *Store) Order(ctx context.Context, userID, orderID string) (PaperOrder, error) {
 	o, err := scanOrder(s.db.QueryRowContext(ctx, `SELECT `+orderColumns+` FROM paper_orders WHERE user_id=$1 AND order_id=$2`, userID, orderID))
 	if err == sql.ErrNoRows {

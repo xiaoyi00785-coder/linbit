@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Smoke for the earn/loan product admin APIs: RBAC, 2FA, audit, product CRUD,
-# stock limits (incl. TERM_QUOTA_EXCEEDED on a real borrow) and rate changes
-# through dual approval + notice period + scheduler + rollback.
+# 理财/借币产品后台 API smoke：RBAC、2FA、审计、产品 CRUD、
+# 额度（含真实借款触发 TERM_QUOTA_EXCEEDED）、利率变更（双人审批 + 公告期 + 调度器 + 回滚）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

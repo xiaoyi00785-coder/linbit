@@ -1,5 +1,7 @@
 package main
 
+// 行情 HTTP。公开 /market 和 /ws；引擎事件走 /internal/events，不经 gateway。
+
 import (
 	"github.com/shopspring/decimal"
 	"log"

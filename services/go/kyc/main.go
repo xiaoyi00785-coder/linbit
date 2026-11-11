@@ -1,13 +1,7 @@
-// Command kyc is the Linbit KYC (identity verification) service. It accepts
-// controlled document uploads, basic (level 1) and advanced (level 2) identity
-// submissions, enforces the submission state machine (one pending application at
-// a time, re-submit after rejection, advanced requires an approved basic), and
-// exposes an admin review queue. On approval it syncs the user's kycLevel back to
-// the account service so the wallet can apply KYC-tiered withdrawal limits.
-//
-// Documents are stored through the shared pluggable ObjectStorage (local backend
-// by default) and are never publicly served: they are read back only through the
-// internal-token-guarded admin route.
+// kyc 收受控证件，以及基础（level 1）和高级（level 2）身份申请。
+// 状态机：同一用户同时只能有一笔 pending；拒绝后可重提；高级必须已有通过的基础认证。
+// 提供管理端审核队列。通过后把 kycLevel 同步回 account，钱包按 KYC 档位限制提现。
+// 证件走可插拔 ObjectStorage（默认本地），不公开下载，只经内部令牌保护的管理接口读取。
 package main
 
 import (
@@ -25,8 +19,7 @@ import (
 
 func main() {
 	cfg := LoadConfig()
-	// Mainnet: local disk (persistent volume + backup) is the owner's choice;
-	// S3 stays supported and then needs its credentials.
+	// 主网证件放本地盘（持久卷加备份，产品决定）；改用 S3 时要另给凭证。
 	kycStore := common.MainnetVars("KYC_DOC_STORAGE_DIR")
 	if strings.EqualFold(os.Getenv("STORAGE_BACKEND"), "s3") {
 		kycStore = common.MainnetVars("S3_BUCKET", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")

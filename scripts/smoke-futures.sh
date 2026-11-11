@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for USDT-margined perpetual futures (services/go/futures):
-#   spot -> futures transfer, leverage / margin mode, limit + market fills with
-#   0.05% fees on both sides, isolated margin adjust, TP trigger, funding,
-#   isolated liquidation with ADL (fund empty), cross liquidation fee,
-#   insurance-covered shortfall, tiered margin / position limits,
-#   market data, conservation audit, futures -> spot transfer, gateway access.
-#
-#   bash scripts/smoke-futures.sh                       # boots devstack
+# USDT 本位永续端到端 smoke（services/go/futures）。
+# 现货 → 合约划转、杠杆/保证金模式、限价 + 市价成交（双方 0.05% 手续费）、逐仓调整保证金、止盈触发、资金费、
+# 逐仓强平 + ADL（保险基金为空）、全仓强平费、保险基金覆盖穿仓、分档保证金/持仓上限、
+# 行情、守恒审计、合约 → 现货划转、网关访问。
+#   bash scripts/smoke-futures.sh                       # 拉起 devstack
 #   GATEWAY_URL=... ASSET_URL=... ACCOUNT_URL=... FUTURES_URL=... INTERNAL_TOKEN=... \
-#     SMOKE_INNER=1 bash scripts/smoke-futures.sh       # existing stack
-#
+#     SMOKE_INNER=1 bash scripts/smoke-futures.sh       # 已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

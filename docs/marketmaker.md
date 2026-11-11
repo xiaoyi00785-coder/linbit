@@ -54,7 +54,7 @@ order 迁移 00003 新增三个交易对（TRX 价格 5 位小数、数量整数
 撮合引擎 `SYMBOLS` 追加 `SOLUSDT:3,BNBUSDT:3,TRXUSDT:1`（只能追加，顺序决定成交 id 命名空间）。
 指数价自动来自 Binance `SOLUSDT` 等 / OKX `SOL-USDT` 等全量 ticker，无需映射配置。
 
-## Ticker / kline fallback when there are no trades
-- Ticker `lastPrice` = last trade → mid of best bid/ask → index price (futures: → mark) → `"0"`. `priceSource` tells which (`trade|mid|index|mark|none`). Without trades, 24h change is 0, high/low equal lastPrice, volume 0. No trades are fabricated.
-- Klines: if a symbol has no trade candles, index-sampled candles are returned (spot: sampled every INDEX_POLL; futures: from `fut_mark_history.index_price`), volume 0, each candle `source:"index"`; futures klines response also has top-level `source: trade|index|none`. UI should render them as a dashed/flagged line, not as traded volume.
-- `/futures/market/contracts` items carry `tags` (ids from `market_categories`, same as spot).
+## 无成交时的 Ticker / K 线
+- Ticker `lastPrice` = 最近成交 → 最优买卖中间价 → 指数价（合约再 → 标记价）→ `"0"`。`priceSource` 标明来源（`trade|mid|index|mark|none`）。没有成交时 24h 涨跌为 0，高低等于 lastPrice，成交量为 0。不编造成交。
+- K 线：该交易对没有成交 K 线时返回指数采样 K 线（现货每个 INDEX_POLL 采一次；合约取 `fut_mark_history.index_price`），成交量 0，每根 `source:"index"`。合约 K 线响应还有顶层 `source: trade|index|none`。UI 画成虚线或带标记，不要当成成交量。
+- `/futures/market/contracts` 每项带 `tags`（id 来自 `market_categories`，与现货相同）。

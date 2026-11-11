@@ -13,8 +13,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// USDT/USD is a live venue quote (USD per 1 USDT). It is never assumed to be 1.
-// Precision is 8 decimal places, half away from zero (shopspring Round).
+// USDT/USD 是交易所的实时报价：1 USDT 值多少 USD，绝不假定为 1。
+// 精度 8 位，一半远离零（shopspring Round）。
 
 const (
 	usdPrecision  = 8

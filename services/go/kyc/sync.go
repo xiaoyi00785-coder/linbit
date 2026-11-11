@@ -1,5 +1,7 @@
 package main
 
+// 把已通过的 kycLevel 同步到 account。失败按指数退避重试；同一用户保留较高的 level。
+
 import (
 	"context"
 	"log"

@@ -1,6 +1,5 @@
-// Command paper provides a completely separate virtual-spot ledger and
-// server-side, once-only index price alerts. It never calls the production
-// order book, matching engine, balances or ledger endpoints.
+// 模拟盘：独立虚拟现货账本（paper_balances），以及服务端只触发一次的指数价预警。
+// 不调用生产订单簿、撮合、真实余额或账本接口。合约模拟只读写 paper_fut_*，不写 fut_accounts。
 package main
 
 import (

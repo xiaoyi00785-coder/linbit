@@ -1,5 +1,8 @@
 package main
 
+// 合约引擎。s.mu 串行订单、成交、资金费、强平、划转；pmu 只保护内存价格。
+// 撮合在进程内完成：成交、仓位、余额和 fut_trades 同一事务提交，trade id 由插入时生成。
+
 import (
 	"context"
 	"database/sql"
@@ -13,8 +16,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Server owns the futures engine. mu serializes every state mutation (orders,
-// fills, funding, liquidation, transfers); pmu guards the in-memory price state.
+// Server 启动时从库加载合约，并用每个合约最近一笔 fut_trades 填最新价。
 type Server struct {
 	cfg         Config
 	markPushing atomic.Bool
@@ -42,6 +44,7 @@ type Server struct {
 	histStatus     string // status for position history rows written by the current liquidation/ADL step
 }
 
+// NewServer 把资金费桶对齐到当前区间，不补结历史资金费。合约列表来自数据库，不存在的交易对随后 UNKNOWN_SYMBOL。
 func NewServer(cfg Config, db *sql.DB) (*Server, error) {
 	s := &Server{cfg: cfg, db: db, asset: NewAssetClient(cfg.AssetURL, cfg.InternalToken), market: NewMarketClient(cfg.MarketURL),
 		now: time.Now, contracts: map[string]Contract{}, prices: map[string]*priceState{}, devIndex: map[string]decimal.Decimal{}, tpslRetry: map[string]time.Time{}, traders: map[string]bool{}}
@@ -76,7 +79,7 @@ func (s *Server) contract(sym string) (Contract, error) {
 	return c, nil
 }
 
-// withTx runs fn under the engine lock in a single transaction.
+// withTx 在引擎锁内开一个事务跑 fn。锁不可重入，fn 里不能再拿 s.mu。
 func (s *Server) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -124,6 +127,8 @@ type PosView struct {
 	markMissing bool
 }
 
+// AcctState 是一次快照。可用 = 钱包余额 - 挂单冻结 - 全仓初始保证金 + min(0, 全仓未实现盈亏)。
+// 逐仓保证金已经从余额划到仓位，不再从可用里扣第二次。
 type AcctState struct {
 	Balance   decimal.Decimal `json:"walletBalance"`
 	Frozen    decimal.Decimal `json:"orderMargin"`
@@ -166,6 +171,7 @@ func (s *Server) state(ctx context.Context, q queryer, uid string) (AcctState, e
 		v.upnl = upnl(p.Qty, p.Entry, m)
 		lev := decimal.NewFromInt(int64(max(p.Leverage, 1)))
 		v.mm = c.maintMargin(p.Qty.Abs().Mul(m))
+		// 逐仓：保证金是仓位 Iso，盈亏不进全仓维持保证金。全仓：初始保证金 = 名义价值/杠杆，维持保证金按档位累加。
 		if p.Mode == "isolated" {
 			v.im = p.Iso
 			st.IsoMargin = st.IsoMargin.Add(p.Iso)
@@ -185,6 +191,8 @@ func (s *Server) state(ctx context.Context, q queryer, uid string) (AcctState, e
 		p := v.pos
 		c := s.contracts[p.Symbol]
 		var M decimal.Decimal
+		// 强平价的 M：逐仓用 Iso；全仓用钱包 + 其他全仓未实现盈亏 - 其他全仓维持保证金，再加本档 maintAmount。
+		// 标记价缺失时上面用开仓价顶上，只用于展示；checkUser 不会按缺失的标记价强平。
 		if p.Mode == "isolated" {
 			M = p.Iso
 		} else {
@@ -228,11 +236,10 @@ type Trade struct {
 	Time      time.Time       `json:"time"`
 }
 
-// fill applies a signed quantity d at price px to uid's position on posSide
-// (BOTH in one-way mode, LONG/SHORT in hedge mode) and wallet: realized PnL,
-// isolated-margin movement, and fee = |d|*px*feeRate (by position value, on open
-// and on close alike) moved to the fee account. A position that goes flat (or
-// flips in one-way mode) is written to fut_position_history.
+// fill 把带符号数量 d 打到 posSide（单向 BOTH，对冲 LONG/SHORT）。
+// 手续费 = |d|*px*feeRate，开仓和平仓都收，收到 system:fee；可用抵扣金再体验金抵。
+// 逐仓开仓从钱包划 Iso = 开仓名义/杠杆，平仓按平掉比例退回 Iso。仓位归零或单向翻向时写入 fut_position_history。
+// 金额先过 money()，四舍五入到 8 位。
 func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid, posSide string, d, px, feeRate decimal.Decimal, lev int, mode string, tp, sl decimal.NullDecimal, tpT, slT string) (fee, pnl, bonus decimal.Decimal, err error) {
 	if _, _, err = lockAccount(ctx, tx, uid); err != nil {
 		return
@@ -380,6 +387,7 @@ func optDec(v string) (decimal.NullDecimal, error) {
 	return decimal.NullDecimal{Decimal: d, Valid: true}, nil
 }
 
+// PlaceOrder 在 s.mu 内下单并撮合，返回后跑 processCopy。价格和数量走 checkPrice/checkQty，不符合步长直接拒绝。
 func (s *Server) PlaceOrder(ctx context.Context, uid string, r PlaceReq) (Order, []Trade, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -557,7 +565,7 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 	return o, trades, nil
 }
 
-// closable returns how much of an order on side can reduce uid's position.
+// closable 是这笔方向还能减掉的仓位量。同向或无仓返回 0。
 func closable(ctx context.Context, tx *sql.Tx, uid, sym, posSide, side string) (decimal.Decimal, error) {
 	p, _, err := loadPosition(ctx, tx, uid, sym, posSide, false)
 	if err != nil || p.Qty.IsZero() {
@@ -576,8 +584,7 @@ func signed(side string, q decimal.Decimal) decimal.Decimal {
 	return q
 }
 
-// consume records qty filled at px on o (with fee) and releases the matching
-// share of its reservation.
+// consume 记下成交并按成交量比例释放冻结。最后一笔把剩余冻结一次放完。
 func consume(ctx context.Context, tx *sql.Tx, o *Order, qty, px, fee decimal.Decimal) error {
 	rem := o.remaining()
 	rel := o.Reserved
@@ -600,7 +607,8 @@ func consume(ctx context.Context, tx *sql.Tx, o *Order, qty, px, fee decimal.Dec
 	return updateOrder(ctx, tx, o)
 }
 
-// match crosses taker against the book (price-time priority, maker price).
+// match 按价格优先、同价 seq 优先吃单，成交价用挂单价。
+// 市价单超出标记价 ±MarketBand 就停。自成交的挂单直接撤。成交与 fut_trades 插入在同一事务，不按 trade id 另做一次结算。
 func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order, mark decimal.Decimal) ([]Trade, error) {
 	var trades []Trade
 	opp, cmp, ord := "sell", "<=", "ASC"
@@ -705,6 +713,7 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 	return trades, nil
 }
 
+// CancelOrder 只撤该用户仍开放的订单，并退回剩余冻结。已完成返回 ORDER_NOT_OPEN。
 func (s *Server) CancelOrder(ctx context.Context, uid string, id int64) (Order, error) {
 	var o Order
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
@@ -812,7 +821,7 @@ func (s *Server) SetLeverage(ctx context.Context, uid, sym string, lev int, mode
 	})
 }
 
-// AdjustMargin adds (delta>0) or removes isolated margin.
+// AdjustMargin 只改逐仓 Iso。delta>0 要求可用足够；delta<0 时减少后的 Iso+min(0, 标记价浮盈) 不得低于名义价值/杠杆，否则 MARGIN_TOO_LOW，不会自动减到上限。标记价缺失则拒绝。全仓返回 NOT_ISOLATED。
 func (s *Server) AdjustMargin(ctx context.Context, uid, sym, posSide string, delta decimal.Decimal) error {
 	c, err := s.contract(sym)
 	if err != nil {
@@ -860,7 +869,7 @@ func (s *Server) AdjustMargin(ctx context.Context, uid, sym, posSide string, del
 	})
 }
 
-// SetTPSL sets/clears the position-level take-profit / stop-loss (mark-triggered).
+// SetTPSL 写仓位止盈止损。clear 为真且价格无效则清除。方向相对触发参考价（缺省 MARK，有最新价类型则用该价）：多仓止盈高于、止损低于。同时撤掉该仓同方向的条件单，避免两套并存。无仓 NO_POSITION。
 func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl decimal.NullDecimal, clearTP, clearSL bool, tpT, slT string) error {
 	c, err := s.contract(sym)
 	if err != nil {
@@ -939,7 +948,7 @@ func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl d
 	})
 }
 
-// ClosePosition submits a reduce-only market order for the whole position.
+// ClosePosition 对整仓发只减仓市价单。没有仓位则失败。
 func (s *Server) ClosePosition(ctx context.Context, uid, sym, posSide, source string) (Order, []Trade, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -974,22 +983,19 @@ func (s *Server) closeLocked(ctx context.Context, uid, sym, posSide, source stri
 
 // ---- transfers (spot <-> futures) ----
 
-// TransferIn debits spot then credits the futures wallet. TransferOut debits the
-// futures wallet first (under the lock) then credits spot. A pending row is
-// retried by RunTransferRetry until the (idempotent) asset call succeeds.
+// TransferIn 先扣现货再加合约钱包。TransferOut 在锁内先扣合约钱包再加现货。
+// pending 行由 RunTransferRetry 重试，资产侧按 ref 幂等。
 func (s *Server) Transfer(ctx context.Context, uid, dir string, amount decimal.Decimal) (string, string, error) {
 	return s.TransferIdem(ctx, uid, dir, amount, "")
 }
 
-// TransferIdem is Transfer with an optional client idempotency key: a repeat
-// with the same clientId returns the original ref/status (no second move);
-// the same clientId with a different direction/amount is IDEMPOTENCY_CONFLICT.
+// TransferIdem 带客户端幂等键。相同 clientId 重复请求返回原来的 ref/status，不再划第二次；
+// 相同 clientId 但方向或金额不同返回 IDEMPOTENCY_CONFLICT。
 func (s *Server) TransferIdem(ctx context.Context, uid, dir string, amount decimal.Decimal, clientID string) (string, string, error) {
 	return s.TransferWallet(ctx, uid, dir, "spot", amount, clientID)
 }
 
-// TransferWallet is TransferIdem with the asset-service wallet (spot|funding)
-// on the non-futures side.
+// TransferWallet 的非合约一侧是资产服务的 spot 或 funding。
 func (s *Server) TransferWallet(ctx context.Context, uid, dir, wallet string, amount decimal.Decimal, clientID string) (string, string, error) {
 	if wallet != "spot" && wallet != "funding" {
 		return "", "", bad("VALIDATION_ERROR", "wallet 不合法")
@@ -1101,6 +1107,7 @@ func (s *Server) completeOut(ctx context.Context, ref, uid, wallet string, amoun
 	return "done"
 }
 
+// RunTransferRetry 重试 updated_at 早于 3 秒的 pending 划转，每轮最多 50 笔。资产调用按 ref 幂等。
 func (s *Server) RunTransferRetry(ctx context.Context) {
 	t := time.NewTicker(s.cfg.TransferRetry)
 	defer t.Stop()

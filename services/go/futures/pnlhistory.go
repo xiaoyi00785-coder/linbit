@@ -1,5 +1,8 @@
 package main
 
+// GET /futures/pnl/history：按日已实现盈亏，来自 fut_bills，另加成交笔数。
+// 没有账单的日子是 0，表示没有对应流水，不是抽样曲线。
+
 import (
 	"net/http"
 	"time"
@@ -7,9 +10,6 @@ import (
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
-
-// GET /futures/pnl/history — daily realised PnL from fut_bills, plus trade counts.
-// Days with no bills are zero, which means no matching ledger rows, not a sample curve.
 
 var pnlKinds = []string{"realized_pnl", "funding", "fee", "liquidation_fee", "insurance_cover"}
 

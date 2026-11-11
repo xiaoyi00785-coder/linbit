@@ -1,5 +1,9 @@
 package common
 
+// telegram.go：运维告警，走 Telegram Bot API。
+// TELEGRAM_BOT_TOKEN、TELEGRAM_CHAT_ID 来自环境变量。TELEGRAM_API_URL 默认 https://api.telegram.org，测试可指到本地。
+// 令牌不进日志。没配 token 或 chat id 时只打日志。
+
 import (
 	"bytes"
 	"context"
@@ -11,11 +15,6 @@ import (
 	"strings"
 	"time"
 )
-
-// telegram.go: operator alerts via the Telegram Bot API. TELEGRAM_BOT_TOKEN and
-// TELEGRAM_CHAT_ID come from the environment; TELEGRAM_API_URL (default
-// https://api.telegram.org) can point at a local fake for tests. The token is
-// never logged. Without a token or chat id the alert is only logged.
 
 var telegramClient = &http.Client{Timeout: 8 * time.Second}
 
@@ -65,11 +64,9 @@ func AlertTelegram(text string) {
 	}()
 }
 
-// TestnetSeedAllowed reports whether the virtual market-maker seed
-// (mm_testnet_seed) may be used. The gate is the chain, not LINBIT_ENV:
-// WALLET_CHAIN=testnet is allowed even with LINBIT_ENV=production (the
-// testnet server runs hardened); WALLET_CHAIN=mock only outside production;
-// anything else (mainnet or unknown) is always refused. The reason explains.
+// TestnetSeedAllowed 判断能否做虚拟做市注资 mm_testnet_seed。看的是链，不是 LINBIT_ENV：
+// WALLET_CHAIN=testnet 即使 LINBIT_ENV=production 也允许（测试网机器是加固的）；
+// WALLET_CHAIN=mock 只在非生产；mainnet 或未知一律拒绝。原因里不含密钥。
 func TestnetSeedAllowed() (bool, string) {
 	if IsMainnet() {
 		return false, "NETWORK=mainnet: virtual seed is forbidden"

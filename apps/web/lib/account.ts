@@ -39,7 +39,7 @@ async function call<T>(
   try {
     const { data, error, response } = await fn();
     if (response.ok) return { ok: true, data: (data ?? (true as unknown)) as T, source: "api" };
-    // 网关可达时的 4xx/5xx 都如实返回
+    // 网关可达时的 4xx/5xx 都如实返回；429 把 Retry-After 向上取整为秒，供登录按钮倒计时
     const ra = Number(response.headers.get("Retry-After"));
     return { ok: false, error: errMsg(error, response.status), code: (error as { code?: string } | undefined)?.code ?? (response.status === 429 ? "RATE_LIMITED" : undefined), retryAfter: Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : undefined, source: "api" };
   } catch {

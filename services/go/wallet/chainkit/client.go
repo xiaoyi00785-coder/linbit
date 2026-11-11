@@ -1,5 +1,7 @@
 package chainkit
 
+// client.go：真实链 RPC 的共用类型。金额在业务层是 decimal，上链前用 toUnits 收成整数单位。
+
 import (
 	"bytes"
 	"context"
@@ -15,7 +17,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Token is a fungible token contract (ERC20/BEP20/TRC20) or SPL mint.
+// Token 是 ERC20/BEP20/TRC20 合约或 SPL mint。Decimals 是链上整数单位的小数位，不是平台的 8 位。
 type Token struct {
 	Symbol   string
 	Contract string
@@ -133,7 +135,8 @@ func (j jsonRPC) call(ctx context.Context, method string, params []interface{}, 
 	return json.Unmarshal(resp.Result, out)
 }
 
-// toUnits converts a decimal amount into integer base units.
+// toUnits 把十进制金额收成链上整数单位。小数位超过 token decimals 就拒绝，避免截断丢钱。
+// 金额不用 float。
 func toUnits(d decimal.Decimal, decimals int32) (*decimal.Decimal, error) {
 	u := d.Shift(decimals)
 	if !u.Equal(u.Truncate(0)) {

@@ -1,12 +1,9 @@
-//! Local command transport: a minimal blocking HTTP server that fronts the
-//! per-symbol matching loops.
+//! 本地命令入口：一个阻塞的 HTTP 服务，后面是按交易对拆开的撮合循环。
 //!
-//! Each symbol runs on its own thread; the HTTP handler routes a command to the
-//! right symbol over a channel and blocks on a reply channel, so matching stays
-//! single-threaded per symbol while the service handles many connections. This
-//! is the *local* implementation of the replaceable messaging interface; the
-//! production path would consume commands from Kafka and drive the same loops
-//! (see `bus.rs` for the event-side Kafka skeleton).
+//! 每个交易对一个线程。HTTP 处理函数把命令经 channel 交给对应交易对，并阻塞等回复，
+//! 因此单个交易对的撮合始终是单线程的，服务本身可以同时接很多连接。
+//! 这是可替换消息接口的本地实现；生产环境可以从 Kafka 消费命令，驱动同一套循环
+//! （事件侧的 Kafka 占位见 `bus.rs`）。
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -19,19 +16,17 @@ use std::time::{Duration, Instant};
 use crate::book::SymbolEngine;
 use crate::types::{Command, DepthEvent, ExecReport};
 
-/// WAL durability policy for the matching loops.
+/// 撮合循环使用的 WAL 落盘策略。
 #[derive(Clone, Copy, Debug)]
 pub enum CommitMode {
-    /// Each command is fsync'd on its own before it is applied/acknowledged.
+    /// 每条命令单独 fsync，落盘之后才应用并确认。
     PerCommand,
-    /// Commands are coalesced into a batch — bounded by `max_batch` records or a
-    /// `window` of wall-clock time, whichever comes first — and the batch is made
-    /// durable with a single fsync before any of its commands are
-    /// applied/acknowledged.
+    /// 命令合成一批再落盘。批的大小由 `max_batch` 条或 `window` 墙钟时间先到者为准。
+    /// 整批一次 fsync，成功之后才应用并确认批内的命令。
     Group { max_batch: usize, window: Duration },
 }
 
-/// A request handed to a symbol's matching thread.
+/// 交给某个交易对撮合线程的请求。
 enum Req {
     Cmd(Command),
     Depth,
@@ -48,15 +43,14 @@ struct Job {
     reply: SyncSender<Resp>,
 }
 
-/// Routes commands to per-symbol matching threads.
+/// 把命令分发到各个交易对的撮合线程。
 #[derive(Clone)]
 pub struct Dispatcher {
     senders: Arc<HashMap<String, SyncSender<Job>>>,
 }
 
 impl Dispatcher {
-    /// Spawn one matching thread per engine and return a dispatcher over them.
-    /// `mode` selects the WAL durability policy the threads use.
+    /// 每个引擎起一个撮合线程，返回它们的分发器。`mode` 决定这些线程用哪种 WAL 落盘策略。
     pub fn spawn(engines: Vec<SymbolEngine>, mode: CommitMode) -> Self {
         let mut senders = HashMap::new();
         for engine in engines {
@@ -88,8 +82,7 @@ impl Dispatcher {
     }
 }
 
-/// Per-command policy: handle each job as it arrives, fsyncing every command on
-/// its own before replying.
+/// 逐条策略：来一条处理一条，每条命令单独 fsync，落盘之后才回复。
 fn run_per_command(mut engine: SymbolEngine, rx: Receiver<Job>) {
     for job in rx {
         let resp = match job.req {
@@ -100,14 +93,12 @@ fn run_per_command(mut engine: SymbolEngine, rx: Receiver<Job>) {
     }
 }
 
-/// Group-commit policy: coalesce jobs that are waiting in the channel into a
-/// batch (bounded by `max_batch` or `window`), make the batch's commands durable
-/// with a single fsync, then apply and reply to all of them.
+/// 组提交：把 channel 里已经在等的任务合成一批（不超过 `max_batch` 条，也不超过 `window`），
+/// 整批命令一次 fsync 落盘，然后再应用并逐条回复。
 fn run_group_commit(mut engine: SymbolEngine, rx: Receiver<Job>, max_batch: usize, window: Duration) {
-    // Block for the first job of a batch; once one arrives, keep pulling already-
-    // queued (or soon-to-arrive within `window`) jobs until the batch is full or
-    // the window closes. A lone command therefore waits at most `window` before
-    // its fsync; under load, batches fill to `max_batch` and the window is moot.
+    // 先阻塞等来批里的第一条。来了之后继续取已经排队的，或在 `window` 内到达的任务，
+    // 直到批满或窗口结束。单独一条命令最多等 `window` 才 fsync；
+    // 忙的时候批会凑满 `max_batch`，窗口就不起作用了。
     while let Ok(first) = rx.recv() {
         let mut jobs = vec![first];
         let deadline = Instant::now() + window;
@@ -119,7 +110,7 @@ fn run_group_commit(mut engine: SymbolEngine, rx: Receiver<Job>, max_batch: usiz
             match rx.recv_timeout(deadline - now) {
                 Ok(job) => jobs.push(job),
                 Err(RecvTimeoutError::Timeout) => break,
-                // Senders gone: drain what we have, then the outer recv() ends.
+                // 发送端没了：先处理手里已经有的，外层 recv() 随后结束。
                 Err(RecvTimeoutError::Disconnected) => break,
             }
         }
@@ -127,10 +118,8 @@ fn run_group_commit(mut engine: SymbolEngine, rx: Receiver<Job>, max_batch: usiz
     }
 }
 
-/// Apply a collected batch of jobs in arrival order. Consecutive commands are
-/// coalesced into one group-committed WAL batch; a depth query flushes any
-/// pending commands first so it observes their effects, preserving the exact
-/// ordering a per-command loop would have produced.
+/// 按到达顺序处理一批任务。连续的命令合成一次组提交；深度查询会先把前面的命令刷掉，
+/// 这样它看到的是这些命令已经生效后的订单簿，顺序和逐条循环一致。
 fn process_batch_jobs(engine: &mut SymbolEngine, jobs: Vec<Job>) {
     let mut cmds: Vec<Command> = Vec::new();
     let mut replies: Vec<SyncSender<Resp>> = Vec::new();
@@ -150,7 +139,7 @@ fn process_batch_jobs(engine: &mut SymbolEngine, jobs: Vec<Job>) {
     flush_command_batch(engine, &mut cmds, &mut replies);
 }
 
-/// Group-commit the buffered commands (one fsync) and reply with each report.
+/// 把缓冲的命令做一次组提交（一次 fsync），并按报告逐条回复。
 fn flush_command_batch(engine: &mut SymbolEngine, cmds: &mut Vec<Command>, replies: &mut Vec<SyncSender<Resp>>) {
     if cmds.is_empty() {
         return;
@@ -162,7 +151,7 @@ fn flush_command_batch(engine: &mut SymbolEngine, cmds: &mut Vec<Command>, repli
     cmds.clear();
 }
 
-/// Run the HTTP server until the process is killed.
+/// 跑 HTTP 服务，直到进程被杀掉。每个连接一个线程。
 pub fn serve(bind: &str, token: String, dispatcher: Dispatcher) -> std::io::Result<()> {
     let listener = TcpListener::bind(bind)?;
     println!("matching-engine listening on {bind}");
@@ -188,12 +177,12 @@ pub fn serve(bind: &str, token: String, dispatcher: Dispatcher) -> std::io::Resu
 fn handle_conn(mut stream: TcpStream, token: &str, d: &Dispatcher) -> std::io::Result<()> {
     let (method, path, headers, body) = read_request(&mut stream)?;
 
-    // Health check is unauthenticated.
+    // 健康检查不校验内部令牌。
     if method == "GET" && path == "/healthz" {
         return write_response(&mut stream, 200, "text/plain", b"ok");
     }
 
-    // All other endpoints require the shared internal token when one is set.
+    // 配了 INTERNAL_TOKEN 时，其余接口都要带同一个 X-Internal-Token。空令牌表示不校验。
     if !token.is_empty() && headers.get("x-internal-token").map(String::as_str) != Some(token) {
         return write_json(&mut stream, 401, br#"{"error":"unauthorized"}"#);
     }
@@ -238,13 +227,13 @@ fn handle_conn(mut stream: TcpStream, token: &str, d: &Dispatcher) -> std::io::R
     }
 }
 
-/// Parse an HTTP/1.1 request: method, path, lowercased headers, and body.
+/// 解析一个 HTTP/1.1 请求：方法、路径、小写后的头，以及 body。
 fn read_request(
     stream: &mut TcpStream,
 ) -> std::io::Result<(String, String, HashMap<String, String>, Vec<u8>)> {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 4096];
-    // Read until we have the full header block.
+    // 一直读到完整的头部块（空行 \r\n\r\n）。头部超过 8MiB 直接拒绝。
     let header_end = loop {
         if let Some(pos) = find_subslice(&buf, b"\r\n\r\n") {
             break pos;

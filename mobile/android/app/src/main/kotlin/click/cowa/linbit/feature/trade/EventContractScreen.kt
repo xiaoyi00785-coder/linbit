@@ -1,3 +1,4 @@
+/** 事件合约页：选择标的和周期，按服务端限额校验投注，再提交看涨或看跌。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

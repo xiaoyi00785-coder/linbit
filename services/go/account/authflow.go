@@ -281,8 +281,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusCreated, tokens)
 }
 
-// handleLogin verifies the password, then either issues tokens directly (known
-// device, no 2FA) or returns a challenge requiring a second factor.
+// 先验密码。密码错误只回 AUTH_INVALID_CREDENTIALS，不记次数，也不按 IP 封禁。
+// 已开 TOTP 或子账户走 totp；否则新设备发邮箱/短信（purpose=login，限流见 CodeService），已知设备且未开 TOTP 直接发令牌。
+// 子账户须父账户打开登录且已绑定 TOTP，否则拒绝。挑战有效期 loginChallengeTTL（5 分钟）。
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := common.DecodeJSON(r, &req); err != nil {
@@ -322,8 +323,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	dev := deviceFrom(r, req.DeviceID, req.DeviceName)
 
-	// Decide the second factor: TOTP wins; otherwise a new device triggers an
-	// email/SMS code. A known device with no TOTP logs in directly.
+	// TOTP 优先。没有 TOTP 时，只有未知设备才要邮箱/短信码。
 	method := ""
 	if u.TOTPEnabled || isSub {
 		method = "totp"
@@ -508,11 +508,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, http.StatusOK, tokens)
 }
 
-// handleLogout revokes every active session for the user: all refresh tokens
-// are revoked and every access token issued so far stops working immediately
-// (per-user cutoff in Redis, checked by the gateway and s.auth). The user is
-// identified by a valid bearer access token or, when that is missing/expired,
-// by the refreshToken in the body.
+// 吊销全部 refresh token，并写入 auth:revoked_before:{uid}=现在的 unix 毫秒，TTL 为 AccessTTL+1 分钟。
+// 网关和 s.auth 拒绝 IssuedAtMs 小于等于该值的 access。身份用未吊销的 Bearer，否则用 body 里的 refreshToken。
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	var u *User
 	if token := bearer(r); token != "" {
@@ -537,7 +534,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	// Keep the cutoff for the longest possible access-token lifetime.
+	// 截止时间保留到最长的 access 寿命。Redis 写失败则 503 LOGOUT_INCOMPLETE，refresh 已经吊销。
 	if err := common.RevokeAccessTokens(r.Context(), s.rdb, u.UID, s.now(), s.cfg.AccessTTL+time.Minute); err != nil {
 		log.Printf("logout: revoke access tokens: %s", common.RedactSecrets(err.Error()))
 		common.WriteError(w, http.StatusServiceUnavailable, "LOGOUT_INCOMPLETE", "刷新令牌已吊销，但访问令牌吊销失败，请稍后重试")
@@ -595,8 +592,8 @@ func (s *Server) handlePasswordVerifyCode(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// handlePasswordReset is step 2 of the forgot-password flow: it consumes the
-// single-use reset token, sets the new password, and revokes all sessions.
+// 消耗一次性 reset token 并改密码，然后只吊销 refresh token。
+// 不写 auth:revoked_before，已发出的 access 在过期前仍然有效。
 func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 	var req passwordResetRequest
 	if err := common.DecodeJSON(r, &req); err != nil {

@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-#
-# End-to-end smoke for the spot grid strategy service: validation, preview,
-#   arithmetic + geometric grids, initial market buy, buy->sell->buy cycle with
-#   realised grid profit, ledger == spot balances, strategy square, take-profit
-#   stop (sells base), manual stop (keep base), external-cancel stop, ownership.
-#
-#   bash scripts/smoke-grid.sh                       # boots devstack
+# 现货网格端到端 smoke。
+# 校验、预览、等差 + 等比网格、初始市价买入、买→卖→买循环与已实现网格利润、
+# 账本 == 现货余额、策略广场、止盈停止（卖掉基础币）、手动停止（保留基础币）、外部撤单停止、归属。
+#   bash scripts/smoke-grid.sh                       # 拉起 devstack
 #   GATEWAY_URL=... ASSET_URL=... ACCOUNT_URL=... STRATEGY_URL=... INTERNAL_TOKEN=... \
-#     SMOKE_INNER=1 bash scripts/smoke-grid.sh       # existing stack
-#
+#     SMOKE_INNER=1 bash scripts/smoke-grid.sh       # 已有栈
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

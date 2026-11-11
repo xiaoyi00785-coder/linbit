@@ -1,3 +1,4 @@
+/** 现货页里的策略广场、理财浏览和闪兑报价。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.background

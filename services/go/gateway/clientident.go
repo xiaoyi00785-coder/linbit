@@ -9,25 +9,21 @@ import (
 	"strings"
 )
 
-// Client identity normalisation (outermost middleware).
+// 最外层中间件：收成唯一的客户端 IP / 国家。
 //
-// Who may assert the client's IP / country:
-//   - a TCP peer inside TRUSTED_PROXY_CIDRS (nginx via the docker bridge, or
-//     Cloudflare when the gateway is exposed directly), or
-//   - a caller presenting X-Linbit-Edge-Auth == GATEWAY_EDGE_SECRET (the
-//     web/partner Next servers calling http://gateway:8080 directly over the
-//     docker network; their container IP is not stable, so a shared secret is
-//     used instead of an address).
+// 可以声明 IP 和国家的调用方：
+//   - TCP 对端落在 TRUSTED_PROXY_CIDRS（docker 网桥上的 nginx，或直连的 Cloudflare）
+//   - 或带 X-Linbit-Edge-Auth，且与 GATEWAY_EDGE_SECRET 常量时间相等。
+//     web/partner 的 Next 直连 http://gateway:8080，容器 IP 不稳定，所以用共享密钥而不是地址。
+//     密钥去空白后短于 32 字符则当作未设置。
 //
-// For everyone else the identity headers (X-Real-IP, X-Forwarded-For,
-// CF-Connecting-IP, CF-IPCountry, Forwarded, True-Client-IP) are deleted and
-// the TCP peer is the client. Afterwards X-Real-IP / X-Forwarded-For carry
-// exactly one validated IP, so the geo block, API-key IP allowlists, access
-// log and downstream services (account/admin read X-Forwarded-For[0]) all see
-// the same, unspoofable value. The edge-auth header never reaches upstreams.
+// 其余请求删掉 X-Real-IP、X-Forwarded-For、CF-Connecting-IP、CF-IPCountry、Forwarded、True-Client-IP，
+// 客户端就是 TCP 对端。通过之后这三个 IP 头只留一个校验过的地址，
+// 地理封锁、API key 白名单、访问日志，以及读 X-Forwarded-For 第一段的 account/admin 看到同一值。
+// X-Linbit-Edge-Auth 在比较后立即删除，不会转到上游。
 const edgeAuthHeader = "X-Linbit-Edge-Auth"
 
-// minEdgeSecretLen: shorter secrets are ignored (treated as unset).
+// 短于该长度的 GATEWAY_EDGE_SECRET 忽略，按未配置处理。
 const minEdgeSecretLen = 32
 
 type trustKey struct{}
@@ -57,7 +53,7 @@ func validIP(s string) string {
 	return ""
 }
 
-// resolveClientIP picks the client IP from a trusted request's headers.
+// 只用于已信任的请求。顺序：配置的头、X-Real-IP、CF-Connecting-IP、X-Forwarded-For 第一段。取第一个合法 IP。
 func resolveClientIP(r *http.Request, hdr string) string {
 	cands := []string{}
 	if hdr != "" {
@@ -84,6 +80,7 @@ func withClientIdentity(trusted []*net.IPNet, edgeSecret, ipHeader string, next 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := r.Header.Get(edgeAuthHeader)
 		r.Header.Del(edgeAuthHeader)
+		// CIDR 与边缘密钥二选一。密钥未配置或对不上，就只认对端网段。
 		ok := peerTrusted(r, trusted)
 		if !ok && secret != "" && got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(secret)) == 1 {
 			ok = true
@@ -119,8 +116,7 @@ func withClientIdentity(trusted []*net.IPNet, edgeSecret, ipHeader string, next 
 	})
 }
 
-// requestTrusted reports whether withClientIdentity accepted the request's
-// edge headers; ok=false when the middleware did not run (direct unit tests).
+// trusted 表示上面接受了 CIDR 或边缘密钥。ok 为 false 表示中间件没跑（单测直调）。
 func requestTrusted(r *http.Request) (trusted, ok bool) {
 	v, ok := r.Context().Value(trustKey{}).(bool)
 	return v, ok

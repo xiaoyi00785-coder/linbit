@@ -1,3 +1,5 @@
+/** 资产总览与站内转账。未登录不请求 overview。
+ *  24 小时转账额度只展示后端 message，不在前端写死数字。 */
 import type { components } from "@linbit/api-client";
 import { rest, useRest, type RestResult } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";

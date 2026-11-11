@@ -1,3 +1,4 @@
+/** 首页排版：总资产、新人任务、功能宫格、卡片与理财，以及自选和涨跌榜。 */
 package click.cowa.linbit.feature.home
 
 import androidx.compose.foundation.background

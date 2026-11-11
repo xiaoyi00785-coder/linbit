@@ -1,5 +1,11 @@
 package main
 
+// 公开 WS 的内存状态，每个 tick 经行情服务转发，和 "mark:{SYMBOL}" 一起推：
+// futures-ticker:{SYMBOL} 与 GET /futures/market/ticker?symbol= 同结构；
+// futures-kline:{SYMBOL}:{interval} 是当前未收盘 K 线，REST K 线形状加 time/closed。
+// 有本地成交的桶是成交 K（量/额），否则是指数 K（source "index"）。
+// 进程重启后的第一根只覆盖本进程看到的成交；客户端用 REST 柱合并高低价。
+
 import (
 	"context"
 	"sort"
@@ -9,19 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// livefeed.go: state behind the public WS channels relayed through
-// market-data every tick (alongside "mark:{SYMBOL}"):
-//
-//	futures-ticker:{SYMBOL}            same object as GET /futures/market/ticker?symbol=
-//	futures-kline:{SYMBOL}:{interval}  the current (open) candle, REST kline shape + time/closed
-//
-// Candles follow GET /futures/market/klines: a bucket with local fills is a
-// trade candle (volume/turnover), otherwise an index candle (source "index").
-// The first bucket after a restart only covers what this process observed;
-// clients merge high/low with their REST bar.
-
-// tickerStatsTTL bounds how often the WS ticker re-runs the 24h/OI queries;
-// live fields (last/mark/index/funding/change) are recomputed every tick.
+// tickerStatsTTL：WS ticker 最多每 5 秒重跑 24h/持仓量查询。最新价、标记价、指数、资金费、涨跌每个 tick 都重算。
 const tickerStatsTTL = 5 * time.Second
 
 type liveBar struct {

@@ -1,5 +1,8 @@
 package main
 
+// 启动时从公开源回补资金费历史，只供展示。插入点严格早于本地已结算的最早一行
+// （没有则早于 now-interval-1h），冲突不覆盖，不影响引擎按 (symbol, funding_time) 的结算。不改余额。
+
 import (
 	"context"
 	"encoding/json"
@@ -15,19 +18,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// fundingPoint is one historical funding rate from a public source.
+// fundingPoint 是公开源的一条历史资金费率，Mark 可能为空。
 type fundingPoint struct {
 	At   time.Time
 	Rate decimal.Decimal
 	Mark decimal.Decimal
 }
 
-// BackfillFunding imports public funding-rate history for every contract so
-// GET /futures/market/funding-history is populated on a fresh deployment.
-// Rows are inserted only strictly before the earliest locally settled row
-// (or before now-interval-1h when none exists), and never overwrite, so the
-// engine's own settlement (idempotent on (symbol,funding_time)) is unaffected.
-// Display data only: no balances move.
+// BackfillFunding 给 GET /futures/market/funding-history 补冷启动数据。
+// 只插入早于本地已结算记录的行，不覆盖；FUTURES_FUNDING_BACKFILL_SOURCES 按顺序试，天数见 FUTURES_FUNDING_BACKFILL_DAYS。不改余额。
 func (s *Server) BackfillFunding(ctx context.Context) {
 	hc := &http.Client{Timeout: 15 * time.Second}
 	since := s.now().Add(-time.Duration(s.cfg.FundingBackfillDays) * 24 * time.Hour)

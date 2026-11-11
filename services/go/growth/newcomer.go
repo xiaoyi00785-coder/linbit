@@ -12,11 +12,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Newcomer gift package (福利中心 · 新人限时任务) and the invite KYC reward.
-//
-// Flow: KYC → enroll → complete tasks inside the window → claim → voucher in
-// the coupon center → activate. Every task is claimable once per user; the
-// trading-volume levels stack.
+// 福利中心的新人限时任务，以及邀请 KYC 奖励。
+// 流程：KYC、报名、窗口内完成任务、领取、卡券中心激活。
+// 每个任务每人只能领一次；交易量档位可以叠。
 
 type NewcomerTask struct {
 	Key    string          `json:"key"`
@@ -27,6 +25,7 @@ type NewcomerTask struct {
 	Type   string          `json:"type"`   // bind | first_deposit | volume
 }
 
+// NewcomerRules 是新人任务，以及报名后的天数窗口和所需 KYC 等级。
 type NewcomerRules struct {
 	Tasks    []NewcomerTask
 	Days     int // GROWTH_NEWCOMER_DAYS (7): window after enrollment

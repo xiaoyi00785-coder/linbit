@@ -6,9 +6,8 @@ import (
 	"unicode"
 )
 
-// chatfilter.go: server-side content checks for chat messages. Text is
-// normalised first (full-width -> ASCII, common dot/at look-alikes, zero-width
-// characters dropped) so 「ｗｗｗ．ｘｘ．ｃｏｍ」 or "foo(at)bar.com" are caught too.
+// 聊天内容检查。先规范化：全角转 ASCII，常见点号和 @ 变体，去掉零宽字符，
+// 这样「ｗｗｗ．ｘｘ．ｃｏｍ」和 foo(at)bar.com 也会被拦住。
 
 var (
 	reURL   = regexp.MustCompile(`(?i)(https?://|ftp://|www\.|t\.me/|wa\.me/|[a-z0-9][a-z0-9-]*\.(com|net|org|io|cc|me|xyz|top|app|co|cn|info|link|vip|club|site|online|ly|gg|tk|ru|biz|pro|live|shop|fun|icu|ink|ltd|tv|to|im|so|ai)\b)`)

@@ -13,9 +13,8 @@ import (
 	"time"
 )
 
-// Minimal server-side WebSocket (RFC 6455) over the standard library — enough to
-// serve the public market-data channels without pulling in an external
-// dependency (matching the house style, cf. the engine's hand-rolled HTTP).
+// 标准库实现的最小 RFC 6455 服务端，只够公开行情频道，不引外部依赖
+// （和引擎手写 HTTP 同一路数）。
 
 const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 

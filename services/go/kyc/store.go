@@ -1,5 +1,7 @@
 package main
 
+// KYC 申请和证件。状态为 pending、approved、rejected；没有申请时对外是 none。
+
 import (
 	"context"
 	"database/sql"

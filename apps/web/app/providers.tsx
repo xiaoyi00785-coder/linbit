@@ -8,6 +8,7 @@ import { TransferHost } from "@/components/Transfer";
 import { OverlayManager } from "@/components/OverlayManager";
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  // 任意接口返回 451（REGION_BLOCKED）时整页跳到 /blocked，只安装一次
   installGeoBlockHandler();
   const [client] = useState(
     () =>

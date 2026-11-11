@@ -1,3 +1,4 @@
+/** 把文本画成二维码，充值地址用它展示。 */
 package click.cowa.linbit.feature.assets
 
 import android.graphics.Bitmap

@@ -1,3 +1,4 @@
+/** 全屏的登录、注册和找回密码，含二次验证、设置密码和国家区号选择。 */
 package click.cowa.linbit.feature.auth
 
 import androidx.activity.compose.BackHandler

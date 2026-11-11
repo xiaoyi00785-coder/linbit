@@ -1,3 +1,5 @@
+/** 数字展示。fmtFeeEst 按十进制字符串向上进位；fmtFeeExact 原样保留后端金额字符串，不经 Number。其余展示函数会转成 Number。 */
+
 /** 数字格式化：小额保留更多小数位。 */
 export function fmtNum(value: string | number | undefined, maxFrac = 2): string {
   if (value === undefined) return "--";

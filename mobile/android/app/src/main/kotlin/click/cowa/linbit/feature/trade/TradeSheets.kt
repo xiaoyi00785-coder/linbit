@@ -1,3 +1,4 @@
+/** 现货与合约共用弹层：盘口聚合精度、交易对搜索、下单确认和外观模式。 */
 package click.cowa.linbit.feature.trade
 
 import androidx.compose.foundation.BorderStroke

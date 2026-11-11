@@ -1,3 +1,4 @@
+// 登录后拉取现货余额和合约账户，并按美元估值整理列表。
 import Foundation
 
 @MainActor

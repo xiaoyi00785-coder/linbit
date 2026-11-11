@@ -1,5 +1,8 @@
 package chainkit
 
+// keystore.go：签名进程里的种子。v1 文件是 64 字节随机种子，用 scrypt 派生密钥后 AES-256-GCM 加密。
+// 种子不出签名进程，对外只给 xpub 和地址。文件模式 0600，CreateKeystore 拒绝覆盖。
+
 import (
 	"crypto/aes"
 	"crypto/cipher"
@@ -16,9 +19,6 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// Keystore file format (v1): a random 64-byte master seed encrypted with
-// AES-256-GCM under a scrypt-derived key. The seed never leaves the signer
-// process; only xpubs / public addresses are exported.
 type keystoreFile struct {
 	Version    int    `json:"version"`
 	KDF        string `json:"kdf"`
@@ -31,7 +31,7 @@ type keystoreFile struct {
 	Testnet    bool   `json:"testnet"`
 }
 
-// Keystore is an unlocked seed. Its String/GoString never reveal the seed.
+// Keystore 是已解锁的种子。String/GoString 不打印种子。
 type Keystore struct {
 	seed    []byte
 	testnet bool
@@ -46,8 +46,7 @@ func (k *Keystore) Testnet() bool { return k.testnet }
 // scrypt cost; tests may lower it.
 var scryptN = 1 << 17
 
-// CreateKeystore generates a fresh random seed and writes it encrypted to path
-// (mode 0600, refuses to overwrite).
+// CreateKeystore 生成新的随机种子，加密写到 path。模式 0600，已存在则拒绝覆盖。
 func CreateKeystore(path string, passphrase []byte, testnet bool) (*Keystore, error) {
 	if len(passphrase) < 12 {
 		return nil, errors.New("keystore: passphrase must be at least 12 characters")
@@ -118,8 +117,7 @@ func ksCipher(pass []byte, f keystoreFile) (cipher.AEAD, error) {
 	return cipher.NewGCM(blk)
 }
 
-// Key branches: deposit addresses live on branch 0, the hot wallet on branch 1
-// and the reserve ("cold" stand-in, same HD seed) on branch 2.
+// 分支：充值地址在 branch 0，热钱包在 branch 1，储备（同一 HD 种子上的冷钱包替身）在 branch 2。
 const (
 	BranchDeposit uint32 = 0
 	BranchHot     uint32 = 1
@@ -144,8 +142,7 @@ func accountPath(c Chain, testnet bool) ([]uint32, error) {
 	return nil, fmt.Errorf("keystore: no secp256k1 path for %s", c)
 }
 
-// AccountXpub exports the account-level xpub for a secp256k1 chain. The
-// wallet derives deposit addresses as <xpub>/0/i and the hot wallet as <xpub>/1/0.
+// AccountXpub 导出 secp256k1 链的账户级 xpub。钱包用 <xpub>/0/i 派充值地址，热钱包是 <xpub>/1/0。
 func (k *Keystore) AccountXpub(c Chain) (string, error) {
 	acct, err := k.account(c)
 	if err != nil {
@@ -177,9 +174,8 @@ func (k *Keystore) secpKey(c Chain, branch, index uint32) (*ExtKey, error) {
 	return acct.Derive(branch, index)
 }
 
-// solKey derives an ed25519 key with SLIP-10 (hardened only):
-// m/44'/501'/(branch*2^20+index)'/0'. Branch 0 = deposit, 1 = hot,
-// 2 = reserve (cold-from-HD). Branches 0..BranchReserve are allowed.
+// solKey 用 SLIP-10 派生 ed25519（只能硬化）：
+// m/44'/501'/(branch*2^20+index)'/0'。branch 0 充值，1 热钱包，2 储备。允许 0..BranchReserve。
 func (k *Keystore) solKey(branch, index uint32) (ed25519.PrivateKey, error) {
 	if index >= 1<<20 || branch > BranchReserve {
 		return nil, errors.New("keystore: sol index out of range")
@@ -201,9 +197,8 @@ func (k *Keystore) solKey(branch, index uint32) (ed25519.PrivateKey, error) {
 	return ed25519.NewKeyFromSeed(key), nil
 }
 
-// SolAddresses exports n public deposit addresses (Solana keys cannot be
-// derived from a public key, so the wallet gets a public address list instead
-// of an xpub) and the hot-wallet address.
+// SolAddresses 导出 n 个充值公钥地址和热钱包地址。
+// Solana 不能从公钥派生子密钥，所以钱包拿地址列表，而不是 xpub。
 func (k *Keystore) SolAddresses(n int) (deposit []string, hot string, err error) {
 	for i := 0; i < n; i++ {
 		pk, err := k.solKey(BranchDeposit, uint32(i))

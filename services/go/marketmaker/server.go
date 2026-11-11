@@ -13,8 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Routes: everything is internal (X-Internal-Token); the admin service adds
-// RBAC, 2FA and audit in front of the write operations.
+// 全部是内部接口（X-Internal-Token）。写操作的 RBAC、2FA 和审计由 admin 加在前面。
 func (m *Maker) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

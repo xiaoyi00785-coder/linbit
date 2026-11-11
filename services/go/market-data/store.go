@@ -1,5 +1,7 @@
 package main
 
+// K 线落库，并只读 order 服务维护的 symbols 表。
+
 import (
 	"context"
 	"database/sql"

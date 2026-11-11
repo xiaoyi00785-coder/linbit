@@ -1,5 +1,7 @@
 package main
 
+// 调 asset 做平台账户划转。相同 ref 幂等。
+
 import (
 	"bytes"
 	"context"

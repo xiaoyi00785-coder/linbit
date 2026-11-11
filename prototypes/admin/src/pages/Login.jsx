@@ -1,3 +1,4 @@
+// 管理员登录：账号、密码和谷歌验证码一次提交。
 import { useState } from 'react'
 import { api, errText, setToken } from '../api.js'
 
