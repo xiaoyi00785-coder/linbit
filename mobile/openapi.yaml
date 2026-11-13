@@ -212,8 +212,10 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429":
           description: >
-            需邮箱/短信验证码但发送过于频繁（RATE_LIMITED）。响应头 Retry-After 为建议等待秒数；
-            等待后重新调用登录即可。仅在密码正确后才可能返回，不暴露账号是否存在。
+            两种原因：(1) `RATE_LIMITED`——需邮箱/短信验证码但发送过于频繁，响应头 Retry-After
+            为建议等待秒数，等待后重新调用登录即可，仅在密码正确后才可能返回，不暴露账号是否存在；
+            (2) `AUTH_LOCKED`——该账号连续多次密码错误已暂时锁定（默认 5 次 / 15 分钟），此时不会
+            再校验密码，请等待 Retry-After 秒后再试或使用找回密码。
           headers:
             Retry-After: { schema: { type: integer }, description: 建议等待秒数 }
           content:
@@ -227,10 +229,107 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { code: EMAIL_UNAVAILABLE, message: 邮件服务暂不可用，请稍后再试 }
 
+  /auth/google:
+    post:
+      tags: [Auth]
+      summary: Google 登录（第一因子）
+      description: |
+        Google 身份只算第一因子：账户已开启 TOTP 时返回 LoginChallenge（methods=["totp"]），
+        需再调用 `/auth/login/verify` 提交 totpCode，令牌才会下发。
+        已存在同邮箱账户但未绑定 Google 时返回 409 `GOOGLE_LINK_REQUIRED`，不会自动关联；
+        登录后调用 `/account/oauth/google/link` 主动绑定。子账户不能使用 Google 登录。
+      operationId: loginWithGoogle
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken: { type: string, description: Google 签发的 ID token }
+                deviceId: { type: string }
+                deviceName: { type: string }
+      responses:
+        "200":
+          description: 已登录（AuthTokens）或需要完成 TOTP（LoginChallenge）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AuthTokens"
+                  - $ref: "#/components/schemas/LoginChallenge"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Google 凭证无效（`GOOGLE_TOKEN_INVALID`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            该邮箱已注册但未绑定 Google（`GOOGLE_LINK_REQUIRED`）、邮箱未验证
+            （`GOOGLE_EMAIL_UNVERIFIED`）或已被占用（`AUTH_EMAIL_EXISTS`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Google 登录未配置或暂时无法校验（`GOOGLE_UNCONFIGURED` / `GOOGLE_UNAVAILABLE`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /account/oauth/google/link:
+    post:
+      tags: [Account]
+      summary: 绑定 Google 登录到当前账户
+      description: |
+        绑定第三方登录必须由账户本人完成：需要登录态 + 第二因子（已开启 TOTP 时传 `totpCode`，
+        否则传发到邮箱/手机的 `code`，purpose=security）。Google 账号邮箱必须与本站账户邮箱一致；
+        绑定后触发提现锁定并发送安全通知。子账户不可绑定。
+      operationId: linkGoogleAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken: { type: string }
+                totpCode: { type: string, description: 已开启 TOTP 时必填 }
+                code: { type: string, description: 未开启 TOTP 时必填 }
+      responses:
+        "200":
+          description: 已绑定
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  provider: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: 缺少第二因子（`TWOFA_REQUIRED`）或子账户不可绑定（`SUB_ACCOUNT_FORBIDDEN`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            邮箱不一致（`GOOGLE_EMAIL_MISMATCH`）或该 Google 账号已绑定其他账户（`GOOGLE_ALREADY_LINKED`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /auth/login/verify:
     post:
       tags: [Auth]
       summary: 提交二次验证，换取令牌
+      description: |
+        TOTP 有防暴力破解与防重放：每个账户连续 5 次错误后锁定 15 分钟（`TOTP_LOCKED`，
+        锁定期间即使输入正确也会拒绝，且对登录、敏感操作、提现统一生效）；同一验证码只能使用一次
+        （`TOTP_REPLAYED`，请等待验证器刷新出新的验证码）。
       operationId: loginVerify
       security: []
       requestBody:
@@ -245,8 +344,17 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthTokens" }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: 参数错误，或 TOTP 验证码已使用过（`TOTP_REPLAYED`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429":
+          description: TOTP 错误次数过多，已暂时锁定（`TOTP_LOCKED`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /auth/login/code:
     post:
@@ -403,6 +511,9 @@ paths:
     post:
       tags: [2FA]
       summary: 开始绑定 TOTP（返回密钥与 otpauth URI）
+      description: |
+        仅在尚未开启 TOTP 时可用；已开启时返回 409 `TOTP_ALREADY_ENABLED`。
+        更换身份验证器须先调用 `/2fa/totp/disable`（需当前 TOTP，并触发提现锁定），再重新绑定。
       operationId: bindTotp
       responses:
         "200":
@@ -414,11 +525,22 @@ paths:
                 secret: JBSWY3DPEHPK3PXP
                 otpauthUri: otpauth://totp/Linbit:trader@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Linbit
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: 已开启 TOTP（`TOTP_ALREADY_ENABLED`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /2fa/totp/verify:
     post:
       tags: [2FA]
       summary: 校验 TOTP 验证码并启用 2FA
+      description: |
+        启用 TOTP 需同时提交身份验证器验证码 `code` 与发送到账户已绑定邮箱/手机的安全验证码
+        `securityCode`（先调用 `POST /account/code/send`，`purpose=security`）。仅凭登录态无法开启。
+        错误码：`TOTP_INVALID`（动态码错误）、`CODE_INVALID` / `CODE_TOO_MANY_ATTEMPTS`（安全验证码错误）、
+        `VALIDATION_ERROR`（缺少安全验证码）、`TWOFA_REQUIRED`（账户未绑定邮箱/手机）、`TOTP_ALREADY_ENABLED`（409）。
+        开启成功后发送账户安全通知。
       operationId: verifyTotp
       requestBody:
         required: true
@@ -426,13 +548,17 @@ paths:
           application/json:
             schema:
               type: object
-              required: [code]
+              required: [code, securityCode]
               properties:
                 code:
                   type: string
                   description: 6 位 TOTP 验证码
+                securityCode:
+                  type: string
+                  description: 发送至账户已绑定邮箱/手机的安全验证码（先调用 /account/code/send，purpose=security）
             example:
               code: "123456"
+              securityCode: "654321"
       responses:
         "200":
           description: 2FA 已启用
@@ -444,6 +570,16 @@ paths:
                 method: totp
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: 账户未绑定可接收验证码的邮箱/手机（`TWOFA_REQUIRED`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: 已开启 TOTP（`TOTP_ALREADY_ENABLED`）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /2fa/totp/disable:
     post:

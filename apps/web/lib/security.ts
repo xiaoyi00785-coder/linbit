@@ -94,6 +94,7 @@ export const SEC_ERR: Record<string, string> = {
   CONTACT_UNCHANGED: "与当前绑定的联系方式相同", FUND_PASSWORD_EXISTS: "资金密码已设置", FUND_PASSWORD_INVALID: "资金密码错误",
   FUND_PASSWORD_NOT_SET: "请先设置资金密码", FUND_PASSWORD_REQUIRED: "请输入资金密码", PASSKEY_UNAVAILABLE: "通行密钥服务暂未启用",
   WITHDRAW_LOCKED: "安全设置变更后 24 小时内禁止提现",
+  TOTP_LOCKED: "验证码错误次数过多，两步验证已暂时锁定，请 15 分钟后再试", TOTP_REPLAYED: "该验证码已使用，请等待验证器显示新的验证码",
 };
 export const fmtUntil = (s?: string | null) => (s ? new Date(s).toLocaleString("zh-CN", { hour12: false }) : "");
 export const secMsg = (r: { code?: string; error?: string; status?: number }) =>

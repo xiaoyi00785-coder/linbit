@@ -1,0 +1,119 @@
+# Linbit 后端 CI：Go 服务（go vet + go test，带真实 Postgres）+ Rust 撮合引擎（cargo test）
+# 之前仓库只有 web / ios / android 三个工作流，后端约 170 个 Go 测试文件和撮合引擎测试从未在 CI 中运行。
+name: Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "tools/devstack/**"
+      - "tools/wsprobe/**"
+      - "scripts/test-all.sh"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "services/**"
+      - "tools/devstack/**"
+      - "tools/wsprobe/**"
+      - "scripts/test-all.sh"
+      - ".github/workflows/backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (vet + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      # 与 docker-compose 一致：所有服务共用一个库，各服务用自己的 goose 版本表
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: linbit
+          POSTGRES_PASSWORD: linbit
+          POSTGRES_DB: linbit
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U linbit -d linbit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://linbit:linbit@localhost:5432/linbit?sslmode=disable
+      # 缺少 DATABASE_URL 时 test-all.sh 直接失败，避免依赖数据库的测试被静默跳过
+      REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # 版本取自 go.mod，与代码保持一致，不在这里写死
+          go-version-file: services/go/common/go.mod
+          cache-dependency-path: |
+            services/go/*/go.sum
+            tools/*/go.sum
+
+      - name: go vet + go test（所有 Go 模块）
+        run: bash scripts/test-all.sh
+
+  rust:
+    name: Rust matching engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/rust/matching-engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            services/rust/matching-engine/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('services/rust/matching-engine/Cargo.lock') }}
+
+      # --locked：Cargo.lock 已提交，依赖版本必须与之一致
+      - name: cargo test
+        run: cargo test --locked
+
+      - name: cargo build --release（含 kafka feature 编译检查）
+        run: cargo build --locked --release --features kafka
+
+  # 依赖漏洞扫描。首次接入时先不阻塞合并（已有依赖可能报出问题），
+  # 结果在 Actions 页面查看；清理完存量问题后去掉 continue-on-error 改为强制。
+  vulncheck:
+    name: govulncheck（暂不阻塞）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go/common/go.mod
+          cache-dependency-path: |
+            services/go/*/go.sum
+            tools/*/go.sum
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          status=0
+          for m in services/go/*/ tools/devstack/; do
+            [ -f "$m/go.mod" ] || continue
+            echo "::group::$m"
+            (cd "$m" && govulncheck ./...) || status=1
+            echo "::endgroup::"
+          done
+          exit $status

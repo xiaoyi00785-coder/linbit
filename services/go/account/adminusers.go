@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -193,6 +194,13 @@ func (s *Server) handleInternalAdminSetStatus(w http.ResponseWriter, r *http.Req
 	if err := s.store.SetStatus(r.Context(), u.ID, req.Status, strings.TrimSpace(req.Reason)); err != nil {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
+	}
+	// Freezing must not leave live access tokens behind: the attacker's session
+	// keeps trading for up to AccessTTL otherwise.
+	if req.Status == userFrozen {
+		if err := common.RevokeAccessTokens(r.Context(), s.rdb, u.UID, s.now(), s.revocationTTL()); err != nil {
+			log.Printf("admin set status: revoke access tokens: %s", common.RedactSecrets(err.Error()))
+		}
 	}
 	u, _ = s.store.UserByUID(r.Context(), u.UID)
 	common.WriteJSON(w, http.StatusOK, toAdminUserDTO(u))

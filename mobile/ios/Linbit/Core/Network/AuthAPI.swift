@@ -133,8 +133,9 @@ enum AuthAPI {
 
     static func account() async throws -> APIAccount { try await api.get("/account", auth: true) }
     static func bindTotp() async throws -> APITotpBinding { try await api.post("/2fa/totp/bind", body: Optional<Int>.none) }
-    static func verifyTotp(_ code: String) async throws {
-        let _: EmptyResponse = try await api.post("/2fa/totp/verify", body: APIVerifyTotpRequest(code: code))
+    /// 开启 TOTP：`code` 为身份验证器验证码，`securityCode` 为 sendSecurityCode() 发到邮箱/手机的验证码
+    static func verifyTotp(_ code: String, securityCode: String) async throws {
+        let _: EmptyResponse = try await api.post("/2fa/totp/verify", body: APIVerifyTotpRequest(code: code, securityCode: securityCode))
     }
 }
 

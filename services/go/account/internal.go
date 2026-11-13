@@ -70,7 +70,15 @@ func (s *Server) handleInternalWithdrawVerify(w http.ResponseWriter, r *http.Req
 			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_required"})
 			return
 		}
-		if !validateTOTP(u.TOTPSecret, req.TOTPCode) {
+		switch v := s.verifyTOTP(r.Context(), u, req.TOTPCode); v {
+		case totpOK:
+		case totpLocked:
+			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_locked"})
+			return
+		case totpReplayed:
+			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_reused"})
+			return
+		default:
 			common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "totp_invalid"})
 			return
 		}

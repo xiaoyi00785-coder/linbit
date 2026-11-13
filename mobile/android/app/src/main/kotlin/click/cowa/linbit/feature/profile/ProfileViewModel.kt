@@ -124,7 +124,7 @@ class SecurityViewModel @Inject constructor(
 
     fun beginBinding() {
         viewModelScope.launch {
-            _s.value = _s.value.copy(bindingLoading = true, error = null, binding = null, code = "")
+            _s.value = _s.value.copy(bindingLoading = true, error = null, binding = null, code = "", securityCode = "")
             try { _s.value = _s.value.copy(bindingLoading = false, binding = apiCall { api.bindTotp() }) }
             catch (e: Exception) { _s.value = _s.value.copy(bindingLoading = false, error = e.lbMessage()) }
         }
@@ -132,12 +132,28 @@ class SecurityViewModel @Inject constructor(
 
     fun code(raw: String) { _s.value = _s.value.copy(code = raw.filter(Char::isDigit).take(6), error = null) }
 
+    fun securityCode(raw: String) { _s.value = _s.value.copy(securityCode = raw.filter(Char::isDigit).take(6), error = null) }
+
+    /** 开启 TOTP 前向已绑定的邮箱/手机发送安全验证码（purpose=security），60 秒冷却 */
+    fun sendSecurityCode() {
+        if (_s.value.sending || _s.value.cooldown > 0) return
+        viewModelScope.launch {
+            _s.value = _s.value.copy(sending = true, error = null)
+            try {
+                apiCall { api.sendAccountCode(ApiSendCodeAuthedRequest(purpose = ApiSendCodeAuthedRequest.Purpose.SECURITY)) }
+                toast.show("验证码已发送")
+                _s.value = _s.value.copy(sending = false, cooldown = 60)
+                while (_s.value.cooldown > 0) { kotlinx.coroutines.delay(1_000); _s.value = _s.value.copy(cooldown = _s.value.cooldown - 1) }
+            } catch (e: Exception) { _s.value = _s.value.copy(sending = false, error = e.lbMessage()) }
+        }
+    }
+
     fun verify(onDone: () -> Unit) {
         viewModelScope.launch {
             _s.value = _s.value.copy(submitting = true, error = null)
             try {
-                apiCall { api.verifyTotp(ApiVerifyTotpRequest(_s.value.code)) }
-                _s.value = _s.value.copy(submitting = false, code = "", binding = null)
+                apiCall { api.verifyTotp(ApiVerifyTotpRequest(code = _s.value.code, securityCode = _s.value.securityCode)) }
+                _s.value = _s.value.copy(submitting = false, code = "", securityCode = "", binding = null)
                 toast.show("身份验证器已绑定")
                 load(); onDone()
             } catch (e: Exception) { _s.value = _s.value.copy(submitting = false, error = e.lbMessage()) }
@@ -165,6 +181,10 @@ data class SecurityUiState(
     val security: ApiSecurityOverview? = null,
     val binding: ApiTotpBinding? = null,
     val code: String = "",
+    /** 开启 TOTP 所需的邮箱/手机安全验证码 */
+    val securityCode: String = "",
+    val sending: Boolean = false,
+    val cooldown: Int = 0,
 )
 
 @HiltViewModel

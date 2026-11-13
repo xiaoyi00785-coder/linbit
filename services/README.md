@@ -65,7 +65,7 @@ client ──HTTP/WS──> gateway ──> account / order / asset / market-dat
   `gateway` 是统一鉴权入口：校验 Bearer access token，剥离客户端伪造的 `X-User-Id`，再注入
   由令牌 `sub`（即 uid）得到的 `X-User-Id` 转发给上游。`account` 的受保护接口自身也会再次校验
   JWT（纵深防御）；`asset` 仅信任网关注入的 `X-User-Id`，故 **asset 只应部署在网关之后**。
-- **2FA / 二次验证登录**：`/2fa/totp/bind` 生成密钥与 otpauth URI，`/2fa/totp/verify` 校验并启用。
+- **2FA / 二次验证登录**：`/2fa/totp/bind` 生成密钥与 otpauth URI，`/2fa/totp/verify` 校验并启用（需同时提交 TOTP `code` 与 `/account/code/send purpose=security` 发出的 `securityCode`）。已开启 TOTP 时 bind / verify 返回 409 `TOTP_ALREADY_ENABLED`；更换身份验证器须先 `/2fa/totp/disable`。
   登录改为**两步**：`POST /auth/login` 密码正确后，若需二次验证（已开启 TOTP、或**新设备**触发邮箱/短信
   验证）返回 `LoginChallenge`（`challengeToken` + `methods`，不签发 access token）；再用
   `POST /auth/login/verify` 提交 TOTP 或验证码换取令牌。已信任设备且未开 TOTP 则直接签发令牌。

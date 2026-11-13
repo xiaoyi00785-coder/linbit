@@ -401,6 +401,57 @@ interface LinbitApi {
     @GET("account/security")
     suspend fun securityOverview(): ApiSecurityOverview
 
+    /** 向当前账户自己的邮箱/手机发送验证码（敏感操作前置校验，如开启 TOTP 用 purpose=security） */
+    @POST("account/code/send")
+    suspend fun sendAccountCode(@Body body: ApiSendCodeAuthedRequest): ApiSendCodeResponse
+
+    // ---- 账户安全设置（对照 iOS SecurityAPI.swift）。敏感操作：已开启 TOTP 传 totpCode，否则传 code（purpose=security）----
+    @POST("account/password/change")
+    suspend fun changePassword(@Body body: ApiChangePasswordRequest): ApiChangePassword200Response
+
+    /** 向新的邮箱 / 手机发送绑定验证码（purpose=bind_new，由服务端决定） */
+    @POST("account/contact/code")
+    suspend fun sendContactCode(@Body body: ApiSendContactCodeRequest): ApiSendContactCode200Response
+
+    @PUT("account/email")
+    suspend fun changeEmail(@Body body: ApiChangeContactRequest): ApiOkResponse
+
+    @PUT("account/phone")
+    suspend fun changePhone(@Body body: ApiChangeContactRequest): ApiOkResponse
+
+    @POST("account/fund-password")
+    suspend fun setFundPassword(@Body body: ApiFundPasswordRequest): ApiOkResponse
+
+    @PUT("account/fund-password")
+    suspend fun changeFundPassword(@Body body: ApiFundPasswordRequest): ApiOkResponse
+
+    @POST("account/fund-password/reset")
+    suspend fun resetFundPassword(@Body body: ApiFundPasswordRequest): ApiOkResponse
+
+    @PUT("account/anti-phishing")
+    suspend fun setAntiPhishing(@Body body: ApiSetAntiPhishingRequest): ApiOkResponse
+
+    @GET("account/sessions")
+    suspend fun sessions(): ApiListSessions200Response
+
+    @DELETE("account/sessions/{id}")
+    suspend fun revokeSession(@Path("id") id: String)
+
+    @POST("account/sessions/revoke-others")
+    suspend fun revokeOtherSessions(): ApiRevokeOtherSessions200Response
+
+    @GET("account/devices")
+    suspend fun devices(): ApiDeviceList
+
+    @DELETE("account/devices/{deviceId}")
+    suspend fun removeDevice(@Path("deviceId") deviceId: String)
+
+    @GET("account/passkeys")
+    suspend fun passkeys(): ApiListPasskeys200Response
+
+    @DELETE("account/passkeys/{id}")
+    suspend fun deletePasskey(@Path("id") id: String)
+
     @POST("2fa/totp/bind")
     suspend fun bindTotp(): ApiTotpBinding
 

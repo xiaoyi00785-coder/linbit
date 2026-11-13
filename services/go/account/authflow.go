@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -298,9 +299,29 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, err := s.lookupByIdentity(r.Context(), id)
-	if err != nil || !checkPassword(u.PasswordHash, req.Password) {
+	if err != nil {
+		// Run the same bcrypt work as a real account so response time does not
+		// reveal whether the identifier is registered.
+		_ = checkPassword(dummyPasswordHash, req.Password)
 		common.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "账号或密码错误")
 		return
+	}
+	// Per-account lockout: after too many wrong passwords no guess is evaluated.
+	if locked, until := s.loginLocked(r.Context(), u.ID); locked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(time.Until(until).Seconds())+1))
+		common.WriteError(w, http.StatusTooManyRequests, "AUTH_LOCKED", "密码错误次数过多，登录已暂时锁定，请稍后再试或找回密码")
+		return
+	}
+	if !checkPassword(u.PasswordHash, req.Password) {
+		if lockUntil := s.recordLoginFailure(r.Context(), u.ID); !lockUntil.IsZero() {
+			s.notifyAsync(u, common.NoticeSecurity, "登录失败次数过多",
+				"您的账户因连续多次密码错误已被暂时锁定至 "+lockUntil.UTC().Format("2006-01-02 15:04")+" (UTC)。如非本人操作，请立即找回密码或联系客服。")
+		}
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "账号或密码错误")
+		return
+	}
+	if err := s.store.ClearLoginFailures(r.Context(), u.ID); err != nil {
+		log.Printf("login: clear failures: %v", err)
 	}
 	if u.Status == userFrozen {
 		writeFrozen(w)
@@ -405,7 +426,19 @@ func (s *Server) handleLoginVerify(w http.ResponseWriter, r *http.Request) {
 
 	switch c.Method {
 	case "totp":
-		if req.TOTPCode == "" || !validateTOTP(u.TOTPSecret, req.TOTPCode) {
+		if req.TOTPCode == "" {
+			common.WriteError(w, http.StatusUnauthorized, "TOTP_INVALID", "两步验证码错误")
+			return
+		}
+		switch v := s.verifyTOTP(r.Context(), u, req.TOTPCode); v {
+		case totpOK:
+		case totpLocked:
+			common.WriteError(w, http.StatusTooManyRequests, "TOTP_LOCKED", "验证码错误次数过多，两步验证已暂时锁定，请 15 分钟后再试")
+			return
+		case totpReplayed:
+			common.WriteError(w, http.StatusBadRequest, "TOTP_REPLAYED", "该验证码已使用，请等待验证器显示新的验证码")
+			return
+		default:
 			common.WriteError(w, http.StatusUnauthorized, "TOTP_INVALID", "两步验证码错误")
 			return
 		}
@@ -625,10 +658,17 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
-	if err := s.store.RevokeAllRefreshTokens(r.Context(), userID); err != nil {
-		log.Printf("password reset: revoke tokens: %v", err)
+	u, err := s.store.UserByID(r.Context(), userID)
+	if err != nil {
+		log.Printf("password reset: load user: %v", err)
 	}
-	if u, err := s.store.UserByID(r.Context(), userID); err == nil {
+	if err := s.store.RevokeAllRefreshTokens(r.Context(), userID); err != nil {
+		log.Printf("password reset: revoke refresh tokens: %v", err)
+	}
+	if u != nil {
+		// A reset must kill access tokens too, or the session that stole the
+		// account keeps working until they expire.
+		s.revokeUserSessions(r.Context(), u)
 		s.notifyAsync(u, common.NoticeSecurity, "登录密码已重置", "您的登录密码已重置，所有设备已退出登录。如非本人操作，请立即联系客服。")
 	}
 	w.WriteHeader(http.StatusNoContent)

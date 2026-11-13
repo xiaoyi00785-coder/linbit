@@ -1,6 +1,8 @@
 package common
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -24,7 +26,21 @@ type AccessClaims struct {
 	// IatMs is the issue time in unix milliseconds, compared against the
 	// per-user logout cutoff (see revoke.go).
 	IatMs int64 `json:"iatms,omitempty"`
+	// DevID is a hash of the session's device key. It lets a single device be
+	// kicked without logging the user out everywhere (revoke.go, per-device
+	// cutoff). Empty on older tokens, which can only be revoked per user.
+	DevID string `json:"dev,omitempty"`
 	jwt.RegisteredClaims
+}
+
+// DeviceClaim returns the value stored in the token's DevID claim for a device
+// key: sha256(deviceKey) hex, so the raw key never travels inside the token.
+func DeviceClaim(deviceKey string) string {
+	if deviceKey == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(deviceKey))
+	return hex.EncodeToString(sum[:])
 }
 
 // SignAccessToken issues an HS256 access token for the given uid/email.
@@ -35,6 +51,12 @@ func SignAccessToken(secret, uid, email string, ttl time.Duration, now time.Time
 // SignAccessTokenFor issues an access token; a non-empty parentUID marks the
 // session as a sub-account session (acct="sub").
 func SignAccessTokenFor(secret, uid, email, parentUID string, ttl time.Duration, now time.Time) (string, error) {
+	return SignAccessTokenForDevice(secret, uid, email, parentUID, "", ttl, now)
+}
+
+// SignAccessTokenForDevice is SignAccessTokenFor plus the session's device key,
+// which allows revoking just that device's access tokens.
+func SignAccessTokenForDevice(secret, uid, email, parentUID, deviceKey string, ttl time.Duration, now time.Time) (string, error) {
 	acct := ""
 	if parentUID != "" {
 		acct = "sub"
@@ -44,6 +66,7 @@ func SignAccessTokenFor(secret, uid, email, parentUID string, ttl time.Duration,
 		Typ:    "access",
 		Acct:   acct,
 		Parent: parentUID,
+		DevID:  DeviceClaim(deviceKey),
 		IatMs:  now.UnixMilli(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   uid,

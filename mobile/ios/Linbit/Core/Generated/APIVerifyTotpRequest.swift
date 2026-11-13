@@ -11,13 +11,17 @@ public struct APIVerifyTotpRequest: Codable, JSONEncodable, Hashable {
 
     /** 6 位 TOTP 验证码 */
     public var code: String
+    /** 发送至账户已绑定邮箱/手机的安全验证码（先调用 /account/code/send，purpose=security） */
+    public var securityCode: String
 
-    public init(code: String) {
+    public init(code: String, securityCode: String) {
         self.code = code
+        self.securityCode = securityCode
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case code
+        case securityCode
     }
 
     // Encodable protocol methods
@@ -25,6 +29,6 @@ public struct APIVerifyTotpRequest: Codable, JSONEncodable, Hashable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(code, forKey: .code)
+        try container.encode(securityCode, forKey: .securityCode)
     }
 }
-

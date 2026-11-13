@@ -117,7 +117,7 @@ func (s *Server) requireSensitiveAuth(w http.ResponseWriter, r *http.Request, u 
 	// Error split: TWOFA_REQUIRED (403) = no second factor supplied / bound;
 	// INVALID_TOTP (401) = a TOTP was supplied but is wrong.
 	if u.TOTPEnabled {
-		return requireTOTPIfEnabled(w, u, totpCode)
+		return s.requireTOTPIfEnabled(r.Context(), w, u, totpCode)
 	}
 	if s.contactTarget(u, s.contactChannel(u)) == "" {
 		common.WriteError(w, http.StatusForbidden, "TWOFA_REQUIRED", "请先绑定两步验证或邮箱/手机")

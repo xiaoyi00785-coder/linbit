@@ -9171,6 +9171,15 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description 已开启 TOTP（`TOTP_ALREADY_ENABLED`） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     verifyTotp: {
@@ -9184,12 +9193,15 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "code": "123456"
+                 *       "code": "123456",
+                 *       "securityCode": "654321"
                  *     }
                  */
                 "application/json": {
                     /** @description 6 位 TOTP 验证码 */
                     code: string;
+                    /** @description 发送至账户已绑定邮箱/手机的安全验证码（先调用 /account/code/send，purpose=security） */
+                    securityCode: string;
                 };
             };
         };
@@ -9211,6 +9223,24 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description 账户未绑定可接收验证码的邮箱/手机（`TWOFA_REQUIRED`） */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description 已开启 TOTP（`TOTP_ALREADY_ENABLED`） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     disableTotp: {

@@ -51,9 +51,7 @@ func (s *Server) handleRemoveDevice(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "设备不存在")
 		return
 	}
-	if err := s.store.RevokeDeviceRefreshTokens(r.Context(), u.ID, deviceKey); err != nil {
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
+	// Revoke the device's refresh tokens and the access tokens it holds.
+	s.revokeDeviceSessions(r.Context(), u.UID, u.ID, deviceKey)
 	w.WriteHeader(http.StatusNoContent)
 }

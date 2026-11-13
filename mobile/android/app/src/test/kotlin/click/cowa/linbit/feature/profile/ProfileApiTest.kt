@@ -29,9 +29,17 @@ class ProfileApiTest {
         assertEquals("ABC", api.bindTotp().secret)
         assertEquals("POST", server.takeRequest().method)
 
+        // 开启 TOTP 前先向已绑定联系方式发送安全验证码（purpose=security）
+        server.enqueue(MockResponse().setBody("""{"sent":true,"channel":"email","ttlSeconds":300}"""))
+        assertTrue(api.sendAccountCode(ApiSendCodeAuthedRequest(purpose = ApiSendCodeAuthedRequest.Purpose.SECURITY)).sent)
+        server.takeRequest().let {
+            assertEquals("/account/code/send", it.path)
+            assertEquals("{\"purpose\":\"security\"}", it.body.readUtf8())
+        }
+
         server.enqueue(MockResponse().setBody("""{"enabled":true,"method":"totp"}"""))
-        assertTrue(api.verifyTotp(ApiVerifyTotpRequest("123456")).enabled)
-        assertEquals("{\"code\":\"123456\"}", server.takeRequest().body.readUtf8())
+        assertTrue(api.verifyTotp(ApiVerifyTotpRequest(code = "123456", securityCode = "654321")).enabled)
+        assertEquals("{\"code\":\"123456\",\"securityCode\":\"654321\"}", server.takeRequest().body.readUtf8())
 
         server.enqueue(MockResponse().setBody("""{"enabled":false}"""))
         assertFalse(api.disableTotp(ApiDisableTotpRequest("123456")).enabled)

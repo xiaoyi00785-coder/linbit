@@ -27,22 +27,37 @@ import click.cowa.linbit.feature.assets.QrImage
 import click.cowa.linbit.ui.components.*
 import click.cowa.linbit.ui.theme.*
 
-private enum class SecurityPage { CENTER, BIND, DISABLE }
+private enum class SecurityPage { CENTER, BIND, DISABLE, PASSWORD, EMAIL, PHONE, FUND, ANTI_PHISHING, SESSIONS, PASSKEYS }
 
 @Composable
-fun SecurityHost(onBack: () -> Unit, vm: SecurityViewModel = hiltViewModel()) {
+fun SecurityHost(
+    onBack: () -> Unit,
+    vm: SecurityViewModel = hiltViewModel(),
+    settings: SecuritySettingsViewModel = hiltViewModel(),
+) {
     var page by remember { mutableStateOf(SecurityPage.CENTER) }
+    val s by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.load() }
-    BackHandler { if (page == SecurityPage.CENTER) onBack() else page = SecurityPage.CENTER }
+    val back = { page = SecurityPage.CENTER }
+    // 二级页提交成功：回到安全中心并刷新概览（安全等级、提现保护期等）
+    val done = { page = SecurityPage.CENTER; vm.load() }
+    BackHandler { if (page == SecurityPage.CENTER) onBack() else back() }
     when (page) {
-        SecurityPage.CENTER -> SecurityCenterScreen(vm, onBack, onBind = { page = SecurityPage.BIND; vm.beginBinding() }, onDisable = { page = SecurityPage.DISABLE })
-        SecurityPage.BIND -> TotpSetupScreen(vm, onBack = { page = SecurityPage.CENTER })
-        SecurityPage.DISABLE -> DisableTotpScreen(vm, onBack = { page = SecurityPage.CENTER })
+        SecurityPage.CENTER -> SecurityCenterScreen(vm, onBack, onBind = { page = SecurityPage.BIND; vm.beginBinding() }, onDisable = { page = SecurityPage.DISABLE }, onOpen = { page = it })
+        SecurityPage.BIND -> TotpSetupScreen(vm, onBack = back)
+        SecurityPage.DISABLE -> DisableTotpScreen(vm, onBack = back)
+        SecurityPage.PASSWORD -> ChangePasswordScreen(s.security, settings, onBack = back, onDone = done)
+        SecurityPage.EMAIL -> ContactChangeScreen(email = true, s.security, settings, onBack = back, onDone = done)
+        SecurityPage.PHONE -> ContactChangeScreen(email = false, s.security, settings, onBack = back, onDone = done)
+        SecurityPage.FUND -> FundPasswordScreen(s.security, settings, onBack = back, onDone = done)
+        SecurityPage.ANTI_PHISHING -> AntiPhishingScreen(s.security, settings, onBack = back, onDone = done)
+        SecurityPage.SESSIONS -> SessionsScreen(settings, onBack = back)
+        SecurityPage.PASSKEYS -> PasskeysScreen(settings, onBack = { back(); vm.load() })
     }
 }
 
 @Composable
-private fun SecurityCenterScreen(vm: SecurityViewModel, onBack: () -> Unit, onBind: () -> Unit, onDisable: () -> Unit) {
+private fun SecurityCenterScreen(vm: SecurityViewModel, onBack: () -> Unit, onBind: () -> Unit, onDisable: () -> Unit, onOpen: (SecurityPage) -> Unit) {
     val p = LB.p
     val s by vm.state.collectAsStateWithLifecycle()
     val security = s.security
@@ -60,15 +75,16 @@ private fun SecurityCenterScreen(vm: SecurityViewModel, onBack: () -> Unit, onBi
                 }
                 security?.securityLevel?.let { SecurityLevelCard(it) }
                 Text("账户信息", Modifier.padding(horizontal = Spacing.pageH).padding(top = 18.dp, bottom = 4.dp), style = lb(FontSize.caption), color = p.textSecondary)
-                ProfileRow("邮箱", security?.email ?: "未绑定") { vm.toast.show("邮箱管理将在后续安全批次接入") }
-                ProfileRow("手机", security?.phone ?: "未绑定") { vm.toast.show("手机管理将在后续安全批次接入") }
+                ProfileRow("邮箱", security?.email ?: "未绑定") { onOpen(SecurityPage.EMAIL) }
+                ProfileRow("手机", security?.phone ?: "未绑定") { onOpen(SecurityPage.PHONE) }
                 Text("登录验证", Modifier.padding(horizontal = Spacing.pageH).padding(top = 18.dp, bottom = 4.dp), style = lb(FontSize.caption), color = p.textSecondary)
                 ProfileRow("身份验证器", if (enabled) "已开启" else "未开启") { if (enabled) onDisable() else onBind() }
-                ProfileRow("通行密钥", if ((security?.passkeysCount ?: 0) > 0) "${security?.passkeysCount} 个" else "未添加") { vm.toast.show("通行密钥将在后续安全批次接入") }
-                ProfileRow("登录密码", "修改") { vm.toast.show("登录密码修改将在后续安全批次接入") }
+                ProfileRow("通行密钥", if ((security?.passkeysCount ?: 0) > 0) "${security?.passkeysCount} 个" else "未添加") { onOpen(SecurityPage.PASSKEYS) }
+                ProfileRow("登录密码", "修改") { onOpen(SecurityPage.PASSWORD) }
+                ProfileRow("登录设备与会话", "${security?.recentDevices?.size ?: 0} 台设备") { onOpen(SecurityPage.SESSIONS) }
                 Text("资金安全", Modifier.padding(horizontal = Spacing.pageH).padding(top = 18.dp, bottom = 4.dp), style = lb(FontSize.caption), color = p.textSecondary)
-                ProfileRow("资金密码", if (security?.fundPasswordSet == true) "已设置" else "未设置") { vm.toast.show("资金密码将在后续安全批次接入") }
-                ProfileRow("防钓鱼码", if (security?.antiPhishingSet == true) (security.antiPhishingHint ?: "已设置") else "未设置") { vm.toast.show("防钓鱼码将在后续安全批次接入") }
+                ProfileRow("资金密码", if (security?.fundPasswordSet == true) "已设置" else "未设置") { onOpen(SecurityPage.FUND) }
+                ProfileRow("防钓鱼码", if (security?.antiPhishingSet == true) (security.antiPhishingHint ?: "已设置") else "未设置") { onOpen(SecurityPage.ANTI_PHISHING) }
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -143,10 +159,21 @@ private fun TotpSetupScreen(vm: SecurityViewModel, onBack: () -> Unit) {
                 }
             }
             TotpStep(3, "输入身份验证器验证码")
-            LbTextField(s.code, vm::code, "6 位身份验证器验证码", Modifier.padding(top = 10.dp), keyboardType = KeyboardType.NumberPassword, error = s.error, height = 48.dp)
+            LbTextField(s.code, vm::code, "6 位身份验证器验证码", Modifier.padding(top = 10.dp), keyboardType = KeyboardType.NumberPassword, height = 48.dp)
+            Spacer(Modifier.height(16.dp))
+            TotpStep(4, "输入安全验证码", "验证码将发送至您已绑定的邮箱或手机。")
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Top) {
+                LbTextField(s.securityCode, vm::securityCode, "6 位安全验证码", Modifier.weight(1f), keyboardType = KeyboardType.NumberPassword, error = s.error, height = 48.dp)
+                TextButton(onClick = vm::sendSecurityCode, enabled = !s.sending && s.cooldown == 0, modifier = Modifier.height(48.dp)) {
+                    Text(
+                        when { s.cooldown > 0 -> "${s.cooldown}s"; s.sending -> "发送中"; else -> "获取验证码" },
+                        style = lb(FontSize.small, FontWeight.Medium), color = if (s.cooldown > 0) p.textTertiary else p.brand,
+                    )
+                }
+            }
             Spacer(Modifier.height(24.dp))
         }
-        LbButton("确认", Modifier.padding(Spacing.pageH), enabled = s.code.length == 6 && s.binding != null, loading = s.submitting) { vm.verify(onBack) }
+        LbButton("确认", Modifier.padding(Spacing.pageH), enabled = s.code.length == 6 && s.securityCode.length == 6 && s.binding != null, loading = s.submitting) { vm.verify(onBack) }
     }
 }
 

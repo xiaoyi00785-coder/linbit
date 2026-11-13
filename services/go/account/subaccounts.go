@@ -391,7 +391,7 @@ func (s *Server) handlePatchSub(w http.ResponseWriter, r *http.Request) {
 	}
 	var loginTOTP map[string]string
 	if req.LoginEnabled != nil || req.Password != "" {
-		if !requireParentTOTP(w, p, req.TOTPCode) {
+		if !s.requireParentTOTP(r.Context(), w, p, req.TOTPCode) {
 			return
 		}
 	}
@@ -474,7 +474,12 @@ func (s *Server) handleFreezeSub(freeze bool) http.HandlerFunc {
 			return
 		}
 		if freeze {
-			_ = s.store.RevokeAllRefreshTokens(r.Context(), sub.UserID)
+			// Kick live access tokens as well, not just refresh tokens.
+			if su, err := s.store.UserByID(r.Context(), sub.UserID); err == nil {
+				s.revokeUserSessions(r.Context(), su)
+			} else {
+				_ = s.store.RevokeAllRefreshTokens(r.Context(), sub.UserID)
+			}
 		}
 		sub, _ = s.store.SubByUserID(r.Context(), sub.UserID)
 		common.WriteJSON(w, http.StatusOK, toSubDTO(sub))
@@ -817,7 +822,7 @@ func (s *Server) handleCreateSubKey(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "IP 白名单格式不正确（最多 20 条）")
 		return
 	}
-	if !requireParentTOTP(w, p, req.TOTPCode) {
+	if !s.requireParentTOTP(r.Context(), w, p, req.TOTPCode) {
 		return
 	}
 	if sub.Status == userFrozen {
@@ -987,10 +992,10 @@ func writeSubLoginDisabled(w http.ResponseWriter) {
 
 // requireParentTOTP: sub-account management always needs the parent's TOTP.
 // TWOFA_REQUIRED (403) = TOTP not bound or not supplied; INVALID_TOTP (401) = wrong code.
-func requireParentTOTP(w http.ResponseWriter, p *User, code string) bool {
+func (s *Server) requireParentTOTP(ctx context.Context, w http.ResponseWriter, p *User, code string) bool {
 	if !p.TOTPEnabled {
 		common.WriteError(w, http.StatusForbidden, "TWOFA_REQUIRED", "请先开启两步验证（谷歌验证器）")
 		return false
 	}
-	return requireTOTPIfEnabled(w, p, code)
+	return s.requireTOTPIfEnabled(ctx, w, p, code)
 }

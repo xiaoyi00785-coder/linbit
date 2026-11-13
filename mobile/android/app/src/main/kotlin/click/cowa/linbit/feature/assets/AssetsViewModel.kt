@@ -2,7 +2,10 @@ package click.cowa.linbit.feature.assets
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import click.cowa.linbit.core.generated.ApiAssetsOverview
 import click.cowa.linbit.core.generated.ApiBalance
+import click.cowa.linbit.core.generated.ApiSecurityOverview
+import click.cowa.linbit.core.generated.ApiSendCodeAuthedRequest
 import click.cowa.linbit.core.generated.ApiCreateWithdrawAddressRequest
 import click.cowa.linbit.core.generated.ApiDepositAddress
 import click.cowa.linbit.core.generated.ApiFuturesAccount
@@ -137,6 +140,21 @@ class AssetsViewModel @Inject constructor(
 
     suspend fun loadWalletNetworksForWithdraw(asset: String): Result<List<ApiWalletNetwork>> = runCatching {
         AssetsLogic.withdrawEnabledNetworks(apiCall { api.walletNetworks(asset) }.networks)
+    }
+
+    /**
+     * 提现页上下文：资产总览（后端指定的提现扣款账户及其余额）+ 安全设置（是否开启 TOTP、
+     * 资金密码与提现保护期）。任一失败返回 null，由页面按"未知"处理，不阻塞提现表单。
+     */
+    suspend fun loadWithdrawContext(): Pair<ApiAssetsOverview?, ApiSecurityOverview?> {
+        val overview = runCatching { apiCall { api.assetsOverview() } }.getOrNull()
+        val security = runCatching { apiCall { api.securityOverview() } }.getOrNull()
+        return overview to security
+    }
+
+    /** 未开启 TOTP 时，提现验证码发往账户已绑定的邮箱/手机（purpose=withdraw）。 */
+    suspend fun sendWithdrawCode(): Result<*> = runCatching {
+        apiCall { api.sendAccountCode(ApiSendCodeAuthedRequest(purpose = ApiSendCodeAuthedRequest.Purpose.WITHDRAW)) }
     }
 
     /** 提交链上提现。调用方负责二次确认；单测不得调用。 */
