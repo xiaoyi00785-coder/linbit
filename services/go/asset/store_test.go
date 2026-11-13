@@ -117,7 +117,7 @@ func TestConcurrentFreeze(t *testing.T) {
 	if err := store.EnsureAccount(ctx, uid); err != nil {
 		t.Fatalf("ensure account: %v", err)
 	}
-	if err := store.Credit(ctx, uid, "USDT", decimal.RequireFromString("100"), "seed"); err != nil {
+	if err := store.Credit(ctx, uid, "USDT", decimal.RequireFromString("100"), fmt.Sprintf("seed-%s", uid)); err != nil {
 		t.Fatalf("credit: %v", err)
 	}
 
