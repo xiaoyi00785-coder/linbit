@@ -374,26 +374,18 @@ func TestTwoStepLoginTOTP(t *testing.T) {
 	email := uniqueEmail()
 	tok := registerWithCode(t, srv, email, "", "")
 
-	// Bind + enable TOTP.
-	w := doJSON(t, h, "POST", "/2fa/totp/bind", tok.AccessToken, nil)
-	var bind struct {
-		Secret string `json:"secret"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &bind)
-	code, _ := totp.GenerateCode(bind.Secret, time.Now())
-	if w := doJSON(t, h, "POST", "/2fa/totp/verify", tok.AccessToken, codeRequest{Code: code}); w.Code != http.StatusOK {
-		t.Fatalf("totp verify = %d %s", w.Code, w.Body.String())
-	}
+	// Bind + enable TOTP (authenticator code + email security code).
+	secret := enableTOTP(t, srv, tok.AccessToken, email)
 
 	// Login now returns a TOTP challenge (even from the registered device).
-	w = doJSON(t, h, "POST", "/auth/login", "", map[string]string{"email": email, "password": "Str0ng-Passw0rd!"})
+	w := doJSON(t, h, "POST", "/auth/login", "", map[string]string{"email": email, "password": "Str0ng-Passw0rd!"})
 	var ch loginChallengeResponse
 	_ = json.Unmarshal(w.Body.Bytes(), &ch)
 	if ch.ChallengeToken == "" || ch.Methods[0] != "totp" {
 		t.Fatalf("expected totp challenge, got %+v", ch)
 	}
 	// Complete with a TOTP code.
-	code, _ = totp.GenerateCode(bind.Secret, time.Now())
+	code, _ := totp.GenerateCode(secret, time.Now())
 	w = doJSON(t, h, "POST", "/auth/login/verify", "", map[string]string{"challengeToken": ch.ChallengeToken, "totpCode": code})
 	var out authTokens
 	_ = json.Unmarshal(w.Body.Bytes(), &out)

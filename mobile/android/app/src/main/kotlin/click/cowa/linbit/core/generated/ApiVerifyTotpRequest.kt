@@ -24,6 +24,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param code 6 位 TOTP 验证码
+ * @param securityCode 发送至账户已绑定邮箱/手机的安全验证码（先调用 /account/code/send，purpose=security）
  */
 @Serializable
 
@@ -31,7 +32,11 @@ data class ApiVerifyTotpRequest (
 
     /* 6 位 TOTP 验证码 */
     @SerialName(value = "code")
-    val code: kotlin.String
+    val code: kotlin.String,
+
+    /* 发送至账户已绑定邮箱/手机的安全验证码（先调用 /account/code/send，purpose=security） */
+    @SerialName(value = "securityCode")
+    val securityCode: kotlin.String
 
 ) {
 

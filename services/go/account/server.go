@@ -224,6 +224,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/passkey/login/finish", s.handlePasskeyLoginFinish)
 	mux.HandleFunc("GET /auth/providers", s.handleAuthProviders)
 	mux.HandleFunc("POST /auth/google", s.handleGoogleLogin)
+	mux.Handle("POST /account/oauth/google/link", a(s.handleGoogleLink))
 	mux.HandleFunc("GET /support/guest", s.handleGuestSupport)
 	mux.HandleFunc("GET /fiat/buy", s.handleFiatBuyConfig)
 	mux.Handle("POST /fiat/buy/quotes", s.auth(http.HandlerFunc(s.handleFiatBuyUnavailable)))
@@ -496,7 +497,7 @@ func (s *Server) issueTokens(ctx context.Context, u *User, deviceKey string) (au
 		}
 		parentUID = sub.ParentUID
 	}
-	access, err := common.SignAccessTokenFor(s.cfg.JWTSecret, u.UID, subEmail, parentUID, s.cfg.AccessTTL, now)
+	access, err := common.SignAccessTokenForDevice(s.cfg.JWTSecret, u.UID, subEmail, parentUID, deviceKey, s.cfg.AccessTTL, now)
 	if err != nil {
 		return authTokens{}, err
 	}

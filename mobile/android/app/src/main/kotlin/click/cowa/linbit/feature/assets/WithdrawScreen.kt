@@ -28,7 +28,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import click.cowa.linbit.core.generated.ApiAssetsOverview
 import click.cowa.linbit.core.generated.ApiInternalTransferRequest
+import click.cowa.linbit.core.generated.ApiSecurityOverview
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawRequest
@@ -48,8 +50,14 @@ import click.cowa.linbit.ui.theme.Radius
 import click.cowa.linbit.ui.theme.Spacing
 import click.cowa.linbit.ui.theme.lb
 import click.cowa.linbit.ui.theme.lbNum
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/** 提现保护期截止时间按本地时区显示 */
+private val LockTimeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
 /**
  * 提现：链上 / 内部转账。
@@ -79,9 +87,18 @@ fun WithdrawScreen(
     var amount by remember { mutableStateOf("") }
     var to by remember { mutableStateOf("") }
     var totp by remember { mutableStateOf("") }
+    var emailCode by remember { mutableStateOf("") }
     var fundPw by remember { mutableStateOf("") }
     var showConfirm by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
+    var sendingCode by remember { mutableStateOf(false) }
+    var cooldown by remember { mutableStateOf(0) }
+    var overview by remember { mutableStateOf<ApiAssetsOverview?>(null) }
+    var security by remember { mutableStateOf<ApiSecurityOverview?>(null) }
+
+    LaunchedEffect(cooldown) {
+        if (cooldown > 0) { delay(1_000); cooldown -= 1 }
+    }
 
     LaunchedEffect(asset) {
         nets = emptyList(); net = null; walletNets = emptyList(); walletNet = null
@@ -110,29 +127,41 @@ fun WithdrawScreen(
                 net = nets.firstOrNull()
             }
         }
+        // 提现扣款账户余额 + 安全设置（决定验证方式、保护期与资金密码要求）
+        val (ov, sec) = vm.loadWithdrawContext()
+        overview = ov
+        security = sec ?: security
         vm.load(silent = true)
     }
     LaunchedEffect(assetInit) { if (!assetInit.isNullOrBlank()) asset = assetInit }
 
-    val free = (vm.state.value.funding + vm.state.value.spot)
-        .firstOrNull { it.asset.equals(asset, true) }?.free
-        ?.let { Dec.parse(it) } ?: BigDecimal.ZERO
+    // 可用余额：优先取后端 /assets/overview 指定的提现扣款账户；总览不可用时回退到本地余额（资金优先）
+    val free = AssetsLogic.withdrawAvailable(overview, asset)
+        ?: (vm.state.value.funding + vm.state.value.spot)
+            .firstOrNull { it.asset.equals(asset, true) }?.free
+            ?.let { Dec.parse(it) } ?: BigDecimal.ZERO
     val minS = AssetsLogic.positiveAmount(net?.minWithdraw)
     val maxS = AssetsLogic.positiveAmount(net?.maxWithdraw)
     val feeS = AssetsLogic.positiveAmount(net?.gasFeeEstimate)
     val eta = AssetsLogic.etaShort(net?.estimatedArrivalMinutes ?: walletNet?.estimatedArrivalMinutes)
     val memoReq = AssetsLogic.withdrawMemoRequired(net, walletNet)
     val value = Dec.parse(amount)
-    val receive = AssetsLogic.receiveAmount(amount, net?.gasFeeEstimate)
+    // 只有 Gas 以提现币种计价时才从数量中扣除
+    val receive = AssetsLogic.receiveAmount(amount, net?.gasFeeEstimate, asset, net?.gasFeeAsset)
 
-    fun amtError(): String? {
-        if (amount.isBlank()) return null
-        if (value.signum() <= 0) return "请输入提现数量"
-        if (value > free) return "可用余额不足"
-        minS?.let { if (value < Dec.parse(it)) return "最小提现数量 $it $asset" }
-        maxS?.let { if (value > Dec.parse(it)) return "单笔最大提现 $it $asset" }
-        feeS?.let { if (value <= Dec.parse(it)) return "提现数量需大于链上网络费（Gas） $it $asset" }
-        return null
+    // 账户安全：未开启 TOTP 的账户用邮箱/短信验证码提现；安全设置未知时按开启 TOTP 处理（与旧行为一致）
+    val useTotp = security?.twoFactor?.enabled ?: true
+    val lockUntil = AssetsLogic.activeWithdrawLock(security?.withdrawLockedUntil)
+    val fundPasswordMissing = security?.policy?.fundPasswordMandatory == true && security?.fundPasswordSet != true
+    val fundRequired = security?.fundPasswordSet == true && security?.policy?.fundPasswordForWithdraw != false
+
+    fun amtError(): String? = if (tab == 0) {
+        AssetsLogic.withdrawAmountError(amount, asset, free, net)
+    } else when {
+        amount.isBlank() -> null
+        value.signum() <= 0 -> "请输入转账数量"
+        value > free -> "可用余额不足"
+        else -> null
     }
 
     Column(Modifier.fillMaxSize().background(p.bg)) {
@@ -140,7 +169,16 @@ fun WithdrawScreen(
             Text("地址簿", Modifier.pressable(scale = 1f) { assetsNav.openAddressBook() }, style = lb(FontSize.small), color = p.textSecondary)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH).padding(top = 8.dp)) {
-            WarnBanner("为保障账户安全，修改密码或绑定/解绑身份验证器会触发提现保护期。")
+            if (lockUntil != null) {
+                val reason = security?.withdrawLockReason?.takeIf { it.isNotBlank() } ?: "安全设置变更"
+                WarnBanner("$reason，${LockTimeFmt.format(lockUntil)} 前暂停提现与内部转账。")
+            } else {
+                WarnBanner("为保障账户安全，修改密码或绑定/解绑身份验证器会触发提现保护期。")
+            }
+            if (fundPasswordMissing) {
+                Spacer(Modifier.height(8.dp))
+                Text("平台要求设置资金密码后才能提现，请先在「我的 → 账户安全 → 资金密码」中设置。", style = lb(FontSize.small), color = p.down)
+            }
             Spacer(Modifier.height(12.dp))
             Text("选择币种", style = lb(FontSize.caption), color = p.textSecondary)
             Row(
@@ -224,7 +262,11 @@ fun WithdrawScreen(
             if (tab == 0) {
                 AssetKv("单笔最小提现", "${minS ?: "--"} $asset")
                 AssetKv("单笔最大提现", "${maxS ?: "不限"} $asset")
-                AssetKv("链上网络费（Gas）", "${feeS ?: "--"} ${net?.gasFeeAsset ?: asset}")
+                AssetKv(
+                    "链上网络费（Gas）",
+                    "${feeS ?: "--"} ${net?.gasFeeAsset ?: asset}" +
+                        if (net != null && !AssetsLogic.gasDeductedFromAmount(asset, net?.gasFeeAsset)) "（另行扣除）" else "",
+                )
                 AssetKv("到账数量", "${receive ?: "--"} $asset")
                 AssetKv("预计到账时间", eta)
             } else {
@@ -235,7 +277,8 @@ fun WithdrawScreen(
             Text("* 请谨防诈骗！Linbit 不会以任何形式索要账户密码，也不会要求私下转账或提现。", style = lb(11.sp), color = p.textTertiary)
             Spacer(Modifier.height(24.dp))
         }
-        val canSubmit = if (tab == 0) {
+        val blocked = lockUntil != null || fundPasswordMissing
+        val canSubmit = !blocked && if (tab == 0) {
             addr.length >= 10 && value.signum() > 0 && amtError() == null && net != null && (!memoReq || memo.isNotBlank())
         } else {
             to.isNotBlank() && value.signum() > 0 && amtError() == null
@@ -271,17 +314,50 @@ fun WithdrawScreen(
         LbSheet("安全验证", onClose = { if (!submitting) showConfirm = false }, showClose = true) {
             Column(Modifier.padding(horizontal = Spacing.pageH).padding(bottom = 24.dp)) {
                 Text(
-                    if (tab == 0) "提现 $amount $asset（${AssetsLogic.displayNetwork(net?.network)}），扣除 Gas ${feeS ?: "--"}，到账 ${receive ?: "--"}"
-                    else "站内转账 $amount $asset 至 $to，免手续费，实时到账",
+                    if (tab == 0) {
+                        val gasPart = if (AssetsLogic.gasDeductedFromAmount(asset, net?.gasFeeAsset)) "扣除 Gas ${feeS ?: "--"} $asset" else "Gas ${feeS ?: "--"} ${net?.gasFeeAsset} 另行扣除"
+                        "提现 $amount $asset 至 $addr（${AssetsLogic.displayNetwork(net?.network)}），$gasPart，到账 ${receive ?: "--"} $asset"
+                    } else "站内转账 $amount $asset 至 $to，免手续费，实时到账",
                     style = lb(FontSize.small),
                     color = p.textSecondary,
                 )
                 Spacer(Modifier.height(12.dp))
-                LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "谷歌验证器动态码", keyboardType = KeyboardType.Number)
+                // 链上提现：已开启 TOTP 用动态码，否则用发到邮箱/手机的验证码（purpose=withdraw）。
+                // 内部转账后端要求已绑定谷歌验证器，始终用动态码。
+                val codeMode = tab == 0 && !useTotp
+                if (codeMode) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LbTextField(emailCode, { emailCode = it.filter(Char::isDigit).take(6) }, "邮箱 / 短信验证码", Modifier.weight(1f), keyboardType = KeyboardType.Number)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            when { cooldown > 0 -> "${cooldown}s"; sendingCode -> "发送中"; else -> "获取验证码" },
+                            Modifier.pressable(scale = 1f) {
+                                if (cooldown > 0 || sendingCode) return@pressable
+                                scope.launch {
+                                    sendingCode = true
+                                    vm.sendWithdrawCode().fold(
+                                        onSuccess = { vm.toast.show("验证码已发送"); cooldown = 60 },
+                                        onFailure = { vm.toast.show(it.lbMessage()) },
+                                    )
+                                    sendingCode = false
+                                }
+                            },
+                            style = lb(FontSize.small, FontWeight.Medium),
+                            color = if (cooldown > 0) p.textTertiary else p.brand,
+                        )
+                    }
+                } else {
+                    LbTextField(totp, { totp = it.filter(Char::isDigit).take(6) }, "谷歌验证器动态码", keyboardType = KeyboardType.Number)
+                }
                 Spacer(Modifier.height(8.dp))
-                LbTextField(fundPw, { fundPw = it.filter(Char::isDigit).take(6) }, "资金密码（若已设置）", secure = true, keyboardType = KeyboardType.NumberPassword)
+                LbTextField(
+                    fundPw, { fundPw = it.filter(Char::isDigit).take(6) },
+                    if (fundRequired) "资金密码" else "资金密码（若已设置）", secure = true, keyboardType = KeyboardType.NumberPassword,
+                )
                 Spacer(Modifier.height(12.dp))
-                LbButton("确认提交", loading = submitting, enabled = totp.length == 6) {
+                val codeOk = if (codeMode) emailCode.length == 6 else totp.length == 6
+                val fundOk = if (fundRequired) fundPw.length == 6 else fundPw.isEmpty() || fundPw.length == 6
+                LbButton("确认提交", loading = submitting, enabled = codeOk && fundOk) {
                     scope.launch {
                         submitting = true
                         val result = if (tab == 0) {
@@ -292,7 +368,8 @@ fun WithdrawScreen(
                                     address = addr,
                                     amount = amount,
                                     memo = memo.ifBlank { null },
-                                    totpCode = totp,
+                                    totpCode = if (codeMode) null else totp,
+                                    code = if (codeMode) emailCode else null,
                                     fundPassword = fundPw.ifBlank { null },
                                 ),
                             )
@@ -314,7 +391,7 @@ fun WithdrawScreen(
                             onSuccess = {
                                 vm.toast.show(if (tab == 0) "提现申请已提交" else "转账成功")
                                 showConfirm = false
-                                amount = ""; addr = ""; memo = ""; totp = ""; fundPw = ""
+                                amount = ""; addr = ""; memo = ""; totp = ""; emailCode = ""; fundPw = ""
                                 vm.load(silent = true)
                             },
                             onFailure = { vm.toast.show(it.lbMessage()) },

@@ -10,6 +10,8 @@ import { rest, rget } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 import { useAuth } from "@/legacy/auth";
 import { useDismiss } from "@/lib/dismiss";
+import { sendAccountCode } from "@/lib/account";
+import { CodeInput } from "./common";
 const authed = () => !!useAuthStore.getState().accessToken;
 
 type MP = Record<string, any>;
@@ -42,16 +44,22 @@ const SEC: Record<string, [string, string[]]> = {
 function Security({ kind = "other", label, close }: MP) {
   const [t, fields] = SEC[kind] || SEC.other; const [v, setV] = useState<Record<string, string>>({});
   const [bind, setBind] = useState<{ secret: string; otpauthUri: string } | null>(null); const [be, setBe] = useState(""); const [busy, setBusy] = useState(false);
+  const [sc, setSc] = useState(""); // 邮箱/手机安全验证码（purpose=security），开启 TOTP 必填
   useEffect(() => { if (kind !== "totp") return; if (!authed()) { close(); location.href = "/login"; return; }
-    rest<any>("POST", "/2fa/totp/bind").then((r) => r.ok && r.data?.otpauthUri ? setBind(r.data) : setBe(r.status === 401 ? "请先登录" : (r as any).error || "获取绑定密钥失败")); }, [kind]);
+    rest<any>("POST", "/2fa/totp/bind").then((r) => r.ok && r.data?.otpauthUri ? setBind(r.data) : setBe(r.status === 401 ? "请先登录" : r.code === "TOTP_ALREADY_ENABLED" ? "已开启谷歌验证；如需更换，请先关闭后再重新绑定" : (r as any).error || "获取绑定密钥失败")); }, [kind]);
   const ok = async () => { const miss = fields.find((x) => !v[x]); if (miss) return toast("请填写" + miss, "err"); if (fields[1]?.startsWith("确认") && v[fields[0]] !== v[fields[1]]) return toast("两次输入不一致", "err");
-    if (kind === "totp") { if (!bind) return toast(be || "绑定密钥未就绪", "err"); const code = (v[fields[0]] || "").trim(); if (!/^\d{6}$/.test(code)) return toast("请输入 6 位验证码", "err");
-      setBusy(true); const r = await rest<any>("POST", "/2fa/totp/verify", { code }); setBusy(false); if (r.ok) { toast("谷歌验证已开启"); close(); } else toast(r.status === 400 ? "验证码错误或已过期" : (r as any).error || "验证失败", "err"); return; }
+    if (kind === "totp") { if (!bind) return toast(be || "绑定密钥未就绪", "err"); const code = (v[fields[0]] || "").trim(); if (!/^\d{6}$/.test(code)) return toast("请输入 6 位谷歌验证码", "err");
+      if (!/^\d{6}$/.test(sc)) return toast("请获取并输入 6 位安全验证码", "err");
+      setBusy(true); const r = await rest<any>("POST", "/2fa/totp/verify", { code, securityCode: sc }); setBusy(false);
+      if (r.ok) { toast("谷歌验证已开启"); close(); return; }
+      const msg = r.code === "TOTP_INVALID" ? "谷歌验证码错误" : r.code === "TOTP_REPLAYED" ? "该验证码已使用，请等待验证器显示新的验证码" : r.code === "TOTP_LOCKED" ? "错误次数过多，请 15 分钟后再试" : r.code === "CODE_INVALID" || r.code === "CODE_TOO_MANY_ATTEMPTS" ? "安全验证码错误或已过期，请重新获取" : r.code === "TOTP_ALREADY_ENABLED" ? "已开启谷歌验证" : (r as any).error || "验证失败";
+      toast(msg, "err"); return; }
     toast("该安全设置接口暂未开放，请稍后再试", "info"); close(); };
   return <Box title={label || t} onClose={close} dismissible={kind !== "totp" && !busy} foot={<><button className="tk-b2" onClick={close}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>{busy ? "提交中…" : "确认"}</button></>}>
     {kind === "totp" && (bind ? <><div className="kit-qr"><QRCodeSVG value={bind.otpauthUri} size={140} marginSize={2} /></div><p className="tk-txt">无法扫码？手动输入密钥：<b>{bind.secret}</b> <a role="button" onClick={() => copyText(bind.secret)}>复制</a></p></> : <p className="tk-txt">{be || "正在获取绑定密钥…"}</p>)}
     {kind === "passkey" && <p className="tk-txt">尚未添加通行密钥。通行密钥使用设备生物识别登录，更安全便捷。</p>}
     {fields.map((x) => <div key={x}><div className="tk-lbl">{x}</div><input className="kit-in" type={/密码/.test(x) ? "password" : "text"} value={v[x] || ""} onChange={(e) => setV({ ...v, [x]: e.target.value })} placeholder={"请输入" + x} /></div>)}
+    {kind === "totp" && <div><div className="tk-lbl">安全验证码（发送至已绑定的邮箱/手机）</div><CodeInput value={sc} onChange={setSc} send={async () => { const r = await sendAccountCode("security"); return { ok: r.ok, ttl: r.data?.ttlSeconds, error: r.error }; }} /></div>}
   </Box>;
 }
 

@@ -36,6 +36,7 @@ struct AssetsView: View {
             .navigationDestination(for: AssetsRoute.self) { r in
                 switch r {
                 case .deposit(let a): if let a { DepositView(asset: a) } else { CoinPickerView(mode: .deposit) }
+                case .withdraw(let a): WithdrawView(asset: a)
                 case .transfer: TransferView()
                 case .records, .history: RecordsView()
                 case .overview: AssetOverviewView()
@@ -254,7 +255,7 @@ struct WithdrawSheet: View {
     private func card(_ icon: String, _ t: String, _ s: String, badge: String?) -> some View {
         Button {
             onClose()
-            if t == "内部转账" { Router.shared.open(.internalTransfer) } else { ToastCenter.shared.show("\(t)将在提现阶段开放") }
+            Router.shared.open(t == "内部转账" ? .internalTransfer : .withdraw(nil))
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: icon).font(.system(size: 20)).foregroundColor(p.textPrimary)

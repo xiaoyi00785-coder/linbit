@@ -95,6 +95,7 @@ struct RootTabView: View {
         case "assets-networks": router.tab = .assets; router.assetsPath.append(AssetsRoute.networks("USDT"))
         case "assets-account-transfer": router.tab = .assets; router.assetsPath.append(AssetsRoute.accountTransfer)
         case "assets-internal-transfer": router.tab = .assets; router.assetsPath.append(AssetsRoute.internalTransfer)
+        case "assets-withdraw": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdraw("USDT"))
         case "assets-withdraw-records": router.tab = .assets; router.assetsPath.append(AssetsRoute.withdrawRecords)
         case "assets-address-book": router.tab = .assets; router.assetsPath.append(AssetsRoute.addressBook)
         case "futures": router.tab = .futures; router.futuresTop = 0

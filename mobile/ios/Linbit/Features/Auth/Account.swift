@@ -224,6 +224,10 @@ struct TotpSetupView: View {
     var onDone: (() -> Void)? = nil
     @State private var binding: Loadable<APITotpBinding> = .loading
     @State private var code = ""
+    /// 发到已绑定邮箱/手机的安全验证码（purpose=security），开启 TOTP 必填
+    @State private var securityCode = ""
+    @State private var sending = false
+    @State private var cooldown = 0
     @State private var loading = false
     @State private var error: String?
 
@@ -255,15 +259,24 @@ struct TotpSetupView: View {
                     }
                     step(3, "输入身份验证器验证码", nil)
                     LBTextField(placeholder: "身份验证器验证码", text: Binding(get: { code }, set: { code = String($0.filter(\.isNumber).prefix(6)) }),
-                                keyboard: .numberPad, error: error).padding(.top, 10)
+                                keyboard: .numberPad).padding(.top, 10)
+                    step(4, "输入安全验证码", "验证码将发送至您已绑定的邮箱或手机。").padding(.top, 16)
+                    LBTextField(placeholder: "6 位安全验证码", text: Binding(get: { securityCode }, set: { securityCode = String($0.filter(\.isNumber).prefix(6)) }),
+                                keyboard: .numberPad, error: error) {
+                        Button { Task { await sendCode() } } label: {
+                            Text(cooldown > 0 ? "\(cooldown)s" : (sending ? "发送中" : "获取验证码"))
+                                .font(.lb(FontSize.small, .medium)).foregroundColor(cooldown > 0 ? p.textTertiary : p.brand)
+                        }.disabled(cooldown > 0 || sending)
+                    }.padding(.top, 10)
                 }.padding(.horizontal, Spacing.pageH)
             }
-            LBButton(title: "确认", enabled: code.count == 6 && binding.value != nil, loading: loading) { Task { await verify() } }
+            LBButton(title: "确认", enabled: code.count == 6 && securityCode.count == 6 && binding.value != nil, loading: loading) { Task { await verify() } }
                 .padding(Spacing.pageH)
         }
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
         .task { await load() }
         .onChange(of: code) { _ in error = nil }
+        .onChange(of: securityCode) { _ in error = nil }
     }
     private func step(_ n: Int, _ t: String, _ s: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -276,15 +289,34 @@ struct TotpSetupView: View {
     }
     private func load() async {
         binding = .loading
-        do { binding = .loaded(try await AuthAPI.bindTotp()) } catch { binding = .failed(error.lbMessage) }
+        do { binding = .loaded(try await AuthAPI.bindTotp()) } catch {
+            binding = .failed((error as? APIFailure)?.code == "TOTP_ALREADY_ENABLED" ? "已开启身份验证器；如需更换，请先关闭后再重新绑定" : error.lbMessage)
+        }
+    }
+    private func sendCode() async {
+        sending = true; defer { sending = false }
+        do {
+            try await AuthAPI.sendSecurityCode()
+            ToastCenter.shared.show("验证码已发送", .success)
+            cooldown = 60
+            Task { while cooldown > 0 { try? await Task.sleep(nanoseconds: 1_000_000_000); cooldown -= 1 } }
+        } catch { self.error = error.lbMessage }
     }
     private func verify() async {
         loading = true; defer { loading = false }
         do {
-            try await AuthAPI.verifyTotp(code)
+            try await AuthAPI.verifyTotp(code, securityCode: securityCode)
             await Session.shared.reloadAccount()
             ToastCenter.shared.show("身份验证器已绑定", .success); if let onDone { onDone() } else { dismiss() }
-        } catch { self.error = "验证码错误，请重新输入"; Haptics.error() }
+        } catch {
+            switch (error as? APIFailure)?.code {
+            case "TOTP_INVALID": self.error = "身份验证器验证码错误，请重新输入"
+            case "CODE_INVALID", "CODE_TOO_MANY_ATTEMPTS": self.error = "安全验证码错误或已过期，请重新获取"
+            case "VALIDATION_ERROR": self.error = "请先获取并输入安全验证码"
+            default: self.error = error.lbMessage
+            }
+            Haptics.error()
+        }
     }
 }
 

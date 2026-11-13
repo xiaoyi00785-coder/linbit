@@ -19,6 +19,17 @@ func checkPassword(hash, plain string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain)) == nil
 }
 
+// dummyPasswordHash is compared for identifiers that do not exist, so a failed
+// login costs the same bcrypt work either way and response timing does not
+// reveal which accounts are registered.
+var dummyPasswordHash = func() string {
+	h, err := hashPassword("linbit-timing-equalizer")
+	if err != nil {
+		return ""
+	}
+	return h
+}()
+
 // newRefreshToken returns a cryptographically random opaque refresh token.
 func newRefreshToken() (string, error) {
 	b := make([]byte, 32)

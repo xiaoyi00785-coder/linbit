@@ -160,6 +160,7 @@ assets-overview
 assets-networks
 assets-account-transfer
 assets-internal-transfer
+assets-withdraw
 assets-withdraw-records
 assets-address-book
 

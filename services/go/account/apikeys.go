@@ -113,7 +113,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "IP 白名单格式不正确（最多 20 条 IPv4/IPv6 或 CIDR）")
 		return
 	}
-	if !requireParentTOTP(w, u, req.TOTPCode) {
+	if !s.requireParentTOTP(r.Context(), w, u, req.TOTPCode) {
 		return
 	}
 	var n int

@@ -313,6 +313,10 @@ func verifyError(vr VerifyResult) *apiError {
 		return errf(http.StatusLocked, "FUND_PASSWORD_LOCKED", msg)
 	case "fund_password_not_set":
 		return errf(http.StatusForbidden, "FUND_PASSWORD_NOT_SET", "请先设置资金密码")
+	case "totp_locked":
+		return errf(http.StatusLocked, "TOTP_LOCKED", "验证码错误次数过多，两步验证已暂时锁定，请 15 分钟后再试或联系客服")
+	case "totp_reused":
+		return errf(http.StatusUnauthorized, "TOTP_REPLAYED", "该验证码已使用，请等待验证器显示新的验证码")
 	case "internal_error":
 		return errf(http.StatusInternalServerError, "INTERNAL", "二次验证服务不可用")
 	default: // totp_required, code_required, no_contact, legacy/unknown

@@ -139,18 +139,28 @@ func (s *Store) scanUser(row *sql.Row) (*User, error) {
 }
 
 // SetTOTPSecret stores a pending TOTP secret (not yet enabled).
+// SetTOTPSecret stores a newly minted secret. The attempt/replay state is reset
+// with it: a fresh secret must not inherit the previous one's last step or lock.
 func (s *Store) SetTOTPSecret(ctx context.Context, uid, secret string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_secret = $2 WHERE uid = $1`, uid, secret)
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE users SET totp_secret = $2, totp_failed = 0, totp_locked_until = NULL, totp_last_step = 0
+		 WHERE uid = $1`, uid, secret)
 	return err
 }
 
 // SetTOTPEnabled toggles 2FA; when disabling it also clears the secret.
 func (s *Store) SetTOTPEnabled(ctx context.Context, uid string, enabled bool) error {
 	if enabled {
-		_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_enabled = TRUE WHERE uid = $1`, uid)
+		// The code used to enable was just consumed by the replay guard; clear the
+		// step so the same 30s window can still log in.
+		_, err := s.db.ExecContext(ctx,
+			`UPDATE users SET totp_enabled = TRUE, totp_failed = 0, totp_locked_until = NULL, totp_last_step = 0
+			 WHERE uid = $1`, uid)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_enabled = FALSE, totp_secret = '' WHERE uid = $1`, uid)
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE users SET totp_enabled = FALSE, totp_secret = '', totp_failed = 0,
+		        totp_locked_until = NULL, totp_last_step = 0 WHERE uid = $1`, uid)
 	return err
 }
 

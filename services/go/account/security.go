@@ -200,21 +200,39 @@ func (s *Store) listSessions(ctx context.Context, userID int64) ([]sessionDTO, e
 	return out, rows.Err()
 }
 
-func (s *Store) revokeSession(ctx context.Context, userID int64, id string) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE refresh_tokens SET revoked=TRUE WHERE user_id=$1 AND id::text=$2 AND revoked=FALSE`, userID, id)
-	if err != nil {
-		return false, err
+// revokeSession revokes one session and returns the device key it belonged to
+// ("" when no live session with that id exists), so the caller can also cut
+// that device's access tokens.
+func (s *Store) revokeSession(ctx context.Context, userID int64, id string) (string, error) {
+	var deviceKey string
+	err := s.db.QueryRowContext(ctx,
+		`UPDATE refresh_tokens SET revoked=TRUE WHERE user_id=$1 AND id::text=$2 AND revoked=FALSE
+		 RETURNING device_key`, userID, id).Scan(&deviceKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
 	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
+	return deviceKey, err
 }
 
-func (s *Store) revokeOtherSessions(ctx context.Context, userID int64, keepDevice string) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE refresh_tokens SET revoked=TRUE WHERE user_id=$1 AND device_key<>$2 AND revoked=FALSE`, userID, keepDevice)
+// revokeOtherSessions revokes every other device's sessions and returns the
+// device keys it revoked (each also needs its access tokens cut).
+func (s *Store) revokeOtherSessions(ctx context.Context, userID int64, keepDevice string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`UPDATE refresh_tokens SET revoked=TRUE WHERE user_id=$1 AND device_key<>$2 AND revoked=FALSE
+		 RETURNING device_key`, userID, keepDevice)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return res.RowsAffected()
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
 }
 
 // ---- helpers ----
@@ -243,8 +261,10 @@ func (s *Server) securityChanged(ctx context.Context, u *User, what string, lock
 	}()
 }
 
-// requireTOTPIfEnabled checks TOTP only when the user has it enabled.
-func requireTOTPIfEnabled(w http.ResponseWriter, u *User, totp string) bool {
+// requireTOTPIfEnabled checks TOTP only when the user has it enabled. It goes
+// through verifyTOTP so every confirmation counts towards the per-account
+// attempt limit and an already-used code is refused.
+func (s *Server) requireTOTPIfEnabled(ctx context.Context, w http.ResponseWriter, u *User, totp string) bool {
 	if !u.TOTPEnabled {
 		return true
 	}
@@ -252,11 +272,7 @@ func requireTOTPIfEnabled(w http.ResponseWriter, u *User, totp string) bool {
 		common.WriteError(w, http.StatusForbidden, "TWOFA_REQUIRED", "请提供两步验证码")
 		return false
 	}
-	if !validateTOTP(u.TOTPSecret, totp) {
-		common.WriteError(w, http.StatusUnauthorized, "INVALID_TOTP", "两步验证码错误")
-		return false
-	}
-	return true
+	return writeTOTPVerdict(w, s.verifyTOTP(ctx, u, totp))
 }
 
 // verifyCodeAt verifies a code sent to a specific target.
@@ -468,9 +484,16 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		internalErr(w)
 		return
 	}
-	var revoked int64
+	var revoked int
 	if req.RevokeOtherSessions == nil || *req.RevokeOtherSessions {
-		revoked, _ = s.store.revokeOtherSessions(r.Context(), u.ID, deviceKeyFor(r, ""))
+		keys, err := s.store.revokeOtherSessions(r.Context(), u.ID, deviceKeyFor(r, ""))
+		if err != nil {
+			log.Printf("password change: revoke other sessions: %v", err)
+		}
+		for _, k := range keys {
+			s.revokeDeviceSessions(r.Context(), u.UID, u.ID, k)
+		}
+		revoked = len(keys)
 	}
 	s.securityChanged(r.Context(), u, "修改了登录密码", true)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "revokedSessions": revoked})
@@ -561,7 +584,7 @@ func (s *Server) handleChangeContact(kind string) http.HandlerFunc {
 			common.WriteError(w, http.StatusServiceUnavailable, "SMS_UNAVAILABLE", "短信服务暂不可用，请稍后再试")
 			return
 		}
-		if !requireTOTPIfEnabled(w, u, req.TOTPCode) {
+		if !s.requireTOTPIfEnabled(r.Context(), w, u, req.TOTPCode) {
 			return
 		}
 		// Old-contact proof: the code goes to the contact being replaced; when
@@ -820,15 +843,17 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	done, err := s.store.revokeSession(r.Context(), u.ID, r.PathValue("id"))
+	deviceKey, err := s.store.revokeSession(r.Context(), u.ID, r.PathValue("id"))
 	if err != nil {
 		internalErr(w)
 		return
 	}
-	if !done {
+	if deviceKey == "" {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "会话不存在")
 		return
 	}
+	// Also stop this device's access tokens, not just its refresh token.
+	s.revokeDeviceSessions(r.Context(), u.UID, u.ID, deviceKey)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -837,12 +862,15 @@ func (s *Server) handleRevokeOtherSessions(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	n, err := s.store.revokeOtherSessions(r.Context(), u.ID, deviceKeyFor(r, ""))
+	keys, err := s.store.revokeOtherSessions(r.Context(), u.ID, deviceKeyFor(r, ""))
 	if err != nil {
 		internalErr(w)
 		return
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"revoked": n})
+	for _, k := range keys {
+		s.revokeDeviceSessions(r.Context(), u.UID, u.ID, k)
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"revoked": len(keys)})
 }
 
 // ---- internal: outflow verification (wallet) ----

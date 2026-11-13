@@ -1,10 +1,12 @@
 package click.cowa.linbit.feature.assets
 
+import click.cowa.linbit.core.generated.ApiAssetsOverview
 import click.cowa.linbit.core.generated.ApiBalance
 import click.cowa.linbit.core.generated.ApiWalletNetwork
 import click.cowa.linbit.core.generated.ApiWithdrawNetwork
 import click.cowa.linbit.core.util.Dec
 import java.math.BigDecimal
+import java.time.Instant
 
 /** 资产/充提纯逻辑（无 Android 依赖，供单测）。 */
 object AssetsLogic {
@@ -84,12 +86,57 @@ object AssetsLogic {
             .sortedWith(compareByDescending<ApiBalance> { usdOf(it) }.thenBy { it.asset })
     }
 
-    fun receiveAmount(amount: String?, gasFee: String?): String? {
+    /**
+     * Gas 是否从提现数量中扣除：只有 Gas 以提现币种计价时才扣（后端 GasDeductMode=amount）。
+     * gasFeeAsset 为空时按提现币种处理（与后端默认一致）。
+     */
+    fun gasDeductedFromAmount(asset: String, gasFeeAsset: String?): Boolean =
+        gasFeeAsset.isNullOrBlank() || gasFeeAsset.equals(asset, ignoreCase = true)
+
+    /** 到账数量 = 数量 − 同币种 Gas；Gas 以其他币种计价时到账数量等于提现数量。 */
+    fun receiveAmount(amount: String?, gasFee: String?, asset: String? = null, gasFeeAsset: String? = null): String? {
         val a = Dec.parseOrNull(amount) ?: return null
-        val fee = Dec.parse(gasFee)
+        val deduct = asset == null || gasDeductedFromAmount(asset, gasFeeAsset)
+        val fee = if (deduct) Dec.parse(gasFee) else BigDecimal.ZERO
         val r = a.subtract(fee)
         if (r.signum() < 0) return null
         return r.stripTrailingZeros().toPlainString()
+    }
+
+    /**
+     * 提现数量校验，返回 null 表示通过（数量为空时不提示）。
+     * 只有 Gas 以提现币种计价时，才要求数量大于 Gas。
+     */
+    fun withdrawAmountError(amount: String, asset: String, available: BigDecimal?, net: ApiWithdrawNetwork?): String? {
+        if (amount.isBlank()) return null
+        val value = Dec.parse(amount)
+        if (value.signum() <= 0) return "请输入提现数量"
+        if (available != null && value > available) return "可用余额不足"
+        if (net == null) return null
+        positiveAmount(net.minWithdraw)?.let { if (value < Dec.parse(it)) return "最小提现数量 $it $asset" }
+        positiveAmount(net.maxWithdraw)?.let { if (value > Dec.parse(it)) return "单笔最大提现 $it $asset" }
+        if (gasDeductedFromAmount(asset, net.gasFeeAsset)) {
+            positiveAmount(net.gasFeeEstimate)?.let { if (value <= Dec.parse(it)) return "提现数量需大于链上网络费（Gas） $it $asset" }
+        }
+        return null
+    }
+
+    /**
+     * 提现扣款账户中该币种的可用余额。account 为 /assets/overview 的 withdrawAccount（缺省 funding）；
+     * 找不到账户或币种时返回 0。
+     */
+    fun withdrawAvailable(overview: ApiAssetsOverview?, asset: String): BigDecimal? {
+        overview ?: return null
+        val acct = overview.withdrawAccount?.value ?: "funding"
+        val row = overview.accounts.orEmpty().firstOrNull { it.account?.value == acct }
+            ?.balances.orEmpty().firstOrNull { it.asset.equals(asset, ignoreCase = true) }
+        return Dec.parse(row?.free)
+    }
+
+    /** 提现保护期截止时间（ISO-8601）；已过期或无法解析时返回 null。 */
+    fun activeWithdrawLock(lockedUntil: String?, now: Instant = Instant.now()): Instant? {
+        val t = lockedUntil?.takeIf { it.isNotBlank() }?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return null
+        return t.takeIf { it.isAfter(now) }
     }
 
     fun newClientId(prefix: String = "and"): String =
