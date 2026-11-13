@@ -49,13 +49,40 @@ func main() {
 	if err := srv.LoadUserFees(context.Background()); err != nil {
 		log.Printf("load user fee overrides: %v", err)
 	}
-	go srv.RunBackground(context.Background())
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go srv.RunBackground(ctx)
+	startStream(ctx, cfg, srv, store)
 
 	addr := ":" + cfg.Port
 	log.Printf("order service listening on %s (engine=%s asset=%s)", addr, cfg.EngineURL, cfg.AssetInternalURL)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
+}
+
+// startStream settles engine results. Kafka is the fan-out path when
+// KAFKA_BROKERS is set; the HTTP stream stays the gap-fill and the ack path.
+func startStream(ctx context.Context, cfg Config, srv *Server, store *Store) {
+	syms, err := store.Symbols(ctx)
+	if err != nil {
+		log.Fatalf("symbols: %v", err)
+	}
+	names := make([]string, 0, len(syms))
+	for _, sym := range syms {
+		names = append(names, sym.Symbol)
+	}
+	httpStream := NewHTTPStream(cfg.EngineURL, cfg.InternalToken)
+	var stream EngineStream = httpStream
+	if len(cfg.KafkaBrokers) > 0 {
+		ks := NewKafkaReportStream(cfg.KafkaBrokers, cfg.KafkaReportsTopic, httpStream)
+		go ks.Run(ctx)
+		stream = ks
+		log.Printf("order stream: kafka topic=%s brokers=%s", cfg.KafkaReportsTopic, cfg.KafkaBrokers)
+	} else {
+		log.Printf("order stream: http %s", cfg.EngineURL)
+	}
+	go NewStreamConsumer(srv, stream, names).Run(ctx)
 }
 
 func waitForDB(db *sql.DB) error {

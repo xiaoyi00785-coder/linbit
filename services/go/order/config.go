@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
 )
@@ -30,6 +32,11 @@ type Config struct {
 	ContractTakerFeeRate decimal.Decimal
 
 	FeeAccount string
+
+	// KafkaBrokers, when non-empty, is where the order service consumes the
+	// engine result stream. Empty keeps the HTTP poll.
+	KafkaBrokers      []string
+	KafkaReportsTopic string
 }
 
 // LoadConfig reads configuration from the environment.
@@ -47,7 +54,20 @@ func LoadConfig() Config {
 		ContractMakerFeeRate: feeRate("CONTRACT_MAKER_FEE_RATE", "", "0.0005"),
 		ContractTakerFeeRate: feeRate("CONTRACT_TAKER_FEE_RATE", "", "0.0005"),
 		FeeAccount:           common.Env("FEE_ACCOUNT", "platform"),
+		KafkaBrokers:         splitCSV(common.Env("KAFKA_BROKERS", "")),
+		KafkaReportsTopic:    common.Env("KAFKA_REPORTS_TOPIC", "engine.reports"),
 	}
+}
+
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // feeRate reads a rate from key, falling back to legacyKey (if set) then def.

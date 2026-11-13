@@ -595,9 +595,13 @@ func (s *Server) processCopy(ctx context.Context) {
 		for _, e := range evs {
 			// Mark first: a follower order never re-emits (sub-accounts are not
 			// traders), and a crash mid-way must not double-mirror.
-			if _, err := s.db.ExecContext(ctx, `UPDATE fut_copy_events SET processed=true WHERE id=$1`, e.ID); err != nil {
+			res, err := s.db.ExecContext(ctx, `UPDATE fut_copy_events SET processed=true WHERE id=$1 AND NOT processed`, e.ID)
+			if err != nil {
 				log.Printf("futures: copy event %d: %v", e.ID, err)
 				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				continue // another replica already claimed this event
 			}
 			fs, err := s.follows(ctx, `trader=$1 AND status='active'`, e.Trader)
 			if err != nil {

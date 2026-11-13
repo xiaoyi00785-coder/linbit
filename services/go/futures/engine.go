@@ -76,7 +76,9 @@ func (s *Server) contract(sym string) (Contract, error) {
 	return c, nil
 }
 
-// withTx runs fn under the engine lock in a single transaction.
+// withTx runs fn under the in-process engine lock in a single transaction.
+// Cross-replica exclusion is the per-user advisory lock taken by lockFutUser
+// (see userlock.go), not s.mu.
 func (s *Server) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,6 +86,18 @@ func (s *Server) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 }
 
 func (s *Server) txLocked(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		err = s.txOnce(ctx, fn)
+		if err == nil || !isDeadlock(err) {
+			return err
+		}
+		log.Printf("futures: deadlock, retry %d: %v", attempt+1, err)
+	}
+	return err
+}
+
+func (s *Server) txOnce(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -659,6 +673,11 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 			}
 			qty = dmin(qty, cl)
 		}
+		// Both wallets are locked in user-id order before either fill reads a
+		// position, so two matches cannot apply the same user's qty concurrently.
+		if err := lockFutUsers(ctx, tx, maker.UserID, taker.UserID); err != nil {
+			return nil, err
+		}
 		mRate, _, _ := s.userFees(maker.UserID, c)
 		_, tRate, _ := s.userFees(taker.UserID, c)
 		mfee, _, mbonus, err := s.fill(ctx, tx, c, maker.UserID, maker.PosSide, signed(maker.Side, qty), px, mRate, maker.Leverage, maker.Mode, maker.TP, maker.SL, maker.TPType, maker.SLType)
@@ -880,6 +899,9 @@ func (s *Server) SetTPSL(ctx context.Context, uid, sym, posSide string, tp, sl d
 		return err
 	}
 	return s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := lockFutUser(ctx, tx, uid); err != nil {
+			return err
+		}
 		p, _, err := loadPosition(ctx, tx, uid, c.Symbol, posSide, true)
 		if err != nil {
 			return err
@@ -1075,6 +1097,9 @@ func (s *Server) completeIn(ctx context.Context, ref, uid, wallet string, amount
 		return "pending"
 	}
 	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := lockFutUser(ctx, tx, uid); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE fut_transfers SET status='done', attempts=attempts+1, updated_at=now() WHERE ref=$1 AND status='pending'`, ref)
 		if err != nil {
 			return err

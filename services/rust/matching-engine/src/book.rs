@@ -74,6 +74,8 @@ pub struct SymbolEngine {
     clock: Option<Box<dyn Fn() -> u64 + Send>>,
 
     sink: Arc<dyn EventSink>,
+    /// Optional publisher for the ordered result stream (Kafka). Absent in tests.
+    report_pub: Option<Arc<dyn crate::bus::ReportPublisher>>,
     wal: Option<Wal>,
     dir: Option<PathBuf>,
     snapshot_every: u64,
@@ -124,6 +126,7 @@ impl SymbolEngine {
             reports: ReportLog::in_memory(),
             clock: None,
             sink,
+            report_pub: None,
             wal: None,
             dir: None,
             snapshot_every: 0,
@@ -263,7 +266,9 @@ impl SymbolEngine {
         }
         self.seq = seq;
         let report = self.apply_and_emit(cmd);
-        self.reports.append(vec![entry_for(cmd, seq, ts, report.clone())]);
+        let entry = entry_for(cmd, seq, ts, report.clone());
+        self.publish_reports(std::slice::from_ref(&entry));
+        self.reports.append(vec![entry]);
 
         self.since_snapshot += 1;
         if self.snapshot_every > 0 && self.since_snapshot >= self.snapshot_every {
@@ -324,6 +329,7 @@ impl SymbolEngine {
             entries.push(entry_for(cmd, self.seq, ts, report.clone()));
             *slot = Some(report);
         }
+        self.publish_reports(&entries);
         self.reports.append(entries);
 
         // One snapshot check per batch: it captures the effects of every command
@@ -375,6 +381,20 @@ impl SymbolEngine {
     }
 
     // --- result stream ------------------------------------------------------
+
+    /// Attach a publisher for result-stream entries. Called once, before the
+    /// matching thread starts, so it does not race with `process`.
+    pub fn set_report_publisher(&mut self, publisher: Arc<dyn crate::bus::ReportPublisher>) {
+        self.report_pub = Some(publisher);
+    }
+
+    fn publish_reports(&self, entries: &[ReportEntry]) {
+        if let Some(p) = &self.report_pub {
+            for e in entries {
+                p.publish_report(e);
+            }
+        }
+    }
 
     /// Result-stream entries after `after` (at most `limit`), plus the current
     /// head and the engine-clock watermark. Advances the engine clock, so every
@@ -496,12 +516,13 @@ impl SymbolEngine {
         // Market orders behave as IOC; otherwise honour the requested TIF.
         let tif = if is_market { TimeInForce::IOC } else { p.time_in_force };
 
-        // PostOnly must not cross: reject outright if it would match.
-        if tif == TimeInForce::PostOnly && self.crosses(is_buy, price) {
+        // PostOnly must not cross another user's order. Our own resting orders
+        // are not a cross: self-trade protection will skip them.
+        if tif == TimeInForce::PostOnly && self.crosses(is_buy, price, &p.user_id) {
             return reject_place(p, &self.symbol, "post_only_would_cross");
         }
-        // FOK must fill in full or not at all.
-        if tif == TimeInForce::FOK && !self.fully_fillable(is_buy, price, remaining) {
+        // FOK must fill in full against other users or not at all.
+        if tif == TimeInForce::FOK && !self.fully_fillable(is_buy, price, remaining, &p.user_id) {
             return reject_place(p, &self.symbol, "fok_unfillable");
         }
 
@@ -510,14 +531,14 @@ impl SymbolEngine {
         let mut taker_filled = 0;
 
         loop {
-            // Best opposite price that still satisfies the taker's price bound.
-            let best = self.best_opposite(is_buy, price, is_market);
-            let Some(level_price) = best else { break };
-
-            // Determine fill quantity against the front resting order.
+            // First other-user order in price-time order. Same-user orders stay
+            // resting and are skipped, so a user cannot trade with themselves.
+            let Some((level_price, idx)) = self.find_maker(is_buy, price, is_market, &p.user_id) else {
+                break;
+            };
             let opp = if is_buy { &mut self.asks } else { &mut self.bids };
             let level = opp.get_mut(&level_price).expect("level exists");
-            let maker = level.front_mut().expect("non-empty level");
+            let maker = level.get_mut(idx).expect("order exists");
 
             let fill = if market_by_quote {
                 let by_budget = fixed::floor_to(fixed::qty_for_budget(budget, level_price), self.qty_precision);
@@ -530,6 +551,10 @@ impl SymbolEngine {
             }
 
             maker.remaining -= fill;
+            let maker_done = maker.remaining == 0;
+            let maker_id = maker.order_id.clone();
+            let maker_user = maker.user_id.clone();
+            let maker_filled = maker.quantity - maker.remaining;
             taker_filled += fill;
             if market_by_quote {
                 budget -= fixed::notional(level_price, fill);
@@ -545,26 +570,22 @@ impl SymbolEngine {
                 price: fixed::format(level_price),
                 quantity: fixed::format(fill),
                 taker_order_id: p.order_id.clone(),
-                maker_order_id: maker.order_id.clone(),
+                maker_order_id: maker_id.clone(),
                 taker_user_id: p.user_id.clone(),
-                maker_user_id: maker.user_id.clone(),
+                maker_user_id: maker_user.clone(),
                 taker_side: p.side,
             });
-            let maker_status = if maker.remaining == 0 {
-                OrderStatus::Filled
-            } else {
-                OrderStatus::PartiallyFilled
-            };
+            let maker_status = if maker_done { OrderStatus::Filled } else { OrderStatus::PartiallyFilled };
             maker_updates.push(OrderUpdate {
-                order_id: maker.order_id.clone(),
-                user_id: maker.user_id.clone(),
+                order_id: maker_id.clone(),
+                user_id: maker_user,
                 status: maker_status,
-                filled_quantity: fixed::format(maker.quantity - maker.remaining),
+                filled_quantity: fixed::format(maker_filled),
             });
 
-            if maker.remaining == 0 {
-                let done = level.pop_front().unwrap();
-                self.index.remove(&done.order_id);
+            if maker_done {
+                level.remove(idx);
+                self.index.remove(&maker_id);
                 if level.is_empty() {
                     opp.remove(&level_price);
                 }
@@ -581,7 +602,7 @@ impl SymbolEngine {
         let status = if market_by_quote {
             // Market buy: filled if the budget was effectively consumed (no more
             // can be bought), otherwise the book ran dry with budget left over.
-            if self.best_opposite(true, 0, true).is_none() && budget > 0 {
+            if self.find_maker(true, 0, true, &p.user_id).is_none() && budget > 0 {
                 // Book ran dry with budget left; leftover is unfrozen downstream.
                 OrderStatus::Canceled
             } else {
@@ -635,32 +656,42 @@ impl SymbolEngine {
         touched.push((is_buy, price));
     }
 
-    /// Best opposite price for a taker, or None if nothing is matchable.
-    fn best_opposite(&self, is_buy: bool, price: i128, is_market: bool) -> Option<i128> {
+    /// Next other-user resting order inside the taker's price bound.
+    /// `(price, index)` is in price-time order, skipping `taker_user`.
+    fn find_maker(&self, is_buy: bool, price: i128, is_market: bool, taker_user: &str) -> Option<(i128, usize)> {
         if is_buy {
-            let (&ask, _) = self.asks.iter().next()?; // lowest ask
-            if is_market || ask <= price {
-                Some(ask)
-            } else {
-                None
+            for (&ask, level) in self.asks.iter() {
+                if !is_market && ask > price {
+                    return None;
+                }
+                for (i, o) in level.iter().enumerate() {
+                    if o.remaining > 0 && o.user_id != taker_user {
+                        return Some((ask, i));
+                    }
+                }
             }
         } else {
-            let (&bid, _) = self.bids.iter().next_back()?; // highest bid
-            if is_market || bid >= price {
-                Some(bid)
-            } else {
-                None
+            for (&bid, level) in self.bids.iter().rev() {
+                if !is_market && bid < price {
+                    return None;
+                }
+                for (i, o) in level.iter().enumerate() {
+                    if o.remaining > 0 && o.user_id != taker_user {
+                        return Some((bid, i));
+                    }
+                }
             }
         }
+        None
     }
 
-    /// Would a resting order at `price` on `is_buy`'s side cross the book now?
-    fn crosses(&self, is_buy: bool, price: i128) -> bool {
-        self.best_opposite(is_buy, price, false).is_some()
+    /// Would a resting order at `price` on `is_buy`'s side cross another user's order?
+    fn crosses(&self, is_buy: bool, price: i128, user: &str) -> bool {
+        self.find_maker(is_buy, price, false, user).is_some()
     }
 
-    /// Can `qty` be fully filled immediately within the price bound?
-    fn fully_fillable(&self, is_buy: bool, price: i128, qty: i128) -> bool {
+    /// Can `qty` be fully filled immediately, against other users, within the price bound?
+    fn fully_fillable(&self, is_buy: bool, price: i128, qty: i128, user: &str) -> bool {
         let mut need = qty;
         if is_buy {
             for (&ask, level) in self.asks.iter() {
@@ -668,6 +699,9 @@ impl SymbolEngine {
                     break;
                 }
                 for o in level {
+                    if o.user_id == user {
+                        continue;
+                    }
                     need -= o.remaining;
                     if need <= 0 {
                         return true;
@@ -680,6 +714,9 @@ impl SymbolEngine {
                     break;
                 }
                 for o in level {
+                    if o.user_id == user {
+                        continue;
+                    }
                     need -= o.remaining;
                     if need <= 0 {
                         return true;
@@ -919,6 +956,54 @@ mod tests {
         assert_eq!(r.trades[0].trade_id, "1000000000001");
         let r = e.process(&place("b2", "b", Side::Buy, OrderType::Limit, TimeInForce::GTC, "70000", "0.01"));
         assert_eq!(r.trades[0].trade_id, "1000000000002");
+    }
+
+    #[test]
+    fn self_trade_skips_own_order_and_hits_the_next() {
+        let mut e = eng();
+        e.process(&place("s1", "alice", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
+        e.process(&place("s2", "bob", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
+        let r = e.process(&place("b1", "alice", Side::Buy, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
+        assert_eq!(r.trades.len(), 1);
+        assert_eq!(r.trades[0].maker_order_id, "s2");
+        assert_eq!(r.trades[0].maker_user_id, "bob");
+        assert_eq!(r.trades[0].taker_user_id, "alice");
+        assert!(e.resting_orders().iter().any(|o| o.order_id == "s1"));
+    }
+
+    #[test]
+    fn self_trade_alone_rests_without_a_fill() {
+        let mut e = eng();
+        e.process(&place("s1", "alice", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
+        let r = e.process(&place("b1", "alice", Side::Buy, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
+        assert!(r.trades.is_empty());
+        assert_eq!(r.status, OrderStatus::New);
+        assert_eq!(e.resting_orders().len(), 2);
+    }
+
+    #[test]
+    fn post_only_rests_when_only_own_order_would_cross() {
+        let mut e = eng();
+        e.process(&place("s1", "alice", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "1"));
+        let r = e.process(&place("b1", "alice", Side::Buy, OrderType::Limit, TimeInForce::PostOnly, "70000", "1"));
+        assert_eq!(r.status, OrderStatus::New);
+        assert!(r.trades.is_empty());
+    }
+
+    #[test]
+    fn fok_ignores_own_liquidity() {
+        let mut e = eng();
+        e.process(&place("s1", "alice", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "0.004"));
+        let r = e.process(&place("b1", "alice", Side::Buy, OrderType::Limit, TimeInForce::FOK, "70000", "0.01"));
+        assert_eq!(r.status, OrderStatus::Rejected);
+        assert!(r.trades.is_empty());
+
+        e.process(&place("s2", "bob", Side::Sell, OrderType::Limit, TimeInForce::GTC, "70000", "0.01"));
+        let r = e.process(&place("b2", "alice", Side::Buy, OrderType::Limit, TimeInForce::FOK, "70000", "0.01"));
+        assert_eq!(r.status, OrderStatus::Filled);
+        assert_eq!(r.trades.len(), 1);
+        assert_eq!(r.trades[0].maker_order_id, "s2");
+        assert!(e.resting_orders().iter().any(|o| o.order_id == "s1"));
     }
 }
 

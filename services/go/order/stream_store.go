@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
@@ -28,13 +30,74 @@ func (s *Store) GetCursor(ctx context.Context, symbol string) (int64, error) {
 	return seq, err
 }
 
-// AdvanceCursor advances the cursor for symbol to seq if seq > current value.
-func (s *Store) AdvanceCursor(ctx context.Context, symbol string, seq int64) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE engine_cursors SET last_seq = $2, updated_at = now()
-		 WHERE symbol = $1 AND last_seq < $2`,
-		symbol, seq)
-	return err
+// ClaimCursor takes the symbol's consume lease with SELECT ... FOR UPDATE.
+// ok is false when another replica's lease is still in the future. The caller
+// must not settle that symbol until it wins a later claim. ttl is how long
+// this owner keeps the lease; renew it by claiming again or by AdvanceCursor.
+func (s *Store) ClaimCursor(ctx context.Context, symbol, owner string, ttl time.Duration) (seq int64, ok bool, err error) {
+	if owner == "" {
+		return 0, false, fmt.Errorf("cursor lease owner is empty")
+	}
+	secs := leaseSeconds(ttl)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback()
+	var curOwner sql.NullString
+	var until sql.NullTime
+	err = tx.QueryRowContext(ctx, `
+		SELECT last_seq, lease_owner, lease_until
+		FROM engine_cursors WHERE symbol = $1 FOR UPDATE`, symbol).Scan(&seq, &curOwner, &until)
+	if err != nil {
+		return 0, false, err
+	}
+	heldByOther := curOwner.Valid && curOwner.String != "" && curOwner.String != owner &&
+		until.Valid && until.Time.After(time.Now())
+	if heldByOther {
+		return seq, false, nil
+	}
+	if _, err = tx.ExecContext(ctx, `
+		UPDATE engine_cursors
+		SET lease_owner = $2, lease_until = now() + make_interval(secs => $3), updated_at = now()
+		WHERE symbol = $1`, symbol, owner, secs); err != nil {
+		return 0, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, false, err
+	}
+	return seq, true, nil
+}
+
+// AdvanceCursor advances the cursor when this owner still holds the row and
+// seq is ahead. The lease may already have lapsed: expiry only lets another
+// replica claim, and a slow settle must still be able to record the cursor it
+// owns. A lost lease (owner changed) returns an error so the caller does not
+// ack the engine past a cursor it no longer owns.
+func (s *Store) AdvanceCursor(ctx context.Context, symbol string, seq int64, owner string, ttl time.Duration) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE engine_cursors
+		SET last_seq = $2,
+		    lease_until = now() + make_interval(secs => $4),
+		    updated_at = now()
+		WHERE symbol = $1 AND last_seq < $2 AND lease_owner = $3`,
+		symbol, seq, owner, leaseSeconds(ttl))
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("cursor %s not advanced (lost lease or seq already applied)", symbol)
+	}
+	return nil
+}
+
+func leaseSeconds(ttl time.Duration) int64 {
+	secs := int64(ttl / time.Second)
+	if secs < 1 {
+		return 1
+	}
+	return secs
 }
 
 // ---- orders: stream columns ----
