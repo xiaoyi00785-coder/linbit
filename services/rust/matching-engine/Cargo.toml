@@ -13,14 +13,16 @@ name = "bench"
 path = "src/bin/bench.rs"
 
 [dependencies]
+rskafka = "0.6.0"
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2.2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 
 [features]
-# Production messaging over Kafka. Local builds use the HTTP/in-memory sink;
-# the `kafka` feature compiles an interface skeleton (see src/bus.rs) that marks
-# where an rdkafka producer/consumer would be wired. It does not require a
-# running Kafka broker.
+# Kept so existing `--features kafka` builds still succeed. The producer is
+# always compiled; it connects only when KAFKA_BROKERS is set.
 kafka = []
 
 [profile.release]

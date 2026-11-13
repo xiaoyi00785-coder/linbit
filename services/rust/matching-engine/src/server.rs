@@ -6,13 +6,15 @@
 //! single-threaded per symbol while the service handles many connections. This
 //! is the *local* implementation of the replaceable messaging interface; the
 //! production path would consume commands from Kafka and drive the same loops
-//! (see `bus.rs` for the event-side Kafka skeleton).
+//! (see `bus.rs` for the Kafka producer).
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::{BufReader, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -194,10 +196,44 @@ fn flush_command_batch(engine: &mut SymbolEngine, cmds: &mut Vec<Command>, repli
     cmds.clear();
 }
 
-/// Run the HTTP server until the process is killed.
+/// Hard limits for the hand-rolled HTTP/1.1 front. Headers past this are
+/// rejected before the body is read; a Content-Length above the body cap is
+/// rejected without allocating that many bytes.
+const MAX_HEADER_BYTES: usize = 8 * 1024;
+const MAX_BODY_BYTES: usize = 64 * 1024;
+const KEEPALIVE_IDLE: Duration = Duration::from_secs(30);
+const MAX_KEEPALIVE_REQUESTS: usize = 100;
+
+static REQ_SEQ: AtomicU64 = AtomicU64::new(1);
+
+/// Optional TLS material. Both files are PEM.
+pub struct TlsPaths {
+    pub cert: String,
+    pub key: String,
+}
+
+/// Run the HTTP server until the process is killed. Plain TCP.
 pub fn serve(bind: &str, token: String, dispatcher: Dispatcher) -> std::io::Result<()> {
+    serve_with(bind, token, dispatcher, None)
+}
+
+/// Like [`serve`], with optional TLS. `tls` requires both a certificate chain
+/// and a private key; the listener then speaks TLS to every connection.
+pub fn serve_with(
+    bind: &str,
+    token: String,
+    dispatcher: Dispatcher,
+    tls: Option<TlsPaths>,
+) -> std::io::Result<()> {
+    let tls_cfg = match tls {
+        Some(p) => Some(load_tls(&p.cert, &p.key).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+        })?),
+        None => None,
+    };
     let listener = TcpListener::bind(bind)?;
-    println!("matching-engine listening on {bind}");
+    let mode = if tls_cfg.is_some() { "tls" } else { "plain" };
+    println!("matching-engine listening on {bind} ({mode})");
     for stream in listener.incoming() {
         let stream = match stream {
             Ok(s) => s,
@@ -208,68 +244,235 @@ pub fn serve(bind: &str, token: String, dispatcher: Dispatcher) -> std::io::Resu
         };
         let d = dispatcher.clone();
         let token = token.clone();
+        let tls_cfg = tls_cfg.clone();
         thread::spawn(move || {
-            if let Err(e) = handle_conn(stream, &token, &d) {
-                eprintln!("conn: {e}");
+            let net = match tls_cfg {
+                None => Net::Plain(stream),
+                Some(cfg) => match rustls::ServerConnection::new(cfg) {
+                    Ok(conn) => Net::Tls(rustls::StreamOwned::new(conn, stream)),
+                    Err(e) => {
+                        eprintln!("tls handshake setup: {e}");
+                        return;
+                    }
+                },
+            };
+            if let Err(e) = handle_conn(net, &token, &d) {
+                if !quiet_io(&e) {
+                    eprintln!("conn: {e}");
+                }
             }
         });
     }
     Ok(())
 }
 
-fn handle_conn(mut stream: TcpStream, token: &str, d: &Dispatcher) -> std::io::Result<()> {
-    let (method, path, headers, body) = read_request(&mut stream)?;
+fn quiet_io(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        ErrorKind::UnexpectedEof
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+            | ErrorKind::TimedOut
+            | ErrorKind::WouldBlock
+    )
+}
 
-    // Health check is unauthenticated.
-    if method == "GET" && path == "/healthz" {
-        return write_response(&mut stream, 200, "text/plain", b"ok");
+enum Net {
+    Plain(TcpStream),
+    Tls(rustls::StreamOwned<rustls::ServerConnection, TcpStream>),
+}
+
+impl Net {
+    fn set_read_timeout(&mut self, t: Option<Duration>) -> std::io::Result<()> {
+        match self {
+            Net::Plain(s) => s.set_read_timeout(t),
+            Net::Tls(s) => s.sock.set_read_timeout(t),
+        }
     }
+}
 
-    // All other endpoints require the shared internal token when one is set.
-    if !token.is_empty() && headers.get("x-internal-token").map(String::as_str) != Some(token) {
-        return write_json(&mut stream, 401, br#"{"error":"unauthorized"}"#);
+impl Read for Net {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Net::Plain(s) => s.read(buf),
+            Net::Tls(s) => s.read(buf),
+        }
     }
+}
 
-    let symbol = query_param(&path, "symbol").unwrap_or_default();
-    match (method.as_str(), path_only(&path)) {
+impl Write for Net {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Net::Plain(s) => s.write(buf),
+            Net::Tls(s) => s.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Net::Plain(s) => s.flush(),
+            Net::Tls(s) => s.flush(),
+        }
+    }
+}
+
+fn load_tls(cert_path: &str, key_path: &str) -> Result<Arc<rustls::ServerConfig>, String> {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+    let mut cert_r = BufReader::new(File::open(cert_path).map_err(|e| format!("open TLS cert: {e}"))?);
+    let certs: Vec<rustls::pki_types::CertificateDer<'static>> = rustls_pemfile::certs(&mut cert_r)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("parse TLS cert: {e}"))?;
+    if certs.is_empty() {
+        return Err("TLS cert file contained no certificates".into());
+    }
+    let mut key_r = BufReader::new(File::open(key_path).map_err(|e| format!("open TLS key: {e}"))?);
+    let key = rustls_pemfile::private_key(&mut key_r)
+        .map_err(|e| format!("parse TLS key: {e}"))?
+        .ok_or_else(|| "TLS key file contained no private key".to_string())?;
+    let config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| format!("tls config: {e}"))?;
+    Ok(Arc::new(config))
+}
+
+#[derive(Debug)]
+struct HttpRequest {
+    method: String,
+    path: String,
+    version: String,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
+}
+
+#[derive(Debug)]
+enum ReadFail {
+    Io(std::io::Error),
+    Status(u16, &'static str),
+}
+
+fn handle_conn(mut net: Net, token: &str, d: &Dispatcher) -> std::io::Result<()> {
+    let mut served = 0usize;
+    loop {
+        net.set_read_timeout(Some(KEEPALIVE_IDLE))?;
+        let req = match read_request(&mut net) {
+            Ok(r) => r,
+            Err(ReadFail::Io(e)) if quiet_io(&e) => return Ok(()),
+            Err(ReadFail::Io(e)) => return Err(e),
+            Err(ReadFail::Status(code, msg)) => {
+                let id = next_request_id(&HashMap::new());
+                let _ = write_http(&mut net, code, msg.as_bytes(), &id, false);
+                eprintln!("req id={id} -> {code} {msg}");
+                return Ok(());
+            }
+        };
+        served += 1;
+        let id = next_request_id(&req.headers);
+        let close = want_close(&req.version, &req.headers, served);
+        let status = match route(&mut net, &req, token, d, &id, !close) {
+            Ok(s) => s,
+            Err(e) if quiet_io(&e) => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        eprintln!("req id={id} {} {} -> {status}", req.method, path_only(&req.path));
+        if close {
+            return Ok(());
+        }
+    }
+}
+
+fn route(
+    net: &mut Net,
+    req: &HttpRequest,
+    token: &str,
+    d: &Dispatcher,
+    id: &str,
+    keepalive: bool,
+) -> std::io::Result<u16> {
+    if req.method == "GET" && path_only(&req.path) == "/healthz" {
+        write_http(net, 200, b"ok", id, keepalive)?;
+        return Ok(200);
+    }
+    if !token_ok(token, req.headers.get("x-internal-token").map(String::as_str).unwrap_or("")) {
+        write_http(net, 401, br#"{"error":"unauthorized"}"#, id, keepalive)?;
+        return Ok(401);
+    }
+    let symbol = query_param(&req.path, "symbol").unwrap_or_default();
+    match (req.method.as_str(), path_only(&req.path)) {
         ("POST", "/engine/commands") => {
-            let cmd: Command = match serde_json::from_slice(&body) {
+            let cmd: Command = match serde_json::from_slice(&req.body) {
                 Ok(c) => c,
-                Err(e) => return write_json(&mut stream, 400, &err_json(&format!("bad command: {e}"))),
+                Err(e) => {
+                    let body = err_json(&format!("bad command: {e}"));
+                    write_http(net, 400, &body, id, keepalive)?;
+                    return Ok(400);
+                }
             };
             let symbol = cmd.symbol().to_string();
             match d.submit(&symbol, Req::Cmd(cmd)) {
-                Resp::Report(r) => write_json(&mut stream, 200, &serde_json::to_vec(&*r).unwrap_or_default()),
-                other => write_failure(&mut stream, other, 400),
+                Resp::Report(r) => {
+                    let body = serde_json::to_vec(&*r).unwrap_or_default();
+                    write_http(net, 200, &body, id, keepalive)?;
+                    Ok(200)
+                }
+                other => write_failure(net, other, 400, id, keepalive),
             }
         }
         ("GET", "/engine/depth") => match d.submit(&symbol, Req::Depth) {
-            Resp::Depth(dep) => write_json(&mut stream, 200, &serde_json::to_vec(&*dep).unwrap_or_default()),
-            other => write_failure(&mut stream, other, 404),
+            Resp::Depth(dep) => {
+                let body = serde_json::to_vec(&*dep).unwrap_or_default();
+                write_http(net, 200, &body, id, keepalive)?;
+                Ok(200)
+            }
+            other => write_failure(net, other, 404, id, keepalive),
         },
         ("GET", "/engine/reports") => {
-            let after: u64 = query_param(&path, "after").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let limit: usize = query_param(&path, "limit").and_then(|v| v.parse().ok()).unwrap_or(500usize).clamp(1, 2000);
+            let after: u64 = query_param(&req.path, "after").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let limit: usize = query_param(&req.path, "limit")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(500usize)
+                .clamp(1, 2000);
             match d.submit(&symbol, Req::Reports { after, limit }) {
-                Resp::Page(p) => write_json(&mut stream, 200, &serde_json::to_vec(&*p).unwrap_or_default()),
-                other => write_failure(&mut stream, other, 404),
+                Resp::Page(p) => {
+                    let body = serde_json::to_vec(&*p).unwrap_or_default();
+                    write_http(net, 200, &body, id, keepalive)?;
+                    Ok(200)
+                }
+                other => write_failure(net, other, 404, id, keepalive),
             }
         }
         ("POST", "/engine/reports/ack") => {
-            let ack: AckBody = match serde_json::from_slice(&body) {
+            let ack: AckBody = match serde_json::from_slice(&req.body) {
                 Ok(a) => a,
-                Err(e) => return write_json(&mut stream, 400, &err_json(&format!("bad ack: {e}"))),
+                Err(e) => {
+                    let body = err_json(&format!("bad ack: {e}"));
+                    write_http(net, 400, &body, id, keepalive)?;
+                    return Ok(400);
+                }
             };
             match d.submit(&ack.symbol, Req::Ack(ack.seq)) {
-                Resp::Acked => write_json(&mut stream, 200, br#"{"ok":true}"#),
-                other => write_failure(&mut stream, other, 400),
+                Resp::Acked => {
+                    write_http(net, 200, br#"{"ok":true}"#, id, keepalive)?;
+                    Ok(200)
+                }
+                other => write_failure(net, other, 400, id, keepalive),
             }
         }
         ("GET", "/engine/orders") => match d.submit(&symbol, Req::Orders) {
-            Resp::Orders(o) => write_json(&mut stream, 200, &serde_json::to_vec(&o).unwrap_or_default()),
-            other => write_failure(&mut stream, other, 404),
+            Resp::Orders(o) => {
+                let body = serde_json::to_vec(&o).unwrap_or_default();
+                write_http(net, 200, &body, id, keepalive)?;
+                Ok(200)
+            }
+            other => write_failure(net, other, 404, id, keepalive),
         },
-        _ => write_json(&mut stream, 404, br#"{"error":"not found"}"#),
+        _ => {
+            write_http(net, 404, br#"{"error":"not found"}"#, id, keepalive)?;
+            Ok(404)
+        }
     }
 }
 
@@ -283,35 +486,93 @@ fn err_json(msg: &str) -> Vec<u8> {
     serde_json::json!({ "error": msg }).to_string().into_bytes()
 }
 
-/// Map a non-success response to HTTP: a definite rejection gets `bad_status`
-/// (4xx), an unknown outcome gets 503 so callers never mistake it for a reject.
-fn write_failure(stream: &mut TcpStream, resp: Resp, bad_status: u16) -> std::io::Result<()> {
+fn write_failure(net: &mut Net, resp: Resp, bad_status: u16, id: &str, keepalive: bool) -> std::io::Result<u16> {
     match resp {
-        Resp::BadRequest(e) => write_json(stream, bad_status, &err_json(&e)),
-        Resp::Unavailable(e) => write_json(stream, 503, &err_json(&e)),
-        _ => write_json(stream, 500, br#"{"error":"bad response"}"#),
+        Resp::BadRequest(e) => {
+            write_http(net, bad_status, &err_json(&e), id, keepalive)?;
+            Ok(bad_status)
+        }
+        Resp::Unavailable(e) => {
+            write_http(net, 503, &err_json(&e), id, keepalive)?;
+            Ok(503)
+        }
+        _ => {
+            write_http(net, 500, br#"{"error":"bad response"}"#, id, keepalive)?;
+            Ok(500)
+        }
     }
 }
 
-/// Parse an HTTP/1.1 request: method, path, lowercased headers, and body.
-fn read_request(
-    stream: &mut TcpStream,
-) -> std::io::Result<(String, String, HashMap<String, String>, Vec<u8>)> {
+/// Constant-time comparison so a wrong internal token does not leak the prefix.
+fn token_ok(expected: &str, got: &str) -> bool {
+    if expected.is_empty() {
+        return true;
+    }
+    let a = expected.as_bytes();
+    let b = got.as_bytes();
+    let mut diff = a.len() ^ b.len();
+    let n = a.len().max(b.len());
+    for i in 0..n {
+        let x = if i < a.len() { a[i] } else { 0 };
+        let y = if i < b.len() { b[i] } else { 0 };
+        diff |= (x ^ y) as usize;
+    }
+    diff == 0
+}
+
+fn next_request_id(headers: &HashMap<String, String>) -> String {
+    if let Some(raw) = headers.get("x-request-id") {
+        let id = raw.trim();
+        if is_safe_id(id) {
+            return id.to_string();
+        }
+    }
+    let n = REQ_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("{n:x}")
+}
+
+fn is_safe_id(id: &str) -> bool {
+    (1..=128).contains(&id.len())
+        && id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
+fn want_close(version: &str, headers: &HashMap<String, String>, served: usize) -> bool {
+    if served >= MAX_KEEPALIVE_REQUESTS {
+        return true;
+    }
+    let conn = headers.get("connection").map(|v| v.to_ascii_lowercase()).unwrap_or_default();
+    let has = |name: &str| conn.split(',').any(|p| p.trim() == name);
+    if has("close") {
+        return true;
+    }
+    if has("keep-alive") {
+        return false;
+    }
+    // HTTP/1.1 defaults to keep-alive; HTTP/1.0 defaults to close.
+    version != "HTTP/1.1"
+}
+
+/// Parse one HTTP/1.1 request. A declared body larger than [`MAX_BODY_BYTES`]
+/// or a header block larger than [`MAX_HEADER_BYTES`] is rejected before the
+/// oversized bytes are buffered. Chunked bodies are refused.
+fn read_request<R: Read>(stream: &mut R) -> Result<HttpRequest, ReadFail> {
     let mut buf = Vec::new();
-    let mut tmp = [0u8; 4096];
-    // Read until we have the full header block.
+    let mut tmp = [0u8; 1024];
     let header_end = loop {
         if let Some(pos) = find_subslice(&buf, b"\r\n\r\n") {
+            if pos > MAX_HEADER_BYTES {
+                return Err(ReadFail::Status(431, "headers too large"));
+            }
             break pos;
         }
-        let n = stream.read(&mut tmp)?;
+        if buf.len() > MAX_HEADER_BYTES {
+            return Err(ReadFail::Status(431, "headers too large"));
+        }
+        let n = stream.read(&mut tmp).map_err(ReadFail::Io)?;
         if n == 0 {
-            break buf.len();
+            return Err(ReadFail::Io(std::io::Error::new(ErrorKind::UnexpectedEof, "eof")));
         }
         buf.extend_from_slice(&tmp[..n]);
-        if buf.len() > 8 * 1024 * 1024 {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "headers too large"));
-        }
     };
 
     let head = String::from_utf8_lossy(&buf[..header_end]).to_string();
@@ -320,6 +581,7 @@ fn read_request(
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
     let path = parts.next().unwrap_or("").to_string();
+    let version = parts.next().unwrap_or("HTTP/1.1").to_string();
 
     let mut headers = HashMap::new();
     for line in lines {
@@ -328,35 +590,52 @@ fn read_request(
         }
     }
 
-    let content_len: usize = headers.get("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let mut body = buf[(header_end + 4).min(buf.len())..].to_vec();
+    if headers
+        .get("transfer-encoding")
+        .map(|v| v.to_ascii_lowercase().contains("chunked"))
+        .unwrap_or(false)
+    {
+        return Err(ReadFail::Status(411, "chunked transfer encoding is not supported"));
+    }
+    let content_len: usize = match headers.get("content-length") {
+        Some(v) => v.parse().map_err(|_| ReadFail::Status(400, "bad content-length"))?,
+        None => 0,
+    };
+    if content_len > MAX_BODY_BYTES {
+        return Err(ReadFail::Status(413, "body too large"));
+    }
+
+    let mut body = buf[header_end + 4..].to_vec();
     while body.len() < content_len {
-        let n = stream.read(&mut tmp)?;
+        let n = stream.read(&mut tmp).map_err(ReadFail::Io)?;
         if n == 0 {
-            break;
+            return Err(ReadFail::Io(std::io::Error::new(ErrorKind::UnexpectedEof, "truncated body")));
         }
-        body.extend_from_slice(&tmp[..n]);
+        let need = content_len - body.len();
+        body.extend_from_slice(&tmp[..n.min(need)]);
     }
     body.truncate(content_len);
-    Ok((method, path, headers, body))
+    Ok(HttpRequest { method, path, version, headers, body })
 }
 
-fn write_json(stream: &mut TcpStream, status: u16, body: &[u8]) -> std::io::Result<()> {
-    write_response(stream, status, "application/json", body)
-}
-
-fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body: &[u8]) -> std::io::Result<()> {
+fn write_http(stream: &mut Net, status: u16, body: &[u8], req_id: &str, keepalive: bool) -> std::io::Result<()> {
     let reason = match status {
         200 => "OK",
         400 => "Bad Request",
         401 => "Unauthorized",
         404 => "Not Found",
+        411 => "Length Required",
+        413 => "Payload Too Large",
+        431 => "Request Header Fields Too Large",
         503 => "Service Unavailable",
         _ => "Internal Server Error",
     };
+    let conn = if keepalive { "keep-alive" } else { "close" };
+    let content_type = if body == b"ok" { "text/plain" } else { "application/json" };
     let header = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: {conn}\r\nKeep-Alive: timeout={}\r\nX-Request-Id: {req_id}\r\n\r\n",
+        body.len(),
+        KEEPALIVE_IDLE.as_secs(),
     );
     stream.write_all(header.as_bytes())?;
     stream.write_all(body)?;
@@ -381,4 +660,69 @@ fn query_param(path: &str, key: &str) -> Option<String> {
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+#[cfg(test)]
+mod http_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn rejects_oversized_body_before_buffering_it() {
+        let req = b"POST /engine/commands HTTP/1.1\r\nHost: x\r\nContent-Length: 999999\r\n\r\n";
+        match read_request(&mut Cursor::new(&req[..])) {
+            Err(ReadFail::Status(413, _)) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_oversized_headers() {
+        let mut req = b"GET /healthz HTTP/1.1\r\n".to_vec();
+        req.extend(std::iter::repeat(b'A').take(9000));
+        req.extend(b"\r\n\r\n");
+        match read_request(&mut Cursor::new(req)) {
+            Err(ReadFail::Status(431, _)) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_chunked_bodies() {
+        let req = b"POST /x HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
+        match read_request(&mut Cursor::new(&req[..])) {
+            Err(ReadFail::Status(411, _)) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_small_request() {
+        let req = b"POST /engine/commands HTTP/1.1\r\nContent-Length: 2\r\nX-Request-Id: abc-1\r\n\r\n{}";
+        let got = read_request(&mut Cursor::new(&req[..])).unwrap();
+        assert_eq!(got.method, "POST");
+        assert_eq!(got.path, "/engine/commands");
+        assert_eq!(got.version, "HTTP/1.1");
+        assert_eq!(got.body, b"{}");
+        assert_eq!(got.headers.get("x-request-id").map(String::as_str), Some("abc-1"));
+        assert!(!want_close(&got.version, &got.headers, 1));
+    }
+
+    #[test]
+    fn http10_closes_unless_keepalive() {
+        let mut h = HashMap::new();
+        assert!(want_close("HTTP/1.0", &h, 1));
+        h.insert("connection".into(), "keep-alive".into());
+        assert!(!want_close("HTTP/1.0", &h, 1));
+        assert!(want_close("HTTP/1.1", &h, MAX_KEEPALIVE_REQUESTS));
+    }
+
+    #[test]
+    fn token_compare_rejects_a_prefix() {
+        assert!(token_ok("", "anything"));
+        assert!(token_ok("secret", "secret"));
+        assert!(!token_ok("secret", "secre"));
+        assert!(!token_ok("secret", "secretX"));
+        assert!(!token_ok("secret", ""));
+    }
 }

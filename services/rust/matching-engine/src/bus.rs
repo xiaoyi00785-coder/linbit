@@ -21,6 +21,12 @@ pub trait EventSink: Send + Sync {
     fn publish(&self, event: &EngineEvent);
 }
 
+/// Publishes one result-stream entry (the settlement log), as opposed to the
+/// trade/depth [`EngineEvent`]s. The order service consumes these.
+pub trait ReportPublisher: Send + Sync {
+    fn publish_report(&self, entry: &crate::types::ReportEntry);
+}
+
 /// Collects events in memory. Test-only convenience.
 #[derive(Default)]
 pub struct InMemorySink {
@@ -85,34 +91,177 @@ impl EventSink for MultiSink {
     }
 }
 
-// --- Kafka skeleton (production path) ---------------------------------------
+// --- Kafka -------------------------------------------------------------------
 //
-// Compiled only with `--features kafka`. This is deliberately an interface
-// skeleton: it shows exactly where a Kafka producer would serialize and emit
-// each event, without pulling in rdkafka or requiring a broker to build/test.
-#[cfg(feature = "kafka")]
-pub struct KafkaSink {
-    pub brokers: String,
-    pub topic: String,
+// One background producer. Matching threads only enqueue. The result stream
+// (settlement) and the trade/depth events go to two topics. A full queue drops
+// the record and logs: the on-disk report log is still the source of truth and
+// the order service gap-fills over HTTP.
+
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
+use std::thread;
+use std::time::Duration;
+
+use rskafka::client::partition::{Compression, UnknownTopicHandling};
+use rskafka::client::{ClientBuilder, SaslConfig};
+use rskafka::record::Record;
+
+enum BusMsg {
+    Report { key: Vec<u8>, body: Vec<u8> },
+    Event { key: Vec<u8>, body: Vec<u8> },
 }
 
-#[cfg(feature = "kafka")]
-impl KafkaSink {
-    pub fn new(brokers: String, topic: String) -> Self {
-        Self { brokers, topic }
+/// Kafka producer for engine output. Clone is cheap (it clones the queue sender).
+#[derive(Clone)]
+pub struct KafkaBus {
+    tx: SyncSender<BusMsg>,
+}
+
+impl KafkaBus {
+    /// Spawn the producer. It retries the broker forever; a down broker does
+    /// not stop the engine. `brokers` is a comma-separated list. SASL PLAIN is
+    /// used when both `KAFKA_SASL_USERNAME` and `KAFKA_SASL_PASSWORD` are set.
+    pub fn start(brokers: &str, reports_topic: String, events_topic: String) -> Result<Self, String> {
+        let list: Vec<String> = brokers
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if list.is_empty() {
+            return Err("KAFKA_BROKERS is empty".into());
+        }
+        let (tx, rx) = sync_channel(8192);
+        let sasl = match (std::env::var("KAFKA_SASL_USERNAME"), std::env::var("KAFKA_SASL_PASSWORD")) {
+            (Ok(u), Ok(p)) if !u.is_empty() => {
+                Some(SaslConfig::Plain(rskafka::client::Credentials { username: u, password: p }))
+            }
+            _ => None,
+        };
+        thread::Builder::new()
+            .name("kafka-produce".into())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("kafka runtime");
+                rt.block_on(produce_loop(list, reports_topic, events_topic, sasl, rx));
+            })
+            .map_err(|e| format!("spawn kafka producer: {e}"))?;
+        Ok(Self { tx })
+    }
+
+    fn enqueue(&self, msg: BusMsg) {
+        match self.tx.try_send(msg) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                eprintln!("[kafka] queue full; HTTP result stream remains the source of truth");
+            }
+            Err(TrySendError::Disconnected(_)) => eprintln!("[kafka] producer stopped"),
+        }
     }
 }
 
-#[cfg(feature = "kafka")]
-impl EventSink for KafkaSink {
+impl ReportPublisher for KafkaBus {
+    fn publish_report(&self, entry: &crate::types::ReportEntry) {
+        let Ok(body) = serde_json::to_vec(entry) else { return };
+        let key = entry.report.symbol.as_bytes().to_vec();
+        self.enqueue(BusMsg::Report { key, body });
+    }
+}
+
+impl EventSink for KafkaBus {
     fn publish(&self, event: &EngineEvent) {
-        // Production: serialize `event` and produce to `self.topic` on
-        // `self.brokers` keyed by symbol so a symbol's events stay ordered,
-        // e.g. with rdkafka's FutureProducer. Left unimplemented so the crate
-        // builds without a broker.
-        let _ = (event, &self.brokers, &self.topic);
-        unimplemented!("wire an rdkafka producer here for the Kafka deployment");
+        let Ok(body) = serde_json::to_vec(event) else { return };
+        let key = match event {
+            EngineEvent::Trade(t) => t.symbol.as_bytes().to_vec(),
+            EngineEvent::Depth(d) => d.symbol.as_bytes().to_vec(),
+        };
+        self.enqueue(BusMsg::Event { key, body });
     }
+}
+
+async fn produce_loop(
+    brokers: Vec<String>,
+    reports_topic: String,
+    events_topic: String,
+    sasl: Option<SaslConfig>,
+    rx: Receiver<BusMsg>,
+) {
+    loop {
+        match connect(&brokers, &reports_topic, &events_topic, sasl.clone()).await {
+            Ok((reports, events)) => {
+                if !drain(&reports, &events, &rx).await {
+                    return; // sender dropped; process is exiting
+                }
+            }
+            Err(e) => {
+                eprintln!("[kafka] connect: {e}");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+    }
+}
+
+async fn connect(
+    brokers: &[String],
+    reports_topic: &str,
+    events_topic: &str,
+    sasl: Option<SaslConfig>,
+) -> Result<(rskafka::client::partition::PartitionClient, rskafka::client::partition::PartitionClient), String> {
+    let mut b = ClientBuilder::new(brokers.to_vec()).client_id("linbit-matching-engine");
+    if let Some(sasl) = sasl {
+        b = b.sasl_config(sasl);
+    }
+    let client = b.build().await.map_err(|e| e.to_string())?;
+    // Partition 0 keeps one symbol's records ordered because every record for a
+    // topic shares that partition. The order service reads every partition.
+    let reports = client
+        .partition_client(reports_topic, 0, UnknownTopicHandling::Error)
+        .await
+        .map_err(|e| e.to_string())?;
+    let events = client
+        .partition_client(events_topic, 0, UnknownTopicHandling::Error)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((reports, events))
+}
+
+/// Returns false when the queue is closed.
+async fn drain(
+    reports: &rskafka::client::partition::PartitionClient,
+    events: &rskafka::client::partition::PartitionClient,
+    rx: &Receiver<BusMsg>,
+) -> bool {
+    loop {
+        let msg = match rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(m) => m,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return false,
+        };
+        let (client, key, body) = match msg {
+            BusMsg::Report { key, body } => (reports, key, body),
+            BusMsg::Event { key, body } => (events, key, body),
+        };
+        let record = Record {
+            key: Some(key),
+            value: Some(body),
+            headers: Default::default(),
+            timestamp: kafka_now(),
+        };
+        if let Err(e) = client.produce(vec![record], Compression::NoCompression).await {
+            eprintln!("[kafka] produce: {e}");
+            return true; // reconnect; the record was already taken off the queue
+        }
+    }
+}
+
+fn kafka_now() -> rskafka::chrono::DateTime<rskafka::chrono::Utc> {
+    use rskafka::chrono::{DateTime, TimeZone, Utc};
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    Utc.timestamp_millis_opt(ms).single().unwrap_or(DateTime::UNIX_EPOCH)
 }
 
 /// Masks the password of a `scheme://user:pass@host` URL before it is logged.

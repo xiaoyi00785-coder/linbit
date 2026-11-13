@@ -55,6 +55,29 @@ type adlCand struct {
 	score decimal.Decimal
 }
 
+// opposingUsers lists the users deleverage will touch, without locking rows,
+// so the caller can take their advisory locks before FOR UPDATE.
+func opposingUsers(ctx context.Context, q queryer, sym string, sign int, exclude string) ([]string, error) {
+	cmp := "qty > 0"
+	if sign < 0 {
+		cmp = "qty < 0"
+	}
+	rows, err := q.QueryContext(ctx, `SELECT user_id FROM fut_positions WHERE symbol=$1 AND `+cmp+` AND user_id <> $2 AND user_id NOT LIKE 'system:%' ORDER BY user_id`, sym, exclude)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 func (s *Server) adlCandidates(ctx context.Context, q queryer, sym string, sign int, exclude string, mark decimal.Decimal, lock bool) ([]adlCand, error) {
 	cmp := "qty > 0"
 	if sign < 0 {
@@ -86,6 +109,13 @@ func (s *Server) adlCandidates(ctx context.Context, q queryer, sym string, sign 
 // positions and returns the quantity it could not place (taken over by the fund).
 func (s *Server) deleverage(ctx context.Context, tx *sql.Tx, uid string, c Contract, p Position, px, mark decimal.Decimal) (decimal.Decimal, error) {
 	rem := p.Qty.Abs()
+	ids, err := opposingUsers(ctx, tx, c.Symbol, -p.Qty.Sign(), uid)
+	if err != nil {
+		return rem, err
+	}
+	if err := lockFutUsers(ctx, tx, append(ids, uid)...); err != nil {
+		return rem, err
+	}
 	cands, err := s.adlCandidates(ctx, tx, c.Symbol, -p.Qty.Sign(), uid, mark, true)
 	if err != nil {
 		return rem, err
