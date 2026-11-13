@@ -141,6 +141,10 @@ func (s *Store) lockMove(ctx context.Context, acct, userID, asset string, amount
 		d.free, d.locked, txType = amount, amount.Neg(), "unfreeze"
 		lines[0].Direction, lines[1].Direction = "credit", "debit"
 	}
+	// Idempotency: claim the ref before touching balances.
+	if err := claimRef(ctx, tx, ref, txType, userID, asset, amount); err != nil {
+		return err
+	}
 	if err := s.applyDeltas(ctx, tx, []balanceDelta{d}); err != nil {
 		return err
 	}

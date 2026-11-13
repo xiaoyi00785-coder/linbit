@@ -27,7 +27,46 @@ use crate::types::Command;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WalRecord {
     pub seq: u64,
+    /// Engine time (unix ms) the command was admitted at. Recorded so replay
+    /// reproduces the result stream (and the monotonic engine clock) exactly.
+    /// Records written before this field existed read as 0.
+    #[serde(default)]
+    pub ts: u64,
     pub command: Command,
+}
+
+/// Truncate `dir/wal.log` after its last complete, parseable record. A torn
+/// tail (crash mid-write) would otherwise sit in front of every record appended
+/// after restart, and `read_all` stops at the first bad line — silently
+/// dropping acknowledged commands on the *next* recovery.
+pub fn repair(dir: &Path) -> std::io::Result<()> {
+    repair_jsonl::<WalRecord>(&dir.join("wal.log"))
+}
+
+/// Generic JSON-lines tail repair shared by the WAL and the report log.
+pub fn repair_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> std::io::Result<()> {
+    let bytes = match fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let mut good = 0usize;
+    let mut start = 0usize;
+    while start < bytes.len() {
+        let Some(nl) = bytes[start..].iter().position(|b| *b == b'\n') else { break };
+        let line = &bytes[start..start + nl];
+        if !line.iter().all(|b| b.is_ascii_whitespace()) && serde_json::from_slice::<T>(line).is_err() {
+            break;
+        }
+        start += nl + 1;
+        good = start;
+    }
+    if good < bytes.len() {
+        let f = OpenOptions::new().write(true).open(path)?;
+        f.set_len(good as u64)?;
+        f.sync_all()?;
+    }
+    Ok(())
 }
 
 /// Append-only write-ahead log backed by a single file.

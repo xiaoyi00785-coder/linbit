@@ -32,6 +32,10 @@ type EngineCommand struct {
 	Price         string `json:"price,omitempty"`
 	Quantity      string `json:"quantity,omitempty"`
 	QuoteOrderQty string `json:"quoteOrderQty,omitempty"`
+	// DeadlineMs is the engine-clock deadline (unix ms). A place that reaches
+	// the matching thread after this instant is rejected as `expired` before
+	// the WAL write so it can never execute later. 0 = no deadline.
+	DeadlineMs int64 `json:"deadlineMs,omitempty"`
 }
 
 // EngineTrade mirrors the engine's Trade event.

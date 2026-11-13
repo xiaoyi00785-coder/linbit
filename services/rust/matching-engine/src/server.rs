@@ -16,8 +16,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::book::SymbolEngine;
-use crate::types::{Command, DepthEvent, ExecReport};
+use serde::Deserialize;
+
+use crate::book::{StreamPage, SymbolEngine};
+use crate::types::{Command, DepthEvent, ExecReport, RestingView};
 
 /// WAL durability policy for the matching loops.
 #[derive(Clone, Copy, Debug)]
@@ -35,12 +37,27 @@ pub enum CommitMode {
 enum Req {
     Cmd(Command),
     Depth,
+    /// Result-stream page after `after`, at most `limit` entries.
+    Reports { after: u64, limit: usize },
+    /// Acknowledge stream entries up to and including this seq.
+    Ack(u64),
+    /// All resting orders (reconciliation only).
+    Orders,
 }
 
 enum Resp {
     Report(Box<ExecReport>),
     Depth(Box<DepthEvent>),
-    Error(String),
+    Page(Box<StreamPage>),
+    Orders(Vec<RestingView>),
+    Acked,
+    /// The request itself is invalid (e.g. unknown symbol): it was definitely
+    /// NOT applied, so callers may treat it as a rejection.
+    BadRequest(String),
+    /// The outcome is unknown (matching thread gone, no reply, I/O failure).
+    /// Callers must NOT treat this as a rejection; the result stream is the
+    /// source of truth for whether a command executed.
+    Unavailable(String),
 }
 
 struct Job {
@@ -78,13 +95,29 @@ impl Dispatcher {
 
     fn submit(&self, symbol: &str, req: Req) -> Resp {
         let Some(tx) = self.senders.get(symbol) else {
-            return Resp::Error(format!("unknown symbol {symbol}"));
+            return Resp::BadRequest(format!("unknown symbol {symbol}"));
         };
         let (rtx, rrx) = sync_channel(1);
         if tx.send(Job { req, reply: rtx }).is_err() {
-            return Resp::Error("matching thread gone".into());
+            return Resp::Unavailable("matching thread gone".into());
         }
-        rrx.recv().unwrap_or_else(|_| Resp::Error("no reply".into()))
+        rrx.recv().unwrap_or_else(|_| Resp::Unavailable("no reply".into()))
+    }
+}
+
+/// Serve every non-command request on the symbol's matching thread, so reads
+/// observe a consistent engine state (and `stream_page` advances the engine
+/// clock on the same thread that stamps commands).
+fn handle_query(engine: &mut SymbolEngine, req: Req) -> Resp {
+    match req {
+        Req::Depth => Resp::Depth(Box::new(engine.depth_snapshot())),
+        Req::Reports { after, limit } => Resp::Page(Box::new(engine.stream_page(after, limit))),
+        Req::Ack(seq) => match engine.ack_reports(seq) {
+            Ok(()) => Resp::Acked,
+            Err(e) => Resp::Unavailable(format!("ack failed: {e}")),
+        },
+        Req::Orders => Resp::Orders(engine.resting_orders()),
+        Req::Cmd(_) => Resp::BadRequest("not a query".into()),
     }
 }
 
@@ -94,7 +127,7 @@ fn run_per_command(mut engine: SymbolEngine, rx: Receiver<Job>) {
     for job in rx {
         let resp = match job.req {
             Req::Cmd(cmd) => Resp::Report(Box::new(engine.process(&cmd))),
-            Req::Depth => Resp::Depth(Box::new(engine.depth_snapshot())),
+            other => handle_query(&mut engine, other),
         };
         let _ = job.reply.send(resp);
     }
@@ -140,10 +173,9 @@ fn process_batch_jobs(engine: &mut SymbolEngine, jobs: Vec<Job>) {
                 cmds.push(cmd);
                 replies.push(job.reply);
             }
-            Req::Depth => {
+            other => {
                 flush_command_batch(engine, &mut cmds, &mut replies);
-                let dep = engine.depth_snapshot();
-                let _ = job.reply.send(Resp::Depth(Box::new(dep)));
+                let _ = job.reply.send(handle_query(engine, other));
             }
         }
     }
@@ -198,43 +230,66 @@ fn handle_conn(mut stream: TcpStream, token: &str, d: &Dispatcher) -> std::io::R
         return write_json(&mut stream, 401, br#"{"error":"unauthorized"}"#);
     }
 
+    let symbol = query_param(&path, "symbol").unwrap_or_default();
     match (method.as_str(), path_only(&path)) {
         ("POST", "/engine/commands") => {
             let cmd: Command = match serde_json::from_slice(&body) {
                 Ok(c) => c,
-                Err(e) => {
-                    let msg = format!(r#"{{"error":"bad command: {e}"}}"#);
-                    return write_json(&mut stream, 400, msg.as_bytes());
-                }
+                Err(e) => return write_json(&mut stream, 400, &err_json(&format!("bad command: {e}"))),
             };
             let symbol = cmd.symbol().to_string();
             match d.submit(&symbol, Req::Cmd(cmd)) {
-                Resp::Report(r) => {
-                    let bytes = serde_json::to_vec(&*r).unwrap_or_default();
-                    write_json(&mut stream, 200, &bytes)
-                }
-                Resp::Error(e) => {
-                    let msg = format!(r#"{{"error":"{e}"}}"#);
-                    write_json(&mut stream, 400, msg.as_bytes())
-                }
-                _ => write_json(&mut stream, 500, br#"{"error":"bad response"}"#),
+                Resp::Report(r) => write_json(&mut stream, 200, &serde_json::to_vec(&*r).unwrap_or_default()),
+                other => write_failure(&mut stream, other, 400),
             }
         }
-        ("GET", "/engine/depth") => {
-            let symbol = query_param(&path, "symbol").unwrap_or_default();
-            match d.submit(&symbol, Req::Depth) {
-                Resp::Depth(dep) => {
-                    let bytes = serde_json::to_vec(&*dep).unwrap_or_default();
-                    write_json(&mut stream, 200, &bytes)
-                }
-                Resp::Error(e) => {
-                    let msg = format!(r#"{{"error":"{e}"}}"#);
-                    write_json(&mut stream, 404, msg.as_bytes())
-                }
-                _ => write_json(&mut stream, 500, br#"{"error":"bad response"}"#),
+        ("GET", "/engine/depth") => match d.submit(&symbol, Req::Depth) {
+            Resp::Depth(dep) => write_json(&mut stream, 200, &serde_json::to_vec(&*dep).unwrap_or_default()),
+            other => write_failure(&mut stream, other, 404),
+        },
+        ("GET", "/engine/reports") => {
+            let after: u64 = query_param(&path, "after").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let limit: usize = query_param(&path, "limit").and_then(|v| v.parse().ok()).unwrap_or(500usize).clamp(1, 2000);
+            match d.submit(&symbol, Req::Reports { after, limit }) {
+                Resp::Page(p) => write_json(&mut stream, 200, &serde_json::to_vec(&*p).unwrap_or_default()),
+                other => write_failure(&mut stream, other, 404),
             }
         }
+        ("POST", "/engine/reports/ack") => {
+            let ack: AckBody = match serde_json::from_slice(&body) {
+                Ok(a) => a,
+                Err(e) => return write_json(&mut stream, 400, &err_json(&format!("bad ack: {e}"))),
+            };
+            match d.submit(&ack.symbol, Req::Ack(ack.seq)) {
+                Resp::Acked => write_json(&mut stream, 200, br#"{"ok":true}"#),
+                other => write_failure(&mut stream, other, 400),
+            }
+        }
+        ("GET", "/engine/orders") => match d.submit(&symbol, Req::Orders) {
+            Resp::Orders(o) => write_json(&mut stream, 200, &serde_json::to_vec(&o).unwrap_or_default()),
+            other => write_failure(&mut stream, other, 404),
+        },
         _ => write_json(&mut stream, 404, br#"{"error":"not found"}"#),
+    }
+}
+
+#[derive(Deserialize)]
+struct AckBody {
+    symbol: String,
+    seq: u64,
+}
+
+fn err_json(msg: &str) -> Vec<u8> {
+    serde_json::json!({ "error": msg }).to_string().into_bytes()
+}
+
+/// Map a non-success response to HTTP: a definite rejection gets `bad_status`
+/// (4xx), an unknown outcome gets 503 so callers never mistake it for a reject.
+fn write_failure(stream: &mut TcpStream, resp: Resp, bad_status: u16) -> std::io::Result<()> {
+    match resp {
+        Resp::BadRequest(e) => write_json(stream, bad_status, &err_json(&e)),
+        Resp::Unavailable(e) => write_json(stream, 503, &err_json(&e)),
+        _ => write_json(stream, 500, br#"{"error":"bad response"}"#),
     }
 }
 
@@ -296,6 +351,7 @@ fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body:
         400 => "Bad Request",
         401 => "Unauthorized",
         404 => "Not Found",
+        503 => "Service Unavailable",
         _ => "Internal Server Error",
     };
     let header = format!(

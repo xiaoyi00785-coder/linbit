@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
@@ -139,8 +140,10 @@ type placeError struct {
 
 func perrf(status int, code, msg string) *placeError { return &placeError{status, code, msg} }
 
-// placeOrder validates, freezes, persists, submits and settles one order. It is
-// shared by POST /spot/orders and the conditional-order trigger worker.
+// placeOrder validates, freezes, persists, and submits one order to the
+// matching engine. Settlement is driven asynchronously by the stream consumer;
+// this path only determines whether the order was definitively rejected (400)
+// or is live/ambiguous (return the order in its initial state).
 func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRequest) (*orderDTO, *placeError) {
 	o, sym, errCode, errMsg := s.buildOrder(ctx, userID, req)
 	if errCode != "" {
@@ -153,8 +156,13 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 		return nil, perrf(http.StatusBadRequest, errCode, errMsg)
 	}
 
-	// Freeze funds before the order can match, so a fill can never settle against
-	// money the user does not have. Reject on insufficient balance.
+	// Set a 10-second engine-clock deadline. If the place doesn't reach the
+	// engine before this instant the engine rejects it as `expired` before
+	// any WAL write, so it can never execute later.
+	o.EngineDeadline = time.Now().Add(10 * time.Second).UnixMilli()
+
+	// Freeze funds before the order can match, so a fill can never settle
+	// against money the user does not have. Reject on insufficient balance.
 	if err := s.asset.Freeze(ctx, userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID); err != nil {
 		if errors.Is(err, ErrInsufficient) {
 			return nil, perrf(http.StatusBadRequest, "INSUFFICIENT_BALANCE", "余额不足")
@@ -165,19 +173,24 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 
 	if err := s.store.InsertOrder(ctx, o); err != nil {
 		log.Printf("place: insert order: %v", err)
-		// Best-effort release of the funds we just froze.
 		_ = s.asset.Unfreeze(ctx, userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID)
 		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
 
-	// Submit to the matching engine and settle whatever it reports.
+	// Submit to the matching engine. A 400 response means the order was
+	// definitively rejected (never applied); anything else leaves the outcome
+	// ambiguous — the stream consumer will resolve it.
 	rep, err := s.engine.Submit(ctx, s.placeCommand(o))
 	if err != nil {
-		log.Printf("place: engine submit: %v", err)
-		// The engine never saw the order (or we never saw its reply): unwind.
-		_ = s.store.UpdateFill(ctx, o.OrderID, decimal.Zero, "rejected")
-		s.releaseLeftover(ctx, o)
-		return nil, perrf(http.StatusBadGateway, "ENGINE_UNAVAILABLE", "撮合引擎不可用")
+		// Transport error or 5xx: outcome unknown, leave the order as `new`.
+		// The stream consumer will confirm or expire it.
+		log.Printf("place: engine submit (ambiguous): %v", err)
+		fresh, _ := s.store.GetOrder(ctx, userID, o.OrderID)
+		if fresh == nil {
+			fresh = o
+		}
+		dto := toOrderDTO(fresh, sym)
+		return &dto, nil
 	}
 
 	if rep.Status == "rejected" {
@@ -185,19 +198,24 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 		if rep.RejectReason != nil {
 			reason = *rep.RejectReason
 		}
-		_ = s.store.UpdateFill(ctx, o.OrderID, decimal.Zero, "rejected")
-		s.releaseLeftover(ctx, o)
+		_ = s.store.RankUpdateFill(ctx, o.OrderID, decimal.Zero, "rejected")
+		won, _ := s.store.ClaimRelease(ctx, o.OrderID)
+		if won {
+			consumed, _ := s.store.Consumed(ctx, o.OrderID, o.Side)
+			leftover := o.FrozenAmount.Sub(consumed)
+			if leftover.Sign() > 0 {
+				_ = s.asset.Unfreeze(ctx, userID, o.FrozenAsset, leftover, "order:"+o.OrderID+":leftover")
+			}
+		}
 		if strings.Contains(reason, "post_only") {
 			return nil, perrf(http.StatusBadRequest, "POST_ONLY_REJECTED", "只做 Maker 订单会立即成交，已被拒绝")
 		}
 		return nil, perrf(http.StatusBadRequest, "ORDER_REJECTED", reason)
 	}
 
-	if err := s.applyReport(ctx, o, sym, rep); err != nil {
-		log.Printf("place: apply report: %v", err)
-		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "成交结算失败")
-	}
-
+	// A non-rejection response (new, partially_filled, filled, canceled) means
+	// the engine has applied the order. Settlement arrives via the stream; just
+	// return the current state.
 	fresh, err := s.store.GetOrder(ctx, userID, o.OrderID)
 	if err != nil {
 		log.Printf("place: reload order: %v", err)
@@ -355,11 +373,9 @@ func (s *Server) placeCommand(o *Order) EngineCommand {
 		Type:        o.Type,
 		TimeInForce: o.TimeInForce,
 		Quantity:    o.Quantity.String(),
+		DeadlineMs:  o.EngineDeadline,
 	}
 	if o.Type == "market" && o.Side == "buy" && !o.HasQuoteQty && o.HasPrice {
-		// Market buy by base quantity: the engine prices market buys by quote
-		// budget only, so it is sent as an IOC limit capped at the protection
-		// price (best ask + slippage). Unfilled remainder is released.
 		cmd.Type = "limit"
 		cmd.TimeInForce = "IOC"
 	}
@@ -374,6 +390,12 @@ func (s *Server) placeCommand(o *Order) EngineCommand {
 
 // ---- cancel ----
 
+// handleCancel submits a cancel to the engine. The engine's cancel report
+// arrives via the result stream and the stream consumer settles it; this
+// handler just validates the order is live and forwards the command.
+// A 502 means the engine is unreachable; the order stays open and may be
+// retried. The cancel report from the stream will update status and release
+// leftover funds atomically.
 func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request, userID string) {
 	orderID := r.PathValue("orderId")
 	o, err := s.store.GetOrder(r.Context(), userID, orderID)
@@ -391,25 +413,15 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request, userID str
 		return
 	}
 
-	rep, err := s.engine.Submit(r.Context(), EngineCommand{Cmd: "cancel", Symbol: o.Symbol, OrderID: orderID})
+	_, err = s.engine.Submit(r.Context(), EngineCommand{Cmd: "cancel", Symbol: o.Symbol, OrderID: orderID})
 	if err != nil {
 		log.Printf("cancel: engine submit: %v", err)
 		common.WriteError(w, http.StatusBadGateway, "ENGINE_UNAVAILABLE", "撮合引擎不可用")
 		return
 	}
-	// Whether the engine still held the order or not, mark it canceled locally and
-	// release the leftover frozen funds (exactly once).
-	filled := o.FilledQuantity
-	if f, err := decimal.NewFromString(rep.FilledQuantity); err == nil && f.GreaterThan(filled) {
-		filled = f
-	}
-	if err := s.store.UpdateFill(r.Context(), orderID, filled, "canceled"); err != nil {
-		log.Printf("cancel: update: %v", err)
-		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
-		return
-	}
-	s.releaseLeftover(r.Context(), o)
-
+	// The engine accepted the cancel; the stream consumer will deliver the
+	// cancel report (with any final fills) and release the leftover. Return
+	// the current order state so the caller can poll for the final status.
 	fresh, err := s.store.GetOrder(r.Context(), userID, orderID)
 	if err != nil {
 		log.Printf("cancel: reload: %v", err)
@@ -494,117 +506,6 @@ func (s *Server) symbolMap(ctx context.Context) (map[string]*SymbolConfig, error
 		m[syms[i].Symbol] = &syms[i]
 	}
 	return m, nil
-}
-
-// ---- settlement ----
-
-// applyReport settles every fill in the engine report and updates order state.
-// Each trade is settled atomically by the asset service and recorded locally;
-// both steps are idempotent on tradeId so re-delivery is harmless.
-func (s *Server) applyReport(ctx context.Context, taker *Order, sym *SymbolConfig, rep *ExecReport) error {
-	for _, t := range rep.Trades {
-		price, err := decimal.NewFromString(t.Price)
-		if err != nil {
-			return err
-		}
-		qty, err := decimal.NewFromString(t.Quantity)
-		if err != nil {
-			return err
-		}
-		quoteAmount := price.Mul(qty)
-
-		// Resolve buyer/seller and their maker/taker roles from the trade.
-		buyerIsTaker := t.TakerSide == "buy"
-		buyerUser, sellerUser := t.MakerUserID, t.TakerUserID
-		buyerOrder, sellerOrder := t.MakerOrderID, t.TakerOrderID
-		buyerRole, sellerRole := "maker", "taker"
-		if buyerIsTaker {
-			buyerUser, sellerUser = t.TakerUserID, t.MakerUserID
-			buyerOrder, sellerOrder = t.TakerOrderID, t.MakerOrderID
-			buyerRole, sellerRole = "taker", "maker"
-		}
-		buyerFeeBase := qty.Mul(s.userFeeRate(buyerUser, buyerRole))
-		sellerFeeQuote := quoteAmount.Mul(s.userFeeRate(sellerUser, sellerRole))
-
-		if err := s.asset.Settle(ctx, SettleParams{
-			TradeID:        t.TradeID,
-			Base:           sym.Base,
-			Quote:          sym.Quote,
-			BuyerUserID:    buyerUser,
-			SellerUserID:   sellerUser,
-			FeeAccount:     s.cfg.FeeAccount,
-			QuoteAmount:    quoteAmount,
-			BaseQty:        qty,
-			BuyerFeeBase:   buyerFeeBase,
-			SellerFeeQuote: sellerFeeQuote,
-		}); err != nil {
-			return err
-		}
-
-		// Record both sides of the trade (idempotent on (trade_id, order_id)).
-		if err := s.store.InsertTrade(ctx, TradeRow{
-			TradeID: t.TradeID, OrderID: buyerOrder, UserID: buyerUser, Symbol: sym.Symbol,
-			Side: "buy", Price: price, Quantity: qty, Fee: buyerFeeBase, FeeAsset: sym.Base, Role: buyerRole,
-		}); err != nil {
-			return err
-		}
-		if err := s.store.InsertTrade(ctx, TradeRow{
-			TradeID: t.TradeID, OrderID: sellerOrder, UserID: sellerUser, Symbol: sym.Symbol,
-			Side: "sell", Price: price, Quantity: qty, Fee: sellerFeeQuote, FeeAsset: sym.Quote, Role: sellerRole,
-		}); err != nil {
-			return err
-		}
-	}
-
-	// Update resting maker orders touched by this match.
-	for _, u := range rep.MakerUpdates {
-		filled, err := decimal.NewFromString(u.FilledQuantity)
-		if err != nil {
-			return err
-		}
-		if err := s.store.UpdateFill(ctx, u.OrderID, filled, u.Status); err != nil {
-			return err
-		}
-	}
-
-	// Update the taker order and release leftover frozen funds if it is terminal.
-	takerFilled, err := decimal.NewFromString(rep.FilledQuantity)
-	if err != nil {
-		return err
-	}
-	if err := s.store.UpdateFill(ctx, taker.OrderID, takerFilled, rep.Status); err != nil {
-		return err
-	}
-	if terminal(rep.Status) {
-		s.releaseLeftover(ctx, taker)
-	}
-	return nil
-}
-
-// releaseLeftover unfreezes the unspent part of an order's frozen funds, exactly
-// once. The leftover is the frozen amount minus what the order actually consumed
-// across its fills (so a buy that filled at a better price releases the excess).
-func (s *Server) releaseLeftover(ctx context.Context, o *Order) {
-	won, err := s.store.ClaimUnfreeze(ctx, o.OrderID)
-	if err != nil {
-		log.Printf("releaseLeftover: claim: %v", err)
-		return
-	}
-	if !won {
-		return
-	}
-	consumed, err := s.store.Consumed(ctx, o.OrderID, o.Side)
-	if err != nil {
-		log.Printf("releaseLeftover: consumed: %v", err)
-		return
-	}
-	leftover := o.FrozenAmount.Sub(consumed)
-	if leftover.Sign() <= 0 {
-		return
-	}
-	if err := s.asset.Unfreeze(ctx, o.UserID, o.FrozenAsset, leftover, "order:"+o.OrderID+":leftover"); err != nil {
-		log.Printf("releaseLeftover: unfreeze: %v", err)
-	}
 }
 
 // feeRate returns the configured spot fee rate for a maker/taker role.

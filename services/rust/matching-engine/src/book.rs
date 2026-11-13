@@ -5,15 +5,21 @@
 //! no locks. Orders rest in price→time (FIFO) priority: bids are matched from
 //! the highest price, asks from the lowest, and within a price level the oldest
 //! resting order fills first.
+//!
+//! Every WAL-logged command also produces one entry in the symbol's ordered
+//! result stream ([`crate::reports`]), which is what the order service settles
+//! from.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::bus::EventSink;
 use crate::fixed;
+use crate::reports::ReportLog;
 use crate::types::*;
 use crate::wal::{self, Wal, WalRecord};
 
@@ -30,7 +36,7 @@ pub struct RestingOrder {
 }
 
 /// The serializable portion of a book — everything a snapshot needs. Runtime-
-/// only fields (sink, WAL handle) live on [`SymbolEngine`].
+/// only fields (sink, WAL handle, report log) live on [`SymbolEngine`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookState {
     pub symbol: String,
@@ -42,6 +48,10 @@ pub struct BookState {
     /// Price level -> FIFO queue of resting orders.
     pub bids: Vec<(i128, VecDeque<RestingOrder>)>,
     pub asks: Vec<(i128, VecDeque<RestingOrder>)>,
+    /// Engine clock high-water mark (unix ms), so time never runs backwards
+    /// across a restart. Absent in snapshots written before it existed.
+    #[serde(default)]
+    pub last_ts: u64,
 }
 
 /// Matching engine for one symbol.
@@ -56,12 +66,44 @@ pub struct SymbolEngine {
     asks: BTreeMap<i128, VecDeque<RestingOrder>>,
     /// order_id -> (is_bid, price) for O(1) cancel lookups.
     index: HashMap<String, (bool, i128)>,
+    /// Monotonic engine clock (unix ms): deadlines and stream watermarks are
+    /// compared against this, never against the caller's clock.
+    last_ts: u64,
+    reports: ReportLog,
+    /// Test hook: overrides the wall clock.
+    clock: Option<Box<dyn Fn() -> u64 + Send>>,
 
     sink: Arc<dyn EventSink>,
     wal: Option<Wal>,
     dir: Option<PathBuf>,
     snapshot_every: u64,
     since_snapshot: u64,
+}
+
+/// What the result stream looks like right now (`GET /engine/reports`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamPage {
+    pub entries: Vec<ReportEntry>,
+    /// Seq of the last command applied when this page was taken.
+    pub head: u64,
+    /// Engine time when this page was taken. Any place whose deadline is below
+    /// the watermark and that is not in the stream up to `head` will never
+    /// execute: later commands are admitted at engine time ≥ watermark.
+    pub watermark: u64,
+}
+
+fn wall_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// Durability is a hard requirement: if the WAL can't be written or fsynced we
+/// cannot tell what is on disk (a failed fsync may still have persisted some
+/// bytes), so replying — even with a rejection — could contradict what a later
+/// replay does. Stop the process; callers see a dropped connection and treat
+/// the outcome as unknown, which the result stream then resolves.
+fn wal_fatal(symbol: &str, what: &str, e: &std::io::Error) -> ! {
+    eprintln!("[{symbol}] FATAL: {what}: {e}; aborting to keep WAL and replies consistent");
+    std::process::abort();
 }
 
 impl SymbolEngine {
@@ -78,6 +120,9 @@ impl SymbolEngine {
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
             index: HashMap::new(),
+            last_ts: 0,
+            reports: ReportLog::in_memory(),
+            clock: None,
             sink,
             wal: None,
             dir: None,
@@ -87,7 +132,8 @@ impl SymbolEngine {
     }
 
     /// Open a persistent engine rooted at `dir`, recovering from a snapshot and
-    /// replaying the WAL tail if present.
+    /// replaying the WAL tail if present. Result-stream entries missing from the
+    /// report log's tail are regenerated during replay.
     pub fn open(
         dir: PathBuf,
         symbol: &str,
@@ -103,18 +149,47 @@ impl SymbolEngine {
         if let Some(state) = wal::read_snapshot::<BookState>(&dir)? {
             engine.load_state(state);
         }
+        let loaded = ReportLog::open(&dir)?;
+        let fresh = loaded.fresh;
+        engine.reports = loaded.log;
+        let regenerate_after = engine.reports.last_seq();
+
         // Replay any WAL records newer than the snapshot. Replay uses `apply`
         // directly: no WAL re-append, no event emission.
+        wal::repair(&dir)?;
         let snapshot_seq = engine.seq;
+        let mut regenerated = Vec::new();
         for rec in Wal::read_all(&dir)? {
             if rec.seq > snapshot_seq {
                 engine.seq = rec.seq;
+                engine.last_ts = engine.last_ts.max(rec.ts);
                 let mut touched = Vec::new();
-                let _ = engine.apply(&rec.command, &mut touched);
+                let report = engine.apply(&rec.command, &mut touched);
+                if !fresh && rec.seq > regenerate_after {
+                    regenerated.push(entry_for(&rec.command, rec.seq, rec.ts, report));
+                }
             }
+        }
+        engine.reports.append(regenerated);
+        if fresh {
+            // First start with the result stream: everything up to here was
+            // already settled through the old synchronous path.
+            engine.reports.adopt_at(engine.seq)?;
         }
         engine.wal = Some(Wal::open(&dir)?);
         Ok(engine)
+    }
+
+    /// Replace the wall clock (tests).
+    pub fn set_clock(&mut self, f: impl Fn() -> u64 + Send + 'static) {
+        self.clock = Some(Box::new(f));
+    }
+
+    /// Advance and return the monotonic engine clock.
+    fn tick(&mut self) -> u64 {
+        let now = self.clock.as_ref().map(|f| f()).unwrap_or_else(wall_ms);
+        self.last_ts = self.last_ts.max(now);
+        self.last_ts
     }
 
     fn load_state(&mut self, s: BookState) {
@@ -124,6 +199,7 @@ impl SymbolEngine {
         self.seq = s.seq;
         self.trade_counter = s.trade_counter;
         self.depth_seq = s.depth_seq;
+        self.last_ts = s.last_ts;
         self.bids = s.bids.into_iter().collect();
         self.asks = s.asks.into_iter().collect();
         self.index.clear();
@@ -150,28 +226,44 @@ impl SymbolEngine {
             depth_seq: self.depth_seq,
             bids: self.bids.iter().map(|(p, q)| (*p, q.clone())).collect(),
             asks: self.asks.iter().map(|(p, q)| (*p, q.clone())).collect(),
+            last_ts: self.last_ts,
+        }
+    }
+
+    /// A place whose engine-clock deadline has passed is refused here, before
+    /// anything is written to the WAL — so it can never execute later and is
+    /// never part of the result stream.
+    fn expired(&self, cmd: &Command, ts: u64) -> Option<ExecReport> {
+        match cmd {
+            Command::Place(p) if p.deadline_ms > 0 && ts > p.deadline_ms => {
+                Some(reject_place(p, &self.symbol, "expired"))
+            }
+            _ => None,
         }
     }
 
     /// Process a command with per-command durability: write-ahead to the WAL and
-    /// `fsync` it, then apply it, emit events, and snapshot if due. Returns the
-    /// authoritative execution report.
+    /// `fsync` it, then apply it, record its result-stream entry, emit events,
+    /// and snapshot if due. Returns the authoritative execution report.
     ///
     /// [`process_batch`](Self::process_batch) is the group-commit equivalent for
     /// many commands at once; this single-command path remains for the
     /// per-command fsync policy, tests, and recovery replay drivers.
     pub fn process(&mut self, cmd: &Command) -> ExecReport {
-        self.seq += 1;
+        let ts = self.tick();
+        if let Some(r) = self.expired(cmd, ts) {
+            return r;
+        }
+        let seq = self.seq + 1;
         if let Some(wal) = self.wal.as_mut() {
-            let rec = WalRecord { seq: self.seq, command: cmd.clone() };
+            let rec = WalRecord { seq, ts, command: cmd.clone() };
             if let Err(e) = wal.append(&rec) {
-                // A durable WAL is a hard requirement; refuse the command.
-                self.seq -= 1;
-                return reject(cmd, format!("wal append failed: {e}"));
+                wal_fatal(&self.symbol, "wal append", &e);
             }
         }
-
+        self.seq = seq;
         let report = self.apply_and_emit(cmd);
+        self.reports.append(vec![entry_for(cmd, seq, ts, report.clone())]);
 
         self.since_snapshot += 1;
         if self.snapshot_every > 0 && self.since_snapshot >= self.snapshot_every {
@@ -180,62 +272,68 @@ impl SymbolEngine {
         report
     }
 
-    /// Process a batch of commands under **group commit**: stage every command's
-    /// WAL record, issue a single `fsync` for the whole batch, and only then
-    /// apply the commands, emit their events, and build their reports. Reports
-    /// are returned in the same order as `cmds`.
+    /// Process a batch of commands under **group commit**: stage every admitted
+    /// command's WAL record, issue a single `fsync` for the whole batch, and only
+    /// then apply the commands, record their result-stream entries, emit their
+    /// events, and build their reports. Reports are returned in the same order as
+    /// `cmds`; expired places are rejected without touching the WAL.
     ///
     /// Durability is identical to [`process`](Self::process): no command in the
     /// batch is applied, emitted, or (by the caller) acknowledged until the one
     /// `fsync` has made the entire batch durable. A crash before that `fsync`
     /// loses the whole (unacknowledged) batch — the torn tail is dropped on
-    /// recovery; a crash after it recovers every command exactly.
-    ///
-    /// If the WAL write or `fsync` fails, the batch is rejected as a unit: the
-    /// sequence counter is rolled back and every command gets a rejection
-    /// report, leaving the book untouched.
+    /// recovery; a crash after it recovers every command exactly. A WAL error
+    /// aborts the process (see [`wal_fatal`]).
     pub fn process_batch(&mut self, cmds: &[Command]) -> Vec<ExecReport> {
         if cmds.is_empty() {
             return Vec::new();
         }
+        let ts = self.tick();
+        let mut out: Vec<Option<ExecReport>> = cmds.iter().map(|c| self.expired(c, ts)).collect();
 
-        // Phase 1 — stage all records, then one fsync. On any WAL error the
-        // batch never touches the book and seq is left unchanged.
+        // Phase 1 — stage the admitted records, then one fsync.
+        let base = self.seq;
         if let Some(wal) = self.wal.as_mut() {
-            let base = self.seq;
-            let mut err: Option<String> = None;
-            for (i, cmd) in cmds.iter().enumerate() {
-                let rec = WalRecord { seq: base + i as u64 + 1, command: cmd.clone() };
-                if let Err(e) = wal.append_buffered(&rec) {
-                    err = Some(format!("wal append failed: {e}"));
-                    break;
+            let mut seq = base;
+            for (cmd, done) in cmds.iter().zip(&out) {
+                if done.is_some() {
+                    continue;
+                }
+                seq += 1;
+                if let Err(e) = wal.append_buffered(&WalRecord { seq, ts, command: cmd.clone() }) {
+                    wal_fatal(&self.symbol, "wal append", &e);
                 }
             }
-            if err.is_none() {
+            if seq > base {
                 if let Err(e) = wal.sync() {
-                    err = Some(format!("wal sync failed: {e}"));
+                    wal_fatal(&self.symbol, "wal sync", &e);
                 }
-            }
-            if let Some(msg) = err {
-                return cmds.iter().map(|c| reject(c, msg.clone())).collect();
             }
         }
 
-        // Phase 2 — the batch is durable: apply, emit, and report each command.
-        let mut reports = Vec::with_capacity(cmds.len());
-        for cmd in cmds {
+        // Phase 2 — the batch is durable: apply, record, emit, and report.
+        let mut entries = Vec::new();
+        let mut applied = 0u64;
+        for (cmd, slot) in cmds.iter().zip(out.iter_mut()) {
+            if slot.is_some() {
+                continue;
+            }
             self.seq += 1;
-            reports.push(self.apply_and_emit(cmd));
+            applied += 1;
+            let report = self.apply_and_emit(cmd);
+            entries.push(entry_for(cmd, self.seq, ts, report.clone()));
+            *slot = Some(report);
         }
+        self.reports.append(entries);
 
         // One snapshot check per batch: it captures the effects of every command
         // just applied (all already fsynced), so truncating the WAL afterwards is
         // safe. The overshoot past `snapshot_every` is bounded by the batch size.
-        self.since_snapshot += cmds.len() as u64;
+        self.since_snapshot += applied;
         if self.snapshot_every > 0 && self.since_snapshot >= self.snapshot_every {
             self.maybe_snapshot();
         }
-        reports
+        out.into_iter().map(|r| r.expect("every command has a report")).collect()
     }
 
     /// Apply one already-durable command to the book and publish its events.
@@ -252,9 +350,17 @@ impl SymbolEngine {
         report
     }
 
-    /// Force a snapshot now and truncate the WAL.
+    /// Force a snapshot now and truncate the WAL. The report log is compacted
+    /// and fsynced first: once the WAL is gone it is the only record of
+    /// unacknowledged results.
     pub fn maybe_snapshot(&mut self) {
         let Some(dir) = self.dir.clone() else { return };
+        if let Err(e) = self.reports.compact_and_sync() {
+            // Without a durable report log we must keep the WAL to regenerate
+            // results from; skip this snapshot and try again later.
+            eprintln!("[{}] report log sync failed, snapshot skipped: {e}", self.symbol);
+            return;
+        }
         let state = self.snapshot_state();
         if let Err(e) = wal::write_snapshot(&dir, &state) {
             eprintln!("[{}] snapshot failed: {e}", self.symbol);
@@ -266,6 +372,47 @@ impl SymbolEngine {
             }
         }
         self.since_snapshot = 0;
+    }
+
+    // --- result stream ------------------------------------------------------
+
+    /// Result-stream entries after `after` (at most `limit`), plus the current
+    /// head and the engine-clock watermark. Advances the engine clock, so every
+    /// command admitted after this call is stamped at ≥ the returned watermark.
+    pub fn stream_page(&mut self, after: u64, limit: usize) -> StreamPage {
+        let watermark = self.tick();
+        StreamPage { entries: self.reports.after(after, limit), head: self.seq, watermark }
+    }
+
+    /// Acknowledge stream entries up to `seq`; they may then be discarded.
+    pub fn ack_reports(&mut self, seq: u64) -> std::io::Result<()> {
+        self.reports.ack(seq)
+    }
+
+    /// Number of unacknowledged stream entries.
+    pub fn report_backlog(&self) -> usize {
+        self.reports.backlog()
+    }
+
+    /// Every resting order (reconciliation only).
+    pub fn resting_orders(&self) -> Vec<RestingView> {
+        let side = |is_bid: bool| if is_bid { Side::Buy } else { Side::Sell };
+        let mut out = Vec::new();
+        for (is_bid, book) in [(true, &self.bids), (false, &self.asks)] {
+            for (p, q) in book {
+                for o in q {
+                    out.push(RestingView {
+                        order_id: o.order_id.clone(),
+                        user_id: o.user_id.clone(),
+                        side: side(is_bid),
+                        price: fixed::format(*p),
+                        quantity: fixed::format(o.quantity),
+                        remaining: fixed::format(o.remaining),
+                    });
+                }
+            }
+        }
+        out
     }
 
     // --- core matching (no WAL, no event emission) --------------------------
@@ -313,6 +460,11 @@ impl SymbolEngine {
     }
 
     fn apply_place(&mut self, p: &PlaceCommand, touched: &mut Vec<(bool, i128)>) -> ExecReport {
+        // An id that is already resting must never be admitted twice: the index
+        // is keyed by order id, so a second copy would corrupt cancels.
+        if self.index.contains_key(&p.order_id) {
+            return reject_place(p, &self.symbol, "duplicate_order_id");
+        }
         // Parse amounts. Validation of precision/min-notional happens in Go; a
         // parse error here means a malformed command and is rejected.
         let price = if p.order_type == OrderType::Market || p.price.is_empty() {
@@ -591,21 +743,6 @@ impl SymbolEngine {
     }
 }
 
-fn reject(cmd: &Command, reason: String) -> ExecReport {
-    ExecReport {
-        symbol: cmd.symbol().to_string(),
-        order_id: match cmd {
-            Command::Place(p) => p.order_id.clone(),
-            Command::Cancel(c) => c.order_id.clone(),
-        },
-        status: OrderStatus::Rejected,
-        filled_quantity: "0".into(),
-        trades: vec![],
-        maker_updates: vec![],
-        reject_reason: Some(reason),
-    }
-}
-
 fn reject_place(p: &PlaceCommand, symbol: &str, reason: &str) -> ExecReport {
     ExecReport {
         symbol: symbol.to_string(),
@@ -638,6 +775,7 @@ mod tests {
             price: price.into(),
             quantity: qty.into(),
             quote_order_qty: String::new(),
+            deadline_ms: 0,
         })
     }
 
@@ -652,6 +790,7 @@ mod tests {
             price: String::new(),
             quantity: String::new(),
             quote_order_qty: quote.into(),
+            deadline_ms: 0,
         })
     }
 
@@ -781,4 +920,13 @@ mod tests {
         let r = e.process(&place("b2", "b", Side::Buy, OrderType::Limit, TimeInForce::GTC, "70000", "0.01"));
         assert_eq!(r.trades[0].trade_id, "1000000000002");
     }
+}
+
+/// Wrap one command's execution report as its result-stream entry.
+fn entry_for(cmd: &Command, seq: u64, ts: u64, report: ExecReport) -> ReportEntry {
+    let kind = match cmd {
+        Command::Place(_) => ReportKind::Place,
+        Command::Cancel(_) => ReportKind::Cancel,
+    };
+    ReportEntry { seq, ts, kind, report }
 }
