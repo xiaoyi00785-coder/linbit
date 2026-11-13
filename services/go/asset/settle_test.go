@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/shopspring/decimal"
@@ -79,14 +80,18 @@ func mustCredit(t *testing.T, s *Store, uid, asset, amt string) {
 	if err := s.EnsureAccount(context.Background(), uid); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
-	if err := s.Credit(context.Background(), uid, asset, decimal.RequireFromString(amt), "seed"); err != nil {
+	// Use a per-user-per-asset ref so parallel tests with different users don't
+	// collide on the wallet_ops uniqueness constraint.
+	ref := fmt.Sprintf("seed-%s-%s", uid, asset)
+	if err := s.Credit(context.Background(), uid, asset, decimal.RequireFromString(amt), ref); err != nil {
 		t.Fatalf("credit %s %s: %v", uid, asset, err)
 	}
 }
 
 func mustFreeze(t *testing.T, s *Store, uid, asset, amt string) {
 	t.Helper()
-	if err := s.Freeze(context.Background(), uid, asset, decimal.RequireFromString(amt), "order"); err != nil {
+	ref := fmt.Sprintf("order-%s-%s", uid, asset)
+	if err := s.Freeze(context.Background(), uid, asset, decimal.RequireFromString(amt), ref); err != nil {
 		t.Fatalf("freeze %s %s: %v", uid, asset, err)
 	}
 }

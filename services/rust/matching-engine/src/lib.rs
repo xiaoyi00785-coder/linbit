@@ -8,6 +8,7 @@ pub mod book;
 pub mod bus;
 pub mod fixed;
 pub mod httpc;
+pub mod reports;
 pub mod server;
 pub mod types;
 pub mod wal;

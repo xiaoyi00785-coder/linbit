@@ -47,6 +47,7 @@ type Order struct {
 	FrozenAsset   string
 	FrozenAmount  decimal.Decimal
 	Unfrozen      bool
+	EngineDeadline int64 // unix ms; 0 when not set
 	CreatedAt     time.Time
 }
 
@@ -133,12 +134,12 @@ func (s *Store) InsertOrder(ctx context.Context, o *Order) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO orders (order_id, client_order_id, user_id, symbol, side, type,
 		    time_in_force, price, quantity, quote_order_qty, filled_quantity, status,
-		    frozen_asset, frozen_amount)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		    frozen_asset, frozen_amount, engine_deadline)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 		o.OrderID, nullString(o.ClientOrderID), o.UserID, o.Symbol, o.Side, o.Type,
 		o.TimeInForce, nullDecimal(o.Price, o.HasPrice), o.Quantity.String(),
 		nullDecimal(o.QuoteOrderQty, o.HasQuoteQty), o.FilledQuantity.String(), o.Status,
-		o.FrozenAsset, o.FrozenAmount.String())
+		o.FrozenAsset, o.FrozenAmount.String(), nullInt64(o.EngineDeadline))
 	return err
 }
 
@@ -245,6 +246,7 @@ type rowScanner interface {
 func (s *Store) scanOrder(sc rowScanner) (*Order, error) {
 	var o Order
 	var client, price, quoteQty sql.NullString
+	var deadline sql.NullInt64
 	if err := sc.Scan(&o.OrderID, &client, &o.UserID, &o.Symbol, &o.Side, &o.Type,
 		&o.TimeInForce, &price, &o.Quantity, &quoteQty, &o.FilledQuantity, &o.Status,
 		&o.FrozenAsset, &o.FrozenAmount, &o.Unfrozen, &o.CreatedAt); err != nil {
@@ -261,6 +263,9 @@ func (s *Store) scanOrder(sc rowScanner) (*Order, error) {
 	if quoteQty.Valid {
 		o.QuoteOrderQty = decimal.RequireFromString(quoteQty.String)
 		o.HasQuoteQty = true
+	}
+	if deadline.Valid {
+		o.EngineDeadline = deadline.Int64
 	}
 	return &o, nil
 }
@@ -358,4 +363,11 @@ func join(parts []string, sep string) string {
 		out += p
 	}
 	return out
+}
+
+func nullInt64(n int64) interface{} {
+	if n == 0 {
+		return nil
+	}
+	return n
 }

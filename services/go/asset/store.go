@@ -137,6 +137,18 @@ func (s *Store) post(ctx context.Context, userID, asset, txType, ref string, fre
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	// Idempotency: claim the ref before any balance work. If the ref was
+	// already posted we return ErrAlreadyApplied without touching balances.
+	// Use the positive side of the delta as the recorded amount (for freeze
+	// that is lockedDelta; for unfreeze and credit it is freeDelta).
+	claimAmount := freeDelta
+	if claimAmount.IsNegative() {
+		claimAmount = lockedDelta
+	}
+	if err := claimRef(ctx, tx, ref, txType, userID, asset, claimAmount); err != nil {
+		return err
+	}
+
 	// Ensure the row exists so it can be locked, then take the row lock.
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO balances (user_id, asset) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

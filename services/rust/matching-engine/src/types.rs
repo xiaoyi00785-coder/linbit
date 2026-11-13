@@ -77,6 +77,49 @@ pub struct PlaceCommand {
     /// Quote budget for a market buy (decimal string); empty otherwise.
     #[serde(default, rename = "quoteOrderQty")]
     pub quote_order_qty: String,
+    /// Engine-clock deadline (unix ms). A place that reaches the matching
+    /// thread after this instant is rejected as `expired` *before* it is
+    /// written to the WAL, so it can never execute later. 0 = no deadline.
+    #[serde(default, rename = "deadlineMs", skip_serializing_if = "is_zero")]
+    pub deadline_ms: u64,
+}
+
+fn is_zero(v: &u64) -> bool {
+    *v == 0
+}
+
+/// Which command produced a [`ReportEntry`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReportKind {
+    Place,
+    Cancel,
+}
+
+/// One entry of a symbol's ordered result stream: the outcome of exactly one
+/// WAL-logged command. The order service consumes these in `seq` order and is
+/// the only place settlement is driven from, so a lost HTTP reply never loses a
+/// fill. Entries are retained until the consumer acknowledges them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportEntry {
+    pub seq: u64,
+    /// Engine time (unix ms) at which the command was admitted.
+    pub ts: u64,
+    pub kind: ReportKind,
+    pub report: ExecReport,
+}
+
+/// A resting order as exposed by `GET /engine/orders` (reconciliation only).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestingView {
+    #[serde(rename = "orderId")]
+    pub order_id: String,
+    #[serde(rename = "userId")]
+    pub user_id: String,
+    pub side: Side,
+    pub price: String,
+    pub quantity: String,
+    pub remaining: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

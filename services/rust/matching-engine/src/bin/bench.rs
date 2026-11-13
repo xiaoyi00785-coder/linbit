@@ -51,6 +51,7 @@ fn place(id: u64, user: &str, side: Side, price: &str, qty: &str) -> Command {
         price: price.into(),
         quantity: qty.into(),
         quote_order_qty: String::new(),
+        deadline_ms: 0,
     })
 }
 

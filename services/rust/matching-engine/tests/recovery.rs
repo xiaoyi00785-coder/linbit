@@ -18,6 +18,7 @@ fn place(id: &str, user: &str, side: Side, tif: TimeInForce, price: &str, qty: &
         price: price.into(),
         quantity: qty.into(),
         quote_order_qty: String::new(),
+        deadline_ms: 0,
     })
 }
 
