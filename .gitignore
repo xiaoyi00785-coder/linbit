@@ -59,6 +59,8 @@ services/go/admin/admin
 services/go/gateway/gateway
 services/go/order/order
 services/go/wallet/wallet
+services/go/marketmaker/marketmaker
+services/go/paper/paper
 
 # wallet secrets (never commit)
 secrets/

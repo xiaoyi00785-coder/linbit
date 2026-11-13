@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,7 +37,14 @@ func newTestStore(t *testing.T) (*Store, *sql.DB) {
 	return NewStore(db), db
 }
 
-func testUser() string { return fmt.Sprintf("u%d", time.Now().UnixNano()) }
+// testUserSeq keeps ids unique even when the clock is coarse: macOS reports
+// time in microseconds, so back-to-back UnixNano() calls can return the same
+// value and two "different" test users would collide.
+var testUserSeq atomic.Int64
+
+func testUser() string {
+	return fmt.Sprintf("u%d%04d", time.Now().UnixNano(), testUserSeq.Add(1)%10000)
+}
 
 func TestCreditFreezeUnfreeze(t *testing.T) {
 	store, _ := newTestStore(t)

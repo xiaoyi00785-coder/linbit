@@ -50,8 +50,21 @@ jobs:
       DATABASE_URL: postgres://linbit:linbit@localhost:5432/linbit?sslmode=disable
       # 缺少 DATABASE_URL 时 test-all.sh 直接失败，避免依赖数据库的测试被静默跳过
       REQUIRE_DB: "1"
+      # futures 集成测试会 DROP SCHEMA public 后重建，必须用独立的库，不能与共享库混用
+      FUTURES_TEST_DATABASE_URL: postgres://linbit:linbit@localhost:5432/linbit_futures_adv?sslmode=disable
+      FUTURES_BONUS_TEST_URL: postgres://linbit:linbit@localhost:5432/linbit_futures_bonus?sslmode=disable
+      # TODO: admin 的 TestViewsAgainstSchema 需要一个"已执行全部服务迁移"的库（ADMIN_VIEWS_TEST_DSN），
+      # 目前 CI 没有统一执行所有迁移的步骤，暂不启用。
     steps:
       - uses: actions/checkout@v4
+
+      - name: 创建 futures 测试专用数据库
+        env:
+          PGPASSWORD: linbit
+        run: |
+          for db in linbit_futures_adv linbit_futures_bonus; do
+            psql -h localhost -U linbit -d linbit -c "CREATE DATABASE $db"
+          done
 
       - uses: actions/setup-go@v5
         with:

@@ -51,7 +51,7 @@ func totpMatch(secret, code string, now time.Time) (step int64, ok bool) {
 	opts := totp.ValidateOpts{Period: totpPeriod, Skew: 0, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
 	for _, skew := range []time.Duration{-totpPeriod * time.Second, 0, totpPeriod * time.Second} {
 		t := now.Add(skew)
-		if totp.ValidateCustom(code, secret, t, opts) {
+		if ok, err := totp.ValidateCustom(code, secret, t, opts); err == nil && ok {
 			return t.Unix() / totpPeriod, true
 		}
 	}
@@ -67,6 +67,19 @@ func totpMatch(secret, code string, now time.Time) (step int64, ok bool) {
 // another reason; the user simply waits for the next 30-second code. Callers
 // that can fail afterwards should run this check last.
 func (s *Server) verifyTOTP(ctx context.Context, u *User, code string) totpVerdict {
+	return s.checkTOTPCode(ctx, u, code, true)
+}
+
+// checkTOTP is verifyTOTP without consuming the code: the attempt limit and
+// lock still apply, but a correct code stays usable. Used when enabling TOTP,
+// where a later check (the email/SMS security code) can still fail — consuming
+// first would make the user wait for the next 30-second code to retry — and
+// where the replay state is reset on success anyway.
+func (s *Server) checkTOTP(ctx context.Context, u *User, code string) totpVerdict {
+	return s.checkTOTPCode(ctx, u, code, false)
+}
+
+func (s *Server) checkTOTPCode(ctx context.Context, u *User, code string, consume bool) totpVerdict {
 	now := s.now()
 	lockedUntil, err := s.store.TOTPLockedUntil(ctx, u.ID)
 	if err != nil {
@@ -82,6 +95,9 @@ func (s *Server) verifyTOTP(ctx context.Context, u *User, code string) totpVerdi
 			log.Printf("totp: record failure: %v", err)
 		}
 		return totpInvalid
+	}
+	if !consume {
+		return totpOK
 	}
 	// Claim the step atomically: the update only matches when this step is newer
 	// than the last accepted one, so the same code cannot be used twice — even

@@ -94,7 +94,9 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "TOTP_NOT_BOUND", "请先绑定 TOTP")
 		return
 	}
-	if !writeTOTPVerdict2FA(w, s.verifyTOTP(r.Context(), u, req.Code)) {
+	// Check without consuming: if the security code below is missing or wrong,
+	// the user can retry with the same authenticator code.
+	if !writeTOTPVerdict2FA(w, s.checkTOTP(r.Context(), u, req.Code)) {
 		return
 	}
 	// Enabling TOTP replaces email/SMS codes as the second factor for withdrawals
