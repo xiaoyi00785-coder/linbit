@@ -171,6 +171,11 @@ func (s *Server) placeOrder(ctx context.Context, userID string, req placeOrderRe
 		return nil, perrf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
 
+	// The freeze has landed. A client disconnect must not cancel the insert or
+	// the engine submit: the engine may already have accepted the command, and
+	// the result stream is what settles it.
+	ctx = context.WithoutCancel(ctx)
+
 	if err := s.store.InsertOrder(ctx, o); err != nil {
 		log.Printf("place: insert order: %v", err)
 		_ = s.asset.Unfreeze(ctx, userID, o.FrozenAsset, o.FrozenAmount, "order:"+o.OrderID)
@@ -413,10 +418,25 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request, userID str
 		return
 	}
 
-	_, err = s.engine.Submit(r.Context(), EngineCommand{Cmd: "cancel", Symbol: o.Symbol, OrderID: orderID})
+	rep, err := s.engine.Submit(r.Context(), EngineCommand{Cmd: "cancel", Symbol: o.Symbol, OrderID: orderID})
 	if err != nil {
 		log.Printf("cancel: engine submit: %v", err)
 		common.WriteError(w, http.StatusBadGateway, "ENGINE_UNAVAILABLE", "撮合引擎不可用")
+		return
+	}
+	if status, code, msg, stop := classifyCancel(rep); stop {
+		// not_found means the engine no longer has the order. If settlement
+		// has already finished, return that order; otherwise tell the caller
+		// to refresh instead of reporting a successful cancel.
+		if code == "ORDER_SETTLING" {
+			if fresh, ferr := s.store.GetOrder(r.Context(), userID, orderID); ferr == nil && terminal(fresh.Status) {
+				if sym, serr := s.store.Symbol(r.Context(), fresh.Symbol); serr == nil {
+					common.WriteJSON(w, http.StatusOK, toOrderDTO(fresh, sym))
+					return
+				}
+			}
+		}
+		common.WriteError(w, status, code, msg)
 		return
 	}
 	// The engine accepted the cancel; the stream consumer will deliver the
@@ -435,6 +455,29 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request, userID str
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, toOrderDTO(fresh, sym))
+}
+
+// classifyCancel distinguishes an engine cancel that missed the order (it
+// already filled, or never rested) from any other rejection. not_found is not
+// a successful cancel: the caller should refresh once settlement catches up.
+func classifyCancel(rep *ExecReport) (status int, code, msg string, stop bool) {
+	if rep == nil {
+		return 0, "", "", false
+	}
+	reason := ""
+	if rep.RejectReason != nil {
+		reason = *rep.RejectReason
+	}
+	if reason == "not_found" {
+		return http.StatusConflict, "ORDER_SETTLING", "订单正在结算，请稍后刷新", true
+	}
+	if rep.Status == "rejected" {
+		if reason == "" {
+			reason = "撤单被拒绝"
+		}
+		return http.StatusConflict, "CANCEL_REJECTED", reason, true
+	}
+	return 0, "", "", false
 }
 
 // ---- queries ----

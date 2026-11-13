@@ -12,6 +12,12 @@
 //! * `INTERNAL_TOKEN`  — shared token required on `/engine/*` (empty = open).
 //! * `EVENT_SINK_URL`  — if set, engine events are also POSTed here (the local
 //!                       pub/sub stand-in); otherwise events are logged.
+//! * `KAFKA_BROKERS`   — comma-separated brokers. When set, result-stream
+//!                       entries are produced to `KAFKA_REPORTS_TOPIC`
+//!                       (default `engine.reports`) and trade/depth events to
+//!                       `KAFKA_EVENTS_TOPIC` (default `engine.events`).
+//! * `KAFKA_SASL_USERNAME` / `KAFKA_SASL_PASSWORD` — optional SASL PLAIN.
+//! * `TLS_CERT` / `TLS_KEY` — PEM files. Both set: the listener speaks TLS.
 //! * `WAL_FSYNC`       — durability policy: `group` (default) group-commits a
 //!                       batch with a single fsync; `per_command` fsyncs every
 //!                       command on its own.
@@ -25,8 +31,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use matching_engine::book::SymbolEngine;
-use matching_engine::bus::{EventSink, HttpSink, LogSink, MultiSink};
-use matching_engine::server::{serve, CommitMode, Dispatcher};
+use matching_engine::bus::{EventSink, HttpSink, KafkaBus, LogSink, MultiSink};
+use matching_engine::server::{serve_with, CommitMode, Dispatcher, TlsPaths};
 
 fn main() {
     let bind = env("BIND", "0.0.0.0:8083");
@@ -42,12 +48,36 @@ fn main() {
     let symbols = parse_symbols(&env("SYMBOLS", "BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1,AAPLUSDT:4,TSLAUSDT:4,NVDAUSDT:4,MSFTUSDT:4,GOOGLUSDT:4,AMZNUSDT:4,METAUSDT:4,COINUSDT:4,SPYUSDT:4,PAXGUSDT:5,XAUTUSDT:5"));
     let commit_mode = parse_commit_mode();
 
-    let sink: Arc<dyn EventSink> = match std::env::var("EVENT_SINK_URL") {
-        Ok(url) if !url.is_empty() => Arc::new(MultiSink(vec![
-            Box::new(LogSink),
-            Box::new(HttpSink::new(url, token.clone())),
-        ])),
-        _ => Arc::new(LogSink),
+    let kafka = match std::env::var("KAFKA_BROKERS") {
+        Ok(b) if !b.trim().is_empty() => {
+            let reports = env("KAFKA_REPORTS_TOPIC", "engine.reports");
+            let events = env("KAFKA_EVENTS_TOPIC", "engine.events");
+            match KafkaBus::start(&b, reports.clone(), events) {
+                Ok(bus) => {
+                    println!("kafka result stream -> {reports} ({b})");
+                    Some(bus)
+                }
+                Err(e) => {
+                    eprintln!("kafka: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => None,
+    };
+    let mut parts: Vec<Box<dyn EventSink>> = vec![Box::new(LogSink)];
+    if let Ok(url) = std::env::var("EVENT_SINK_URL") {
+        if !url.is_empty() {
+            parts.push(Box::new(HttpSink::new(url, token.clone())));
+        }
+    }
+    if let Some(bus) = &kafka {
+        parts.push(Box::new(bus.clone()));
+    }
+    let sink: Arc<dyn EventSink> = if parts.len() == 1 {
+        Arc::new(LogSink)
+    } else {
+        Arc::new(MultiSink(parts))
     };
 
     let mut engines = Vec::new();
@@ -68,6 +98,12 @@ fn main() {
         println!("symbol {symbol} ready (qtyPrecision={qty_prec})");
         engines.push(engine);
     }
+    if let Some(bus) = &kafka {
+        let publisher: Arc<dyn matching_engine::bus::ReportPublisher> = Arc::new(bus.clone());
+        for engine in &mut engines {
+            engine.set_report_publisher(Arc::clone(&publisher));
+        }
+    }
 
     match commit_mode {
         CommitMode::PerCommand => println!("WAL durability: per-command fsync"),
@@ -78,7 +114,21 @@ fn main() {
     }
 
     let dispatcher = Dispatcher::spawn(engines, commit_mode);
-    if let Err(e) = serve(&bind, token, dispatcher) {
+    let tls = match (std::env::var("TLS_CERT"), std::env::var("TLS_KEY")) {
+        (Ok(c), Ok(k)) if !c.trim().is_empty() && !k.trim().is_empty() => {
+            Some(TlsPaths { cert: c, key: k })
+        }
+        (Ok(c), _) if !c.trim().is_empty() => {
+            eprintln!("matching-engine: TLS_CERT is set but TLS_KEY is empty");
+            std::process::exit(1);
+        }
+        (_, Ok(k)) if !k.trim().is_empty() => {
+            eprintln!("matching-engine: TLS_KEY is set but TLS_CERT is empty");
+            std::process::exit(1);
+        }
+        _ => None,
+    };
+    if let Err(e) = serve_with(&bind, token, dispatcher, tls) {
         eprintln!("serve: {e}");
         std::process::exit(1);
     }

@@ -105,6 +105,11 @@ func loadContracts(ctx context.Context, db queryer) ([]Contract, error) {
 // ---- accounts / bills ----
 
 func lockAccount(ctx context.Context, tx queryer, uid string) (bal, frozen decimal.Decimal, err error) {
+	// Advisory lock first, before the account row lock, so a replica that
+	// already holds the position row cannot invert the lock order.
+	if err = lockFutUser(ctx, tx, uid); err != nil {
+		return
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO fut_accounts (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, uid); err != nil {
 		return
 	}

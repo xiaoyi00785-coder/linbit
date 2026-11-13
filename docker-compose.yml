@@ -267,6 +267,12 @@ services:
       SYMBOLS: "BTCUSDT:6,ETHUSDT:5,SOLUSDT:3,BNBUSDT:3,TRXUSDT:1,AAPLUSDT:4,TSLAUSDT:4,NVDAUSDT:4,MSFTUSDT:4,GOOGLUSDT:4,AMZNUSDT:4,METAUSDT:4,COINUSDT:4,SPYUSDT:4,PAXGUSDT:5,XAUTUSDT:5"
       # Stream trade/depth events to market-data (local pub/sub stand-in).
       EVENT_SINK_URL: http://market-data:8085/internal/events
+      # Optional result-stream fan-out. Empty keeps the HTTP stream.
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_REPORTS_TOPIC: ${KAFKA_REPORTS_TOPIC:-engine.reports}
+      KAFKA_EVENTS_TOPIC: ${KAFKA_EVENTS_TOPIC:-engine.events}
+      TLS_CERT: ${ENGINE_TLS_CERT:-}
+      TLS_KEY: ${ENGINE_TLS_KEY:-}
     volumes:
       - enginedata:/data
 
@@ -282,6 +288,8 @@ services:
       ASSET_INTERNAL_URL: http://asset:8082
       ENGINE_URL: http://matching-engine:8083
       FUTURES_INTERNAL_URL: http://futures:8089
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_REPORTS_TOPIC: ${KAFKA_REPORTS_TOPIC:-engine.reports}
       SPOT_MAKER_FEE_RATE: ${SPOT_MAKER_FEE_RATE:-0.001}
       SPOT_TAKER_FEE_RATE: ${SPOT_TAKER_FEE_RATE:-0.001}
       FEE_ACCOUNT: ${FEE_ACCOUNT:-}

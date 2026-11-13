@@ -169,6 +169,27 @@ func (s *Server) settleFunding(ctx context.Context, sym string, rate, mark decim
 		if n, _ := res.RowsAffected(); n == 0 {
 			return nil
 		}
+		urows, err := tx.QueryContext(ctx, `SELECT DISTINCT user_id FROM fut_positions WHERE symbol=$1 AND qty <> 0 ORDER BY user_id`, sym)
+		if err != nil {
+			return err
+		}
+		var uids []string
+		for urows.Next() {
+			var u string
+			if err := urows.Scan(&u); err != nil {
+				urows.Close()
+				return err
+			}
+			uids = append(uids, u)
+		}
+		urows.Close()
+		if err := urows.Err(); err != nil {
+			return err
+		}
+		// Lock every holder before taking position row locks, in user-id order.
+		if err := lockFutUsers(ctx, tx, uids...); err != nil {
+			return err
+		}
 		rows, err := tx.QueryContext(ctx, `SELECT `+posCols+` FROM fut_positions WHERE symbol=$1 AND qty <> 0 FOR UPDATE`, sym)
 		if err != nil {
 			return err

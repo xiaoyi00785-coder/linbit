@@ -143,6 +143,9 @@ func (s *Server) CreateTPSL(ctx context.Context, uid string, r TPSLReq) ([]AlgoO
 	}
 	var out []AlgoOrder
 	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := lockFutUser(ctx, tx, uid); err != nil {
+			return err
+		}
 		cfg, err := loadOrderConfig(ctx, tx)
 		if err != nil {
 			return err

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -114,23 +115,39 @@ func (s *HTTPStream) Ack(ctx context.Context, symbol string, seq int64) error {
 
 // ---- consumer ----
 
+// clockSkewLimit is the engine-vs-local gap past which places are rejected as
+// expired (the order service stamps deadlines from its own clock). Alerts are
+// deduped so a stuck skew does not page on every poll.
+const (
+	clockSkewLimit      = 2 * time.Second
+	clockSkewAlertEvery = 5 * time.Minute
+	cursorLease         = 15 * time.Second
+)
+
 // StreamConsumer runs one goroutine per symbol that polls the engine's result
-// stream and settles every entry.
+// stream and settles every entry. owner is this process's lease identity.
 type StreamConsumer struct {
-	server    *Server
-	stream    EngineStream
-	symbols   []string
-	pollDelay time.Duration
+	server     *Server
+	stream     EngineStream
+	symbols    []string
+	owner      string
+	leaseFor   time.Duration
+	pollDelay  time.Duration
 	sweepEvery time.Duration
+
+	skewMu   sync.Mutex
+	lastSkew map[string]time.Time
 }
 
 // NewStreamConsumer constructs a consumer for the given symbols.
 func NewStreamConsumer(server *Server, stream EngineStream, symbols []string) *StreamConsumer {
 	return &StreamConsumer{
-		server:    server,
-		stream:    stream,
-		symbols:   symbols,
-		pollDelay: 50 * time.Millisecond,
+		server:     server,
+		stream:     stream,
+		symbols:    symbols,
+		owner:      instanceID(),
+		leaseFor:   cursorLease,
+		pollDelay:  50 * time.Millisecond,
 		sweepEvery: 5 * time.Second,
 	}
 }
@@ -164,10 +181,14 @@ func (c *StreamConsumer) runSymbol(ctx context.Context, symbol string) {
 		default:
 		}
 
-		cursor, err := c.server.store.GetCursor(ctx, symbol)
+		cursor, ok, err := c.server.store.ClaimCursor(ctx, symbol, c.owner, c.leaseFor)
 		if err != nil {
 			log.Printf("stream[%s]: cursor: %v", symbol, err)
 			sleepCtx(ctx, c.pollDelay)
+			continue
+		}
+		if !ok {
+			sleepCtx(ctx, c.leaseFor/3)
 			continue
 		}
 
@@ -177,6 +198,7 @@ func (c *StreamConsumer) runSymbol(ctx context.Context, symbol string) {
 			sleepCtx(ctx, c.pollDelay)
 			continue
 		}
+		c.noteSkew(symbol, page.Watermark)
 
 		// Settle entries in seq order. Stop at the first error so the cursor
 		// stays behind it; the next poll retries.
@@ -191,7 +213,7 @@ func (c *StreamConsumer) runSymbol(ctx context.Context, symbol string) {
 
 		// Advance and ack the cursor.
 		if lastSettled > cursor {
-			if err := c.server.store.AdvanceCursor(ctx, symbol, lastSettled); err != nil {
+			if err := c.server.store.AdvanceCursor(ctx, symbol, lastSettled, c.owner, c.leaseFor); err != nil {
 				log.Printf("stream[%s]: advance cursor: %v", symbol, err)
 			} else if err := c.stream.Ack(ctx, symbol, lastSettled); err != nil {
 				log.Printf("stream[%s]: ack: %v", symbol, err)
@@ -220,7 +242,14 @@ func (c *StreamConsumer) settleEntry(ctx context.Context, symbol string, entry S
 	_ = c.server.store.MarkEngineSeen(ctx, rep.OrderID)
 
 	// A rejected place/cancel never rested and never filled.
+	// not_found is the cancel of an order the engine no longer has — usually
+	// because it already filled. Leave the row alone; an earlier stream entry
+	// (or the expiry sweep) is what settles it. Marking it rejected here would
+	// unfreeze funds that a fill still needs.
 	if rep.Status == "rejected" {
+		if rep.RejectReason != nil && *rep.RejectReason == "not_found" {
+			return nil
+		}
 		_ = c.server.store.RankUpdateFill(ctx, rep.OrderID, decimal.Zero, "rejected")
 		c.releaseLeftoverByID(ctx, rep.OrderID)
 		return nil
@@ -262,6 +291,9 @@ func (c *StreamConsumer) settleEntry(ctx context.Context, symbol string, entry S
 // settleTrade settles one fill through the asset service and records both
 // sides locally. Idempotent on (trade_id, order_id).
 func (c *StreamConsumer) settleTrade(ctx context.Context, sym *SymbolConfig, t *EngineTrade) error {
+	if t.TakerUserID != "" && t.TakerUserID == t.MakerUserID {
+		return fmt.Errorf("self-trade: taker and maker are %s", t.TakerUserID)
+	}
 	price, err := decimal.NewFromString(t.Price)
 	if err != nil {
 		return fmt.Errorf("bad price: %w", err)
@@ -390,6 +422,55 @@ func (s *Server) feeRateFor(ctx context.Context, orderID, userID, role string) d
 		return rate
 	}
 	return s.userFeeRate(userID, role)
+}
+
+// skewTooLarge reports whether |localMs - watermark| is past the limit.
+// watermark is the engine clock in unix milliseconds.
+func skewTooLarge(localMs, watermark int64) bool {
+	if watermark <= 0 {
+		return false
+	}
+	d := localMs - watermark
+	if d < 0 {
+		d = -d
+	}
+	return d > clockSkewLimit.Milliseconds()
+}
+
+// noteSkew alerts when this process and the engine disagree by more than
+// clockSkewLimit. The place path stamps deadlines from the local clock; a
+// larger gap makes the engine reject fresh orders as expired.
+func (c *StreamConsumer) noteSkew(symbol string, watermark int64) {
+	local := time.Now().UnixMilli()
+	if !skewTooLarge(local, watermark) {
+		return
+	}
+	delta := local - watermark
+	if delta < 0 {
+		delta = -delta
+	}
+	c.skewMu.Lock()
+	defer c.skewMu.Unlock()
+	if c.lastSkew == nil {
+		c.lastSkew = map[string]time.Time{}
+	}
+	if t, ok := c.lastSkew[symbol]; ok && time.Since(t) < clockSkewAlertEvery {
+		return
+	}
+	c.lastSkew[symbol] = time.Now()
+	common.AlertTelegram(fmt.Sprintf("Clock skew: order service vs matching engine on %s is %dms (limit %s). Orders may be rejected as expired.", symbol, delta, clockSkewLimit))
+}
+
+// instanceID identifies this process on engine_cursors.lease_owner.
+func instanceID() string {
+	if v := strings.TrimSpace(os.Getenv("INSTANCE_ID")); v != "" {
+		return v
+	}
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "order"
+	}
+	return fmt.Sprintf("%s-%d", host, os.Getpid())
 }
 
 // sleepCtx sleeps for d or until ctx is cancelled.
