@@ -19,6 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,7 +106,9 @@ fun SpotTradeContent(
     var sheet by remember { mutableStateOf<String?>(null) }
     var skipConfirm by remember { mutableStateOf(false) }
     var ordersTab by remember { mutableStateOf(0) }
+    val spotTop by vm.spotTop.collectAsStateWithLifecycle()
     var topTab by remember { mutableStateOf(0) }
+    LaunchedEffect(spotTop) { topTab = spotTop }
     var chartOpen by remember { mutableStateOf(false) }
     val step = vm.bookPrecision ?: BigDecimal.ONE.movePointLeft(vm.pricePrec)
     val grouped = remember(vm.book, step) { vm.book.grouped(step) }
@@ -134,7 +137,7 @@ fun SpotTradeContent(
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     LbIcon(R.drawable.ic_sun, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { sheet = "theme" })
                     LbIcon(R.drawable.ic_candles, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { chartOpen = !chartOpen })
-                    LbIcon(R.drawable.ic_more, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { vm.toast.show("更多功能即将开放") })
+                    LbIcon(R.drawable.ic_more, 20.dp, p.textPrimary, Modifier.pressable(scale = 1f) { topTab = 1 })
                 }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

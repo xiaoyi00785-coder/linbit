@@ -20,6 +20,7 @@ final class EarnModel: ObservableObject {
 }
 
 struct EarnView: View {
+    var embedded = false
     @Environment(\.palette) private var p
     @EnvironmentObject private var session: Session
     @StateObject private var m = EarnModel()
@@ -29,15 +30,8 @@ struct EarnView: View {
     @State private var hide = false
 
     var body: some View {
-        FeatureShell(title: "理财") {
-            ScrollView {
-                VStack(spacing: 0) {
-                    overview
-                    PrimaryTabs(items: ["全部", "活期", "定期", "我的"], selected: $tab).padding(.top, 8)
-                    list
-                }.padding(.bottom, 40)
-            }
-            .refreshable { await m.load() }
+        Group {
+            if embedded { earnBody } else { FeatureShell(title: "理财") { earnBody } }
         }
         .task {
             await m.load()
@@ -50,6 +44,17 @@ struct EarnView: View {
         .lbSheet(Binding(get: { redeem != nil }, set: { if !$0 { redeem = nil } })) {
             if let h = redeem { EarnRedeemSheet(pos: h) { done in redeem = nil; if done { Task { await m.loadMine() } } } }
         }
+    }
+
+    private var earnBody: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                overview
+                PrimaryTabs(items: ["全部", "活期", "定期", "我的"], selected: $tab).padding(.top, 8)
+                list
+            }.padding(.bottom, 40)
+        }
+        .refreshable { await m.load() }
     }
 
     private var overview: some View {

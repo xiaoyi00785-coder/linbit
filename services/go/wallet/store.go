@@ -380,8 +380,47 @@ func (s *Store) ListDeposits(ctx context.Context, userID, asset string, page, pa
 
 // InsertWithdrawal creates a withdrawal row and returns its id.
 func (s *Store) InsertWithdrawal(ctx context.Context, w Withdrawal) (int64, error) {
+	return insertWithdrawal(ctx, s.db, w)
+}
+
+// InsertWithdrawalLocked rechecks the rolling-24h usage and inserts the row
+// while holding a per-user advisory lock, so two concurrent withdrawals cannot
+// both pass the limit. limitOK sees withdrawals already committed or inserted
+// by a transaction that took the same lock first.
+func (s *Store) InsertWithdrawalLocked(ctx context.Context, w Withdrawal, since time.Time, limitOK func(prior []AssetAmount) error) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('wd:' || $1))`, w.UserID); err != nil {
+		return 0, err
+	}
+	prior, err := queryWithdrawnSince(ctx, tx, w.UserID, since)
+	if err != nil {
+		return 0, err
+	}
+	if err := limitOK(prior); err != nil {
+		return 0, err
+	}
+	id, err := insertWithdrawal(ctx, tx, w)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+type rowQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func insertWithdrawal(ctx context.Context, q rowQueryer, w Withdrawal) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx,
+	err := q.QueryRowContext(ctx,
 		`INSERT INTO withdrawals
 		   (user_id, asset, network, address, memo, amount, gas_fee, gas_fee_asset,
 		    gas_deduct_mode, frozen_amount, risk_score, status)
@@ -553,7 +592,11 @@ type AssetAmount struct {
 // or after `since` that count toward the KYC daily limit — i.e. everything except
 // those that released their funds (rejected / canceled / failed).
 func (s *Store) WithdrawnSince(ctx context.Context, userID string, since time.Time) ([]AssetAmount, error) {
-	rows, err := s.db.QueryContext(ctx,
+	return queryWithdrawnSince(ctx, s.db, userID, since)
+}
+
+func queryWithdrawnSince(ctx context.Context, q rowQueryer, userID string, since time.Time) ([]AssetAmount, error) {
+	rows, err := q.QueryContext(ctx,
 		`SELECT asset, amount::text FROM withdrawals
 		 WHERE user_id = $1 AND created_at >= $2
 		   AND status NOT IN ('rejected','canceled','failed')`,

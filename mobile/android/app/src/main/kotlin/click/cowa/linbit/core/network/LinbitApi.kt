@@ -621,4 +621,72 @@ interface LinbitApi {
     @POST("support/attachments")
     suspend fun uploadSupportAttachment(@Part file: MultipartBody.Part): ApiSupportAttachment
 
+    @POST("earn/products/{id}/subscribe")
+    suspend fun earnSubscribe(@Path("id") id: String, @Body body: AmountBody): JsonElement
+
+    @POST("earn/products/{id}/redeem")
+    suspend fun earnRedeem(@Path("id") id: String, @Body body: AmountBody): JsonElement
+
+    @POST("strategy/grid")
+    suspend fun createGrid(@Body body: ApiGridCreateRequest): JsonElement
+
+    @POST("strategy/grid/square/{id}/copy")
+    suspend fun copyGrid(@Path("id") id: String, @Body body: InvestmentBody): JsonElement
+
+    @POST("strategy/grid/{id}/stop")
+    suspend fun stopGrid(@Path("id") id: String): JsonElement
+
+    @GET("paper/futures/account")
+    suspend fun paperFuturesAccount(): JsonElement
+
+    @POST("paper/futures/account/claim")
+    suspend fun paperFuturesClaim(@Body body: AmountBody): JsonElement
+
+    @POST("paper/futures/orders")
+    suspend fun paperFuturesOrder(@Body body: PaperOrderBody): JsonElement
+
+    @GET("paper/futures/positions")
+    suspend fun paperFuturesPositions(): JsonElement
+
+    @GET("price-alerts")
+    suspend fun priceAlerts(): JsonElement
+
+    @POST("price-alerts")
+    suspend fun createPriceAlert(@Body body: PriceAlertBody): JsonElement
+
+    @DELETE("price-alerts/{id}")
+    suspend fun deletePriceAlert(@Path("id") id: String): JsonElement
+
+    @GET("futures/pnl/today")
+    suspend fun futuresPnlToday(): JsonElement
+
+    @GET("spot/pnl/history")
+    suspend fun spotPnlHistory(): JsonElement
 }
+
+@kotlinx.serialization.Serializable
+data class AmountBody(val amount: String)
+
+@kotlinx.serialization.Serializable
+data class InvestmentBody(val investment: String)
+
+@kotlinx.serialization.Serializable
+data class PaperOrderBody(
+    val symbol: String,
+    val side: String,
+    val type: String = "market",
+    val action: String = "open",
+    val quantity: String,
+)
+
+@kotlinx.serialization.Serializable
+data class PriceAlertBody(
+    val clientAlertId: String,
+    val market: String,
+    val symbol: String,
+    val condition: String,
+    val threshold: String,
+    val priceSource: String = "last",
+    val triggerMode: String = "once",
+    val channels: List<String> = listOf("inapp"),
+)

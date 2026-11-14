@@ -90,9 +90,9 @@ struct LoginAccountView: View {
                     .padding(.top, 28)
                     OrDivider().padding(.vertical, 24)
                     VStack(spacing: 10) {
-                        SocialButton(icon: "person.badge.key", title: "使用通行密钥继续") { ToastCenter.shared.show("通行密钥登录即将开放") }
-                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { ToastCenter.shared.show("Apple 登录即将开放") }
-                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { ToastCenter.shared.show("Google 登录即将开放") }
+                        SocialButton(icon: "person.badge.key", title: "使用通行密钥继续") { Task { await loginWithPasskey(m) } }
+                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { Task { await explainProvider("apple") } }
+                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { Task { await explainProvider("google") } }
                     }
                     Button("创建账户", action: switchTo).font(.lb(FontSize.label, .medium)).foregroundColor(p.brand).padding(.top, 20)
                 }
@@ -296,8 +296,8 @@ struct RegisterView: View {
                     LBButton(title: "注册", enabled: !m.raw.isEmpty, loading: m.loading) { Task { await next() } }.padding(.top, 16)
                     OrDivider().padding(.vertical, 24)
                     VStack(spacing: 10) {
-                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { ToastCenter.shared.show("Apple 注册即将开放") }
-                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { ToastCenter.shared.show("Google 注册即将开放") }
+                        SocialButton(icon: "apple.logo", title: "通过 Apple 继续") { Task { await explainProvider("apple") } }
+                        SocialButton(icon: "g.circle", title: "通过 Google 继续") { Task { await explainProvider("google") } }
                     }
                     Button("已有账户，立即登录", action: switchTo).font(.lb(FontSize.label, .medium)).foregroundColor(p.brand)
                         .frame(maxWidth: .infinity).padding(.top, 20)
@@ -426,4 +426,31 @@ struct ForgotAccountView: View {
         }
         .background(p.bg.ignoresSafeArea())
     }
+}
+
+@MainActor
+private func explainProvider(_ id: String) async {
+    struct Resp: Decodable { struct Item: Decodable { var id: String?; var configured: Bool? }; var providers: [Item]? }
+    do {
+        let r: Resp = try await APIClient.shared.get("/auth/providers")
+        let on = r.providers?.first { $0.id == id }?.configured == true
+        ToastCenter.shared.show(on ? "\(id) 已在服务端开启，请使用通行密钥或密码完成登录" : "\(id) 登录未在服务端配置")
+    } catch { ToastCenter.shared.error(error) }
+}
+
+@MainActor
+private func loginWithPasskey(_ m: AuthModel) async {
+    struct Begin: Decodable { var sessionId: String?; var publicKey: [String: AnyCodable]? }
+    struct Finish: Encodable { var sessionId: String; var credential: AnyCodable; var deviceId: String; var deviceName: String }
+    m.loading = true; defer { m.loading = false }
+    do {
+        struct Empty: Encodable {}
+        let begin: Begin = try await APIClient.shared.post("/auth/passkey/login/begin", body: Empty(), auth: false)
+        guard let sid = begin.sessionId, let key = begin.publicKey else { throw PasskeyError.badOptions }
+        let cred = try await PasskeyRegistrar().login(options: key)
+        let tokens: APIAuthTokens = try await APIClient.shared.post("/auth/passkey/login/finish", body: Finish(
+            sessionId: sid, credential: AnyCodable(cred), deviceId: UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString, deviceName: UIDevice.current.name), auth: false)
+        TokenStore.shared.save(tokens)
+        await Session.shared.didLogin()
+    } catch { ToastCenter.shared.error(error) }
 }

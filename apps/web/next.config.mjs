@@ -41,6 +41,16 @@ const nextConfig = {
     // 构建时跳过 ESLint（本仓库未配置 eslint）
     ignoreDuringBuilds: true,
   },
+  async headers() {
+    const security = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+      { key: "Strict-Transport-Security", value: "max-age=15552000; includeSubDomains" },
+    ];
+    return [{ source: "/:path*", headers: security }];
+  },
 };
 
 export default nextConfig;

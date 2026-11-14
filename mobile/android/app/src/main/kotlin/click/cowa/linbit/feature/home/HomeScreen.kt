@@ -125,7 +125,7 @@ fun HomeContent(
     LaunchedEffect(s.earn.size) { earnPage = 0; while (s.earn.size > 1) { delay(4_000); earnPage = (earnPage + 1) % s.earn.size } }
 
     Column(modifier.fillMaxSize().background(p.bg)) {
-        TopBar(loggedIn, onOpenAvatar, onSoon, onNotifications, onSupport, unread)
+        TopBar(loggedIn, onOpenAvatar, onOpenMarkets, onDeposit, onNotifications, onSupport, unread)
         PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = bottomInset + 40.dp)) {
                 AssetHeader(hide, { hide = !hide }, s.totalUsdt, m.cnyRate, onDeposit)
@@ -133,9 +133,9 @@ fun HomeContent(
                 RedPacket(Modifier.padding(top = 15.dp)) { onFeature("福利中心") }
                 Grid(Modifier.padding(top = 15.dp), onTap = { if (it == "更多") onOpenMore() else onFeature(it) })
                 Hairline(Modifier.padding(top = (64f / 3).dp))
-                CardPromo(s.banners.getOrNull(bannerPage), bannerPage, s.banners.size) { onSoon("Linbit Card 即将开放") }
+                CardPromo(s.banners.getOrNull(bannerPage), bannerPage, s.banners.size) { onFeature("卡券中心") }
                 Hairline()
-                EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onSoon("理财即将开放") }
+                EarnStrip(s.earn.getOrNull(earnPage), earnPage, s.earn.size) { onFeature("理财") }
                 Hairline()
                 Ranking(m, watch, rankTab, { rankTab = it }, rankKind, { rankKind = it }, onOpenMarkets)
             }
@@ -150,7 +150,7 @@ private fun Hairline(modifier: Modifier = Modifier) {
 
 // ── 顶栏：Logo / 搜索 / 扫码 / 客服 / 通知（ref/1：左上为品牌 Logo，搜索框 31 高，3 个 22 图标）──
 @Composable
-private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int) {
+private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSearch: () -> Unit, onScan: () -> Unit, onNotifications: () -> Unit, onSupport: () -> Unit, unread: Int) {
     val p = LB.p
     Row(
         Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.pageH),
@@ -161,13 +161,13 @@ private fun TopBar(loggedIn: Boolean, onAvatar: () -> Unit, onSoon: (String) -> 
         }
         Row(
             Modifier.weight(1f).height(Metrics.searchBarH).clip(RoundedCornerShape(Radius.md)).background(p.fill)
-                .pressable(scale = 1f) { onSoon("搜索即将开放") }.padding(horizontal = 10.dp),
+                .pressable(scale = 1f) { onSearch() }.padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             LbIcon(R.drawable.ic_search, 15.dp, p.textTertiary)
             Text("BTC", style = lb(FontSize.label), color = p.textTertiary)
         }
-        LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable { onSoon("扫一扫即将开放") })
+        LbIcon(R.drawable.ic_scan, modifier = Modifier.pressable { onScan() })
         LbIcon(R.drawable.ic_headset, modifier = Modifier.pressable { onSupport() })
         Box(Modifier.pressable(scale = 1f, onClick = onNotifications)) {
             LbIcon(R.drawable.ic_bell)

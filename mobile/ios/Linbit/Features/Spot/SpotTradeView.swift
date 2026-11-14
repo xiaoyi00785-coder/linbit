@@ -6,13 +6,13 @@ struct SpotTradeView: View {
     @EnvironmentObject private var session: Session
     @ObservedObject private var router = Router.shared
     @StateObject private var m = SpotModel(symbol: Router.shared.spotSymbol)
-    @State private var topTab = 0
     @State private var bottomTab = 0
-    @State private var botTab = 0
     @State private var showKind = false
     @State private var showConfirm = false
     @State private var showPrecision = false
     @State private var showPairs = false
+    @State private var chartOpen = false
+    @State private var showOrderKind = false
     @State private var showFee = false
     @State private var confirm: ConfirmRequest?
     @AppStorage("lb.spot.skipConfirm") private var skipConfirm = false
@@ -20,19 +20,31 @@ struct SpotTradeView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            ScrollView {
-                VStack(spacing: 0) {
-                    pairHeader
-                    HStack(alignment: .top, spacing: 12) {
-                        form.frame(maxWidth: .infinity)
-                        OrderBookView(m: m, showPrecision: $showPrecision).frame(width: 138)
+            if router.spotTop == 0 {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        pairHeader
+                        HStack(alignment: .top, spacing: 12) {
+                            form.frame(maxWidth: .infinity)
+                            OrderBookView(m: m, showPrecision: $showPrecision).frame(width: 138)
+                        }
+                        .padding(.horizontal, Spacing.pageH).padding(.top, 8)
+                        if chartOpen {
+                            SpotChartPanel(symbol: m.symbol, pricePrec: m.pricePrec)
+                                .padding(.horizontal, Spacing.pageH).padding(.top, 12)
+                        }
+                        ordersSection.padding(.top, 20)
                     }
-                    .padding(.horizontal, Spacing.pageH).padding(.top, 8)
-                    ordersSection.padding(.top, 20)
+                    .padding(.bottom, 100)
                 }
-                .padding(.bottom, 100)
+                .refreshable { await m.loadBook(); await m.refreshAccount() }
+            } else if router.spotTop == 1 {
+                StrategyView(embedded: true)
+            } else if router.spotTop == 2 {
+                EarnView(embedded: true)
+            } else {
+                SwapView(embedded: true)
             }
-            .refreshable { await m.loadBook(); await m.refreshAccount() }
         }
         .background(p.bg.ignoresSafeArea())
         .task {
@@ -62,15 +74,21 @@ struct SpotTradeView: View {
         .lbSheet($showFee) { SpotFeeSheet(m: m) { showFee = false } }
         .lbSheet($showPrecision) { PrecisionSheet(m: m) { showPrecision = false } }
         .lbSheet($showPairs) { PairPickerSheet(current: m.symbol) { s in showPairs = false; router.spotSymbol = s } onClose: { showPairs = false } }
+        .lbSheet($showOrderKind) {
+            LBSheet(title: nil, onClose: { showOrderKind = false }) {
+                VStack(spacing: 0) {
+                    SheetOptionRow(title: "当前委托", selected: bottomTab == 0) { bottomTab = 0; showOrderKind = false }
+                    SheetOptionRow(title: "条件单", selected: bottomTab == 2) { bottomTab = 2; showOrderKind = false }
+                }.padding(.bottom, 20)
+            }
+        }
         .lbConfirm($confirm)
     }
 
     // 一级 Tab：现货 / 策略 / 理财 / 闪兑
     private var topBar: some View {
         HStack {
-            PrimaryTabs(items: ["现货", "策略", "理财", "闪兑"], selected: Binding(get: { topTab }, set: { i in
-                if i == 0 { topTab = 0 } else { Haptics.tap(); Router.shared.openFeature([FeaturePage.strategy, .strategy, .earn, .swap][i]) }
-            }))
+            PrimaryTabs(items: ["现货", "策略", "理财", "闪兑"], selected: Binding(get: { router.spotTop }, set: { router.spotTop = $0 }))
             Spacer()
         }.padding(.horizontal, Spacing.pageH).frame(height: 44)
     }
@@ -90,8 +108,8 @@ struct SpotTradeView: View {
             Spacer()
             HStack(spacing: 18) {
                 ThemeToggleButton()
-                Button { ToastCenter.shared.show("K 线页即将开放") } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
-                Button { ToastCenter.shared.show("更多功能即将开放") } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
+                Button { chartOpen.toggle() } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
+                Button { router.spotTop = 1 } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
             }.font(.system(size: 17)).padding(.top, 4)
         }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
     }
@@ -178,18 +196,28 @@ struct SpotTradeView: View {
     private var ordersSection: some View {
         VStack(spacing: 0) {
             HStack(spacing: 18) {
-                tabText("委托(\(m.openOrders.count))", 0, arrow: true)
-                tabText("条件单(\(m.conditional.count))", 2)
-                tabText("交易机器人(0)", 1)
+                Button {
+                    if bottomTab == 0 || bottomTab == 2 { showOrderKind = true } else { bottomTab = 0 }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(bottomTab == 2 ? "条件单(\(m.conditional.count))" : "委托(\(m.openOrders.count))")
+                            .font(.lb(FontSize.label, bottomTab != 1 ? .semibold : .regular))
+                        Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6))
+                    }.foregroundColor(bottomTab != 1 ? p.textPrimary : p.textSecondary)
+                }.buttonStyle(PressableStyle(scale: 1))
+                Button { bottomTab = 1 } label: {
+                    Text("交易机器人(0)").font(.lb(FontSize.label, bottomTab == 1 ? .semibold : .regular))
+                        .foregroundColor(bottomTab == 1 ? p.textPrimary : p.textSecondary)
+                }.buttonStyle(PressableStyle(scale: 1))
                 Spacer()
                 NavigationLink(value: SpotRoute.history) {
                     Image(systemName: "clock.fill").font(.system(size: 15)).foregroundColor(p.textSecondary)
                 }
             }.padding(.horizontal, Spacing.pageH)
-            if bottomTab == 0 {
-                HStack {
-                    Checkbox(on: $m.onlyCurrent, label: "只看当前")
-                    Spacer()
+            HStack {
+                Checkbox(on: $m.onlyCurrent, label: "只看当前")
+                Spacer()
+                if bottomTab == 0 {
                     Button {
                         guard !m.shownOrders.isEmpty else { return }
                         confirm = .init(title: "全部撤销", message: "确定撤销\(m.onlyCurrent ? "当前交易对" : "全部")的 \(m.shownOrders.count) 笔委托吗？",
@@ -198,7 +226,9 @@ struct SpotTradeView: View {
                         Text("全部撤销").font(.lb(FontSize.small)).foregroundColor(m.shownOrders.isEmpty ? p.textTertiary : p.textPrimary)
                             .padding(.horizontal, 10).frame(height: 24).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
                     }.buttonStyle(PressableStyle())
-                }.padding(.horizontal, Spacing.pageH).padding(.top, 14)
+                }
+            }.padding(.horizontal, Spacing.pageH).padding(.top, 14)
+            if bottomTab == 0 {
                 if m.shownOrders.isEmpty {
                     SpotEmpty()
                 } else {
@@ -215,17 +245,6 @@ struct SpotTradeView: View {
             } else if bottomTab == 2 {
                 condSection
             } else {
-                HStack(spacing: 18) {
-                    ForEach(["现货网格", "现货定投"].indices, id: \.self) { i in
-                        Text(["现货网格", "现货定投"][i]).font(.lb(FontSize.caption, botTab == i ? .medium : .regular))
-                            .foregroundColor(botTab == i ? p.textPrimary : p.textSecondary).onTapGesture { botTab = i }
-                    }
-                    Spacer()
-                    Button { ToastCenter.shared.show("交易机器人即将开放") } label: {
-                        Text("创建交易机器人").font(.lb(FontSize.small, .medium)).foregroundColor(p.textOnPrimary)
-                            .padding(.horizontal, 10).frame(height: 26).background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.primary))
-                    }.buttonStyle(PressableStyle())
-                }.padding(.horizontal, Spacing.pageH).padding(.top, 14)
                 EmptyStateView(text: "暂无交易机器人")
             }
         }
@@ -250,14 +269,6 @@ struct SpotTradeView: View {
                 }.padding(.top, 8)
             }
         }
-    }
-    private func tabText(_ t: String, _ i: Int, arrow: Bool = false) -> some View {
-        HStack(spacing: 3) {
-            Text(t).font(.lb(FontSize.label, bottomTab == i ? .semibold : .regular))
-            if arrow { Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)) }
-        }
-        .foregroundColor(bottomTab == i ? p.textPrimary : p.textSecondary)
-        .onTapGesture { bottomTab = i }
     }
 }
 

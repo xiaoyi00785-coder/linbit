@@ -133,6 +133,7 @@ struct FuturesKindSheet: View {
 struct FuturesToolsSheet: View {
     @Environment(\.palette) private var p
     let onClose: () -> Void
+    @State private var alert = false
     private let items: [(String, String)] = [("gearshape.fill", "交易偏好"), ("plusminus", "计算器"), ("bell.badge.fill", "价格预警"), ("rectangle.stack.person.crop.fill", "模拟交易"),
                                              ("chart.bar.fill", "仓位档位介绍"), ("percent", "历史资金费率"), ("chart.xyaxis.line", "历史标记价格"), ("dollarsign.circle.fill", "风险准备金"),
                                              ("star.fill", "添加自选"), ("safari.fill", "新手教学")]
@@ -141,13 +142,16 @@ struct FuturesToolsSheet: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 20) {
                 ForEach(items, id: \.1) { icon, title in
                     Button {
+                        if title == "价格预警" { alert = true; return }
                         onClose()
                         switch title {
                         case "模拟交易": Router.shared.futuresTop = 3
                         case "仓位档位介绍": Router.shared.openFeature(.futuresRiskTiers)
                         case "历史资金费率": Router.shared.openFeature(.futuresFunding)
+                        case "价格预警": alert = true
                         case "添加自选": ToastCenter.shared.show("已添加到自选", .success)
-                        default: ToastCenter.shared.show("\(title)即将开放")
+                        case "交易偏好": Router.shared.openFeature(.security)
+                        default: Router.shared.openFeature(.futuresHistory)
                         }
                     } label: {
                         VStack(spacing: 8) {
@@ -159,6 +163,7 @@ struct FuturesToolsSheet: View {
                 }
             }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
         }
+        .lbSheet($alert) { PriceAlertSheet(symbol: Router.shared.futuresSymbol) { alert = false } }
     }
 }
 

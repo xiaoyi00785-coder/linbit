@@ -63,9 +63,15 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
             "TradFi" -> MorePage.TRADFI
             "卡券中心" -> MorePage.COUPONS
             "合伙人计划" -> MorePage.PARTNER
+            "聊天室" -> MorePage.SUPPORT
             else -> null
         }
-        if (page != null) morePage = page else vm.toast.show("$title 即将开放")
+        when (title) {
+            "理财" -> { vm.tradeNav.openSpotTab(2); tab = MainTab.SPOT }
+            "策略交易" -> { vm.tradeNav.openSpotTab(1); tab = MainTab.SPOT }
+            "闪兑" -> { vm.tradeNav.openSpotTab(3); tab = MainTab.SPOT }
+            else -> if (page != null) morePage = page else vm.toast.show("请从现货页的策略、理财或闪兑进入")
+        }
     }
 
     LinbitTheme(dark) {
@@ -116,6 +122,8 @@ fun AppRoot(vm: AppViewModel = hiltViewModel()) {
                         assetsNav = vm.assetsNav,
                         onOpenFutures = { tab = MainTab.FUTURES },
                         onOpenSpot = { tab = MainTab.SPOT },
+                        onOpenSpotTab = { i -> vm.tradeNav.openSpotTab(i); tab = MainTab.SPOT },
+                        onOpenPnl = { historyKind = "futures" },
                         onOpenProfile = { if (loggedIn) userCenter = true else auth = "login" },
                     )
                 }

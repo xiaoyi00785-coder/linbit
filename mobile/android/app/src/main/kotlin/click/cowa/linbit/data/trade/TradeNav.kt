@@ -10,6 +10,10 @@ class TradeNav {
     private val _futures = MutableStateFlow("BTCUSDT")
     val spotSymbol: StateFlow<String> = _spot.asStateFlow()
     val futuresSymbol: StateFlow<String> = _futures.asStateFlow()
+    private val _spotTop = MutableStateFlow(0)
+    val spotTop: StateFlow<Int> = _spotTop.asStateFlow()
     fun setSpot(symbol: String) { _spot.value = symbol }
     fun setFutures(symbol: String) { _futures.value = symbol }
+    /** 0 现货 1 策略 2 理财 3 闪兑 */
+    fun openSpotTab(index: Int) { _spotTop.value = index }
 }

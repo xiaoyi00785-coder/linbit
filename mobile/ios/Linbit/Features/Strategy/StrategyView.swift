@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 策略交易：网格广场 / 我的策略；创建网格 → GridCreateView
 struct StrategyView: View {
+    var embedded = false
     @Environment(\.palette) private var p
     @EnvironmentObject private var session: Session
     @State private var tab = 0
@@ -14,16 +15,8 @@ struct StrategyView: View {
     @State private var copyFrom: APIGridSquareItem?
 
     var body: some View {
-        FeatureShell(title: "策略交易") {
-            VStack(spacing: 0) {
-                PrimaryTabs(items: ["网格广场", "我的策略"], selected: $tab)
-                ScrollView {
-                    VStack(spacing: 0) { if tab == 0 { squareList } else { mineList } }.padding(.bottom, 90)
-                }
-                .refreshable { await load() }
-                LBButton(title: "创建现货网格") { session.requireLogin { copyFrom = nil; create = true } }
-                    .padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
-            }
+        Group {
+            if embedded { strategyBody } else { FeatureShell(title: "策略交易") { strategyBody } }
         }
         .task { await load(); if Router.shared.shotSheet == "gridCreate" { Router.shared.shotSheet = nil; create = true } }
         .onChange(of: tab) { _ in Task { await load() } }
@@ -43,6 +36,18 @@ struct StrategyView: View {
                     }.padding(.horizontal, Spacing.pageH)
                 }
             }
+        }
+    }
+
+    private var strategyBody: some View {
+        VStack(spacing: 0) {
+            PrimaryTabs(items: ["网格广场", "我的策略"], selected: $tab)
+            ScrollView {
+                VStack(spacing: 0) { if tab == 0 { squareList } else { mineList } }.padding(.bottom, 90)
+            }
+            .refreshable { await load() }
+            LBButton(title: "创建现货网格") { session.requireLogin { copyFrom = nil; create = true } }
+                .padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
         }
     }
 

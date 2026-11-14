@@ -38,10 +38,13 @@ final class AccountsStore: ObservableObject {
 struct UserCenterView: View {
     @Environment(\.palette) private var p
     @EnvironmentObject private var session: Session
+    @EnvironmentObject private var theme: ThemeStore
     @State private var tab = 0
     @State private var confirm: ConfirmRequest?
     @State private var showSwitch = false
-    @ObservedObject private var flags = AppFeatures.shared
+    @State private var editingNick = false
+    @State private var nickDraft = ""
+    @State private var nickBusy = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,40 +63,14 @@ struct UserCenterView: View {
                 }
                 PrimaryTabs(items: ["个人资料", "偏好设置", "通知设置"], selected: $tab, size: FontSize.label, underline: true)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Spacing.pageH).padding(.top, 24)
-                VStack(spacing: 0) {
-                    row("UID") {
-                        HStack(spacing: 8) {
-                            Text(session.account?.uid ?? "—").font(.lbNum(FontSize.label)).foregroundColor(p.textSecondary)
-                            Image(systemName: "doc.on.doc").font(.system(size: 13)).foregroundColor(p.textSecondary)
-                        }
-                    } action: { UIPasteboard.general.string = session.account?.uid; ToastCenter.shared.show("已复制", .success) }
-                    row("昵称", value: session.account?.nickname ?? "") {}
-                    row("身份认证", value: (session.account?.kycLevel ?? 0) > 0 ? "已认证" : "去认证") {
-                        Router.shared.showUserCenter = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.kyc) }
-                    }
-                    row("卡券中心", value: nil) {
-                        Router.shared.showUserCenter = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.coupons) }
-                    }
-                    NavigationLink { SecurityView() } label: { rowLabel("账户安全", value: nil) }.buttonStyle(RowPressStyle())
-                    row("子账户", value: nil) {
-                        Router.shared.showUserCenter = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.subAccounts) }
-                    }
-                    if flags.isOn("supportTickets") {
-                        row("帮助中心 · 我的工单", value: nil) {
-                            Router.shared.showUserCenter = false
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(.support) }
-                        }
-                    }
-                    row("切换账号", value: nil) { showSwitch = true }
-                    Button {
-                        confirm = .init(title: "退出当前账户", message: "退出后需重新登录才能交易与查看资产", confirmTitle: "退出", destructive: true) {
-                            Task { await session.logout() }
-                        }
-                    } label: { rowLabel("退出当前账户", value: nil, red: true) }.buttonStyle(RowPressStyle())
-                }.padding(.top, 8)
+                if tab == 0 {
+                    profileRows
+                } else if tab == 1 {
+                    preferencePane
+                } else {
+                    InfoNote(text: "站内信与邮件通知可在消息通知页查看和设置；系统推送将在 Firebase / FCM 接入后开放。")
+                        .padding(Spacing.pageH).padding(.top, 12)
+                }
             }
         }
         .background(p.bg.ignoresSafeArea())
@@ -102,7 +79,79 @@ struct UserCenterView: View {
             NavigationLink(isActive: $showSwitch) { AccountSwitchView() } label: { EmptyView() }
         )
         .lbConfirm($confirm)
+        .lbSheet($editingNick) {
+            LBSheet(title: "修改昵称", showClose: true, onClose: { if !nickBusy { editingNick = false } }) {
+                VStack(alignment: .leading, spacing: 12) {
+                    LBTextField(placeholder: "1-32 个字符", text: $nickDraft)
+                    Text("昵称将展示在跟单、聊天室等公开场景。").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    LBButton(title: nickBusy ? "保存中" : "保存", enabled: !nickDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !nickBusy) {
+                        Task { await saveNick() }
+                    }
+                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
+            }
+        }
     }
+
+    private var profileRows: some View {
+        VStack(spacing: 0) {
+            row("UID") {
+                HStack(spacing: 8) {
+                    Text(session.account?.uid ?? "—").font(.lbNum(FontSize.label)).foregroundColor(p.textSecondary)
+                    Image(systemName: "doc.on.doc").font(.system(size: 13)).foregroundColor(p.textSecondary)
+                }
+            } action: { UIPasteboard.general.string = session.account?.uid; ToastCenter.shared.show("UID 已复制", .success) }
+            row("昵称", value: session.account?.nickname ?? "未设置") {
+                nickDraft = session.account?.nickname ?? ""; editingNick = true
+            }
+            row("身份认证", value: (session.account?.kycLevel ?? 0) > 0 ? "已认证" : "去认证") { open(.kyc) }
+            NavigationLink { SecurityView() } label: { rowLabel("账户安全", value: nil) }.buttonStyle(RowPressStyle())
+            row("子账户", value: nil) { open(.subAccounts) }
+            row("切换账号", value: nil) { showSwitch = true }
+            row("福利中心", value: nil) { open(.welfare) }
+            row("卡券中心", value: nil) { open(.coupons) }
+            row("合伙人计划", value: nil) { open(.partner) }
+            row("客服工单", value: nil) { open(.support) }
+            Button {
+                confirm = .init(title: "退出当前账户", message: "退出后需重新登录才能交易与查看资产", confirmTitle: "退出", destructive: true) {
+                    Task { await session.logout() }
+                }
+            } label: { rowLabel("退出当前账户", value: nil, red: true) }.buttonStyle(RowPressStyle())
+        }.padding(.top, 8)
+    }
+
+    private var preferencePane: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("外观").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).padding(.horizontal, Spacing.pageH)
+            HStack(spacing: 10) {
+                ForEach(ThemeMode.allCases) { mode in
+                    LBButton(title: mode.title, kind: theme.mode == mode ? .primary : .secondary, height: 40) { theme.mode = mode }
+                }
+            }.padding(.horizontal, Spacing.pageH)
+            Text("计价货币").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).padding(.horizontal, Spacing.pageH).padding(.top, 18)
+            row("默认计价货币", value: session.account?.quoteCurrency ?? "系统默认") {
+                ToastCenter.shared.show("计价货币设置将在后续批次接入")
+            }
+        }.padding(.top, 12)
+    }
+
+    private func open(_ page: FeaturePage) {
+        Router.shared.showUserCenter = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.openFeature(page) }
+    }
+
+    private func saveNick() async {
+        let n = nickDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1...32).contains(n.count) else { ToastCenter.shared.show("昵称需为 1-32 个字符", .error); return }
+        nickBusy = true
+        defer { nickBusy = false }
+        do {
+            _ = try await SecurityAPI.updateNickname(n)
+            await session.reloadAccount()
+            editingNick = false
+            ToastCenter.shared.show("昵称已更新", .success)
+        } catch { ToastCenter.shared.show(error.lbMessage, .error) }
+    }
+
     private var masked: String {
         guard let a = session.account else { return "" }
         return AccountId(kind: a.email != nil ? .email : .phone, email: a.email ?? "", countryCode: a.countryCode ?? "86", phone: a.phone ?? "").masked

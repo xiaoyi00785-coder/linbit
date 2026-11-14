@@ -3,6 +3,7 @@ import SwiftUI
 /// 闪兑：/convert/pairs → /convert/quote（10s 有效，过期自动重询）→ /convert/accept（幂等）；记录 /convert/orders。
 /// 未登录时用现货指数价给出参考值，登录后以服务端报价为准。
 struct SwapView: View {
+    var embedded = false
     @Environment(\.palette) private var p
     @EnvironmentObject private var session: Session
     @StateObject private var store = MarketStore.shared
@@ -55,15 +56,18 @@ struct SwapView: View {
     }
 
     var body: some View {
-        FeatureShell(title: "闪兑", trailing: {
-            Button { session.requireLogin { records = true } } label: { Image(systemName: "doc.text").foregroundColor(p.textPrimary) }
-        }) {
-            ScrollView {
+        Group {
+            if embedded {
                 VStack(spacing: 0) {
-                    if loading && cfg == nil { SkeletonList(rows: 3) }
-                    else if cfg == nil, let e = cfgError { ErrorStateView(message: e) { Task { await loadPairs() } }.frame(height: 300) }
-                    else { form }
-                }.padding(.horizontal, Spacing.pageH).padding(.top, 12)
+                    HStack {
+                        Text("闪兑").font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        recordsButton
+                    }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+                    swapBody
+                }
+            } else {
+                FeatureShell(title: "闪兑", trailing: { recordsButton }) { swapBody }
             }
         }
         .task {
@@ -82,6 +86,20 @@ struct SwapView: View {
         }
         .lbSheet($confirm) { confirmSheet }
         .lbSheet($records) { ConvertRecordsSheet { records = false } }
+    }
+
+    private var recordsButton: some View {
+        Button { session.requireLogin { records = true } } label: { Image(systemName: "doc.text").foregroundColor(p.textPrimary) }
+    }
+
+    private var swapBody: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if loading && cfg == nil { SkeletonList(rows: 3) }
+                else if cfg == nil, let e = cfgError { ErrorStateView(message: e) { Task { await loadPairs() } }.frame(height: 300) }
+                else { form }
+            }.padding(.horizontal, Spacing.pageH).padding(.top, 12)
+        }
     }
 
     private var pickable: [String] {

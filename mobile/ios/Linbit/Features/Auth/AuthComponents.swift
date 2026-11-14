@@ -15,7 +15,7 @@ struct AuthTopBar: View {
                     .font(.system(size: 18, weight: .medium)).foregroundColor(p.textPrimary).frame(width: 44, height: 44, alignment: .leading)
             }.buttonStyle(PressableStyle())
             Spacer()
-            Button { ToastCenter.shared.show("在线客服即将开放") } label: {
+            Button { Router.shared.openFeature(.support) } label: {
                 Image(systemName: "headphones").font(.system(size: 18)).foregroundColor(p.textPrimary).frame(width: 44, height: 44, alignment: .trailing)
             }.buttonStyle(PressableStyle())
         }

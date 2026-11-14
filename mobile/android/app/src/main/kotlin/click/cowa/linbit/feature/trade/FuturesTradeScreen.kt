@@ -125,8 +125,7 @@ fun FuturesRootScreen(
                 embedded = true,
                 bottomInset = bottomInset,
             )
-            // OpenAPI 暂无模拟/纸交易端点，不编造余额与成交
-            else -> ComingSoon("模拟交易", "后端尚未提供模拟交易契约（OpenAPI 无 paper/sim 端点），上线后按契约接入", bottomInset)
+            else -> PaperFuturesPane(bottomInset, onLogin)
         }
     }
 }
@@ -248,7 +247,7 @@ fun FuturesTradeContent(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CheckRow(vm.tpsl, "止盈/止损", dashed = false) { vm.tpsl = it }
                             Box(Modifier.weight(1f))
-                            if (vm.tpsl) Text("高级设置 ›", Modifier.pressable(scale = 1f) { vm.toast.show("高级止盈止损即将开放") }, style = lb(FontSize.small), color = p.textSecondary)
+                            if (vm.tpsl) Text("按标记价触发", style = lb(FontSize.small), color = p.textSecondary)
                         }
                         if (vm.tpsl) {
                             NumberBox("止盈", vm.quote, vm.tpText, { vm.tpText = it })
@@ -332,7 +331,7 @@ fun FuturesTradeContent(
                         else -> if (vm.shownPlans.isEmpty()) EmptyState("暂无计划委托") else vm.shownPlans.forEach { a -> AlgoOrderRow(a) { cancelAlgoTarget = a }; HorizontalDivider(Modifier.padding(horizontal = Spacing.pageH), color = p.divider) }
                     }
                 }
-                2 -> EmptyState("暂无跟单") { ChipButton("跟单交易", Modifier.width(120.dp).height(36.dp)) { vm.toast.show("跟单交易即将开放") } }
+                2 -> EmptyState("暂无跟单") { ChipButton("跟单交易", Modifier.width(120.dp).height(36.dp)) { onCopy() } }
                 else -> Coupons(vm, couponTab) { couponTab = it }
             }
             Box(Modifier.height(24.dp))
@@ -369,11 +368,14 @@ fun FuturesTradeContent(
         "pairs" -> PairPickerSheet(marketRows, vm.symbol, false, { vm.switchSymbol(it) }, { sheet = null })
         "precision" -> PrecisionSheet(vm.pricePrec, vm.bookPrecision, { vm.bookPrecision = it }, { sheet = null })
         "theme" -> ThemeModeSheet(themeMode, onTheme, { sheet = null })
+        "alert" -> LbSheet("价格预警", { sheet = null }) { PriceAlertForm(vm.symbol) { sheet = null } }
         "tools" -> ToolsSheet(vm.toast::show, { sheet = null }) { tool ->
             when (tool) {
                 "计算器" -> showCalculator = true
-                "价格预警" -> vm.toast.show("价格预警即将开放")
+                "价格预警" -> sheet = "alert"
                 "模拟交易" -> onSim()
+                "交易偏好" -> sheet = "theme"
+                else -> onHistory()
             }
         }
         "mode" -> MarginModeSheet(vm) { sheet = null }
@@ -448,7 +450,7 @@ private fun Coupons(vm: FuturesTradeViewModel, tab: Int, onTab: (Int) -> Unit) {
             )
         }
     }
-    if (items.isEmpty()) EmptyState("暂无卡券") { ChipButton("前往卡券中心", Modifier.width(140.dp).height(36.dp)) { vm.toast.show("卡券中心即将开放") } }
+    if (items.isEmpty()) EmptyState("暂无卡券。可从首页进入卡券中心。")
     else items.forEach { b ->
         Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.pageH).padding(top = 10.dp).border(1.dp, p.border, RoundedCornerShape(Radius.md)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
