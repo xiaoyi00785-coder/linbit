@@ -60,9 +60,22 @@ struct NewcomerView: View {
         switch c {
         case "login": session.present(.login)
         case "kyc": Router.shared.feature = .kyc
-        case "continue", "enroll", "open": Router.shared.feature = nil; Router.shared.tab = .spot
-        default: ToastCenter.shared.show("奖励领取即将开放")
+        case "continue", "open": Router.shared.feature = nil; Router.shared.tab = .spot
+        case "enroll", "claim": Task { await reward(c) }
+        default: Router.shared.openFeature(.welfare)
         }
+    }
+
+    private func reward(_ c: String?) async {
+        struct Empty: Encodable {}
+        do {
+            if c == "enroll" {
+                let _: JSONValue = try await APIClient.shared.post("/rewards/newcomer/enroll", body: Empty())
+            } else if let key = (state.value?.tasks ?? []).first(where: { $0.status != "claimed" && $0.status != "done" })?.key {
+                let _: JSONValue = try await APIClient.shared.post("/rewards/newcomer/tasks/\(key)/claim", body: Empty())
+            }
+            await load()
+        } catch { ToastCenter.shared.error(error) }
     }
 
     private func row(_ t: Newcomer.Task) -> some View {

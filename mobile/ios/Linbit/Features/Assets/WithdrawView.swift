@@ -52,6 +52,8 @@ struct WithdrawView: View {
     @Environment(\.palette) private var p
     @EnvironmentObject private var session: Session
     @State private var asset: String
+    @State private var mode = 0
+    @State private var recipient = ""
     @State private var nets: Loadable<[APIWithdrawNetwork]> = .idle
     @State private var recommended: Set<String> = []
     @State private var net: APIWithdrawNetwork?
@@ -76,7 +78,16 @@ struct WithdrawView: View {
     private var fundPasswordMissing: Bool {
         security?.policy?.fundPasswordMandatory == true && security?.fundPasswordSet != true
     }
-    private var amountError: String? { WithdrawRules.amountError(amount, asset: asset, available: available, net: net) }
+    private var amountError: String? {
+        if mode == 1 {
+            guard !amount.isEmpty else { return nil }
+            let a = Dec.parse(amount)
+            if a <= 0 { return "请输入转账数量" }
+            if let av = available, a > av { return "可用余额不足" }
+            return nil
+        }
+        return WithdrawRules.amountError(amount, asset: asset, available: available, net: net)
+    }
     private var receive: Decimal? { WithdrawRules.receive(amount, asset: asset, net: net) }
     /// 后端返回的原始字符串（只在 > 0 时展示，避免出现「最小 0」）
     private var minText: String? { WithdrawRules.positive(net?.minWithdraw) == nil ? nil : net?.minWithdraw }
@@ -84,8 +95,14 @@ struct WithdrawView: View {
 
     /// 提交前的完整校验；nil 表示可以提交
     private var validation: String? {
-        if lockedUntil != nil { return "提现保护期中，暂不可提现" }
+        if lockedUntil != nil { return mode == 1 ? "提现保护期中，暂不可转账" : "提现保护期中，暂不可提现" }
         if fundPasswordMissing { return "请先设置资金密码" }
+        if mode == 1 {
+            if security?.twoFactor?.enabled != true { return "内部转账需先绑定谷歌验证器" }
+            if recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "请输入接收方 UID 或邮箱" }
+            if amount.isEmpty { return "请输入转账数量" }
+            return amountError
+        }
         if net == nil { return "请选择提现网络" }
         if addr.count < 10 { return "请输入有效的提现地址" }
         if memoRequired && memo.trimmingCharacters(in: .whitespaces).isEmpty { return "该网络必须填写 Memo / Tag" }
@@ -96,9 +113,14 @@ struct WithdrawView: View {
     var body: some View {
         VStack(spacing: 0) {
             NavBar(title: "提现") {
-                NavigationLink(value: AssetsRoute.withdrawRecords) {
-                    Image(systemName: "doc.text.magnifyingglass").font(.system(size: 16)).foregroundColor(p.textPrimary)
-                }.accessibilityLabel("提现记录")
+                HStack(spacing: 14) {
+                    Button { Router.shared.assetsPath.append(AssetsRoute.addressBook) } label: {
+                        Text("地址簿").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    }
+                    NavigationLink(value: AssetsRoute.withdrawRecords) {
+                        Image(systemName: "doc.text.magnifyingglass").font(.system(size: 16)).foregroundColor(p.textPrimary)
+                    }.accessibilityLabel("提现记录")
+                }
             }
             AssetsLoginGate {
                 VStack(spacing: 0) {
@@ -133,7 +155,7 @@ struct WithdrawView: View {
         .lbSheet($showVerify) {
             WithdrawVerifySheet(
                 summary: summary,
-                useTotp: security?.twoFactor?.enabled == true,
+                useTotp: mode == 1 || security?.twoFactor?.enabled == true,
                 showFund: security?.fundPasswordSet == true,
                 fundRequired: security?.fundPasswordSet == true && security?.policy?.fundPasswordForWithdraw != false,
                 loading: submitting,
@@ -163,35 +185,42 @@ struct WithdrawView: View {
 
             PickerField(label: "币种", value: asset) { showAsset = true }
 
+            PillSegment(items: ["链上提现", "内部转账"], selected: $mode, height: 36)
+
+            if mode == 0 {
+                VStack(alignment: .leading, spacing: 6) {
+                    PickerField(label: "提现网络", value: net?.network ?? "", placeholder: networkPlaceholder) {
+                        if case .failed = nets { Task { await loadNetworks() } } else { showNet = true }
+                    }
+                    if case .failed(let e) = nets {
+                        Text("\(e)，点击上方重试").font(.lb(FontSize.small)).foregroundColor(p.down)
+                    } else if let n = net {
+                        Text("预计到账：\(WithdrawRules.eta(n.estimatedArrivalMinutes))\(n.confirmations.map { " · \($0) 次网络确认" } ?? "")")
+                            .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    }
+                }
+
+                LBTextField(label: "提现地址", placeholder: "输入或粘贴 \(asset) 地址", text: $address) {
+                    HStack(spacing: 12) {
+                        Button {
+                            if let s = UIPasteboard.general.string { address = s.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        } label: { Text("粘贴").font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary) }
+                        Button { showBook = true } label: {
+                            Image(systemName: "book.closed").font(.system(size: 15)).foregroundColor(p.textPrimary)
+                        }.accessibilityLabel("从地址簿选择")
+                    }
+                }
+
+                if memoRequired || !memo.isEmpty {
+                    LBTextField(label: "Memo / Tag", placeholder: memoRequired ? "该网络必须填写 Memo / Tag" : "Memo / Tag（选填）", text: $memo)
+                }
+            } else {
+                WarnBanner(text: "转给 Linbit 用户，免手续费、实时到账、不上链。需已绑定谷歌验证器。")
+                LBTextField(label: "收款人", placeholder: "请输入接收方 UID 或邮箱", text: $recipient)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
-                PickerField(label: "提现网络", value: net?.network ?? "", placeholder: networkPlaceholder) {
-                    if case .failed = nets { Task { await loadNetworks() } } else { showNet = true }
-                }
-                if case .failed(let e) = nets {
-                    Text("\(e)，点击上方重试").font(.lb(FontSize.small)).foregroundColor(p.down)
-                } else if let n = net {
-                    Text("预计到账：\(WithdrawRules.eta(n.estimatedArrivalMinutes))\(n.confirmations.map { " · \($0) 次网络确认" } ?? "")")
-                        .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                }
-            }
-
-            LBTextField(label: "提现地址", placeholder: "输入或粘贴 \(asset) 地址", text: $address) {
-                HStack(spacing: 12) {
-                    Button {
-                        if let s = UIPasteboard.general.string { address = s.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    } label: { Text("粘贴").font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary) }
-                    Button { showBook = true } label: {
-                        Image(systemName: "book.closed").font(.system(size: 15)).foregroundColor(p.textPrimary)
-                    }.accessibilityLabel("从地址簿选择")
-                }
-            }
-
-            if memoRequired || !memo.isEmpty {
-                LBTextField(label: "Memo / Tag", placeholder: memoRequired ? "该网络必须填写 Memo / Tag" : "Memo / Tag（选填）", text: $memo)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                NumberBox(label: "提现数量", unit: asset, text: $amount, onEdit: {})
+                NumberBox(label: mode == 0 ? "提现数量" : "转账数量", unit: asset, text: $amount, onEdit: {})
                     .overlay(alignment: .trailing) {
                         Button("全部") { if let av = available, av > 0 { amount = "\(av)" } }
                             .font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary).padding(.trailing, 60)
@@ -204,11 +233,18 @@ struct WithdrawView: View {
                 if let e = amountError { Text(e).font(.lb(FontSize.small)).foregroundColor(p.down) }
             }
 
-            AssetsCard {
-                AssetKVRow(k: "单笔最小提现", v: "\(minText ?? "--") \(asset)")
-                AssetKVRow(k: "单笔最大提现", v: maxText.map { "\($0) \(asset)" } ?? "不限")
-                AssetKVRow(k: "链上网络费（Gas）", v: "\(net?.gasFeeEstimate ?? "--") \(net?.gasFeeAsset ?? asset)")
-                AssetKVRow(k: "到账数量", v: "\(receive.map { Fmt.amount($0, 8) } ?? "--") \(asset)")
+            if mode == 0 {
+                AssetsCard {
+                    AssetKVRow(k: "单笔最小提现", v: "\(minText ?? "--") \(asset)")
+                    AssetKVRow(k: "单笔最大提现", v: maxText.map { "\($0) \(asset)" } ?? "不限")
+                    AssetKVRow(k: "链上网络费（Gas）", v: "\(net?.gasFeeEstimate ?? "--") \(net?.gasFeeAsset ?? asset)")
+                    AssetKVRow(k: "到账数量", v: "\(receive.map { Fmt.amount($0, 8) } ?? "--") \(asset)")
+                }
+            } else {
+                AssetsCard {
+                    AssetKVRow(k: "手续费", v: "免费")
+                    AssetKVRow(k: "预计到账", v: "实时到账")
+                }
             }
 
             Text("请确认收款地址与所选网络一致，链上转账一旦发出无法撤回。Linbit 不会以任何形式索要密码或要求私下转账，谨防诈骗。")
@@ -228,11 +264,12 @@ struct WithdrawView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("预计到账").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                Text("\(receive.map { Fmt.amount($0, 8) } ?? "0") \(asset)").font(.lbNum(FontSize.body, .bold)).foregroundColor(p.textPrimary)
+                Text(mode == 0 ? "\(receive.map { Fmt.amount($0, 8) } ?? "0") \(asset)" : "\(Dec.parse(amount) > 0 ? amount : "0") \(asset)")
+                    .font(.lbNum(FontSize.body, .bold)).foregroundColor(p.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
             Spacer()
-            LBButton(title: "提现", enabled: validation == nil, loading: submitting) { openVerify() }.frame(width: 140)
+            LBButton(title: mode == 0 ? "提现" : "转账", enabled: validation == nil, loading: submitting) { openVerify() }.frame(width: 140)
         }
         .padding(.horizontal, Spacing.pageH).padding(.vertical, 10)
         .background(p.bg)
@@ -240,7 +277,11 @@ struct WithdrawView: View {
     }
 
     private var summary: [(String, String)] {
-        [("币种 / 网络", "\(asset) · \(net?.network ?? "--")"),
+        if mode == 1 {
+            return [("币种", asset), ("收款人", recipient.trimmingCharacters(in: .whitespacesAndNewlines)),
+                    ("转账数量", "\(amount) \(asset)"), ("手续费", "免费"), ("到账", "实时到账")]
+        }
+        return [("币种 / 网络", "\(asset) · \(net?.network ?? "--")"),
          ("提现地址", addr + (memo.isEmpty ? "" : "\nMemo: \(memo)")),
          ("提现数量", "\(amount) \(asset)"),
          ("网络费（Gas）", "\(net?.gasFeeEstimate ?? "--") \(net?.gasFeeAsset ?? asset)"),
@@ -260,7 +301,34 @@ struct WithdrawView: View {
         }
     }
 
+    private func submitInternal(totp: String?, fund: String?) {
+        guard let totp, !totp.isEmpty, !submitting else {
+            if (totp ?? "").isEmpty { ToastCenter.shared.show("请输入谷歌验证码", .error) }
+            return
+        }
+        let who = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = who.contains("@")
+        submitting = true
+        Task {
+            defer { submitting = false }
+            do {
+                let t = try await AssetsAPI.internalTransfer(APIInternalTransferRequest(
+                    clientId: "ios-\(UUID().uuidString.lowercased())", asset: asset, amount: amount,
+                    toUid: email ? nil : who, toEmail: email ? who : nil, totpCode: totp, fundPassword: fund))
+                showVerify = false
+                Haptics.success()
+                ToastCenter.shared.show(t.status == .failed ? "转账失败" : "转账成功", t.status == .failed ? .error : .success)
+                amount = ""; recipient = ""
+                await AssetsModel.shared.load(silent: true)
+            } catch {
+                Haptics.error()
+                ToastCenter.shared.show(securityMessage(error), .error)
+            }
+        }
+    }
+
     private func submit(totp: String?, code: String?, fund: String?) {
+        if mode == 1 { submitInternal(totp: totp, fund: fund); return }
         guard let n = net, !submitting else { return }
         submitting = true
         Task {

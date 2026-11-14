@@ -49,15 +49,46 @@ func (s *Server) checkDailyLimit(ctx context.Context, userID, asset string, amou
 	if !on || limit.Sign() <= 0 {
 		return nil // unlimited for this level
 	}
-	price, ok := s.usdtPrice(ctx, asset)
-	if !ok {
-		return errf(http.StatusBadRequest, "PRICE_UNAVAILABLE", "暂无 "+asset+" 的实时价格，无法计算提现额度，请稍后再试")
-	}
-
 	since := time.Now().Add(-24 * time.Hour)
 	prior, err := s.store.WithdrawnSince(ctx, userID, since)
 	if err != nil {
 		return errf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+	}
+	return s.limitAgainst(ctx, userID, asset, amount, prior)
+}
+
+// dailyLimitLocked is the same 24h cap, using usage read inside the withdrawal
+// advisory lock. userID is required because prior rows do not carry it.
+func (s *Server) dailyLimitLocked(ctx context.Context, userID, asset string, amount decimal.Decimal, prior []AssetAmount) *apiError {
+	_, tiersOn := s.cfg.KYC.limit(0)
+	if !tiersOn {
+		return nil
+	}
+	level, err := s.account.KYCLevel(ctx, userID)
+	if err != nil {
+		return errf(http.StatusInternalServerError, "INTERNAL", "无法获取认证等级")
+	}
+	limit, on := s.cfg.KYC.limit(level)
+	if !on || limit.Sign() <= 0 {
+		return nil
+	}
+	return s.limitAgainst(ctx, userID, asset, amount, prior)
+}
+
+func (s *Server) limitAgainst(ctx context.Context, userID, asset string, amount decimal.Decimal, prior []AssetAmount) *apiError {
+	_ = userID
+	levelLimit := decimal.Zero
+	if level, err := s.account.KYCLevel(ctx, userID); err == nil {
+		if lim, on := s.cfg.KYC.limit(level); on {
+			levelLimit = lim
+		}
+	}
+	if levelLimit.Sign() <= 0 {
+		return nil
+	}
+	price, ok := s.usdtPrice(ctx, asset)
+	if !ok {
+		return errf(http.StatusBadRequest, "PRICE_UNAVAILABLE", "暂无 "+asset+" 的实时价格，无法计算提现额度，请稍后再试")
 	}
 	used := decimal.Zero
 	cache := map[string]decimal.Decimal{asset: price}
@@ -73,9 +104,9 @@ func (s *Server) checkDailyLimit(ctx context.Context, userID, asset string, amou
 		used = used.Add(w.Amount.Mul(p))
 	}
 	projected := used.Add(amount.Mul(price))
-	if projected.GreaterThan(limit) {
+	if projected.GreaterThan(levelLimit) {
 		return errf(http.StatusBadRequest, "WITHDRAW_LIMIT_EXCEEDED",
-			"超过当前认证等级的 24 小时提现额度（上限 "+limit.String()+" USDT 等值，已用 "+used.StringFixed(2)+"）")
+			"超过当前认证等级的 24 小时提现额度（上限 "+levelLimit.String()+" USDT 等值，已用 "+used.StringFixed(2)+"）")
 	}
 	return nil
 }

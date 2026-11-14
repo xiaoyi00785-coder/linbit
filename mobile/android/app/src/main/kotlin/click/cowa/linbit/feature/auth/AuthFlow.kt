@@ -130,16 +130,16 @@ internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: 
     var showCountry by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = true, onLeft = onClose, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = true, onLeft = onClose, onSupport = { soon("请先登录，然后在首页耳机图标打开工单") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("登录", lightSubtitle("立即登录，每日登录领红包 🧧"))
             LabeledAccountField(vm) { showCountry = true }
             AuthButton("登录", Modifier.padding(top = 32.dp)) { vm.submitAccount(onNext) }
             OrDivider(Modifier.padding(vertical = 32.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SocialButton(R.drawable.ic_passkey, "使用通行密钥继续") { soon("通行密钥登录即将开放") }
-                SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 登录即将开放") }
-                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 登录即将开放") }
+                SocialButton(R.drawable.ic_passkey, "使用通行密钥继续") { soon("请先在安全中心绑定通行密钥，再使用系统通行密钥登录") }
+                SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 登录需要服务端配置 Sign in with Apple") }
+                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 登录需要服务端配置 OAuth 客户端") }
             }
             Text(
                 "创建账户", Modifier.align(Alignment.CenterHorizontally).padding(top = 24.dp, bottom = 24.dp).pressable(onClick = onRegister),
@@ -155,7 +155,7 @@ internal fun LoginAccountScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: 
 internal fun PasswordScreen(vm: AuthViewModel, onBack: () -> Unit, onForgot: () -> Unit, onChallenge: () -> Unit, onDone: () -> Unit, soon: (String) -> Unit) {
     val p = LB.p
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("请先登录，然后在首页耳机图标打开工单") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("请输入密码", AnnotatedString(vm.id.masked), LB.p.textSecondary)
             FieldLabel("密码")
@@ -197,7 +197,7 @@ internal fun VerifyScreen(
     }
     fun submit() { vm.submitCode(mode, method, onDone, onSetPassword, onResetToken) }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { soon("请先登录，然后在首页耳机图标打开工单") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader(title, subtitle)
             FieldLabel("验证码")
@@ -244,7 +244,7 @@ internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -
     var showCountry by remember { mutableStateOf(false) }
     BackHandler { showRetain = true }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = true, onLeft = { showRetain = true }, onSupport = { soon("在线客服即将开放") })
+        AuthTopBar(isRoot = true, onLeft = { showRetain = true }, onSupport = { soon("请先登录，然后在首页耳机图标打开工单") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("创建帐户", buildAnnotatedString {
                 append("完成注册可获得最高 ")
@@ -271,8 +271,8 @@ internal fun RegisterScreen(vm: AuthViewModel, onClose: () -> Unit, onNext: () -
             AuthButton("注册", Modifier.padding(top = 16.dp), loading = vm.loading) { vm.submitRegister(agree, onNext) }
             OrDivider(Modifier.padding(vertical = 32.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 注册即将开放") }
-                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 注册即将开放") }
+                SocialButton(R.drawable.ic_apple, "通过 Apple 继续") { soon("Apple 注册需要服务端配置 Sign in with Apple") }
+                SocialButton(R.drawable.ic_google, "通过 Google 继续", multicolor = true) { soon("Google 注册需要服务端配置 OAuth 客户端") }
             }
             Text(
                 "已有账户，立即登录", Modifier.align(Alignment.CenterHorizontally).padding(top = 24.dp, bottom = 24.dp).pressable(onClick = onLogin),
@@ -314,7 +314,7 @@ internal fun SetPasswordScreen(
     var pwd2 by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { vm.toast.show("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { vm.toast.show("请先登录，然后在首页耳机图标打开工单") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader(
                 if (resetToken == null) "设置密码" else "重置密码",
@@ -348,7 +348,7 @@ internal fun SetPasswordScreen(
 internal fun ForgotScreen(vm: AuthViewModel, onBack: () -> Unit, onNext: () -> Unit) {
     var showCountry by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { vm.toast.show("在线客服即将开放") })
+        AuthTopBar(isRoot = false, onLeft = onBack, onSupport = { vm.toast.show("请先登录，然后在首页耳机图标打开工单") })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.pageH)) {
             AuthHeader("重置密码", AnnotatedString("为保障资金安全，重置密码后 24 小时内禁止提现。"))
             LabeledAccountField(vm) { showCountry = true }

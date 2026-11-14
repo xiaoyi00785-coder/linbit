@@ -62,6 +62,7 @@ class SpotTradeViewModel @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     val symbolFlow: StateFlow<String> = nav.spotSymbol
+    val spotTop: StateFlow<Int> = nav.spotTop
     var symbol by mutableStateOf(nav.spotSymbol.value); private set
     var meta by mutableStateOf<ApiSymbol?>(null); private set
     var book by mutableStateOf(OrderBook()); private set

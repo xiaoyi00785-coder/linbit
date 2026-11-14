@@ -110,8 +110,36 @@ final class PasskeyRegistrar: NSObject, ASAuthorizationControllerDelegate, ASAut
         return try await withCheckedThrowingContinuation { k in cont = k; c.performRequests() }
     }
 
+    func login(options raw: [String: AnyCodable]) async throws -> [String: Any] {
+        var o: [String: Any] = raw.mapValues { $0.value }
+        if let inner = o["publicKey"] as? [String: Any] { o = inner }
+        guard let ch = o["challenge"] as? String, let challenge = Data(base64url: ch),
+              let rp = o["rpId"] as? String ?? (o["rp"] as? [String: Any])?["id"] as? String
+        else { throw PasskeyError.badOptions }
+        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rp)
+        let req = provider.createCredentialAssertionRequest(challenge: challenge)
+        let c = ASAuthorizationController(authorizationRequests: [req])
+        c.delegate = self; c.presentationContextProvider = self
+        return try await withCheckedThrowingContinuation { k in cont = k; c.performRequests() }
+    }
+
     nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization a: ASAuthorization) {
         Task { @MainActor in
+            if let r = a.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion {
+                let id = r.credentialID.base64url
+                cont?.resume(returning: [
+                    "id": id, "rawId": id, "type": "public-key", "authenticatorAttachment": "platform",
+                    "response": [
+                        "clientDataJSON": r.rawClientDataJSON.base64url,
+                        "authenticatorData": r.rawAuthenticatorData.base64url,
+                        "signature": r.signature.base64url,
+                        "userHandle": (r.userID ?? Data()).base64url,
+                    ],
+                    "clientExtensionResults": [String: Any](),
+                ])
+                cont = nil
+                return
+            }
             guard let r = a.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration, let att = r.rawAttestationObject else {
                 cont?.resume(throwing: PasskeyError.badOptions); cont = nil; return
             }

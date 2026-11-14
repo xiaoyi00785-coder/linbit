@@ -17,7 +17,12 @@ struct AssetsView: View {
             VStack(spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     PrimaryTabs(items: tabs, selected: Binding(get: { tab }, set: { i in
-                        if i >= 4 { ToastCenter.shared.show("\(tabs[i])即将开放") } else { tab = i }
+                        switch i {
+                        case 4: Router.shared.openSpotTab(2)
+                        case 5: Router.shared.openSpotTab(1)
+                        case 6: Router.shared.openSpotTab(0)
+                        default: tab = i
+                        }
                     })).padding(.horizontal, Spacing.pageH)
                 }.frame(height: 44)
                 Divider().overlay(p.divider)
@@ -138,12 +143,12 @@ struct AssetsView: View {
     private var actions: some View {
         let items: [(String, String, () -> Void)] = {
             let dep = ("充值", "arrow.down.left.circle.fill", { router.open(.deposit(nil)) })
-            let buy = ("快捷买币", "creditcard.fill", { ToastCenter.shared.show("快捷买币即将开放") })
+            let buy = ("快捷买币", "creditcard.fill", { Router.shared.openSpotTab(3) })
             let wd = ("提现", "arrow.up.right.circle.fill", { showWithdraw = true })
             let tr = ("划转", "arrow.left.arrow.right.circle.fill", { router.open(.transfer) })
             let trade = ("去交易", "chart.line.uptrend.xyaxis.circle.fill", { router.tab = tab == 2 ? .futures : .spot })
             switch tab {
-            case 2: return [trade, tr, ("盈亏", "chart.pie.fill", { ToastCenter.shared.show("盈亏分析即将开放") })]
+            case 2: return [trade, tr, ("盈亏", "chart.pie.fill", { Router.shared.openFeature(.futuresHistory) })]
             case 3: return [trade, dep, buy, tr]
             default: return [dep, buy, wd, tr]
             }
@@ -162,7 +167,7 @@ struct AssetsView: View {
     }
 
     private var swapEntry: some View {
-        Button { ToastCenter.shared.show("现货兑换即将开放") } label: {
+        Button { Router.shared.openSpotTab(3) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.triangle.2.circlepath.circle").foregroundColor(p.textPrimary)
                 Text("现货兑换").font(.lb(FontSize.label)).foregroundColor(p.textPrimary)

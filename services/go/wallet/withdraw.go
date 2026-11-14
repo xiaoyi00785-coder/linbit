@@ -4,6 +4,7 @@ import (
 	"github.com/linbit/platform/services/go/common"
 
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -28,6 +29,8 @@ type apiError struct {
 }
 
 func errf(status int, code, msg string) *apiError { return &apiError{status, code, msg} }
+
+func (e *apiError) Error() string { return e.code + ": " + e.msg }
 
 // withdrawInput is the validated submit payload.
 type withdrawInput struct {
@@ -86,7 +89,8 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		}
 	}
 
-	// KYC-tiered rolling-24h withdrawal limit (checked before any funds are frozen).
+	// Fast reject before 2FA and gas. The insert below checks the same limit
+	// again under a per-user lock.
 	if apiErr := s.checkDailyLimit(ctx, userID, in.Asset, in.Amount); apiErr != nil {
 		return nil, apiErr
 	}
@@ -153,8 +157,18 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		Amount: in.Amount, GasFee: gas, GasFeeAsset: net.GasFeeAsset, GasDeductMode: s.cfg.GasDeductMode,
 		FrozenAmount: frozen, RiskScore: score, Status: wStatusReview,
 	}
-	id, err := s.store.InsertWithdrawal(ctx, w)
+	since := time.Now().Add(-24 * time.Hour)
+	id, err := s.store.InsertWithdrawalLocked(ctx, w, since, func(prior []AssetAmount) error {
+		if apiErr := s.dailyLimitLocked(ctx, userID, in.Asset, in.Amount, prior); apiErr != nil {
+			return apiErr
+		}
+		return nil
+	})
 	if err != nil {
+		var apiErr *apiError
+		if errors.As(err, &apiErr) {
+			return nil, apiErr
+		}
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 	}
 

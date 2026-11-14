@@ -29,7 +29,7 @@ fun PlaceholderScreen(title: String, bottomInset: Dp, loginHint: Boolean = false
     ) {
         LinbitWordmark(132.dp)
         Text(title, Modifier.padding(top = 28.dp), style = lb(FontSize.title, FontWeight.SemiBold), color = p.textPrimary)
-        Text(if (loginHint) "登录后查看资产" else "即将开放", Modifier.padding(top = 6.dp), style = lb(FontSize.caption), color = p.textSecondary)
+        Text(if (loginHint) "登录后查看资产" else "从首页或资产页进入对应功能", Modifier.padding(top = 6.dp), style = lb(FontSize.caption), color = p.textSecondary)
         if (loginHint) LbButton("登录 / 注册", Modifier.padding(top = 24.dp), onClick = onLogin)
     }
 }

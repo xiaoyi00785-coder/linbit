@@ -11,7 +11,6 @@ struct HomeView: View {
     @ObservedObject private var notif = NotifCenter.shared
     @State private var rankTab = 1
     @State private var rankKind = 0
-    @State private var newsTab = 0
     @State private var bannerPage = 0
     @State private var earnPage = 0
     @State private var moreSheet = false
@@ -33,8 +32,6 @@ struct HomeView: View {
                     earnStrip
                     hairline
                     ranking
-                    sectionDivider
-                    news
                 }
                 .padding(.bottom, Metrics.tabBarH + 40)
             }
@@ -56,16 +53,18 @@ struct HomeView: View {
                 } else { IconView(icon: .avatar, size: 28) }
             }
                 .buttonStyle(PressableStyle())
-            HStack(spacing: 6) {
-                IconView(icon: .search, size: 15, tint: p.textTertiary)
-                Text(vm.searchHint ?? "BTC").font(.lb(FontSize.label)).foregroundColor(p.textTertiary)
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .frame(height: Metrics.searchBarH)
-            .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
-            IconView(icon: .scan, tint: p.textPrimary)
-            IconView(icon: .headset, tint: p.textPrimary)
+            Button(action: onOpenMarkets) {
+                HStack(spacing: 6) {
+                    IconView(icon: .search, size: 15, tint: p.textTertiary)
+                    Text(vm.searchHint ?? "BTC").font(.lb(FontSize.label)).foregroundColor(p.textTertiary)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .frame(height: Metrics.searchBarH)
+                .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+            }.buttonStyle(PressableStyle())
+            Button { Router.shared.open(.deposit(nil)) } label: { IconView(icon: .scan, tint: p.textPrimary) }.buttonStyle(PressableStyle())
+            Button { Session.shared.requireLogin { Router.shared.openFeature(.support) } } label: { IconView(icon: .headset, tint: p.textPrimary) }.buttonStyle(PressableStyle())
             Button { if session.isLoggedIn || NotifShot.state != nil { Router.shared.openFeature(.notifications) } else { session.showAuth = true } } label: {
                 IconView(icon: .bell, tint: p.textPrimary)
                     .overlay(alignment: .topTrailing) { if notif.unread > 0 { Badge(n: notif.unread).offset(x: 8, y: -6) } }
@@ -164,17 +163,16 @@ struct HomeView: View {
 
     private func gridTap(_ title: String) {
         switch title {
-        case "聊天室": Router.shared.openFeature(.chat)
+        case "聊天室": Router.shared.openFeature(.support)
         case "福利中心": Router.shared.openFeature(.welfare)
-        case "理财": Router.shared.openFeature(.earn)
+        case "理财": Router.shared.openSpotTab(2)
         case "TradFi": Router.shared.openFeature(.tradfi)
         case "跟单": Router.shared.openFeature(.copyTrading)
-        case "策略交易": Router.shared.openFeature(.strategy)
+        case "策略交易": Router.shared.openSpotTab(1)
         default: moreSheet = true
         }
     }
 
-    private var sectionDivider: some View { Rectangle().fill(p.fill).frame(height: 8) }
     /// 对照图 #1 的分隔线：1 物理像素（@3x = 0.33pt）通栏浅灰线
     private var hairline: some View { Rectangle().fill(p.border).frame(height: 1 / max(displayScale, 1)) }
 
@@ -206,7 +204,7 @@ struct HomeView: View {
         .frame(height: 138)
         .overlay(alignment: .bottomTrailing) { pager(bannerPage + 1, max(vm.banners.count, 1)).padding(.trailing, 23).padding(.bottom, 4) }
         .contentShape(Rectangle())
-        .onTapGesture { HomeLink.open(currentBanner?.link, fallback: nil) }
+        .onTapGesture { Router.shared.openFeature(.coupons) }
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
             if vm.banners.count > 1 { withAnimation { bannerPage = (bannerPage + 1) % vm.banners.count } }
         }
@@ -254,7 +252,7 @@ struct HomeView: View {
         .frame(height: 87)
         .overlay(alignment: .bottomTrailing) { pager(earnPage + 1, max(vm.earn.count, 1)).padding(.trailing, 23).padding(.bottom, 23.5) }
         .contentShape(Rectangle())
-        .onTapGesture { Router.shared.openFeature(.earn) }
+        .onTapGesture { Router.shared.openSpotTab(2) }
         .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
             if !vm.earn.isEmpty { earnPage = (earnPage + 1) % vm.earn.count }
         }
@@ -284,31 +282,6 @@ struct HomeView: View {
         }
     }
 
-    // MARK: 公告 / 快讯 / 学院
-    private var news: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PrimaryTabs(items: ["公告", "快讯", "学院"], selected: $newsTab, size: 16)
-                .padding(.horizontal, Spacing.pageH).padding(.vertical, 16)
-            if newsTab == 0 {
-                if vm.announcements.isEmpty {
-                    EmptyStateView(text: vm.announcementNote ?? "暂无公告").frame(height: 140)
-                }
-                ForEach(Array(vm.announcements.prefix(5).enumerated()), id: \.offset) { _, a in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(a.title ?? "").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).lineLimit(2)
-                        Text(a.publishAt.map { Fmt.dateTime($0) } ?? "")
-                            .font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
-                    }
-                    .padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
-                    Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
-                }
-            } else {
-                EmptyStateView(text: newsTab == 1 ? "快讯即将上线" : "学院即将上线").frame(height: 140)
-            }
-            moreLink {}
-        }
-    }
-
     private func moreLink(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 2) {
@@ -329,9 +302,8 @@ extension Array {
 @MainActor
 enum HomeLink {
     private static let routes: [String: FeaturePage] = [
-        "earn": .earn, "grid": .strategy, "strategy": .strategy, "swap": .swap, "convert": .swap,
-        "chat": .chat, "reward": .welfare, "rewards": .welfare, "newcomer": .welfare, "welfare": .welfare,
-        "sub-account": .subAccounts, "partner": .partner, "loans": .loans, "loan": .loans, "affiliate": .partner, "copy": .copyTrading, "tradfi": .tradfi,
+        "reward": .welfare, "rewards": .welfare, "newcomer": .welfare, "welfare": .welfare,
+        "sub-account": .subAccounts, "partner": .partner, "affiliate": .partner, "copy": .copyTrading, "tradfi": .tradfi,
     ]
     private static let webHosts: Set<String> = ["cowa.click", "www.cowa.click"]
 
@@ -353,48 +325,44 @@ enum HomeLink {
     static func open(_ link: String?, fallback: FeaturePage?) {
         guard let link, !link.isEmpty else { if let f = fallback { Router.shared.openFeature(f) }; return }
         if let first = segments(link)?.first {
-            if let f = routes[first] { Router.shared.openFeature(f); return }
-            if first == "futures" { Router.shared.tab = .futures; return }
-            if first == "event" { Router.shared.futuresTop = 1; Router.shared.tab = .futures; return }
+            switch first {
+            case "earn": Router.shared.openSpotTab(2); return
+            case "grid", "strategy": Router.shared.openSpotTab(1); return
+            case "swap", "convert": Router.shared.openSpotTab(3); return
+            case "chat": Router.shared.openFeature(.support); return
+            case "futures": Router.shared.tab = .futures; return
+            case "event": Router.shared.futuresTop = 1; Router.shared.tab = .futures; return
+            default: if let f = routes[first] { Router.shared.openFeature(f); return }
+            }
         }
         if link.lowercased().hasPrefix("http"), let u = URL(string: link) { UIApplication.shared.open(u); return }
         if let f = fallback { Router.shared.openFeature(f) }
     }
 }
 
-/// 首页“更多”：全部功能（未开放的显示即将上线）
+/// 首页“更多”：与安卓全部功能一致的 7 项。
 struct HomeMoreSheet: View {
     @Environment(\.palette) private var p
-    @ObservedObject private var flags = AppFeatures.shared
     let onClose: () -> Void
-    private let items: [(String, String, FeaturePage?, String?)] = [
-        ("arrow.left.arrow.right.circle", "闪兑", .swap, "convert"), ("chart.bar.xaxis", "策略交易", .strategy, nil),
-        ("banknote", "理财", .earn, nil), ("bubble.left.and.bubble.right", "聊天室", .chat, "chat"),
-        ("person.2", "子账户", .subAccounts, "subAccounts"), ("gift", "福利中心", .welfare, nil), ("person.3.sequence", "合伙人", .partner, nil), ("banknote", "质押借币", .loans, nil),
-        ("doc.on.doc", "跟单", .copyTrading, "copyTrading"), ("building.columns", "TradFi", .tradfi, "tokenizedStocks"),
-        ("clock.arrow.circlepath", "事件合约", nil, "eventContracts"), ("person.3", "P2P", nil, "p2p"),
-        ("creditcard", "快捷买币", nil, "fiatOnRamp"), ("function", "期权", nil, "options")]
+    private let items: [(String, FeaturePage)] = [
+        ("福利中心", .welfare), ("跟单交易", .copyTrading), ("消息通知", .notifications),
+        ("卡券中心", .coupons), ("合伙人计划", .partner), ("TradFi", .tradfi), ("我的工单", .support),
+    ]
     var body: some View {
         LBSheet(title: "全部功能", showClose: true, onClose: onClose) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 18) {
-                ForEach(items, id: \.1) { icon, title, page, flag in
-                    let on = flag.map { flags.isOn($0) } ?? true
+            VStack(spacing: 10) {
+                ForEach(items, id: \.0) { title, page in
                     Button {
                         onClose()
-                        if !on { ToastCenter.shared.show("\(title) 即将上线"); return }
-                        if let page { Router.shared.openFeature(page) }
-                        else if title == "事件合约" { Router.shared.futuresTop = 1; Router.shared.tab = .futures }
-                        else { ToastCenter.shared.show("\(title) 即将上线") }
+                        Router.shared.openFeature(page)
                     } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: icon).font(.system(size: 18)).foregroundColor(on ? p.textPrimary : p.textTertiary)
-                                .frame(width: 44, height: 44).background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.iconTileBg))
-                                .overlay(alignment: .topTrailing) {
-                                    if !on { Text("即将上线").font(.lb(8)).foregroundColor(p.textOnPrimary).padding(.horizontal, 3)
-                                        .background(Capsule().fill(p.brand)).offset(x: 10, y: -6) }
-                                }
-                            Text(title).font(.lb(FontSize.small)).foregroundColor(on ? p.textPrimary : p.textTertiary)
+                        HStack {
+                            Text(title).font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(p.textTertiary)
                         }
+                        .padding(16)
+                        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
                     }.buttonStyle(PressableStyle())
                 }
             }.padding(.horizontal, Spacing.pageH)

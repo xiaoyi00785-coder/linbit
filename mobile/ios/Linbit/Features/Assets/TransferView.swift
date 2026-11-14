@@ -71,7 +71,12 @@ struct TransferView: View {
                         }
                     }
                     ForEach(["现货账户", "理财账户", "子账户"], id: \.self) { a in
-                        SheetOptionRow(title: a, subtitle: "即将开放", selected: false) { ToastCenter.shared.show("\(a)划转即将开放") }.opacity(0.5)
+                        SheetOptionRow(title: a, subtitle: "打开", selected: false) {
+                            pickFrom = nil
+                            if a == "现货账户" { Router.shared.openSpotTab(0) }
+                            else if a == "理财账户" { Router.shared.openSpotTab(2) }
+                            else { Router.shared.openFeature(.subAccounts) }
+                        }
                     }
                 }.padding(.bottom, 20)
             }

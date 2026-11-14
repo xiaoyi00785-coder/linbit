@@ -38,6 +38,9 @@ import click.cowa.linbit.core.generated.ApiEarnProduct
 import click.cowa.linbit.core.generated.ApiEarnSummary200Response
 import click.cowa.linbit.core.generated.ApiGridBot
 import click.cowa.linbit.core.generated.ApiGridSquareItem
+import click.cowa.linbit.core.generated.ApiGridCreateRequest
+import click.cowa.linbit.core.network.AmountBody
+import click.cowa.linbit.core.network.InvestmentBody
 import click.cowa.linbit.core.network.LinbitApi
 import click.cowa.linbit.core.network.TokenStore
 import click.cowa.linbit.core.network.apiCall
@@ -129,6 +132,52 @@ class SpotSubpagesViewModel @Inject constructor(
         }
     }
 
+    fun subscribe(id: String, amount: String) {
+        if (!tokens.loggedIn.value) { toast.show("请先登录"); return }
+        viewModelScope.launch {
+            try {
+                apiCall { api.earnSubscribe(id, AmountBody(amount)) }
+                toast.show("申购成功", ToastCenter.Kind.SUCCESS)
+                loadEarn()
+            } catch (e: Throwable) { toast.error(e) }
+        }
+    }
+
+    fun redeem(id: String, amount: String) {
+        if (!tokens.loggedIn.value) { toast.show("请先登录"); return }
+        viewModelScope.launch {
+            try {
+                apiCall { api.earnRedeem(id, AmountBody(amount)) }
+                toast.show("赎回已提交", ToastCenter.Kind.SUCCESS)
+                loadEarn()
+            } catch (e: Throwable) { toast.error(e) }
+        }
+    }
+
+    fun copyGrid(id: String, investment: String) {
+        if (!tokens.loggedIn.value) { toast.show("请先登录"); return }
+        viewModelScope.launch {
+            try {
+                apiCall { api.copyGrid(id, InvestmentBody(investment)) }
+                toast.show("已复制策略", ToastCenter.Kind.SUCCESS)
+                loadStrategy()
+            } catch (e: Throwable) { toast.error(e) }
+        }
+    }
+
+    fun createGrid(symbol: String, lower: String, upper: String, grids: Int, investment: String) {
+        if (!tokens.loggedIn.value) { toast.show("请先登录"); return }
+        viewModelScope.launch {
+            try {
+                apiCall {
+                    api.createGrid(ApiGridCreateRequest(symbol = symbol, mode = ApiGridCreateRequest.Mode.ARITHMETIC, lowerPrice = lower, upperPrice = upper, gridCount = grids, investment = investment))
+                }
+                toast.show("网格已创建", ToastCenter.Kind.SUCCESS)
+                loadStrategy()
+            } catch (e: Throwable) { toast.error(e) }
+        }
+    }
+
     fun acceptQuote(onDone: (Boolean) -> Unit = {}) {
         val q = quote ?: return
         val id = q.quoteId ?: run { toast.show("报价无效"); return }
@@ -169,8 +218,11 @@ fun StrategySubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Uni
                     }
                     KvRow("价格区间", "${item.lowerPrice ?: "--"} – ${item.upperPrice ?: "--"}")
                     KvRow("网格数", "${item.gridCount ?: 0}")
+                    var invest by remember(item.id) { mutableStateOf("100") }
+                    NumberBox("投入 USDT", "USDT", invest, { invest = it })
                     ChipButton("复制策略", Modifier.height(32.dp)) {
-                        if (!loggedIn) onLogin() else vm.toast.show("复制策略即将在后续版本开放完整表单")
+                        val id = item.id
+                        if (!loggedIn) onLogin() else if (id != null) vm.copyGrid(id, invest)
                     }
                 }
             }
@@ -226,11 +278,17 @@ fun EarnSubpage(bottomInset: androidx.compose.ui.unit.Dp, onLogin: () -> Unit, v
                     Column(horizontalAlignment = Alignment.End) {
                         Text("${Fmt.amount(Dec.parse(prod.apr).multiply(BigDecimal(100)), 2)}%", style = lbNum(FontSize.body, FontWeight.SemiBold), color = p.up)
                         Text("年化", style = lb(FontSize.small), color = p.textTertiary)
+                        val id = prod.id
+                        if (id != null) {
+                            var amt by remember(id) { mutableStateOf(prod.minAmount ?: "10") }
+                            NumberBox("数量", prod.asset ?: "", amt, { amt = it })
+                            ChipButton("申购", Modifier.height(28.dp)) { if (!loggedIn) onLogin() else vm.subscribe(id, amt) }
+                            ChipButton("赎回", Modifier.height(28.dp)) { if (!loggedIn) onLogin() else vm.redeem(id, amt) }
+                        }
                     }
                 }
             }
         }
-        Text("申购 / 赎回完整流程将在资产模块完善；当前可浏览产品与持仓摘要。", Modifier.padding(Spacing.pageH), style = lb(FontSize.small), color = p.textTertiary)
     }
 }
 

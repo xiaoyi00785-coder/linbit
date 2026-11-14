@@ -54,6 +54,8 @@ final class Session: ObservableObject {
 final class Router: ObservableObject {
     static let shared = Router()
     @Published var tab: MainTab = .home
+    /// 现货页顶部：0 现货 1 策略 2 理财 3 闪兑
+    @Published var spotTop = 0
     @Published var spotSymbol = "BTCUSDT"
     @Published var assetsPath = NavigationPath()
     @Published var spotPath = NavigationPath()
@@ -66,8 +68,10 @@ final class Router: ObservableObject {
     /// CI 截图：自动弹出的弹窗名（leverage / mode / tpsl / kind / tools / subscribe / gridSheet …）
     @Published var shotSheet: String?
 
-    func trade(_ symbol: String) { spotSymbol = symbol; tab = .spot }
+    func trade(_ symbol: String) { spotSymbol = symbol; spotTop = 0; tab = .spot }
     func tradeFutures(_ symbol: String) { futuresSymbol = symbol; futuresTop = 0; tab = .futures }
+    /// 切到现货 Tab 的某一子页。0 现货，1 策略，2 理财，3 闪兑。
+    func openSpotTab(_ index: Int) { spotTop = index; tab = .spot }
     func openFeature(_ f: FeaturePage) { feature = f }
     func open(_ r: AssetsRoute) {
         Session.shared.requireLogin { [self] in tab = .assets; assetsPath.append(r) }

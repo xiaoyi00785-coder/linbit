@@ -62,6 +62,8 @@ fun AssetsScreen(
     assetsNav: AssetsNav,
     onOpenFutures: () -> Unit = {},
     onOpenSpot: () -> Unit = {},
+    onOpenSpotTab: (Int) -> Unit = {},
+    onOpenPnl: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
     vm: AssetsViewModel = hiltViewModel(),
 ) {
@@ -78,7 +80,12 @@ fun AssetsScreen(
     Column(Modifier.fillMaxSize().background(p.bg)) {
         Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             PrimaryTabs(Tabs, s.tab, onSelect = { i ->
-                if (i >= 4) vm.toast.show("${Tabs[i]}即将开放") else vm.setTab(i)
+                when (i) {
+                    4 -> onOpenSpotTab(2)
+                    5 -> onOpenSpotTab(1)
+                    6 -> onOpenSpotTab(0)
+                    else -> vm.setTab(i)
+                }
             }, Modifier.padding(horizontal = Spacing.pageH))
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(p.divider))
@@ -124,7 +131,8 @@ fun AssetsScreen(
                     onWithdraw = { showWithdraw = true },
                     onTransfer = { assetsNav.openTransfer() },
                     onTrade = { if (s.tab == 2) onOpenFutures() else onOpenSpot() },
-                    onSoon = { vm.toast.show(it) },
+                    onOpenSpotTab = onOpenSpotTab,
+                    onOpenPnl = onOpenPnl,
                 )
                 if (s.tab == 2) FuturesCard(vm, s) else AssetList(
                     vm, s, showSearch,
@@ -240,13 +248,14 @@ private fun Actions(
     onWithdraw: () -> Unit,
     onTransfer: () -> Unit,
     onTrade: () -> Unit,
-    onSoon: (String) -> Unit,
+    onOpenSpotTab: (Int) -> Unit,
+    onOpenPnl: () -> Unit,
 ) {
     val p = LB.p
     val items: List<Pair<String, () -> Unit>> = when (tab) {
-        2 -> listOf("去交易" to onTrade, "划转" to onTransfer, "盈亏" to { onSoon("盈亏分析即将开放") })
-        3 -> listOf("去交易" to onTrade, "充值" to onDeposit, "快捷买币" to { onSoon("快捷买币即将开放") }, "划转" to onTransfer)
-        else -> listOf("充值" to onDeposit, "快捷买币" to { onSoon("快捷买币即将开放") }, "提现" to onWithdraw, "划转" to onTransfer)
+        2 -> listOf("去交易" to onTrade, "划转" to onTransfer, "盈亏" to onOpenPnl)
+        3 -> listOf("去交易" to onTrade, "充值" to onDeposit, "快捷买币" to { onOpenSpotTab(3) }, "划转" to onTransfer)
+        else -> listOf("充值" to onDeposit, "快捷买币" to { onOpenSpotTab(3) }, "提现" to onWithdraw, "划转" to onTransfer)
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(top = 20.dp)) {
         items.forEach { (title, act) ->

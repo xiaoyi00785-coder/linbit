@@ -16,7 +16,7 @@ struct FuturesRootView: View {
             case 1:
                 if flags.isOn("eventContracts") { EventContractView() } else { ComingSoonView(title: "事件合约", note: "猜涨跌，到期按指数价结算，敬请期待") }
             case 2: TradFiView()
-            default: ComingSoonView(title: "模拟交易", note: "使用模拟资金体验合约交易，即将上线")
+            default: PaperFuturesScreen()
             }
         }
         .background(p.bg.ignoresSafeArea())
@@ -318,10 +318,10 @@ struct FuturesTradeView: View {
     private var bottomSection: some View {
         VStack(spacing: 0) {
             HStack(spacing: 18) {
-                tab("仓位(\(m.positions.count))", 0)
-                tab("委托(\(m.openOrders.count))", 1)
-                tab("跟单", 2)
-                tab("卡券", 3)
+                tab("仓位 (\(m.positions.count))", 0)
+                tab("委托 (\(m.openOrders.count + m.planAlgos.count + m.tpslAlgos.count))", 1)
+                tab("跟单 (0)", 2)
+                tab("卡券 (\(m.bonus?.items?.count ?? 0))", 3)
                 Spacer()
                 Button { Router.shared.openFeature(.futuresHistory) } label: {
                     Image(systemName: "doc.text").font(.system(size: 15)).foregroundColor(p.textSecondary)

@@ -92,12 +92,12 @@ struct KVCell: View {
 struct ComingSoonView: View {
     @Environment(\.palette) private var p
     let title: String
-    var note = "该功能即将上线，敬请期待"
+    var note = "该功能当前已关闭"
     var body: some View {
         VStack(spacing: 12) {
             Spacer()
             EmptyIllustration()
-            Text("\(title) 即将上线").font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+            Text(title).font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
             Text(note).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).multilineTextAlignment(.center)
             Spacer(); Spacer()
         }
