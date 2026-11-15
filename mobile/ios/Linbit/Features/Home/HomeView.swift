@@ -10,7 +10,7 @@ struct HomeView: View {
     @State private var hideAssets = false
     @ObservedObject private var notif = NotifCenter.shared
     @State private var rankTab = 1
-    @State private var rankKind = 0
+    @State private var rankKind = 1  // Android ref/2：默认选中「合约」
     @State private var bannerPage = 0
     @State private var earnPage = 0
     @State private var moreSheet = false
@@ -50,7 +50,7 @@ struct HomeView: View {
                 if session.account != nil || SecShot.raw == "sec:home" {
                     AvatarView(url: session.account?.avatarUrl, name: session.account?.nickname ?? "lb_Trader", size: 28,
                                local: SecShot.raw == "sec:home" ? AvatarDemo.image(120) : nil)
-                } else { IconView(icon: .avatar, size: 28) }
+                } else { IconView(icon: .logo, size: 28) }
             }
                 .buttonStyle(PressableStyle())
             Button(action: onOpenMarkets) {
@@ -103,10 +103,15 @@ struct HomeView: View {
 
     private var taskCard: some View {
         HStack(spacing: 4) {
-            (Text(newcomerLead).foregroundColor(p.textPrimary)
-             + Text("\(vm.newcomer?.total ?? "215") \(vm.newcomer?.asset ?? "USDT")").foregroundColor(p.brand).fontWeight(.semibold)
-             + Text(" 体验金").foregroundColor(p.textPrimary))
-                .font(.lb(FontSize.caption))
+            VStack(alignment: .leading, spacing: 2) {
+                (Text(newcomerLead).foregroundColor(p.textPrimary)
+                 + Text("\(vm.newcomer?.total ?? "215") \(vm.newcomer?.asset ?? "USDT")").foregroundColor(p.brand).fontWeight(.semibold)
+                 + Text(" 体验金").foregroundColor(p.textPrimary))
+                    .font(.lb(FontSize.caption))
+                if let deadline = vm.newcomer?.deadline {
+                    CountdownText(deadline: deadline).font(.lbNum(10)).foregroundColor(p.textTertiary)
+                }
+            }
             Spacer()
             IconView(icon: .chevronRight, size: 14, tint: p.textSecondary)
         }
@@ -128,13 +133,13 @@ struct HomeView: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(vm.promo?.title ?? "全员红包雨火爆来袭").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                Text(vm.promo?.subtitle ?? "惊喜好礼等你拿").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                Text(vm.promo?.subtitle ?? "每日登入领红包，各种福利领不停").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
             }
             Spacer()
             IconView(icon: .gGift, size: 40)
         }
         .padding(.horizontal, 14)
-        .frame(height: Metrics.bannerH)
+        .frame(height: 62)
         .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); HomeLink.open(vm.promo?.linkUrl, fallback: .welfare) }
@@ -225,11 +230,23 @@ struct HomeView: View {
             AsyncImage(url: url) { img in img.resizable().scaledToFit() } placeholder: { RoundedRectangle(cornerRadius: 8).fill(p.fill) }
                 .frame(width: 76, height: 70)
         } else if currentBanner == nil {
+            // 对齐 Android：绿卡 #ABE127 在后旋转 -9°，黑卡 #070808 在前旋转 +5°，右下角白色 VISA 文字
             ZStack {
-                RoundedRectangle(cornerRadius: 4).fill(p.brand).frame(width: 54, height: 34)
-                    .rotationEffect(.degrees(-8)).position(x: 27, y: 19)
-                RoundedRectangle(cornerRadius: 4).fill(p.primary).frame(width: 62, height: 39)
-                    .overlay(IconView(icon: .logo, size: 10, tint: p.bg).padding(5), alignment: .topLeading)
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(red: 0xAB/255.0, green: 0xE1/255.0, blue: 0x27/255.0))
+                    .frame(width: 54, height: 34)
+                    .rotationEffect(.degrees(-9))
+                    .position(x: 27, y: 19)
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(red: 0x07/255.0, green: 0x08/255.0, blue: 0x08/255.0))
+                    .frame(width: 62, height: 39)
+                    .overlay(
+                        ZStack(alignment: .bottomTrailing) {
+                            IconView(icon: .logo, size: 10, tint: .white).padding(5).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            Text("VISA").font(.system(size: 7, weight: .bold)).foregroundColor(.white).padding(.trailing, 5).padding(.bottom, 3)
+                        }
+                    )
+                    .rotationEffect(.degrees(5))
                     .position(x: 44.5, y: 41)
             }
             .frame(width: 76, height: 70)
@@ -267,7 +284,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 对照图 #2：分隔线到 Tab 文字顶 23pt；Tab 间距 18pt、选中项下 16×3 横线；横线到筛选块 19pt
             PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16, underline: true, spacing: 17)
-                .padding(.horizontal, Spacing.pageH).padding(.top, 20)
+                .padding(.horizontal, Spacing.pageH).padding(.top, 16)
             ChipBar(items: ["现货", "合约"], selected: $rankKind).padding(.top, 19).padding(.bottom, 12)
             HStack {
                 Text("交易对"); Spacer(); Text("最新价")
@@ -367,5 +384,24 @@ struct HomeMoreSheet: View {
                 }
             }.padding(.horizontal, Spacing.pageH)
         }
+    }
+}
+
+/// 倒计时文本（与 Android 一致：「6D:23:46:26」），每秒刷新。
+private struct CountdownText: View {
+    let deadline: Date
+    @State private var text: String = ""
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    var body: some View {
+        Text(text).onAppear { update() }.onReceive(timer) { _ in update() }
+    }
+    private func update() {
+        let left = max(deadline.timeIntervalSinceNow, 0)
+        if left == 0 { text = ""; return }
+        let d = Int(left) / 86400
+        let h = Int(left) % 86400 / 3600
+        let m = Int(left) % 3600 / 60
+        let s = Int(left) % 60
+        text = String(format: "%dD:%02d:%02d:%02d", d, h, m, s)
     }
 }

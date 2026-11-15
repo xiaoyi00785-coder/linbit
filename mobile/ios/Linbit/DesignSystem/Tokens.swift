@@ -17,9 +17,9 @@ struct Palette {
         iconTileBg: .hex(0xF3F3F3), badgeDot: .hex(0x9BCB2A), mask: .hex(0x000000, 0.4))
 
     static let dark = Palette(
-        bg: .hex(0x0B0B0C), bgElevated: .hex(0x161618), fill: .hex(0x1E1E20), fillStrong: .hex(0x2A2A2D),
+        bg: .hex(0x070808), bgElevated: .hex(0x161618), fill: .hex(0x1E1E20), fillStrong: .hex(0x2A2A2D),
         border: .hex(0x2A2A2D), divider: .hex(0x1C1C1E),
-        textPrimary: .hex(0xF5F5F5), textSecondary: .hex(0x8C8C8F), textTertiary: .hex(0x5E5E62), textOnPrimary: .hex(0x0B0B0C),
+        textPrimary: .hex(0xF5F5F5), textSecondary: .hex(0x8C8C8F), textTertiary: .hex(0x5E5E62), textOnPrimary: .hex(0x070808),
         primary: .hex(0xF5F5F5), brand: .hex(0xABE127), up: .hex(0x5FB971), down: .hex(0xDD5754),
         upTint: .hex(0x14261A), downTint: .hex(0x2C1616), onChange: .hex(0xFFFFFF),
         tabBarBg: .hex(0x1C1C1E, 0.90), tabBarSelected: .hex(0x2E2E31), tabBarBorder: .hex(0x2A2A2D),
@@ -27,7 +27,7 @@ struct Palette {
 }
 
 enum FontSize {
-    static let assetHero: CGFloat = 40, tabPrimary: CGFloat = 18, title: CGFloat = 17, symbol: CGFloat = 17
+    static let assetHero: CGFloat = 34, tabPrimary: CGFloat = 18, title: CGFloat = 17, symbol: CGFloat = 17
     static let symbolWithIcon: CGFloat = 16, body: CGFloat = 15, price: CGFloat = 16, change: CGFloat = 15
     static let label: CGFloat = 14, tabSecondary: CGFloat = 15, chip: CGFloat = 14, caption: CGFloat = 13
     static let small: CGFloat = 12, tabBar: CGFloat = 11

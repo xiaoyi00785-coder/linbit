@@ -301,18 +301,27 @@ struct NumberBox: View {
     }
 }
 
-/// 委托空状态：插画 + 「划转资金，开始现货交易」+ 充值 / 划转
+/// 委托空状态：已登录时显示「划转资金，开始现货交易」插画 + 充值/划转；未登录时显示登录引导（对齐 Android）
 struct SpotEmpty: View {
     @Environment(\.palette) private var p
+    @ObservedObject private var session = Session.shared
     var body: some View {
-        VStack(spacing: 12) {
-            EmptyIllustration()
-            Text("划转资金，开始现货交易").font(.lb(FontSize.caption)).foregroundColor(p.textPrimary)
-            HStack(spacing: 10) {
-                small("充值") { Router.shared.open(.deposit(nil)) }
-                small("划转") { Router.shared.open(.transfer) }
-            }
-        }.frame(maxWidth: .infinity).padding(.vertical, 24)
+        if session.isLoggedIn {
+            VStack(spacing: 12) {
+                EmptyIllustration()
+                Text("划转资金，开始现货交易").font(.lb(FontSize.caption)).foregroundColor(p.textPrimary)
+                HStack(spacing: 10) {
+                    small("充值") { Router.shared.open(.deposit(nil)) }
+                    small("划转") { Router.shared.open(.transfer) }
+                }
+            }.frame(maxWidth: .infinity).padding(.vertical, 24)
+        } else {
+            VStack(spacing: 12) {
+                EmptyIllustration()
+                Text("登录后查看委托").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                LBButton(title: "登录 / 注册") { session.present(.login) }.frame(width: 160)
+            }.frame(maxWidth: .infinity).padding(.vertical, 24)
+        }
     }
     private func small(_ t: String, _ a: @escaping () -> Void) -> some View {
         Button(action: a) {
