@@ -90,6 +90,80 @@ func TestCreditFreezeUnfreeze(t *testing.T) {
 	}
 }
 
+// TestWithdrawFreezeUnfreeze verifies that a withdrawal's freeze and unfreeze
+// (reject/cancel path) use distinct refs and do not collide.
+func TestWithdrawFreezeUnfreeze(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	uid := testUser()
+	withdrawID := "withdraw:123"
+
+	if err := store.EnsureAccount(ctx, uid); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if err := store.Credit(ctx, uid, "USDT", decimal.RequireFromString("1000"), "seed-"+uid); err != nil {
+		t.Fatalf("credit: %v", err)
+	}
+
+	// Freeze for withdrawal (same as FreezeWithdraw, but at the store level).
+	if err := store.Freeze(ctx, uid, "USDT", decimal.RequireFromString("500"), withdrawID); err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	assertBalance(t, store, uid, "USDT", "500", "500")
+
+	// Withdrawal rejected/cancelled: unfreeze must succeed with the same ref.
+	if err := store.Unfreeze(ctx, uid, "USDT", decimal.RequireFromString("500"), withdrawID); err != nil {
+		t.Fatalf("unfreeze after reject: %v", err)
+	}
+	assertBalance(t, store, uid, "USDT", "1000", "0")
+
+	// Idempotency: repeating the unfreeze with the same ref is a no-op.
+	if err := store.Unfreeze(ctx, uid, "USDT", decimal.RequireFromString("500"), withdrawID); err != ErrAlreadyApplied {
+		t.Fatalf("second unfreeze: got %v, want ErrAlreadyApplied", err)
+	}
+	assertBalance(t, store, uid, "USDT", "1000", "0")
+}
+
+// TestWithdrawFreezeComplete verifies that completing a withdrawal after freezing
+// does not collide (the freeze and complete operations namespace their refs).
+func TestWithdrawFreezeComplete(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	uid := testUser()
+	feeAcct := testUser()
+	withdrawID := "withdraw:456"
+
+	if err := store.EnsureAccount(ctx, uid); err != nil {
+		t.Fatalf("ensure user: %v", err)
+	}
+	if err := store.EnsureAccount(ctx, feeAcct); err != nil {
+		t.Fatalf("ensure fee: %v", err)
+	}
+	if err := store.Credit(ctx, uid, "USDT", decimal.RequireFromString("1000"), "seed-"+uid); err != nil {
+		t.Fatalf("credit: %v", err)
+	}
+
+	// Freeze for withdrawal.
+	if err := store.Freeze(ctx, uid, "USDT", decimal.RequireFromString("500"), withdrawID); err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	assertBalance(t, store, uid, "USDT", "500", "500")
+
+	// Complete the withdrawal (deduct locked balance, collect gas fee).
+	if err := store.WithdrawComplete(ctx, uid, "USDT", decimal.RequireFromString("490"), decimal.RequireFromString("10"), feeAcct, withdrawID); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	assertBalance(t, store, uid, "USDT", "500", "0")
+	assertBalance(t, store, feeAcct, "USDT", "10", "0")
+
+	// Idempotency: repeating complete with the same ref is a no-op.
+	if err := store.WithdrawComplete(ctx, uid, "USDT", decimal.RequireFromString("490"), decimal.RequireFromString("10"), feeAcct, withdrawID); err != ErrAlreadyApplied {
+		t.Fatalf("second complete: got %v, want ErrAlreadyApplied", err)
+	}
+	assertBalance(t, store, uid, "USDT", "500", "0")
+	assertBalance(t, store, feeAcct, "USDT", "10", "0")
+}
+
 func TestFreezeInsufficient(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()

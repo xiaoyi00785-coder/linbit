@@ -18,14 +18,22 @@ var ErrAlreadyApplied = errors.New("operation already applied")
 
 // claimRef inserts ref into wallet_ops inside tx. It returns ErrAlreadyApplied
 // when the ref already exists.
+//
+// The stored ref is prefixed by op so that freeze, unfreeze, and
+// withdraw_complete on the same user-supplied ref remain distinct: a rejected
+// withdrawal can unfreeze without colliding with the initial freeze, and
+// completing a withdrawal does not collide with the freeze that preceded it.
 func claimRef(ctx context.Context, tx *sql.Tx, ref, op, userID, asset string, amount decimal.Decimal) error {
 	if ref == "" {
 		return nil // no idempotency requested
 	}
+	// Namespace the stored ref by operation to prevent collisions when the same
+	// caller-supplied ref is used for freeze, unfreeze, and withdraw_complete.
+	storedRef := op + ":" + ref
 	res, err := tx.ExecContext(ctx,
 		`INSERT INTO wallet_ops (ref, op, user_id, asset, amount) VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (ref) DO NOTHING`,
-		ref, op, userID, asset, amount.String())
+		storedRef, op, userID, asset, amount.String())
 	if err != nil {
 		return err
 	}
