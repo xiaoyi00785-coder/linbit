@@ -55,6 +55,14 @@ type extFeed struct {
 	books    map[string]depthDTO
 	seq      map[string]uint64
 	ticks    map[string]tickerDTO
+
+	// Futures books are kept apart from spot. Both used to share `books`, so
+	// /market/depth flipped between the Binance spot book and the OKX swap
+	// book depending on which venue wrote last.
+	futBooks map[string]depthDTO
+	okxBooks map[string]*okxBook        // instId -> full local book (channel "books")
+	okxCt    map[string]decimal.Decimal // instId -> contract value in base coin
+	okxEmit  map[string]time.Time       // instId -> last futures-depth broadcast
 }
 
 func newExtFeed(binance, fapi, okx string) *extFeed {
@@ -71,6 +79,10 @@ func newExtFeed(binance, fapi, okx string) *extFeed {
 		books:    map[string]depthDTO{},
 		seq:      map[string]uint64{},
 		ticks:    map[string]tickerDTO{},
+		futBooks: map[string]depthDTO{},
+		okxBooks: map[string]*okxBook{},
+		okxCt:    map[string]decimal.Decimal{},
+		okxEmit:  map[string]time.Time{},
 	}
 }
 
@@ -80,17 +92,41 @@ func (e *extFeed) hasDepth(symbol string) bool {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	d, ok := e.books[strings.ToUpper(symbol)]
+	symbol = strings.ToUpper(symbol)
+	if d, ok := e.books[symbol]; ok && len(d.Bids)+len(d.Asks) > 0 {
+		return true
+	}
+	d, ok := e.futBooks[symbol]
 	return ok && len(d.Bids)+len(d.Asks) > 0
 }
 
+// depth returns the spot venue book. Symbols that only trade as perps
+// (stocks, metals, oil) have no spot book and fall back to the swap book.
 func (e *extFeed) depth(symbol string, limit int) (depthDTO, bool) {
+	return e.venueDepth(symbol, limit, false)
+}
+
+// futDepth returns the swap venue book, falling back to spot when the swap
+// stream has not delivered yet.
+func (e *extFeed) futDepth(symbol string, limit int) (depthDTO, bool) {
+	return e.venueDepth(symbol, limit, true)
+}
+
+func (e *extFeed) venueDepth(symbol string, limit int, futures bool) (depthDTO, bool) {
 	if e == nil {
 		return depthDTO{}, false
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	d, ok := e.books[strings.ToUpper(symbol)]
+	symbol = strings.ToUpper(symbol)
+	first, second := e.books, e.futBooks
+	if futures {
+		first, second = e.futBooks, e.books
+	}
+	d, ok := first[symbol]
+	if !ok || len(d.Bids)+len(d.Asks) == 0 {
+		d, ok = second[symbol]
+	}
 	if !ok || len(d.Bids)+len(d.Asks) == 0 {
 		return depthDTO{}, false
 	}

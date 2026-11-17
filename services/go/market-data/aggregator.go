@@ -467,6 +467,17 @@ func (a *Aggregator) DepthFrame(symbol string, limit int) (depthDTO, bool) {
 	}, true
 }
 
+// FuturesDepthFrame returns the swap venue book for the futures page and
+// falls back to the spot frame when no swap book exists.
+func (a *Aggregator) FuturesDepthFrame(symbol string, limit int) (depthDTO, bool) {
+	if a.ext != nil {
+		if d, ok := a.ext.futDepth(symbol, limit); ok {
+			return d, true
+		}
+	}
+	return a.DepthFrame(symbol, limit)
+}
+
 // TickerFrame returns a 24h ticker DTO for the symbol.
 func (a *Aggregator) TickerFrame(symbol string) (tickerDTO, bool) {
 	a.mu.Lock()
