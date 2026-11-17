@@ -132,6 +132,10 @@ enum AuthAPI {
     }
 
     static func account() async throws -> APIAccount { try await api.get("/account", auth: true) }
+    static func preferences() async throws -> APIAccountPreferences { try await api.get("/account/preferences", auth: true) }
+    static func updateQuote(_ currency: String) async throws -> APIAccountPreferences {
+        try await api.put("/account/preferences", body: APIUpdateAccountPreferencesRequest(quoteCurrency: currency))
+    }
     static func bindTotp() async throws -> APITotpBinding { try await api.post("/2fa/totp/bind", body: Optional<Int>.none) }
     /// 开启 TOTP：`code` 为身份验证器验证码，`securityCode` 为 sendSecurityCode() 发到邮箱/手机的验证码
     static func verifyTotp(_ code: String, securityCode: String) async throws {

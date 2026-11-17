@@ -48,10 +48,11 @@ Gateway: `/futures/market/*` is public. The rest of `/futures/*` needs a Bearer 
   - MM = notional × mmr(tier) − maintenanceAmount(tier), where the tier is picked by the position's notional at mark. maintenanceAmount keeps MM continuous across tiers.
   - Each tier has a max leverage. An order (non reduce-only) is rejected with `POSITION_LIMIT` when |position + same-side open orders + order| × price exceeds the largest notional allowed at the current leverage. Raising leverage on an open position is rejected the same way.
   - Liquidation prices use the tier at the current notional.
-  - Seeded brackets (USDT notional / MMR / max leverage):
-    - 200x contracts (BTC, ETH): ≤50k 0.4% 200x; ≤500k 0.5% 100x; ≤2M 1% 50x; ≤10M 2.5% 20x; ≤50M 5% 10x; ≤200M 10% 5x.
-    - 100x contracts (BNB, SOL, XRP, DOGE): ≤20k 0.4% 100x; ≤200k 1% 50x; ≤1M 2.5% 20x; ≤5M 5% 10x; ≤20M 10% 5x.
-    - 75x contracts (ARB, TON, LINK, AVAX): ≤10k 0.4% 75x; ≤100k 1% 50x; ≤500k 2.5% 20x; ≤2M 5% 10x; ≤10M 10% 5x.
+  - Brackets after migration 00015 (USDT notional / MMR / max leverage). The top bracket is sized so the highest leverage accepts about 100,000 USDT of margin:
+    - 200x contracts (BTC, ETH): ≤20M 0.4% 200x; ≤50M 0.5% 100x; ≤100M 1% 50x; ≤200M 2.5% 20x; ≤500M 5% 10x; ≤1B 10% 5x.
+    - 100x contracts (BNB, SOL, XRP, DOGE): ≤10M 0.4% 100x; ≤20M 1% 50x; ≤50M 2.5% 20x; ≤100M 5% 10x; ≤200M 10% 5x.
+    - 75x contracts (ARB, TON, LINK, AVAX): ≤7.5M 0.4% 75x; ≤15M 1% 50x; ≤40M 2.5% 20x; ≤80M 5% 10x; ≤150M 10% 5x.
+    - 50x contracts (XAG, WTI): ≤5M 1% 50x; ≤15M 2% 25x; ≤40M 5% 10x; ≤100M 10% 5x.
 - **ADL (auto-deleveraging)**, `FUTURES_ADL_ENABLED=true`:
   - Triggered when a liquidated position is bankrupt (equity < 0 at mark) and the deficit is larger than the insurance fund balance.
   - The uncovered part is pushed into the close price: the position is closed at the bankruptcy price (mark shifted by uncovered / |qty|; for cross, the deficit is split across positions by notional) against opposing user positions, in order of score = ROE × leverage (in profit) or ROE ÷ leverage (in loss).

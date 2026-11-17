@@ -138,7 +138,7 @@ struct AssetsView: View {
     }
 
     private var header: some View {
-        let total = tab == 2 ? m.futuresTotal : tab == 0 ? m.total : m.spotTotal
+        let total = tab == 2 ? m.futuresTotal : tab == 1 ? m.fundingTotal : tab == 3 ? m.spotTotal : m.total
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("总资产估值").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
@@ -156,7 +156,7 @@ struct AssetsView: View {
             if tab == 1 || tab == 2 {
                 HStack(spacing: 8) {
                     Text(tab == 2 ? "今日盈亏" : "可用余额").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                    Text(m.hideAmount ? "****" : tab == 2 ? "\(Fmt.amount(Dec.parse(m.futures?.crossUnrealizedPnl), 2)) USD" : "\(Fmt.amount(m.spotAvailUSDT, 2)) USDT")
+                    Text(m.hideAmount ? "****" : tab == 2 ? "\(Fmt.amount(Dec.parse(m.futures?.crossUnrealizedPnl), 2)) USD" : "\(Fmt.amount(tab == 1 ? m.fundingAvailUSDT : m.spotAvailUSDT, 2)) USDT")
                         .font(.lbNum(FontSize.small, .medium)).foregroundColor(p.textPrimary)
                 }.padding(.top, 8)
             }
@@ -201,6 +201,21 @@ struct AssetsView: View {
         }.buttonStyle(PressableStyle()).padding(.horizontal, Spacing.pageH)
     }
 
+    private struct Holding: Identifiable {
+        var account: String
+        var balance: APIBalance
+        var id: String { account + "-" + balance.asset + "-" + (balance.free ?? "") + "-" + (balance.total ?? "") }
+    }
+    private var holdings: [Holding] {
+        switch tab {
+        case 1: return m.filtered(m.funding).map { Holding(account: "资金", balance: $0) }
+        case 3: return m.filtered(m.spot).map { Holding(account: "现货", balance: $0) }
+        default:
+            return m.filtered(m.funding).map { Holding(account: "资金", balance: $0) }
+                + m.filtered(m.spot).map { Holding(account: "现货", balance: $0) }
+        }
+    }
+
     private var assetList: some View {
         VStack(spacing: 0) {
             Rectangle().fill(p.fill).frame(height: 8).padding(.top, 20)
@@ -215,14 +230,18 @@ struct AssetsView: View {
                     Button { showFilter = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
             }.font(.system(size: 16)).foregroundColor(p.textSecondary).padding(.horizontal, Spacing.pageH).frame(height: 56)
-            if m.rows.isEmpty { EmptyStateView(text: m.query.isEmpty ? "暂无资产" : "暂无相关币种").padding(.vertical, 40) }
-            ForEach(m.rows, id: \.asset) { b in
+            if let note = tab == 1 ? m.fundingError : tab == 3 ? m.spotError : nil {
+                Text(note).font(.lb(FontSize.small)).foregroundColor(p.down).padding(.horizontal, Spacing.pageH)
+            }
+            if holdings.isEmpty { EmptyStateView(text: m.query.isEmpty ? "暂无资产" : "暂无相关币种").padding(.vertical, 40) }
+            ForEach(holdings) { row in
+                let b = row.balance
                 Button { router.assetsPath.append(DepositTarget(asset: b.asset)) } label: {
                     HStack(spacing: 12) {
                         CoinIcon(base: b.asset)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(b.asset).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
-                            Text(Dec.parse(b.locked) > 0 ? "冻结 \(b.locked)" : (m.unitPrice(b).map { "单价 $\(Fmt.amount($0, $0 < 1 ? 6 : 2))" } ?? b.asset)).font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                            Text((tab == 0 ? row.account + " · " : "") + (Dec.parse(b.locked) > 0 ? "冻结 \(b.locked)" : (m.unitPrice(b).map { "单价 $\(Fmt.amount($0, $0 < 1 ? 6 : 2))" } ?? b.asset))).font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 3) {

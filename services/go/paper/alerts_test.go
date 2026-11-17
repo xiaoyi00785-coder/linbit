@@ -36,6 +36,18 @@ func (n *fakeNotifier) InApp(_ context.Context, uid, title, body, key string) (s
 	return id, nil
 }
 
+func TestValidateAlertModes(t *testing.T) {
+	for _, mode := range []string{"once", "daily", "repeat"} {
+		_, _, err := validateAlert(CreatePriceAlert{ClientAlertID: "mode-ok", Market: "spot", Symbol: "btcusdt", Condition: "gte", Threshold: "1.5", PriceSource: "INDEX", TriggerMode: mode, Channels: []string{"in_app"}})
+		if err != nil {
+			t.Fatalf("%s: %v", mode, err)
+		}
+	}
+	if _, _, err := validateAlert(CreatePriceAlert{ClientAlertID: "mode-bad", Market: "spot", Symbol: "BTCUSDT", Condition: "gte", Threshold: "1", PriceSource: "INDEX", TriggerMode: "always", Channels: []string{"in_app"}}); err == nil {
+		t.Fatal("expected invalid triggerMode")
+	}
+}
+
 func newAlert(t *testing.T, store *Store, m *fakeMarket, user, id string, condition, threshold string) PriceAlert {
 	t.Helper()
 	a, err := store.CreateAlert(context.Background(), user, CreatePriceAlert{ClientAlertID: id, Market: "spot", Symbol: "BTCUSDT", Condition: condition, Threshold: threshold, PriceSource: "INDEX", TriggerMode: "once", Channels: []string{"in_app"}, Note: "test"}, m, time.Now())

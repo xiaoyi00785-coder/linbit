@@ -147,6 +147,10 @@ struct EventContractView: View {
     @State private var tab = 0
     @State private var pending: Bool?   // 待确认方向 true 涨 / false 跌
     @State private var showRules = false
+    @State private var chartIv = "15m"
+    @State private var showPeriod = false
+    @State private var showSymbol = false
+    @State private var spotFree: String?
 
     var body: some View {
         Group {
@@ -158,29 +162,146 @@ struct EventContractView: View {
             }
         }
         .background(p.bg)
-        .task { await m.start(); if Router.shared.shotSheet == "eventConfirm" { Router.shared.shotSheet = nil; pending = true } }
+        .task { await m.start(); await loadSpotFree(); if Router.shared.shotSheet == "eventConfirm" { Router.shared.shotSheet = nil; pending = true } }
         .onDisappear { m.stop() }
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshOrders() } }
         .lbSheet(Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
             if let up = pending { EventConfirmSheet(m: m, up: up) { pending = nil } }
         }
         .lbSheet($showRules) { EventRulesSheet(m: m) { showRules = false } }
+        .lbSheet($showPeriod) {
+            LBSheet(title: "时间单位", onClose: { showPeriod = false }) {
+                VStack(spacing: 0) {
+                    ForEach(m.cfg?.periods ?? [], id: \.period) { pd in
+                        Button {
+                            m.period = pd.period
+                            showPeriod = false
+                        } label: {
+                            HStack {
+                                Text(m.periodTitle(pd.period)).foregroundColor(p.textPrimary)
+                                Spacer()
+                                if pd.period == m.period { Image(systemName: "checkmark").foregroundColor(p.textPrimary) }
+                            }.padding(.horizontal, Spacing.pageH).frame(height: 48)
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .lbSheet($showSymbol) {
+            LBSheet(title: "选择合约", onClose: { showSymbol = false }) {
+                VStack(spacing: 0) {
+                    ForEach(m.cfg?.products ?? []) { pr in
+                        Button {
+                            m.symbol = pr.symbol
+                            m.priceTrail = []
+                            showSymbol = false
+                        } label: {
+                            HStack {
+                                Text(pr.symbol).foregroundColor(p.textPrimary)
+                                Spacer()
+                                if pr.symbol == m.symbol { Image(systemName: "checkmark") }
+                            }.padding(.horizontal, Spacing.pageH).frame(height: 48)
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
     }
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                productBar
-                priceCard.padding(.top, 12)
-                periodBar.padding(.top, 16)
-                stakeBox.padding(.top, 16)
-                buttons.padding(.top, 18)
-                Rectangle().fill(p.fill).frame(height: 8).padding(.top, 20)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Button { showSymbol = true } label: {
+                        HStack(spacing: 4) {
+                            Text(m.symbol).font(.lb(FontSize.symbol, .semibold)).foregroundColor(p.textPrimary)
+                            Image(systemName: "chevron.down").font(.system(size: 10)).foregroundColor(p.textSecondary)
+                        }
+                    }.buttonStyle(.plain)
+                    Spacer()
+                    Text("上涨: \(payPct)  下跌: \(payPct)").font(.lb(FontSize.small)).foregroundColor(p.up)
+                }.padding(.horizontal, Spacing.pageH)
+                chartIntervals
+                EventTapeChart(symbol: m.symbol, interval: chartIv).id(m.symbol + chartIv)
+                    .padding(.horizontal, Spacing.pageH)
+                HStack {
+                    Text("时间单位").frame(maxWidth: .infinity, alignment: .leading)
+                    Text("数量(\(m.asset))").frame(maxWidth: .infinity, alignment: .leading)
+                }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary).padding(.horizontal, Spacing.pageH)
+                HStack(spacing: 8) {
+                    Button { showPeriod = true } label: {
+                        HStack {
+                            Text(m.periodTitle(m.period))
+                            Spacer()
+                            Image(systemName: "chevron.down").font(.system(size: 9))
+                        }.font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                            .padding(.horizontal, 10).frame(height: 40)
+                            .background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
+                    }.buttonStyle(.plain).frame(maxWidth: .infinity)
+                    NumberBox(label: stakeHint, unit: "", text: $m.stakeText, onEdit: {})
+                    VStack(spacing: 4) {
+                        Button { stepStake(1) } label: { Image(systemName: "plus") }
+                        Button { stepStake(-1) } label: { Image(systemName: "minus") }
+                    }.font(.system(size: 12)).foregroundColor(p.textPrimary)
+                }.padding(.horizontal, Spacing.pageH)
+                HStack {
+                    Text("可用现货账户").foregroundColor(p.textSecondary)
+                    Spacer()
+                    Text(session.isLoggedIn ? "\(spotFree ?? "--") \(m.asset)" : "0 \(m.asset)").foregroundColor(p.textPrimary)
+                }.font(.lb(FontSize.small)).padding(.horizontal, Spacing.pageH)
+                HStack(spacing: 12) {
+                    payColumn
+                    payColumn
+                }.padding(.horizontal, Spacing.pageH)
+                HStack(spacing: 12) {
+                    dirButton(up: true)
+                    dirButton(up: false)
+                }.padding(.horizontal, Spacing.pageH)
+                Picker("", selection: $tab) {
+                    Text("已开仓 (\(m.active.count))").tag(0)
+                    Text("已平仓 (\(m.history.count))").tag(1)
+                }.pickerStyle(.segmented).padding(.horizontal, Spacing.pageH).padding(.top, 8)
                 ordersSection
             }
-            .padding(.bottom, Metrics.tabBarH + 60)
+            .padding(.bottom, Metrics.tabBarH + 24)
         }
         .refreshable { await m.load(); await m.refreshOrders() }
+    }
+
+    private func stepStake(_ dir: Int) {
+        let step = m.minStake > 0 ? m.minStake : 1
+        let next = max(0, Dec.parse(m.stakeText) + step * Decimal(dir))
+        let cap = m.maxStake > 0 ? min(next, m.maxStake) : next
+        m.stakeText = Dec.plain(max(0, cap), 2)
+    }
+    private func loadSpotFree() async {
+        guard session.isLoggedIn else { spotFree = nil; return }
+        let rows = try? await AssetsAPI.balances(account: "spot")
+        spotFree = rows?.first { $0.asset == m.asset }?.free
+    }
+    private var payPct: String { Fmt.amount(m.ratio * 100, 0) + "%" }
+    private var stakeHint: String {
+        let a = m.cfg?.minStake ?? "1"
+        let b = m.cfg?.maxStake ?? "500"
+        return "\(a)-\(b)"
+    }
+    private var chartIntervals: some View {
+        let items = [("1m", "1分"), ("5m", "5分"), ("15m", "15分"), ("30m", "30分"), ("1h", "1小时"), ("4h", "4小时"), ("1d", "1天")]
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(items, id: \.0) { iv, title in
+                    Text(title).font(.lb(FontSize.small, chartIv == iv ? .semibold : .regular))
+                        .foregroundColor(chartIv == iv ? p.textPrimary : p.textSecondary)
+                        .onTapGesture { chartIv = iv }
+                }
+            }.padding(.horizontal, Spacing.pageH)
+        }
+    }
+    private var payColumn: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack { Text("支付率").foregroundColor(p.textSecondary); Spacer(); Text(payPct).foregroundColor(p.up) }
+            HStack { Text("支付金额").foregroundColor(p.textSecondary); Spacer(); Text("\(Fmt.amount(m.stake * m.ratio, 2)) \(m.asset)") }
+        }.font(.lb(FontSize.small))
     }
 
     private var productBar: some View {
@@ -269,8 +390,8 @@ struct EventContractView: View {
         }.padding(.horizontal, Spacing.pageH)
     }
     private func dirButton(up: Bool) -> some View {
-        LBButton(title: session.isLoggedIn ? (up ? "看涨" : "看跌") : "登录 / 注册", kind: session.isLoggedIn ? (up ? .buy : .sell) : .primary,
-                 height: 48, loading: m.placing, subtitle: session.isLoggedIn ? "\(m.periodTitle(m.period))后 \(up ? "高于" : "低于")开仓价" : nil) {
+        LBButton(title: session.isLoggedIn ? (up ? "上涨" : "下跌") : "登录 / 注册", kind: session.isLoggedIn ? (up ? .buy : .sell) : .primary,
+                 height: 48, loading: m.placing) {
             session.requireLogin {
                 if let e = m.validation { ToastCenter.shared.show(e, .error); return }
                 pending = up
@@ -392,6 +513,27 @@ struct EventConfirmSheet: View {
                 }.padding(.top, 6)
             }.padding(.horizontal, Spacing.pageH)
         }
+    }
+}
+
+private struct EventTapeChart: View {
+    let interval: String
+    @StateObject private var live: MarketTape
+    init(symbol: String, interval: String) {
+        self.interval = interval
+        _live = StateObject(wrappedValue: MarketTape(symbol: symbol, futures: true, interval: interval))
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if live.bars.isEmpty {
+                ProgressView().frame(maxWidth: .infinity).frame(height: 180)
+            } else {
+                CandleChart(bars: live.bars, pricePrec: live.pricePrec)
+            }
+        }
+        .task { await live.start() }
+        .onDisappear { live.stop() }
+        .onChange(of: interval) { live.setInterval($0) }
     }
 }
 

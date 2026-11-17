@@ -231,13 +231,14 @@ struct Badge: View {
 // MARK: - 邮件通知偏好（安全通知不可关闭）
 struct NotifSettingsView: View {
     @Environment(\.palette) private var p
+    var embedded = false
     let onBack: () -> Void
     @State private var data: Loadable<APINotifyPrefs> = .loading
     @State private var saving: String?
 
     var body: some View {
         VStack(spacing: 0) {
-            NavBar(title: "通知设置", onBack: onBack)
+            if !embedded { NavBar(title: "通知设置", onBack: onBack) }
             switch data {
             case .idle, .loading: Spacer(); ProgressView(); Spacer()
             case let .failed(m): ErrorStateView(message: m) { Task { await load() } }

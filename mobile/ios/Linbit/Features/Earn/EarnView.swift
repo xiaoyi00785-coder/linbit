@@ -24,7 +24,7 @@ struct EarnView: View {
     @Environment(\.palette) private var p
     @EnvironmentObject private var session: Session
     @StateObject private var m = EarnModel()
-    @State private var tab = 0          // 0 全部 1 活期 2 定期 3 我的
+    @State private var tab = 0          // 0 全部 1 简单赚币 2 定期 3 链上赚币 4 VIP 5 质押借币 6 我的
     @State private var subscribe: APIEarnProduct?
     @State private var redeem: APIEarnPositions200ResponseItemsInner?
     @State private var hide = false
@@ -50,7 +50,7 @@ struct EarnView: View {
         ScrollView {
             VStack(spacing: 0) {
                 overview
-                PrimaryTabs(items: ["全部", "活期", "定期", "我的"], selected: $tab).padding(.top, 8)
+                PrimaryTabs(items: ["全部", "简单赚币", "定期", "链上赚币", "VIP", "质押借币", "我的"], selected: $tab).padding(.top, 8)
                 list
             }.padding(.bottom, 40)
         }
@@ -78,15 +78,28 @@ struct EarnView: View {
         .padding(.horizontal, Spacing.pageH).padding(.top, 8)
     }
 
+    private func matches(_ pr: APIEarnProduct, _ tab: Int) -> Bool {
+        let title = pr.title ?? ""
+        switch tab {
+        case 0: return true
+        case 1: return pr.kind == .flexible || pr.kind == .simple
+        case 2: return pr.kind == .fixed
+        case 3: return pr.kind == .onchain || title.contains("链上")
+        case 4: return title.localizedCaseInsensitiveContains("VIP")
+        case 5: return title.contains("质押") || title.contains("借币")
+        default: return false
+        }
+    }
+
     @ViewBuilder private var list: some View {
         switch m.products {
         case .idle, .loading: SkeletonList(rows: 6)
         case let .failed(e): ErrorStateView(message: e) { Task { await m.load() } }.frame(height: 300)
         case let .loaded(all):
-            if tab == 3 {
+            if tab == 6 {
                 mine
             } else {
-                let rows = all.filter { tab == 0 || (tab == 1 ? ($0.kind == .flexible || $0.kind == .simple) : $0.kind == .fixed) }
+                let rows = all.filter { matches($0, tab) }
                 if rows.isEmpty { EmptyStateView(text: "暂无理财产品").frame(height: 260) }
                 LazyVStack(spacing: 0) {
                     ForEach(rows, id: \.id) { pr in

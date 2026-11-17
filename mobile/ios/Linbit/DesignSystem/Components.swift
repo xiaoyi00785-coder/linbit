@@ -76,59 +76,52 @@ struct SortLabel: View {
 }
 
 // MARK: - 币种图标（多来源 PNG，都失败时用带首字母的色块，避免空白）
+/// 与网页 `components/CoinIcon.tsx` 同一套：本地 `coin-<代码>` 图标，别名表相同，没有文件时用首字母。
+enum CoinArt {
+    static let alias: [String: String] = [
+        "GOLD": "xau", "XAUUSD": "xau", "SILVER": "xag", "XAGUSD": "xag",
+        "USOIL": "wti", "CL": "wti", "UKOIL": "brent", "NATGAS": "ngas",
+        "GOOG": "googl", "WBTC": "wbtc", "MATIC": "pol", "1000PEPE": "pepe", "1000SHIB": "shib",
+    ]
+    static func base(of raw: String) -> String {
+        var x = raw.uppercased().trimmingCharacters(in: .whitespaces)
+        if let cut = x.firstIndex(where: { "/-_ ".contains($0) }) { x = String(x[..<cut]) }
+        if x.isEmpty { return "?" }
+        for quote in ["USDT", "USDC", "BUSD", "USD"] where x.hasSuffix(quote) && x.count - quote.count >= 2 {
+            return String(x.dropLast(quote.count))
+        }
+        return x
+    }
+    static func image(for raw: String) -> UIImage? {
+        let symbol = base(of: raw)
+        let file = alias[symbol] ?? symbol.lowercased()
+        return UIImage(named: "coin-\(file)")
+    }
+}
+
 struct CoinIcon: View {
     @Environment(\.palette) private var p
     let base: String
     var size: CGFloat = Metrics.coinIcon
-    @State private var image: UIImage?
     var body: some View {
+        let symbol = CoinArt.base(of: base)
+        let image = CoinArt.image(for: symbol)
         ZStack {
-            Circle().fill(Self.tint(base).opacity(0.18))
-            Text(String(base.prefix(1))).font(.lb(size * 0.42, .semibold)).foregroundColor(Self.tint(base))
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            Circle().fill(Self.tint(symbol).opacity(0.18))
+            if image == nil {
+                Text(String(symbol.prefix(1))).font(.lb(size * 0.42, .semibold)).foregroundColor(Self.tint(symbol))
+            }
+            if let image { Image(uiImage: image).resizable().scaledToFit() }
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .task(id: base) { image = await CoinIconLoader.shared.image(for: base) }
+        .id(symbol)
     }
 
     private static func tint(_ base: String) -> Color {
         let hues: [Color] = [.hex(0xF7931A), .hex(0x627EEA), .hex(0x26A17B), .hex(0xE84142), .hex(0x9BCB2A), .hex(0x2775CA)]
         let n = base.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return hues[n % hues.count]
-    }
-}
-
-private final class CoinIconLoader {
-    static let shared = CoinIconLoader()
-    private let cache = NSCache<NSString, UIImage>()
-    private let missing = NSCache<NSString, NSNumber>()
-
-    func image(for base: String) async -> UIImage? {
-        let key = base.uppercased() as NSString
-        if let hit = cache.object(forKey: key) { return hit }
-        if missing.object(forKey: key) != nil { return nil }
-        let sym = base.lowercased().filter { $0.isLetter || $0.isNumber }
-        guard !sym.isEmpty else { return nil }
-        let urls = [
-            "https://assets.coincap.io/assets/icons/\(sym)@2x.png",
-            "https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@0.18.1/128/color/\(sym).png",
-            "https://bin.bnbstatic.com/static/assets/logos/\(sym.uppercased()).png",
-            "https://static.okx.com/cdn/oksupport/asset/currency/icon/\(sym).png",
-        ]
-        for raw in urls {
-            guard let url = URL(string: raw) else { continue }
-            var req = URLRequest(url: url, timeoutInterval: 8)
-            req.setValue("image/png,image/*,*/*", forHTTPHeaderField: "Accept")
-            req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-            guard let (data, resp) = try? await URLSession.shared.data(for: req),
-                  let http = resp as? HTTPURLResponse, http.statusCode == 200,
-                  let img = UIImage(data: data), img.size.width > 8 else { continue }
-            cache.setObject(img, forKey: key)
-            return img
-        }
-        missing.setObject(1, forKey: key)
-        return nil
     }
 }
 

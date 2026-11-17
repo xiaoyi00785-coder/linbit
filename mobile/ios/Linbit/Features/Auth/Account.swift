@@ -45,6 +45,10 @@ struct UserCenterView: View {
     @State private var editingNick = false
     @State private var nickDraft = ""
     @State private var nickBusy = false
+    @State private var showTheme = false
+    @State private var showQuote = false
+    @State private var quotes: [String] = []
+    @State private var quote = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,8 +72,7 @@ struct UserCenterView: View {
                 } else if tab == 1 {
                     preferencePane
                 } else {
-                    InfoNote(text: "站内信与邮件通知可在消息通知页查看和设置；系统推送将在 Firebase / FCM 接入后开放。")
-                        .padding(Spacing.pageH).padding(.top, 12)
+                    NotifSettingsView(embedded: true, onBack: {})
                 }
             }
         }
@@ -79,6 +82,26 @@ struct UserCenterView: View {
             NavigationLink(isActive: $showSwitch) { AccountSwitchView() } label: { EmptyView() }
         )
         .lbConfirm($confirm)
+        .lbSheet($showTheme) {
+            LBSheet(title: "主题模式", showClose: true, onClose: { showTheme = false }) {
+                VStack(spacing: 0) {
+                    ForEach(ThemeMode.allCases) { mode in
+                        SheetOptionRow(title: mode.title, selected: theme.mode == mode) { theme.mode = mode; showTheme = false }
+                    }
+                }.padding(.bottom, 12)
+            }
+        }
+        .lbSheet($showQuote) {
+            LBSheet(title: "计价货币", showClose: true, onClose: { showQuote = false }) {
+                VStack(spacing: 0) {
+                    if quotes.isEmpty { Text("没有可选货币").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).padding() }
+                    ForEach(quotes, id: \.self) { c in
+                        SheetOptionRow(title: c, selected: quote == c) { Task { await saveQuote(c) } }
+                    }
+                }.padding(.bottom, 12)
+            }
+        }
+        .task { await loadQuotes() }
         .lbSheet($editingNick) {
             LBSheet(title: "修改昵称", showClose: true, onClose: { if !nickBusy { editingNick = false } }) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -120,18 +143,26 @@ struct UserCenterView: View {
     }
 
     private var preferencePane: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("外观").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).padding(.horizontal, Spacing.pageH)
-            HStack(spacing: 10) {
-                ForEach(ThemeMode.allCases) { mode in
-                    LBButton(title: mode.title, kind: theme.mode == mode ? .primary : .secondary, height: 40) { theme.mode = mode }
-                }
-            }.padding(.horizontal, Spacing.pageH)
-            Text("计价货币").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).padding(.horizontal, Spacing.pageH).padding(.top, 18)
-            row("默认计价货币", value: session.account?.quoteCurrency ?? "系统默认") {
-                ToastCenter.shared.show("计价货币设置将在后续批次接入")
-            }
-        }.padding(.top, 12)
+        VStack(alignment: .leading, spacing: 0) {
+            row("主题模式", value: theme.mode.title) { showTheme = true }
+            row("计价货币", value: quote.isEmpty ? (session.account?.quoteCurrency ?? "系统默认") : quote) { showQuote = true }
+        }.padding(.top, 8)
+    }
+
+    private func loadQuotes() async {
+        guard session.isLoggedIn, let p = try? await AuthAPI.preferences() else { return }
+        quotes = p.supportedQuoteCurrencies
+        quote = p.quoteCurrency
+    }
+
+    private func saveQuote(_ c: String) async {
+        do {
+            let p = try await AuthAPI.updateQuote(c)
+            quote = p.quoteCurrency
+            await session.reloadAccount()
+            showQuote = false
+            ToastCenter.shared.show("计价货币已改为 \(p.quoteCurrency)", .success)
+        } catch { ToastCenter.shared.show(error.lbMessage, .error) }
     }
 
     private func open(_ page: FeaturePage) {

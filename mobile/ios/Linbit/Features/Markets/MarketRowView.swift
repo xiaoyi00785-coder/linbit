@@ -8,6 +8,7 @@ struct MarketRowView: View {
     /// 首页榜单样式：显示完整交易对（BTCUSDT），17pt
     var compactPair = false
     var showsStar = false
+    var marketFutures = false
     @AppStorage("lb.market.logo") private var logos = true
     @ObservedObject private var watch = Watchlist.shared
 
@@ -42,7 +43,7 @@ struct MarketRowView: View {
         .padding(.horizontal, Spacing.pageH)
         .frame(height: Metrics.marketRowH)
         .contentShape(Rectangle())
-        .onTapGesture { Router.shared.marketDetail = row.symbol }
+        .onTapGesture { Router.shared.showMarket(row.symbol, futures: marketFutures) }
     }
 
     private var priceText: String {

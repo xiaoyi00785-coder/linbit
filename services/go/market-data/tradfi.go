@@ -309,6 +309,7 @@ func (t *TradFi) deviation(sym string) (devState, bool) {
 
 func (s *Server) tradfiRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /tradfi/assets", s.hTradFiPublic)
+	mux.HandleFunc("GET /tradfi/challenge", s.hTradFiChallenge)
 	mux.HandleFunc("GET /internal/tradfi/assets", s.internal(s.hTradFiAssets))
 	mux.HandleFunc("PUT /internal/tradfi/assets/{asset}", s.internal(s.hTradFiAssetPut))
 	mux.HandleFunc("PUT /internal/tradfi/tokens", s.internal(s.hTradFiTokenPut))
@@ -367,6 +368,31 @@ func (s *Server) hTradFiPublic(w http.ResponseWriter, r *http.Request) {
 		out = append(out, p)
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// GET /tradfi/challenge — 关卡来自现有 TradFi 目录。奖励未配置时不返回金额。
+func (s *Server) hTradFiChallenge(w http.ResponseWriter, r *http.Request) {
+	flags := s.currentFlags(r.Context())
+	if !flags["tokenizedStocks"] && !flags["metals"] {
+		common.WriteError(w, http.StatusForbidden, "FEATURE_DISABLED", "该功能暂未开放")
+		return
+	}
+	assets, _ := s.tradfi.snapshot()
+	levels := []map[string]any{}
+	n := 0
+	for _, a := range assets {
+		if !flags[flagFor(a.Kind)] || a.Status != "active" {
+			continue
+		}
+		n++
+		levels = append(levels, map[string]any{
+			"level": n, "asset": a.Asset, "name": a.Name, "kind": a.Kind,
+			"symbol": a.Symbol, "market": a.Market,
+		})
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{
+		"title": "TradFi 闯关", "rewardConfigured": false, "levels": levels,
+	})
 }
 
 func (s *Server) hTradFiAssets(w http.ResponseWriter, r *http.Request) {

@@ -83,6 +83,54 @@ extension LBTextField where Trailing == EmptyView {
     }
 }
 
+/// 数字键盘自带的 accessory。绑在输入框上，不依赖页面 toolbar，切换焦点时也不会丢。
+struct DecimalField: UIViewRepresentable {
+    @Binding var text: String
+    var onEdit: () -> Void = {}
+    var onFocus: (Bool) -> Void = { _ in }
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.keyboardType = .decimalPad
+        field.font = .monospacedDigitSystemFont(ofSize: 16, weight: .regular)
+        field.textColor = .label
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .editingChanged)
+        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+        let done = UIBarButtonItem(title: "完成", style: .done, target: context.coordinator, action: #selector(Coordinator.done))
+        bar.items = [UIBarButtonItem(systemItem: .flexibleSpace), done]
+        field.inputAccessoryView = bar
+        return field
+    }
+    func updateUIView(_ field: UITextField, context: Context) {
+        context.coordinator.text = $text
+        context.coordinator.onEdit = onEdit
+        context.coordinator.onFocus = onFocus
+        if !field.isFirstResponder, field.text != text { field.text = text }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text, onEdit: onEdit, onFocus: onFocus) }
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var text: Binding<String>
+        var onEdit: () -> Void
+        var onFocus: (Bool) -> Void
+        init(text: Binding<String>, onEdit: @escaping () -> Void, onFocus: @escaping (Bool) -> Void) {
+            self.text = text; self.onEdit = onEdit; self.onFocus = onFocus
+        }
+        func textFieldDidBeginEditing(_ textField: UITextField) { onFocus(true) }
+        func textFieldDidEndEditing(_ textField: UITextField) { onFocus(false) }
+        @objc func changed(_ field: UITextField) {
+            let raw = field.text ?? ""
+            let clean = raw.filter { $0.isNumber || $0 == "." }
+            let kept = clean.filter { $0 == "." }.count <= 1 ? clean : String(clean.dropLast())
+            if kept != raw { field.text = kept }
+            text.wrappedValue = kept
+            onEdit()
+        }
+        @objc func done() {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+    }
+}
+
 extension View {
     func placeholder<C: View>(when show: Bool, @ViewBuilder _ c: () -> C) -> some View {
         ZStack(alignment: .leading) { c().opacity(show ? 1 : 0).allowsHitTesting(false); self }

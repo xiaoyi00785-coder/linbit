@@ -7,10 +7,12 @@ struct FuturesRootView: View {
     @ObservedObject private var flags = AppFeatures.shared
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                PrimaryTabs(items: ["合约", "事件合约", "TradFi", "模拟交易"], selected: $router.futuresTop)
-                Spacer()
-            }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+            if router.futuresTop != 3 {
+                HStack {
+                    PrimaryTabs(items: ["合约", "事件合约", "TradFi", "模拟交易"], selected: $router.futuresTop)
+                    Spacer()
+                }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+            }
             switch router.futuresTop {
             case 0: FuturesTradeView()
             case 1:
@@ -36,6 +38,7 @@ struct FuturesTradeView: View {
     @State private var showMode = false
     @State private var showLev = false
     @State private var showKind = false
+    @State private var showUnit = false
     @State private var showTools = false
     @State private var showPairs = false
     @State private var showChart = false
@@ -86,6 +89,7 @@ struct FuturesTradeView: View {
             m.kind = k
             showKind = false
         } onClose: { showKind = false } }
+        .lbSheet($showUnit) { FuturesUnitSheet(base: m.base, quote: m.quote, selected: m.orderUnit) { m.setOrderUnit($0); showUnit = false } }
         .lbSheet($showTools) { FuturesToolsSheet { showTools = false } }
         .lbSheet($showPairs) { FuturesPairSheet(current: m.symbol) { s in showPairs = false; router.futuresSymbol = s } onClose: { showPairs = false } }
         .lbSheet($showTpslForm) { TpslSheet(m: m, position: tpslTarget) { showTpslForm = false } }
@@ -178,13 +182,13 @@ struct FuturesTradeView: View {
                     Text("永续").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                         .padding(.horizontal, 4).frame(height: 18).background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
                     Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
-                    Text(Fmt.percent(m.changePct)).font(.lbNum(FontSize.small)).foregroundColor(m.changePct < 0 ? p.down : p.up)
+                    Text(m.changePct.map(Fmt.percent) ?? "--").font(.lbNum(FontSize.small)).foregroundColor((m.changePct ?? 0) < 0 ? p.down : p.up)
                 }
             }.buttonStyle(PressableStyle())
             Spacer()
             HStack(spacing: 18) {
                 ThemeToggleButton()
-                Button { withAnimation { showChart.toggle() } } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
+                Button { Router.shared.showMarket(m.symbol, futures: true) } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
                 Button { showTools = true } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
             }.font(.system(size: 17))
         }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
@@ -199,7 +203,9 @@ struct FuturesTradeView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("资金费率 / 倒计时").font(.lb(10)).foregroundColor(p.textTertiary)
-                Text("\(Fmt.amount(m.fundingRate, 4))% / \(m.fundingCountdown)").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text("\(Fmt.amount(m.fundingRate, 4))% / \(m.fundingText(at: ctx.date))").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                }
             }
         }.padding(.horizontal, Spacing.pageH)
     }
@@ -235,7 +241,11 @@ struct FuturesTradeView: View {
                 NumberBox(label: "价格", unit: m.quote, text: $m.priceText, onEdit: {})
             }
             if m.isOpen {
-                NumberBox(label: "成本", unit: m.quote, text: $m.costText, onEdit: { m.percent = 0 })
+                NumberBox(label: m.orderUnit.fieldLabel, unit: m.orderUnit == .qty ? m.base : m.quote, text: $m.costText, onEdit: { m.percent = 0 }, onUnit: { showUnit = true })
+                if m.orderPrice > 0, m.typed > 0 {
+                    Text(m.orderUnit == .qty ? "≈\(Fmt.amount(m.orderValue, 4)) \(m.quote)" : "≈\(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)")
+                        .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
             } else {
                 HStack {
                     Text("数量").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
@@ -262,7 +272,15 @@ struct FuturesTradeView: View {
                     Text("\(Fmt.amount(m.available, 2)) \(m.quote)").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
                     Button { Router.shared.open(.transfer) } label: { Image(systemName: "arrow.left.arrow.right.square.fill").font(.system(size: 12)).foregroundColor(p.textPrimary) }
                 }
-                KVRow(k: m.isOpen ? "可开" : "可平", v: "\(Fmt.amount(m.isOpen ? m.maxOpenQty : abs(Dec.parse(m.closeTarget?.qty)), m.qtyPrec)) \(m.base)")
+                if m.isOpen {
+                    KVRow(k: "可开", v: m.openLimitText)
+                    KVRow(k: "可卖", v: m.openLimitText)
+                } else if m.hedge {
+                    KVRow(k: "可平多", v: "\(Fmt.amount(abs(Dec.parse(m.position(long: true)?.qty)), m.qtyPrec)) \(m.base)")
+                    KVRow(k: "可平空", v: "\(Fmt.amount(abs(Dec.parse(m.position(long: false)?.qty)), m.qtyPrec)) \(m.base)")
+                } else {
+                    KVRow(k: "可平", v: "\(Fmt.amount(abs(Dec.parse(m.closeTarget?.qty)), m.qtyPrec)) \(m.base)")
+                }
             }
             if m.kind == .postOnly {
                 Text("只做 Maker：若委托会立即成交则整单撤销").font(.lb(10)).foregroundColor(p.textTertiary)
@@ -276,15 +294,17 @@ struct FuturesTradeView: View {
         VStack(spacing: 6) {
             if m.isOpen {
                 KVRow(k: "预估强平价", v: m.orderPrice > 0 ? Fmt.price(m.liqPrice(long: long), precision: m.pricePrec) : "--")
-                KVRow(k: "成本", v: "\(Fmt.amount(m.cost, 2)) \(m.quote)")
+                KVRow(k: "成本", v: "\(Fmt.amount(m.margin, 2)) \(m.quote)")
             }
-            LBButton(title: session.isLoggedIn ? (m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")) : "登录 / 注册",
-                     kind: session.isLoggedIn ? (long ? .buy : .sell) : .primary, height: 40, loading: m.placing) {
+            LBButton(title: session.isLoggedIn ? (m.isOpen ? (long ? "开多" : "开空") : (long ? "买入平空" : "卖出平多")) : "登录 / 注册",
+                     kind: session.isLoggedIn ? (long ? .buy : .sell) : .primary, height: m.isOpen ? 48 : 40,
+                     loading: m.placing,
+                     subtitle: m.isOpen && m.orderValue > 0 ? "≈\(Fmt.amount(m.orderValue, 4)) \(m.quote)" : nil) {
                 session.requireLogin {
                     if let e = m.validation { ToastCenter.shared.show(e, .error); return }
                     let dir = m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")
                     confirm = .init(title: "\(dir) \(m.symbol)",
-                                    message: "\(m.kind.title) · \(m.marginMode == .isolated ? "逐仓" : "全仓") \(m.leverage)x · \(m.hedge ? "分仓" : "合仓")\(m.kind == .plan ? "\n触发价 \(m.triggerText)（\(m.planTriggerType == .mark ? "标记价格" : "最新价格")）" : "")\n价格 \(m.kind == .market || (m.kind == .plan && m.planMarket) ? "市价" : m.priceText)  数量 \(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)\n预估手续费 \(Fmt.amount(m.qty * m.orderPrice * m.takerFee, 4)) USDT",
+                                    message: "\(m.kind.title) · \(m.marginMode == .isolated ? "逐仓" : "全仓") \(m.leverage)x · \(m.hedge ? "分仓" : "合仓")\(m.kind == .plan ? "\n触发价 \(m.triggerText)（\(m.planTriggerType == .mark ? "标记价格" : "最新价格")）" : "")\n价格 \(m.kind == .market || (m.kind == .plan && m.planMarket) ? "市价" : m.priceText)\n数量 \(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)  成本 \(Fmt.amount(m.margin, 2)) \(m.quote)\n价值 \(Fmt.amount(m.orderValue, 2)) \(m.quote)\n预估手续费 \(Fmt.amount(m.qty * m.orderPrice * m.takerFee, 4)) USDT",
                                     confirmTitle: "确认\(dir)") { Task { _ = await m.place(long: long) } }
                 }
             }
@@ -333,9 +353,17 @@ struct FuturesTradeView: View {
                     Checkbox(on: $m.onlyCurrent, label: "只看当前")
                     Spacer()
                     if bottomTab == 0 {
-                        smallAction("一键平仓", enabled: !m.shownPositions.isEmpty) {
-                            confirm = .init(title: "一键平仓", message: "将以市价平掉\(m.onlyCurrent ? "当前合约" : "全部")的 \(m.shownPositions.count) 个仓位，确定吗？",
-                                            confirmTitle: "全部平仓", destructive: true) { Task { await m.closeAll() } }
+                        smallAction("一键平仓", enabled: !m.shownPositions.isEmpty && m.closingKeys.isEmpty && !m.closingAll) {
+                            let n = m.shownPositions.count
+                            let scope = m.onlyCurrent ? "当前合约" : "全部"
+                            confirm = .init(title: "一键平仓", message: "将以市价只减仓平掉\(scope)的 \(n) 个仓位。每个仓位只提交一次。未成交会说明原因，不会把持仓直接清零。",
+                                            confirmTitle: "全部平仓", destructive: true) {
+                                Task {
+                                    let rows = await m.closeAll()
+                                    let ok = rows.allSatisfy(\.reduced)
+                                    ToastCenter.shared.show(rows.map(\.text).joined(separator: "\n"), ok ? .success : .error)
+                                }
+                            }
                         }
                     } else {
                         smallAction("全部撤销", enabled: !m.shownOrders.isEmpty) {
@@ -388,9 +416,17 @@ struct FuturesTradeView: View {
                     PositionCard(pos: pos, live: m.livePnl(pos), onTpsl: { tpslTarget = pos; showTpslForm = true },
                                  onMargin: { marginTarget = pos },
                                  onClose: {
-                        confirm = .init(title: "市价平仓", message: "确定以市价平掉 \(pos.symbol ?? "") \(pos.side == .short ? "空" : "多")仓 \(pos.qty ?? "") 吗？",
-                                        confirmTitle: "平仓", destructive: true) { Task { await m.close(pos) } }
-                    })
+                        let sym = pos.symbol ?? m.symbol
+                        let side = pos.side == .short ? "空" : "多"
+                        confirm = .init(title: "市价平仓", message: "以市价只减仓平掉 \(sym) \(side)仓 \(pos.qty ?? "")。确认后只提交一次。",
+                                        confirmTitle: m.isClosing(pos) ? "处理中" : "平仓", destructive: true) {
+                            guard !m.isClosing(pos) else { return }
+                            Task {
+                                let r = await m.close(pos)
+                                ToastCenter.shared.show(r.text, r.reduced ? .success : .error)
+                            }
+                        }
+                    }, closing: m.isClosing(pos))
                     Rectangle().fill(p.fill).frame(height: 8)
                 }
             }
@@ -553,6 +589,7 @@ struct PositionCard: View {
     let onTpsl: () -> Void
     let onMargin: () -> Void
     let onClose: () -> Void
+    var closing = false
     var body: some View {
         let long = pos.side != .short
         let pnl = live?.pnl ?? Dec.parse(pos.unrealizedPnl), roe = live?.roe ?? Dec.parse(pos.roe) * 100
@@ -591,16 +628,16 @@ struct PositionCard: View {
             HStack(spacing: 8) {
                 btn(pos.marginMode == .isolated ? "调整保证金" : "保证金", onMargin)
                 btn("止盈止损", onTpsl)
-                btn("市价平仓", onClose)
+                btn(closing ? "平仓中" : "市价平仓", onClose, enabled: !closing)
             }
         }
         .padding(.horizontal, Spacing.pageH).padding(.vertical, 14)
     }
-    private func btn(_ t: String, _ a: @escaping () -> Void) -> some View {
-        Button(action: a) {
-            Text(t).font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary)
+    private func btn(_ t: String, _ a: @escaping () -> Void, enabled: Bool = true) -> some View {
+        Button(action: { if enabled { a() } }) {
+            Text(t).font(.lb(FontSize.small, .medium)).foregroundColor(enabled ? p.textPrimary : p.textTertiary)
                 .frame(maxWidth: .infinity).frame(height: 30).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
-        }.buttonStyle(PressableStyle())
+        }.buttonStyle(PressableStyle()).disabled(!enabled)
     }
 }
 
@@ -667,7 +704,7 @@ struct FuturesBookView: View {
             } else {
                 ForEach(Array(asks), id: \.price) { l in level(l, up: false, maxQ: maxQ) }
                 VStack(spacing: 1) {
-                    Text(Fmt.price(m.last, precision: m.pricePrec)).font(.lbNum(16, .semibold)).foregroundColor(m.changePct < 0 ? p.down : p.up)
+                    Text(Fmt.price(m.last, precision: m.pricePrec)).font(.lbNum(16, .semibold)).foregroundColor((m.changePct ?? 0) < 0 ? p.down : p.up)
                     Text(Fmt.price(m.mark, precision: m.pricePrec)).font(.lbNum(10)).foregroundColor(p.textSecondary).underline()
                 }.padding(.vertical, 6)
                 ForEach(bids, id: \.price) { l in level(l, up: true, maxQ: maxQ) }
@@ -684,7 +721,7 @@ struct FuturesBookView: View {
         }
         .font(.lbNum(11)).frame(height: 18)
         .background(alignment: .trailing) {
-            GeometryReader { g in Rectangle().fill(up ? p.upTint : p.downTint).frame(width: g.size.width * min(ratio, 1)).frame(maxWidth: .infinity, alignment: .trailing) }
+            Rectangle().fill(up ? p.upTint : p.downTint).frame(width: 120 * min(ratio, 1))
         }
         .contentShape(Rectangle())
         .onTapGesture { m.priceText = Dec.plain(l.price, m.pricePrec); if m.kind == .market { m.kind = .limit } }

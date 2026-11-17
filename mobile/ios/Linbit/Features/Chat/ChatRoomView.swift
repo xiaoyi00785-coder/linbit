@@ -20,6 +20,9 @@ struct ChatRoomView: View {
     @State private var myIds: Set<Int64> = []
     /// 嵌在行情 Tab 里时不套返回栏，底部让出悬浮 Tab。
     var embedded = false
+    /// 从群聊列表进入时固定房间，并显示返回。
+    var focusRoom: String? = nil
+    var onBack: (() -> Void)? = nil
 
     var body: some View {
         Group {
@@ -51,7 +54,13 @@ struct ChatRoomView: View {
         Group {
             if disabled { ComingSoonView(title: "聊天室") } else {
                 VStack(spacing: 0) {
-                    roomBar
+                    if let onBack {
+                        HStack {
+                            Button(action: onBack) { Image(systemName: "arrow.left").foregroundColor(p.textPrimary) }.buttonStyle(.plain)
+                            Text(rooms.first { $0.id == room }?.name ?? room).font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary).lineLimit(1)
+                            Spacer()
+                        }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+                    } else { roomBar }
                     switch state {
                     case .idle, .loading: SkeletonList(rows: 8)
                     case let .failed(e): ErrorStateView(message: e) { Task { await loadRooms() } }
@@ -147,7 +156,8 @@ struct ChatRoomView: View {
             let r = try await ChatAPI.rooms()
             rooms = r.rooms ?? [ChatRoom(id: "general", type: "general", symbol: nil, name: "综合", online: nil)]
             rules = r.rules
-            if !rooms.contains(where: { $0.id == room }), let f = rooms.first { room = f.id }
+            if let focus = focusRoom { room = focus }
+            else if !rooms.contains(where: { $0.id == room }), let f = rooms.first { room = f.id }
             await loadMessages()
         } catch {
             if (error as? APIFailure)?.code == "FEATURE_DISABLED" { disabled = true } else { state = .failed(error.lbMessage) }
@@ -186,5 +196,155 @@ struct ChatRoomView: View {
             if !messages.contains(where: { $0.id == msg.id }) { messages.append(msg) }
             cooldownUntil = Date().addingTimeInterval(Double(rules?.minIntervalMs ?? 0) / 1000)
         } catch { ToastCenter.shared.error(error) }
+    }
+}
+
+/// 群聊列表。加入、退出和分组走 /chat/joined、/chat/rooms/{room}/join、/chat/folders。
+struct ChatDirectoryView: View {
+    @Environment(\.palette) private var p
+    @ObservedObject private var session = Session.shared
+    var embedded = false
+    @State private var joined: [ChatRoom] = []
+    @State private var folders: [ChatFolder] = []
+    @State private var catalog: [ChatRoom] = []
+    @State private var query = ""
+    @State private var open: String?
+    @State private var showAdd = false
+    @State private var showFolders = false
+    @State private var folderName = ""
+    @State private var error: String?
+    @State private var disabled = false
+
+    var body: some View {
+        Group {
+            if let open {
+                ChatRoomView(embedded: embedded, focusRoom: open, onBack: { self.open = nil })
+            } else {
+                list.padding(.bottom, embedded ? Metrics.tabBarH + 8 : 0)
+            }
+        }
+        .task(id: session.isLoggedIn) { await reload() }
+        .lbSheet($showAdd) { addSheet }
+        .lbSheet($showFolders) { folderSheet }
+    }
+
+    private var filtered: [ChatRoom] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return joined }
+        return joined.filter { ($0.name ?? $0.id).localizedCaseInsensitiveContains(q) || $0.id.localizedCaseInsensitiveContains(q) }
+    }
+
+    private var list: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                SearchField(text: $query, placeholder: "搜索已加入的群")
+                Button { showAdd = true } label: { Image(systemName: "plus").foregroundColor(p.textPrimary).frame(width: 36, height: 36) }
+                    .buttonStyle(.plain).disabled(!session.isLoggedIn)
+            }.padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
+            if !session.isLoggedIn {
+                LBButton(title: "登录后查看群聊", height: 40) { session.present(.login) }.padding(Spacing.pageH)
+                Spacer()
+            } else if disabled {
+                ComingSoonView(title: "聊天室")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        Button { Router.shared.openFeature(.notifications) } label: {
+                            HStack {
+                                Image(systemName: "bell").foregroundColor(p.textPrimary)
+                                Text("系统通知").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(p.textTertiary)
+                            }.padding(.horizontal, Spacing.pageH).frame(height: 52)
+                        }.buttonStyle(.plain)
+                        if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down).padding(.horizontal, Spacing.pageH) }
+                        if filtered.isEmpty { EmptyStateView(text: query.isEmpty ? "还没有加入群聊" : "没有匹配的群") }
+                        ForEach(filtered) { room in
+                            Button { open = room.id } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(room.name ?? room.id).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                                        if let id = room.folderId, let folder = folders.first(where: { $0.id == id }) {
+                                            Text(folder.name).font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+                                        }
+                                    }
+                                    Spacer()
+                                    if let n = room.online { Text("\(n)").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary) }
+                                }.padding(.horizontal, Spacing.pageH).frame(height: 56)
+                            }.buttonStyle(.plain)
+                            .contextMenu { Button("退出", role: .destructive) { Task { await leave(room.id) } } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var addSheet: some View {
+        LBSheet(title: "加入群聊", showClose: true, onClose: { showAdd = false }) {
+            VStack(spacing: 0) {
+                Button { showAdd = false; showFolders = true } label: {
+                    HStack { Text("查看分组").foregroundColor(p.textPrimary); Spacer(); Image(systemName: "chevron.right").foregroundColor(p.textTertiary) }
+                        .padding(.horizontal, Spacing.pageH).frame(height: 48)
+                }.buttonStyle(.plain)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(catalog.filter { room in !joined.contains { $0.id == room.id } }) { room in
+                            Button { Task { await join(room.id) } } label: {
+                                HStack {
+                                    Text(room.name ?? room.id).foregroundColor(p.textPrimary)
+                                    Spacer()
+                                    Text("加入").font(.lb(FontSize.small)).foregroundColor(p.brand)
+                                }.padding(.horizontal, Spacing.pageH).frame(height: 48)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }.frame(maxHeight: 360)
+            }
+        }
+    }
+
+    private var folderSheet: some View {
+        LBSheet(title: "分组", showClose: true, onClose: { showFolders = false }) {
+            VStack(alignment: .leading, spacing: 12) {
+                if folders.isEmpty { Text("暂无分组").font(.lb(FontSize.small)).foregroundColor(p.textSecondary) }
+                ForEach(folders) { f in Text(f.name).font(.lb(FontSize.body)).foregroundColor(p.textPrimary) }
+                HStack {
+                    TextField("分组名称", text: $folderName).font(.lb(FontSize.body))
+                    Button("创建") { Task { await createFolder() } }.disabled(folderName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }.padding(12).background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+            }.padding(.horizontal, Spacing.pageH).padding(.bottom, 20)
+        }
+    }
+
+    private func reload() async {
+        guard session.isLoggedIn else { joined = []; return }
+        do {
+            let j = try await ChatAPI.joined()
+            joined = j.rooms ?? []
+            folders = j.folders ?? []
+            catalog = (try? await ChatAPI.rooms())?.rooms ?? []
+            error = nil
+        } catch {
+            if (error as? APIFailure)?.code == "FEATURE_DISABLED" { disabled = true }
+            else { self.error = error.lbMessage }
+        }
+    }
+
+    private func join(_ id: String) async {
+        do { try await ChatAPI.join(id); showAdd = false; await reload() }
+        catch { self.error = error.lbMessage }
+    }
+
+    private func leave(_ id: String) async {
+        do { try await ChatAPI.leave(id); await reload() }
+        catch { self.error = error.lbMessage }
+    }
+
+    private func createFolder() async {
+        let name = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        do { _ = try await ChatAPI.createFolder(name); folderName = ""; await reload() }
+        catch { self.error = error.lbMessage }
     }
 }

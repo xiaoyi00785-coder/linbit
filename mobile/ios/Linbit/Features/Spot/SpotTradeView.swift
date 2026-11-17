@@ -11,7 +11,6 @@ struct SpotTradeView: View {
     @State private var showConfirm = false
     @State private var showPrecision = false
     @State private var showPairs = false
-    @State private var chartOpen = false
     @State private var showOrderKind = false
     @State private var showFee = false
     @State private var confirm: ConfirmRequest?
@@ -29,10 +28,6 @@ struct SpotTradeView: View {
                             OrderBookView(m: m, showPrecision: $showPrecision).frame(width: 138)
                         }
                         .padding(.horizontal, Spacing.pageH).padding(.top, 8)
-                        if chartOpen {
-                            SpotChartPanel(symbol: m.symbol, pricePrec: m.pricePrec)
-                                .padding(.horizontal, Spacing.pageH).padding(.top, 12)
-                        }
                         ordersSection.padding(.top, 20)
                     }
                     .padding(.bottom, 100)
@@ -61,7 +56,8 @@ struct SpotTradeView: View {
         .onDisappear { m.stop() }
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshAccount() } }
         .onChange(of: router.spotSymbol) { s in
-            m.stop(); m.symbol = s; m.priceText = ""; m.qtyText = ""; m.amountText = ""; m.percent = 0; m.last = 0
+            let cached = MarketStore.shared.spot.first { $0.symbol == s }?.last ?? 0
+            m.stop(); m.symbol = s; m.priceText = ""; m.qtyText = ""; m.amountText = ""; m.percent = 0; m.last = cached; m.book = OrderBook(); m.bookState = .idle
             Task { await m.start() }
         }
         .lbSheet($showKind) { OrderKindSheet(selected: m.kind) { k in
@@ -108,7 +104,7 @@ struct SpotTradeView: View {
             Spacer()
             HStack(spacing: 18) {
                 ThemeToggleButton()
-                Button { chartOpen.toggle() } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
+                Button { Router.shared.showMarket(m.symbol, futures: false) } label: { Image(systemName: "chart.bar.xaxis").foregroundColor(p.textPrimary) }
                 Button { router.spotTop = 1 } label: { Image(systemName: "ellipsis").foregroundColor(p.textPrimary) }
             }.font(.system(size: 17)).padding(.top, 4)
         }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
@@ -314,6 +310,18 @@ private struct PlanLimitPriceField: View {
     }
 }
 
+extension View {
+    /// 数字键盘没有系统「完成」键。工具栏只收起键盘，不改输入、不下单。
+    func keyboardDoneBar() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
+            }
+        }
+    }
+}
+
 /// 输入盒：左上小标签 + 数值，右侧单位（对照图 #28 灰底圆角）
 struct NumberBox: View {
     @Environment(\.palette) private var p
@@ -321,19 +329,26 @@ struct NumberBox: View {
     let unit: String
     @Binding var text: String
     let onEdit: () -> Void
+    var onUnit: (() -> Void)? = nil
     @FocusState private var f: Bool
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 1) {
                 if !text.isEmpty || f { Text(label).font(.lb(11)).foregroundColor(p.textSecondary) }
-                TextField("", text: Binding(get: { text }, set: { v in
-                    let clean = v.filter { $0.isNumber || $0 == "." }
-                    if clean.filter({ $0 == "." }).count <= 1 { text = clean; onEdit() }
-                }))
+                DecimalField(text: $text, onEdit: onEdit, onFocus: { f = $0 })
                 .placeholder(when: text.isEmpty && !f) { Text(label).foregroundColor(p.textSecondary) }
-                .font(.lbNum(FontSize.body)).foregroundColor(p.textPrimary).keyboardType(.decimalPad).focused($f)
+                .font(.lbNum(FontSize.body)).foregroundColor(p.textPrimary)
             }
-            Text(unit).font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
+            if let onUnit {
+                Button(action: onUnit) {
+                    HStack(spacing: 3) {
+                        Text(unit)
+                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                    }.font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
+                }.buttonStyle(.plain)
+            } else {
+                Text(unit).font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
+            }
         }
         .padding(.horizontal, 10).frame(height: 44)
         .background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))

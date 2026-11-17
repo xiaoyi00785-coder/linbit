@@ -44,6 +44,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /market/depth", s.handleDepth)
 	mux.HandleFunc("GET /market/klines", s.handleKlines)
 	mux.HandleFunc("GET /market/trades", s.handleTrades)
+	mux.HandleFunc("GET /market/widget", s.handleWidget)
 	mux.HandleFunc("GET /market/index", s.handleIndex)
 	mux.HandleFunc("GET /market/usd-rate", s.handleUSDRate)
 	mux.HandleFunc("GET /market/proof-of-reserves", s.handleProofOfReserves)
@@ -405,6 +406,44 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 		trades = []tradeDTO{}
 	}
 	common.WriteJSON(w, http.StatusOK, trades)
+}
+
+// handleWidget: GET /market/widget?symbols=BTCUSDT,ETHUSDT
+// At most four symbols. An empty query returns the three highest-turnover tickers.
+func (s *Server) handleWidget(w http.ResponseWriter, r *http.Request) {
+	type item struct {
+		Symbol             string `json:"symbol"`
+		LastPrice          string `json:"lastPrice"`
+		PriceChangePercent string `json:"priceChangePercent"`
+	}
+	raw := strings.TrimSpace(r.URL.Query().Get("symbols"))
+	var picked []tickerDTO
+	if raw == "" {
+		for _, sym := range s.agg.TrackedSymbols() {
+			if t, ok := s.agg.TickerFrame(sym); ok {
+				picked = append(picked, t)
+			}
+		}
+		sortTickers(picked, "volume")
+		if len(picked) > 3 {
+			picked = picked[:3]
+		}
+	} else {
+		syms := splitUpper(raw)
+		if len(syms) > 4 {
+			syms = syms[:4]
+		}
+		for _, sym := range syms {
+			if t, ok := s.agg.TickerFrame(sym); ok {
+				picked = append(picked, t)
+			}
+		}
+	}
+	items := make([]item, 0, len(picked))
+	for _, t := range picked {
+		items = append(items, item{Symbol: t.Symbol, LastPrice: t.LastPrice, PriceChangePercent: t.PriceChangePercent})
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // atoiDefault parses s as an int, clamping to [min,max] and using def when empty

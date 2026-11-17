@@ -1,21 +1,21 @@
 import SwiftUI
 
-/// 币种详情。K 线周期只用接口支持的 8 档。公开成交流没有接口，成交页显示本人成交。
+/// 币种详情。K 线周期只用接口支持的 8 档。最新成交来自 /market/trades。
 struct MarketDetailView: View {
     @Environment(\.palette) private var p
-    @ObservedObject private var session = Session.shared
     @ObservedObject private var watch = Watchlist.shared
     let symbol: String
-    @State private var ticker: APITicker?
-    @State private var book = OrderBook()
+    let futures: Bool
+    @StateObject private var live: MarketTape
     @State private var interval = "15m"
-    @State private var candles: [APIFuturesKlinesKlinesInner] = []
-    @State private var candleLoading = false
-    @State private var candleError: String?
     @State private var section = 0
-    @State private var error: String?
-    @State private var fills: [APITrade] = []
-    @State private var fillsNote: String?
+    @State private var studies = ChartStudies()
+    @State private var bookGroup = 1
+    init(symbol: String, futures: Bool = false) {
+        self.symbol = symbol
+        self.futures = futures
+        _live = StateObject(wrappedValue: MarketTape(symbol: symbol, futures: futures))
+    }
     @State private var showIntervals = false
     @State private var editingPins = false
     @State private var showAlert = false
@@ -33,9 +33,9 @@ struct MarketDetailView: View {
             }
         }
         .background(p.bg.ignoresSafeArea())
-        .task { await load() }
-        .task(id: interval) { await loadCandles() }
-        .task(id: session.isLoggedIn) { await loadFills() }
+        .task { await live.start() }
+        .onDisappear { live.stop() }
+        .onChange(of: interval) { live.setInterval($0) }
         .lbSheet($showIntervals) {
             if editingPins {
                 PinEditor(pins: pinList, all: allIntervals, onConfirm: { savePins($0); editingPins = false; showIntervals = false }, onBack: { editingPins = false })
@@ -48,7 +48,7 @@ struct MarketDetailView: View {
 
     private var detail: some View {
         VStack(spacing: 0) {
-            NavBar(title: pair, onBack: { Router.shared.marketDetail = nil }) {
+            NavBar(title: futures ? "\(symbol) 永续" : pair, onBack: { Router.shared.marketDetail = nil }) {
                 Button { watch.toggle(symbol) } label: {
                     Image(systemName: watch.contains(symbol) ? "star.fill" : "star")
                         .foregroundColor(watch.contains(symbol) ? p.brand : p.textPrimary)
@@ -62,7 +62,7 @@ struct MarketDetailView: View {
                     Picker("", selection: $section) {
                         Text("订单表").tag(0)
                         Text("深度图").tag(1)
-                        Text("我的成交").tag(2)
+                        Text("最新成交").tag(2)
                     }.pickerStyle(.segmented)
                     if section == 0 { bookList }
                     else if section == 1 { depthChart }
@@ -100,18 +100,18 @@ struct MarketDetailView: View {
     }
 
     private var pair: String {
-        let base = ticker.map { String($0.symbol.dropLast(4)) } ?? String(symbol.dropLast(4))
         let quote = symbol.hasSuffix("USDT") ? "USDT" : String(symbol.suffix(4))
         return "\(base)/\(quote)"
     }
-    private var base: String { ticker.map { String($0.symbol.dropLast(4)) } ?? String(symbol.dropLast(4)) }
-    private var last: Decimal { Dec.parse(ticker?.lastPrice) }
-    private var change: Decimal { Dec.parse(ticker?.priceChangePercent) }
+    private var base: String { symbol.hasSuffix("USDT") ? String(symbol.dropLast(4)) : symbol }
+    private var book: OrderBook { live.book }
+    private var last: Decimal { live.last }
+    private var change: Decimal { live.change }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(last > 0 ? Fmt.priceAuto(last) : "--")
+                Text(last > 0 ? Fmt.price(last, precision: live.pricePrec) : "--")
                     .font(.lbNum(28, .bold)).foregroundColor(change < 0 ? p.down : p.up)
                 Text(last > 0 ? "≈ " + Fmt.fiat(last, rate: AppConfig.usdtCny) : "")
                     .font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
@@ -119,10 +119,10 @@ struct MarketDetailView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .leading, spacing: 6) {
-                stat("24h最高价", Fmt.priceAuto(Dec.parse(ticker?.high)))
-                stat("24h最低价", Fmt.priceAuto(Dec.parse(ticker?.low)))
-                stat("24h成交量(\(base))", Fmt.compact(Dec.parse(ticker?.volume)))
-                stat("24h成交额(USDT)", Fmt.compact(Dec.parse(ticker?.quoteVolume)))
+                stat("24h最高价", live.high > 0 ? Fmt.price(live.high, precision: live.pricePrec) : "--")
+                stat("24h最低价", live.low > 0 ? Fmt.price(live.low, precision: live.pricePrec) : "--")
+                stat("24h成交量(\(base))", Fmt.compact(live.volume))
+                stat("24h成交额(USDT)", Fmt.compact(live.quoteVolume))
             }.frame(width: 150, alignment: .leading)
         }
     }
@@ -174,31 +174,72 @@ struct MarketDetailView: View {
     }
 
     @ViewBuilder private var chart: some View {
-        if candleLoading && candles.isEmpty {
+        if live.loadingBars && live.bars.isEmpty {
             ProgressView().frame(maxWidth: .infinity).frame(height: 220)
-        } else if let candleError, candles.isEmpty {
+        } else if let candleError = live.barError, live.bars.isEmpty {
             Text(candleError).font(.lb(FontSize.small)).foregroundColor(p.down).frame(maxWidth: .infinity).frame(height: 120)
-        } else if candles.isEmpty {
+        } else if live.bars.isEmpty {
             EmptyStateView(text: "暂无 K 线").frame(height: 160)
         } else {
-            CandleChart(candles: candles, pricePrec: 2).frame(height: 220)
+            CandleChart(bars: live.bars, pricePrec: live.pricePrec, studies: studies)
+            studyBar
         }
-        if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
+    }
+
+    private var studyBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 18) {
+                studyChip("MA", studies.ma) { studies.ma.toggle() }
+                studyChip("BOLL", studies.boll) { studies.boll.toggle() }
+                studyChip("EMA", studies.ema) { studies.ema.toggle() }
+                studyChip("VOL", studies.vol) { studies.vol.toggle() }
+                studyChip("MACD", studies.macd) { studies.macd.toggle() }
+            }
+        }
+    }
+
+    private func studyChip(_ title: String, _ on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.lb(FontSize.small, on ? .semibold : .regular))
+                .foregroundColor(on ? p.textPrimary : p.textTertiary)
+        }.buttonStyle(.plain)
     }
 
     private var bookList: some View {
         VStack(spacing: 0) {
             ratioBar
             HStack {
-                Text("价格 (USDT)").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                Spacer()
-                Text("数量 (USDT)").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-            }
+                Text("买").frame(maxWidth: .infinity, alignment: .leading)
+                Text("卖").frame(maxWidth: .infinity, alignment: .trailing)
+                Menu {
+                    ForEach([1, 10, 100], id: \.self) { n in
+                        Button(tickText(n)) { bookGroup = n }
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(tickText(bookGroup))
+                        Image(systemName: "chevron.down").font(.system(size: 8))
+                    }
+                }
+            }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
             if book.asks.isEmpty && book.bids.isEmpty { EmptyStateView(text: "暂无盘口") }
-            ForEach(Array(book.asks.prefix(8)).reversed()) { level($0, up: false) }
-            Text(last > 0 ? Fmt.priceAuto(last) : "--").font(.lbNum(18, .bold)).foregroundColor(change < 0 ? p.down : p.up)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
-            ForEach(Array(book.bids.prefix(8))) { level($0, up: true) }
+            let bids = grouped(book.bids, up: false)
+            let asks = grouped(book.asks, up: true)
+            let maxBid = bids.map(\.qty).max() ?? 1
+            let maxAsk = asks.map(\.qty).max() ?? 1
+            let rows = max(bids.count, asks.count)
+            GeometryReader { g in
+                let half = g.size.width / 2
+                VStack(spacing: 0) {
+                    ForEach(0..<rows, id: \.self) { i in
+                        HStack(spacing: 0) {
+                            bookSide(bids[safe: i], up: true, maxQty: maxBid, width: half, qtyOnLeft: true)
+                            bookSide(asks[safe: i], up: false, maxQty: maxAsk, width: half, qtyOnLeft: false)
+                        }.frame(height: 28)
+                    }
+                }
+            }
+            .frame(height: CGFloat(rows) * 28)
         }
     }
 
@@ -229,74 +270,108 @@ struct MarketDetailView: View {
 
     private var fillsList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("公开成交流没有接口，这里是你在 \(pair) 的成交。")
-                .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-            if let fillsNote { Text(fillsNote).font(.lb(FontSize.small)).foregroundColor(p.down) }
-            if !session.isLoggedIn { EmptyStateView(text: "登录后查看成交") }
-            else if fills.isEmpty { EmptyStateView(text: "暂无成交") }
+            if live.trades.isEmpty { EmptyStateView(text: "暂无公开成交") }
             else {
                 HStack {
                     Text("时间").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("价格").frame(width: 110, alignment: .trailing)
-                    Text("数量").frame(width: 80, alignment: .trailing)
+                    Text("价格(USDT)").frame(width: 110, alignment: .trailing)
+                    Text("数量(\(base))").frame(width: 90, alignment: .trailing)
                 }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                ForEach(fills, id: \.tradeId) { t in
+                ForEach(live.trades) { t in
                     HStack {
-                        Text(Fmt.dateTime(t.createdAt)).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(t.price).foregroundColor(t.side == .buy ? p.up : p.down).frame(width: 110, alignment: .trailing)
-                        Text(t.quantity).frame(width: 80, alignment: .trailing)
+                        Text(Self.clock.string(from: t.time)).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(Fmt.price(Dec.parse(t.price), precision: live.pricePrec)).foregroundColor(t.side == "buy" ? p.up : p.down).frame(width: 110, alignment: .trailing)
+                        Text(Fmt.amount(Dec.parse(t.quantity), 5)).frame(width: 90, alignment: .trailing)
                     }.font(.lbNum(12)).foregroundColor(p.textPrimary).frame(height: 28)
                 }
             }
         }
     }
 
-    private func level(_ x: BookLevel, up: Bool) -> some View {
-        HStack {
-            Text(Fmt.priceAuto(x.price)).foregroundColor(up ? p.up : p.down)
-            Spacer()
-            Text(Fmt.compact(x.price * x.qty)).foregroundColor(p.textPrimary)
-        }.font(.lbNum(12)).frame(height: 22)
+    private func tickText(_ group: Int) -> String {
+        let value = tickUnit * Decimal(group)
+        return Fmt.price(value, precision: min(live.pricePrec + (group == 1 ? 0 : 0), 8)).replacingOccurrences(of: ",", with: "")
     }
+
+    private var tickUnit: Decimal {
+        var step = Decimal(1)
+        let n = max(live.pricePrec, 0)
+        if n > 0 { for _ in 0..<n { step /= 10 } }
+        return step
+    }
+
+    private func grouped(_ rows: [BookLevel], up: Bool) -> [BookLevel] {
+        let step = tickUnit * Decimal(bookGroup)
+        guard step > 0 else { return Array(rows.prefix(50)) }
+        var map: [Decimal: Decimal] = [:]
+        for row in rows where row.price > 0 && row.qty > 0 {
+            var q = row.price / step
+            var rounded = Decimal()
+            NSDecimalRound(&rounded, &q, 0, up ? .up : .down)
+            let bucket = rounded * step
+            map[bucket, default: 0] += row.qty
+        }
+        let sorted = map.map { BookLevel(price: $0.key, qty: $0.value) }.sorted { up ? $0.price < $1.price : $0.price > $1.price }
+        return Array(sorted.prefix(50))
+    }
+
+    private func bookSide(_ level: BookLevel?, up: Bool, maxQty: Decimal, width: CGFloat, qtyOnLeft: Bool) -> some View {
+        let frac: CGFloat = {
+            guard let level, maxQty > 0 else { return 0 }
+            return CGFloat(min(1, max(0, NSDecimalNumber(decimal: level.qty / maxQty).doubleValue)))
+        }()
+        return ZStack(alignment: qtyOnLeft ? .leading : .trailing) {
+            Rectangle().fill((up ? p.up : p.down).opacity(0.16))
+                .frame(width: width * frac)
+            HStack(spacing: 4) {
+                if qtyOnLeft {
+                    Text(level.map { Self.qtyText($0.qty, live.qtyPrec) } ?? "")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(level.map { Fmt.price($0.price, precision: live.pricePrec) } ?? "")
+                        .foregroundColor(p.up)
+                } else {
+                    Text(level.map { Fmt.price($0.price, precision: live.pricePrec) } ?? "")
+                        .foregroundColor(p.down)
+                    Text(level.map { Self.qtyText($0.qty, live.qtyPrec) } ?? "")
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            .font(.lbNum(12))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 2)
+        }
+        .frame(width: width, height: 28)
+        .clipped()
+    }
+
+    private static func qtyText(_ q: Decimal, _ prec: Int) -> String {
+        let raw = Fmt.amount(q, prec)
+        guard raw.contains(".") else { return raw }
+        return raw.replacingOccurrences(of: #"0+$"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\.$"#, with: "", options: .regularExpression)
+    }
+
+    private static let clock: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "HH:mm:ss"; return f
+    }()
 
     private func openTrade() {
         let sym = symbol
+        let fut = futures
         Router.shared.marketDetail = nil
-        Router.shared.trade(sym)
+        if fut {
+            if Router.shared.tab == .futures && Router.shared.futuresSymbol == sym { Router.shared.tab = .futures }
+            else { Router.shared.tradeFutures(sym) }
+        } else if Router.shared.tab == .spot && Router.shared.spotSymbol == sym {
+            Router.shared.tab = .spot
+        } else {
+            Router.shared.trade(sym)
+        }
     }
 
     private func plainPrice(_ d: Decimal) -> String {
         d > 0 ? NSDecimalNumber(decimal: d).stringValue : ""
-    }
-
-    private func load() async {
-        do {
-            let r: APIGetTicker200Response = try await APIClient.shared.get("/market/ticker", query: ["symbol": symbol])
-            if case let .typeAPITicker(t) = r { ticker = t }
-            book = try await SpotAPI.depth(symbol)
-            error = nil
-        } catch { self.error = error.lbMessage }
-    }
-
-    private func loadCandles() async {
-        candleLoading = true
-        candleError = nil
-        defer { candleLoading = false }
-        do {
-            let rows: [SpotKline] = try await APIClient.shared.get("/market/klines", query: ["symbol": symbol, "interval": interval, "limit": "120"])
-            candles = rows.map { APIFuturesKlinesKlinesInner(_open: $0.open, high: $0.high, low: $0.low, close: $0.close) }
-        } catch {
-            candles = []
-            candleError = error.lbMessage
-        }
-    }
-
-    private func loadFills() async {
-        guard session.isLoggedIn else { fills = []; fillsNote = nil; return }
-        do {
-            fills = try await SpotAPI.trades(symbol: symbol, page: 1).items.filter { $0.symbol == symbol }
-            fillsNote = nil
-        } catch { fillsNote = error.lbMessage }
     }
 }
 
@@ -307,33 +382,29 @@ private struct DepthPlot: View {
     let down: Color
     var body: some View {
         Canvas { ctx, size in
-            let bids = Array(book.bids.prefix(20))
-            let asks = Array(book.asks.prefix(20))
-            func cum(_ rows: [BookLevel]) -> [Double] {
+            let bids = Array(book.bids.prefix(40))
+            let asks = Array(book.asks.prefix(40))
+            guard let hi = asks.last?.price ?? bids.first?.price, let lo = bids.last?.price ?? asks.first?.price, hi > lo else { return }
+            func cum(_ rows: [BookLevel]) -> [(Decimal, Double)] {
                 var s = 0.0
-                return rows.map { s += NSDecimalNumber(decimal: $0.qty).doubleValue; return s }
+                return rows.map { s += NSDecimalNumber(decimal: $0.qty).doubleValue; return ($0.price, s) }
             }
             let b = cum(bids), a = cum(asks)
-            let maxV = max(b.max() ?? 0, a.max() ?? 0, 1)
-            func path(_ values: [Double], fromRight: Bool) -> Path {
-                var p = Path()
-                guard !values.isEmpty else { return p }
-                let step = (size.width / 2) / CGFloat(values.count)
-                for (i, v) in values.enumerated() {
-                    let x = fromRight ? size.width - step * CGFloat(i) : step * CGFloat(i)
-                    let y = size.height - CGFloat(v / maxV) * (size.height - 8)
-                    if i == 0 { p.move(to: CGPoint(x: x, y: size.height)); p.addLine(to: CGPoint(x: x, y: y)) }
-                    else { p.addLine(to: CGPoint(x: x, y: y)) }
-                }
-                let endX = fromRight ? size.width - step * CGFloat(values.count) : step * CGFloat(values.count)
-                p.addLine(to: CGPoint(x: endX, y: size.height))
-                p.closeSubpath()
-                return p
+            let maxV = max(b.map(\.1).max() ?? 0, a.map(\.1).max() ?? 0, 1)
+            let span = NSDecimalNumber(decimal: hi - lo).doubleValue
+            func x(_ price: Decimal) -> CGFloat { CGFloat((NSDecimalNumber(decimal: price - lo).doubleValue / span)) * size.width }
+            func area(_ rows: [(Decimal, Double)], color: Color) {
+                guard let first = rows.first else { return }
+                var path = Path()
+                path.move(to: CGPoint(x: x(first.0), y: size.height))
+                for row in rows { path.addLine(to: CGPoint(x: x(row.0), y: size.height - CGFloat(row.1 / maxV) * (size.height - 8))) }
+                if let last = rows.last { path.addLine(to: CGPoint(x: x(last.0), y: size.height)) }
+                path.closeSubpath()
+                ctx.fill(path, with: .color(color.opacity(0.25)))
+                ctx.stroke(path, with: .color(color), lineWidth: 1.5)
             }
-            ctx.fill(path(b, fromRight: false), with: .color(up.opacity(0.25)))
-            ctx.stroke(path(b, fromRight: false), with: .color(up), lineWidth: 1.5)
-            ctx.fill(path(a, fromRight: true), with: .color(down.opacity(0.25)))
-            ctx.stroke(path(a, fromRight: true), with: .color(down), lineWidth: 1.5)
+            area(b.reversed(), color: up)
+            area(a, color: down)
         }
     }
 }
@@ -375,7 +446,7 @@ private struct PinEditor: View {
     }
 }
 
-/// 现货价格预警。条件只有涨到 / 跌到，频率只有一次，和 /price-alerts 一致。
+/// 现货价格预警。条件是涨到 / 跌到。频率 once、daily、repeat 对应接口 triggerMode。
 private struct SpotAlertPage: View {
     @Environment(\.palette) private var p
     @ObservedObject private var session = Session.shared
@@ -383,6 +454,7 @@ private struct SpotAlertPage: View {
     let suggested: String
     let onBack: () -> Void
     @State private var rise = true
+    @State private var mode = "once"
     @State private var threshold = ""
     @State private var items: [PriceAlertAPI.Item] = []
     @State private var error: String?
@@ -395,10 +467,15 @@ private struct SpotAlertPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(symbol).font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
-                    Text("按现货指数价比较，只提醒一次，通知在站内。").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    Text("按现货指数价比较，通知在站内。").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                     HStack(spacing: 8) {
                         chip("价格涨到", rise) { rise = true }
                         chip("价格跌到", !rise) { rise = false }
+                    }
+                    HStack(spacing: 8) {
+                        chip("只提醒一次", mode == "once") { mode = "once" }
+                        chip("每天一次", mode == "daily") { mode = "daily" }
+                        chip("持续提醒", mode == "repeat") { mode = "repeat" }
                     }
                     LBTextField(placeholder: "价格", text: $threshold, keyboard: .decimalPad)
                     if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
@@ -416,7 +493,7 @@ private struct SpotAlertPage: View {
                     if items.isEmpty { EmptyStateView(text: "暂无提醒") }
                     ForEach(items) { item in
                         HStack {
-                            Text(item.condition == "lte" ? "跌到" : "涨到").foregroundColor(p.textSecondary)
+                            Text(alertLabel(item)).foregroundColor(p.textSecondary)
                             Text(item.threshold).foregroundColor(p.textPrimary)
                             Spacer()
                             Text(item.status).font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
@@ -428,6 +505,15 @@ private struct SpotAlertPage: View {
         .onAppear { if threshold.isEmpty { threshold = suggested } }
         .task(id: session.isLoggedIn) { await reload() }
         .lbConfirm($confirm)
+    }
+
+    private func alertLabel(_ item: PriceAlertAPI.Item) -> String {
+        let side = item.condition == "lte" ? "跌到" : "涨到"
+        switch item.triggerMode ?? "once" {
+        case "daily": return "每天·\(side)"
+        case "repeat": return "持续·\(side)"
+        default: return side
+        }
     }
 
     private func chip(_ title: String, _ on: Bool, _ tap: @escaping () -> Void) -> some View {
@@ -448,7 +534,7 @@ private struct SpotAlertPage: View {
         saving = true
         defer { saving = false }
         do {
-            try await PriceAlertAPI.create(symbol: symbol, condition: rise ? "gte" : "lte", threshold: threshold)
+            try await PriceAlertAPI.create(symbol: symbol, condition: rise ? "gte" : "lte", threshold: threshold, mode: mode)
             error = nil
             ToastCenter.shared.show("已创建提醒")
             await reload()

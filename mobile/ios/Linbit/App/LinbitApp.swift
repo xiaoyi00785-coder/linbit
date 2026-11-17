@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct LinbitApp: App {
@@ -42,29 +43,40 @@ struct RootTabView: View {
     @ObservedObject private var session = Session.shared
     @ObservedObject private var overlays = OverlayTracker.shared
     @EnvironmentObject private var theme: ThemeStore
+    @State private var keyboardCover: CGFloat = 0
+    /// 进过的页面留在树上，再切回来用已有行情，不把整页打回加载态。
+    @State private var mounted: Set<MainTab> = []
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Group {
-                switch router.tab {
-                case .home: HomeView(onOpenMarkets: { router.tab = .markets })
-                case .markets: MarketsView()
-                case .futures: FuturesRootView()
-                case .spot: NavigationStack(path: $router.spotPath) {
-                    SpotTradeView().navigationBarHidden(true)
-                        .navigationDestination(for: SpotRoute.self) { _ in SpotHistoryView() }
-                }
-                case .assets: AssetsView()
-                }
+            ZStack {
+                if mounted.contains(.home) { tabPage(.home) { HomeView(onOpenMarkets: { router.tab = .markets }) } }
+                if mounted.contains(.markets) { tabPage(.markets) { MarketsView() } }
+                if mounted.contains(.futures) { tabPage(.futures) { FuturesRootView() } }
+                if mounted.contains(.spot) { tabPage(.spot) {
+                    NavigationStack(path: $router.spotPath) {
+                        SpotTradeView().navigationBarHidden(true)
+                            .navigationDestination(for: SpotRoute.self) { _ in SpotHistoryView() }
+                    }
+                } }
+                if mounted.contains(.assets) { tabPage(.assets) { AssetsView() } }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if overlays.count == 0, router.spotPath.isEmpty && router.assetsPath.isEmpty || ![.spot, .assets].contains(router.tab) {
                 FloatingTabBar(selected: $router.tab)
+                    .offset(y: keyboardCover)
             }
         }
         .background(p.bg.ignoresSafeArea())
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
+            let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect ?? .zero
+            let overlap = max(0, UIScreen.main.bounds.maxY - frame.minY)
+            let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+            withAnimation(.easeOut(duration: duration)) { keyboardCover = overlap }
+        }
         .overlay(alignment: .top) { ToastOverlay() }
-        .onAppear { applyScreenshotRoute() }
+        .onAppear { applyScreenshotRoute(); mounted.insert(router.tab) }
+        .onChange(of: router.tab) { mounted.insert($0) }
         .task { await AppFeatures.shared.refresh(); await Watchlist.shared.sync() }
         .fullScreenCover(item: $router.feature) { page in
             ThemedRoot { FeatureHost(page: page) }
@@ -72,7 +84,8 @@ struct RootTabView: View {
         }
         .fullScreenCover(isPresented: Binding(get: { router.marketDetail != nil }, set: { if !$0 { router.marketDetail = nil } })) {
             if let symbol = router.marketDetail {
-                ThemedRoot { MarketDetailView(symbol: symbol) }
+                ThemedRoot { MarketDetailView(symbol: symbol, futures: router.marketDetailFutures) }
+                    .id("\(symbol)-\(router.marketDetailFutures)")
                     .environmentObject(session).environmentObject(theme)
                     .overlay(alignment: .top) { ToastOverlay() }
             }
@@ -87,6 +100,14 @@ struct RootTabView: View {
     }
 
     /// CI 截图用：仅当模拟器写入 lb.shot 时切换页面，正常启动不改变界面。
+    private func tabPage<V: View>(_ tab: MainTab, @ViewBuilder _ content: () -> V) -> some View {
+        content()
+            .opacity(router.tab == tab ? 1 : 0)
+            .allowsHitTesting(router.tab == tab)
+            .accessibilityHidden(router.tab != tab)
+            .zIndex(router.tab == tab ? 1 : 0)
+    }
+
     private func applyScreenshotRoute() {
         guard let shot = UserDefaults.standard.string(forKey: "lb.shot"), !shot.isEmpty else { return }
         switch shot {

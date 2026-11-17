@@ -265,7 +265,6 @@ enum ErrorText {
         "INVALID_PRICE": "价格不符合精度或超出限价范围",
         "INVALID_QTY": "数量不符合要求（改单数量需大于已成交数量）",
         "INVALID_TPSL": "止盈止损价格不合理，请检查方向与触发价",
-        "POSITION_LIMIT": "超过当前杠杆档位的最大持仓",
         "REDUCE_ONLY_REJECTED": "只减仓委托会增加仓位，已拒绝",
         "CONTRACT_HALTED": "该合约暂停交易",
         "POST_ONLY_REJECTED": "只做 Maker 委托会立即成交，已撤销",

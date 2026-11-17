@@ -351,7 +351,8 @@ enum SubAPI {
 // MARK: - 聊天室（feat/chat）
 
 /// type: general / spot / futures；name 为服务端给出的展示名
-struct ChatRoom: Decodable, Hashable, Identifiable { let id: String; let type: String?; let symbol: String?; let name: String?; let online: Int? }
+struct ChatRoom: Decodable, Hashable, Identifiable { let id: String; let type: String?; let symbol: String?; let name: String?; let online: Int?; var folderId: Int64? = nil }
+struct ChatFolder: Decodable, Hashable, Identifiable { let id: Int64; let name: String }
 struct ChatRules: Decodable, Hashable { let maxLength: Int?; let minIntervalMs: Int?; let minKycLevel: Int?; let blockLinks: Bool?; let blockContacts: Bool? }
 struct ChatMessage: Decodable, Hashable, Identifiable {
     let id: Int64
@@ -369,7 +370,20 @@ enum ChatAPI {
     struct Send: Encodable { let clientId: String; let text: String }
     struct Report: Encodable { let reason: String? }
     struct OK: Decodable { let ok: Bool? }
+    struct Joined: Decodable { let rooms: [ChatRoom]?; let folders: [ChatFolder]? }
+    struct FolderBody: Encodable { let name: String }
+    struct JoinBody: Encodable { let folderId: Int64? }
     static func rooms() async throws -> Rooms { try await APIClient.shared.get("/chat/rooms", auth: TokenStore.shared.isLoggedIn) }
+    static func joined() async throws -> Joined { try await APIClient.shared.get("/chat/joined", auth: true) }
+    static func join(_ room: String, folderId: Int64? = nil) async throws {
+        let _: OK = try await APIClient.shared.post("/chat/rooms/\(room)/join", body: JoinBody(folderId: folderId))
+    }
+    static func leave(_ room: String) async throws {
+        try await APIClient.shared.deleteAuth("/chat/rooms/\(room)/join")
+    }
+    static func createFolder(_ name: String) async throws -> ChatFolder {
+        try await APIClient.shared.post("/chat/folders", body: FolderBody(name: name))
+    }
     static func messages(_ room: String, before: Int64?) async throws -> Messages {
         try await APIClient.shared.get("/chat/rooms/\(room)/messages", query: ["before": before.map { "\($0)" }, "limit": "50"], auth: TokenStore.shared.isLoggedIn)
     }

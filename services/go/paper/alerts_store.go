@@ -50,8 +50,8 @@ func validateAlert(in CreatePriceAlert) (CreatePriceAlert, decimal.Decimal, erro
 	if !validClientID.MatchString(in.ClientAlertID) || len(in.Note) > 120 {
 		return in, decimal.Zero, apiErr(http.StatusBadRequest, "VALIDATION_ERROR", "clientAlertId 或 note 无效")
 	}
-	if in.Market != "spot" || (in.Condition != "gte" && in.Condition != "lte") || in.PriceSource != "INDEX" || in.TriggerMode != "once" {
-		return in, decimal.Zero, apiErr(http.StatusBadRequest, "VALIDATION_ERROR", "P0 仅支持 spot/INDEX/gte/lte/once")
+	if in.Market != "spot" || (in.Condition != "gte" && in.Condition != "lte") || in.PriceSource != "INDEX" || (in.TriggerMode != "once" && in.TriggerMode != "daily" && in.TriggerMode != "repeat") {
+		return in, decimal.Zero, apiErr(http.StatusBadRequest, "VALIDATION_ERROR", "仅支持 spot/INDEX/gte/lte，triggerMode 为 once、daily 或 repeat")
 	}
 	if len(in.Channels) != 1 || in.Channels[0] != "in_app" {
 		return in, decimal.Zero, apiErr(http.StatusBadRequest, "VALIDATION_ERROR", "P0 仅支持 in_app")
@@ -119,27 +119,30 @@ func (s *Store) CreateAlert(ctx context.Context, userID string, in CreatePriceAl
 		return PriceAlert{}, apiErr(http.StatusConflict, "ALERT_LIMIT_EXCEEDED", "每用户最多 50 条激活、100 条历史预警")
 	}
 	now := clock
-	a := PriceAlert{AlertID: randomID("al"), ClientAlertID: in.ClientAlertID, Market: "spot", Symbol: in.Symbol, Condition: in.Condition, Threshold: threshold.String(), PriceSource: "INDEX", TriggerMode: "once", Channels: []string{"in_app"}, Enabled: enabled, Status: status, Revision: 1, DeliveryStatus: "none", Note: in.Note, CreatedAt: now, UpdatedAt: now}
+	a := PriceAlert{AlertID: randomID("al"), ClientAlertID: in.ClientAlertID, Market: "spot", Symbol: in.Symbol, Condition: in.Condition, Threshold: threshold.String(), PriceSource: "INDEX", TriggerMode: in.TriggerMode, Channels: []string{"in_app"}, Enabled: enabled, Status: status, Revision: 1, DeliveryStatus: "none", Note: in.Note, CreatedAt: now, UpdatedAt: now}
 	a.Limit.ActivePerUser = 50
-	_, err = tx.ExecContext(ctx, `INSERT INTO price_alerts (alert_id,user_id,client_alert_id,request_hash,market,symbol,condition,threshold,enabled,status,note,created_at,updated_at) VALUES ($1,$2,$3,$4,'spot',$5,$6,$7,$8,$9,$10,$11,$11)`, a.AlertID, userID, in.ClientAlertID, hash, in.Symbol, in.Condition, threshold.String(), enabled, status, in.Note, now)
+	_, err = tx.ExecContext(ctx, `INSERT INTO price_alerts (alert_id,user_id,client_alert_id,request_hash,market,symbol,condition,threshold,trigger_mode,enabled,status,note,created_at,updated_at) VALUES ($1,$2,$3,$4,'spot',$5,$6,$7,$8,$9,$10,$11,$12,$12)`, a.AlertID, userID, in.ClientAlertID, hash, in.Symbol, in.Condition, threshold.String(), in.TriggerMode, enabled, status, in.Note, now)
 	if err != nil {
 		return PriceAlert{}, err
 	}
 	return a, tx.Commit()
 }
 
-const alertColumns = `alert_id,client_alert_id,symbol,condition,threshold::text,enabled,status,revision,last_observed_price::text,last_evaluated_at,triggered_price::text,triggered_at,notification_id,delivery_status,cooldown_until,coalesce(note,''),created_at,updated_at`
+const alertColumns = `alert_id,client_alert_id,symbol,condition,threshold::text,enabled,status,revision,last_observed_price::text,last_evaluated_at,triggered_price::text,triggered_at,notification_id,delivery_status,cooldown_until,trigger_mode,coalesce(note,''),created_at,updated_at`
 
 func scanAlert(scanner interface{ Scan(...any) error }) (PriceAlert, error) {
 	var a PriceAlert
 	var last, trigger sql.NullString
 	var evaluated, triggered, cooldown sql.NullTime
 	var notification sql.NullString
-	err := scanner.Scan(&a.AlertID, &a.ClientAlertID, &a.Symbol, &a.Condition, &a.Threshold, &a.Enabled, &a.Status, &a.Revision, &last, &evaluated, &trigger, &triggered, &notification, &a.DeliveryStatus, &cooldown, &a.Note, &a.CreatedAt, &a.UpdatedAt)
+	err := scanner.Scan(&a.AlertID, &a.ClientAlertID, &a.Symbol, &a.Condition, &a.Threshold, &a.Enabled, &a.Status, &a.Revision, &last, &evaluated, &trigger, &triggered, &notification, &a.DeliveryStatus, &cooldown, &a.TriggerMode, &a.Note, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return PriceAlert{}, err
 	}
-	a.Market, a.PriceSource, a.TriggerMode, a.Channels = "spot", "INDEX", "once", []string{"in_app"}
+	a.Market, a.PriceSource, a.Channels = "spot", "INDEX", []string{"in_app"}
+	if a.TriggerMode == "" {
+		a.TriggerMode = "once"
+	}
 	a.Limit.ActivePerUser = 50
 	if last.Valid {
 		a.LastObservedPrice = &last.String
