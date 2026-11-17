@@ -52,9 +52,9 @@ final class SpotModel: ObservableObject {
     @Published var feeState: Loadable<Void> = .idle
 
     private var subs: [WSSubscription] = []
-    private var poll: Task<Void, Never>?
-    /// WS 深度 / 成交帧先存这里，最多每 250ms 合并发布一次（每帧都发布会让整页一秒重算几十次）
-    private var pendingBook: OrderBook?
+    /// 盘口：固定 0.5 秒节拍发布（BookStream），回调里同步到 book
+    let bookStream = BookStream()
+    /// 成交 / ticker 帧先存这里，最多每 250ms 合并发布一次（每帧都发布会让整页一秒重算几十次）
     private var pendingLast: Decimal?
     private var pendingChange: Decimal?
     private var flush: Task<Void, Never>?
@@ -117,13 +117,14 @@ final class SpotModel: ObservableObject {
         if let row = MarketStore.shared.spot.first(where: { $0.symbol == symbol }) { last = row.last; changePct = row.changePct }
         await loadBook()
         if Task.isCancelled { return }
+        bookStream.onPublish = { [weak self] b in
+            guard let self else { return }
+            self.book = b
+            if self.bookState.value == nil { self.bookState = .loaded(()) }
+        }
+        bookStream.start(symbol: symbol, futures: false)
         subs.forEach { $0.cancel() }
         subs = [
-            MarketSocket.shared.subscribe("depth:\(symbol)") { [weak self] f in
-                guard let d = try? CodableHelper.jsonDecoder.decode(APIDepth.self, from: f.data) else { return }
-                let b = OrderBook(d)
-                Task { @MainActor in self?.queue(book: b) }
-            },
             MarketSocket.shared.subscribe("ticker:\(symbol)") { [weak self] f in
                 guard let t = TapePrice.decode(f.data) else { return }
                 let px = Dec.parse(t.lastPrice ?? t.price)
@@ -136,26 +137,17 @@ final class SpotModel: ObservableObject {
                 Task { @MainActor in self?.queue(last: px, change: nil) }
             },
         ]
-        // WS 不可用时 3 秒轮询兜底
-        poll?.cancel()
-        poll = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                await self?.loadBook(silent: true)
-            }
-        }
         await refreshAccount()
         await loadFees()
     }
     func stop() {
         subs.forEach { $0.cancel() }; subs = []
-        poll?.cancel(); poll = nil
+        bookStream.stop()
         flush?.cancel(); flush = nil
-        pendingBook = nil; pendingLast = nil; pendingChange = nil
+        pendingLast = nil; pendingChange = nil
     }
 
-    private func queue(book b: OrderBook? = nil, last px: Decimal? = nil, change: Decimal? = nil) {
-        if let b { pendingBook = b }
+    private func queue(last px: Decimal? = nil, change: Decimal? = nil) {
         if let px, px > 0 { pendingLast = px }
         if let change { pendingChange = change }
         guard flush == nil else { return }
@@ -163,13 +155,9 @@ final class SpotModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard let self, !Task.isCancelled else { return }
             self.flush = nil
-            if let b = self.pendingBook {
-                if b != self.book { self.book = b }
-                if self.bookState.value == nil { self.bookState = .loaded(()) }
-            }
             if let px = self.pendingLast, px != self.last { self.last = px }
             if let c = self.pendingChange, c != self.changePct { self.changePct = c }
-            self.pendingBook = nil; self.pendingLast = nil; self.pendingChange = nil
+            self.pendingLast = nil; self.pendingChange = nil
         }
     }
 

@@ -36,6 +36,9 @@ enum FuturesKind: String, CaseIterable { case limit, market, plan, postOnly
     /// 四种委托均已接通：限价/市价 → /futures/orders；只做 Maker → timeInForce POST_ONLY；计划委托 → /futures/plan-orders
     var available: Bool { true }
     var backendMissing: Bool { false }
+    var icon: String {
+        ["limit": "chart.line.downtrend.xyaxis", "market": "arrow.up.right", "plan": "chart.line.uptrend.xyaxis", "postOnly": "chart.xyaxis.line"][rawValue]!
+    }
 }
 
 @MainActor
@@ -43,7 +46,9 @@ final class FuturesModel: ObservableObject {
     @Published var symbol: String
     @Published var contract: APIFuturesContract?
     @Published var ticker: APIFuturesTicker?
-    @Published var book = OrderBook()
+    /// 盘口单独成流：只有盘口视图订阅它，按固定节拍刷新，不带着整页重算
+    let bookStream = BookStream()
+    var book: OrderBook { bookStream.book }
     @Published var account: APIFuturesAccount?
     @Published var positions: [APIFuturesPosition] = []
     @Published var openOrders: [APIFuturesOrder] = []
@@ -86,6 +91,10 @@ final class FuturesModel: ObservableObject {
     @Published var onlyCurrent = false
     /// 成交推送的最新价。盘口中间大字用它，不再等 3 秒轮询。
     @Published var tradeLast: Decimal = 0
+    /// 最新价相对上一笔的方向：1 涨 / -1 跌 / 0 未知。盘口中间大字按它变绿 / 变红。
+    @Published var tickDir = 0
+    /// 盘口价格精度（合并档位），0 表示用合约最小价格步长
+    @Published var bookPrecision: Decimal = 0
     @Published var closingKeys: Set<String> = []
     @Published var closingAll = false
     private var quoteSubs: [WSSubscription] = []
@@ -241,6 +250,7 @@ final class FuturesModel: ObservableObject {
         if priceText.isEmpty, last > 0 { priceText = Dec.plain(last, pricePrec) }
         syncMarkSubs()
         subscribeQuotes()
+        bookStream.start(symbol: symbol, futures: true)
         loop?.cancel()
         loop = Task { [weak self] in
             var n = 0
@@ -258,6 +268,7 @@ final class FuturesModel: ObservableObject {
     /// 离开页面：停止轮询并退订全部 mark:<symbol>
     func stop() {
         loop?.cancel(); loop = nil
+        bookStream.stop()
         quoteFlush?.cancel(); quoteFlush = nil
         for s in markSubs.values { s.cancel() }
         markSubs = [:]
@@ -292,7 +303,11 @@ final class FuturesModel: ObservableObject {
         quoteFlush = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard let self, !Task.isCancelled else { return }
-            if let p = self.pendingLast, p != self.tradeLast { self.tradeLast = p }
+            if let p = self.pendingLast, p != self.tradeLast {
+                let dir = self.tradeLast == 0 ? 0 : (p > self.tradeLast ? 1 : -1)
+                if dir != self.tickDir { self.tickDir = dir }
+                self.tradeLast = p
+            }
             self.quoteFlush = nil
         }
     }
@@ -327,7 +342,7 @@ final class FuturesModel: ObservableObject {
 
     /// restart 为 false 时（页面不在屏幕上）只换币种、清表单，等页面回到屏幕再拉行情。
     func switchSymbol(_ s: String, restart: Bool = true) async {
-        stop(); symbol = s; priceText = ""; costText = ""; percent = 0; ticker = nil; book = OrderBook(); tradeLast = 0
+        stop(); symbol = s; priceText = ""; costText = ""; percent = 0; ticker = nil; bookStream.clear(); tradeLast = 0; tickDir = 0; bookPrecision = 0
         if restart { await start() }
     }
 
@@ -341,11 +356,8 @@ final class FuturesModel: ObservableObject {
 
     func refreshMarket() async {
         do {
-            async let t = FuturesAPI.ticker(symbol)
-            async let b = FuturesAPI.depth(symbol)
-            let nt = try await t
+            let nt = try await FuturesAPI.ticker(symbol)
             if nt != ticker { ticker = nt }
-            if let nb = try? await b, nb != book { book = nb }
             if marketError != nil { marketError = nil }
         } catch { if ticker == nil { marketError = error.lbMessage } }
     }
@@ -645,6 +657,31 @@ final class FuturesModel: ObservableObject {
 }
 
 extension FuturesModel {
+    /// 合约最小价格步长
+    var tick: Decimal { var s = Decimal(1); for _ in 0..<pricePrec { s /= 10 }; return s }
+    var bookStep: Decimal { bookPrecision > 0 ? bookPrecision : tick }
+    /// 盘口精度可选：步长 ×1 / ×10 / ×100 / ×500（BTC 为 0.1 / 1 / 10 / 50）
+    var bookSteps: [Decimal] { [tick, tick * 10, tick * 100, tick * 500] }
+
+    /// 价格框 − / +：按最小步长调整
+    func stepPrice(_ up: Bool) {
+        let base = Dec.parse(priceText) > 0 ? Dec.parse(priceText) : last
+        let v = max(base + (up ? tick : -tick), 0)
+        priceText = Dec.plain(v, pricePrec)
+    }
+
+    /// 按最小下单量填入输入框（向上取到 2 位小数，换算回数量后不低于最小值）
+    func useMinQty() {
+        guard minQty > 0, orderPrice > 0 else { return }
+        func ceil2(_ d: Decimal) -> String { var v = d, r = Decimal(); NSDecimalRound(&r, &v, 2, .up); return NSDecimalNumber(decimal: r).stringValue }
+        switch orderUnit {
+        case .qty: costText = Dec.plain(minQty, qtyPrec)
+        case .cost: costText = ceil2(minQty * orderPrice / Decimal(max(leverage, 1)))
+        case .value: costText = ceil2(minQty * orderPrice)
+        }
+        percent = 0
+    }
+
     func setIfChanged<T: Equatable>(_ kp: ReferenceWritableKeyPath<FuturesModel, T>, _ v: T) {
         if self[keyPath: kp] != v { self[keyPath: kp] = v }
     }

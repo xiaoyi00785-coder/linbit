@@ -59,11 +59,11 @@ struct MarketDetailView: View {
                     header
                     intervalBar
                     chart
-                    Picker("", selection: $section) {
-                        Text("订单表").tag(0)
-                        Text("深度图").tag(1)
-                        Text("最新成交").tag(2)
-                    }.pickerStyle(.segmented)
+                    // 对照 EasiCoin：文字标签 + 下划线，不用系统分段控件
+                    VStack(spacing: 0) {
+                        HStack { PrimaryTabs(items: ["订单表", "深度图", "最新成交"], selected: $section, size: FontSize.tabSecondary, underline: true); Spacer() }
+                        Divider().overlay(p.divider)
+                    }
                     if section == 0 { bookList }
                     else if section == 1 { depthChart }
                     else { fillsList }
@@ -78,7 +78,7 @@ struct MarketDetailView: View {
                         Text("预警").font(.lb(10))
                     }.foregroundColor(p.textPrimary).frame(width: 52, height: 44)
                 }.buttonStyle(.plain)
-                LBButton(title: "交易", kind: .buy) { openTrade() }
+                LBButton(title: "交易") { openTrade() }
             }
             .padding(.horizontal, Spacing.pageH)
             .padding(.bottom, 12)
@@ -223,23 +223,24 @@ struct MarketDetailView: View {
                 }
             }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
             if book.asks.isEmpty && book.bids.isEmpty { EmptyStateView(text: "暂无盘口") }
-            let bids = grouped(book.bids, up: false)
-            let asks = grouped(book.asks, up: true)
-            let maxBid = bids.map(\.qty).max() ?? 1
-            let maxAsk = asks.map(\.qty).max() ?? 1
-            let rows = max(bids.count, asks.count)
+            // 固定 20 行；底色条是从中间向两侧的累计深度（越往下越宽），和参考 App 的阶梯形一致
+            let bids = Array(grouped(book.bids, up: false).prefix(20))
+            let asks = Array(grouped(book.asks, up: true).prefix(20))
+            let bidSum = Self.running(bids), askSum = Self.running(asks)
+            let total = max(bidSum.last ?? 0, askSum.last ?? 0, 0.00000001)
+            let rows = 20
             GeometryReader { g in
                 let half = g.size.width / 2
                 VStack(spacing: 0) {
                     ForEach(0..<rows, id: \.self) { i in
                         HStack(spacing: 0) {
-                            bookSide(bids[safe: i], up: true, maxQty: maxBid, width: half, qtyOnLeft: true)
-                            bookSide(asks[safe: i], up: false, maxQty: maxAsk, width: half, qtyOnLeft: false)
-                        }.frame(height: 28)
+                            bookSide(bids[safe: i], up: true, depth: bidSum[safe: i] ?? 0, total: total, width: half, qtyOnLeft: true)
+                            bookSide(asks[safe: i], up: false, depth: askSum[safe: i] ?? 0, total: total, width: half, qtyOnLeft: false)
+                        }.frame(height: 30)
                     }
                 }
             }
-            .frame(height: CGFloat(rows) * 28)
+            .frame(height: CGFloat(rows) * 30)
         }
     }
 
@@ -315,13 +316,19 @@ struct MarketDetailView: View {
         return Array(sorted.prefix(50))
     }
 
-    private func bookSide(_ level: BookLevel?, up: Bool, maxQty: Decimal, width: CGFloat, qtyOnLeft: Bool) -> some View {
+    private static func running(_ rows: [BookLevel]) -> [Decimal] {
+        var sum = Decimal(0)
+        return rows.map { sum += $0.qty; return sum }
+    }
+
+    private func bookSide(_ level: BookLevel?, up: Bool, depth: Decimal, total: Decimal, width: CGFloat, qtyOnLeft: Bool) -> some View {
         let frac: CGFloat = {
-            guard let level, maxQty > 0 else { return 0 }
-            return CGFloat(min(1, max(0, NSDecimalNumber(decimal: level.qty / maxQty).doubleValue)))
+            guard level != nil, total > 0 else { return 0 }
+            return CGFloat(min(1, max(0, NSDecimalNumber(decimal: depth / total).doubleValue)))
         }()
-        return ZStack(alignment: qtyOnLeft ? .leading : .trailing) {
-            Rectangle().fill((up ? p.up : p.down).opacity(0.16))
+        // 买盘的条贴着中线向左长，卖盘贴着中线向右长
+        return ZStack(alignment: qtyOnLeft ? .trailing : .leading) {
+            Rectangle().fill((up ? p.up : p.down).opacity(0.14))
                 .frame(width: width * frac)
             HStack(spacing: 4) {
                 if qtyOnLeft {
@@ -336,20 +343,18 @@ struct MarketDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .font(.lbNum(12))
+            .font(.lbNum(13))
             .lineLimit(1)
             .minimumScaleFactor(0.7)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, 4)
         }
-        .frame(width: width, height: 28)
+        .frame(width: width, height: 30)
         .clipped()
     }
 
     private static func qtyText(_ q: Decimal, _ prec: Int) -> String {
-        let raw = Fmt.amount(q, prec)
-        guard raw.contains(".") else { return raw }
-        return raw.replacingOccurrences(of: #"0+$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"\.$"#, with: "", options: .regularExpression)
+        // 固定小数位（不去尾零）：数字宽度稳定，刷新时不左右抖
+        Fmt.amount(q, prec)
     }
 
     private static let clock: DateFormatter = {

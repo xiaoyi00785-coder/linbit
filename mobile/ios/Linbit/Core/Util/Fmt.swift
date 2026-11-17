@@ -4,6 +4,12 @@ import Foundation
 enum Dec {
     static let posix = Locale(identifier: "en_US_POSIX")
     static func parse(_ s: String?) -> Decimal { s.flatMap { Decimal(string: $0, locale: posix) } ?? 0 }
+    /// 小数位数（0.1 → 1，10 → 0）
+    static func decimals(_ d: Decimal) -> Int {
+        let s = NSDecimalNumber(decimal: d).stringValue
+        guard let dot = s.firstIndex(of: ".") else { return 0 }
+        return s.distance(from: dot, to: s.endIndex) - 1
+    }
 }
 
 enum Fmt {

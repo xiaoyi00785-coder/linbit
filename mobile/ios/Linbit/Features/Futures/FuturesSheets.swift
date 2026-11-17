@@ -13,14 +13,10 @@ struct MarginModeSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("保证金模式").font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary)
                 PillSegment(items: ["全仓", "逐仓"], selected: $mode, height: 40)
-                Text(mode == 0 ? "全仓模式：所有全仓仓位共享账户可用余额作为保证金，盈亏可相互抵消。"
-                               : "逐仓模式：每个仓位独立分配保证金，最大亏损为该仓位保证金。")
-                    .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                 Text("仓位模式").font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary).padding(.top, 4)
                 PillSegment(items: ["合仓", "分仓"], selected: $posMode, height: 40)
-                Text(posMode == 0 ? "合仓模式：同一合约（开多与开空）仅持有一个仓位，反向开仓会先减少已有仓位。"
-                                  : "分仓模式：同一合约可同时持有多个独立仓位，每笔开仓单独计算保证金与盈亏，可分别止盈止损、平仓。")
-                    .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                // 对照 EasiCoin：按两项组合给一段说明
+                Text(comboText).font(.lb(FontSize.small)).foregroundColor(p.textSecondary).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
                 let modeChanged = (posMode == 1) != m.hedge
                 if modeChanged, let reason = m.positionModeBlockReason {
                     InlineBanner(text: reason)
@@ -43,6 +39,14 @@ struct MarginModeSheet: View {
         }
         .onAppear { mode = m.marginMode == .isolated ? 1 : 0; posMode = m.hedge ? 1 : 0 }
     }
+    private var comboText: String {
+        switch (mode, posMode) {
+        case (0, 0): return "全仓合仓：同一合约同一方向的开仓合并为一个仓位，最多同时持有多仓和空仓各一个。杠杆统一调整，所有全仓仓位共享账户保证金，盈亏可以互相抵消。"
+        case (0, _): return "全仓分仓：同一合约同一方向可以开多个仓位，每个仓位可单独设置杠杆、止盈止损和平仓。新开仓不会并入已有仓位，所有全仓仓位共享账户保证金。"
+        case (_, 0): return "逐仓合仓：同一合约同一方向的开仓合并为一个仓位。每个仓位单独分配保证金，最大亏损不超过该仓位的保证金。"
+        default: return "逐仓分仓：同一合约同一方向可以开多个仓位，每个仓位可单独设置杠杆。新开仓不会并入已有仓位，各仓位保证金互相独立。"
+        }
+    }
 }
 
 /// 对照图 #18：调整杠杆（− 100x +，刻度 1x–100x，最大可开）
@@ -55,12 +59,20 @@ struct LeverageSheet: View {
     private var maxL: Double { Double(max(m.maxLeverage, 1)) }
     private var ticks: [Int] {
         let mx = max(m.maxLeverage, 1)
-        return [1] + (1...4).map { mx * $0 / 5 } + [mx]
+        return mx <= 5 ? Array(1...mx) : [1] + (1...4).map { mx * $0 / 5 } + [mx]
     }
     var body: some View {
         let lev = Int(value.rounded())
         LBSheet(title: "调整杠杆", showClose: true, onClose: onClose) {
             VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 6) {
+                    Text(m.symbol).font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
+                    Text(m.hedge ? "多/空" : "多").font(.lb(FontSize.small)).foregroundColor(p.up)
+                        .padding(.horizontal, 4).frame(height: 18).background(RoundedRectangle(cornerRadius: 3).fill(p.upTint))
+                    Text("\(lev)x").font(.lbNum(FontSize.small)).foregroundColor(p.up)
+                        .padding(.horizontal, 4).frame(height: 18).background(RoundedRectangle(cornerRadius: 3).fill(p.upTint))
+                    Text(m.marginMode == .isolated ? "逐仓" : "全仓").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
                 HStack {
                     stepBtn("minus") { value = max(1, value - 1) }
                     Spacer()
@@ -70,21 +82,16 @@ struct LeverageSheet: View {
                 }
                 .padding(.horizontal, 6).frame(height: 48)
                 .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
-                VStack(spacing: 6) {
-                    Slider(value: $value, in: 1...maxL, step: 1).tint(p.textPrimary)
-                    HStack {
-                        ForEach(ticks.indices, id: \.self) { i in
-                            Text("\(ticks[i])x").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
-                                .onTapGesture { value = Double(ticks[i]) }
-                            if i < ticks.count - 1 { Spacer() }
-                        }
-                    }
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("· 当前杠杆倍数最高可持有头寸：\(maxPositionText(lev)) USDT").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                    Text("· 调整杠杆对当前合约的全部仓位与委托生效").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                // 菱形滑块 + 刻度（对照 EasiCoin 1x / 40x … 200x）
+                TickSlider(value: Binding(get: { maxL > 1 ? (value - 1) / (maxL - 1) : 0 },
+                                          set: { value = max(1, (1 + $0 * (maxL - 1)).rounded()) }),
+                           labels: ticks.map { "\($0)x" }, tint: p.textPrimary)
+                VStack(alignment: .leading, spacing: 8) {
+                    infoLine("当前杠杆倍数最大可开", "\(Fmt.amount(m.available * Decimal(lev), 2)) USDT")
+                    infoLine("当前仓位占用保证金", "\(Fmt.amount(currentMargin, 2)) USDT")
+                    infoLine("该杠杆最高可持有头寸", "\(maxPositionText(lev)) USDT")
                     Button { onClose(); Router.shared.openFeature(.futuresRiskTiers) } label: {
-                        Text("· 查看仓位档位介绍 ›").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                        Text("查看仓位档位介绍 ›").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
                     }
                     if lev >= 50 {
                         Text("· 选择超过 50x 的杠杆交易会增加强行平仓的风险，请注意相关风险").font(.lb(FontSize.small)).foregroundColor(p.down)
@@ -101,6 +108,15 @@ struct LeverageSheet: View {
             }.padding(.horizontal, Spacing.pageH)
         }
         .onAppear { value = Double(m.leverage) }
+    }
+    private var currentMargin: Decimal {
+        m.positions.filter { $0.symbol == m.symbol }.reduce(0) { $0 + Dec.parse($1.margin) }
+    }
+    private func infoLine(_ k: String, _ v: String) -> some View {
+        HStack(spacing: 4) {
+            Text(k).font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+            Text(v).font(.lbNum(FontSize.small, .medium)).foregroundColor(p.textPrimary)
+        }
     }
     private func maxPositionText(_ lev: Int) -> String {
         guard let cap = m.maxNotional(forLeverage: lev) else { return "--" }
@@ -119,12 +135,12 @@ struct FuturesKindSheet: View {
     let onPick: (FuturesKind) -> Void
     let onClose: () -> Void
     var body: some View {
-        LBSheet(title: "委托类型", showClose: true, onClose: onClose) {
+        LBSheet(title: "委托类型", onClose: onClose) {
             VStack(spacing: 0) {
                 ForEach(FuturesKind.allCases, id: \.self) { k in
-                    SheetOptionRow(title: k.title, subtitle: k.subtitle, selected: k == selected) { onPick(k) }
+                    SheetOptionRow(icon: k.icon, title: k.title, selected: k == selected) { onPick(k) }
                 }
-            }
+            }.padding(.bottom, 12)
         }
     }
 }
@@ -140,7 +156,7 @@ struct FuturesToolsSheet: View {
     var body: some View {
         LBSheet(title: "常用功能", onClose: onClose) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 20) {
-                ForEach(items, id: \.1) { icon, title in
+                ForEach(items.map { $0.1 == "添加自选" && Watchlist.shared.contains(Router.shared.futuresSymbol) ? ("star.slash.fill", "取消自选") : $0 }, id: \.1) { icon, title in
                     Button {
                         if title == "价格预警" { alert = true; return }
                         onClose()
@@ -149,14 +165,25 @@ struct FuturesToolsSheet: View {
                         case "仓位档位介绍": Router.shared.openFeature(.futuresRiskTiers)
                         case "历史资金费率": Router.shared.openFeature(.futuresFunding)
                         case "价格预警": alert = true
-                        case "添加自选": ToastCenter.shared.show("已添加到自选", .success)
+                        case "添加自选", "取消自选":
+                            let s = Router.shared.futuresSymbol
+                            Watchlist.shared.toggle(s)
+                            ToastCenter.shared.show(Watchlist.shared.contains(s) ? "已添加到自选" : "已取消自选", .success)
                         case "交易偏好": Router.shared.openFeature(.security)
                         default: Router.shared.openFeature(.futuresHistory)
                         }
                     } label: {
                         VStack(spacing: 8) {
-                            Image(systemName: icon).font(.system(size: 17)).foregroundColor(p.textPrimary)
-                                .frame(width: 44, height: 44).background(RoundedRectangle(cornerRadius: Radius.lg).stroke(p.border))
+                            Image(systemName: icon).font(.system(size: 18)).foregroundColor(p.textPrimary)
+                                .frame(width: 48, height: 48)
+                                .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.bgElevated))
+                                .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border))
+                                .overlay(alignment: .topTrailing) {
+                                    if title == "新手教学" {
+                                        Text("New").font(.lb(9, .semibold)).foregroundColor(.white).padding(.horizontal, 4).frame(height: 13)
+                                            .background(Capsule().fill(p.brand)).offset(x: 8, y: -6)
+                                    }
+                                }
                             Text(title).font(.lb(FontSize.small)).foregroundColor(p.textPrimary).lineLimit(1).minimumScaleFactor(0.8)
                         }
                     }.buttonStyle(PressableStyle())
@@ -662,6 +689,259 @@ struct FuturesUnitSheet: View {
                 }
             }
             .padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
+        }
+    }
+}
+
+// MARK: - 对照 EasiCoin 合约页补充的小组件与说明弹窗
+
+/// 行情连接状态点：WebSocket 连着为绿，否则灰
+struct LiveDot: View {
+    @Environment(\.palette) private var p
+    @ObservedObject private var socket = MarketSocket.shared
+    var body: some View {
+        Circle().fill(socket.state == .open ? p.up : p.textTertiary).frame(width: 5, height: 5)
+    }
+}
+
+/// 带虚线下划线的标签：可点开说明（资金费率、预估强平价、成本等）
+struct DottedText: View {
+    let text: String
+    var size: CGFloat = FontSize.small
+    var color: Color
+    var body: some View {
+        Text(text).font(.lb(size)).foregroundColor(color)
+            .padding(.bottom, 2)
+            .overlay(alignment: .bottom) {
+                Line().stroke(color.opacity(0.6), style: StrokeStyle(lineWidth: 0.8, dash: [2, 2])).frame(height: 1)
+            }
+    }
+    private struct Line: Shape {
+        func path(in r: CGRect) -> Path { var p = Path(); p.move(to: CGPoint(x: 0, y: r.midY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY)); return p }
+    }
+}
+
+struct InfoSheetItem: Identifiable {
+    let id = UUID()
+    var title: String
+    var text: String
+}
+
+/// 字段说明：标题 + 正文 +「我知道了」
+struct InfoSheet: View {
+    @Environment(\.palette) private var p
+    let item: InfoSheetItem
+    let onClose: () -> Void
+    var body: some View {
+        LBSheet(title: item.title, onClose: onClose) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(item.text).font(.lb(FontSize.body)).foregroundColor(p.textPrimary).fixedSize(horizontal: false, vertical: true)
+                LBButton(title: "我知道了", action: onClose)
+            }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
+        }
+    }
+}
+
+/// 资金费率说明：周期 / 方向 / 当前费率 + 计算说明
+struct FundingInfoSheet: View {
+    @Environment(\.palette) private var p
+    @ObservedObject var m: FuturesModel
+    let onClose: () -> Void
+    var body: some View {
+        let rate = m.fundingRate
+        LBSheet(title: "资金费率", onClose: onClose) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(spacing: 12) {
+                    row("资金费率周期") { Text("8 小时").foregroundColor(p.textPrimary) }
+                    row("资金费率方向") {
+                        if rate >= 0 { Text("多头").foregroundColor(p.up) + Text("支付").foregroundColor(p.textPrimary) + Text("空头").foregroundColor(p.down) }
+                        else { Text("空头").foregroundColor(p.down) + Text("支付").foregroundColor(p.textPrimary) + Text("多头").foregroundColor(p.up) }
+                    }
+                    row("当前资金费率") { Text("\(Fmt.amount(rate, 4))%").foregroundColor(p.textPrimary) }
+                    row("下次结算倒计时") {
+                        TimelineView(.periodic(from: .now, by: 1)) { ctx in Text(m.fundingText(at: ctx.date)).foregroundColor(p.textPrimary) }
+                    }
+                }
+                .font(.lbNum(FontSize.label))
+                .padding(14)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border))
+                Text("资金费用每 8 小时在多空双方之间直接交换一次，平台不收取。费率为正时多仓支付给空仓，为负时空仓支付给多仓。\n资金费用 = 仓位价值 × 资金费率。只有结算时刻持有仓位才会收付。")
+                    .font(.lb(FontSize.small)).foregroundColor(p.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Button { onClose(); Router.shared.openFeature(.futuresFunding) } label: {
+                    Text("查看历史资金费率 ›").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                }.buttonStyle(.plain)
+            }.padding(.horizontal, Spacing.pageH)
+        }
+    }
+    private func row<V: View>(_ k: String, @ViewBuilder _ v: () -> V) -> some View {
+        HStack { Text(k).foregroundColor(p.textSecondary); Spacer(); v() }
+    }
+}
+
+/// 委托类型介绍（点「ⓘ」）：四种类型分页，每页一段说明 + 示意图 + 例子
+struct OrderKindIntroSheet: View {
+    @Environment(\.palette) private var p
+    let initial: FuturesKind
+    let onClose: () -> Void
+    @State private var kind: FuturesKind = .limit
+    @State private var buy = true
+    var body: some View {
+        LBSheet(onClose: onClose) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 18) {
+                    ForEach(FuturesKind.allCases, id: \.self) { k in
+                        VStack(spacing: 6) {
+                            Text(k.title).font(.lb(FontSize.label, k == kind ? .semibold : .regular)).foregroundColor(k == kind ? p.textPrimary : p.textSecondary)
+                            Capsule().fill(k == kind ? p.textPrimary : .clear).frame(width: 16, height: 3)
+                        }.onTapGesture { kind = k }
+                    }
+                }
+                Divider().overlay(p.divider)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(summary).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary).fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Text("示意图").font(.lb(FontSize.label, .semibold)).foregroundColor(p.textPrimary)
+                            Spacer()
+                            Checkbox(on: Binding(get: { buy }, set: { if $0 { buy = true } }), label: "买入")
+                            Checkbox(on: Binding(get: { !buy }, set: { if $0 { buy = false } }), label: "卖出")
+                        }
+                        KindDiagram(kind: kind, buy: buy).frame(height: 190)
+                        Text(detail).font(.lb(FontSize.small)).foregroundColor(p.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    }.padding(.bottom, 12)
+                }.frame(maxHeight: 480)
+            }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
+        }
+        .onAppear { kind = initial }
+    }
+    private var summary: String {
+        switch kind {
+        case .limit: return "限价单按你设定的价格或更优价格成交，不保证一定成交。"
+        case .market: return "市价单按当前盘口最优价格立即成交，成交价可能和看到的价格有差距。"
+        case .plan: return "计划委托先设一个触发价，价格到达后才按设定的价格（或市价）下单。"
+        case .postOnly: return "只做 Maker 的委托只挂在盘口等待成交；如果下单时会立即成交，整单撤销。"
+        }
+    }
+    private var detail: String {
+        switch (kind, buy) {
+        case (.limit, true): return "图中当前价为 A。买入限价设在 C（低于 A）时，委托挂在盘口，价格跌到 C 或更低才成交；如果买入限价设在 B（高于 A），会按当前盘口卖一附近的价格立即成交，而不是按 B 成交。"
+        case (.limit, false): return "图中当前价为 A。卖出限价设在 C（高于 A）时，价格涨到 C 或更高才成交；如果卖出限价设在 B（低于 A），会按当前盘口买一附近的价格立即成交。"
+        case (.market, _): return "市价单没有价格框，只填数量（或成本 / 价值）。盘口深度不足时会分多档成交，平均成交价可能偏离最新价，深度极差时剩余部分会被撤销。"
+        case (.plan, true): return "设触发价 T。最新价（或标记价）涨到 / 跌到 T 时，系统按设定的委托价 C 下买单；选「市价」则触发后直接市价成交。触发前不占用保证金，触发后行情剧烈波动时可能下单失败。"
+        case (.plan, false): return "设触发价 T。价格到达 T 时系统按设定的委托价 C 下卖单，常用于突破追单或止损。触发前不占用保证金。"
+        case (.postOnly, true): return "只做 Maker 的买单价格必须低于卖一价（图中 A），否则会立即成交，系统会把整单撤销，保证你只付挂单手续费。"
+        case (.postOnly, false): return "只做 Maker 的卖单价格必须高于买一价（图中 A），否则整单撤销。"
+        }
+    }
+}
+
+/// 委托类型示意图：折线表示价格走势，标出当前价 A、委托价 B / C、触发价 T
+private struct KindDiagram: View {
+    @Environment(\.palette) private var p
+    let kind: FuturesKind
+    let buy: Bool
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height - 20
+            func pt(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: w * x, y: h * (1 - y)) }
+            let path: [(Double, Double)] = buy
+                ? [(0.02, 0.1), (0.25, 0.55), (0.34, 0.42), (0.45, 0.62), (0.58, 0.9), (0.8, 0.25), (0.92, 0.32)]
+                : [(0.02, 0.9), (0.25, 0.45), (0.34, 0.58), (0.45, 0.38), (0.58, 0.1), (0.8, 0.75), (0.92, 0.68)]
+            var solid = Path(); solid.move(to: pt(path[0].0, path[0].1))
+            for q in path[1...3] { solid.addLine(to: pt(q.0, q.1)) }
+            ctx.stroke(solid, with: .color(p.textPrimary), lineWidth: 1.5)
+            var dash = Path(); dash.move(to: pt(path[3].0, path[3].1))
+            for q in path[4...] { dash.addLine(to: pt(q.0, q.1)) }
+            ctx.stroke(dash, with: .color(p.textSecondary), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
+            let line = buy ? 0.25 : 0.75
+            // 买入：限价线以下是会成交的区域；卖出：限价线以上
+            let zone = buy ? CGRect(x: 0, y: h * (1 - line), width: w, height: h * line) : CGRect(x: 0, y: 0, width: w, height: h * (1 - line))
+            ctx.fill(Path(zone), with: .color(p.brand.opacity(0.08)))
+            var level = Path(); level.move(to: pt(0, line)); level.addLine(to: pt(1, line))
+            ctx.stroke(level, with: .color(p.brand.opacity(0.7)), lineWidth: 1)
+            func dot(_ c: CGPoint, _ color: Color, _ label: String) {
+                ctx.fill(Path(ellipseIn: CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8)), with: .color(color))
+                ctx.draw(Text(label).font(.lb(11, .semibold)).foregroundColor(p.textPrimary), at: CGPoint(x: c.x + 12, y: c.y - 8))
+            }
+            dot(pt(path[3].0, path[3].1), p.textPrimary, "A")
+            switch kind {
+            case .limit, .postOnly:
+                dot(pt(0.8, line), p.brand, buy ? "≤C" : "≥C")
+                if kind == .limit { dot(pt(0.45, buy ? 0.9 : 0.1), p.brand, "B") }
+            case .market:
+                dot(pt(0.5, path[3].1), p.brand, "成交")
+            case .plan:
+                dot(pt(0.58, path[4].1), p.brand, "T")
+                dot(pt(0.8, line), p.brand, "C")
+            }
+            let legend = Text("● A 当前价格    ● \(kind == .plan ? "T 触发价  C 委托价" : kind == .market ? "立即成交" : "B / C 委托价")").font(.lb(10)).foregroundColor(p.textSecondary)
+            ctx.draw(legend, at: CGPoint(x: w / 2, y: size.height - 6))
+        }
+    }
+}
+
+/// 盘口显示模式：默认 / 只看买 / 只看卖
+struct BookModeSheet: View {
+    @Binding var mode: Int
+    let onClose: () -> Void
+    var body: some View {
+        LBSheet(onClose: onClose) {
+            VStack(spacing: 0) {
+                ForEach(0..<3, id: \.self) { i in
+                    Button { mode = i; Haptics.tap(); onClose() } label: {
+                        HStack(spacing: 12) {
+                            BookModeIcon(mode: i)
+                            Text(["默认", "买", "卖"][i]).font(.lb(FontSize.body)).foregroundColor(.primary)
+                            Spacer()
+                            if mode == i { Image(systemName: "checkmark.circle.fill").font(.system(size: 18)) }
+                        }.padding(.horizontal, Spacing.pageH).frame(height: 52).contentShape(Rectangle())
+                    }.buttonStyle(RowPressStyle())
+                }
+            }.padding(.bottom, 12)
+        }
+    }
+}
+
+/// 合约盘口价格精度
+struct FuturesPrecisionSheet: View {
+    @ObservedObject var m: FuturesModel
+    let onClose: () -> Void
+    var body: some View {
+        LBSheet(onClose: onClose) {
+            VStack(spacing: 0) {
+                ForEach(m.bookSteps, id: \.self) { d in
+                    SheetOptionRow(title: NSDecimalNumber(decimal: d).stringValue, selected: d == m.bookStep) {
+                        m.bookPrecision = d; onClose()
+                    }
+                }
+            }.padding(.bottom, 12)
+        }
+    }
+}
+
+/// 数量低于最小下单量：提示可按最小数量下单。可用不足时只能取消。
+struct MinQtySheet: View {
+    @Environment(\.palette) private var p
+    @ObservedObject var m: FuturesModel
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+    var body: some View {
+        let px = m.orderPrice
+        let minValue = m.minQty * px
+        let enough = px > 0 && minValue / Decimal(max(m.leverage, 1)) <= m.available
+        LBSheet(onClose: onCancel) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("订单数量未达到最低要求。请确认是否按最低数量 \(Dec.plain(m.minQty, m.qtyPrec)) \(m.base) ≈ \(Fmt.amount(minValue, 1)) \(m.quote) 下单。")
+                    .font(.lb(FontSize.body)).foregroundColor(p.textPrimary).fixedSize(horizontal: false, vertical: true)
+                if enough {
+                    HStack(spacing: 10) {
+                        LBButton(title: "取消", kind: .secondary, action: onCancel)
+                        LBButton(title: "确认", action: onConfirm)
+                    }
+                } else {
+                    LBButton(title: "取消", action: onCancel)
+                }
+            }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
         }
     }
 }
