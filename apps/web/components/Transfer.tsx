@@ -58,11 +58,11 @@ export function TransferHost() {
           <label>到<select className="fsel" value={to} onChange={(e) => setTo(e.target.value)}>{ACCTS.filter((a) => a !== from).map((a) => <option key={a}>{a}</option>)}</select></label>
         </div>
         <div className="trl"><span>币种</span><Dropdown cls="fsel" icons v={coin} opts={["USDT", "BTC", "ETH"]} onChange={setCoin} /></div>
-        <label className="trl">数量<span className="wamt"><input inputMode="decimal" placeholder="请输入划转数量" value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(avail)}>全部</a><em>{coin}</em></span></label>
+        <label className="trl">数量<span className="wamt"><input inputMode="decimal" placeholder="请输入划转数量" value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(avail)}>最大值</a><em>{coin}</em></span></label>
         {amtE && <div className="fx-err fe-inline">{amtE}</div>}
-        <div className="lg trv">可用 {avail} {coin}</div>
+        <div className="lg trv">可划转 {avail} {coin}</div>
         {hist.length > 0 && <div className="trhist"><div className="lg">最近划转</div>{hist.map((h) => <div key={h.id}><span>{ACCT_NAME[h.from] ?? h.from} → {ACCT_NAME[h.to] ?? h.to}</span><span>{h.amount} {h.asset}</span><span className="lg">{stLabel(h.status)}</span></div>)}</div>}
-        <button className={"lb dark wide" + (canSubmit ? "" : " dis")} disabled={!canSubmit} onClick={submit}>{busy ? "划转中…" : "确认划转"}</button>
+        <button className={"lb dark wide" + (canSubmit ? "" : " dis")} disabled={!canSubmit} onClick={submit}>{busy ? "划转中…" : "划转"}</button>
       </div>
     </div>
   );

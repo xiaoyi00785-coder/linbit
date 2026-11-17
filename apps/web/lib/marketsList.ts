@@ -5,8 +5,8 @@ import { restBase } from "./market";
 /** 前端分类映射（/market/symbols 暂无 tags 字段；后端补 symbols[].tags 后优先用 tags）。 */
 export const CATS = ["全部", "公链", "贵金属", "大宗商品", "股票", "Meme", "AI", "DeFi", "Layer 2", "生态"] as const;
 const CAT_MAP: Record<string, string[]> = {
-  BTC: ["公链"], ETH: ["公链", "生态"], SOL: ["公链", "生态"], BNB: ["公链", "生态"], TRX: ["公链"],
-  ADA: ["公链"], AVAX: ["公链"], DOT: ["公链"], SUI: ["公链"], APT: ["公链"], NEAR: ["公链", "AI"], TON: ["公链"],
+  BTC: ["公链"], ETH: ["公链", "生态"], SOL: ["公链", "生态", "Solana 生态"], BNB: ["公链", "生态", "平台币"], TRX: ["公链"],
+  ADA: ["公链"], AVAX: ["公链"], DOT: ["公链"], SUI: ["公链"], APT: ["公链"], NEAR: ["公链", "AI"], TON: ["公链", "TON"],
   XAU: ["贵金属"], XAG: ["贵金属"], PAXG: ["贵金属"], XAUT: ["贵金属"], OIL: ["大宗商品"], WTI: ["大宗商品"],
   DOGE: ["Meme"], SHIB: ["Meme"], PEPE: ["Meme"], WIF: ["Meme"], BONK: ["Meme"], FLOKI: ["Meme"],
   FET: ["AI"], RNDR: ["AI"], TAO: ["AI"], WLD: ["AI"],
@@ -14,7 +14,10 @@ const CAT_MAP: Record<string, string[]> = {
   ARB: ["Layer 2"], OP: ["Layer 2"], POL: ["Layer 2"], MATIC: ["Layer 2"], STRK: ["Layer 2"],
 };
 /** chip 名称 ↔ 后端分类 id（GET /market/categories、symbols[].tags 使用 id） */
-export const CAT_ID: Record<string, string> = { 公链: "layer1", 贵金属: "metals", 大宗商品: "commodities", 股票: "stocks", Meme: "meme", AI: "ai", DeFi: "defi", "Layer 2": "layer2", 生态: "ecosystem" };
+export const CAT_ID: Record<string, string> = { 公链: "layer1", 贵金属: "metals", 大宗商品: "commodities", 商品: "commodities", 股票: "stocks", 股票代币: "stocks", Meme: "meme", AI: "ai", DeFi: "defi", "Layer 2": "layer2", 生态: "ecosystem", "Solana 生态": "solana" };
+/** 行情筛选。名称与参考站一致；没有对应交易对的分类保持为空，不补假币。 */
+export const FUT_CHIPS = ["全部", "公链", "贵金属", "商品", "股票", "Meme", "AI", "DeFi", "Layer 2", "Solana 生态", "GameFi", "DePIN", "NFT", "TON", "LSD", "Web3", "平台币", "支付", "USDT"] as const;
+export const SPOT_CHIPS = ["全部", "公链", "股票代币", "Meme", "DeFi", "Solana 生态", "Layer 2", "AI", "DePIN", "平台币", "支付", "稳定币", "USDT", "NFT", "基础架构", "RWA", "新币", "POW", "存储", "游戏"] as const;
 export type CatMarket = "spot" | "futures";
 const catNames: Partial<Record<CatMarket, string[]>> = {};
 const catP: Partial<Record<CatMarket, Promise<Record<string, string[]> | null>>> = {};
@@ -44,10 +47,12 @@ export function useCategories(market: CatMarket = "spot") {
 /** 判断交易对是否属于某 chip：categories 接口 → symbols[].tags → 本地映射 */
 export function inCat(chip: string, symbol: string, base: string, tags: string[] | undefined, cats: Record<string, string[]> | null): boolean {
   if (chip === "全部") return true;
-  const id = CAT_ID[chip];
-  if (cats && id in cats) return cats[id].includes(symbol);
-  if (tags?.length) return tags.includes(id) || tags.includes(chip);
-  return (CAT_MAP[base.toUpperCase()] ?? []).includes(chip);
+  const name = chip === "商品" ? "大宗商品" : chip === "股票代币" ? "股票" : chip;
+  const id = CAT_ID[chip] || CAT_ID[name];
+  if (cats && id && id in cats) return cats[id].includes(symbol);
+  if (tags?.length && (tags.includes(id) || tags.includes(chip) || tags.includes(name))) return true;
+  const mine = CAT_MAP[base.toUpperCase()] ?? [];
+  return mine.includes(chip) || mine.includes(name);
 }
 
 export type FutRow = { symbol: string; base: string; tags?: string[]; last?: string; chg?: string; hi?: string; lo?: string; vol?: string; pp?: number };

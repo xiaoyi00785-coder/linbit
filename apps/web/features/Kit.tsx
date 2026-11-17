@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { CoinIcon } from "@/components/CoinIcon";
 import { toast, copyText } from "@/lib/ui";
+import { Dialog } from "@/components/overlays";
 import { rest, rget } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 import { useAuth } from "@/legacy/auth";
@@ -20,9 +21,7 @@ export const openM = (name: string, props: MP = {}) => name === "transfer" ? ope
 
 /** dismissible=false：点击遮罩 / Esc 不关闭，仅 ✕ 可关闭（用于有输入或提交中的关键弹窗） */
 function Box({ title, onClose, children, foot, dismissible = true }: { title: string; onClose: () => void; children: React.ReactNode; foot?: React.ReactNode; dismissible?: boolean }) {
-  useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
-  return <div className="fx-modal" data-dismissible={dismissible ? undefined : "false"} onClick={onClose}><div className="tk-modal" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
-    <div className="tk-mh"><b>{title}</b><span className="tk-x" onClick={onClose}>✕</span></div>{children}{foot && <div className="tk-mf">{foot}</div>}</div></div>;
+  return <Dialog title={title} onClose={onClose} dismissible={dismissible} foot={foot}>{children}</Dialog>;
 }
 
 const DL: Record<string, string> = { apple: "App Store", beta: "测试版 (TestFlight)", gplay: "Google Play", apk: "Android APK" };
@@ -97,7 +96,7 @@ export function Dropdown({ k, v, opts, onChange, cls = "lsel", store, icons }: {
   useDismiss(o, () => setO(false), r);
   const list = opts || defOpts(v, k);
   return <div ref={r} className={cls + " kit-dd"} role="combobox" aria-expanded={o} aria-haspopup="listbox" tabIndex={0} onClick={() => setO(!o)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setO(!o); } }}>{icons && <CoinIcon s={val} size={20} className="kit-ci" />}{val} <em>▾</em>
-    {o && <div className="kit-menu" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} role="option" aria-selected={x === val} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLElement).click(); }} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{icons && <CoinIcon s={x} size={18} className="kit-ci" />}{x}</div>)}</div>}
+    {o && <div className="kit-menu ov-menu" role="listbox" onClick={(e) => e.stopPropagation()}>{list.map((x) => <div key={x} role="option" aria-selected={x === val} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLElement).click(); }} className={"kit-it" + (x === val ? " on" : "")} onClick={() => { setVal(x); setO(false); store && localStorage.setItem(store, x); onChange?.(x); window.dispatchEvent(new CustomEvent("lb-filter", { detail: { k, v: x } })); }}>{icons && <CoinIcon s={x} size={18} className="kit-ci" />}{x}</div>)}</div>}
   </div>;
 }
 const iso = (d: Date) => d.toISOString().slice(0, 10);

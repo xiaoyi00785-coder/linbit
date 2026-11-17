@@ -5,6 +5,7 @@ import "@/features/features.css";
 import "./interact.css";
 import "./uiux.css";
 import "./qa-r3.css";
+import "./overlays.css";
 import type { Metadata } from "next";
 import { Providers } from "./providers";
 import LegacyChrome from "@/components/LegacyChrome";

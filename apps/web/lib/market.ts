@@ -301,10 +301,11 @@ export function useOrderBook(symbol: string, limit = 50) {
       .catch(() => live && setSrc((s) => (s === "api" ? s : "network")));
     const un = marketWS.subscribe(`depth:${symbol}`, (d) => {
       setSrc("api");
-      if (first.current) {
+      if (first.current || d.snapshot) {
         first.current = false;
-        depthCache.set(symbol, { lastUpdateId: d.lastUpdateId, bids: applyLevels([], d.bids || [], true), asks: applyLevels([], d.asks || [], false) });
-        setBook({ lastUpdateId: d.lastUpdateId, bids: applyLevels([], d.bids || [], true), asks: applyLevels([], d.asks || [], false) });
+        const next = { lastUpdateId: d.lastUpdateId, bids: applyLevels([], d.bids || [], true), asks: applyLevels([], d.asks || [], false) };
+        depthCache.set(symbol, next);
+        setBook(next);
         return;
       }
       setBook((b) => {

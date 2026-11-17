@@ -77,8 +77,8 @@ body,:lang(sk),:lang(cs),:lang(el){font-family:-apple-system,BlinkMacSystemFont,
 /* 兜底：窄屏下媒体不超出容器，页面不出现横向滚动 */
 @media (max-width:900px){main img,main svg{max-width:100%}main{overflow-x:clip}.dsel{max-width:100%}}
 .tk-sel .tk-chip{white-space:nowrap}@media (max-width:600px){.tk-sel{flex-wrap:wrap}}
-/* r3 follow-up：行情页三榜（涨幅/跌幅/成交额，服务端排行） */
-.mlists{grid-template-columns:repeat(3,minmax(0,1fr))}.mlists .mlg{grid-template-columns:1fr}
+/* 行情页两榜：涨幅榜、交易额榜 */
+.mlists{grid-template-columns:repeat(2,minmax(0,1fr))}.mlists .mlg{grid-template-columns:1fr}
 
 /* /buy：未勾选免责声明时“下一步”呈禁用态（仍可点击以提示原因） */
 .lb.lime.dis,.lb.lime[aria-disabled="true"]{background:var(--lb-light-border)!important;color:var(--lb-text-2)!important;cursor:not-allowed;box-shadow:none}
