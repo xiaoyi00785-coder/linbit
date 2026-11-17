@@ -79,17 +79,16 @@ struct FuturesTradeView: View {
         .refreshable { await m.refreshMarket(); await m.refreshAccount() }
         .background(p.bg)
         .onAppear { applyEarlyShot() }
-        .task { await m.start(); applyShot() }
-        .onDisappear { m.stop() }
+        .liveWhileVisible(.futures, start: { await m.start(); applyShot() }, stop: { m.stop() })
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshAccount() } }
-        .onChange(of: router.futuresSymbol) { s in Task { await m.switchSymbol(s) } }
+        .onChange(of: router.futuresSymbol) { s in Task { await m.switchSymbol(s, restart: router.isLive(.futures)) } }
         .lbSheet($showMode) { MarginModeSheet(m: m) { showMode = false } }
         .lbSheet($showLev) { LeverageSheet(m: m) { showLev = false } }
         .lbSheet($showKind) { FuturesKindSheet(selected: m.kind) { k in
             m.kind = k
             showKind = false
         } onClose: { showKind = false } }
-        .lbSheet($showUnit) { FuturesUnitSheet(base: m.base, quote: m.quote, selected: m.orderUnit) { m.setOrderUnit($0); showUnit = false } }
+        .lbSheet($showUnit) { FuturesUnitSheet(base: m.base, quote: m.quote, selected: m.orderUnit, onPick: { m.setOrderUnit($0); showUnit = false }, onClose: { showUnit = false }) }
         .lbSheet($showTools) { FuturesToolsSheet { showTools = false } }
         .lbSheet($showPairs) { FuturesPairSheet(current: m.symbol) { s in showPairs = false; router.futuresSymbol = s } onClose: { showPairs = false } }
         .lbSheet($showTpslForm) { TpslSheet(m: m, position: tpslTarget) { showTpslForm = false } }
@@ -149,6 +148,7 @@ struct FuturesTradeView: View {
         case "mode": showMode = true
         case "tpsl": showTpslForm = true
         case "kind": showKind = true
+        case "unit": showUnit = true
         case "tools": showTools = true
         case "chart": showChart = true
         case "plan": m.kind = .plan

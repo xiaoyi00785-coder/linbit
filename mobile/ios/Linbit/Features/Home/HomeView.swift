@@ -8,6 +8,7 @@ struct HomeView: View {
     @StateObject private var store = MarketStore.shared
     @StateObject private var watch = Watchlist.shared
     @ObservedObject private var session = Session.shared
+    @ObservedObject private var router = Router.shared
     @State private var hideAssets = false
     @ObservedObject private var notif = NotifCenter.shared
     @State private var rankTab = 1
@@ -51,6 +52,10 @@ struct HomeView: View {
         .background(p.bg)
         .task { await NotifCenter.shared.refresh() }
         .task { await vm.load(); if store.spot.isEmpty { await store.load() }; await loadTradFi() }
+        // 登录 / 退出后重取；首页常驻不卸载，从别的 Tab 回来（如刚充值、划转、下单）也重取
+        .onChange(of: session.isLoggedIn) { _ in Task { await vm.loadTotal() } }
+        .onChange(of: session.account?.uid) { _ in Task { await vm.loadTotal() } }   // 切换账号
+        .onChange(of: router.tab) { t in if t == .home { Task { await vm.loadTotal() } } }
         .lbSheet($moreSheet) { HomeMoreSheet { moreSheet = false } }
         .fullScreenCover(isPresented: $scanning) {
             CodeScanner(onCode: { code in scanning = false; handleScan(code) }, onClose: { scanning = false })

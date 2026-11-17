@@ -37,6 +37,30 @@ struct LinbitApp: App {
     }
 }
 
+/// 常驻 Tab 页的实时数据开关：页面在屏幕上时启动，切走、被全屏页盖住或移出视图树时停止。
+/// 根视图用 opacity 隐藏去过的 Tab，隐藏时 onDisappear 不触发，只靠 .task / onDisappear 会让行情、轮询在后台一直跑。
+private struct LiveWhileVisible: ViewModifier {
+    let tab: MainTab
+    let enabled: Bool
+    let start: () async -> Void
+    let stop: () -> Void
+    @ObservedObject private var router = Router.shared
+
+    func body(content: Content) -> some View {
+        let live = enabled && router.isLive(tab)
+        content
+            .task(id: live) { if live { await start() } else { stop() } }
+            .onDisappear { stop() }
+    }
+}
+
+extension View {
+    /// enabled 为额外条件（如现货页只在「现货」子页时拉行情）。
+    func liveWhileVisible(_ tab: MainTab, enabled: Bool = true, start: @escaping () async -> Void, stop: @escaping () -> Void) -> some View {
+        modifier(LiveWhileVisible(tab: tab, enabled: enabled, start: start, stop: stop))
+    }
+}
+
 struct RootTabView: View {
     @Environment(\.palette) private var p
     @ObservedObject private var router = Router.shared
@@ -131,6 +155,7 @@ struct RootTabView: View {
         case "futures-mode": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "mode"
         case "futures-tpsl": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "tpsl"
         case "futures-kind": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "kind"
+        case "futures-unit": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "unit"
         case "futures-tools": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "tools"
         case "futures-chart": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "chart"
         case "futures-plan": router.tab = .futures; router.futuresTop = 0; router.shotSheet = "plan"

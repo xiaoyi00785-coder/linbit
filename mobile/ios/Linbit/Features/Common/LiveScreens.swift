@@ -221,8 +221,8 @@ struct PaperFuturesScreen: View {
                 }.padding(.horizontal, Spacing.pageH).padding(.bottom, Metrics.tabBarH + 24)
             }
         }
-        .task { await live.start(); await reload() }
-        .onDisappear { live.stop() }
+        .task { await reload() }
+        .liveWhileVisible(.futures, start: { await live.start() }, stop: { live.stop() })
         .lbSheet(Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
             LBSheet(title: pending == "close-all" ? "一键平仓" : (pending ?? "").hasPrefix("close") ? "确认平仓" : (pending == "sell" ? "确认开空" : "确认开多"), onClose: { pending = nil }) {
                 VStack(alignment: .leading, spacing: 12) {

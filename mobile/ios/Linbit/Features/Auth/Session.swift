@@ -78,6 +78,9 @@ final class Router: ObservableObject {
     /// CI 截图：自动弹出的弹窗名（leverage / mode / tpsl / kind / tools / subscribe / gridSheet …）
     @Published var shotSheet: String?
 
+    /// 主 Tab 页此刻是否在屏幕上：是当前 Tab，且没有全屏页盖在上面。
+    func isLive(_ t: MainTab) -> Bool { tab == t && feature == nil && marketDetail == nil && !showUserCenter }
+
     func trade(_ symbol: String) { spotSymbol = symbol; spotTop = 0; tab = .spot }
     func tradeFutures(_ symbol: String) { futuresSymbol = symbol; futuresTop = 0; tab = .futures }
     /// 切到现货 Tab 的某一子页。0 现货，1 策略，2 理财，3 闪兑。

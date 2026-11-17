@@ -6,8 +6,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "14"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "15"
     DEVELOPMENT_TEAM: "4X7829UBS7"   # Apple Team ID；上传前可用 xcodebuild DEVELOPMENT_TEAM=XXXX 覆盖
     # 通行密钥 / 通用链接域名：须与后端 WEBAUTHN_RP_ID 一致（mainnet 默认 www.cowa.click），可用 LB_ASSOCIATED_DOMAIN=... 覆盖
     LB_ASSOCIATED_DOMAIN: www.cowa.click

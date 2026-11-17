@@ -642,23 +642,26 @@ struct FuturesUnitSheet: View {
     let quote: String
     let selected: FuturesOrderUnit
     let onPick: (FuturesOrderUnit) -> Void
+    var onClose: () -> Void = {}
 
+    // 必须包在 LBSheet 里：它提供弹窗底色。之前直接返回 VStack，弹窗是透明的，下面的下单表单会透出来。
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("合约单位设置").font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .center).padding(.top, 8)
-            ForEach(FuturesOrderUnit.allCases) { unit in
-                Button { Haptics.tap(); onPick(unit) } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(unit.title(base: base, quote: quote)).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
-                        Text(unit.detail(base: base)).font(.lb(FontSize.small)).foregroundColor(p.textSecondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .background(RoundedRectangle(cornerRadius: Radius.md).stroke(unit == selected ? p.textPrimary : p.border, lineWidth: unit == selected ? 1.5 : 1))
-                }.buttonStyle(.plain)
+        LBSheet(title: "合约单位设置", onClose: onClose) {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(FuturesOrderUnit.allCases) { unit in
+                    Button { Haptics.tap(); onPick(unit) } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(unit.title(base: base, quote: quote)).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                            Text(unit.detail(base: base)).font(.lb(FontSize.small)).foregroundColor(p.textSecondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: Radius.md).stroke(unit == selected ? p.textPrimary : p.border, lineWidth: unit == selected ? 1.5 : 1))
+                        .contentShape(RoundedRectangle(cornerRadius: Radius.md))
+                    }.buttonStyle(.plain)
+                }
             }
+            .padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
         }
-        .padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
     }
 }

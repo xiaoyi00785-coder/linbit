@@ -70,7 +70,7 @@ struct FuturesChartPanel: View {
         }
     }
     static func hms(_ d: Date) -> String {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "HH:mm:ss"; return f.string(from: d)
+        Fmt.date(d, "HH:mm:ss")
     }
     private func loadCandles() async {
         if candles.value == nil { candles = .loading }
@@ -335,12 +335,9 @@ struct CandleChart: View {
         let end = min(bars.count, max(count, bars.count - right))
         let start = max(0, end - count)
         guard bars.indices.contains(start), bars.indices.contains(end - 1) else { return "" }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "MM-dd HH:mm"
         let a = Date(timeIntervalSince1970: Double(bars[start].time))
         let b = Date(timeIntervalSince1970: Double(bars[end - 1].time))
-        return f.string(from: a) + "  –  " + f.string(from: b)
+        return Fmt.date(a, "MM-dd HH:mm") + "  –  " + Fmt.date(b, "MM-dd HH:mm")
     }
 
     private func crossCard(_ bar: ChartBar) -> some View {
@@ -360,10 +357,7 @@ struct CandleChart: View {
     }
 
     private func axisClock(_ t: Int64) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy/MM/dd HH:mm"
-        return f.string(from: Date(timeIntervalSince1970: Double(t)))
+        Fmt.date(Date(timeIntervalSince1970: Double(t)), "yyyy/MM/dd HH:mm")
     }
 
     private func legend(ma5: [Double?], ma10: [Double?], ma20: [Double?], boll: (mid: [Double?], up: [Double?], lo: [Double?]), ema7: [Double?], ema30: [Double?]) -> some View {

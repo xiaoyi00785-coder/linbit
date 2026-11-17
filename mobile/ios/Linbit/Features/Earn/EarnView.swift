@@ -50,7 +50,13 @@ struct EarnView: View {
         ScrollView {
             VStack(spacing: 0) {
                 overview
-                PrimaryTabs(items: ["全部", "简单赚币", "定期", "链上赚币", "VIP", "质押借币", "我的"], selected: $tab).padding(.top, 8)
+                // 7 个分类一屏放不下：横向滚动，用二级标签字号 + 下划线（和行情页分类一致）
+                ScrollView(.horizontal, showsIndicators: false) {
+                    PrimaryTabs(items: ["全部", "简单赚币", "定期", "链上赚币", "VIP", "质押借币", "我的"], selected: $tab,
+                                size: FontSize.tabSecondary, underline: true)
+                        .padding(.horizontal, Spacing.pageH)
+                }
+                .padding(.top, 14).padding(.bottom, 4)
                 list
             }.padding(.bottom, 40)
         }

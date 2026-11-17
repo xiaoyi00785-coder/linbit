@@ -8,7 +8,7 @@ final class HomeViewModel: ObservableObject {
     @Published var announcementNote: String?
     @Published var hotFromServer: [HotType: [MarketRow]] = [:]
 
-    /// 登录后从 /assets 汇总；未登录显示 0.00
+    /// 登录后取 /assets/overview 的 totalValueUsdt（资金 + 现货 + 合约，和安卓、资产页一致）；未登录显示 0.00
     @Published var totalUSDT: Decimal = 0
 
     static let localBanners: [HomeBanner] = [
@@ -29,6 +29,7 @@ final class HomeViewModel: ObservableObject {
         async let r: Void = FiatRates.refresh()
         async let n = try? HomeAPI.newcomer()
         async let f: Void = AppFeatures.shared.refresh()
+        async let t: Void = loadTotal()
         // 优先 /home/placements → 回退 /home/banners → 本地
         if let items = await p, !items.isEmpty {
             let b = items.filter { $0.slot == "carousel" }
@@ -42,9 +43,23 @@ final class HomeViewModel: ObservableObject {
         }
         _ = await r
         _ = await f
+        _ = await t
         newcomer = await n
         earn = (await e)?.items?.filter { ($0.apr.map(Dec.parse) ?? 0) > 0 } ?? []
         await a
+    }
+
+    /// 首页总资产估值。overview 不可用时退回资产页同样的算法（三个账户余额按价格折 USDT）。
+    func loadTotal() async {
+        guard Session.shared.isLoggedIn else { totalUSDT = 0; return }
+        if let o = try? await AssetsAPI.overview(), let v = o.totalValueUsdt, !v.isEmpty {
+            totalUSDT = Dec.parse(v)
+            return
+        }
+        let assets = AssetsModel.shared
+        await assets.load(silent: true)
+        guard Session.shared.isLoggedIn else { totalUSDT = 0; return }
+        if assets.balances.value != nil || assets.futures != nil { totalUSDT = assets.total }
     }
 
     private func loadAnnouncements() async {

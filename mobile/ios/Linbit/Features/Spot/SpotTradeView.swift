@@ -51,14 +51,14 @@ struct SpotTradeView: View {
             default: break
             }
             if ["spotPlan", "spotMarketAmount", "spotFee", "spotConditional"].contains(router.shotSheet ?? "") { router.shotSheet = nil }
-            await m.start()
         }
-        .onDisappear { m.stop() }
+        // 只在「现货」子页且现货 Tab 在屏幕上时拉行情；切到策略 / 理财 / 闪兑或别的 Tab 就停
+        .liveWhileVisible(.spot, enabled: router.spotTop == 0, start: { await m.start() }, stop: { m.stop() })
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshAccount() } }
         .onChange(of: router.spotSymbol) { s in
             let cached = MarketStore.shared.spot.first { $0.symbol == s }?.last ?? 0
             m.stop(); m.symbol = s; m.priceText = ""; m.qtyText = ""; m.amountText = ""; m.percent = 0; m.last = cached; m.book = OrderBook(); m.bookState = .idle
-            Task { await m.start() }
+            if router.isLive(.spot) && router.spotTop == 0 { Task { await m.start() } }
         }
         .lbSheet($showKind) { OrderKindSheet(selected: m.kind) { k in
             if k.available { m.kind = k; m.qtyEdited() } else { ToastCenter.shared.show("该委托类型暂未开放") }

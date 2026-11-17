@@ -228,15 +228,20 @@ final class FuturesModel: ObservableObject {
     }
     func isClosing(_ pos: APIFuturesPosition) -> Bool { closingKeys.contains(Self.closeKey(pos, fallback: symbol)) }
 
+    /// 页面离开时调用方会取消本任务并 stop()。网络请求返回后要先看是否已取消，
+    /// 否则会在 stop() 之后重新订阅、起轮询，页面不在屏幕上也一直刷新。
     func start() async {
         loop?.cancel()
         await loadContract()
+        if Task.isCancelled { return }
         await refreshMarket()
+        if Task.isCancelled { return }
         await refreshAccount()
+        if Task.isCancelled { return }
         if priceText.isEmpty, last > 0 { priceText = Dec.plain(last, pricePrec) }
         syncMarkSubs()
         subscribeQuotes()
-        await loadTodayPnl()
+        loop?.cancel()
         loop = Task { [weak self] in
             var n = 0
             while !Task.isCancelled {
@@ -248,6 +253,7 @@ final class FuturesModel: ObservableObject {
                 if n % 30 == 0 { await self.loadTodayPnl(silent: true) }
             }
         }
+        await loadTodayPnl()
     }
     /// 离开页面：停止轮询并退订全部 mark:<symbol>
     func stop() {
@@ -278,14 +284,15 @@ final class FuturesModel: ObservableObject {
         })
     }
 
+    /// 成交帧可能一秒几十条。每条都发布会让整页重算，这里最多每 250ms 刷一次，价格没变不发布。
     func noteTradeLast(_ v: Decimal) {
         guard v > 0 else { return }
         pendingLast = v
         guard quoteFlush == nil else { return }
         quoteFlush = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            guard let self else { return }
-            if let p = self.pendingLast { self.tradeLast = p }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            if let p = self.pendingLast, p != self.tradeLast { self.tradeLast = p }
             self.quoteFlush = nil
         }
     }
@@ -300,8 +307,11 @@ final class FuturesModel: ObservableObject {
                 let v = Dec.parse(mk.markPrice)
                 Task { @MainActor in
                     guard let self, v > 0 else { return }
-                    self.wsMarks[mk.symbol] = v
-                    if let r = mk.fundingRate { self.wsFunding[mk.symbol] = (Dec.parse(r), mk.nextFundingTime) }
+                    if self.wsMarks[mk.symbol] != v { self.wsMarks[mk.symbol] = v }
+                    if let r = mk.fundingRate {
+                        let rate = Dec.parse(r), old = self.wsFunding[mk.symbol]
+                        if old?.rate != rate || old?.next != mk.nextFundingTime { self.wsFunding[mk.symbol] = (rate, mk.nextFundingTime) }
+                    }
                 }
             }
         }
@@ -315,9 +325,10 @@ final class FuturesModel: ObservableObject {
         catch { if !silent || todayPnl.value == nil { todayPnl = .failed(error.lbMessage) } }
     }
 
-    func switchSymbol(_ s: String) async {
+    /// restart 为 false 时（页面不在屏幕上）只换币种、清表单，等页面回到屏幕再拉行情。
+    func switchSymbol(_ s: String, restart: Bool = true) async {
         stop(); symbol = s; priceText = ""; costText = ""; percent = 0; ticker = nil; book = OrderBook(); tradeLast = 0
-        await start()
+        if restart { await start() }
     }
 
     private func loadContract() async {
@@ -332,9 +343,10 @@ final class FuturesModel: ObservableObject {
         do {
             async let t = FuturesAPI.ticker(symbol)
             async let b = FuturesAPI.depth(symbol)
-            ticker = try await t
-            book = (try? await b) ?? book
-            marketError = nil
+            let nt = try await t
+            if nt != ticker { ticker = nt }
+            if let nb = try? await b, nb != book { book = nb }
+            if marketError != nil { marketError = nil }
         } catch { if ticker == nil { marketError = error.lbMessage } }
     }
 
@@ -351,21 +363,25 @@ final class FuturesModel: ObservableObject {
         async let o = try? FuturesAPI.openOrders()
         async let l = try? FuturesAPI.leverage(symbol)
         async let bn = try? FuturesAPI.bonus()
-        if let acc = await a { account = acc; positions = (acc.positions ?? []).filter { Dec.parse($0.qty) != 0 } }
-        if let list = await o { openOrders = list }
-        if let lv = await l {
-            leverage = lv.leverage ?? leverage
-            maxLeverage = lv.maxLeverage ?? maxLeverage
-            if let mm = lv.marginMode { marginMode = mm == .isolated ? .isolated : .cross }
+        // 每 6 秒轮询一次。只在值变了时赋值：每次 @Published 赋值都会让整个合约页重算。
+        if let acc = await a {
+            setIfChanged(\.account, acc)
+            setIfChanged(\.positions, (acc.positions ?? []).filter { Dec.parse($0.qty) != 0 })
         }
-        bonus = await bn
-        if let mode = await pm { positionMode = mode }
+        if let list = await o { setIfChanged(\.openOrders, list) }
+        if let lv = await l {
+            setIfChanged(\.leverage, lv.leverage ?? leverage)
+            setIfChanged(\.maxLeverage, lv.maxLeverage ?? maxLeverage)
+            if let mm = lv.marginMode { setIfChanged(\.marginMode, mm == .isolated ? .isolated : .cross) }
+        }
+        setIfChanged(\.bonus, await bn)
+        if let mode = await pm { setIfChanged(\.positionMode, mode) }
         do {
             let (t, pl) = try await (ta, pa)
-            tpslAlgos = t.orders ?? []; planAlgos = pl.orders ?? []; algosError = nil
+            setIfChanged(\.tpslAlgos, t.orders ?? []); setIfChanged(\.planAlgos, pl.orders ?? []); setIfChanged(\.algosError, nil)
         } catch { if !algosLoaded { algosError = error.lbMessage } }
-        algosLoaded = true
-        accountLoaded = true
+        setIfChanged(\.algosLoaded, true)
+        setIfChanged(\.accountLoaded, true)
     }
 
     func setPercent(_ v: Double) {
@@ -629,6 +645,9 @@ final class FuturesModel: ObservableObject {
 }
 
 extension FuturesModel {
+    func setIfChanged<T: Equatable>(_ kp: ReferenceWritableKeyPath<FuturesModel, T>, _ v: T) {
+        if self[keyPath: kp] != v { self[keyPath: kp] = v }
+    }
     /// 指定杠杆下可持有的最大名义价值：取 maxLeverage ≥ lev 的最高档上限（Decimal）
     func maxNotional(forLeverage lev: Int) -> Decimal? {
         let ok = tiers.filter { ($0.maxLeverage ?? 0) >= lev }

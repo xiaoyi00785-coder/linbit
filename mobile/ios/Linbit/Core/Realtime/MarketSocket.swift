@@ -143,38 +143,56 @@ final class MarketSocket: ObservableObject {
         }
     }
 
+    /// 收帧和 JSON 解析放在后台线程，主线程只做分发。行情帧一秒几十条，全在主线程解析会挤掉滑动和动画的帧。
     private func receive(on t: URLSessionWebSocketTask) {
-        Task { [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self] in
             while true {
                 do {
                     let msg = try await t.receive()
-                    guard let self, self.task === t else { return }
-                    self.lastFrameAt = Date()
-                    self.attempt = 0 // 收到真实帧才重置退避
+                    let parsed: Parsed
                     switch msg {
-                    case let .string(s): self.handle(Data(s.utf8))
-                    case let .data(d): self.handle(d)
-                    @unknown default: break
+                    case let .string(s): parsed = Self.parse(Data(s.utf8))
+                    case let .data(d): parsed = Self.parse(d)
+                    @unknown default: parsed = .ignored
                     }
+                    guard let self else { return }
+                    guard await self.deliver(parsed, from: t) else { return }
                 } catch {
-                    guard let self, self.task === t else { return }
-                    self.scheduleReconnect()
+                    await self?.receiveFailed(t)
                     return
                 }
             }
         }
     }
 
-    private func handle(_ raw: Data) {
-        guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { return }
+    private enum Parsed { case ping, ignored, frame(WSFrame) }
+
+    private nonisolated static func parse(_ raw: Data) -> Parsed {
+        guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { return .ignored }
         if let event = obj["event"] as? String {
-            if event == "ping" { send(op: "pong", args: nil) }
-            return // subscribed / authed / pong / error 回执
+            return event == "ping" ? .ping : .ignored // subscribed / authed / pong / error 回执
         }
         guard let channel = obj["channel"] as? String, let payload = obj["data"],
-              let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        let frame = WSFrame(channel: channel, ts: (obj["ts"] as? NSNumber)?.int64Value, data: data)
-        handlers[channel]?.values.forEach { $0(frame) }
+              let data = try? JSONSerialization.data(withJSONObject: payload) else { return .ignored }
+        return .frame(WSFrame(channel: channel, ts: (obj["ts"] as? NSNumber)?.int64Value, data: data))
+    }
+
+    /// 返回 false 表示这条连接已被替换，接收循环应退出
+    private func deliver(_ p: Parsed, from t: URLSessionWebSocketTask) -> Bool {
+        guard task === t else { return false }
+        lastFrameAt = Date()
+        attempt = 0 // 收到真实帧才重置退避
+        switch p {
+        case .ping: send(op: "pong", args: nil)
+        case .ignored: break
+        case let .frame(frame): handlers[frame.channel]?.values.forEach { $0(frame) }
+        }
+        return true
+    }
+
+    private func receiveFailed(_ t: URLSessionWebSocketTask) {
+        guard task === t else { return }
+        scheduleReconnect()
     }
 
     private func sendAuthIfNeeded() {
