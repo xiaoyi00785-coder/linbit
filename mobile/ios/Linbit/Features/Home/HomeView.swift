@@ -5,7 +5,8 @@ import AVFoundation
 struct HomeView: View {
     @Environment(\.palette) private var p
     @StateObject private var vm = HomeViewModel()
-    @StateObject private var store = MarketStore.shared
+    /// 不在这里订阅行情：价格每秒推几次，整页跟着重算很贵。只有榜单行（HomeRankRows）订阅。
+    private let store = MarketStore.shared
     @StateObject private var watch = Watchlist.shared
     @ObservedObject private var session = Session.shared
     @ObservedObject private var router = Router.shared
@@ -353,9 +354,7 @@ struct HomeView: View {
                     }.buttonStyle(.plain)
                 }
             } else {
-                let rows = vm.ranking(rankTab, kind: rankKind == 0 ? .spot : .futures, store: store, watch: watch)
-                if rows.isEmpty { EmptyStateView(text: rankTab == 0 ? "暂无自选" : "暂无数据").frame(height: 160) }
-                ForEach(rows) { MarketRowView(row: $0, compactPair: true, marketFutures: rankKind == 1) }
+                HomeRankRows(vm: vm, tab: rankTab, kind: rankKind)
             }
             moreLink(rankKind == 2 ? { Router.shared.openFeature(.tradfi) } : onOpenMarkets)
         }
@@ -781,4 +780,18 @@ private final class ScannerController: UIViewController, AVCaptureMetadataOutput
     }
 
     @objc private func closeTapped() { onClose?() }
+}
+
+/// 首页榜单行：唯一订阅 MarketStore 的部分，价格更新只重算这几行
+private struct HomeRankRows: View {
+    let vm: HomeViewModel
+    let tab: Int
+    let kind: Int
+    @ObservedObject private var store = MarketStore.shared
+    @ObservedObject private var watch = Watchlist.shared
+    var body: some View {
+        let rows = vm.ranking(tab, kind: kind == 0 ? .spot : .futures, store: store, watch: watch)
+        if rows.isEmpty { EmptyStateView(text: tab == 0 ? "暂无自选" : "暂无数据").frame(height: 160) }
+        ForEach(rows) { MarketRowView(row: $0, compactPair: true, marketFutures: kind == 1) }
+    }
 }

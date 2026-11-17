@@ -71,19 +71,27 @@ struct RootTabView: View {
     /// 进过的页面留在树上，再切回来用已有行情，不把整页打回加载态。
     @State private var mounted: Set<MainTab> = []
 
+    init() {
+        // TabView 的系统底栏：各页 .toolbar(.hidden) 之外再全局隐藏，避免 push 二级页时冒出来
+        UITabBar.appearance().isHidden = true
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
-            ZStack {
-                if mounted.contains(.home) { tabPage(.home) { HomeView(onOpenMarkets: { router.tab = .markets }) } }
-                if mounted.contains(.markets) { tabPage(.markets) { MarketsView() } }
-                if mounted.contains(.futures) { tabPage(.futures) { FuturesRootView() } }
-                if mounted.contains(.spot) { tabPage(.spot) {
+            // 用系统 TabView 承载各 Tab（系统底栏隐藏，仍用自绘悬浮底栏）。
+            // 之前把去过的 Tab 叠在 ZStack 里用 opacity(0) 隐藏：看不见的首页 / 行情页随行情推送照样布局、渲染，
+            // 真机上每次刷新主线程 20–50ms，持续掉帧。TabView 会把非当前 Tab 移出窗口，不再布局渲染，状态仍保留。
+            TabView(selection: $router.tab) {
+                tabPage(.home) { HomeView(onOpenMarkets: { router.tab = .markets }) }
+                tabPage(.markets) { MarketsView() }
+                tabPage(.futures) { FuturesRootView() }
+                tabPage(.spot) {
                     NavigationStack(path: $router.spotPath) {
                         SpotTradeView().navigationBarHidden(true)
-                            .navigationDestination(for: SpotRoute.self) { _ in SpotHistoryView() }
+                            .navigationDestination(for: SpotRoute.self) { _ in SpotHistoryView().toolbar(.hidden, for: .tabBar) }
                     }
-                } }
-                if mounted.contains(.assets) { tabPage(.assets) { AssetsView() } }
+                }
+                tabPage(.assets) { AssetsView() }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if overlays.count == 0, router.spotPath.isEmpty && router.assetsPath.isEmpty || ![.spot, .assets].contains(router.tab) {
@@ -123,13 +131,14 @@ struct RootTabView: View {
         }
     }
 
-    /// CI 截图用：仅当模拟器写入 lb.shot 时切换页面，正常启动不改变界面。
+    /// 首次切到某 Tab 才创建它的页面（之后一直保留状态）；系统底栏隐藏，用自绘 FloatingTabBar。
+    @ViewBuilder
     private func tabPage<V: View>(_ tab: MainTab, @ViewBuilder _ content: () -> V) -> some View {
-        content()
-            .opacity(router.tab == tab ? 1 : 0)
-            .allowsHitTesting(router.tab == tab)
-            .accessibilityHidden(router.tab != tab)
-            .zIndex(router.tab == tab ? 1 : 0)
+        Group {
+            if mounted.contains(tab) { content() } else { p.bg }
+        }
+        .toolbar(.hidden, for: .tabBar)
+        .tag(tab)
     }
 
     private func applyScreenshotRoute() {
