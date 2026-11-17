@@ -167,38 +167,13 @@ struct FuturesToolsSheet: View {
     }
 }
 
-/// 合约切换（永续合约列表 + 搜索）
+/// 合约选币。和现货不是同一套标签：自选，以及 USDT 合约下的分类。
 struct FuturesPairSheet: View {
-    @Environment(\.palette) private var p
     let current: String
     let onPick: (String) -> Void
     let onClose: () -> Void
-    @StateObject private var store = MarketStore.shared
-    @State private var q = ""
     var body: some View {
-        let rows = store.rows(.futures).filter { q.isEmpty || $0.symbol.localizedCaseInsensitiveContains(q) }
-        LBSheet(title: "永续合约", showClose: true, onClose: onClose) {
-            VStack(spacing: 8) {
-                SearchField(text: $q, placeholder: "搜索合约").padding(.horizontal, Spacing.pageH)
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if rows.isEmpty { EmptyStateView(text: store.futures.isEmpty ? "加载中…" : "无匹配合约") }
-                        ForEach(rows) { r in
-                            Button { onPick(r.symbol) } label: {
-                                HStack {
-                                    Text(r.symbol).font(.lb(FontSize.body, r.symbol == current ? .semibold : .regular)).foregroundColor(p.textPrimary)
-                                    Text("永续").font(.lb(10)).foregroundColor(p.textSecondary)
-                                    Spacer()
-                                    Text(Fmt.priceAuto(r.last)).font(.lbNum(FontSize.label)).foregroundColor(p.textPrimary)
-                                    Text(Fmt.percent(r.changePct)).font(.lbNum(FontSize.small)).foregroundColor(r.changePct < 0 ? p.down : p.up).frame(width: 70, alignment: .trailing)
-                                }.padding(.horizontal, Spacing.pageH).frame(height: 48)
-                            }.buttonStyle(RowPressStyle())
-                        }
-                    }
-                }.frame(height: 380)
-            }
-        }
-        .task { if store.futures.isEmpty { await store.load() } }
+        TradePairSheet(futures: true, current: current, onPick: onPick, onClose: onClose)
     }
 }
 
@@ -657,5 +632,33 @@ struct AmendAlgoSheet: View {
             saving = false
             if let e { error = e } else { onClose() }
         }
+    }
+}
+
+/// 合约单位：数量 / 成本 / 价值
+struct FuturesUnitSheet: View {
+    @Environment(\.palette) private var p
+    let base: String
+    let quote: String
+    let selected: FuturesOrderUnit
+    let onPick: (FuturesOrderUnit) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("合约单位设置").font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .center).padding(.top, 8)
+            ForEach(FuturesOrderUnit.allCases) { unit in
+                Button { Haptics.tap(); onPick(unit) } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(unit.title(base: base, quote: quote)).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                        Text(unit.detail(base: base)).font(.lb(FontSize.small)).foregroundColor(p.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).stroke(unit == selected ? p.textPrimary : p.border, lineWidth: unit == selected ? 1.5 : 1))
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
     }
 }

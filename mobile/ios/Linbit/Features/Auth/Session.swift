@@ -62,8 +62,14 @@ final class Router: ObservableObject {
     @Published var showUserCenter = false
     /// 行情点进的币种详情
     @Published var marketDetail: String?
+    /// 详情页是合约还是现货。必须先于 marketDetail 赋值。
+    @Published var marketDetailFutures = false
     /// 从首页搜索进行情时直接打开搜索页
     @Published var marketSearch = false
+    func showMarket(_ symbol: String, futures: Bool) {
+        marketDetailFutures = futures
+        marketDetail = symbol
+    }
     /// 二级全屏功能页（理财 / 策略 / 闪兑 / 聊天室 / 子账户 …）
     @Published var feature: FeaturePage?
     /// 合约 Tab 顶部：0 合约 1 事件合约 2 TradFi 3 模拟交易

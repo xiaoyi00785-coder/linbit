@@ -53,8 +53,8 @@ actor APIClient {
         try await send(path, method: "DELETE", query: query, body: Optional<Int>.none, auth: true)
     }
 
-    func post<T: Decodable, B: Encodable>(_ path: String, body: B?, auth: Bool = true) async throws -> T {
-        try await send(path, method: "POST", query: [:], body: body, auth: auth)
+    func post<T: Decodable, B: Encodable>(_ path: String, query: [String: String?] = [:], body: B?, auth: Bool = true) async throws -> T {
+        try await send(path, method: "POST", query: query, body: body, auth: auth)
     }
 
     /// 不在 401 时自动刷新令牌（用于退出登录：访问令牌过期时服务端凭请求体 refreshToken 识别用户）

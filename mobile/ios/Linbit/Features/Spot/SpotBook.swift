@@ -25,8 +25,11 @@ struct OrderBookView: View {
             }.font(.lb(11)).foregroundColor(p.textSecondary).padding(.bottom, 6)
 
             switch m.bookState {
-            case .idle, .loading: SkeletonList(rows: 8).frame(height: 300)
-            case .failed(let e): ErrorStateView(message: e) { Task { await m.loadBook() } }.frame(height: 300)
+            case .idle, .loading:
+                side([], up: false, maxQ: 1, pad: true)
+                mid
+                side([], up: true, maxQ: 1, pad: false)
+            case .failed(let e): ErrorStateView(message: e) { Task { await m.loadBook() } }.frame(height: 220)
             case .loaded(_):
                 let asks = Array(agg(m.book.asks, up: true).prefix(rows)).reversed()
                 let bids = Array(agg(m.book.bids, up: false).prefix(rows))
@@ -204,37 +207,175 @@ struct PrecisionSheet: View {
     }
 }
 
-/// 切换交易对
+/// 现货币种面板。底部抽屉，分类来自行情接口，名称写成「BTC / USDT」。
 struct PairPickerSheet: View {
+    let current: String
+    let onPick: (String) -> Void
+    let onClose: () -> Void
+    var body: some View {
+        TradePairSheet(futures: false, current: current, onPick: onPick, onClose: onClose)
+    }
+}
+
+/// 现货和合约的选币抽屉不是同一套标签。futures 为真时用「自选 / USDT合约」加分类，名字不带斜杠。
+struct TradePairSheet: View {
     @Environment(\.palette) private var p
     @ObservedObject private var store = MarketStore.shared
+    @ObservedObject private var watch = Watchlist.shared
+    var futures: Bool
     let current: String
     let onPick: (String) -> Void
     let onClose: () -> Void
     @State private var q = ""
+    /// 合约打开时先落在自选。现货默认是全部分类。
+    @State private var fav: Bool
+    @State private var chip = 0
+    @State private var picked: Set<String> = []
+    @State private var sort = 0
+    init(futures: Bool, current: String, onPick: @escaping (String) -> Void, onClose: @escaping () -> Void) {
+        self.futures = futures
+        self.current = current
+        self.onPick = onPick
+        self.onClose = onClose
+        _fav = State(initialValue: futures)
+    }
+
+    private var pool: [MarketRow] { futures ? store.futures : store.spot }
+    private var cats: [APIMarketCategory] {
+        store.categories.filter { cat in pool.contains { cat.symbols.contains($0.symbol) } }
+    }
+
     var body: some View {
-        LBSheet(title: "选择交易对", onClose: onClose) {
-            VStack(spacing: 8) {
-                SearchField(text: $q, placeholder: "搜索币种").padding(.horizontal, Spacing.pageH)
-                let list = store.spot.filter { q.isEmpty || $0.symbol.localizedCaseInsensitiveContains(q) }
-                if list.isEmpty { EmptyStateView(text: "暂无相关币种").frame(height: 240) }
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(list, id: \.symbol) { r in
-                            Button { onPick(r.symbol) } label: {
-                                HStack {
-                                    Text(r.symbol.replacingOccurrences(of: "USDT", with: "/USDT")).font(.lb(FontSize.body, .medium))
-                                        .foregroundColor(r.symbol == current ? p.brand : p.textPrimary)
-                                    Spacer()
-                                    Text(Fmt.priceAuto(r.last)).font(.lbNum(FontSize.label)).foregroundColor(p.textPrimary)
-                                    Text(Fmt.percent(r.changePct)).font(.lbNum(FontSize.small)).foregroundColor(r.changePct < 0 ? p.down : p.up).frame(width: 64, alignment: .trailing)
-                                }.padding(.horizontal, Spacing.pageH).frame(height: 48).contentShape(Rectangle())
-                            }.buttonStyle(RowPressStyle())
-                        }
-                    }
-                }.frame(height: 420)
+        LBSheet(onClose: onClose) {
+            VStack(spacing: 0) {
+                SearchField(text: $q, placeholder: "搜索币对").padding(.horizontal, Spacing.pageH).padding(.top, 4)
+                if futures {
+                    HStack(spacing: 18) {
+                        tabTitle("自选", true)
+                        tabTitle("USDT合约", false)
+                        Spacer()
+                    }.padding(.horizontal, Spacing.pageH).padding(.top, 12)
+                    if !fav { chipRow }
+                } else {
+                    chipRow
+                }
+                HStack {
+                    Text("交易对").frame(maxWidth: .infinity, alignment: .leading)
+                    Button { sort = sort == 2 ? 1 : 2 } label: { Text(sort == 1 ? "最新价 ↓" : sort == 2 ? "涨跌幅 ↓" : "最新价 / 涨跌幅") }
+                    Image(systemName: "star").font(.system(size: 12)).frame(width: 28)
+                }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    .padding(.horizontal, Spacing.pageH).padding(.top, 8)
+                list.frame(maxHeight: 460)
             }
         }
-        .task { if store.spot.isEmpty { await store.load() } }
+        .task { if pool.isEmpty || store.categories.isEmpty { await store.load() } }
+    }
+
+    private func tabTitle(_ title: String, _ favorites: Bool) -> some View {
+        Text(title).font(.lb(FontSize.body, fav == favorites ? .semibold : .regular))
+            .foregroundColor(fav == favorites ? p.textPrimary : p.textSecondary)
+            .padding(.bottom, 6)
+            .overlay(alignment: .bottom) { if fav == favorites { Rectangle().fill(p.textPrimary).frame(height: 2) } }
+            .onTapGesture { fav = favorites; chip = 0; q = "" }
+    }
+
+    private var chipRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                chip("全部", 0)
+                if !futures { chip("自选", -1) }
+                ForEach(Array(cats.enumerated()), id: \.element.id) { i, cat in
+                    chip(cat.name, i + 1)
+                }
+            }.padding(.horizontal, Spacing.pageH)
+        }.padding(.top, 10)
+    }
+
+    private func chip(_ title: String, _ index: Int) -> some View {
+        Text(title).font(.lb(FontSize.small, chip == index ? .semibold : .regular))
+            .foregroundColor(chip == index ? p.textPrimary : p.textSecondary)
+            .padding(.bottom, 4)
+            .overlay(alignment: .bottom) { if chip == index { Rectangle().fill(p.textPrimary).frame(height: 2) } }
+            .onTapGesture { chip = index; if index == -1 { fav = true } else { fav = false } }
+    }
+
+    @ViewBuilder private var list: some View {
+        let rows = filtered
+        if rows.isEmpty && showingFav {
+            recommend
+        } else if rows.isEmpty {
+            EmptyStateView(text: q.isEmpty ? "暂无交易对" : "无匹配").frame(height: 220)
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(rows) { r in row(r) }
+                }
+            }
+        }
+    }
+
+    private var showingFav: Bool { futures ? fav : chip == -1 }
+
+    private var filtered: [MarketRow] {
+        var rows = pool
+        if showingFav { rows = rows.filter { watch.contains($0.symbol) } }
+        else if chip > 0, chip - 1 < cats.count {
+            let set = Set(cats[chip - 1].symbols)
+            rows = rows.filter { set.contains($0.symbol) }
+        }
+        if !q.isEmpty { rows = rows.filter { $0.symbol.localizedCaseInsensitiveContains(q) || $0.base.localizedCaseInsensitiveContains(q) } }
+        if sort == 1 { rows.sort { $0.last > $1.last } }
+        if sort == 2 { rows.sort { $0.changePct > $1.changePct } }
+        return rows
+    }
+
+    private func row(_ r: MarketRow) -> some View {
+        Button { onPick(r.symbol) } label: {
+            HStack(spacing: 8) {
+                CoinIcon(base: r.base, size: 24)
+                Text(futures ? r.symbol : "\(r.base) / \(r.quote)")
+                    .font(.lb(FontSize.body, r.symbol == current ? .semibold : .regular)).foregroundColor(p.textPrimary)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(Fmt.priceAuto(r.last)).foregroundColor(p.textPrimary)
+                    Text(Fmt.percent(r.changePct)).foregroundColor(r.changePct < 0 ? p.down : p.up)
+                }.font(.lbNum(FontSize.small))
+                Image(systemName: watch.contains(r.symbol) ? "star.fill" : "star")
+                    .foregroundColor(watch.contains(r.symbol) ? p.brand : p.textTertiary)
+                    .frame(width: 28)
+                    .highPriorityGesture(TapGesture().onEnded { watch.toggle(r.symbol) })
+            }.padding(.horizontal, Spacing.pageH).frame(height: 52).contentShape(Rectangle())
+        }.buttonStyle(RowPressStyle())
+    }
+
+    private var recommend: some View {
+        let names = futures
+            ? ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "PAXGUSDT", "TSLAUSDT", "AAPLUSDT"]
+            : ["BTCUSDT", "ETHUSDT"]
+        let rows = names.compactMap { s in pool.first { $0.symbol == s } }
+        return VStack(spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(rows) { r in
+                    let on = picked.contains(r.symbol)
+                    HStack {
+                        Text(futures ? r.symbol : "\(r.base) / \(r.quote)").font(.lb(FontSize.small))
+                        Spacer()
+                        Image(systemName: on ? "checkmark.circle.fill" : "circle").foregroundColor(on ? p.textPrimary : p.textTertiary)
+                    }
+                    .padding(10).frame(height: 44)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(p.border))
+                    .onTapGesture { if on { picked.remove(r.symbol) } else { picked.insert(r.symbol) } }
+                }
+            }.padding(.horizontal, Spacing.pageH).padding(.top, 16)
+            Button {
+                Watchlist.shared.add(Array(picked))
+                picked.removeAll()
+            } label: {
+                Text("加入自选").font(.lb(FontSize.body, .medium)).foregroundColor(p.textOnPrimary)
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.textPrimary))
+            }.buttonStyle(.plain).padding(.horizontal, Spacing.pageH)
+            .disabled(picked.isEmpty)
+        }.frame(maxHeight: 420)
     }
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -371,7 +372,7 @@ func (s *Server) hMargin(w http.ResponseWriter, r *http.Request, uid string) {
 }
 
 func (s *Server) hClose(w http.ResponseWriter, r *http.Request, uid string) {
-	o, trades, err := s.ClosePosition(r.Context(), uid, r.PathValue("symbol"), sideParam(r, ""), "user")
+	o, trades, err := s.ClosePosition(r.Context(), uid, r.PathValue("symbol"), positionSideFrom(r), "user")
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -575,6 +576,18 @@ func (s *Server) hDevAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	fee, _, _ := readAccount(r.Context(), s.db, feeUser)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"totalEquity": money(total), "netTransfers": money(net), "diff": total.Sub(net).Round(8), "feeBalance": money(fee), "accounts": len(users)})
+}
+
+// positionSideFrom reads positionSide from the JSON body, then the query.
+// An empty body is valid: one-way close omits the field.
+func positionSideFrom(r *http.Request) string {
+	var req struct {
+		PosSide string `json:"positionSide"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	return sideParam(r, req.PosSide)
 }
 
 // sideParam returns positionSide from the body value or the ?positionSide= query.

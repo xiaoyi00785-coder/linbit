@@ -15,7 +15,7 @@ final class SpotModel: ObservableObject {
     @Published var symbol: String
     @Published var meta: APISymbol?
     @Published var book = OrderBook()
-    @Published var bookState: Loadable<Void> = .loading
+    @Published var bookState: Loadable<Void> = .idle
     @Published var last: Decimal = 0
     @Published var changePct: Decimal = 0
 
@@ -51,7 +51,7 @@ final class SpotModel: ObservableObject {
     @Published var feeNote: String?
     @Published var feeState: Loadable<Void> = .idle
 
-    private var sub: WSSubscription?
+    private var subs: [WSSubscription] = []
     private var poll: Task<Void, Never>?
     /// 费率未加载时用于估算的兜底值
     static let fallbackFee: Decimal = 0.001
@@ -108,10 +108,27 @@ final class SpotModel: ObservableObject {
         if let list = await s { meta = list.first { $0.symbol == symbol } }
         if let row = MarketStore.shared.spot.first(where: { $0.symbol == symbol }) { last = row.last; changePct = row.changePct }
         await loadBook()
-        sub = MarketSocket.shared.subscribe("depth:\(symbol)") { [weak self] f in
-            guard let d = try? CodableHelper.jsonDecoder.decode(APIDepth.self, from: f.data) else { return }
-            Task { @MainActor in self?.book = OrderBook(d) }
-        }
+        subs.forEach { $0.cancel() }
+        subs = [
+            MarketSocket.shared.subscribe("depth:\(symbol)") { [weak self] f in
+                guard let d = try? CodableHelper.jsonDecoder.decode(APIDepth.self, from: f.data) else { return }
+                Task { @MainActor in self?.book = OrderBook(d); self?.bookState = .loaded(()) }
+            },
+            MarketSocket.shared.subscribe("ticker:\(symbol)") { [weak self] f in
+                guard let t = TapePrice.decode(f.data) else { return }
+                let px = Dec.parse(t.lastPrice ?? t.price)
+                Task { @MainActor in
+                    guard let self, px > 0 else { return }
+                    self.last = px
+                    if let c = t.priceChangePercent { self.changePct = Dec.parse(c) }
+                }
+            },
+            MarketSocket.shared.subscribe("trades:\(symbol)") { [weak self] f in
+                guard let t = TapePrice.decode(f.data) else { return }
+                let px = Dec.parse(t.price)
+                Task { @MainActor in if px > 0 { self?.last = px } }
+            },
+        ]
         // WS 不可用时 3 秒轮询兜底
         poll = Task { [weak self] in
             while !Task.isCancelled {
@@ -122,10 +139,11 @@ final class SpotModel: ObservableObject {
         await refreshAccount()
         await loadFees()
     }
-    func stop() { sub = nil; poll?.cancel() }
+    func stop() { subs.forEach { $0.cancel() }; subs = []; poll?.cancel() }
 
     func loadBook(silent: Bool = false) async {
-        if !silent { bookState = .loading }
+        let haveBook = !book.bids.isEmpty || !book.asks.isEmpty
+        if !silent && !haveBook { bookState = .loading }
         do {
             book = try await SpotAPI.depth(symbol, limit: 20)
             if last == 0 { last = book.bestBid ?? book.bestAsk ?? 0 }

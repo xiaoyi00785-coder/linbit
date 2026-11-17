@@ -17,6 +17,22 @@ struct WSTicker: Decodable {
     let quoteVolume: String?
 }
 
+/// 成交或 ticker 帧。成交用 price，ticker 用 lastPrice；涨跌幅可能缺省或是数字。
+struct TapePrice: Decodable {
+    var price: String
+    var lastPrice: String?
+    var priceChangePercent: String?
+    static func decode(_ data: Data) -> TapePrice? { try? CodableHelper.jsonDecoder.decode(TapePrice.self, from: data) }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        price = (try? c.decode(String.self, forKey: .price)) ?? "0"
+        lastPrice = try? c.decode(String.self, forKey: .lastPrice)
+        if let s = try? c.decode(String.self, forKey: .priceChangePercent) { priceChangePercent = s }
+        else if let n = try? c.decode(Double.self, forKey: .priceChangePercent) { priceChangePercent = String(n) }
+    }
+    private enum CodingKeys: String, CodingKey { case price, lastPrice, priceChangePercent }
+}
+
 /// 行情 / 用户数据 WebSocket 客户端。
 /// - 单连接多订阅；断线后指数退避重连并自动重订阅。
 /// - 心跳：每 20s 发 {"op":"ping"}；服务端 {"event":"ping"} 回 {"op":"pong"}。

@@ -62,14 +62,13 @@ extension FuturesAPI {
         return resp.order
     }
 
-    /// 分仓模式下平仓需带 positionSide（spec：可放在请求体）
+    /// 分仓模式下平仓需带 positionSide。查询参数给当前服务端，请求体与文档一致。
     struct PositionSideBody: Encodable { let positionSide: String }
-    static func close(_ symbol: String, positionSide: String?) async throws {
-        if let ps = positionSide, ps != "BOTH" {
-            let _: APIFuturesPlaceOrder200Response = try await api.post("/futures/positions/\(symbol)/close", body: PositionSideBody(positionSide: ps))
-        } else {
-            try await close(symbol)
+    static func close(_ symbol: String, positionSide: String?) async throws -> APIFuturesPlaceOrder200Response {
+        if let ps = positionSide, ps != "BOTH", ps != "ONE_WAY" {
+            return try await api.post("/futures/positions/\(symbol)/close", query: ["positionSide": ps], body: PositionSideBody(positionSide: ps))
         }
+        return try await api.post("/futures/positions/\(symbol)/close", body: Optional<Int>.none)
     }
     static func setTpsl(_ symbol: String, tp: String?, sl: String?, positionSide: String?,
                         tpType: APIFuturesSetTpslRequest.APITpTriggerPriceType? = nil, slType: APIFuturesSetTpslRequest.APISlTriggerPriceType? = nil) async throws {

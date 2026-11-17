@@ -4,6 +4,10 @@ import Foundation
 final class AssetsModel: ObservableObject {
     static let shared = AssetsModel()
     @Published var balances: Loadable<[APIBalance]> = .idle
+    @Published var funding: [APIBalance] = []
+    @Published var spot: [APIBalance] = []
+    @Published var fundingError: String?
+    @Published var spotError: String?
     @Published var futures: APIFuturesAccount?
     @Published var hideAmount = UserDefaults.standard.bool(forKey: "lb.assets.hide") {
         didSet { UserDefaults.standard.set(hideAmount, forKey: "lb.assets.hide") }
@@ -26,25 +30,56 @@ final class AssetsModel: ObservableObject {
         let px = MarketStore.shared.spot.first { $0.symbol == b.asset + "USDT" }?.last ?? 0
         return Dec.parse(b.total) * px
     }
-    var spotTotal: Decimal { list.reduce(0) { $0 + usd($1) } }
-    var spotAvailUSDT: Decimal { Dec.parse(list.first { $0.asset == "USDT" }?.free) }
+    var spotTotal: Decimal { spot.reduce(0) { $0 + usd($1) } }
+    var fundingTotal: Decimal { funding.reduce(0) { $0 + usd($1) } }
+    var spotAvailUSDT: Decimal { Dec.parse(spot.first { $0.asset == "USDT" }?.free) }
+    var fundingAvailUSDT: Decimal { Dec.parse(funding.first { $0.asset == "USDT" }?.free) }
     var futuresTotal: Decimal { Dec.parse(futures?.marginBalance ?? futures?.walletBalance) }
     var futuresAvail: Decimal { Dec.parse(futures?.availableBalance) }
-    var total: Decimal { spotTotal + futuresTotal }
+    var total: Decimal { fundingTotal + spotTotal + futuresTotal }
 
     /// 资产列表：USDT 置顶，余额降序，可搜索 / 隐藏小额（< 1 USDT）
-    var rows: [APIBalance] {
-        list.filter { (query.isEmpty || $0.asset.localizedCaseInsensitiveContains(query)) && (!hideSmall || usd($0) >= 1) }
+    var rows: [APIBalance] { filtered(list) }
+    func filtered(_ src: [APIBalance]) -> [APIBalance] {
+        src.filter { (query.isEmpty || $0.asset.localizedCaseInsensitiveContains(query)) && (!hideSmall || usd($0) >= 1) }
             .sorted { usd($0) == usd($1) ? $0.asset < $1.asset : usd($0) > usd($1) }
     }
 
     func load(silent: Bool = false) async {
-        guard Session.shared.isLoggedIn else { balances = .idle; futures = nil; return }
+        guard Session.shared.isLoggedIn else { balances = .idle; funding = []; spot = []; futures = nil; return }
         if !silent || balances.value == nil { balances = .loading }
-        do {
-            async let b = AssetsAPI.balances()
-            async let f = try? AssetsAPI.futuresAccount()
-            balances = .loaded(try await b); futures = await f
-        } catch { balances = .failed(error.lbMessage) }
+        async let fundingTask = Self.loadWallet("funding")
+        async let spotTask = Self.loadWallet("spot")
+        async let futuresTask = try? AssetsAPI.futuresAccount()
+        let fundingResult = await fundingTask
+        let spotResult = await spotTask
+        futures = await futuresTask
+        switch fundingResult {
+        case let .success(rows): funding = Self.collapseExactDuplicates(rows); fundingError = nil
+        case let .failure(error): fundingError = error.lbMessage
+        }
+        switch spotResult {
+        case let .success(rows): spot = Self.collapseExactDuplicates(rows); spotError = nil
+        case let .failure(error): spotError = error.lbMessage
+        }
+        if fundingError != nil && spotError != nil && funding.isEmpty && spot.isEmpty {
+            balances = .failed(fundingError ?? spotError ?? "余额加载失败")
+        } else {
+            balances = .loaded(funding + spot)
+        }
+    }
+
+    /// 同一账户里资产、可用、冻结、总额都相同的重复行只留一条，不把两份余额加在一起。
+    private static func collapseExactDuplicates(_ rows: [APIBalance]) -> [APIBalance] {
+        var seen = Set<String>()
+        return rows.filter { row in
+            let key = "\(row.asset)|\(row.free ?? "")|\(row.locked ?? "")|\(row.total ?? "")"
+            return seen.insert(key).inserted
+        }
+    }
+
+    private static func loadWallet(_ account: String) async -> Result<[APIBalance], Error> {
+        do { return .success(try await AssetsAPI.balances(account: account)) }
+        catch { return .failure(error) }
     }
 }

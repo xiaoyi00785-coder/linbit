@@ -1,5 +1,32 @@
 import Foundation
 
+/// 下单输入单位。数量是币的个数，成本是保证金，价值是仓位名义价值。
+enum FuturesOrderUnit: String, CaseIterable, Identifiable {
+    case qty, cost, value
+    var id: String { rawValue }
+    var fieldLabel: String {
+        switch self {
+        case .qty: return "数量"
+        case .cost: return "成本"
+        case .value: return "价值"
+        }
+    }
+    func title(base: String, quote: String) -> String {
+        switch self {
+        case .qty: return "数量-\(base)"
+        case .cost: return "成本-\(quote)"
+        case .value: return "价值-\(quote)"
+        }
+    }
+    func detail(base: String) -> String {
+        switch self {
+        case .qty: return "合约标的交易的仓位数量，单位为\(base)。"
+        case .cost: return "交易实际投入的保证金数量，如：开仓时的初始保证金、平仓时结算的保证金。"
+        case .value: return "标的资产的市场价值，基于保证金和杠杆倍数计算，并随市场价格波动而调整。"
+        }
+    }
+}
+
 enum FuturesKind: String, CaseIterable { case limit, market, plan, postOnly
     var title: String { ["limit": "限价单", "market": "市价单", "plan": "计划委托", "postOnly": "只做 Maker"][rawValue]! }
     var subtitle: String {
@@ -32,7 +59,9 @@ final class FuturesModel: ObservableObject {
     @Published var isOpen = true
     @Published var kind: FuturesKind = .limit
     @Published var priceText = ""
+    /// 输入框原文。含义由 orderUnit 决定：数量、成本或价值。
     @Published var costText = ""
+    @Published var orderUnit: FuturesOrderUnit = .cost
     @Published var percent: Double = 0
     @Published var tpsl = false
     @Published var tpText = ""
@@ -55,7 +84,13 @@ final class FuturesModel: ObservableObject {
     @Published var tiers: [APIFuturesRiskTiers200ResponseContractsInnerTiersInner] = []
     @Published var placing = false
     @Published var onlyCurrent = false
-    @Published var now = Date()
+    /// 成交推送的最新价。盘口中间大字用它，不再等 3 秒轮询。
+    @Published var tradeLast: Decimal = 0
+    @Published var closingKeys: Set<String> = []
+    @Published var closingAll = false
+    private var quoteSubs: [WSSubscription] = []
+    private var pendingLast: Decimal?
+    private var quoteFlush: Task<Void, Never>?
     /// 今日盈亏（GET /futures/pnl/today）
     @Published var todayPnl: Loadable<APIFuturesTodayPnl200Response> = .idle
     /// WS mark:<symbol> 实时标记价格（symbol -> 价格）
@@ -75,7 +110,10 @@ final class FuturesModel: ObservableObject {
     var qtyPrec: Int { Dec.precision(of: contract?.minQty) }
     var minQty: Decimal { Dec.parse(contract?.minQty) }
     private var spotLast: Decimal { MarketStore.shared.spot.first { $0.symbol == symbol }?.last ?? 0 }
-    var last: Decimal { ticker?.effectivePrice(spot: spotLast) ?? spotLast }
+    var last: Decimal {
+        if tradeLast > 0 { return tradeLast }
+        return ticker?.effectivePrice(spot: spotLast) ?? spotLast
+    }
     var mark: Decimal {
         if let w = wsMarks[symbol], w > 0 { return w }
         let m = Dec.parse(ticker?.markPrice); return m > 0 ? m : last
@@ -98,7 +136,12 @@ final class FuturesModel: ObservableObject {
     }
     /// 全部仓位的实时未实现盈亏合计
     var liveUnrealized: Decimal { positions.reduce(0) { $0 + livePnl($1).pnl } }
-    var changePct: Decimal { Dec.parse(ticker?.priceChangePercent24h) }
+    /// 24h 涨跌幅。priceChangePercent 已是百分数（-0.6 表示 -0.6%）；priceChangePercent24h 是比率（-0.005969）。没有字段时是 nil，不当成 0。
+    var changePct: Decimal? {
+        if let raw = ticker?.priceChangePercent, !raw.isEmpty { return Dec.parse(raw) }
+        if let raw = ticker?.priceChangePercent24h, !raw.isEmpty { return Dec.parse(raw) * 100 }
+        return nil
+    }
     var fundingRate: Decimal { if let f = wsFunding[symbol] { return f.rate * 100 }; return Dec.parse(ticker?.fundingRate) * 100 }
     var available: Decimal { Dec.parse(account?.availableBalance) }
     var mmr: Decimal { Dec.parse(contract?.maintenanceMarginRate ?? "0.004") }
@@ -112,14 +155,47 @@ final class FuturesModel: ObservableObject {
         }
         return Dec.parse(priceText)
     }
-    var cost: Decimal { Dec.parse(costText) }
-    /// 成本（保证金）× 杠杆 / 价格 = 数量，按最小数量步长向下取整
+    /// 输入框里的数
+    var typed: Decimal { Dec.parse(costText) }
+    private var lev: Decimal { Decimal(max(leverage, 1)) }
+    /// 按当前单位换算出的下单数量，按最小数量步长向下取整
     var qty: Decimal {
         guard orderPrice > 0 else { return 0 }
         if !isOpen, let pos = closeTarget { return Dec.parse(Dec.plain(abs(Dec.parse(pos.qty)) * Decimal(percent > 0 ? percent : 1), qtyPrec)) }
-        return Dec.parse(Dec.plain(cost * Decimal(leverage) / orderPrice, qtyPrec))
+        let raw: Decimal
+        switch orderUnit {
+        case .qty: raw = typed
+        case .cost: raw = typed * lev / orderPrice
+        case .value: raw = typed / orderPrice
+        }
+        return Dec.parse(Dec.plain(raw, qtyPrec))
     }
-    var maxOpenQty: Decimal { orderPrice > 0 ? available * Decimal(leverage) / orderPrice : 0 }
+    /// 这笔单占用的保证金
+    var margin: Decimal {
+        guard orderPrice > 0 else { return 0 }
+        switch orderUnit {
+        case .qty: return qty * orderPrice / lev
+        case .cost: return typed
+        case .value: return typed / lev
+        }
+    }
+    /// 仓位价值 = 数量 × 价格。成本模式下等于输入 × 杠杆。
+    var orderValue: Decimal {
+        switch orderUnit {
+        case .qty: return qty * orderPrice
+        case .cost: return typed * lev
+        case .value: return typed
+        }
+    }
+    var maxOpenQty: Decimal { orderPrice > 0 ? available * lev / orderPrice : 0 }
+    /// 可开 / 可卖，用当前输入单位表示
+    var openLimitText: String {
+        switch orderUnit {
+        case .qty: return "\(Fmt.amount(maxOpenQty, qtyPrec)) \(base)"
+        case .cost: return "\(Fmt.amount(available, 2)) \(quote)"
+        case .value: return "\(Fmt.amount(available * lev, 2)) \(quote)"
+        }
+    }
     func liqPrice(long: Bool) -> Decimal {
         let p = orderPrice; guard p > 0 else { return 0 }
         let inv = 1 / Decimal(leverage)
@@ -142,11 +218,15 @@ final class FuturesModel: ObservableObject {
     var shownPositions: [APIFuturesPosition] { onlyCurrent ? positions.filter { $0.symbol == symbol } : positions }
     var shownOrders: [APIFuturesOrder] { onlyCurrent ? openOrders.filter { $0.symbol == symbol } : openOrders }
 
-    var fundingCountdown: String {
+    func fundingText(at date: Date) -> String {
         guard let t = ticker?.nextFundingTime else { return "--:--:--" }
-        let s = max(0, Int(Double(t) / 1000 - now.timeIntervalSince1970))
+        let s = max(0, Int(Double(t) / 1000 - date.timeIntervalSince1970))
         return String(format: "%02d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60)
     }
+    static func closeKey(_ pos: APIFuturesPosition, fallback: String) -> String {
+        "\(pos.symbol ?? fallback)|\(side(of: pos) ?? "BOTH")"
+    }
+    func isClosing(_ pos: APIFuturesPosition) -> Bool { closingKeys.contains(Self.closeKey(pos, fallback: symbol)) }
 
     func start() async {
         loop?.cancel()
@@ -155,13 +235,14 @@ final class FuturesModel: ObservableObject {
         await refreshAccount()
         if priceText.isEmpty, last > 0 { priceText = Dec.plain(last, pricePrec) }
         syncMarkSubs()
+        subscribeQuotes()
         await loadTodayPnl()
         loop = Task { [weak self] in
             var n = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self else { return }
-                self.now = Date(); n += 1
+                n += 1
                 if n % 3 == 0 { await self.refreshMarket() }
                 if n % 6 == 0 { await self.refreshAccount(); self.syncMarkSubs() }
                 if n % 30 == 0 { await self.loadTodayPnl(silent: true) }
@@ -171,8 +252,42 @@ final class FuturesModel: ObservableObject {
     /// 离开页面：停止轮询并退订全部 mark:<symbol>
     func stop() {
         loop?.cancel(); loop = nil
+        quoteFlush?.cancel(); quoteFlush = nil
         for s in markSubs.values { s.cancel() }
         markSubs = [:]
+        for s in quoteSubs { s.cancel() }
+        quoteSubs = []
+    }
+
+    /// 最新价来自 futures-trades / futures-ticker。成交帧往往没有涨跌幅字段，只更新价格。
+    func subscribeQuotes() {
+        for s in quoteSubs { s.cancel() }
+        quoteSubs = []
+        let sym = symbol
+        quoteSubs.append(MarketSocket.shared.subscribe("futures-trades:\(sym)") { [weak self] frame in
+            guard let px = TapePrice.decode(frame.data)?.price, Dec.parse(px) > 0 else { return }
+            Task { @MainActor in self?.noteTradeLast(Dec.parse(px)) }
+        })
+        quoteSubs.append(MarketSocket.shared.subscribe("futures-ticker:\(sym)") { [weak self] frame in
+            guard let t = TapePrice.decode(frame.data) else { return }
+            let px = Dec.parse(t.lastPrice ?? t.price)
+            Task { @MainActor in
+                guard let self, px > 0 else { return }
+                self.noteTradeLast(px)
+            }
+        })
+    }
+
+    func noteTradeLast(_ v: Decimal) {
+        guard v > 0 else { return }
+        pendingLast = v
+        guard quoteFlush == nil else { return }
+        quoteFlush = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard let self else { return }
+            if let p = self.pendingLast { self.tradeLast = p }
+            self.quoteFlush = nil
+        }
     }
 
     /// 订阅当前合约 + 持仓合约的 mark:<symbol>，退订不再需要的
@@ -201,7 +316,7 @@ final class FuturesModel: ObservableObject {
     }
 
     func switchSymbol(_ s: String) async {
-        stop(); symbol = s; priceText = ""; costText = ""; percent = 0; ticker = nil; book = OrderBook()
+        stop(); symbol = s; priceText = ""; costText = ""; percent = 0; ticker = nil; book = OrderBook(); tradeLast = 0
         await start()
     }
 
@@ -256,15 +371,35 @@ final class FuturesModel: ObservableObject {
     func setPercent(_ v: Double) {
         percent = v
         guard isOpen else { return }
-        costText = v == 0 ? "" : Dec.plain(available * Decimal(v), 2)
+        if v == 0 { costText = ""; return }
+        switch orderUnit {
+        case .cost: costText = Dec.plain(available * Decimal(v), 2)
+        case .value: costText = Dec.plain(available * lev * Decimal(v), 2)
+        case .qty: costText = Dec.plain(maxOpenQty * Decimal(v), qtyPrec)
+        }
+    }
+
+    /// 切换单位时按当前价格和杠杆换算，仓位大小保持不变。
+    func setOrderUnit(_ next: FuturesOrderUnit) {
+        guard next != orderUnit else { return }
+        if isOpen, orderPrice > 0, typed > 0 {
+            let q = qty
+            switch next {
+            case .qty: costText = Dec.plain(q, qtyPrec)
+            case .cost: costText = Dec.plain(q * orderPrice / lev, 2)
+            case .value: costText = Dec.plain(q * orderPrice, 2)
+            }
+        }
+        orderUnit = next
+        percent = 0
     }
 
     var validation: String? {
         if kind == .plan, Dec.parse(triggerText) <= 0 { return "请输入触发价" }
         if kind != .market, !(kind == .plan && planMarket), Dec.parse(priceText) <= 0 { return "请输入价格" }
-        if isOpen && cost <= 0 { return "请输入成本" }
+        if isOpen && typed <= 0 { return "请输入\(orderUnit.fieldLabel)" }
         if qty <= 0 || (minQty > 0 && qty < minQty) { return "数量低于最小下单量 \(Dec.plain(minQty, qtyPrec)) \(base)" }
-        if isOpen && cost > available { return "可用保证金不足" }
+        if isOpen && margin > available { return "可用保证金不足" }
         if !isOpen && closeTarget == nil { return "当前无持仓可平" }
         return nil
     }
@@ -389,12 +524,84 @@ final class FuturesModel: ObservableObject {
         }
     }
 
-    func close(_ pos: APIFuturesPosition) async {
-        do { try await FuturesAPI.close(pos.symbol ?? symbol, positionSide: Self.side(of: pos)); ToastCenter.shared.show("已提交市价平仓", .success); await refreshAccount() }
-        catch { ToastCenter.shared.error(error) }
+    struct CloseOutcome {
+        var symbol: String
+        var text: String
+        /// 持仓数量比提交前减少。全部平掉也是 true。
+        var reduced: Bool
     }
-    func closeAll() async {
-        for p in shownPositions { await close(p) }
+
+    func close(_ pos: APIFuturesPosition) async -> CloseOutcome {
+        let sym = pos.symbol ?? symbol
+        let key = Self.closeKey(pos, fallback: symbol)
+        if closingKeys.contains(key) {
+            return CloseOutcome(symbol: sym, text: "\(sym) 平仓正在处理", reduced: false)
+        }
+        closingKeys.insert(key)
+        defer { closingKeys.remove(key) }
+        let before = abs(Dec.parse(pos.qty))
+        do {
+            let resp = try await FuturesAPI.close(sym, positionSide: Self.side(of: pos))
+            await refreshAccount()
+            return Self.outcome(sym, before: before, after: qtyLeft(sym, Self.side(of: pos)), order: resp.order)
+        } catch {
+            await refreshAccount()
+            let after = qtyLeft(sym, Self.side(of: pos))
+            if after < before {
+                let left = after == 0 ? "已平仓" : "剩余 \(Dec.plain(after, qtyPrec))"
+                return CloseOutcome(symbol: sym, text: "\(sym) \(left)。请求结果未确认：\(error.lbMessage)", reduced: true)
+            }
+            return CloseOutcome(symbol: sym, text: "\(sym) 平仓失败：\(error.lbMessage)", reduced: false)
+        }
+    }
+
+    func closeAll() async -> [CloseOutcome] {
+        if closingAll { return [] }
+        closingAll = true
+        defer { closingAll = false }
+        var out: [CloseOutcome] = []
+        for p in shownPositions { out.append(await close(p)) }
+        return out
+    }
+
+    private func qtyLeft(_ sym: String, _ side: String?) -> Decimal {
+        let row = positions.first { ($0.symbol ?? "") == sym && Self.side(of: $0) == side }
+        return abs(Dec.parse(row?.qty))
+    }
+
+    /// 以刷新后的持仓数量判断成交，不用「接口返回 200」代替平仓完成。
+    static func outcome(_ sym: String, before: Decimal, after: Decimal, order: APIFuturesOrder?) -> CloseOutcome {
+        let status = order?.status ?? ""
+        let filled = Dec.parse(order?.filledQty)
+        let why = cancelText(order?.cancelReason)
+        if after == 0 && before > 0 {
+            return CloseOutcome(symbol: sym, text: "\(sym) 已全部成交", reduced: true)
+        }
+        if after < before {
+            return CloseOutcome(symbol: sym, text: "\(sym) 部分成交，剩余 \(Dec.plain(after, 8))。\(status == "canceled" ? why : "委托状态 \(status)")", reduced: true)
+        }
+        switch status {
+        case "new", "partially_filled":
+            return CloseOutcome(symbol: sym, text: "\(sym) 委托已受理，持仓尚未减少", reduced: false)
+        case "canceled":
+            return CloseOutcome(symbol: sym, text: "\(sym) 平仓未成交：\(why)", reduced: false)
+        case "filled":
+            if filled > 0 { return CloseOutcome(symbol: sym, text: "\(sym) 回报已成交，持仓仍在，请再看一次仓位", reduced: false) }
+            fallthrough
+        default:
+            return CloseOutcome(symbol: sym, text: "\(sym) 平仓没有减少持仓", reduced: false)
+        }
+    }
+
+    static func cancelText(_ reason: String?) -> String {
+        switch reason {
+        case "no_liquidity": return "盘口没有足够对手单"
+        case "price_band": return "对手价偏离标记价超过保护范围"
+        case "reduce_only": return "没有可减的仓位"
+        case "self_trade_prevention": return "对手单是自己的挂单"
+        case nil, "": return "未成交"
+        default: return reason ?? "未成交"
+        }
     }
     func cancel(_ o: APIFuturesOrder) async {
         guard let id = o.orderId else { return }

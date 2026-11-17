@@ -15,6 +15,7 @@ struct HomeView: View {
     @State private var bannerPage = 0
     @State private var earnPage = 0
     @State private var moreSheet = false
+    @State private var tradfi: [HomeTradFi] = []
     @State private var scanning = false
     @State private var article: Article?
     @State private var showAllAnnouncements = false
@@ -30,7 +31,7 @@ struct HomeView: View {
                     if session.isLoggedIn {
                         assetHeader.padding(.top, 14)
                         taskCard.padding(.top, 18)
-                        redPacket.padding(.top, 12)
+                        if vm.promo != nil { redPacket.padding(.top, 12) }
                     } else {
                         guestHero.padding(.top, 28)
                     }
@@ -49,7 +50,7 @@ struct HomeView: View {
         }
         .background(p.bg)
         .task { await NotifCenter.shared.refresh() }
-        .task { await vm.load(); if store.spot.isEmpty { await store.load() } }
+        .task { await vm.load(); if store.spot.isEmpty { await store.load() }; await loadTradFi() }
         .lbSheet($moreSheet) { HomeMoreSheet { moreSheet = false } }
         .fullScreenCover(isPresented: $scanning) {
             CodeScanner(onCode: { code in scanning = false; handleScan(code) }, onClose: { scanning = false })
@@ -167,8 +168,8 @@ struct HomeView: View {
     private var redPacket: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
-                Text(vm.promo?.title ?? "全员红包雨火爆来袭").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                Text(vm.promo?.subtitle ?? "每日登入领红包，各种福利领不停").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                Text(vm.promo?.title ?? "").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
+                Text(vm.promo?.subtitle ?? "").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
             }
             Spacer()
             IconView(icon: .gGift, size: 40)
@@ -320,17 +321,38 @@ struct HomeView: View {
             // 对照图 #2：分隔线到 Tab 文字顶 23pt；Tab 间距 18pt、选中项下 16×3 横线；横线到筛选块 19pt
             PrimaryTabs(items: ["自选", "热门", "涨幅榜", "跌幅榜", "成交额榜"], selected: $rankTab, size: 16, underline: true, spacing: 17)
                 .padding(.horizontal, Spacing.pageH).padding(.top, 16)
-            ChipBar(items: ["现货", "合约"], selected: $rankKind).padding(.top, 19).padding(.bottom, 12)
+            ChipBar(items: ["现货", "合约", "TradFi"], selected: $rankKind).padding(.top, 19).padding(.bottom, 12)
             HStack {
                 Text("交易对"); Spacer(); Text("最新价")
                 Text("涨跌幅").frame(width: Metrics.changeBadgeW + 12, alignment: .trailing)
             }
             .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
             .padding(.horizontal, Spacing.pageH).frame(height: 24)
-            let rows = vm.ranking(rankTab, kind: rankKind == 0 ? .spot : .futures, store: store, watch: watch)
-            if rows.isEmpty { EmptyStateView(text: rankTab == 0 ? "暂无自选" : "暂无数据").frame(height: 160) }
-            ForEach(rows) { MarketRowView(row: $0, showIcon: false, compactPair: true) }
-            moreLink(onOpenMarkets)
+            if rankKind == 2 {
+                let rows = tradfiRows
+                if rows.isEmpty { EmptyStateView(text: rankTab == 0 ? "暂无自选" : "暂无 TradFi").frame(height: 160) }
+                ForEach(rows) { row in
+                    Button {
+                        if row.market == "futures" { Router.shared.tradeFutures(row.symbol) } else { Router.shared.trade(row.symbol) }
+                    } label: {
+                        HStack(spacing: 10) {
+                            CoinIcon(base: row.asset, size: 32)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(row.symbol).font(.lb(FontSize.symbol, .medium)).foregroundColor(p.textPrimary)
+                                Text(row.name).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Text(row.last.isEmpty ? "--" : row.last).font(.lbNum(FontSize.symbol, .medium)).foregroundColor(p.textPrimary)
+                            Text("--").font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary).frame(width: Metrics.changeBadgeW + 12, alignment: .trailing)
+                        }.padding(.horizontal, Spacing.pageH).frame(height: Metrics.marketRowH)
+                    }.buttonStyle(.plain)
+                }
+            } else {
+                let rows = vm.ranking(rankTab, kind: rankKind == 0 ? .spot : .futures, store: store, watch: watch)
+                if rows.isEmpty { EmptyStateView(text: rankTab == 0 ? "暂无自选" : "暂无数据").frame(height: 160) }
+                ForEach(rows) { MarketRowView(row: $0, compactPair: true, marketFutures: rankKind == 1) }
+            }
+            moreLink(rankKind == 2 ? { Router.shared.openFeature(.tradfi) } : onOpenMarkets)
         }
     }
 
@@ -418,6 +440,19 @@ struct HomeView: View {
         }
     }
 
+    private var tradfiRows: [HomeTradFi] {
+        let rows = rankTab == 0 ? tradfi.filter { watch.contains($0.symbol) } : tradfi
+        return rows
+    }
+
+    private func loadTradFi() async {
+        guard let items = try? await TradFiAPI.assets(nil).items else { return }
+        tradfi = items.compactMap { j in
+            guard let asset = j["asset"].s, let symbol = j["symbol"].s else { return nil }
+            return HomeTradFi(asset: asset, name: j["name"].s ?? j["underlying"].s ?? asset, symbol: symbol, market: j["market"].s ?? "spot", last: j["lastPrice"].s ?? "")
+        }
+    }
+
     private func moreLink(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 2) {
@@ -476,33 +511,81 @@ enum HomeLink {
     }
 }
 
-/// 首页“更多”：与安卓全部功能一致的 7 项。
+private struct HomeTradFi: Identifiable {
+    var asset: String
+    var name: String
+    var symbol: String
+    var market: String
+    var last: String
+    var id: String { symbol }
+}
+
+/// 首页“更多”：只列出已经能打开的功能。充值返现没有活动接口，不放入口。
 struct HomeMoreSheet: View {
     @Environment(\.palette) private var p
     let onClose: () -> Void
-    private let items: [(String, FeaturePage)] = [
-        ("福利中心", .welfare), ("跟单交易", .copyTrading), ("消息通知", .notifications),
-        ("卡券中心", .coupons), ("合伙人计划", .partner), ("TradFi", .tradfi), ("我的工单", .support),
+    @State private var showAbout = false
+    private let sections: [(String, [(String, ServiceDest)])] = [
+        ("常用功能", [("邀请好友", .feature(.partner)), ("福利中心", .feature(.welfare)), ("聊天室", .feature(.chat)), ("帮助中心", .feature(.support)), ("身份认证", .feature(.kyc))]),
+        ("交易", [("合约交易", .tab(.futures)), ("现货交易", .tab(.spot)), ("跟单", .feature(.copyTrading)), ("策略交易", .spot(1)), ("理财", .spot(2)), ("TradFi", .feature(.tradfi))]),
+        ("资产", [("充值", .deposit), ("提现", .withdraw), ("划转", .transfer)]),
+        ("其它", [("关于", .about), ("消息通知", .feature(.notifications))]),
     ]
     var body: some View {
-        LBSheet(title: "全部功能", showClose: true, onClose: onClose) {
-            VStack(spacing: 10) {
-                ForEach(items, id: \.0) { title, page in
-                    Button {
-                        onClose()
-                        Router.shared.openFeature(page)
-                    } label: {
-                        HStack {
-                            Text(title).font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(p.textTertiary)
+        LBSheet(title: "全部服务", showClose: true, onClose: onClose) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(sections, id: \.0) { title, items in
+                        Text(title).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                            ForEach(items, id: \.0) { name, dest in
+                                Button {
+                                    if dest == .about { showAbout = true } else { onClose(); dest.open() }
+                                } label: {
+                                    Text(name).font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                                        .frame(maxWidth: .infinity).frame(height: 40)
+                                        .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                                }.buttonStyle(.plain)
+                            }
                         }
-                        .padding(16)
-                        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
-                    }.buttonStyle(PressableStyle())
-                }
-            }.padding(.horizontal, Spacing.pageH)
+                    }
+                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 20)
+            }.frame(maxHeight: 520)
         }
+        .sheet(isPresented: $showAbout) { AboutView() }
+    }
+}
+
+private enum ServiceDest: Equatable {
+    case feature(FeaturePage), tab(MainTab), spot(Int), deposit, withdraw, transfer, about
+    @MainActor func open() {
+        switch self {
+        case let .feature(p): Router.shared.openFeature(p)
+        case let .tab(t): Router.shared.tab = t
+        case let .spot(i): Router.shared.openSpotTab(i)
+        case .deposit: Router.shared.open(.deposit(nil))
+        case .withdraw: Router.shared.open(.withdraw(nil))
+        case .transfer: Router.shared.open(.transfer)
+        case .about: break
+        }
+    }
+}
+
+struct AboutView: View {
+    @Environment(\.palette) private var p
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(spacing: 0) {
+            NavBar(title: "关于", onBack: { dismiss() })
+            VStack(spacing: 8) {
+                Text("Linbit").font(.lb(22, .bold)).foregroundColor(p.textPrimary).padding(.top, 40)
+                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                    .font(.lb(FontSize.body)).foregroundColor(p.textSecondary)
+                Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")")
+                    .font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
+            }
+            Spacer()
+        }.background(p.bg.ignoresSafeArea())
     }
 }
 

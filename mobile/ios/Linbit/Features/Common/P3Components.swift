@@ -159,7 +159,7 @@ struct FeatureHost: View {
         case .strategy: StrategyView()
         case .gridCreate: GridCreateView(copy: nil) { _ in Task { @MainActor in Router.shared.feature = nil } }
         case .swap: if flags.isOn("convert") { SwapView() } else { FeatureShell(title: "闪兑") { ComingSoonView(title: "闪兑") } }
-        case .chat: ChatRoomView()
+        case .chat: ChatDirectoryView()
         case .subAccounts: if flags.isOn("subAccounts") { SubAccountsView() } else { FeatureShell(title: "子账户") { ComingSoonView(title: "子账户") } }
         case .welfare: FeatureShell(title: "福利中心") { NewcomerView() }
         case .copyTrading: CopyTradingView(onBack: { Task { @MainActor in Router.shared.feature = nil } })

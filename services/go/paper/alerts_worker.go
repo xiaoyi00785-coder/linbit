@@ -92,7 +92,8 @@ func (s *Server) evaluateOne(ctx context.Context, alertID, userID, thresholdText
 	var status, persistedThreshold, persistedCondition string
 	var enabled bool
 	var previous sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT evaluation_epoch,status,enabled,threshold::text,condition,last_observed_price::text FROM price_alerts WHERE alert_id=$1 AND user_id=$2 FOR UPDATE`, alertID, userID).Scan(&epoch, &status, &enabled, &persistedThreshold, &persistedCondition, &previous)
+	var mode string
+	err = tx.QueryRowContext(ctx, `SELECT evaluation_epoch,status,enabled,threshold::text,condition,last_observed_price::text,trigger_mode FROM price_alerts WHERE alert_id=$1 AND user_id=$2 FOR UPDATE`, alertID, userID).Scan(&epoch, &status, &enabled, &persistedThreshold, &persistedCondition, &previous, &mode)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -127,12 +128,25 @@ func (s *Server) evaluateOne(ctx context.Context, alertID, userID, thresholdText
 		return err
 	}
 	if blocked || (ownCooldown.Valid && now.Before(ownCooldown.Time)) {
+		// daily/repeat keep the cooldown that was set at the last trigger. Extending it
+		// while the price is still past the threshold would stop them from firing again.
+		if !blocked && mode != "once" && ownCooldown.Valid && now.Before(ownCooldown.Time) {
+			if _, err := tx.ExecContext(ctx, `UPDATE price_alerts SET last_evaluated_at=$2 WHERE alert_id=$1 AND evaluation_epoch=$3`, alertID, now, epoch); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE price_alerts SET last_evaluated_at=$2,cooldown_until=$3 WHERE alert_id=$1 AND evaluation_epoch=$4`, alertID, now, now.Add(s.cfg.AlertCooldown), epoch); err != nil {
 			return err
 		}
 		return tx.Commit()
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE price_alerts SET status='triggering',enabled=false,last_observed_price=$2,last_evaluated_at=$3,triggered_price=$2,triggered_at=$3,delivery_status='pending',cooldown_until=$4,revision=revision+1,updated_at=$3 WHERE alert_id=$1 AND evaluation_epoch=$5 AND status='active' AND enabled=true`, alertID, quote.Price.String(), now, now.Add(s.cfg.AlertCooldown), epoch)
+	until := now.Add(s.cfg.AlertCooldown)
+	if mode == "daily" {
+		next := now.UTC().Add(24 * time.Hour)
+		until = time.Date(next.Year(), next.Month(), next.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE price_alerts SET status='triggering',enabled=false,last_observed_price=$2,last_evaluated_at=$3,triggered_price=$2,triggered_at=$3,delivery_status='pending',cooldown_until=$4,revision=revision+1,updated_at=$3 WHERE alert_id=$1 AND evaluation_epoch=$5 AND status='active' AND enabled=true`, alertID, quote.Price.String(), now, until, epoch)
 	if err != nil {
 		return err
 	}
@@ -237,9 +251,9 @@ func (s *Server) deliverAlerts(ctx context.Context) error {
 		}
 		var state string
 		var currentEpoch int64
-		var status string
+		var status, mode string
 		var enabledFlag bool
-		err = tx.QueryRowContext(ctx, `SELECT o.state,a.evaluation_epoch,a.status,a.enabled FROM price_alert_outbox o JOIN price_alerts a ON a.alert_id=o.alert_id AND a.evaluation_epoch=$2 WHERE o.alert_id=$1 AND o.evaluation_epoch=$2 FOR UPDATE OF o,a`, j.id, j.epoch).Scan(&state, &currentEpoch, &status, &enabledFlag)
+		err = tx.QueryRowContext(ctx, `SELECT o.state,a.evaluation_epoch,a.status,a.enabled,a.trigger_mode FROM price_alert_outbox o JOIN price_alerts a ON a.alert_id=o.alert_id AND a.evaluation_epoch=$2 WHERE o.alert_id=$1 AND o.evaluation_epoch=$2 FOR UPDATE OF o,a`, j.id, j.epoch).Scan(&state, &currentEpoch, &status, &enabledFlag, &mode)
 		if err == sql.ErrNoRows {
 			tx.Rollback()
 			continue
@@ -286,6 +300,14 @@ func (s *Server) deliverAlerts(ctx context.Context) error {
 			if _, err := tx.ExecContext(ctx, `UPDATE price_alerts SET delivery_status='delivered_in_app',notification_id=$3,updated_at=now() WHERE alert_id=$1 AND evaluation_epoch=$2`, j.id, j.epoch, id); err != nil {
 				tx.Rollback()
 				return err
+			}
+			if mode == "daily" || mode == "repeat" {
+				// New epoch so the next crossing can write another outbox row. last_observed_price
+				// is cleared so the condition can match again after cooldown_until.
+				if _, err := tx.ExecContext(ctx, `UPDATE price_alerts SET status='active',enabled=true,evaluation_epoch=evaluation_epoch+1,delivery_status='none',last_observed_price=NULL,updated_at=now() WHERE alert_id=$1 AND evaluation_epoch=$2`, j.id, j.epoch); err != nil {
+					tx.Rollback()
+					return err
+				}
 			}
 		}
 		if err := tx.Commit(); err != nil {

@@ -52,8 +52,9 @@ enum SpotAPI {
 
 enum AssetsAPI {
     static var api: APIClient { .shared }
-    static func balances() async throws -> [APIBalance] {
-        let r: APIPaginatedBalances = try await api.get("/assets/balances", query: ["pageSize": "200"], auth: true)
+    /// account 为 spot 或 funding。不传时服务端按现货余额返回。
+    static func balances(account: String = "spot") async throws -> [APIBalance] {
+        let r: APIPaginatedBalances = try await api.get("/assets/balances", query: ["pageSize": "200", "account": account], auth: true)
         return r.items
     }
     static func depositAddress(asset: String, network: String) async throws -> APIDepositAddress {

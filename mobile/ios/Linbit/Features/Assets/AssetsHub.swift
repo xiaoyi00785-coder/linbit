@@ -31,10 +31,35 @@ extension AssetsAPI {
 }
 
 enum AssetAccount: String, CaseIterable, Identifiable {
-    case funding, spot, futures
+    case funding, spot, futures, earn, sub
     var id: String { rawValue }
-    var title: String { switch self { case .funding: "资金账户"; case .spot: "现货账户"; case .futures: "合约账户" } }
-    var icon: String { switch self { case .funding: "wallet.pass.fill"; case .spot: "chart.bar.fill"; case .futures: "chart.line.uptrend.xyaxis" } }
+    var title: String {
+        switch self {
+        case .funding: return "资金账户"
+        case .spot: return "现货账户"
+        case .futures: return "合约账户"
+        case .earn: return "理财账户"
+        case .sub: return "子账户"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .funding: return "wallet.pass.fill"
+        case .spot: return "chart.bar.fill"
+        case .futures: return "chart.line.uptrend.xyaxis"
+        case .earn: return "leaf.fill"
+        case .sub: return "person.2.fill"
+        }
+    }
+    /// 划转接口只接受 funding、spot、futures。理财和子账户要留在选择面板里，并说明为什么不能提交。
+    var transferID: String? { self == .funding || self == .spot || self == .futures ? rawValue : nil }
+    var transferBlock: String? {
+        switch self {
+        case .earn: return "理财是按产品持仓并计息，不支持直接划转，请使用申购或赎回"
+        case .sub: return "子账户不是资金、现货或合约钱包，不能在这个表单里划转"
+        default: return nil
+        }
+    }
     static func title(_ raw: String?) -> String { raw.flatMap(AssetAccount.init(rawValue:))?.title ?? (raw ?? "--") }
 }
 
@@ -395,16 +420,20 @@ struct AccountTransferView: View {
     @State private var page = 1
     @State private var hasMore = false
 
-    private var available: Decimal {
+    private var available: Decimal? {
+        guard from.transferID != nil, overview != nil else { return nil }
         let acc = overview?.accounts?.first { $0.account?.rawValue == from.rawValue }
-        return Dec.parse(acc?.balances?.first { $0.asset == asset }?.free)
+        guard let free = acc?.balances?.first(where: { $0.asset == asset })?.free, !free.isEmpty else { return nil }
+        return Dec.parse(free)
     }
     private var validation: String? {
+        if let reason = from.transferBlock ?? to.transferBlock { return reason }
         if from == to { return "转出与转入账户不能相同" }
-        if (from == .futures || to == .futures) && asset != "USDT" { return "合约账户仅支持 USDT 划转" }
+        if (from == .futures || to == .futures) && asset != "USDT" { return "合约账户仅支持 USDT" }
         let a = Dec.parse(amount)
         if a <= 0 { return "请输入划转数量" }
-        if overview != nil && a > available { return "可用余额不足" }
+        if let available, a > available { return "可用余额不足" }
+        if overview != nil && available == nil { return "没有读到\(from.title)的 \(asset) 可用余额" }
         return nil
     }
 
@@ -420,9 +449,10 @@ struct AccountTransferView: View {
                             .overlay(alignment: .trailing) {
                                 Button("全部") { amount = "\(available)" }.font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary).padding(.trailing, 60)
                             }
-                        Text("可用 \(Fmt.amount(available, 8)) \(asset)").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                        Text("可用 \(available.map { Fmt.amount($0, 8) } ?? "--") \(asset)").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                     }
-                    if from == .futures || to == .futures { InlineBanner(text: "合约账户仅支持 USDT；理财不属于划转账户，请使用申购 / 赎回") }
+                    if let reason = from.transferBlock ?? to.transferBlock { InlineBanner(text: reason) }
+                    else if from == .futures || to == .futures { InlineBanner(text: "合约账户仅支持 USDT") }
                     LBButton(title: "确认划转", enabled: session.isLoggedIn ? validation == nil : true, loading: submitting) { submit() }
                     if let v = validation, !amount.isEmpty { Text(v).font(.lb(FontSize.small)).foregroundColor(p.down) }
                     history
@@ -435,9 +465,10 @@ struct AccountTransferView: View {
             LBSheet(title: picking == 0 ? "转出账户" : "转入账户", onClose: { picking = nil }) {
                 VStack(spacing: 0) {
                     ForEach(AssetAccount.allCases) { a in
-                        SheetOptionRow(title: a.title, selected: (picking == 0 ? from : to) == a) {
+                        SheetOptionRow(title: a.title, subtitle: a.transferBlock, selected: (picking == 0 ? from : to) == a) {
                             if picking == 0 { if a == to { to = from }; from = a } else { if a == from { from = to }; to = a }
-                            if a == .futures { asset = "USDT" }
+                            amount = ""
+                            if from == .futures || to == .futures { asset = "USDT" }
                             picking = nil
                         }
                     }
@@ -454,7 +485,7 @@ struct AccountTransferView: View {
                 Divider().overlay(p.divider)
                 row("到", to) { picking = 1 }
             }
-            Button { Haptics.tap(); (from, to) = (to, from) } label: {
+            Button { Haptics.tap(); (from, to) = (to, from); amount = ""; if from == .futures || to == .futures { asset = "USDT" } } label: {
                 Image(systemName: "arrow.up.arrow.down").font(.system(size: 14, weight: .semibold)).foregroundColor(p.textPrimary)
                     .frame(width: 36, height: 36).background(Circle().fill(p.bgElevated)).overlay(Circle().stroke(p.border))
             }.accessibilityLabel("交换账户")
@@ -506,7 +537,7 @@ struct AccountTransferView: View {
     private func submit() {
         session.requireLogin {
             if let v = validation { ToastCenter.shared.show(v, .error); return }
-            guard let f = APITransferRequest.APIFrom(rawValue: from.rawValue), let t = APITransferRequest.APITo(rawValue: to.rawValue) else { return }
+            guard let f = from.transferID.flatMap(APITransferRequest.APIFrom.init(rawValue:)), let t = to.transferID.flatMap(APITransferRequest.APITo.init(rawValue:)) else { return }
             submitting = true
             Task {
                 defer { submitting = false }

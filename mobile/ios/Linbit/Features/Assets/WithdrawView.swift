@@ -61,6 +61,7 @@ struct WithdrawView: View {
     @State private var memo = ""
     @State private var amount = ""
     @State private var available: Decimal?
+    @State private var balanceNote: String?
     @State private var withdrawAccount = "funding"
     @State private var security: APISecurityOverview?
     @State private var showAsset = false
@@ -134,7 +135,7 @@ struct WithdrawView: View {
         .task(id: "\(session.isLoggedIn)-\(asset)") { await load() }
         .lbSheet($showAsset) {
             AssetPickSheet(current: asset) { a in
-                if a != asset { asset = a; nets = .idle; net = nil; recommended = []; available = nil; memo = ""; amount = "" }
+                if a != asset { asset = a; nets = .idle; net = nil; recommended = []; available = nil; balanceNote = nil; memo = ""; amount = "" }
                 showAsset = false
             } onClose: { showAsset = false }
         }
@@ -225,10 +226,12 @@ struct WithdrawView: View {
                         Button("全部") { if let av = available, av > 0 { amount = "\(av)" } }
                             .font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary).padding(.trailing, 60)
                     }
-                HStack {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("\(AssetAccount.title(withdrawAccount))可用 \(available.map { Fmt.amount($0, 8) } ?? "--") \(asset)")
                         .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                    Spacer()
+                    if let balanceNote {
+                        Text(balanceNote).font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    }
                 }
                 if let e = amountError { Text(e).font(.lb(FontSize.small)).foregroundColor(p.down) }
             }
@@ -366,7 +369,27 @@ struct WithdrawView: View {
         if let o {
             withdrawAccount = o.withdrawAccount?.rawValue ?? "funding"
             let acc = o.accounts?.first { $0.account?.rawValue == withdrawAccount }
-            available = Dec.parse(acc?.balances?.first { $0.asset == a }?.free)
+            let row = acc?.balances?.first { $0.asset == a }
+            if let free = row?.free, !free.isEmpty {
+                available = Dec.parse(free)
+                let locked = Dec.parse(row?.locked)
+                let otherName = withdrawAccount == "funding" ? "现货" : "资金"
+                let other = o.accounts?.first { $0.account?.rawValue == (withdrawAccount == "funding" ? "spot" : "funding") }
+                let otherFree = Dec.parse(other?.balances?.first { $0.asset == a }?.free)
+                if locked > 0 {
+                    balanceNote = "冻结 \(Fmt.amount(locked, 8)) \(a)，可用按服务端 free 计算"
+                } else if available == 0, otherFree > 0 {
+                    balanceNote = "\(otherName)账户有 \(Fmt.amount(otherFree, 8)) \(a)。提现从\(AssetAccount.title(withdrawAccount))扣款，这里的可用是 0，不会把另一账户的余额当成可提现。"
+                } else {
+                    balanceNote = nil
+                }
+            } else {
+                available = nil
+                balanceNote = o.accounts == nil ? "资产总览没有返回账户余额" : "\(AssetAccount.title(withdrawAccount))没有返回 \(a) 的可用余额"
+            }
+        } else {
+            available = nil
+            balanceNote = "资产总览加载失败，可用余额未知"
         }
     }
 

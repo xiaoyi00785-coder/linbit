@@ -13,6 +13,8 @@ struct MarketsView: View {
     @State private var searching = false
     @State private var query = ""
     @State private var showMore = false
+    @State private var morePage = 0
+    @State private var showWidget = false
     @AppStorage("lb.market.logo") private var showLogo = true
     @AppStorage("lb.market.moreSeen") private var moreSeen = false
     @ObservedObject private var router = Router.shared
@@ -27,7 +29,7 @@ struct MarketsView: View {
                 switch top {
                 case 0: WatchlistTab(query: query)
                 case 1: marketTab
-                default: ChatRoomView(embedded: true)
+                default: ChatDirectoryView(embedded: true)
                 }
             }
         }
@@ -37,13 +39,24 @@ struct MarketsView: View {
             if on { searching = true; router.marketSearch = false }
         }
         .lbSheet($showMore) {
-            LBSheet(title: "图标设置", showClose: true, onClose: { showMore = false }) {
-                VStack(spacing: 0) {
-                    SheetOptionRow(title: "有 Logo", selected: showLogo) { showLogo = true }
-                    SheetOptionRow(title: "无 Logo", selected: !showLogo) { showLogo = false }
-                }.padding(.bottom, 12)
+            if morePage == 0 {
+                LBSheet(title: "更多", showClose: true, onClose: { showMore = false }) {
+                    VStack(spacing: 0) {
+                        SheetOptionRow(title: "图标设置", selected: false) { morePage = 1 }
+                        SheetOptionRow(title: "小组件", selected: false) { showMore = false; showWidget = true }
+                    }.padding(.bottom, 12)
+                }
+            } else {
+                LBSheet(title: "图标设置", showClose: true, onClose: { morePage = 0 }) {
+                    VStack(spacing: 0) {
+                        SheetOptionRow(title: "有 Logo", selected: showLogo) { showLogo = true }
+                        SheetOptionRow(title: "无 Logo", selected: !showLogo) { showLogo = false }
+                    }.padding(.bottom, 12)
+                }
             }
         }
+        .onChange(of: showMore) { if !$0 { morePage = 0 } }
+        .fullScreenCover(isPresented: $showWidget) { WidgetBoardView() }
     }
 
     private var header: some View {
@@ -89,7 +102,7 @@ struct MarketsView: View {
                         if rows.isEmpty {
                             if store.loading { ProgressView().padding(40) } else { EmptyStateView() }
                         }
-                        ForEach(rows) { MarketRowView(row: $0) }
+                        ForEach(rows) { MarketRowView(row: $0, marketFutures: kind == 1) }
                     }
                     .padding(.bottom, Metrics.tabBarH + 30)
                 }
@@ -132,7 +145,9 @@ struct WatchlistTab: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if all.isEmpty { EmptyStateView(text: "暂无自选") }
-                        ForEach(all.sorted(by: field, dir)) { MarketRowView(row: $0) }
+                        ForEach(all.sorted(by: field, dir)) { row in
+                            MarketRowView(row: row, marketFutures: kind == 2 || ((kind == 0 || kind == 3) && !store.spot.contains { $0.symbol == row.symbol } && store.futures.contains { $0.symbol == row.symbol }))
+                        }
                     }
                 }
             }
@@ -219,7 +234,7 @@ struct MarketSearchPage: View {
                             .padding(.horizontal, Spacing.pageH).padding(.bottom, 4)
                     }
                     if rows.isEmpty { EmptyStateView(text: store.loading ? "加载中" : "无匹配交易对") }
-                    ForEach(rows) { MarketRowView(row: $0, showsStar: true) }
+                    ForEach(rows) { MarketRowView(row: $0, showsStar: true, marketFutures: kind == 1) }
                 }.padding(.bottom, Metrics.tabBarH + 30)
             }
         }
@@ -246,3 +261,82 @@ struct MarketSearchPage: View {
         tradfiBases = Set(items.compactMap { $0["asset"].s })
     }
 }
+
+/// 行情小组件。卡片数据来自 GET /market/widget，所选交易对保存在本机并作为 symbols 传给接口。
+struct WidgetBoardView: View {
+    @Environment(\.palette) private var p
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var store = MarketStore.shared
+    @AppStorage("lb.widget.symbols") private var saved = "BTCUSDT,ETHUSDT"
+    @State private var items: [WidgetQuote] = []
+    @State private var error: String?
+
+    private var symbols: [String] {
+        saved.split(separator: ",").map { String($0) }.filter { !$0.isEmpty }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            NavBar(title: "小组件", onBack: { dismiss() })
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
+                    VStack(spacing: 0) {
+                        if items.isEmpty { Text("暂无行情").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).frame(maxWidth: .infinity).padding(20) }
+                        ForEach(items) { q in
+                            HStack {
+                                Text(q.symbol).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                                Spacer()
+                                Text(q.lastPrice).font(.lbNum(FontSize.body)).foregroundColor(p.textPrimary)
+                                Text(Fmt.percent(Dec.parse(q.priceChangePercent))).font(.lbNum(FontSize.small))
+                                    .foregroundColor(Dec.parse(q.priceChangePercent) < 0 ? p.down : p.up)
+                                    .frame(width: 64, alignment: .trailing)
+                            }.padding(.horizontal, 16).frame(height: 48)
+                        }
+                    }
+                    .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
+                    Text("最多 4 个交易对。下面的选择会请求 /market/widget。")
+                        .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    let choices = Array(store.spot.prefix(16))
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(choices) { row in
+                            let on = symbols.contains(row.symbol)
+                            Text(row.base).font(.lb(FontSize.small, on ? .semibold : .regular)).foregroundColor(p.textPrimary)
+                                .frame(maxWidth: .infinity).frame(height: 36)
+                                .background(RoundedRectangle(cornerRadius: Radius.md).stroke(on ? p.textPrimary : p.border))
+                                .onTapGesture { toggle(row.symbol) }
+                        }
+                    }
+                }.padding(Spacing.pageH)
+            }
+        }
+        .background(p.bg.ignoresSafeArea())
+        .task { if store.spot.isEmpty { await store.load() }; await load() }
+        .onChange(of: saved) { _ in Task { await load() } }
+    }
+
+    private func toggle(_ symbol: String) {
+        var next = symbols
+        if let i = next.firstIndex(of: symbol) { next.remove(at: i) }
+        else if next.count >= 4 { ToastCenter.shared.show("最多 4 个"); return }
+        else { next.append(symbol) }
+        saved = next.joined(separator: ",")
+    }
+
+    private func load() async {
+        let q = symbols.joined(separator: ",")
+        do {
+            let r: WidgetResp = try await APIClient.shared.get("/market/widget", query: ["symbols": q.isEmpty ? nil : q])
+            items = r.items
+            error = nil
+        } catch { self.error = error.lbMessage }
+    }
+}
+
+private struct WidgetQuote: Decodable, Identifiable {
+    var symbol: String
+    var lastPrice: String
+    var priceChangePercent: String
+    var id: String { symbol }
+}
+private struct WidgetResp: Decodable { var items: [WidgetQuote] }

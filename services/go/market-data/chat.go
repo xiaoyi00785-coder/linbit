@@ -89,11 +89,12 @@ func mineFlag(author, requester string) *bool {
 }
 
 type chatRoom struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"` // general | spot | futures
-	Symbol string `json:"symbol,omitempty"`
-	Name   string `json:"name"`
-	Online int    `json:"online"`
+	ID       string `json:"id"`
+	Type     string `json:"type"` // general | spot | futures
+	Symbol   string `json:"symbol,omitempty"`
+	Name     string `json:"name"`
+	Online   int    `json:"online"`
+	FolderID *int64 `json:"folderId,omitempty"`
 }
 
 // Chat holds chat state on the market-data server.
@@ -568,6 +569,11 @@ func (s *Server) chatRoutes(mux *http.ServeMux) {
 	s.chat = c
 	s.hub.chatValidate = c.validChatChannel
 	mux.HandleFunc("GET /chat/rooms", c.hRooms)
+	mux.HandleFunc("GET /chat/joined", c.hJoined)
+	mux.HandleFunc("GET /chat/folders", c.hFolders)
+	mux.HandleFunc("POST /chat/folders", c.hCreateFolder)
+	mux.HandleFunc("POST /chat/rooms/{room}/join", c.hJoin)
+	mux.HandleFunc("DELETE /chat/rooms/{room}/join", c.hLeave)
 	mux.HandleFunc("GET /chat/rooms/{room}/messages", c.hMessages)
 	mux.HandleFunc("POST /chat/rooms/{room}/messages", c.hPost)
 	mux.HandleFunc("POST /chat/messages/{id}/report", c.hReport)

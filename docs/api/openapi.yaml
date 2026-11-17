@@ -2190,6 +2190,61 @@ paths:
                   close: "76771.90"
                   volume: "98.76"
 
+  /market/trades:
+    get:
+      tags: [Market]
+      summary: 近期公开成交（新到旧）
+      operationId: getMarketTrades
+      security: []
+      parameters:
+        - { name: symbol, in: query, required: true, schema: { type: string }, example: BTCUSDT }
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 50, minimum: 1, maximum: 1000 } }
+      responses:
+        "200":
+          description: 成交数组。time 为毫秒时间戳
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [tradeId, price, quantity, side, time]
+                  properties:
+                    tradeId: { type: string }
+                    price: { type: string }
+                    quantity: { type: string }
+                    side: { type: string, enum: [buy, sell] }
+                    time: { type: integer, format: int64 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /market/widget:
+    get:
+      tags: [Market]
+      summary: 桌面小组件行情，最多 4 个；不传 symbols 时按成交额取前 3
+      operationId: getMarketWidget
+      security: []
+      parameters:
+        - { name: symbols, in: query, required: false, schema: { type: string }, description: 逗号分隔，如 BTCUSDT,ETHUSDT }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 4
+                    items:
+                      type: object
+                      required: [symbol, lastPrice, priceChangePercent]
+                      properties:
+                        symbol: { type: string }
+                        lastPrice: { type: string }
+                        priceChangePercent: { type: string }
+
   /vip/application:
     get:
       tags: [VIP]
@@ -6786,6 +6841,76 @@ paths:
                   rooms: { type: array, items: { $ref: "#/components/schemas/ChatRoom" } }
                   rules: { $ref: "#/components/schemas/ChatRules" }
         "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /chat/joined:
+    get:
+      tags: [Chat]
+      summary: 已加入的群聊和分组
+      operationId: listJoinedChatRooms
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rooms: { type: array, items: { $ref: "#/components/schemas/ChatRoom" } }
+                  folders: { type: array, items: { type: object, required: [id, name], properties: { id: { type: integer, format: int64 }, name: { type: string } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /chat/folders:
+    get:
+      tags: [Chat]
+      summary: 我的聊天分组
+      operationId: listChatFolders
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, properties: { folders: { type: array, items: { type: object, required: [id, name], properties: { id: { type: integer, format: int64 }, name: { type: string } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Chat]
+      summary: 创建聊天分组
+      operationId: createChatFolder
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 20 } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [id, name], properties: { id: { type: integer, format: int64 }, name: { type: string } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: 同名分组已存在, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /chat/rooms/{room}/join:
+    parameters:
+      - { name: room, in: path, required: true, schema: { type: string, example: spot.BTCUSDT } }
+    post:
+      tags: [Chat]
+      summary: 加入群聊，可指定分组
+      operationId: joinChatRoom
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { folderId: { type: integer, format: int64 } } }
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Chat]
+      summary: 退出群聊
+      operationId: leaveChatRoom
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /chat/rooms/{room}/messages:
     parameters:
       - { name: room, in: path, required: true, schema: { type: string, example: spot.BTCUSDT } }
@@ -7633,6 +7758,35 @@ paths:
                   items: { type: array, items: { $ref: "#/components/schemas/TradFiAsset" } }
         "403": { description: FEATURE_DISABLED | REGION_RESTRICTED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "503": { description: SERVICE_UNAVAILABLE（风控门禁不可用，fail closed）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /tradfi/challenge:
+    get:
+      tags: [TradFi]
+      summary: TradFi 闯关关卡（公开目录，奖励未配置时不含金额）
+      operationId: getTradFiChallenge
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [title, rewardConfigured, levels]
+                properties:
+                  title: { type: string }
+                  rewardConfigured: { type: boolean }
+                  levels:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        level: { type: integer }
+                        asset: { type: string }
+                        name: { type: string }
+                        kind: { type: string }
+                        symbol: { type: string }
+                        market: { type: string }
+        "403": { description: FEATURE_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /admin/v1/tradfi/assets:
     get:
       tags: [Admin]
@@ -8505,7 +8659,7 @@ paths:
     post:
       tags:
       - Price Alerts
-      summary: 创建一次性 INDEX 跨价预警；只发站内信
+      summary: 创建 INDEX 跨价预警；triggerMode 为 once、daily 或 repeat；只发站内信
       operationId: createPriceAlert
       requestBody:
         required: true
@@ -8906,7 +9060,7 @@ components:
         condition: { type: string, enum: [gte, lte] }
         threshold: { type: string, example: "80000.00" }
         priceSource: { type: string, enum: [INDEX], default: INDEX }
-        triggerMode: { type: string, enum: [once], default: once }
+        triggerMode: { type: string, enum: [once, daily, repeat], default: once, description: once 触发后停止；daily 次日 0 点（UTC）后可再触发一次；repeat 冷却后若仍满足条件会再次触发 }
         channels: { type: array, minItems: 1, maxItems: 1, items: { type: string, enum: [in_app] }, default: [in_app] }
         enabled: { type: boolean, default: true }
         note: { type: string, maxLength: 120, default: "" }
@@ -8932,7 +9086,7 @@ components:
         condition: { type: string, enum: [gte, lte] }
         threshold: { type: string }
         priceSource: { type: string, enum: [INDEX] }
-        triggerMode: { type: string, enum: [once] }
+        triggerMode: { type: string, enum: [once, daily, repeat] }
         channels: { type: array, items: { type: string, enum: [in_app] } }
         enabled: { type: boolean }
         status: { type: string, enum: [active, triggered, disabled], description: 持久化短暂的 triggering 不对外操作；deleted 不在列表 }
@@ -11756,6 +11910,7 @@ components:
         symbol: { type: string, description: general 房间不返回 }
         name: { type: string, example: BTC/USDT 现货 }
         online: { type: integer }
+        folderId: { type: integer, format: int64, description: 仅已加入列表返回；未分组时省略 }
       required: [id, type, name, online]
     ChatRules:
       type: object
