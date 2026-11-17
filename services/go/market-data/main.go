@@ -94,11 +94,16 @@ func main() {
 	})
 	agg.SetUSDAnnotator(func(t tickerDTO) *usdQuoteDTO { return annotateUSD(t, readUSDCache()) })
 	agg.StartIndexSampler(ctx, cfg.IndexPoll)
+	ext := newExtFeed(cfg.BinanceURL, cfg.BinanceFAPIURL, cfg.OKXURL)
+	agg.ext = ext
+	go ext.run(ctx, symbols, hub)
+	go ext.stream(ctx, symbols, cfg.FuturesURL, hub)
 	if hasSource(cfg.IndexFeed, "binance") && common.Env("INDEX_BACKFILL", "true") == "true" {
 		go agg.BackfillIndex(ctx, cfg.BinanceURL)
 	}
 	log.Printf("index feed sources: %v (stale after %s)", cfg.IndexFeed, cfg.IndexStale)
 	srv := NewServer(cfg, store, agg, hub, ingest)
+	srv.ext = ext
 	srv.StartUSDRefresh(ctx)
 	srv.feed = feed
 	srv.tradfi = NewTradFi(db, feed, agg.LastPrice)

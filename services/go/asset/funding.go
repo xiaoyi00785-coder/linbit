@@ -338,6 +338,10 @@ func (s *Server) handleUnfreezeAcct(w http.ResponseWriter, r *http.Request) {
 	}
 	acct := req.Account
 	if acct == "" {
+		// freezeAccount looks up the account from freeze_accounts, which is
+		// populated at freeze time with the caller-supplied ref (no prefix).
+		// The wallet_ops idempotency guard now namespaces the stored ref by
+		// operation, so freeze and unfreeze do not collide.
 		a, err := s.store.freezeAccount(r.Context(), req.Ref)
 		if err != nil {
 			writeMoveResult(w, "unfreeze", err)

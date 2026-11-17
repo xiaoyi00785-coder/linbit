@@ -223,6 +223,10 @@ enum EarnAPI {
     }
     static func summary() async throws -> APIEarnSummary200Response { try await api.get("/earn/summary", auth: true) }
     static func positions() async throws -> APIEarnPositions200Response { try await api.get("/earn/positions", auth: true) }
+    static func orders() async throws -> [APIEarnOrders200ResponseItemsInner] {
+        let r: APIEarnOrders200Response = try await api.get("/earn/orders", auth: true)
+        return r.items ?? []
+    }
     static func subscribe(_ id: String, amount: String) async throws -> APIEarnSubscribe200Response {
         try await api.post("/earn/products/\(id)/subscribe", body: Subscribe(amount: amount))
     }

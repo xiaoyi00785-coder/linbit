@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import os, subprocess
+os.chdir("/opt/linbit")
+subprocess.check_call(["tar", "xzf", "/tmp/linbit-stream2.tgz"])
+print("EXTRACT_OK")
+base = ["docker", "compose", "-p", "linbit", "-f", "docker-compose.yml", "-f", "docker-compose.override.yml", "-f", "deploy/mainnet/docker-compose.mainnet.yml", "--env-file", ".env"]
+subprocess.check_call(base + ["build", "market-data", "futures"])
+subprocess.check_call(base + ["up", "-d", "--no-deps", "market-data", "futures"])
+print("STREAM2_DONE")

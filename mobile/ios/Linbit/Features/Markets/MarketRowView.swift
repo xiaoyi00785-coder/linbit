@@ -7,10 +7,13 @@ struct MarketRowView: View {
     var showIcon = true
     /// 首页榜单样式：显示完整交易对（BTCUSDT），17pt
     var compactPair = false
+    var showsStar = false
+    @AppStorage("lb.market.logo") private var logos = true
+    @ObservedObject private var watch = Watchlist.shared
 
     var body: some View {
         HStack(spacing: 10) {
-            if showIcon { CoinIcon(base: row.base) }
+            if showIcon && logos { CoinIcon(base: row.base) }
             VStack(alignment: .leading, spacing: 3) {
                 if compactPair {
                     Text(row.symbol).font(.lb(FontSize.symbol, .medium)).foregroundColor(p.textPrimary)
@@ -28,10 +31,18 @@ struct MarketRowView: View {
                 Text(Fmt.fiat(row.last, rate: AppConfig.usdtCny)).font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
             }
             ChangeBadge(percent: row.changePct).padding(.leading, 12)
+            if showsStar {
+                Image(systemName: watch.contains(row.symbol) ? "star.fill" : "star")
+                    .font(.system(size: 16)).foregroundColor(watch.contains(row.symbol) ? p.brand : p.textTertiary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(TapGesture().onEnded { watch.toggle(row.symbol) })
+            }
         }
         .padding(.horizontal, Spacing.pageH)
         .frame(height: Metrics.marketRowH)
         .contentShape(Rectangle())
+        .onTapGesture { Router.shared.marketDetail = row.symbol }
     }
 
     private var priceText: String {

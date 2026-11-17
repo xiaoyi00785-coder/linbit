@@ -18,20 +18,13 @@ struct ChatRoomView: View {
     @State private var sub: WSSubscription?
     /// 本机发言接口返回的消息 id（WS 推送没有 mine / clientId，用 id 判断是否自己发的）
     @State private var myIds: Set<Int64> = []
+    /// 嵌在行情 Tab 里时不套返回栏，底部让出悬浮 Tab。
+    var embedded = false
 
     var body: some View {
-        FeatureShell(title: "聊天室") {
-            if disabled { ComingSoonView(title: "聊天室") } else {
-                VStack(spacing: 0) {
-                    roomBar
-                    switch state {
-                    case .idle, .loading: SkeletonList(rows: 8)
-                    case let .failed(e): ErrorStateView(message: e) { Task { await loadRooms() } }
-                    case .loaded: list
-                    }
-                    inputBar
-                }
-            }
+        Group {
+            if embedded { chatBody.padding(.bottom, Metrics.tabBarH + 8) }
+            else { FeatureShell(title: "聊天室") { chatBody } }
         }
         .task { await loadRooms() }
         .onDisappear { sub?.cancel(); sub = nil }
@@ -49,6 +42,22 @@ struct ChatRoomView: View {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private var chatBody: some View {
+        Group {
+            if disabled { ComingSoonView(title: "聊天室") } else {
+                VStack(spacing: 0) {
+                    roomBar
+                    switch state {
+                    case .idle, .loading: SkeletonList(rows: 8)
+                    case let .failed(e): ErrorStateView(message: e) { Task { await loadRooms() } }
+                    case .loaded: list
+                    }
+                    inputBar
                 }
             }
         }

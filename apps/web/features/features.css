@@ -132,6 +132,17 @@
 .sp-sl.sell span.on i{border-color:var(--lb-down,#ef454a);background:var(--lb-down,#ef454a)}.sp-sl.buy span.on i{border-color:var(--lb-up,#20b26c);background:var(--lb-up,#20b26c)}
 .ltr .act,.sp-side{cursor:default}.ltr .act a,.sp-side button{cursor:pointer}
 .of .sp-side button:not(.on){background:transparent!important;color:#8a8a8a!important}
+.trade .of{overflow:auto}
+.fut-side{margin-top:16px;padding-top:12px;border-top:1px solid var(--lb-card-2,#2a2a2a)}
+.fut-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.fut-hd b{font-size:14px}
+.fut-eye{border:0;background:none;color:var(--lb-text-2,#a8aaad);cursor:pointer;font-size:12px}
+.fut-coin{font-size:13px;margin-bottom:6px}
+.fut-links{display:flex;gap:16px;margin-top:8px}
+.fut-links button{border:0;background:none;color:var(--lb-primary);cursor:pointer;padding:0;font-size:13px}
+.fut-side .kv2{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12px}
+.fut-side .kv2 span{color:var(--lb-text-2,#a8aaad)}
+.fut-side .kv2 b{font-weight:500;text-align:right}
 /* 闪兑 */
 .cv-pick{position:relative}.cv-pick-btn{display:flex;align-items:center;gap:6px;background:none;border:0;cursor:pointer;font-size:15px;color:inherit;padding:4px 6px;border-radius:8px}.cv-pick-btn:hover{background:rgba(0,0,0,.05)}
 .cv-pop{position:absolute;z-index:20;top:calc(100% + 6px);left:0;width:220px;background:var(--lb-white);border:1px solid var(--lb-light-border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:8px}
@@ -195,6 +206,38 @@ i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border
 .tk-ed{display:grid;gap:10px}.tk-ed .inp{margin:0}
 
 .tk-only{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--lb-text-2);cursor:pointer;margin-left:12px;white-space:nowrap}.tk-only input{accent-color:#abe127;margin:0}
+.orders .pt.sm{flex-wrap:wrap;align-items:center;gap:16px}
+.orders .pt .sp{flex:1}
+.fx-sub{display:flex;gap:16px;padding:4px 12px 0}
+.fx-sub b{font-size:12px;font-weight:400;color:var(--lb-text-2);cursor:pointer}
+.fx-sub b.on{color:var(--lb-text,#fff)}
+.fx-filters{display:flex;gap:18px;align-items:center;padding:8px 12px;flex-wrap:wrap}
+.fx-drop{position:relative}
+.fx-drop-btn{background:none;border:0;color:var(--lb-text-2);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0}
+.fx-drop-btn i{border:4px solid transparent;border-top-color:currentColor;border-bottom:0;display:inline-block;margin-top:2px}
+.fx-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;min-width:200px;max-height:280px;overflow:auto;background:#1b1d22;border:1px solid var(--lb-card-2,#2a2a2a);border-radius:8px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.fx-menu input{width:100%;box-sizing:border-box;height:32px;border-radius:6px;border:1px solid var(--lb-card-2,#2a2a2a);background:transparent;color:var(--lb-text,#fff);padding:0 8px;margin-bottom:6px;outline:0}
+.fx-opt{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;cursor:pointer;font-size:13px}
+.fx-opt.on,.fx-opt:hover{background:rgba(255,255,255,.04)}
+.fx-opt.on{color:var(--lb-primary,#abe127)}
+.fx-zero{display:flex;flex-direction:column;align-items:center;gap:8px;padding:48px 0 36px;color:var(--lb-text-2);font-size:13px}
+.fx-zero-try{color:var(--lb-text,#fff);font-size:14px}
+.fx-zero-acts{display:flex;gap:20px;margin-top:4px}
+.fx-zero-acts button,.fx-zero-acts a{background:none;border:0;color:var(--lb-primary,#abe127);cursor:pointer;font-size:14px;padding:0}
+.fx-coupon{padding:8px 16px 20px}
+.fx-coupon .kv2{max-width:420px}
+.fx-more{display:inline-block;margin-top:12px;color:var(--lb-primary,#abe127);font-size:13px}
+.fx-scroll{overflow-x:auto}
+.fx-pos{min-width:1480px}
+.fx-sym small{display:block;font-weight:400}
+.fx-acts{display:flex;gap:6px}
+.fx-mini{height:24px;padding:0 8px;border:1px solid var(--lb-border-2,#3a3a3a);background:transparent;color:inherit;border-radius:4px;font-size:12px;cursor:pointer;white-space:nowrap}
+.fx-mini:hover{border-color:var(--lb-primary,#abe127);color:var(--lb-primary,#abe127)}
+.fx-adl{display:inline-flex;gap:2px;align-items:flex-end;height:12px}
+.fx-adl i{width:3px;height:10px;background:#3a3a3a;display:block;border-radius:1px}
+.fx-adl i.on{background:#abe127}
+.fx-adl i:nth-child(4).on,.fx-adl i:nth-child(5).on{background:#f6465d}
+.fx-warn{color:#f0b90b}
 .por-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}.por-t th,.por-t td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--lb-card-2)}.por-t th:first-child,.por-t td:first-child{text-align:left}.por-t th{color:var(--lb-text-3);font-weight:400}
 /* 客服工单（沿用账户页浅色令牌 + 主色 #abe127） */
 .tk .ff-btn{white-space:nowrap;flex-shrink:0}
@@ -221,3 +264,36 @@ i.sk{display:inline-block;height:1em;min-width:40px;vertical-align:middle;border
 .tk .tk-total{margin:0 0 8px}.tk .tk-row{display:flex;gap:8px}
 .tk .ff-bar{flex-wrap:wrap}
 @media (max-width:640px){.tk .ff-t th:nth-child(4),.tk .ff-t td:nth-child(4){display:none}.tk .tk-tabs{overflow-x:auto;max-width:100%}}
+/* 合约页对照：行情条、盘口列宽、下单壳 */
+.trade .tbar{height:64px;min-height:64px;padding:0 16px;gap:18px;align-items:center}
+.trade .lp{font-size:22px;font-weight:600;letter-spacing:0;line-height:22px}
+.trade .lp.fut{color:var(--lb-primary)}
+.trade .lp.fut .down{color:var(--lb-down)}
+.trade .lp.fut .up{color:var(--lb-up)}
+.trade .tk{display:flex;flex-direction:column;justify-content:center;gap:1px}
+.trade .tk small{font-size:11px;line-height:14px;white-space:nowrap}
+.trade .tk span{font-size:12px;line-height:16px;white-space:nowrap}
+.tset{width:28px;height:28px;border:0;background:none;color:var(--lb-text-2);border-radius:4px;display:grid;place-items:center;cursor:pointer;flex:none}
+.tset:hover{color:#fff;background:#1c1c1c}
+.ob .obh,.ob .obr{grid-template-columns:79fr 88fr 88fr;height:21px;padding:0 8px;align-items:center;line-height:21px}
+.ob .obh{height:24px;line-height:24px}
+.ob .obm{font-size:20px;font-weight:600;padding:4px 8px;display:flex;align-items:center;gap:6px}
+.ob .obt{display:flex;align-items:center;justify-content:space-between;min-height:32px}
+.of.fut .tk-sel{gap:8px}
+.of.fut .tk-chip{flex:0 0 61px;height:32px;border-radius:4px;background:#1d1d1d;border:0;padding:0 6px}
+.of.fut .tk-sel .tk-chip:first-child{flex:1 1 auto}
+.of.fut .tk-chip.ic{flex:0 0 32px}
+.of.fut .seg{height:32px;border-radius:8px;background:#1d1d1d;padding:2px}
+.of.fut .seg b{height:28px;line-height:28px;padding:0;border-radius:6px;font-size:14px}
+.of.fut .inp{background:#1d1d1d;border-radius:8px;height:66px;padding:6px 12px;margin:8px 0;display:flex;flex-direction:column;justify-content:center}
+.of.fut .inp input{min-height:0;height:26px;padding:0;font-size:14px}
+.of.fut .tk-inrow{display:flex;align-items:center;gap:6px;min-width:0}
+.of.fut .tk-inrow input{flex:1;width:auto;min-width:0}
+.of.fut .inp em{position:static}
+.of.fut .tk-qty .tk-pct,.of.fut .tk-qty select{position:static}
+.of.fut .tk-qty input{padding-right:0}
+.of.fut .slider{height:48px;margin:8px 6px 4px}
+.of.fut .slider .line{height:3px;top:9px}
+.of.fut .slider i{width:14px;height:14px}
+.of.fut .fut-links{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.of.fut .fut-links button{height:32px;border-radius:8px;background:#28292a;color:#fff;font-size:14px}

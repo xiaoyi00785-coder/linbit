@@ -18,16 +18,21 @@ import { safeRedirectFrom } from "@/lib/safeRedirect";
 import { setAuthed } from "@/legacy/auth";
 import { CodeInput, Steps, isEmail, isPhone } from "./common";
 import { asset } from '@/lib/asset';
+import { QRCodeSVG } from "qrcode.react";
+import { siteUrl } from "@/lib/site";
 
-function Shell({ title, sw, children }: { title: string; sw?: [string, string]; children: React.ReactNode }) {
+function Shell({ title, sw, promo = "login", children }: { title: string; sw?: [string, string]; promo?: "login" | "register"; children: React.ReactNode }) {
   return (
     <main className="auth">
       <div className="aleft">
-        <h1>
-          在奖励中心最高可赚
-          <br />
-          <GiftAmt /> 新人奖励
-        </h1>
+        {promo === "register" ? (
+          <h1>限时新人福利，注册即领取最高<br /><GiftAmt /></h1>
+        ) : (
+          <>
+            <Link to="/rewards" className="lime">前往福利中心</Link>
+            <h1>领取最高<br /><GiftAmt /> 奖励</h1>
+          </>
+        )}
         <div className="chest">
           <img src={asset("/img/auth.webp")} alt="" />
         </div>
@@ -92,9 +97,9 @@ function useFinish() {
   };
 }
 
-type Kind = "邮箱" | "手机";
-/** 邮箱 / 手机（含国家区号选择）输入 */
-function useAcct(initial: Kind = "邮箱") {
+type Kind = "邮箱" | "手机" | "二维码";
+/** 邮箱 / 手机（含国家区号选择）输入。登录可加二维码页。 */
+function useAcct(initial: Kind = "邮箱", withQr = false) {
   const [kind, setKind] = useState<Kind>(initial);
   const [cc, setCc] = useState("86");
   const [val, setVal] = useState(() => {
@@ -103,7 +108,8 @@ function useAcct(initial: Kind = "邮箱") {
     return initial === "邮箱" && x.includes("@") ? x : "";
   });
   const [touched, setTouched] = useState(false);
-  const valid = kind === "邮箱" ? isEmail(val) : /^\d{5,14}$/.test(val);
+  const valid = kind === "二维码" ? false : kind === "邮箱" ? isEmail(val) : /^\d{5,14}$/.test(val);
+  const tabs = (withQr ? ["邮箱", "手机", "二维码"] : ["邮箱", "手机"]) as Kind[];
   const target = (): Target => (kind === "邮箱" ? { email: val } : { phone: toE164(cc, val), countryCode: cc });
   const shown = kind === "邮箱" ? val : `+${cc} ${val}`;
   const label = kind === "邮箱" ? "邮箱" : "手机号";
@@ -112,14 +118,14 @@ function useAcct(initial: Kind = "邮箱") {
   const ui = (
     <>
       <div className="pt aline" role="tablist" aria-label="账户类型">
-        {(["邮箱", "手机"] as const).map((x) => (
+        {tabs.map((x) => (
           <b key={x} role="tab" tabIndex={0} aria-selected={kind === x} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setKind(x); setVal(""); setTouched(false); } }} className={kind === x ? "on" : ""} onClick={() => (setKind(x), setVal(""), setTouched(false))}>
-            {x}
+            {x === "手机" ? "手机号" : x}
           </b>
         ))}
       </div>
-      {kind === "邮箱" ? (
-        <input className="ai" type="email" aria-label="邮箱地址" placeholder="邮箱地址" maxLength={ACCT_MAX} autoComplete="email" aria-invalid={touched && !!msg} value={val} onBlur={() => setTouched(true)} onChange={(e) => setVal(e.target.value.trim())} />
+      {kind === "二维码" ? null : kind === "邮箱" ? (
+        <input className="ai" type="email" aria-label="电子邮件地址" placeholder="电子邮件地址" maxLength={ACCT_MAX} autoComplete="email" aria-invalid={touched && !!msg} value={val} onBlur={() => setTouched(true)} onChange={(e) => setVal(e.target.value.trim())} />
       ) : (
         <div className="fx-phone">
           <select className="ai fx-cc" aria-label="国家/地区区号" value={cc} onChange={(e) => setCc(e.target.value)}>
@@ -132,7 +138,7 @@ function useAcct(initial: Kind = "邮箱") {
           <input className="ai" inputMode="numeric" aria-label="手机号" placeholder="手机号" maxLength={14} aria-invalid={touched && !!msg} value={val} onBlur={() => setTouched(true)} onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))} />
         </div>
       )}
-      {touched && msg && <div className="fx-err" role="alert">{msg}</div>}
+      {kind !== "二维码" && touched && msg && <div className="fx-err" role="alert">{msg}</div>}
       {kind === "邮箱" && val.length >= ACCT_MAX && <div className="fx-hint">{`邮箱最多 ${ACCT_MAX} 个字符`}</div>}
     </>
   );
@@ -169,18 +175,17 @@ export function Register() {
 
   if (authed) return <AuthSkel />;
   return (
-    <Shell title="创建账户" sw={["/login", "立即登录"]}>
-      <Steps items={["填写信息", "安全验证"]} cur={step} />
+    <Shell promo="register" title="创建账户" sw={["/login", "立即登录"]}>
       {step === 0 ? (
         <>
           {a.ui}
           <Pwd placeholder={`设置密码（8–${PWD_MAX} 位，含字母和数字）`} value={pwd} onChange={setPwd} />
           <PwdRules pwd={pwd} show={tried} />
-          <input className="ai" aria-label="邀请码（选填）" maxLength={32} placeholder="邀请码（选填）" value={invite} onChange={(e) => setInvite(e.target.value.trim())} />
+          <input className="ai" aria-label="邀请码(可选)" maxLength={32} placeholder="邀请码(可选)" value={invite} onChange={(e) => setInvite(e.target.value.trim())} />
           <label className="agree" onClick={() => setAgree(!agree)}>
             <i className={agree ? "on" : ""}>{agree && "✓"}</i>
             <span>
-              点击「下一步」即表示你同意 linbit 的 <a className="lime">服务条款</a> 和 <a className="lime">隐私政策</a>。
+              点击「创建账户」，即表示您同意 linbit 的 <a className="lime">服务条款</a> 和 <a className="lime">隐私政策</a>。
             </span>
           </label>
           {err && <div className="fx-err">{err}</div>}
@@ -204,8 +209,9 @@ export function Register() {
               setStep(1);
             }}
           >
-            {busy ? "发送验证码…" : "下一步"}
+            {busy ? "发送验证码…" : "创建账户"}
           </button>
+          <OtherWays busy={busy} setErr={setErr} setBusy={setBusy} finish={finish} />
         </>
       ) : (
         <>
@@ -238,9 +244,35 @@ export function Register() {
 
 const METHOD: Record<string, string> = { totp: "谷歌验证器", sms: "短信验证码", email: "邮箱验证码" };
 
+/** 其它登录方式。通行密钥走现有 WebAuthn；Apple / Google 没有接入，点了只说明未开通。 */
+function OtherWays({ busy, setErr, setBusy, finish }: { busy: boolean; setErr: (s: string) => void; setBusy: (b: boolean) => void; finish: (tokens: AuthTokens, t: Target) => void }) {
+  return (
+    <>
+      <div className="or"><span>其它方式</span></div>
+      <button
+        type="button"
+        className={"obtn" + (busy ? " dis" : "")}
+        onClick={async () => {
+          if (!webauthnSupported()) return setErr("当前浏览器不支持通行密钥");
+          setBusy(true);
+          const r = await passkeyLogin({ deviceId: deviceId(), deviceName: deviceName() });
+          setBusy(false);
+          if (!r.ok || !r.data) return setErr(r.code === "PASSKEY_UNAVAILABLE" || r.status === 404 || r.status === undefined ? "通行密钥登录暂未启用" : r.error ?? "通行密钥登录失败");
+          setErr("");
+          finish(r.data as AuthTokens, {});
+        }}
+      >
+        <span><G n="key" s={16} /></span>通过通行密钥登录
+      </button>
+      <button type="button" className="obtn" onClick={() => setErr("Apple 登录暂未开通")}><span><G n="apple" s={16} /></span>通过 Apple 继续</button>
+      <button type="button" className="obtn" onClick={() => setErr("Google 登录暂未开通")}><span>G</span>通过 Google 继续</button>
+    </>
+  );
+}
+
 /** 登录：账户+密码 →（新设备/已开 2FA 时）安全验证 → 完成 */
 export function Login() {
-  const a = useAcct();
+  const a = useAcct("邮箱", true);
   const [pwd, setPwd] = useState("");
   const [ch, setCh] = useState<LoginChallenge | null>(null);
   const [method, setMethod] = useState("totp");
@@ -261,57 +293,52 @@ export function Login() {
 
   if (authed) return <AuthSkel />;
   return (
-    <Shell title="欢迎来到 linbit" sw={["/register", "立即注册"]}>
-      <Steps items={["账户密码", "安全验证"]} cur={ch ? 1 : 0} />
+    <Shell title="欢迎来到 linbit" sw={["/register", "立刻注册"]}>
       {!ch ? (
         <>
           {a.ui}
-          <Pwd placeholder="请输入密码" value={pwd} onChange={(v) => (setPwd(v), setErr(""))} />
-          <Link to="/forgot-password" className="fg">
-            忘记密码？
-          </Link>
+          {a.kind === "二维码" ? (
+            <div className="auth-qr">
+              <QRCodeSVG value={`${siteUrl()}/login`} size={168} marginSize={1} bgColor="transparent" fgColor="currentColor" />
+              <p className="fx-hint">使用 linbit App 扫码。网页扫码登录暂未开通。</p>
+            </div>
+          ) : (
+            <>
+              <Pwd placeholder="输入您的密码" value={pwd} onChange={(v) => (setPwd(v), setErr(""))} />
+              <Link to="/forgot-password" className="fg">
+                忘记密码？
+              </Link>
+              <button
+                className={"abtn" + (a.valid && pwd && !busy && wait <= 0 ? "" : " dis")}
+                disabled={busy || wait > 0}
+                aria-disabled={!(a.valid && pwd)}
+                onClick={async () => {
+                  if (busy || wait > 0) return;
+                  if (!a.valid) { a.touch(); return setErr(a.msg); }
+                  if (!pwd) return setErr("请输入密码");
+                  setBusy(true);
+                  const t = a.target();
+                  const r = await login({ ...t, password: pwd });
+                  setBusy(false);
+                  if (!r.ok || !r.data) {
+                    if (r.code === "RATE_LIMITED") setWait(r.retryAfter ?? 60);
+                    return setErr(loginErrMsg(r));
+                  }
+                  setErr("");
+                  setTgt(t);
+                  if (isChallenge(r.data)) {
+                    setCh(r.data);
+                    setMethod(r.data.methods[0] ?? "totp");
+                    setCode("");
+                  } else finish(r.data, t);
+                }}
+              >
+                {busy ? "登录中…" : wait > 0 ? `请 ${wait} 秒后重试` : "登录"}
+              </button>
+            </>
+          )}
           {err && <div className="fx-err">{err}</div>}
-          <button
-            className={"abtn" + (a.valid && pwd && !busy && wait <= 0 ? "" : " dis")}
-            disabled={busy || wait > 0}
-            aria-disabled={!(a.valid && pwd)}
-            onClick={async () => {
-              if (busy || wait > 0) return;
-              if (!a.valid) { a.touch(); return setErr(a.msg); }
-              if (!pwd) return setErr("请输入密码");
-              setBusy(true);
-              const t = a.target();
-              const r = await login({ ...t, password: pwd });
-              setBusy(false);
-              if (!r.ok || !r.data) {
-                if (r.code === "RATE_LIMITED") setWait(r.retryAfter ?? 60);
-                return setErr(loginErrMsg(r));
-              }
-              setErr("");
-              setTgt(t);
-              if (isChallenge(r.data)) {
-                setCh(r.data);
-                setMethod(r.data.methods[0] ?? "totp");
-                setCode("");
-              } else finish(r.data, t);
-            }}
-          >
-            {busy ? "登录中…" : wait > 0 ? `请 ${wait} 秒后重试` : "登录"}
-          </button>
-          <button
-            className={"lb wide lpk" + (busy ? " dis" : "")}
-            onClick={async () => {
-              if (!webauthnSupported()) return setErr("当前浏览器不支持通行密钥");
-              setBusy(true);
-              const r = await passkeyLogin({ deviceId: deviceId(), deviceName: deviceName() });
-              setBusy(false);
-              if (!r.ok || !r.data) return setErr(r.code === "PASSKEY_UNAVAILABLE" || r.status === 404 || r.status === undefined ? "通行密钥登录暂未启用" : r.error ?? "通行密钥登录失败");
-              setErr("");
-              finish(r.data as AuthTokens, {});
-            }}
-          >
-            <G n="key" s={16} /> 使用通行密钥登录
-          </button>
+          <OtherWays busy={busy} setErr={setErr} setBusy={setBusy} finish={finish} />
         </>
       ) : (
         <>

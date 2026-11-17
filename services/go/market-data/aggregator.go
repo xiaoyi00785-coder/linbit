@@ -149,6 +149,7 @@ type Aggregator struct {
 	// `symbols` catalogue (same source as the order service). Set once at
 	// startup via SetPrecisions and only read afterwards.
 	prec    map[string]symPrec
+	ext     *extFeed
 	now     func() time.Time
 	persist chan persistJob
 	// index returns the external index price (nil = none). Used only as a
@@ -355,11 +356,15 @@ func (a *Aggregator) OnTrade(ev TradeEvent) {
 	}
 
 	ticker := a.tickerDTOLocked(ss)
+	extLive := a.ext != nil && a.ext.live(ev.Symbol)
 	a.mu.Unlock()
 
-	// Broadcast outside the lock.
-	a.bc.Broadcast("trades:"+ev.Symbol, td)
+	// A live external stream owns the public price, chart and prints.
+	if extLive {
+		return
+	}
 	a.bc.Broadcast("ticker:"+ev.Symbol, ticker)
+	a.bc.Broadcast("trades:"+ev.Symbol, td)
 	for _, p := range pushes {
 		a.bc.Broadcast("kline:"+ev.Symbol+":"+p.interval, toWSKline(p.candle))
 	}
@@ -387,7 +392,11 @@ func (a *Aggregator) OnDepth(ev DepthEvent) {
 		ss.lastDepth = ev.Sequence
 	}
 	p := a.prec[ev.Symbol]
+	extBook := a.ext != nil && a.ext.hasDepth(ev.Symbol)
 	a.mu.Unlock()
+	if extBook {
+		return
+	}
 
 	a.bc.Broadcast("depth:"+ev.Symbol, depthDTO{
 		Symbol:       ev.Symbol,
@@ -438,6 +447,11 @@ func (a *Aggregator) TrackedSymbols() []string {
 
 // DepthFrame returns a depth snapshot DTO for the symbol.
 func (a *Aggregator) DepthFrame(symbol string, limit int) (depthDTO, bool) {
+	if a.ext != nil {
+		if d, ok := a.ext.depth(symbol, limit); ok {
+			return d, true
+		}
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	ss := a.states[symbol]
@@ -700,6 +714,11 @@ func mergeKlines(trade []Candle, idx *series) []restKline {
 // KlineFrame returns the current (live) candle for a symbol/interval, for the
 // initial WS push on subscribe.
 func (a *Aggregator) KlineFrame(symbol, interval string) (wsKline, bool) {
+	if a.ext != nil {
+		if k, ok := a.ext.Frame(symbol, interval); ok {
+			return k, true
+		}
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	ss := a.states[symbol]
@@ -856,6 +875,9 @@ func (a *Aggregator) SampleIndex(now time.Time) {
 			}
 		}
 		if noTrades {
+			if a.ext != nil && a.ext.live(ss.symbol) {
+				continue
+			}
 			for _, iv := range Intervals {
 				if s := ss.idxSeries[iv.Name]; len(s.candles) > 0 && len(ss.series[iv.Name].candles) == 0 ||
 					len(s.candles) > 0 && s.candles[len(s.candles)-1].OpenTime > ss.series[iv.Name].candles[len(ss.series[iv.Name].candles)-1].OpenTime {

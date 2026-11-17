@@ -1,8 +1,41 @@
 package main
 
 import (
+	"math"
+	"math/rand/v2"
+	"time"
+
 	"github.com/shopspring/decimal"
 )
+
+const (
+	quoteNotionalMin = 100.0
+	quoteNotionalMax = 1_000_000.0
+)
+
+var quoteRNG = rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0x9e3779b97f4a7c15))
+
+// testNotional, when positive, disables random sizing (unit tests).
+var testNotional decimal.Decimal
+
+func randomQuoteNotional() decimal.Decimal {
+	u := quoteRNG.Float64()
+	v := math.Exp(math.Log(quoteNotionalMin) + u*(math.Log(quoteNotionalMax)-math.Log(quoteNotionalMin)))
+	if v < quoteNotionalMin {
+		v = quoteNotionalMin
+	}
+	if v > quoteNotionalMax {
+		v = quoteNotionalMax
+	}
+	return decimal.NewFromFloat(v).Round(0)
+}
+
+func quoteNotional() decimal.Decimal {
+	if testNotional.IsPositive() {
+		return testNotional
+	}
+	return randomQuoteNotional()
+}
 
 var (
 	bps1 = decimal.NewFromInt(10000)
@@ -131,7 +164,6 @@ func futuresInventory(p Pair, index, pos decimal.Decimal) Inventory {
 func BuildLadder(p Pair, r Rules, index decimal.Decimal, inv Inventory) (decimal.Decimal, []Quote) {
 	mid := index.Mul(one.Sub(inv.Imbalance.Mul(p.MaxSkewBps).Div(bps1)))
 	var out []Quote
-	size := p.LevelNotional
 	for i := 0; i < p.Levels; i++ {
 		off := p.SpreadBps.Div(two).Add(p.LevelStepBps.Mul(decimal.NewFromInt(int64(i)))).Div(bps1)
 		bid := floorTo(mid.Mul(one.Sub(off)), r.Tick)
@@ -147,6 +179,10 @@ func BuildLadder(p Pair, r Rules, index decimal.Decimal, inv Inventory) (decimal
 			if (q.Side == "buy" && !inv.AllowBuy) || (q.Side == "sell" && !inv.AllowSell) || !q.Price.IsPositive() {
 				continue
 			}
+			size := quoteNotional()
+			if cap := quoteNotionalCap(p); cap.IsPositive() && size.GreaterThan(cap) {
+				size = cap
+			}
 			q.Qty = floorTo(size.Div(q.Price), r.Step)
 			if !q.Qty.IsPositive() || (r.MinQty.IsPositive() && q.Qty.LessThan(r.MinQty)) {
 				continue
@@ -156,7 +192,6 @@ func BuildLadder(p Pair, r Rules, index decimal.Decimal, inv Inventory) (decimal
 			}
 			out = append(out, q)
 		}
-		size = size.Mul(p.SizeGrowth)
 	}
 	return mid, out
 }
@@ -173,10 +208,17 @@ func Diff(resting []restingOrder, targets []Quote, requoteBps decimal.Decimal) (
 				continue
 			}
 			dev := o.Price.Sub(t.Price).Abs().Div(t.Price).Mul(bps1)
-			if dev.LessThanOrEqual(requoteBps) && o.Remaining.GreaterThanOrEqual(t.Qty.Div(two)) {
-				match = i
-				break
+			if !dev.LessThanOrEqual(requoteBps) || !o.Remaining.IsPositive() {
+				continue
 			}
+			if t.Qty.IsPositive() {
+				rel := o.Remaining.Sub(t.Qty).Abs().Div(t.Qty)
+				if rel.GreaterThan(decimal.RequireFromString("0.5")) {
+					continue
+				}
+			}
+			match = i
+			break
 		}
 		if match >= 0 {
 			used[match] = true

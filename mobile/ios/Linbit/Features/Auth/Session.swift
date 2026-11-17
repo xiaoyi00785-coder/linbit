@@ -60,6 +60,10 @@ final class Router: ObservableObject {
     @Published var assetsPath = NavigationPath()
     @Published var spotPath = NavigationPath()
     @Published var showUserCenter = false
+    /// 行情点进的币种详情
+    @Published var marketDetail: String?
+    /// 从首页搜索进行情时直接打开搜索页
+    @Published var marketSearch = false
     /// 二级全屏功能页（理财 / 策略 / 闪兑 / 聊天室 / 子账户 …）
     @Published var feature: FeaturePage?
     /// 合约 Tab 顶部：0 合约 1 事件合约 2 TradFi 3 模拟交易
@@ -78,4 +82,4 @@ final class Router: ObservableObject {
     }
 }
 
-enum AssetsRoute: Hashable { case deposit(String?), withdraw(String?), transfer, records, history, overview, accountTransfer, internalTransfer, withdrawRecords, addressBook, networks(String?) }
+enum AssetsRoute: Hashable { case deposit(String?), withdraw(String?), transfer, records, history, overview, accountTransfer, internalTransfer, withdrawRecords, addressBook, networks(String?), proof }

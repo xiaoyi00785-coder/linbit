@@ -11,7 +11,7 @@
  */
 import { useEffect } from "react";
 
-export const MASK_SEL = ".fx-modal,.xmask,.mask,.ff-mask";
+export const MASK_SEL = ".fx-modal,.xmask,.mask,.ff-mask,.ov-mask";
 
 /** 遮罩是否受保护（不可通过点击遮罩 / Esc 关闭） */
 export function isGuarded(m: HTMLElement) {

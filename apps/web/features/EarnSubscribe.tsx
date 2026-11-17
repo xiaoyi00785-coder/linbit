@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { useAuthStore } from "@/lib/store";
 import { rest, emitBalances } from "@/lib/rest";
 import { toast } from "@/lib/ui";
+import { NumericKeypad } from "@/components/overlays";
 import { useOverview } from "@/lib/wallet";
 import { fmtAmt, trimFixed } from "@/lib/format";
 import { useNavigate } from "@/lib/router";
@@ -95,6 +96,7 @@ export function EarnSubscribeModal({
   onDone?: () => void;
 }) {
   const [amt, setAmt] = useState("");
+  const [pad, setPad] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const authed = !!useAuthStore((s) => s.accessToken);
@@ -171,6 +173,8 @@ export function EarnSubscribeModal({
           value={amt}
           onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))}
         />
+        <button type="button" className="lb sm" onClick={() => setPad(true)}>数字键盘</button>
+        <NumericKeypad open={pad} title={`申购数量（${asset}）`} value={amt} onChange={setAmt} onClose={() => setPad(false)} onConfirm={() => setPad(false)} />
         {authed && (
           <div className="lrow">
             <span className="lg">现货可用</span>

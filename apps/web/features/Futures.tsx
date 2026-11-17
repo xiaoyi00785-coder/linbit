@@ -1,14 +1,16 @@
 "use client";
-// 合约下单区底部：仓位 / 当前委托 / 计划委托 / 止盈止损 / 历史委托 / 历史仓位 / 成交明细（可只看当前合约）
-// 对接 GET /futures/positions、/futures/orders、/futures/plan-orders、/futures/tpsl-orders、/futures/positions/history、/futures/trades；
-// 改单 PUT /futures/orders/{id}，持仓止盈止损 POST /futures/tpsl-orders。
+// 合约页底部：仓位 / 当前委托 / 历史仓位 / 历史委托 / 成交明细 / 平仓盈亏 / 跟单 / 卡券。
+// 当前委托与历史委托再分 限价、计划委托、止盈/止损、移动止盈/止损。
+// 对接 GET /futures/positions、/futures/orders、/futures/plan-orders、/futures/tpsl-orders、
+// /futures/positions/history、/futures/trades、/futures/account、/futures/copy/follows、/coupons。
 import { stLabel, isOpenStatus, futOrderOf, closeToast } from "@/lib/orderStatus";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { components } from "@linbit/api-client";
 import { useRest, rest } from "@/lib/rest";
 import { useAuthStore } from "@/lib/store";
 import { toast } from "@/lib/ui";
 import { fmtLocal } from "@/lib/time";
+import { openTransfer } from "@/components/Transfer";
 import { Modal, useMarkPrice } from "./TradeKit";
 
 /** 仓位行标记价：与顶部行情栏同一共享源 */
@@ -20,9 +22,37 @@ function PnlCell({ p }: { p: Pos }) {
   const live = m > 0 && e > 0 && q > 0;
   const pnl = live ? (m - e) * q * dir : Number(p.unrealizedPnl);
   const roe = live ? (mg > 0 ? pnl / mg : NaN) : Number(p.roe);
-  return <td data-testid="pos-pnl" className={pnl >= 0 ? "up" : "down"}>{live ? pnl.toFixed(2) : p.unrealizedPnl} ({isFinite(roe) ? (roe * 100).toFixed(2) : "--"}%)</td>;
+  const n = Number.isFinite(pnl) ? pnl : NaN;
+  const sign = n > 0 ? "+" : "";
+  return <td data-testid="pos-pnl" className={n >= 0 ? "up" : "down"}>{Number.isFinite(n) ? sign + n.toFixed(4) : "--"} USDT ({Number.isFinite(roe) ? (roe > 0 ? "+" : "") + (roe * 100).toFixed(2) : "--"}%)</td>;
 }
 function MarkCell({ sym, fb }: { sym: string; fb: string }) { return <>{useMarkPrice(sym, fb)}</>; }
+function liveUpnl(p: Pos, mark: number) {
+  const e = Number(p.entryPrice), q = Math.abs(Number(p.qty)), dir = sideTxt(p.side) === "多" ? 1 : -1;
+  return mark > 0 && e > 0 && q > 0 ? (mark - e) * q * dir : Number(p.unrealizedPnl);
+}
+function ValueCell({ p }: { p: Pos }) {
+  const m = Number(useMarkPrice(p.symbol, p.markPrice));
+  const q = Math.abs(Number(p.qty));
+  const v = m > 0 && q > 0 ? q * m : Math.abs(Number(p.notional));
+  return <>{Number.isFinite(v) ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " USDT" : "--"}</>;
+}
+function RatioCell({ p, cross }: { p: Pos; cross?: { avail: number; im: number; mm: number } }) {
+  const m = Number(useMarkPrice(p.symbol, p.markPrice));
+  const up = liveUpnl(p, m);
+  const mm = Number(p.maintenanceMargin), mg = Number(p.margin);
+  let r = NaN;
+  if (p.marginMode === "isolated") { const d = mg + up; if (d > 0) r = mm / d; }
+  else if (cross && cross.avail + cross.im > 0) r = cross.mm / (cross.avail + cross.im);
+  else if (mg > 0) r = mm / mg;
+  if (!Number.isFinite(r)) return <>--</>;
+  const pct = r * 100;
+  return <span className={pct >= 80 ? "down" : pct >= 50 ? "fx-warn" : ""}>{pct.toFixed(2)}%</span>;
+}
+function Adl({ n }: { n?: number }) {
+  const k = Math.max(0, Math.min(5, n || 0));
+  return <span className="fx-adl" title="ADL">{[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= k ? "on" : ""} />)}</span>;
+}
 import { tabProps } from "@/lib/a11y";
 import { fmtFeeExact } from "@/lib/format";
 import { liqText } from "@/lib/orderDisplay";
@@ -30,10 +60,14 @@ import { liqText } from "@/lib/orderDisplay";
 type S = components["schemas"];
 type Algo = S["FuturesAlgoOrder"];
 type PosHist = S["FuturesPositionHistory"];
-type Pos = { symbol: string; side: string; positionSide?: string; qty: string; entryPrice: string; markPrice: string; unrealizedPnl: string; roe: string; leverage: number; margin: string; liquidationPrice: string; marginMode: string };
+type Pos = { symbol: string; side: string; positionSide?: string; qty: string; entryPrice: string; markPrice: string; notional?: string; unrealizedPnl: string; roe: string; realizedPnl?: string; leverage: number; margin: string; maintenanceMargin?: string; liquidationPrice: string; marginMode: string; adlRank?: number };
 type Ord = { orderId: string; symbol: string; side: string; positionSide?: string; type: string; timeInForce?: string; price: string; qty: string; filledQty: string; status: string; leverage: number; reduceOnly?: boolean; createdAt: number | string };
-const T = ["仓位", "当前委托", "计划委托", "止盈止损", "历史委托", "历史仓位", "成交明细"] as const;
+type Tab = "pos" | "open" | "ph" | "hist" | "fills" | "pnl" | "copy" | "coupon";
+type Sub = "limit" | "plan" | "tpsl" | "trail";
 type Fill = { tradeId: number; symbol: string; side: "buy" | "sell"; price: string; qty: string; fee: string; role: "maker" | "taker"; time: string };
+type Follow = { id: number; traderId?: string; status?: string; principal?: string; returned?: string; sharePaid?: string };
+type CouponItem = { id: number; kind: "trial" | "deduction"; amount: string; asset?: string; title: string; status: string; bonus?: { remaining?: string } };
+type Acct = { availableBalance?: string; crossMaintenanceMargin?: string; crossPositionMargin?: string };
 const sideTxt = (s: string) => (/buy|long/i.test(s) ? "多" : "空");
 const num = (v: string) => v.replace(/[^\d.]/g, "");
 const TT: Record<string, string> = { LAST: "最新价", MARK: "标记价" };
@@ -47,25 +81,46 @@ const dir = (o: { side?: string; positionSide?: string; reduceOnly?: boolean }) 
 
 export function FutOrders({ symbol }: { symbol?: string }) {
   const authed = !!useAuthStore((s) => s.accessToken);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState<Tab>("pos");
+  const [sub, setSub] = useState<Sub>("limit");
   const [edit, setEdit] = useState<Ord | null>(null);
   const [tp, setTp] = useState<{ p: Pos; tp?: Algo; sl?: Algo } | null>(null);
   const [pe, setPe] = useState<Algo | null>(null);
+  const [lc, setLc] = useState<Pos | null>(null);
+  const [rv, setRv] = useState<Pos | null>(null);
   const [only, setOnly] = useState(false);
+  const [kind, setKind] = useState<"all" | "usdt">("all");
+  const [pick, setPick] = useState("");
+  const [menu, setMenu] = useState<"" | "kind" | "sym">("");
+  const [find, setFind] = useState("");
   const pos = useRest<{ positions: Pos[] }>(authed ? "/futures/positions" : null);
   const posRef = useRef(pos); posRef.current = pos;
   const open = useRest<{ orders: Ord[] }>(authed ? "/futures/orders?status=open" : null);
   const plan = useRest<{ orders: Algo[] }>(authed ? "/futures/plan-orders?status=active" : null);
   const tpsl = useRest<{ orders: Algo[] }>(authed ? "/futures/tpsl-orders?status=active" : null);
-  const hist = useRest<{ orders: Ord[] }>(authed && tab === 4 ? "/futures/orders" : null);
-  const ph = useRest<{ positions: PosHist[] }>(authed && tab === 5 ? "/futures/positions/history" : null);
-  const fills = useRest<{ trades: Fill[] }>(authed && tab === 6 ? "/futures/trades?limit=100" : null);
-  const mine = <X extends { symbol?: string }>(L: X[] | undefined) => (L ?? []).filter((x) => !only || !symbol || x.symbol === symbol);
+  const hist = useRest<{ orders: Ord[] }>(authed && tab === "hist" ? "/futures/orders" : null);
+  const planH = useRest<{ orders: Algo[] }>(authed && tab === "hist" ? "/futures/plan-orders?status=history" : null);
+  const tpslH = useRest<{ orders: Algo[] }>(authed && tab === "hist" ? "/futures/tpsl-orders?status=history" : null);
+  const ph = useRest<{ positions: PosHist[] }>(authed && (tab === "ph" || tab === "pnl") ? "/futures/positions/history" : null);
+  const fills = useRest<{ trades: Fill[] }>(authed && tab === "fills" ? "/futures/trades?limit=100" : null);
+  const acct = useRest<Acct>(authed ? "/futures/account" : null);
+  const follows = useRest<{ follows: Follow[] }>(authed ? "/futures/copy/follows" : null);
+  const coupons = useRest<{ items: CouponItem[] }>(authed ? "/coupons" : null);
+  const cts = useRest<{ contracts: { symbol: string }[] }>("/futures/market/contracts");
+  const pass = <X extends { symbol?: string }>(x: X) => {
+    if (only && symbol && x.symbol !== symbol) return false;
+    if (pick && x.symbol !== pick) return false;
+    if (kind === "usdt" && x.symbol && !x.symbol.endsWith("USDT")) return false;
+    return true;
+  };
+  const mine = <X extends { symbol?: string }>(L: X[] | undefined) => (L ?? []).filter(pass);
   const P = mine(pos.data?.positions), O = mine(open.data?.orders), PL = mine(plan.data?.orders), TS = mine(tpsl.data?.orders);
   const H = mine(hist.data?.orders).filter((o) => !isOpenStatus(o.status)), PH = mine(ph.data?.positions), FL = mine(fills.data?.trades);
-  const cur = [pos, open, plan, tpsl, hist, ph, fills][tab];
+  const PLH = mine(planH.data?.orders), TSH = mine(tpslH.data?.orders);
+  const FLW = (follows.data?.follows ?? []).filter((x) => !x.status || x.status === "active");
+  const cur = tab === "pos" ? pos : tab === "open" ? (sub === "plan" ? plan : sub === "tpsl" ? tpsl : open) : tab === "ph" || tab === "pnl" ? ph : tab === "hist" ? (sub === "plan" ? planH : sub === "tpsl" ? tpslH : hist) : tab === "fills" ? fills : tab === "copy" ? follows : tab === "coupon" ? coupons : pos;
   // 下单/撤单/改单后静默刷新（不闪骨架屏）；撮合与条件单落库有延迟，再补两次
-  const refreshAll = () => { pos.refresh(); open.refresh(); plan.refresh(); tpsl.refresh(); hist.refresh(); ph.refresh(); fills.refresh(); };
+  const refreshAll = () => { pos.refresh(); open.refresh(); plan.refresh(); tpsl.refresh(); hist.refresh(); planH.refresh(); tpslH.refresh(); ph.refresh(); fills.refresh(); acct.refresh(); follows.refresh(); coupons.refresh(); };
   const reloadAll = () => { refreshAll(); window.setTimeout(refreshAll, 800); window.setTimeout(refreshAll, 2500); };
   // 仓位标记价 / 未实现盈亏：每 3s 静默轮询（页面隐藏时暂停）
   useEffect(() => {
@@ -92,34 +147,93 @@ export function FutOrders({ symbol }: { symbol?: string }) {
   });
   const rlRef = useRef(reloadAll); rlRef.current = reloadAll;
   useEffect(() => { const f = () => rlRef.current(); window.addEventListener("lb-fut-orders", f); return () => window.removeEventListener("lb-fut-orders", f); }, []);
-  const labels = [`仓位(${P.length})`, `当前委托(${O.length})`, `计划委托(${PL.length})`, `止盈止损(${TS.length})`, "历史委托", "历史仓位", "成交明细"];
+  useEffect(() => {
+    if (!menu) return;
+    const f = () => setMenu("");
+    document.addEventListener("pointerdown", f);
+    return () => document.removeEventListener("pointerdown", f);
+  }, [menu]);
+  const nlab = (t: string, n?: number) => n == null ? t : `${t}\u00a0(${n})`;
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "pos", label: nlab("仓位", P.length) },
+    { id: "open", label: nlab("当前委托", O.length + PL.length + TS.length) },
+    { id: "ph", label: "历史仓位" },
+    { id: "hist", label: "历史委托" },
+    { id: "fills", label: "成交明细" },
+    { id: "pnl", label: "平仓盈亏" },
+    { id: "copy", label: nlab("跟单", FLW.length) },
+    { id: "coupon", label: nlab("卡券", (coupons.data?.items ?? []).filter((c) => c.status === "issued" || c.status === "active").length) },
+  ];
+  const subs: { id: Sub; label: string }[] = tab === "hist"
+    ? [{ id: "limit", label: nlab("限价", H.length) }, { id: "plan", label: nlab("计划委托", PLH.length) }, { id: "tpsl", label: nlab("止盈/止损", TSH.length) }, { id: "trail", label: nlab("移动止盈/止损", 0) }]
+    : [{ id: "limit", label: nlab("限价", O.length) }, { id: "plan", label: nlab("计划委托", PL.length) }, { id: "tpsl", label: nlab("止盈/止损", TS.length) }, { id: "trail", label: nlab("移动止盈/止损", 0) }];
+  const syms = (cts.data?.contracts ?? []).map((c) => c.symbol).filter((s) => kind === "all" || s.endsWith("USDT")).sort();
+  const shownSyms = syms.filter((s) => !find || s.toLowerCase().includes(find.toLowerCase()));
+  const availN = acct.data ? Number(acct.data.availableBalance) : null;
+  const broke = availN != null && !(availN > 0);
+  const cross = acct.data ? { avail: Number(acct.data.availableBalance) || 0, im: Number(acct.data.crossPositionMargin) || 0, mm: Number(acct.data.crossMaintenanceMargin) || 0 } : undefined;
   const empty = <p className="empty">暂无数据</p>;
-  const algoTable = (L: Algo[], kind: "plan" | "tpsl") => L.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>{kind === "plan" ? "方向" : "类型"}</th><th>触发条件</th><th>委托价</th><th>数量</th><th>状态</th><th /></tr></thead><tbody>
-    {L.map((o) => { const [d, b] = dir(o); return <tr key={o.algoId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td className={kind === "plan" ? (b ? "up" : "down") : o.algoType === "tp" ? "up" : "down"}>{kind === "plan" ? d : o.algoType === "tp" ? "止盈" : "止损"}</td><td>{TT[o.triggerPriceType ?? "LAST"]} {o.triggerDirection === "down" ? "≤" : "≥"} {o.triggerPrice}</td><td>{o.price || "市价"}</td><td>{o.qty || "全部仓位"}</td><td>{stLabel(o.status)}</td><td>{kind === "plan" && <a className="lime2" onClick={() => setPe(o)}>修改</a>} <a className="lime2" onClick={() => del(`/futures/${kind === "plan" ? "plan" : "tpsl"}-orders/${o.algoId}`, "已撤销")}>撤销</a></td></tr>; })}
+  const promo = <div className="fx-zero"><div>可用余额:&nbsp;{availN === 0 ? "0" : (availN ?? 0).toLocaleString("en-US", { maximumFractionDigits: 8 })}</div><div className="fx-zero-try">尝试 0风险体验模拟交易</div><div className="fx-zero-acts"><button type="button" onClick={() => openTransfer("资金账户", "合约账户")}>划转</button><a href="/deposit">充值</a><a href="/sim">模拟交易</a></div></div>;
+  const algoTable = (L: Algo[], mode: "plan" | "tpsl", histRow?: boolean) => L.length ? <table className="sotbl"><thead><tr><th>订单时间</th><th>合约</th><th>{mode === "plan" ? "方向" : "类型"}</th><th>触发价格</th><th>委托价格</th><th>数量</th><th>状态</th>{!histRow && <th />}</tr></thead><tbody>
+    {L.map((o) => { const [d, b] = dir(o); return <tr key={o.algoId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td className={mode === "plan" ? (b ? "up" : "down") : o.algoType === "tp" ? "up" : "down"}>{mode === "plan" ? d : o.algoType === "tp" ? "止盈" : "止损"}</td><td>{TT[o.triggerPriceType ?? "LAST"]} {o.triggerDirection === "down" ? "≤" : "≥"} {o.triggerPrice}</td><td>{o.price || "市价"}</td><td>{o.qty || "全部仓位"}</td><td>{stLabel(o.status)}</td>{!histRow && <td>{mode === "plan" && <a className="lime2" onClick={() => setPe(o)}>修改</a>} <a className="lime2" onClick={() => del(`/futures/${mode === "plan" ? "plan" : "tpsl"}-orders/${o.algoId}`, "已撤销")}>撤销</a></td>}</tr>; })}
   </tbody></table> : empty;
+  const ordTable = (L: Ord[], live: boolean) => L.length ? <table className="sotbl"><thead><tr><th>订单时间</th><th>合约</th><th>委托类型</th><th>方向</th><th>委托价格</th><th>数量</th><th>已成交</th><th>状态</th>{live && <th />}</tr></thead><tbody>
+    {L.map((o) => { const [d, b] = dir(o); return <tr key={o.orderId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : o.type === "market" ? "市价" : o.type}{o.timeInForce && o.type === "limit" ? ` · ${TIF[o.timeInForce] ?? o.timeInForce}` : ""}</td><td className={b ? "up" : "down"}>{d}</td><td>{o.price || "市价"}</td><td>{o.qty}</td><td>{o.filledQty}</td><td>{stLabel(o.status)}</td>{live && <td>{o.type === "limit" && <a className="lime2" onClick={() => setEdit(o)}>修改</a>} <a className="lime2" onClick={() => del(`/futures/orders/${o.orderId}`, "已撤单")}>撤单</a></td>}</tr>; })}
+  </tbody></table> : empty;
+  const blank = (node: ReactNode, n: number) => broke && n === 0 ? promo : node;
+  const body = () => {
+    if (tab === "coupon") {
+      const items = coupons.data?.items ?? [];
+      const sum = (k: CouponItem["kind"]) => { const xs = items.filter((c) => c.kind === k && (c.status === "issued" || c.status === "active")); return xs.length ? xs.reduce((a, c) => a + Number(c.bonus?.remaining ?? c.amount ?? 0), 0) : null; };
+      const trial = sum("trial"), fee = sum("deduction");
+      const fmt = (v: number | null) => v == null ? "--" : v.toLocaleString("en-US", { maximumFractionDigits: 4 });
+      return <div className="fx-coupon"><div className="kv2"><span>抵扣金</span><b>{fmt(fee)} USDT</b></div><div className="kv2"><span>体验金</span><b>{fmt(trial)} USDT</b></div>{items.length ? <table className="sotbl"><thead><tr><th>卡券</th><th>面额</th><th>状态</th></tr></thead><tbody>{items.map((c) => <tr key={c.id}><td>{c.title}</td><td>{c.amount} {c.asset || "USDT"}</td><td>{c.status === "issued" ? "待使用" : c.status === "active" ? "使用中" : c.status === "expired" ? "已过期" : "已失效"}</td></tr>)}</tbody></table> : <p className="empty">暂无卡券</p>}<a className="fx-more" href="/coupons">前往卡券中心</a></div>;
+    }
+    if (tab === "copy") {
+      return blank(FLW.length ? <table className="sotbl"><thead><tr><th>交易员</th><th>状态</th><th>本金</th><th>已退回</th><th>已付分润</th><th /></tr></thead><tbody>{FLW.map((x) => <tr key={x.id}><td>{x.traderId}</td><td>{x.status === "active" ? "跟单中" : x.status}</td><td>{x.principal}</td><td>{x.returned}</td><td>{x.sharePaid}</td><td><a className="lime2" onClick={() => del(`/futures/copy/follows/${x.id}`, "已停止跟单")}>停止跟单</a></td></tr>)}</tbody></table> : <p className="empty">暂无跟单 <a href="/copy">前往跟单</a></p>, FLW.length);
+    }
+    if (tab === "pos") {
+      return blank(P.length ? <div className="fx-scroll"><table className="sotbl fx-pos"><thead><tr><th>合约</th><th>持仓量</th><th>持仓价值</th><th>开仓均价</th><th>预估强平价</th><th>标记价格</th><th>仓位保证金</th><th>保证金比率</th><th>未实现盈亏 (回报率)</th><th>加仓</th><th>全部止盈/止损</th><th>部分止盈/止损</th><th>移动止盈/止损</th><th>反手</th><th>ADL</th><th>平仓</th></tr></thead><tbody>
+        {P.map((p) => { const ps = TS.filter((o) => o.symbol === p.symbol && (!p.positionSide || !o.positionSide || o.positionSide === p.positionSide)); const full = ps.filter((o) => !o.qty), part = ps.filter((o) => !!o.qty); const tpo = full.find((o) => o.algoType === "tp"), slo = full.find((o) => o.algoType === "sl"); const hedge = p.positionSide === "LONG" || p.positionSide === "SHORT";
+          return <tr key={p.symbol + p.side + (p.positionSide ?? "")}><td className="fx-sym"><b>{p.symbol}</b><small className={sideTxt(p.side) === "多" ? "up" : "down"}>{sideTxt(p.side)}·{p.leverage}X·{p.marginMode === "isolated" ? "逐仓" : "全仓"}·{hedge ? "分仓" : "合仓"}</small></td><td>{p.qty}</td><td><ValueCell p={p} /></td><td>{p.entryPrice}</td><td title={liqText(p.liquidationPrice, p.markPrice, p.side) ? undefined : (p.marginMode === "cross" ? "全仓保证金充足，暂无强平价" : "保证金充足，暂无强平价")}>{liqText(p.liquidationPrice, p.markPrice, p.side) ?? "--"}</td><td data-testid="pos-mark"><MarkCell sym={p.symbol} fb={p.markPrice} /></td><td>{p.margin} USDT</td><td><RatioCell p={p} cross={cross} /></td><PnlCell p={p} /><td>—</td><td>{tpo || slo ? <button type="button" className="fx-mini" onClick={() => setTp({ p, tp: tpo, sl: slo })}>{tpo?.triggerPrice || "--"} / {slo?.triggerPrice || "--"}</button> : <button type="button" className="fx-mini" onClick={() => setTp({ p })}>+</button>}</td><td>{part.length ? <button type="button" className="fx-mini" onClick={() => setTp({ p, tp: part.find((o) => o.algoType === "tp"), sl: part.find((o) => o.algoType === "sl") })}>数量, {part[0].qty}</button> : <button type="button" className="fx-mini" onClick={() => setTp({ p })}>+</button>}</td><td>—</td><td><button type="button" className="fx-mini" onClick={() => setRv(p)}>反手</button></td><td><Adl n={p.adlRank} /></td><td><div className="fx-acts"><button type="button" className="fx-mini" onClick={() => setLc(p)}>限价</button><button type="button" className="fx-mini" onClick={() => close(p)}>市价</button></div></td></tr>; })}
+      </tbody></table></div> : <p className="empty">暂无仓位</p>, P.length);
+    }
+    if (tab === "ph") return blank(PH.length ? <table className="sotbl"><thead><tr><th>合约</th><th>方向</th><th>开仓均价</th><th>平仓均价</th><th>最大持仓</th><th>已平数量</th><th>平仓盈亏</th><th>手续费</th><th>资金费</th><th>已实现收益</th><th>开仓时间</th><th>平仓时间</th><th>状态</th></tr></thead><tbody>
+      {PH.map((p) => <tr key={p.id}><td>{p.symbol}</td><td className={p.side === "long" ? "up" : "down"}>{p.side === "long" ? "多" : "空"} {p.leverage}x</td><td>{p.entryPrice}</td><td>{p.closePrice}</td><td>{p.maxQty}</td><td>{p.closedQty}</td><td className={Number(p.realizedPnl) >= 0 ? "up" : "down"}>{fmtFeeExact(p.realizedPnl)}</td><td>{fmtFeeExact(p.fee)}</td><td>{fmtFeeExact(p.fundingFee)}</td><td className={Number(p.netPnl) >= 0 ? "up" : "down"}>{fmtFeeExact(p.netPnl)}</td><td>{fmtLocal(p.openTime)}</td><td>{fmtLocal(p.closeTime)}</td><td>{stLabel(p.status)}</td></tr>)}
+    </tbody></table> : empty, PH.length);
+    if (tab === "pnl") return blank(PH.length ? <table className="sotbl"><thead><tr><th>合约</th><th>方向</th><th>平仓数量</th><th>开仓均价</th><th>平仓均价</th><th>平仓盈亏</th><th>开仓时间</th><th>平仓时间</th></tr></thead><tbody>
+      {PH.map((p) => <tr key={p.id}><td>{p.symbol}</td><td className={p.side === "long" ? "up" : "down"}>{p.side === "long" ? "多" : "空"}·{p.leverage}X</td><td>{p.closedQty}</td><td>{p.entryPrice}</td><td>{p.closePrice}</td><td className={Number(p.realizedPnl) >= 0 ? "up" : "down"}>{fmtFeeExact(p.realizedPnl)}</td><td>{fmtLocal(p.openTime)}</td><td>{fmtLocal(p.closeTime)}</td></tr>)}
+    </tbody></table> : empty, PH.length);
+    if (tab === "fills") return blank(FL.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>方向</th><th>成交价格</th><th>成交数量</th><th>手续费</th><th>角色</th></tr></thead><tbody>
+      {FL.map((t) => <tr key={t.tradeId}><td>{fmtLocal(t.time)}</td><td>{t.symbol}</td><td className={t.side === "buy" ? "up" : "down"}>{t.side === "buy" ? "买入" : "卖出"}</td><td>{t.price}</td><td>{t.qty}</td><td>{fmtFeeExact(t.fee)}</td><td>{t.role === "maker" ? "Maker" : "Taker"}</td></tr>)}
+    </tbody></table> : empty, FL.length);
+    if (sub === "trail") return blank(<p className="empty">暂无移动止盈止损</p>, 0);
+    if (sub === "plan") return blank(algoTable(tab === "hist" ? PLH : PL, "plan", tab === "hist"), (tab === "hist" ? PLH : PL).length);
+    if (sub === "tpsl") return blank(algoTable(tab === "hist" ? TSH : TS, "tpsl", tab === "hist"), (tab === "hist" ? TSH : TS).length);
+    return blank(ordTable(tab === "hist" ? H : O, tab === "open"), (tab === "hist" ? H : O).length);
+  };
   return (
     <div className="orders" data-guide="orders">
-      <div className="pt sm" role="tablist" aria-label="合约订单">{labels.map((x, i) => <b key={x} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}</b>)}<span className="sp" />{cur.source === "network" && <span className="fx-src" role="button" style={{ cursor: "pointer" }} onClick={() => cur.reload()}>加载失败，点击重试</span>}{symbol && <label className="tk-only"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} />只看当前合约</label>}</div>
-      {!authed ? <p className="empty">登录后查看{T[tab]}</p>
-        : cur.loading && !cur.data ? <div style={{ padding: 12 }}><div className="lb-skel" style={{ height: 80 }} /></div>
-        : tab === 0 ? (P.length ? <table className="sotbl"><thead><tr><th>合约</th><th>数量</th><th>开仓价</th><th>标记价</th><th>强平价</th><th>保证金</th><th>未实现盈亏(ROE)</th><th>止盈/止损</th><th /></tr></thead><tbody>
-            {P.map((p) => { const ps = TS.filter((o) => o.symbol === p.symbol && (!p.positionSide || o.positionSide === p.positionSide)); const tpo = ps.find((o) => o.algoType === "tp"), slo = ps.find((o) => o.algoType === "sl"); const tpv = tpo?.triggerPrice, slv = slo?.triggerPrice;
-              return <tr key={p.symbol + p.side + (p.positionSide ?? "")}><td>{p.symbol} <span className={sideTxt(p.side) === "多" ? "up" : "down"}>{sideTxt(p.side)} {p.leverage}x</span></td><td>{p.qty}</td><td>{p.entryPrice}</td><td data-testid="pos-mark"><MarkCell sym={p.symbol} fb={p.markPrice} /></td><td title={liqText(p.liquidationPrice, p.markPrice, p.side) ? undefined : (p.marginMode === "cross" ? "全仓保证金充足，暂无强平价" : "保证金充足，暂无强平价")}>{liqText(p.liquidationPrice, p.markPrice, p.side) ?? "--"}</td><td>{p.margin}</td><PnlCell p={p} /><td>{tpv || "--"} / {slv || "--"} <a className="lime2" onClick={() => setTp({ p, tp: tpo, sl: slo })}>{tpo || slo ? "修改" : "设置"}</a></td><td><a className="lime2" onClick={() => close(p)}>市价平仓</a></td></tr>; })}
-          </tbody></table> : <p className="empty">暂无仓位</p>)
-        : tab === 2 ? algoTable(PL, "plan")
-        : tab === 3 ? algoTable(TS, "tpsl")
-        : tab === 6 ? (FL.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>方向</th><th>成交价</th><th>成交量</th><th>手续费</th><th>角色</th></tr></thead><tbody>
-            {FL.map((t) => <tr key={t.tradeId}><td>{fmtLocal(t.time)}</td><td>{t.symbol}</td><td className={t.side === "buy" ? "up" : "down"}>{t.side === "buy" ? "买入" : "卖出"}</td><td>{t.price}</td><td>{t.qty}</td><td>{fmtFeeExact(t.fee)}</td><td>{t.role === "maker" ? "Maker" : "Taker"}</td></tr>)}
-          </tbody></table> : empty)
-        : tab === 5 ? (PH.length ? <table className="sotbl"><thead><tr><th>平仓时间</th><th>合约</th><th>方向</th><th>开仓均价</th><th>平仓均价</th><th>最大持仓</th><th>已实现盈亏</th><th>手续费 / 资金费</th><th>状态</th></tr></thead><tbody>
-            {PH.map((p) => <tr key={p.id}><td>{fmtLocal(p.closeTime)}</td><td>{p.symbol}</td><td className={p.side === "long" ? "up" : "down"}>{p.side === "long" ? "多" : "空"} {p.leverage}x</td><td>{p.entryPrice}</td><td>{p.closePrice}</td><td>{p.maxQty}</td><td className={+(p.netPnl ?? p.realizedPnl ?? 0) >= 0 ? "up" : "down"}>{fmtFeeExact(p.netPnl ?? p.realizedPnl)}</td><td>{fmtFeeExact(p.fee)} / {fmtFeeExact(p.fundingFee)}</td><td>{stLabel(p.status)}</td></tr>)}
-          </tbody></table> : empty)
-        : (() => { const L = tab === 1 ? O : H; return L.length ? <table className="sotbl"><thead><tr><th>时间</th><th>合约</th><th>类型</th><th>方向</th><th>价格</th><th>数量</th><th>已成交</th><th>状态</th>{tab === 1 && <th />}</tr></thead><tbody>
-            {L.map((o) => { const [d, b] = dir(o); return <tr key={o.orderId}><td>{fmtLocal(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : o.type === "market" ? "市价" : o.type}{o.timeInForce && o.type === "limit" ? ` · ${TIF[o.timeInForce] ?? o.timeInForce}` : ""}</td><td className={b ? "up" : "down"}>{d}</td><td>{o.price}</td><td>{o.qty}</td><td>{o.filledQty}</td><td>{stLabel(o.status)}</td>{tab === 1 && <td>{o.type === "limit" && <a className="lime2" onClick={() => setEdit(o)}>改单</a>} <a className="lime2" onClick={() => del(`/futures/orders/${o.orderId}`, "已撤单")}>撤单</a></td>}</tr>; })}
-          </tbody></table> : empty; })()}
+      <div className="pt sm" role="tablist" aria-label="合约订单">{tabs.map((x) => <b key={x.id} {...tabProps(tab === x.id, () => { setTab(x.id); setSub("limit"); })} className={tab === x.id ? "on" : ""} onClick={() => { setTab(x.id); setSub("limit"); }}>{x.label}</b>)}<span className="sp" />{cur.source === "network" && <span className="fx-src" role="button" style={{ cursor: "pointer" }} onClick={() => cur.reload()}>加载失败，点击重试</span>}{symbol && <label className="tk-only"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} />当前交易对</label>}</div>
+      {!authed ? <p className="empty">请 <a href="/login">登录</a> 或 <a href="/register">注册</a> 后开始交易</p> : <>
+        {(tab === "open" || tab === "hist") && <div className="fx-sub" role="tablist" aria-label="委托类型">{subs.map((x) => <b key={x.id} className={sub === x.id ? "on" : ""} onClick={() => setSub(x.id)}>{x.label}</b>)}</div>}
+        {tab !== "coupon" && <div className="fx-filters">
+          <div className={"fx-drop" + (menu === "kind" ? " open" : "")} onPointerDown={(e) => e.stopPropagation()}>
+            <button type="button" className="fx-drop-btn" onClick={() => setMenu(menu === "kind" ? "" : "kind")}>合约类型：{kind === "usdt" ? "USDT合约" : "全部"}<i /></button>
+            {menu === "kind" && <div className="fx-menu">{([["all", "全部"], ["usdt", "USDT合约"]] as const).map(([k, t]) => <div key={k} className={"fx-opt" + (kind === k ? " on" : "")} onClick={() => { setKind(k); setMenu(""); }}><span>{t}</span>{kind === k && <span>✓</span>}</div>)}</div>}
+          </div>
+          <div className={"fx-drop" + (menu === "sym" ? " open" : "")} onPointerDown={(e) => e.stopPropagation()}>
+            <button type="button" className="fx-drop-btn" onClick={() => setMenu(menu === "sym" ? "" : "sym")}>合约筛选：{pick || "全部"}<i /></button>
+            {menu === "sym" && <div className="fx-menu"><input placeholder="筛选" value={find} onChange={(e) => setFind(e.target.value.toUpperCase())} /><div className={"fx-opt" + (!pick ? " on" : "")} onClick={() => { setPick(""); setMenu(""); }}><span>全部</span>{!pick && <span>✓</span>}</div>{shownSyms.map((s) => <div key={s} className={"fx-opt" + (pick === s ? " on" : "")} onClick={() => { setPick(s); setMenu(""); }}><span>{s}</span>{pick === s && <span>✓</span>}</div>)}</div>}
+          </div>
+        </div>}
+        {cur.loading && !cur.data ? <div style={{ padding: 12 }}><div className="lb-skel" style={{ height: 80 }} /></div> : body()}
+      </>}
       {edit && <EditModal o={edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); reloadAll(); }} />}
       {tp && <TpslModal p={tp.p} cur={tp} onClose={() => setTp(null)} onDone={() => { setTp(null); reloadAll(); }} />}
       {pe && <PlanEditModal o={pe} onClose={() => setPe(null)} onDone={() => { setPe(null); reloadAll(); }} />}
+      {lc && <LimitCloseModal p={lc} onClose={() => setLc(null)} onDone={() => { setLc(null); reloadAll(); }} />}
+      {rv && <ReverseModal p={rv} onClose={() => setRv(null)} onDone={() => { setRv(null); reloadAll(); }} />}
     </div>
   );
 }
@@ -236,6 +350,54 @@ function PlanEditModal({ o, onClose, onDone }: { o: Algo; onClose: () => void; o
         <div className="inp"><small>委托价</small><input inputMode="decimal" aria-label="委托价" placeholder="留空则市价" value={f.price} onChange={(e) => setF({ ...f, price: num(e.target.value) })} /><em>USDT</em></div>
         <div className="inp"><small>数量</small><input inputMode="decimal" aria-label="数量" value={f.qty} onChange={(e) => setF({ ...f, qty: num(e.target.value) })} /></div>
       </div>
+    </Modal>
+  );
+}
+
+/** 限价平仓：只减仓限价单，数量默认等于当前持仓 */
+function LimitCloseModal({ p, onClose, onDone }: { p: Pos; onClose: () => void; onDone: () => void }) {
+  const [price, setPrice] = useState("");
+  const [qty, setQty] = useState(p.qty.replace(/^-/, ""));
+  const [busy, setBusy] = useState(false);
+  const ok = async () => {
+    if (!(Number(price) > 0)) return toast("请输入价格", "err");
+    if (!(Number(qty) > 0)) return toast("数量必须大于 0", "err");
+    const hedge = p.positionSide === "LONG" || p.positionSide === "SHORT";
+    setBusy(true);
+    const r = await rest("POST", "/futures/orders", { symbol: p.symbol, side: sideTxt(p.side) === "多" ? "sell" : "buy", qty, type: "limit", timeInForce: "GTC", price, reduceOnly: hedge ? undefined : true, positionSide: hedge ? p.positionSide : undefined });
+    setBusy(false);
+    if (!r.ok) return toast(r.error || "下单失败", "err", 4000);
+    toast("限价平仓已提交"); onDone();
+  };
+  return (
+    <Modal title={`限价平仓 · ${p.symbol}`} onClose={onClose} foot={<><button className="tk-b2" onClick={onClose}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>确认</button></>}>
+      <div className="tk-ed">
+        <div className="inp"><small>价格</small><input inputMode="decimal" aria-label="平仓价格" value={price} onChange={(e) => setPrice(num(e.target.value))} /><em>USDT</em></div>
+        <div className="inp"><small>数量</small><input inputMode="decimal" aria-label="平仓数量" value={qty} onChange={(e) => setQty(num(e.target.value))} /></div>
+        <p className="tk-txt g">只减仓。不会增加持仓。</p>
+      </div>
+    </Modal>
+  );
+}
+
+/** 反手：先市价平掉当前仓位，再按相同数量反向市价开仓 */
+function ReverseModal({ p, onClose, onDone }: { p: Pos; onClose: () => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const ok = async () => {
+    const hedge = p.positionSide === "LONG" || p.positionSide === "SHORT";
+    const qty = p.qty.replace(/^-/, "");
+    setBusy(true);
+    const c = await rest("POST", `/futures/positions/${p.symbol}/close`, hedge ? { positionSide: p.positionSide } : {});
+    if (!c.ok) { setBusy(false); return toast(c.error || "平仓失败", "err", 4000); }
+    const r = await rest("POST", "/futures/orders", { symbol: p.symbol, side: sideTxt(p.side) === "多" ? "sell" : "buy", qty, type: "market", timeInForce: "IOC", positionSide: hedge ? (p.positionSide === "LONG" ? "SHORT" : "LONG") : undefined });
+    setBusy(false);
+    onDone();
+    if (!r.ok) return toast(r.error || "反向开仓失败，原仓位已平", "err", 4000);
+    toast("已反向开仓");
+  };
+  return (
+    <Modal title={`反手 · ${p.symbol}`} onClose={onClose} foot={<><button className="tk-b2" onClick={onClose}>取消</button><button className="tk-b1" disabled={busy} onClick={ok}>确认</button></>}>
+      <p className="tk-txt">以市价平掉当前{sideTxt(p.side)}仓 {p.qty}，并按相同数量反向开仓。</p>
     </Modal>
   );
 }

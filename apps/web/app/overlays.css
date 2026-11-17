@@ -1,0 +1,28 @@
+.ov-mask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:320;display:flex}
+.ov-mask.center{align-items:center;justify-content:center;padding:24px}
+.ov-mask.bottom{align-items:flex-end;justify-content:center}
+.ov-dialog,.ov-sheet{background:#161616;color:#fff;box-shadow:0 16px 48px rgba(0,0,0,.4)}
+.ov-dialog{width:min(440px,100%);border-radius:16px;padding:18px 18px 16px;border:1px solid #2a2a2a}
+.ov-sheet{width:min(520px,100%);max-height:78vh;overflow:auto;border-radius:16px 16px 0 0;padding:6px 16px 16px}
+.ov-grip{width:36px;height:4px;border-radius:4px;background:#3a3a3a;margin:8px auto 10px}
+.ov-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;font-size:16px}
+.ov-x{border:0;background:none;color:#9a9a9a;font-size:18px;cursor:pointer;width:32px;height:32px}
+.ov-list{display:flex;flex-direction:column;gap:2px}
+.ov-it{display:flex;align-items:center;width:100%;padding:12px;border:0;border-radius:10px;background:transparent;color:inherit;font-size:14px;text-align:left;cursor:pointer}
+.ov-it.on{background:#243014;color:#c6ef55}
+.ov-search{width:100%;height:40px;margin-bottom:10px;padding:0 12px;border-radius:10px;border:1px solid #2e2e2e;background:#101010;color:#fff;font-size:14px}
+.ov-empty{padding:20px 8px;color:#8a8a8a;font-size:13px}
+.ov-group{margin-bottom:14px}
+.ov-lab{font-size:13px;color:#9a9a9a;margin-bottom:8px}
+.ov-chips{display:flex;flex-wrap:wrap;gap:8px}
+.ov-chip{border:1px solid #333;background:transparent;color:#eee;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px}
+.ov-chip.on{border-color:#c6ef55;color:#c6ef55}
+.ov-foot{display:flex;gap:10px;margin-top:14px}
+.ov-foot button,.ov-b1,.ov-b2{height:44px;border:0;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
+.ov-foot button{flex:1}
+.ov-b2{background:#2a2a2a;color:#fff}
+.ov-b1{background:#fff;color:#111}
+.ov-amt{font-size:28px;font-weight:600;text-align:right;padding:8px 4px 14px}
+.ov-keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ov-keys button{height:48px;border:0;border-radius:10px;background:#242424;color:#fff;font-size:18px;cursor:pointer}
+.light .ov-trigger{border:0;background:var(--lb-light-fill);color:inherit;font:inherit;text-align:left;cursor:pointer}

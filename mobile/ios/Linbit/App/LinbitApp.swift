@@ -70,6 +70,13 @@ struct RootTabView: View {
             ThemedRoot { FeatureHost(page: page) }
                 .environmentObject(session).environmentObject(AccountsStore.shared).environmentObject(theme).overlay(alignment: .top) { ToastOverlay() }
         }
+        .fullScreenCover(isPresented: Binding(get: { router.marketDetail != nil }, set: { if !$0 { router.marketDetail = nil } })) {
+            if let symbol = router.marketDetail {
+                ThemedRoot { MarketDetailView(symbol: symbol) }
+                    .environmentObject(session).environmentObject(theme)
+                    .overlay(alignment: .top) { ToastOverlay() }
+            }
+        }
         .fullScreenCover(isPresented: $session.showAuth) {
             ThemedRoot { AuthFlow(start: session.authStart) }.environmentObject(session).environmentObject(theme).overlay(alignment: .top) { ToastOverlay() }
         }

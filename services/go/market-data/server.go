@@ -22,6 +22,7 @@ type Server struct {
 	feed   *IndexFeed
 	chat   *Chat
 	tradfi *TradFi
+	ext    *extFeed
 }
 
 // NewServer constructs a Server.
@@ -365,6 +366,12 @@ func (s *Server) handleKlines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := atoiDefault(q.Get("limit"), 160, 1, 1000)
+	if s.ext != nil {
+		if rows, ok := s.ext.Klines(r.Context(), symbol, interval, limit); ok {
+			common.WriteJSON(w, http.StatusOK, rows)
+			return
+		}
+	}
 	candles, ok := s.agg.Klines(symbol, interval, limit)
 	if !ok {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "交易对不存在")
@@ -383,6 +390,12 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := atoiDefault(r.URL.Query().Get("limit"), 50, 1, 1000)
+	if s.ext != nil {
+		if rows, ok := s.ext.Trades(r.Context(), symbol, limit); ok {
+			common.WriteJSON(w, http.StatusOK, rows)
+			return
+		}
+	}
 	trades, ok := s.agg.RecentTrades(symbol, limit)
 	if !ok {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "交易对不存在")

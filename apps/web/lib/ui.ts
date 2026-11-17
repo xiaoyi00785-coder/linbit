@@ -5,7 +5,8 @@ export function toast(msg: string, kind: ToastKind = "ok", ms = 2200) {
   let box = document.getElementById("lb-toasts");
   if (!box) { box = document.createElement("div"); box.id = "lb-toasts"; document.body.appendChild(box); }
   const el = document.createElement("div");
-  el.className = `lb-toast ${kind}`;
+  el.className = `lb-toast ov-toast ${kind}`;
+  el.setAttribute("role", "status");
   el.innerHTML = `<i>${kind === "ok" ? "✓" : kind === "err" ? "!" : "i"}</i><span></span>`;
   (el.querySelector("span") as HTMLElement).textContent = msg;
   box.appendChild(el);

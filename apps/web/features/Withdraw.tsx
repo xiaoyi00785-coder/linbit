@@ -33,7 +33,7 @@ export function Withdraw() {
   const [coinOpen, setCoinOpen] = useState(false);
   const [asset, setAsset] = useState("USDT");
   const [sending, setSending] = useState(false);
-  const [net, setNet] = useState("TRC20");
+  const [net, setNet] = useState("");
   const [addr, setAddr] = useState("");
   const [memo, setMemo] = useState("");
   const [tab, setTab] = useState<"chain" | "inner">("chain");
@@ -81,7 +81,7 @@ export function Withdraw() {
       if (l.length) {
         setNetInfo((m) => ({ ...m, ...Object.fromEntries(l.map((x) => [`${asset}:${x.network}`, x])) }));
         setApiNets((m) => ({ ...m, [asset]: l.map((x) => x.network) }));
-        setNet((cur) => (l.some((x) => x.network === cur) ? cur : l[0].network));
+        setNet((cur) => (cur && l.some((x) => x.network === cur) ? cur : ""));
         return;
       }
       fallbackNets();
@@ -102,12 +102,13 @@ export function Withdraw() {
           } as WalletNetwork])),
         }));
         setApiNets((m) => ({ ...m, [asset]: l }));
-        setNet((cur) => (l.includes(cur) ? cur : l[0]));
+        setNet((cur) => (cur && l.includes(cur) ? cur : ""));
       }
     });
   }, [asset]);
 
   useEffect(() => {
+    if (!net) { setCfg(undefined); setCfgSrc(undefined); return; }
     getWithdrawConfig(asset, net).then((r) => {
       setCfg(r.data);
       setCfgSrc(r.source);
@@ -170,6 +171,7 @@ export function Withdraw() {
   const receive = amtOk && n > fee ? trimFixed(n - fee, 8) : "--";
 
   const check = () => {
+    if (!net) return "请选择网络";
     if (!addr) return "请输入提现地址";
     if (addrE) return addrE;
     if (!amt) return "请输入提现数量";
@@ -180,7 +182,7 @@ export function Withdraw() {
 
   // 温馨提示随所选币种 / 网络变化：最小额与预计到账都取上面同一个派生值（minS / etaM），缺失则不显示这一句
   const tip = tab === "chain" ? withdrawTip(asset, net, minS, etaM) : undefined;
-  const submitOk = !wLockUntil && (tab === "inner" ? !!toKey && amtOk : !!addr && !addrE && amtOk && (!memoReq || !!memo));
+  const submitOk = !wLockUntil && (tab === "inner" ? !!toKey && amtOk : !!net && !!addr && !addrE && amtOk && (!memoReq || !!memo));
 
   return (
     <main className="light">
@@ -212,14 +214,14 @@ export function Withdraw() {
                 <a className={tab === "inner" ? "on" : ""} onClick={() => { setTab("inner"); setErr(""); }}>内部转账 <i>免费</i></a>
               </div>
               {tab === "chain" ? (<>
-                <div className="wwarn"><b>!</b>请确认收款平台支持所选币种与网络，选错币种或网络可能导致资产丢失。</div>
+                <div className="wwarn"><b>!</b>请确保接收平台支持您提现的代币和网络。如果您选择了错误的代币和网络，可能会导致资产丢失。</div>
                 <div className="fx-field">
                   提现网络
                   <NetPicker out coin={asset} net={net} setNet={setNet}
                     nets={netsOf(asset).map((n) => { const i = netInfo[`${asset}:${n}`]; return { network: n, min: minOf(n, i), eta: etaMinutes(i?.estimatedArrivalMinutes), recommended: i?.recommended === true || undefined }; })} />
                 </div>
                 <div className="fx-field">
-                  <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址簿 ›</Link></span>
+                  <span className="wlab">提现地址 <Link to="/setting/address" className="wbook">地址管理</Link></span>
                   <input placeholder="输入或粘贴地址" value={addr} onChange={(e) => setAddr(e.target.value.trim())} aria-invalid={!!addrE} />
                   {addrE && <div className="fx-err fe-inline">{addrE}</div>}
                 </div>
@@ -238,18 +240,18 @@ export function Withdraw() {
             </St>
             <St n="3" t={tab === "inner" ? "转账数量" : "提现数量"}>
               <div className="fx-field">
-                <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : minS ? `最小提现数量：${minS}` : ni || cfg ? "请输入提现数量" : "加载中…"} value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(free)}>全部</a><em>{asset}</em></span>
+                <span className="wamt"><input inputMode="decimal" placeholder={tab === "inner" ? "请输入转账数量" : "请输入提现数量"} value={amt} onChange={(e) => setAmt(cleanNum(e.target.value))} aria-invalid={!!amtE} /><a className="lime2" onClick={() => setAmt(free)}>最大值</a><em>{asset}</em></span>
                 {amtE && <div className="fx-err fe-inline">{amtE}</div>}
               </div>
               <div className="wkv">
-                <span>{wAcct === "funding" ? "资金账户可用" : "可用"}</span><b>{fmtAmt(free)} {asset}</b>
+                <span>可用的</span><b>{fmtAmt(free)} {asset}</b>
                 {tab !== "inner" && <>
-                <span>单笔最小提现</span><b>{minS ?? "--"} {asset}</b>
-                <span>单笔最大提现</span><b>{maxS ?? "不限"} {asset}</b></>}
+                <span>提币限制</span><b>-- {asset}</b>
+                <span>单次最小提现金额</span><b>{minS ?? "--"} {asset}</b>
+                <span>单次最大提现金额</span><b>{maxS ?? "--"} {asset}</b></>}
               </div>
               <div className="wkv wdiv">
-                <span>平台手续费</span><b>0 {asset}</b>
-                {tab !== "inner" && <><span>链上网络费（Gas）<Src s={cfgSrc} /></span><b>{feeS ?? "--"} {asset}</b></>}
+                <span>手续费<Src s={cfgSrc} /></span><b>{tab === "inner" ? "0" : feeS ?? "--"} {asset}</b>
                 <span>到账数量</span><b>{tab === "inner" ? (amtOk ? amt : "--") : receive} {asset}</b>
                 <span>预计到账时间</span><b>{tab === "inner" ? "实时到账" : eta}</b>
               </div>
@@ -258,18 +260,28 @@ export function Withdraw() {
               {err && <div className="fx-err">{err}</div>}
               {done && <div className="fx-ok">{`✓ 提现申请已提交（${done.id}），状态：审核中`}</div>}
               <button className={"lb dark wide" + (submitOk ? "" : " dis")} disabled={!submitOk} onClick={() => { const e = tab === "inner" ? checkInner() : check(); setErr(e); if (!e) { setFpe(null); setTfa(null); setConfirm(true); } }}>
-                {tab === "inner" ? "转账" : "提现"}
+                {tab === "inner" ? "转账" : "提 现"}
               </button>
             </St>
           </div>
           <div className="dtips">
             <div className="lcard sm">
-              <b>温馨提示</b>
-              <p className="lg">请确认设备安全，谨防信息被篡改或泄露。<br/>谨防诈骗！linbit 不会向你索要账户密码等敏感信息，也不会要求私下转账或提现。<br/>linbit 不收取平台提现手续费，仅从提现数量中扣除链上网络费（Gas），到账数量 = 提现数量 − Gas。{tip && <><br/><span data-testid="wd-tip">{tip}</span></>}</p>
+              <b>提现</b>
+              <p className="lg">{wLockUntil ? <>安全设置变更后 24 小时内不可提现，预计 {fmtUntil(wLockUntil)} 解除。</> : "为了您的资金安全，修改密码或安全设置后，24 小时内不可提现。"}</p>
+              <div className="wkv">
+                <span>电子邮件</span><b>{sec.data?.emailVerified ? "已验证" : <a className="lime2" onClick={() => goto("/setting/security")}>前往设置 &gt;</a>}</b>
+                <span>手机号码</span><b>{sec.data?.phoneVerified ? "已验证" : <a className="lime2" onClick={() => goto("/setting/security")}>前往设置 &gt;</a>}</b>
+                <span>验证器 App</span><b>{sec.data?.twoFactor?.enabled ? "已验证" : <a className="lime2" onClick={() => goto("/setting/security")}>前往设置 &gt;</a>}</b>
+              </div>
+              <p className="lg">选择设置任一 2FA 验证方法</p>
             </div>
             <div className="lcard sm">
-              <b>常见问题</b>
-              <p className="lg">1. 如何从 linbit 提现？<br/>2. 提现为什么还没到账？</p>
+              <b>温馨提示</b>
+              <p className="lg">请务必确认电脑及浏览器安全，防止信息被篡改或泄露。<br/>请小心诈骗！linbit 不会以任何形式向您索要账号密码等信息，更不会要求您私下转账和提现。{tip && <><br/><span data-testid="wd-tip">{tip}</span></>}</p>
+            </div>
+            <div className="lcard sm">
+              <b>相关问题</b>
+              <p className="lg">1. 如何从 linbit 提现<br/>2. 为什么我的提币未到账</p>
             </div>
           </div>
         </div>
@@ -280,7 +292,8 @@ export function Withdraw() {
               <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.direction === "out" ? "转出" : "转入"} {r.amount} {r.asset} · {r.direction === "out" ? (r.toMaskedEmail ? maskEmail(r.toMaskedEmail) : `UID ${r.toUid}`) : `UID ${r.fromUid}`}</span><span>{stLabel(r.status)}</span></div>
             ))}
           </>) : (<>
-          <h3>提现记录 <Src s={recSrc} /></h3>
+          <div className="lrow"><h3>提现记录</h3><span className="lg">所有提现记录 <Src s={recSrc} /></span></div>
+          <div className="wkv lg"><span>时间</span><span>资产</span><span>数量</span><span>类型</span><span>状态</span></div>
           {records.length === 0 ? <div className="lg">暂无数据</div> : records.map((r) => (
             <div key={r.id} className="fx-item"><span>{r.createdAt.slice(0, 16).replace("T", " ")}</span><span className="sp">{r.amount} {r.asset} · {r.network}</span><span>{stLabel(r.status, "withdraw")}</span></div>
           ))}</>)}

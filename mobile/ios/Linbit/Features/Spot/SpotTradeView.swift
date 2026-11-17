@@ -128,18 +128,17 @@ struct SpotTradeView: View {
             }.buttonStyle(PressableStyle(scale: 1))
 
             if m.isPlan {
-                NumberBox(label: "触发价", unit: m.quote, text: $m.triggerText, onEdit: m.qtyEdited)
-                PillSegment(items: ["限价", "市价"], selected: Binding(get: { m.planMarket ? 1 : 0 }, set: { m.planMarket = $0 == 1; m.qtyEdited() }), height: 30)
-            }
-            if m.marketLike {
-                Text(m.isPlan ? "触发后以市价成交" : "以当前最优价格成交").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
+                NumberBox(label: "触发价格", unit: m.quote, text: $m.triggerText, onEdit: m.qtyEdited)
+                planPriceRow
+            } else if m.marketLike {
+                Text("以当前最优价格成交").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
                     .frame(maxWidth: .infinity).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
                 if m.isBuy {
                     PillSegment(items: ["按金额", "按数量"], selected: Binding(get: { m.marketBuyByAmount ? 0 : 1 }, set: { m.marketBuyByAmount = $0 == 0 }), height: 30)
                         .accessibilityIdentifier("spot.marketBuyMode")
                 }
             } else {
-                NumberBox(label: m.isPlan ? "委托价格" : "价格", unit: m.quote, text: $m.priceText, onEdit: m.qtyEdited)
+                NumberBox(label: "价格", unit: m.quote, text: $m.priceText, onEdit: m.qtyEdited)
             }
             if m.byAmount {
                 NumberBox(label: "交易额", unit: m.quote, text: $m.amountText, onEdit: {})
@@ -151,8 +150,8 @@ struct SpotTradeView: View {
                     .padding(.horizontal, 2)
                 NumberBox(label: "交易额", unit: m.quote, text: $m.amountText, onEdit: m.amountEdited)
             }
-            if !m.isPlan { Checkbox(on: $m.tpsl, label: "止盈/止损") }
-            if m.tpsl && !m.isPlan {
+            Checkbox(on: $m.tpsl, label: "止盈/止损")
+            if m.tpsl {
                 NumberBox(label: "止盈触发价", unit: m.quote, text: $m.tpText, onEdit: {})
                 NumberBox(label: "止损触发价", unit: m.quote, text: $m.slText, onEdit: {})
             }
@@ -161,15 +160,36 @@ struct SpotTradeView: View {
                 info(m.isBuy ? "可买" : "可卖", "\(Fmt.amount(m.isBuy ? m.maxQty : m.availBase * m.price, m.isBuy ? m.qtyPrec : 2)) \(m.isBuy ? m.base : m.quote)")
                 Button { showFee = true } label: {
                     HStack(spacing: 4) {
-                        Text("手续费率").font(.lb(FontSize.small)).foregroundColor(p.textSecondary).underline(pattern: .dot)
+                        Text("预估手续费").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                         Spacer()
-                        Text("\(SpotCond.pct(m.feeRate)) ≈ \(Fmt.amount(m.fee, 4))").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                        Text(Fmt.amount(m.fee, 2)).font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
                     }
                 }.buttonStyle(.plain).accessibilityIdentifier("spot.feeRate")
             }
-            LBButton(title: session.isLoggedIn ? "\(m.isBuy ? "买入" : "卖出") \(m.base)" : "登录 / 注册",
-                     kind: session.isLoggedIn ? (m.isBuy ? .buy : .sell) : .primary, height: 40, loading: m.placing) { submit() }
+            LBButton(title: session.isLoggedIn ? "\(m.isBuy ? "买入" : "卖出") \(m.base)" : "登录",
+                     kind: m.isBuy ? .buy : .sell, height: 40, loading: m.placing) { submit() }
         }
+    }
+
+    /// 计划委托的价格行：同一灰底里左侧是委托价，右侧切换限价单 / 市价（对照 17-spot-plan-order）。
+    private var planPriceRow: some View {
+        HStack(spacing: 8) {
+            if m.planMarket {
+                Text("触发后以市价成交").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
+            } else {
+                PlanLimitPriceField(text: $m.priceText, quote: m.quote, onEdit: m.qtyEdited)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Button("限价单") { m.planMarket = false; m.qtyEdited() }
+                Button("市价") { m.planMarket = true; m.qtyEdited() }
+            } label: {
+                Text(m.planMarket ? "市价" : "限价单").font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 44)
+        .background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
     }
 
     private func info(_ k: String, _ v: String, plus: Bool = false) -> some View {
@@ -274,6 +294,26 @@ struct SpotTradeView: View {
 
 enum SpotRoute: Hashable { case history }
 
+/// 计划委托限价时的价格输入，单位写在标签里，右侧留给「限价单」。
+private struct PlanLimitPriceField: View {
+    @Environment(\.palette) private var p
+    @Binding var text: String
+    let quote: String
+    let onEdit: () -> Void
+    @FocusState private var f: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            if !text.isEmpty || f { Text("价格（\(quote)）").font(.lb(11)).foregroundColor(p.textSecondary) }
+            TextField("", text: Binding(get: { text }, set: { v in
+                let clean = v.filter { $0.isNumber || $0 == "." }
+                if clean.filter({ $0 == "." }).count <= 1 { text = clean; onEdit() }
+            }))
+            .placeholder(when: text.isEmpty && !f) { Text("价格（\(quote)）").foregroundColor(p.textSecondary) }
+            .font(.lbNum(FontSize.body)).foregroundColor(p.textPrimary).keyboardType(.decimalPad).focused($f)
+        }
+    }
+}
+
 /// 输入盒：左上小标签 + 数值，右侧单位（对照图 #28 灰底圆角）
 struct NumberBox: View {
     @Environment(\.palette) private var p
@@ -318,8 +358,7 @@ struct SpotEmpty: View {
         } else {
             VStack(spacing: 12) {
                 EmptyIllustration()
-                Text("登录后查看委托").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
-                LBButton(title: "登录 / 注册") { session.present(.login) }.frame(width: 160)
+                Text("暂无数据").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
             }.frame(maxWidth: .infinity).padding(.vertical, 24)
         }
     }

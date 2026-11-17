@@ -17,6 +17,8 @@ func defPair() Pair {
 var btc = Rules{Market: "spot", Symbol: "BTCUSDT", Base: "BTC", Quote: "USDT", Tick: d("0.01"), Step: d("0.00001"), MinQty: d("0.00001"), MinNotional: d("5")}
 
 func TestLadderSymmetric(t *testing.T) {
+	testNotional = d("1000")
+	t.Cleanup(func() { testNotional = decimal.Zero })
 	inv := Inventory{AllowBuy: true, AllowSell: true}
 	mid, qs := BuildLadder(defPair(), btc, d("100000"), inv)
 	if !mid.Equal(d("100000")) || len(qs) != 10 {
@@ -32,8 +34,28 @@ func TestLadderSymmetric(t *testing.T) {
 	if !qs[2].Price.Equal(d("99900")) || !qs[9].Price.Equal(d("100250")) {
 		t.Fatalf("levels %s %s", qs[2].Price, qs[9].Price)
 	}
-	if !qs[0].Qty.Equal(d("0.01")) || !qs[2].Qty.GreaterThan(qs[0].Qty) {
-		t.Fatalf("qty %s %s", qs[0].Qty, qs[2].Qty)
+	if !qs[0].Qty.Equal(d("0.01")) {
+		t.Fatalf("qty %s", qs[0].Qty)
+	}
+}
+
+func TestRandomQuoteNotionalRange(t *testing.T) {
+	lo, hi := d("100"), d("1000000")
+	var sawSmall, sawBig bool
+	for i := 0; i < 400; i++ {
+		n := randomQuoteNotional()
+		if n.LessThan(lo) || n.GreaterThan(hi) {
+			t.Fatalf("%s out of range", n)
+		}
+		if n.LessThan(d("2000")) {
+			sawSmall = true
+		}
+		if n.GreaterThan(d("50000")) {
+			sawBig = true
+		}
+	}
+	if !sawSmall || !sawBig {
+		t.Fatal("random notional too narrow")
 	}
 }
 
@@ -85,12 +107,21 @@ func TestDiff(t *testing.T) {
 	}
 }
 
+func TestDiffQtyMismatch(t *testing.T) {
+	targets := []Quote{{Side: "buy", Price: d("99950"), Qty: d("0.01")}}
+	resting := []restingOrder{{ID: "fat", Side: "buy", Price: d("99950"), Remaining: d("1")}}
+	c, p := Diff(resting, targets, d("2"))
+	if len(c) != 1 || c[0].ID != "fat" || len(p) != 1 {
+		t.Fatalf("cancel=%+v place=%+v", c, p)
+	}
+}
+
 func TestPatchValidate(t *testing.T) {
 	bad := d("0.1")
 	if (pairPatch{SpreadBps: &bad}).Validate() == nil {
 		t.Fatal("spread too small accepted")
 	}
-	lv := 50
+	lv := 99
 	if (pairPatch{Levels: &lv}).Validate() == nil {
 		t.Fatal("levels accepted")
 	}

@@ -25,12 +25,12 @@ type Baseline struct {
 	UpdatedBy  string           `json:"updatedBy,omitempty"`
 }
 
-// resolveBaseline picks the baseline: admin target > testnet seed > start balance > 0.
-func resolveBaseline(b Baseline, testnet bool) Baseline {
+// resolveBaseline picks the baseline: admin target > virtual seed > start balance > 0.
+func resolveBaseline(b Baseline, _ bool) Baseline {
 	switch {
 	case b.TargetBase != nil:
 		b.Qty, b.Source = *b.TargetBase, "admin"
-	case testnet && b.SeedQty.IsPositive():
+	case b.SeedQty.IsPositive():
 		b.Qty, b.Source = b.SeedQty, "seed"
 	case b.StartBase != nil:
 		b.Qty, b.Source = *b.StartBase, "start"
@@ -101,23 +101,21 @@ func (m *Maker) Baselines(ctx context.Context) (map[string]Baseline, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	testnet, _ := common.TestnetSeedAllowed()
-	if testnet {
-		seeds, err := m.seedTotals(ctx)
-		if err != nil {
-			return nil, err
+	seeds, err := m.seedTotals(ctx)
+	if err != nil {
+		log.Printf("mm: seed totals: %v", err)
+		seeds = map[string]decimal.Decimal{}
+	}
+	for a, q := range seeds {
+		if a == "USDT" {
+			continue
 		}
-		for a, q := range seeds {
-			if a == "USDT" {
-				continue
-			}
-			b := out[a]
-			b.Asset, b.SeedQty = a, q
-			out[a] = b
-		}
+		b := out[a]
+		b.Asset, b.SeedQty = a, q
+		out[a] = b
 	}
 	for a, b := range out {
-		out[a] = resolveBaseline(b, testnet)
+		out[a] = resolveBaseline(b, true)
 	}
 	return out, nil
 }

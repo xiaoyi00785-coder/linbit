@@ -7,20 +7,18 @@ import (
 	"testing"
 )
 
-// The virtual seed must be refused before anything else in production or on mainnet.
-func TestSeedRefusedInProductionOrMainnet(t *testing.T) {
-	m := &Maker{cfg: Config{UserID: "mm:main"}}
-	for _, env := range []map[string]string{
-		{"LINBIT_ENV": "production", "WALLET_CHAIN": "mock"},
-		{"LINBIT_ENV": "development", "WALLET_CHAIN": "mainnet"},
-	} {
-		for k, v := range env {
-			t.Setenv(k, v)
-		}
-		w := httptest.NewRecorder()
-		m.Routes().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/internal/mm/seed", strings.NewReader(`{"ref":"x"}`)))
-		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "SEED_DISABLED") {
-			t.Fatalf("%v: got %d %s", env, w.Code, w.Body.String())
-		}
+// MM credit is no longer blocked by NETWORK/WALLET_CHAIN. Without a live
+// asset service the call fails upstream, but it must not return SEED_DISABLED.
+func TestSeedAllowedOnMainnet(t *testing.T) {
+	m := &Maker{cfg: Config{UserID: "mm:main", SeedBaseAssets: "BTC,ETH"}}
+	t.Setenv("LINBIT_ENV", "production")
+	t.Setenv("WALLET_CHAIN", "mainnet")
+	t.Setenv("NETWORK", "mainnet")
+	req := httptest.NewRequest(http.MethodPost, "/internal/mm/seed", strings.NewReader(`{"ref":"x","asset":"USDT","amount":"1000"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	m.Routes().ServeHTTP(w, req)
+	if strings.Contains(w.Body.String(), "SEED_DISABLED") || w.Code == http.StatusForbidden {
+		t.Fatalf("mainnet still blocked seed: %d %s", w.Code, w.Body.String())
 	}
 }

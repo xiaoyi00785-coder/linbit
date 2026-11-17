@@ -10,31 +10,55 @@ struct MarketsView: View {
     @State private var category = 0
     @State private var field: SortField = .volume
     @State private var dir: SortDir = .none
+    @State private var searching = false
+    @State private var query = ""
+    @State private var showMore = false
+    @AppStorage("lb.market.logo") private var showLogo = true
+    @AppStorage("lb.market.moreSeen") private var moreSeen = false
+    @ObservedObject private var router = Router.shared
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider().overlay(p.divider)
-            switch top {
-            case 0: WatchlistTab()
-            case 1: marketTab
-            default: PlaceholderView(title: "聊天室", note: "聊天室后端暂未提供，敬请期待")
+            if searching {
+                MarketSearchPage(query: $query) { searching = false; query = "" }
+            } else {
+                header
+                Divider().overlay(p.divider)
+                switch top {
+                case 0: WatchlistTab(query: query)
+                case 1: marketTab
+                default: ChatRoomView(embedded: true)
+                }
             }
         }
         .background(p.bg)
         .task { if store.spot.isEmpty { await store.load() } }
+        .onChange(of: router.marketSearch) { on in
+            if on { searching = true; router.marketSearch = false }
+        }
+        .lbSheet($showMore) {
+            LBSheet(title: "图标设置", showClose: true, onClose: { showMore = false }) {
+                VStack(spacing: 0) {
+                    SheetOptionRow(title: "有 Logo", selected: showLogo) { showLogo = true }
+                    SheetOptionRow(title: "无 Logo", selected: !showLogo) { showLogo = false }
+                }.padding(.bottom, 12)
+            }
+        }
     }
 
     private var header: some View {
         HStack {
             PrimaryTabs(items: ["自选", "市场", "聊天室"], selected: $top)
             Spacer()
-            IconView(icon: .search, size: 22, tint: p.textPrimary)
-            ZStack(alignment: .topTrailing) {
-                IconView(icon: .more, size: 22, tint: p.textPrimary)
-                Circle().fill(p.badgeDot).frame(width: 6, height: 6).offset(x: 3, y: -4)
-            }
-            .padding(.leading, 18)
+            Button { searching = true } label: {
+                IconView(icon: .search, size: 22, tint: p.textPrimary).frame(width: 32, height: 32)
+            }.buttonStyle(.plain).accessibilityLabel("搜索")
+            Button { moreSeen = true; showMore = true } label: {
+                ZStack(alignment: .topTrailing) {
+                    IconView(icon: .more, size: 22, tint: p.textPrimary)
+                    if !moreSeen { Circle().fill(p.badgeDot).frame(width: 6, height: 6).offset(x: 3, y: -4) }
+                }.frame(width: 32, height: 32)
+            }.buttonStyle(.plain).accessibilityLabel("图标设置").padding(.leading, 8)
         }
         .padding(.horizontal, Spacing.pageH)
         .frame(height: 44)
@@ -57,7 +81,9 @@ struct MarketsView: View {
             } else {
                 ChipBar(items: chipItems, selected: $category).padding(.vertical, 10)
                 MarketListHeader(field: $field, dir: $dir)
-                let rows = store.filtered(kind == 0 ? .spot : .futures, categoryIndex: category).sorted(by: field, dir)
+                let rows = store.filtered(kind == 0 ? .spot : .futures, categoryIndex: category)
+                    .filter { MarketQuery.match($0, query) }
+                    .sorted(by: field, dir)
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if rows.isEmpty {
@@ -74,10 +100,19 @@ struct MarketsView: View {
 }
 
 /// 自选：空时显示推荐（#7：两列卡片 + 勾选 + 黑色「加入自选」）
+enum MarketQuery {
+    static func match(_ row: MarketRow, _ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return true }
+        return row.symbol.localizedCaseInsensitiveContains(q) || row.base.localizedCaseInsensitiveContains(q)
+    }
+}
+
 struct WatchlistTab: View {
     @Environment(\.palette) private var p
     @StateObject private var store = MarketStore.shared
     @StateObject private var watch = Watchlist.shared
+    var query = ""
     @State private var kind = 0
     @State private var picked: Set<String> = []
     @State private var field: SortField = .volume
@@ -90,12 +125,35 @@ struct WatchlistTab: View {
                 Spacer()
             }
             .padding(.horizontal, Spacing.pageH).padding(.top, 10)
-            let all = (store.spot + store.futures).filter { watch.contains($0.symbol) }
-            if watch.symbols.isEmpty { recommend } else {
+            let pool = filteredPool
+            let all = pool.filter { watch.contains($0.symbol) && MarketQuery.match($0, query) }
+            if watch.symbols.isEmpty && kind == 0 { recommend } else {
                 MarketListHeader(field: $field, dir: $dir).padding(.top, 8)
-                ScrollView { LazyVStack(spacing: 0) { ForEach(all.sorted(by: field, dir)) { MarketRowView(row: $0) } } }
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        if all.isEmpty { EmptyStateView(text: "暂无自选") }
+                        ForEach(all.sorted(by: field, dir)) { MarketRowView(row: $0) }
+                    }
+                }
             }
         }
+        .task { await loadTradFi() }
+    }
+
+    @State private var tradfiBases: Set<String> = []
+
+    private var filteredPool: [MarketRow] {
+        switch kind {
+        case 1: return store.spot
+        case 2: return store.futures
+        case 3: return (store.spot + store.futures).filter { tradfiBases.contains($0.base) }
+        default: return store.spot + store.futures
+        }
+    }
+
+    private func loadTradFi() async {
+        guard let items = try? await TradFiAPI.assets(nil).items else { return }
+        tradfiBases = Set(items.compactMap { $0["asset"].s })
     }
 
     private var recommend: some View {
@@ -123,5 +181,68 @@ struct WatchlistTab: View {
         }
         .padding(Spacing.pageH)
         .onAppear { picked = Set(recs.map(\.symbol)) }
+    }
+}
+
+/// 行情搜索：热门来自当前成交额，结果是真实行情。取消回到列表。
+struct MarketSearchPage: View {
+    @Environment(\.palette) private var p
+    @StateObject private var store = MarketStore.shared
+    @Binding var query: String
+    let onCancel: () -> Void
+    @State private var kind = 0
+    @State private var tradfiBases: Set<String> = []
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(p.textSecondary)
+                    TextField("搜索交易对", text: $query)
+                        .font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
+                        .focused($focused).autocorrectionDisabled().textInputAutocapitalization(.never)
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundColor(p.textTertiary) }
+                    }
+                }
+                .padding(.horizontal, 12).frame(height: 36).background(Capsule().fill(p.fill))
+                Button("取消", action: onCancel).font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
+            }
+            .padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
+            ChipBar(items: ["现货", "合约", "TradFi"], selected: $kind).padding(.vertical, 8)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("热门搜索").font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, Spacing.pageH).padding(.bottom, 4)
+                    }
+                    if rows.isEmpty { EmptyStateView(text: store.loading ? "加载中" : "无匹配交易对") }
+                    ForEach(rows) { MarketRowView(row: $0, showsStar: true) }
+                }.padding(.bottom, Metrics.tabBarH + 30)
+            }
+        }
+        .onAppear { focused = true }
+        .task { await loadTradFi() }
+    }
+
+    private var pool: [MarketRow] {
+        switch kind {
+        case 1: return store.futures
+        case 2: return (store.spot + store.futures).filter { tradfiBases.contains($0.base) }
+        default: return store.spot
+        }
+    }
+
+    private var rows: [MarketRow] {
+        let matched = pool.filter { MarketQuery.match($0, query) }.sorted(by: .volume, .desc)
+        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return Array(matched.prefix(8)) }
+        return matched
+    }
+
+    private func loadTradFi() async {
+        guard let items = try? await TradFiAPI.assets(nil).items else { return }
+        tradfiBases = Set(items.compactMap { $0["asset"].s })
     }
 }

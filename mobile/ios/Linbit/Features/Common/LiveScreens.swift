@@ -143,6 +143,47 @@ struct PaperFuturesScreen: View {
     }
 }
 
+/// 价格预警。接口只接受现货、INDEX、一次、站内，条件只有 gte / lte。
+enum PriceAlertAPI {
+    struct Item: Decodable, Identifiable {
+        var alertId: String
+        var symbol: String
+        var condition: String
+        var threshold: String
+        var status: String
+        var revision: Int64
+        var id: String { alertId }
+    }
+    struct List: Decodable { var items: [Item] }
+    struct Create: Encodable {
+        let clientAlertId, market, symbol, condition, threshold, priceSource, triggerMode: String
+        let channels: [String]
+    }
+
+    static func list(symbol: String?) async throws -> [Item] {
+        let r: List = try await APIClient.shared.get("/price-alerts", query: ["symbol": symbol, "pageSize": "50"], auth: true)
+        return r.items
+    }
+
+    /// 去掉千分位后的十进制字符串。不是数字时返回 nil，不发给接口。
+    static func threshold(_ text: String) -> String? {
+        let raw = text.replacingOccurrences(of: ",", with: "").trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty, Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) != nil else { return nil }
+        return raw
+    }
+
+    static func create(symbol: String, condition: String, threshold: String) async throws {
+        guard let raw = Self.threshold(threshold) else { return }
+        let _: JSONValue = try await APIClient.shared.post("/price-alerts", body: Create(
+            clientAlertId: UUID().uuidString, market: "spot", symbol: symbol, condition: condition,
+            threshold: raw, priceSource: "INDEX", triggerMode: "once", channels: ["in_app"]))
+    }
+
+    static func delete(_ id: String) async throws {
+        try await APIClient.shared.deleteAuth("/price-alerts/\(id)")
+    }
+}
+
 struct PriceAlertSheet: View {
     @Environment(\.palette) private var p
     let symbol: String
@@ -153,23 +194,18 @@ struct PriceAlertSheet: View {
     var body: some View {
         LBSheet(title: "价格预警", showClose: true, onClose: onClose) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("\(symbol) 价格上穿后发送站内通知").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                LBTextField(placeholder: "触发价格", text: $price)
+                Text("\(symbol) 现货指数价上穿后，站内提醒一次").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                LBTextField(placeholder: "触发价格", text: $price, keyboard: .decimalPad)
                 if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
-                LBButton(title: "创建预警") { Task { await create() } }
+                LBButton(title: "创建预警", enabled: !price.trimmingCharacters(in: .whitespaces).isEmpty) { Task { await create() } }
             }.padding(.horizontal, Spacing.pageH)
         }
     }
 
     private func create() async {
-        struct Body: Encodable {
-            let clientAlertId, market, symbol, condition, threshold, priceSource, triggerMode: String
-            let channels: [String]
-        }
+        guard PriceAlertAPI.threshold(price) != nil else { error = "请输入数字价格"; return }
         do {
-            let _: JSONValue = try await APIClient.shared.post("/price-alerts", body: Body(
-                clientAlertId: UUID().uuidString, market: "futures", symbol: symbol, condition: "above",
-                threshold: price, priceSource: "last", triggerMode: "once", channels: ["inapp"]))
+            try await PriceAlertAPI.create(symbol: symbol, condition: "gte", threshold: price)
             onClose()
         } catch { self.error = error.lbMessage }
     }

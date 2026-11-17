@@ -58,7 +58,7 @@ market-data 的运营位（placements）也读 `CF-IPCountry`，仅用于展示�
 
 ## 虚拟资产
 
-测试网允许做市使用虚拟种子（`MM_SEED_BASE_ASSETS` 已包含股票与 PAXG/XAUT）；主网由 `common.TestnetSeedAllowed()` 守卫，只能用真实持有的代币。
+做市账户可通过后台「做市账户充值」直接入账（`MM_SEED_BASE_ASSETS` 已包含股票与 PAXG/XAUT）；主网同样可用。
 
 ## 后台
 

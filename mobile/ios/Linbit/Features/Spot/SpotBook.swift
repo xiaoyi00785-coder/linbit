@@ -21,7 +21,7 @@ struct OrderBookView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
-                Text("价格\n(\(m.quote))"); Spacer(); Text("数量\n(\(m.base))").multilineTextAlignment(.trailing)
+                Text("价格\n(\(m.quote))"); Spacer(); Text("数量\n(\(m.quote))").multilineTextAlignment(.trailing)
             }.font(.lb(11)).foregroundColor(p.textSecondary).padding(.bottom, 6)
 
             switch m.bookState {
@@ -30,7 +30,7 @@ struct OrderBookView: View {
             case .loaded(_):
                 let asks = Array(agg(m.book.asks, up: true).prefix(rows)).reversed()
                 let bids = Array(agg(m.book.bids, up: false).prefix(rows))
-                let maxQ = (Array(asks) + bids).map(\.qty).max() ?? 1
+                let maxQ = (Array(asks) + bids).map { $0.price * $0.qty }.max() ?? 1
                 if mode != 1 { side(Array(asks), up: false, maxQ: maxQ, pad: true) }
                 mid
                 if mode != 2 { side(bids, up: true, maxQ: maxQ, pad: false) }
@@ -58,17 +58,18 @@ struct OrderBookView: View {
         }
     }
     private func row(_ x: BookLevel?, up: Bool, maxQ: Decimal) -> some View {
-        Button { if let x { m.pickBookPrice(x.price) } } label: {
+        let notion = x.map { $0.price * $0.qty }
+        let ratio = notion.map { maxQ > 0 ? NSDecimalNumber(decimal: $0 / maxQ).doubleValue : 0 } ?? 0
+        return Button { if let x { m.pickBookPrice(x.price) } } label: {
             HStack {
                 Text(x.map { Fmt.price($0.price, precision: m.pricePrec) } ?? "--").foregroundColor(up ? p.up : p.down)
                 Spacer()
-                Text(x.map { Fmt.compact($0.qty) } ?? "--").foregroundColor(p.textPrimary)
+                Text(notion.map { Fmt.compact($0) } ?? "--").foregroundColor(p.textPrimary)
             }
             .font(.lbNum(12)).frame(height: 22)
             .background(alignment: .trailing) {
                 GeometryReader { g in
-                    let r = x.map { maxQ > 0 ? NSDecimalNumber(decimal: $0.qty / maxQ).doubleValue : 0 } ?? 0
-                    Rectangle().fill(up ? p.upTint : p.downTint).frame(width: g.size.width * min(r, 1))
+                    Rectangle().fill(up ? p.upTint : p.downTint).frame(width: g.size.width * min(ratio, 1))
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
@@ -159,7 +160,7 @@ struct OrderConfirmSheet: View {
                 kv(m.marketLike && !m.byAmount ? "预估交易额" : "交易额", "\(Fmt.amount(m.amount, 2)) \(m.quote)")
                 kv("手续费率", SpotCond.pct(m.feeRate))
                 kv("预估手续费", "\(Fmt.amount(m.fee, 4)) \(m.quote)")
-                if m.tpsl && !m.isPlan {
+                if m.tpsl {
                     if Dec.parse(m.tpText) > 0 { kv("止盈触发价", "\(m.tpText) \(m.quote)") }
                     if Dec.parse(m.slText) > 0 { kv("止损触发价", "\(m.slText) \(m.quote)") }
                 }

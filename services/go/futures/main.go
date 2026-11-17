@@ -46,6 +46,7 @@ func main() {
 		go srv.BackfillFunding(ctx)
 	}
 	go srv.RunTicker(ctx)
+	go srv.PollExternalTape(ctx)
 	go srv.RunTransferRetry(ctx)
 	if cfg.EventWorker {
 		go srv.RunEvents(ctx)

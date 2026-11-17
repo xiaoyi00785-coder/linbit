@@ -10,14 +10,14 @@ import {
   cancelSpotOrder, listMyTrades, listOpenOrders, listOrderHistory, placeSpotOrder,
   type Order, type SpotTrade,
 } from "@/lib/services";
-import { SPOT_FEE } from "@/lib/fees";
-import { fmtSig, fmtAmt, fmtFeeStr, fmtFeeEst } from "@/lib/format";
-import { useFeeSchedule } from "@/lib/live";
+import { fmtSig, fmtAmt, fmtFeeStr } from "@/lib/format";
 import type { PlaceOrderRequest } from "@/lib/services";
 import { Src } from "./common";
 import { useFillPrice, type PairMeta } from "./TradeKit";
 import { useTicker } from "@/lib/market";
 import { useBalances } from "@/lib/queries";
+import { rest } from "@/lib/rest";
+import { openTransfer } from "@/components/Transfer";
 
 const EVT = "lb-spot-orders";
 const bump = () => window.dispatchEvent(new Event(EVT));
@@ -30,10 +30,14 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const nav = useNavigate();
   const authed = useAuthStore((s) => !!s.accessToken);
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [type, setType] = useState<"limit" | "market">("limit");
+  const [type, setType] = useState<"limit" | "market" | "plan">("limit");
   const [price, setPrice] = useState("");
+  const [trig, setTrig] = useState("");
+  const [tpsl, setTpsl] = useState(false);
+  const [tp, setTp] = useState("");
+  const [sl, setSl] = useState("");
   useFillPrice((p) => { setPrice(p); setType("limit"); });
-  useEffect(() => { setPrice(""); setQty(""); setAmt(""); }, [SYMBOL]);
+  useEffect(() => { setPrice(""); setQty(""); setAmt(""); setTrig(""); setTp(""); setSl(""); }, [SYMBOL]);
   const fix = (v: string, d: number) => { const [a, b] = v.split("."); return b === undefined ? a : a + "." + b.slice(0, d); };
   const [qty, setQty] = useState("");
   // 市价买入按金额（USDT）下单：POST /spot/orders 的 quoteOrderQty；限价 / 市价卖出仍按数量
@@ -41,7 +45,7 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
   const byAmt = type === "market" && side === "buy";
   const [msg, setMsg] = useState<{ ok: boolean; t: string }>();
   const [busy, setBusy] = useState(false);
-  const px = type === "limit" ? Number(price) || 0 : last;
+  const px = (type !== "market" && Number(price)) ? Number(price) : last;
   const an = Number(amt) || 0;
   // 按金额买入时，数量按最新价估算（仅用于展示）
   const q = byAmt ? (last ? an / last : 0) : Number(qty) || 0;
@@ -75,12 +79,6 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
     setQty(fl ? fl.toFixed(pair.qp) : "");
   };
   // 费率来自 GET /spot/fee-schedule（不可用时回退平台默认 0.1%）；限价按 maker 估算上限取 max(maker,taker)，市价按 taker
-  const fs = useFeeSchedule("spot");
-  const rate = fs ? (type === "market" ? fs.taker : Math.max(fs.maker, fs.taker)) : SPOT_FEE.taker;
-  // 买入从所得基础币扣（最多 8 位小数），卖出从所得 USDT 扣（最多 4 位小数，与合约面板一致）；统一走 fmtFeeEst，小额不出现 0.00000006383 这类长小数
-  const feeV = side === "buy" ? q * rate : q * px * rate;
-  const fee = !q || (side === "sell" && !px) ? "--" : side === "buy" ? `${fmtFeeEst(feeV, 8)} ${B}` : `${fmtFeeEst(feeV, 4)} USDT`;
-
   const inflight = useRef(false); // 同步防重复提交（busy 状态要等重渲染才禁用按钮）
   const submit = async () => {
     if (inflight.current) return;
@@ -98,7 +96,14 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
     }
     if (type === "market" && !last) return setMsg({ ok: false, t: "暂无市价，请使用限价单" });
     if (type === "limit" && !Number(price)) return setMsg({ ok: false, t: "请输入价格" });
+    if (type === "plan" && !Number(trig)) return setMsg({ ok: false, t: "请输入触发价" });
     setBusy(true);
+    if (type === "plan") {
+      const r = await rest("POST", "/spot/orders/conditional", { symbol: SYMBOL, side, type: Number(price) ? "limit" : "market", kind: "trigger", triggerPrice: trig, price: Number(price) ? price : undefined, quantity: qty, timeInForce: Number(price) ? "GTC" : "IOC", clientOrderId: `web-${Date.now()}` });
+      setBusy(false);
+      if (!r.ok) return setMsg({ ok: false, t: r.error || "计划委托失败" });
+      setMsg({ ok: true, t: "计划委托已提交" }); setQty(""); setTrig(""); setPrice(""); setPc(0); bump(); return;
+    }
     const body = {
       symbol: SYMBOL, side, type,
       ...(byAmt ? { quoteOrderQty: amt } : { quantity: qty }),
@@ -111,7 +116,19 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
     try { r = await placeSpotOrder(body); }
     catch { r = { ok: false, error: "服务暂不可用" } as Awaited<ReturnType<typeof placeSpotOrder>>; }
     finally { inflight.current = false; setBusy(false); }
-    setMsg(r.ok ? (() => { const d: any = r.data; const m = orderToast(d?.status, d?.filledQuantity); return { ok: m.ok, t: `${m.t} #${d?.orderId}` }; })() : { ok: false, t: r.error ?? "下单失败" });
+    if (!r.ok) return setMsg({ ok: false, t: r.error ?? "下单失败" });
+    const d: any = r.data; const m = orderToast(d?.status, d?.filledQuantity);
+    const filled = Number(d?.filledQuantity) || 0;
+    if ((tp || sl) && filled > 0) {
+      const opp = side === "buy" ? "sell" : "buy";
+      const qf = String(d.filledQuantity);
+      for (const [kind, pxv] of [["take_profit", tp], ["stop", sl]] as const) {
+        if (!pxv) continue;
+        const c = await rest("POST", "/spot/orders/conditional", { symbol: SYMBOL, side: opp, type: "market", kind, triggerPrice: pxv, quantity: qf, timeInForce: "IOC", clientOrderId: `web-${kind}-${Date.now()}` });
+        if (!c.ok) { setMsg({ ok: false, t: `委托已成交，止盈止损未挂上：${c.error || "失败"}` }); setQty(""); setAmt(""); setPc(0); bump(); return; }
+      }
+    }
+    setMsg({ ok: m.ok, t: `${m.t} #${d?.orderId}${(tp || sl) && !(filled > 0) ? "。尚未成交，止盈止损未挂出" : ""}` });
     if (r.ok) { setQty(""); setAmt(""); setPc(0); bump(); window.setTimeout(bump, 800); window.setTimeout(bump, 2500); }
   };
 
@@ -121,38 +138,55 @@ export function SpotForm({ pair }: { pair: PairMeta }) {
         {(["buy", "sell"] as const).map((s) => <button key={s} role="tab" aria-selected={side === s} className={(side === s ? "on " : "") + s} onClick={() => setSide(s)}>{s === "buy" ? "买入" : "卖出"}</button>)}
       </div>
       <div className="pt sm" role="tablist" aria-label="订单类型">
-        {(["limit", "market"] as const).map((t) => <b key={t} {...tabProps(type === t, () => setType(t))} className={type === t ? "on" : ""} onClick={() => setType(t)}>{t === "limit" ? "限价" : "市价"}</b>)}
+        {([["limit", "限价"], ["market", "市价"], ["plan", "计划委托"]] as const).map(([k, lab]) => <b key={k} {...tabProps(type === k, () => setType(k))} className={type === k ? "on" : ""} onClick={() => setType(k)}>{lab}</b>)}
       </div>
-      {type === "limit" && <div className="inp"><small>价格(USDT)</small><input inputMode="decimal" value={price} onChange={(e) => setPrice(fix(num(e.target.value), pair.pp))} /></div>}
+      {type === "plan" && <div className="inp"><small>触发价</small><input inputMode="decimal" aria-label="触发价" value={trig} onChange={(e) => setTrig(fix(num(e.target.value), pair.pp))} /><em>USDT</em></div>}
+      {type !== "market" && <div className="inp"><small>{type === "plan" ? "委托价" : "价格"}</small><input inputMode="decimal" placeholder={type === "plan" ? "留空则市价" : ""} value={price} onChange={(e) => setPrice(fix(num(e.target.value), pair.pp))} /><em>USDT</em></div>}
       {byAmt ? <div className="inp"><small>金额(USDT)</small><input inputMode="decimal" aria-label="买入金额" placeholder="按金额买入" value={amt} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "金额不能为负数" }); return; } setMsg(undefined); setAmt(fix(num(v), 2)); setPc(0); }} aria-invalid={amt !== "" && !(an > 0)} /><em>USDT</em></div> :
       <div className="inp"><small>数量({B})</small><input inputMode="decimal" value={qty} onChange={(e) => { const v = e.target.value; if (/-/.test(v)) { setMsg({ ok: false, t: "数量不能为负数" }); return; } setMsg(undefined); setQty(fix(num(v), pair.qp)); }} aria-invalid={qty !== "" && !(q > 0)} /><em>{B}</em></div>}
       <div className={"slider lb-sl sp-sl " + side}><div className="line" /><div className="fill" style={{ width: pc + "%" }} />{[0, 25, 50, 75, 100].map((p) => <span key={p} {...btnProps(() => setByPct(p), `${p}%`)} className={pc >= p ? "on" : ""} style={{ left: p + "%" }} onClick={() => setByPct(p)}><i /><small>{p}%</small></span>)}<input type="range" min="0" max="100" value={pc} onChange={(e) => setByPct(+e.target.value)} aria-label="下单比例" /></div>
-      <div className="kv2 g"><span>可用</span><span>{authed ? `${fmtAmt(avail)} ${side === "buy" ? "USDT" : B}` : "--"}</span></div>
-      {byAmt ? <div className="kv2 g"><span>预估数量</span><span>{q ? `${q.toFixed(pair.qp)} ${B}` : "--"}</span></div> : <div className="kv2 g"><span>{type === "limit" ? "成交额" : "预估成交额"}</span><span>{(q * px).toFixed(2)} USDT</span></div>}
-      <div className="kv2 g"><span>{`预估手续费（${+(rate * 100).toFixed(4)}%）`}</span><span>{fee}</span></div>
+      {type !== "plan" && <label className="tk-ck2"><input type="checkbox" checked={tpsl} onChange={(e) => setTpsl(e.target.checked)} />止盈/止损</label>}
+      {type !== "plan" && tpsl && <div className="tk-tp2"><div className="inp"><small>止盈</small><input inputMode="decimal" placeholder="触发价" value={tp} onChange={(e) => setTp(num(e.target.value))} /><em>USDT</em></div><div className="inp"><small>止损</small><input inputMode="decimal" placeholder="触发价" value={sl} onChange={(e) => setSl(num(e.target.value))} /><em>USDT</em></div></div>}
+      <div className="kv2 g"><span>可用</span><b>{authed ? `${side === "buy" ? avail.toFixed(7) : avail.toFixed(pair.qp)} ${side === "buy" ? "USDT" : B}` : "--"}</b></div>
+      <div className="kv2 g"><span>{side === "buy" ? "可买" : "可卖"}</span><b>{authed ? `${(side === "buy" ? (px ? avail / px : 0) : avail).toFixed(side === "buy" ? pair.qp : 4)} ${side === "buy" ? B : "USDT"}` : "--"}</b></div>
       {msg && <div className={msg.ok ? "fx-ok" : "fx-err"} style={{ fontSize: 12, margin: "6px 0" }}>{msg.t}</div>}
-      <button className={"lbtn" + (authed && side === "sell" ? " sell" : "")} disabled={busy || sellBelowMin} title={sellBelowMin ? belowMinText : undefined} aria-busy={busy || undefined} onClick={submit}>{!authed ? "登录/注册" : sellBelowMin ? "低于最小下单量" : side === "buy" ? `买入 ${B}` : `卖出 ${B}`}</button>
+      <button className={"lbtn" + (authed && side === "sell" ? " sell" : "")} disabled={busy || sellBelowMin} title={sellBelowMin ? belowMinText : undefined} aria-busy={busy || undefined} onClick={submit}>{!authed ? "登录/注册" : sellBelowMin ? "低于最小下单量" : side === "buy" ? "买 入" : "卖 出"}</button>
     </div>
   );
 }
 
 const TABS = ["当前委托", "历史委托", "成交明细"] as const;
 const t = (iso: string) => new Date(iso).toLocaleString("zh-CN", { hour12: false });
+type Cond = { id: string; symbol: string; side: string; kind: string; type: string; triggerPrice: string; triggerDirection?: string; price?: string | null; quantity?: string | null; status: string; createdAt: string };
 
-export function SpotOrders({ symbol: SYMBOL }: { symbol: string }) {
+export function SpotOrders({ symbol: SYMBOL, base }: { symbol: string; base?: string }) {
   const [tab, setTab] = useState(0);
+  const [sub, setSub] = useState<"limit" | "tpsl" | "plan">("limit");
+  const [only, setOnly] = useState(false);
+  const [conds, setConds] = useState<Cond[]>([]);
   const [rows, setRows] = useState<(Order | SpotTrade)[]>([]);
   const [src, setSrc] = useState<"api" | "network">();
   const [err, setErr] = useState("");
   const authed = useAuthStore((s) => !!s.accessToken);
+  const bal = useBalances();
+  const free = (a: string) => Number(((bal.data as { items?: { asset: string; free: string }[] })?.items || []).find((x) => x.asset === a)?.free) || 0;
+  const coin = base || SYMBOL.replace(/USDT$/, "");
 
   const load = useCallback(async () => {
-    if (!authed) { setRows([]); return; }
-    const r = await (tab === 0 ? listOpenOrders(SYMBOL) : tab === 1 ? listOrderHistory(SYMBOL) : listMyTrades(SYMBOL));
+    if (!authed) { setRows([]); setConds([]); return; }
+    const sym = only ? SYMBOL : undefined;
+    const r = await (tab === 0 ? listOpenOrders(sym) : tab === 1 ? listOrderHistory(sym) : listMyTrades(sym));
     setSrc(r.source);
     setErr(r.ok ? "" : r.error ?? "加载失败");
     setRows((r.data?.items as (Order | SpotTrade)[]) ?? []);
-  }, [tab, authed, SYMBOL]);
+    if (tab === 2) return;
+    const q = new URLSearchParams({ status: tab === 1 ? "all" : "open", pageSize: "100" });
+    if (sym) q.set("symbol", sym);
+    const cr = await rest<{ items: Cond[] }>("GET", `/spot/orders/conditional?${q}`);
+    if (!cr.ok) { setErr(cr.error || "条件单加载失败"); setConds([]); return; }
+    const open = (c: Cond) => c.status === "pending" || c.status === "triggering";
+    setConds((cr.data?.items ?? []).filter((c) => (tab === 1 ? !open(c) : open(c))));
+  }, [tab, only, authed, SYMBOL]);
 
   useEffect(() => { load(); window.addEventListener(EVT, load); return () => window.removeEventListener(EVT, load); }, [load]);
 
@@ -161,32 +195,42 @@ export function SpotOrders({ symbol: SYMBOL }: { symbol: string }) {
     if (!r.ok) setErr(r.error ?? "撤单失败");
     bump();
   };
-
-  const head = tab === 2
-    ? ["时间", "交易对", "方向", "成交价", "成交数量", "手续费", "角色"]
-    : ["时间", "交易对", "类型", "方向", "价格", "数量", "已成交", "状态", tab === 0 ? "操作" : ""];
+  const cancelCond = async (id: string) => {
+    const r = await rest("DELETE", `/spot/orders/conditional/${id}`);
+    if (!r.ok) setErr(r.error || "撤销失败");
+    bump();
+  };
+  const shown = conds.filter((c) => sub === "plan" ? c.kind === "trigger" : c.kind === "stop" || c.kind === "take_profit");
+  const nlab = (name: string, n: number) => `${name}\u00a0(${n})`;
+  const broke = authed && !(free("USDT") > 0) && !(free(coin) > 0);
+  const emptyN = tab === 2 || sub === "limit" ? rows.length : shown.length;
+  const promo = <div className="fx-zero"><div>可用余额:&nbsp;0</div><div className="fx-zero-acts"><button type="button" onClick={() => openTransfer("资金账户", "现货账户")}>划转</button><a href="/deposit">充值</a></div></div>;
 
   return (
     <div className="orders" data-guide="orders">
       <div className="pt sm">
-        {TABS.map((x, i) => <b key={x} {...tabProps(tab === i, () => setTab(i))} className={tab === i ? "on" : ""} onClick={() => setTab(i)}>{x}{i === 0 && tab === 0 ? `(${rows.length})` : ""}</b>)}
-        <span className="sp" />{src && <Src s={src} />}
+        {TABS.map((x, i) => <b key={x} {...tabProps(tab === i, () => { setTab(i); setSub("limit"); })} className={tab === i ? "on" : ""} onClick={() => { setTab(i); setSub("limit"); }}>{x}</b>)}
+        <span className="sp" />{src === "network" && <Src s={src} />}
+        <label className="tk-only"><input type="checkbox" checked={only} onChange={(e) => setOnly(e.target.checked)} />当前交易对</label>
       </div>
+      {tab !== 2 && <div className="fx-sub">{([["limit", nlab("限价|市价", sub === "limit" ? rows.length : 0)], ["tpsl", nlab("止盈/止损", conds.filter((c) => c.kind === "stop" || c.kind === "take_profit").length)], ["plan", nlab("计划委托", conds.filter((c) => c.kind === "trigger").length)]] as const).map(([k, lab]) => <b key={k} className={sub === k ? "on" : ""} onClick={() => setSub(k)}>{lab}</b>)}</div>}
       {err && <div className="fx-err" style={{ margin: "8px 12px" }}>{err}</div>}
-      {!rows.length ? <p className="empty">{authed ? "暂无数据" : "登录后查看委托"}</p> : (
-        <table className="sotbl">
-          <thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead>
-          <tbody>
-            {tab === 2
-              ? (rows as SpotTrade[]).map((r) => (
-                <tr key={r.tradeId}><td>{t(r.createdAt)}</td><td>{r.symbol}</td><td className={r.side === "buy" ? "up" : "down"}>{r.side === "buy" ? "买入" : "卖出"}</td><td>{r.price}</td><td>{r.quantity}</td><td>{fmtFeeStr(r.fee)} {r.feeAsset ?? ""}</td><td>{r.role === "maker" ? "Maker" : "Taker"}</td></tr>
-              ))
-              : (rows as Order[]).map((o) => (
-                <tr key={o.orderId}><td>{t(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : "市价"}</td><td className={o.side === "buy" ? "up" : "down"}>{o.side === "buy" ? "买入" : "卖出"}</td><td>{o.price ?? "市价"}</td><td>{orderQtyText(o)}</td><td>{o.filledQuantity}</td><td>{stLabel(o.status)}</td><td>{tab === 0 && <a className="lime2" style={{ cursor: "pointer" }} onClick={() => cancel(o)}>撤单</a>}</td></tr>
-              ))}
-          </tbody>
-        </table>
-      )}
+      {!authed ? <p className="empty">请 <a href="/login">登录</a> 或 <a href="/register">注册</a> 后开始交易</p>
+        : broke && emptyN === 0 ? promo
+        : emptyN === 0 ? <p className="empty">暂无数据</p>
+        : tab === 2 ? (
+          <table className="sotbl"><thead><tr><th>时间</th><th>交易对</th><th>方向</th><th>成交价</th><th>成交数量</th><th>手续费</th><th>角色</th></tr></thead><tbody>
+            {(rows as SpotTrade[]).map((r) => <tr key={r.tradeId}><td>{t(r.createdAt)}</td><td>{r.symbol}</td><td className={r.side === "buy" ? "up" : "down"}>{r.side === "buy" ? "买入" : "卖出"}</td><td>{r.price}</td><td>{r.quantity}</td><td>{fmtFeeStr(r.fee)} {r.feeAsset ?? ""}</td><td>{r.role === "maker" ? "Maker" : "Taker"}</td></tr>)}
+          </tbody></table>
+        ) : sub === "limit" ? (
+          <table className="sotbl"><thead><tr><th>时间</th><th>交易对</th><th>类型</th><th>方向</th><th>价格</th><th>数量</th><th>已成交</th><th>状态</th>{tab === 0 && <th />}</tr></thead><tbody>
+            {(rows as Order[]).map((o) => <tr key={o.orderId}><td>{t(o.createdAt)}</td><td>{o.symbol}</td><td>{o.type === "limit" ? "限价" : "市价"}</td><td className={o.side === "buy" ? "up" : "down"}>{o.side === "buy" ? "买入" : "卖出"}</td><td>{o.price ?? "市价"}</td><td>{orderQtyText(o)}</td><td>{o.filledQuantity}</td><td>{stLabel(o.status)}</td>{tab === 0 && <td><a className="lime2" style={{ cursor: "pointer" }} onClick={() => cancel(o)}>撤单</a></td>}</tr>)}
+          </tbody></table>
+        ) : (
+          <table className="sotbl"><thead><tr><th>时间</th><th>交易对</th><th>{sub === "plan" ? "方向" : "类型"}</th><th>触发价</th><th>委托价</th><th>数量</th><th>状态</th>{tab === 0 && <th />}</tr></thead><tbody>
+            {shown.map((c) => <tr key={c.id}><td>{t(c.createdAt)}</td><td>{c.symbol}</td><td className={c.side === "buy" ? "up" : "down"}>{sub === "plan" ? (c.side === "buy" ? "买入" : "卖出") : c.kind === "take_profit" ? "止盈" : "止损"}</td><td>{c.triggerDirection === "down" ? "≤" : "≥"} {c.triggerPrice}</td><td>{c.price || "市价"}</td><td>{c.quantity || "--"}</td><td>{stLabel(c.status)}</td>{tab === 0 && <td><a className="lime2" style={{ cursor: "pointer" }} onClick={() => cancelCond(c.id)}>撤销</a></td>}</tr>)}
+          </tbody></table>
+        )}
     </div>
   );
 }

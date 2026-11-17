@@ -49,7 +49,15 @@ type liveFeed struct {
 	mu    sync.Mutex
 	trade map[string]*liveBar // sym|iv
 	index map[string]*liveBar
+	ext   map[string]extCandle
 	stats map[string]cachedStats
+}
+
+type extCandle struct {
+	open       int64
+	o, h, l, c decimal.Decimal
+	v, t       decimal.Decimal
+	at         time.Time
 }
 
 func bucketOf(t time.Time, sec int64) int64 {
@@ -110,6 +118,38 @@ func (f *liveFeed) addIndex(sym string, px decimal.Decimal, now time.Time) {
 	}
 }
 
+func (f *liveFeed) setExt(sym, iv string, b klineBar) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ext == nil {
+		f.ext = map[string]extCandle{}
+	}
+	f.ext[sym+"|"+iv] = extCandle{open: b.Open, o: b.O, h: b.H, l: b.L, c: b.C, v: b.V, t: b.T, at: time.Now()}
+}
+
+// PollExternalTape copies venue candles into the futures WS kline so the
+// chart does not fall back to a gray index bar.
+func (s *Server) PollExternalTape(ctx context.Context) {
+	ivs := []string{"1m", "15m", "1h", "4h", "1d", "1w"}
+	t := time.NewTicker(4 * time.Second)
+	defer t.Stop()
+	for {
+		for _, sym := range s.symbols {
+			for _, iv := range ivs {
+				bars, ok := s.market.ExternalKlines(ctx, sym, iv, 2)
+				if ok && len(bars) > 0 {
+					s.live.setExt(sym, iv, bars[len(bars)-1])
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
 // kline returns the current candle for sym/iv (trade wins over index).
 func (f *liveFeed) kline(sym, iv string, now time.Time) (map[string]any, bool) {
 	sec, ok := klineSec[iv]
@@ -120,6 +160,10 @@ func (f *liveFeed) kline(sym, iv string, now time.Time) (map[string]any, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	key := sym + "|" + iv
+	if eb, ok := f.ext[key]; ok && now.Sub(eb.at) < 20*time.Second {
+		return map[string]any{"symbol": sym, "interval": iv, "time": eb.open * 1000, "openTime": eb.open * 1000,
+			"open": eb.o, "high": eb.h, "low": eb.l, "close": eb.c, "volume": eb.v, "turnover": money(eb.t), "closed": false}, true
+	}
 	src := ""
 	b := f.trade[key]
 	if b == nil || b.open != b0 {
@@ -154,23 +198,29 @@ func (f *liveFeed) cachedStats(sym string, now time.Time, load func() tickerStat
 	return st
 }
 
-// liveFrames builds the futures-ticker and futures-kline frames for one tick.
+// liveFrames builds the futures-ticker frames for one tick. K lines are pushed
+// by the external stream so this loop does not overwrite them with a stale bar.
 func (s *Server) liveFrames(ctx context.Context) []map[string]any {
 	now := s.now()
-	ivs := liveIntervals()
-	frames := make([]map[string]any, 0, len(s.symbols)*(1+len(ivs)))
+	frames := make([]map[string]any, 0, len(s.symbols))
 	for _, sym := range s.symbols {
 		ps := s.snapshot(sym)
 		if ps.Mark.Sign() <= 0 {
 			continue
 		}
 		st := s.live.cachedStats(sym, now, func() tickerStats { return s.loadTickerStats(ctx, sym) })
-		frames = append(frames, map[string]any{"channel": "futures-ticker:" + sym, "data": s.buildTicker(ctx, sym, ps, st)})
-		for _, iv := range ivs {
-			if k, ok := s.live.kline(sym, iv, now); ok {
-				frames = append(frames, map[string]any{"channel": "futures-kline:" + sym + ":" + iv, "data": k})
-			}
+		tk := s.buildTicker(ctx, sym, ps, st)
+		// Latest price and 24h stats come from the venue stream. Sending the
+		// local book mid and local turnover here overwrote them every second
+		// and made the header show a reference price with the wrong volume.
+		for _, k := range []string{
+			"lastPrice", "priceSource", "high", "low", "highPrice24h", "lowPrice24h",
+			"volume", "quoteVolume", "volume24h", "turnover24h",
+			"priceChangePercent", "priceChangePercent24h", "openPrice24h",
+		} {
+			delete(tk, k)
 		}
+		frames = append(frames, map[string]any{"channel": "futures-ticker:" + sym, "data": tk})
 	}
 	return frames
 }

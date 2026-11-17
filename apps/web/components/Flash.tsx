@@ -7,16 +7,18 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { flashDir } from "@/lib/tick";
 import { changeClass } from "@/lib/format";
 
-export function Flash({ v, chg, children, className = "" }: { v: string | number | null | undefined; /** 24h 涨跌幅：决定静态颜色；缺省则不着色（继承） */ chg?: string | number | null; children: ReactNode; className?: string }) {
+export function Flash({ v, chg, tone, children, className = "" }: { v: string | number | null | undefined; /** 24h 涨跌幅：决定静态颜色；缺省则不着色（继承） */ chg?: string | number | null; /** tick：静止颜色跟最近一笔跳动，不跟 24h */ tone?: "tick"; children: ReactNode; className?: string }) {
   const prev = useRef<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [st, setSt] = useState<{ d: "up" | "down"; n: number } | null>(null);
+  const [tick, setTick] = useState<"up" | "down" | null>(null);
   useEffect(() => () => clearTimeout(timer.current), []);
   useEffect(() => {
     const n = Number(v);
     if (v == null || v === "" || !Number.isFinite(n)) return;
     const d = flashDir(prev.current, n);
     prev.current = n;
+    if (d) setTick(d);
     if (!d) return;
     setSt((s) => ({ d, n: (s?.n ?? 0) + 1 }));
     // 计时器不随 v 变化清理：否则相同数值的重复帧会让闪烁类一直残留
@@ -25,6 +27,6 @@ export function Flash({ v, chg, children, className = "" }: { v: string | number
   }, [v]);
   // 交替两个动画名，连续同向跳动也能重新触发
   const cls = st ? ` lb-flash-${st.d}${st.n % 2 ? "" : "2"}` : "";
-  const rest = chg === undefined ? "" : " " + changeClass(chg);
+  const rest = tone === "tick" ? " " + (tick ?? "up") : chg === undefined ? "" : " " + changeClass(chg);
   return <span className={"lb-flash" + cls + rest + (className ? " " + className : "")} data-flash={st?.d ?? ""}>{children}</span>;
 }
