@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -610,9 +611,7 @@ func (e *extFeed) streamOKX(ctx context.Context, syms []streamSym, bc Broadcaste
 		return
 	}
 	go e.loadOKXContractValues(ctx)
-	// "books" is the 400-level incremental book. "books5" only carried five
-	// levels a side, too shallow for the trade page.
-	go e.streamOKXLoop(ctx, okxPublicWS, []string{"trades", "books"}, fut, bc)
+	go e.streamOKXLoop(ctx, okxPublicWS, []string{"trades", okxBookChannel()}, fut, bc)
 	e.streamOKXLoop(ctx, "wss://ws.okx.com/ws/v5/business", []string{"candle1m", "candle15m", "candle1H", "candle4H", "candle1D", "candle1W"}, fut, bc)
 }
 
@@ -782,6 +781,19 @@ func (e *extFeed) onOKXTrades(inst string, targets []streamSym, raw json.RawMess
 	}
 }
 
+// okxBookChannel picks the OKX depth channel. "books5" (default) is five
+// levels a side and about 4 KB/s per symbol. "books" is the 400-level
+// incremental book, which gives the trade page 20 levels but measured
+// 100-300 KB/s for 12 symbols. The mainnet host is capped near 600 KB/s
+// inbound and already runs at that cap, so the deep book is opt-in:
+// OKX_BOOK_CHANNEL=books.
+func okxBookChannel() string {
+	if strings.TrimSpace(os.Getenv("OKX_BOOK_CHANNEL")) == "books" {
+		return "books"
+	}
+	return "books5"
+}
+
 // okxBook is the local copy of one OKX swap book, sizes in contracts.
 type okxBook struct {
 	bids, asks map[string]string // price -> size, both as OKX sent them
@@ -833,8 +845,10 @@ func (e *extFeed) onOKXBooks(inst, action string, targets []streamSym, raw json.
 	applyOKXLevels(b.bids, row.Bids)
 	applyOKXLevels(b.asks, row.Asks)
 	b.seq = row.SeqID
+	// Snapshot-only channels push ten frames a second. Clients redraw twice a
+	// second, so one frame per window is enough either way.
 	now := e.now()
-	if !snapshot && now.Sub(e.okxEmit[inst]) < okxBookInterval {
+	if now.Sub(e.okxEmit[inst]) < okxBookInterval {
 		e.mu.Unlock()
 		return false
 	}
