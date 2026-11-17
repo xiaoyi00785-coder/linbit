@@ -48,7 +48,7 @@ func (m *Maker) handleStatus(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, 500, "INTERNAL", "服务器内部错误")
 		return
 	}
-	seed, why := common.TestnetSeedAllowed()
+	_, why := common.TestnetSeedAllowed()
 	m.mu.Lock()
 	pairs := make([]PairState, 0, len(m.state))
 	for _, st := range m.state {
@@ -70,8 +70,10 @@ func (m *Maker) handleStatus(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, 200, map[string]any{
 		"baselines": bl, "positionMode": "net (max_position applies to base - baseline)",
 		"enabled": m.cfg.Enabled, "network": common.Network(), "running": running, "account": m.cfg.UserID, "pairs": pairs, "feedDownPairs": down,
-		"lastCycle": last, "testnetSeedAllowed": seed, "testnetSeedReason": why, "seedAmount": m.cfg.SeedAmount,
-		"stopLoss": false, "priceFeed": "market-data /market/index (REST polling: Binance primary, OKX backup)",
+		"lastCycle": last, "testnetSeedAllowed": true, "creditAllowed": true, "testnetSeedReason": why, "seedAmount": m.cfg.SeedAmount, "seedMax": common.Env("MM_SEED_MAX", "10000000"),
+		"takerEnabled": m.cfg.TakerEnabled, "takerUserId": m.cfg.TakerUserID, "takerNotional": m.cfg.TakerNotional.String(),
+		"stopLoss": false, "quoteMode": "follow-book", "bookFeed": m.cfg.BookFeed,
+		"priceFeed": "index: market-data /market/index; quotes: follow Binance/OKX depth",
 	})
 }
 
@@ -113,8 +115,8 @@ func (p pairPatch) Validate() error {
 	switch {
 	case !inRange(p.SpreadBps, 0.5, 1000):
 		return errors.New("spreadBps 必须在 0.5–1000 之间")
-	case !intIn(p.Levels, 1, 20):
-		return errors.New("levels 必须在 1–20 之间")
+	case !intIn(p.Levels, 1, 50):
+		return errors.New("levels 必须在 1–50 之间")
 	case !inRange(p.LevelStepBps, 0, 500):
 		return errors.New("levelStepBps 必须在 0–500 之间")
 	case !inRange(p.LevelNotional, 0.00000001, 10000000):
@@ -204,8 +206,8 @@ func (m *Maker) handleRun(run bool) http.HandlerFunc {
 	}
 }
 
-// handleSeed credits the MM account with virtual testnet funds via asset.
-// Refused outright in production / on mainnet (asset enforces the same rule).
+// handleSeed credits the MM account with virtual funds via asset. Allowed on
+// every network, including mainnet.
 //
 //	{ref}                              -> MM_SEED_AMOUNT USDT (unchanged)
 //	{ref, assets:["BTC","ETH","SOL"]}  -> per asset, qty = usdtValue / index(<A>USDT)
@@ -216,11 +218,7 @@ func (m *Maker) handleRun(run bool) http.HandlerFunc {
 // retried call with the same ref is already_applied per asset even if the
 // index moved. Virtual seeds are excluded from solvency (virtualSeed per asset).
 func (m *Maker) handleSeed(w http.ResponseWriter, r *http.Request) {
-	if ok, why := common.TestnetSeedAllowed(); !ok {
-		common.WriteError(w, http.StatusForbidden, "SEED_DISABLED", "虚拟注资已禁用："+why)
-		return
-	}
-	defer m.invalidateSeeds() // seeded inventory moves the testnet baseline
+	defer m.invalidateSeeds() // seeded inventory moves the baseline
 	var body struct {
 		Ref       string            `json:"ref"`
 		Assets    []string          `json:"assets"`
@@ -235,7 +233,7 @@ func (m *Maker) handleSeed(w http.ResponseWriter, r *http.Request) {
 	}
 	if a := strings.ToUpper(strings.TrimSpace(body.Asset)); a != "" || body.Amount != "" {
 		// single-asset top-up: exactly {amount} of {asset} into the MM spot
-		// account; asset caps it at MM_SEED_MAX and enforces testnet-only.
+		// account; asset caps it at MM_SEED_MAX.
 		amt, err := decimal.NewFromString(strings.TrimSpace(body.Amount))
 		if a == "" || err != nil || !amt.IsPositive() {
 			common.WriteError(w, 400, "INVALID_REQUEST", "asset/amount 不合法")

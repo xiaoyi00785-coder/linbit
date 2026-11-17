@@ -27,6 +27,8 @@ type depthDTO struct {
 	LastUpdateID uint64      `json:"lastUpdateId"`
 	Bids         [][2]string `json:"bids"`
 	Asks         [][2]string `json:"asks"`
+	// Snapshot means the book is complete and should replace the previous one.
+	Snapshot bool `json:"snapshot,omitempty"`
 }
 
 // restKline is a candle for GET /market/klines (openapi Kline).

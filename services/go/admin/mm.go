@@ -11,9 +11,10 @@ import (
 )
 
 // mm.go: market-maker controls. Reads need mm:view; every write needs mm:edit,
-// a fresh 2FA code and is audited (high). The virtual testnet seed is refused
-// here as well as in marketmaker and asset unless WALLET_CHAIN=testnet (any
-// LINBIT_ENV) or WALLET_CHAIN=mock outside production; mainnet always refuses.
+// a fresh 2FA code and is audited (high). MM account credit (mm_testnet_seed)
+// is allowed on every network, including mainnet: the operator can top up the
+// market-maker spot account from the admin UI. Credits remain unbacked in the
+// solvency report (virtualSeed).
 
 func (s *Server) handleMMGet(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -85,11 +86,12 @@ func (s *Server) handleMMRun(action string) http.HandlerFunc {
 	}
 }
 
-// POST /admin/v1/mm/testnet-seed {ref, assets?, usdtValue?, amounts?, asset?, amount?, reason, totpCode}
+// POST /admin/v1/mm/testnet-seed and POST /admin/v1/mm/credit
+// {ref, assets?, usdtValue?, amounts?, asset?, amount?, reason, totpCode}
 // — single-asset mode {asset:"USDT", amount:"5000000"} credits exactly that
 // amount of one asset to the MM spot account (reason required, amount <=
 // ADMIN_MM_SEED_MAX (legacy MM_SEED_MAX), default 10,000,000).
-// — testnet/mock only. Without assets: MM_SEED_AMOUNT USDT. With assets
+// — allowed on mainnet. Without assets: MM_SEED_AMOUNT USDT. With assets
 // (e.g. ["BTC","ETH","SOL"]): each credited ~usdtValue (default 1,000,000) of
 // the base asset at the current index, idempotent per ref+asset.
 func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
@@ -105,11 +107,6 @@ func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
 		TOTPCode  string            `json:"totpCode"`
 	}
 	_ = common.DecodeJSON(r, &req)
-	if ok, why := common.TestnetSeedAllowed(); !ok {
-		s.audit(r, a, "mm", "testnet_seed", "mm:"+s.cfg.MMUserID, levelHigh, "refused:SEED_DISABLED", nil, nil, why)
-		common.WriteError(w, http.StatusForbidden, "SEED_DISABLED", "虚拟注资已禁用："+why)
-		return
-	}
 	req.Ref = strings.TrimSpace(req.Ref)
 	if req.Ref == "" {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "ref 必填（幂等键）")

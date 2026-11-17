@@ -11,15 +11,14 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// mmseed.go: market-maker test funding and solvency figures.
+// mmseed.go: market-maker funding and solvency figures.
 //
-// mm_testnet_seed credits the market-maker account with VIRTUAL funds. It is
-// only possible when common.TestnetSeedAllowed() (not production, and
-// WALLET_CHAIN=mock|testnet); otherwise the endpoint refuses and the market
-// maker can only use assets really deposited to it. Only MM_USER_ID can be
-// seeded, at most MM_SEED_MAX per call, idempotent on ref. The counterparty
-// is system:mm_testnet_virtual so the virtual amount is visible in the ledger
-// and excluded from the backed-liabilities figure.
+// mm_testnet_seed credits the market-maker account with VIRTUAL funds. This
+// is allowed on every network, including mainnet, so the operator can top up
+// the MM spot account from admin. Only MM_USER_ID can be seeded, at most
+// MM_SEED_MAX per call, idempotent on ref. The counterparty is
+// system:mm_testnet_virtual so the amount is visible in the ledger and
+// excluded from the backed-liabilities figure (virtualSeed).
 
 // MMSeedAccount is the ledger counterparty for virtual seed funds.
 const MMSeedAccount = "system:mm_testnet_virtual"
@@ -28,14 +27,9 @@ const MMSeedAccount = "system:mm_testnet_virtual"
 var ErrSeedDisabled = errors.New("mm_testnet_seed disabled")
 
 // MMTestnetSeed credits amount of asset to userID's free balance as a virtual
-// testnet seed. Idempotent on ref.
+// seed (including on mainnet). Idempotent on ref.
 func (s *Store) MMTestnetSeed(ctx context.Context, userID, asset string, amount decimal.Decimal, ref string) error {
-	ok, why := common.TestnetSeedAllowed()
-	if !ok {
-		log.Printf("!!! REFUSED mm_testnet_seed user=%s asset=%s amount=%s: %s", userID, asset, amount, why)
-		return ErrSeedDisabled
-	}
-	log.Printf("!!! VIRTUAL (UNBACKED) mm_testnet_seed user=%s asset=%s amount=%s ref=%s — %s; excluded from solvency", userID, asset, amount, ref, why)
+	log.Printf("!!! VIRTUAL (UNBACKED) mm_testnet_seed user=%s asset=%s amount=%s ref=%s network=%s; excluded from solvency", userID, asset, amount, ref, common.Network())
 	if amount.Sign() <= 0 || ref == "" {
 		return ErrInvalidAmount
 	}
@@ -155,10 +149,6 @@ func mmUserID() string { return common.Env("MM_USER_ID", "mm:main") }
 
 // POST /internal/mm/testnet-seed {userId, asset, amount, ref}
 func (s *Server) handleMMSeed(w http.ResponseWriter, r *http.Request) {
-	if ok, why := common.TestnetSeedAllowed(); !ok {
-		common.WriteError(w, http.StatusForbidden, "SEED_DISABLED", "生产环境/主网禁止虚拟注资（"+why+"）")
-		return
-	}
 	var req walletMovementRequest
 	if err := common.DecodeJSON(r, &req); err != nil || req.UserID == "" || req.Asset == "" || strings.TrimSpace(req.Ref) == "" {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")

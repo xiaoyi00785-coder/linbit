@@ -215,6 +215,7 @@ final class SpotModel: ObservableObject {
                                                    timeInForce: planMarket ? nil : .gtc, clientOrderId: cid)
                 _ = try await SpotAPI.createConditional(r)
                 ToastCenter.shared.show("计划委托已提交", .success)
+                if tpsl { await placeTpsl(filledQty: 0, orderQty: qty) }
                 triggerText = ""
             } else {
                 let req = APIPlaceOrderRequest(symbol: symbol, side: isBuy ? .buy : .sell, type: kind == .market ? .market : .limit,

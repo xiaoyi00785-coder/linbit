@@ -153,6 +153,7 @@ func (s *Server) Routes() http.Handler {
 	a("POST /admin/v1/mm/start", permMMEdit, s.handleMMRun("start"))
 	a("POST /admin/v1/mm/stop", permMMEdit, s.handleMMRun("stop"))
 	a("POST /admin/v1/mm/testnet-seed", permMMEdit, s.handleMMSeed)
+	a("POST /admin/v1/mm/credit", permMMEdit, s.handleMMSeed)
 	a("POST /admin/v1/mm/futures-transfer", permMMEdit, s.handleMMTransfer)
 	a("GET /admin/v1/mm/baselines", permMMView, s.handleMMGet("/internal/mm/baselines"))
 	a("PUT /admin/v1/mm/baselines/{asset}", permMMEdit, s.handleMMUpdateBaseline)

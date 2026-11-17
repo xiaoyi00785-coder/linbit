@@ -127,6 +127,10 @@ func (s *Server) hDepth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := limitParam(r, 20, 200)
+	if bids, asks, ok := s.market.ExternalDepth(r.Context(), c.Symbol, n); ok {
+		common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "bids": bids, "asks": asks, "time": s.now().UnixMilli()})
+		return
+	}
 	bids, err := s.depthSide(r.Context(), c.Symbol, "buy", "DESC", n)
 	if err != nil {
 		writeErr(w, err)
@@ -173,6 +177,10 @@ func (s *Server) hTrades(w http.ResponseWriter, r *http.Request) {
 	c, err := s.contract(r.URL.Query().Get("symbol"))
 	if err != nil {
 		writeErr(w, err)
+		return
+	}
+	if rows, ok := s.market.ExternalTrades(r.Context(), c.Symbol, limitParam(r, 50, 500)); ok {
+		common.WriteJSON(w, http.StatusOK, map[string]any{"trades": rows})
 		return
 	}
 	rows, err := s.db.QueryContext(r.Context(), `SELECT id, price, qty, taker_side, created_at FROM fut_trades WHERE symbol=$1 ORDER BY id DESC LIMIT $2`, c.Symbol, limitParam(r, 50, 500))
@@ -227,6 +235,14 @@ func (s *Server) hKlines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := limitParam(r, 200, 1000)
+	if bars, ok := s.market.ExternalKlines(r.Context(), c.Symbol, iv, n); ok {
+		out := make([]map[string]any, 0, len(bars))
+		for _, b := range bars {
+			out = append(out, map[string]any{"openTime": b.Open * 1000, "open": b.O, "high": b.H, "low": b.L, "close": b.C, "volume": b.V, "turnover": money(b.T)})
+		}
+		common.WriteJSON(w, http.StatusOK, map[string]any{"symbol": c.Symbol, "interval": iv, "source": "trade", "klines": out})
+		return
+	}
 	anchor := klineAnchor(sec)
 	rows, err := s.db.QueryContext(r.Context(), `SELECT b, (array_agg(price ORDER BY id))[1], max(price), min(price), (array_agg(price ORDER BY id DESC))[1], sum(qty), sum(qty*price)
 		FROM (SELECT id, price, qty, (floor((extract(epoch from created_at) - $4) / $2) * $2 + $4)::bigint AS b FROM fut_trades

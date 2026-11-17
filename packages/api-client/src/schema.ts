@@ -4411,7 +4411,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 做市账户虚拟注资（仅测试网/mock 链；主网或禁用虚拟额度时 403 SEED_DISABLED；totpCode 必填，审计）
+         * 做市账户充值（主网可用；totpCode 必填，审计；与 /admin/v1/mm/credit 相同）
          * @description 三种模式（ref 为幂等键）：
          *     - 仅 {ref}：注入 MM_SEED_AMOUNT USDT（原行为不变）。
          *     - {ref, assets[, usdtValue, amounts]}：按指数价为每个基础资产注入约 usdtValue。
@@ -16474,7 +16474,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description SEED_DISABLED（主网/生产）或无权限 */
+            /** @description 无权限 */
             403: {
                 headers: {
                     [name: string]: unknown;

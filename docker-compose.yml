@@ -51,8 +51,6 @@ services:
       FUTURES_INTERNAL_URL: http://futures:8089
       MARKET_URL: http://market-data:8085
       ACCOUNT_INTERNAL_URL: http://account:8081
-      # mm_testnet_seed is only accepted when WALLET_CHAIN is mock/testnet and
-      # LINBIT_ENV != production.
       WALLET_CHAIN: ${WALLET_CHAIN:-mock}
       MM_USER_ID: ${MM_USER_ID:-mm:main}
       MM_SEED_MAX: ${MM_SEED_MAX:-10000000}
@@ -555,10 +553,21 @@ services:
       WALLET_CHAIN: ${WALLET_CHAIN:-mock}
       MM_USER_ID: ${MM_USER_ID:-mm:main}
       MM_SEED_AMOUNT: ${MM_SEED_AMOUNT:-10000000}
-      # Base-asset seed for the MM inventory (empty = code defaults).
-      MM_SEED_BASE_USDT: ${MM_SEED_BASE_USDT:-}
-      MM_SEED_BASE_ASSETS: ${MM_SEED_BASE_ASSETS:-}
+      MM_SEED_BASE_USDT: ${MM_SEED_BASE_USDT:-1000000}
+      MM_SEED_BASE_ASSETS: ${MM_SEED_BASE_ASSETS:-BTC,ETH,SOL,BNB,TRX,AAPL,TSLA,NVDA,MSFT,GOOGL,AMZN,META,COIN,SPY,PAXG,XAUT}
       MM_TICK_MS: ${MM_TICK_MS:-}
+      MM_ENABLED: ${MM_ENABLED:-true}
+      MM_TAKER_ENABLED: ${MM_TAKER_ENABLED:-true}
+      MM_TAKER_USER_ID: ${MM_TAKER_USER_ID:-taker:mm}
+      MM_TAKER_NOTIONAL: ${MM_TAKER_NOTIONAL:-1000}
+      MM_TAKER_INTERVAL_MS: ${MM_TAKER_INTERVAL_MS:-800}
+      MM_BOOK_FEED: ${MM_BOOK_FEED:-binance,okx,bybit}
+      MM_BOOK_SCALE: ${MM_BOOK_SCALE:-1}
+      MM_BOOK_TTL_MS: ${MM_BOOK_TTL_MS:-1000}
+      BINANCE_API_URL: ${BINANCE_API_URL:-https://data-api.binance.vision}
+      BINANCE_FAPI_URL: ${BINANCE_FAPI_URL:-https://fapi.binance.com}
+      OKX_API_URL: ${OKX_API_URL:-https://www.okx.com}
+      BYBIT_API_URL: ${BYBIT_API_URL:-https://api.bybit.com}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     depends_on:

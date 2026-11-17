@@ -70,7 +70,7 @@ func TestResolveBaselinePrecedence(t *testing.T) {
 	}{
 		{Baseline{TargetBase: &tb, StartBase: &sb, SeedQty: d("5")}, true, "10", "admin"},
 		{Baseline{StartBase: &sb, SeedQty: d("5")}, true, "5", "seed"},
-		{Baseline{StartBase: &sb, SeedQty: d("5")}, false, "3", "start"}, // mainnet ignores seeds
+		{Baseline{StartBase: &sb, SeedQty: d("5")}, false, "5", "seed"}, // virtual seed counts as baseline on mainnet too
 		{Baseline{SeedQty: decimal.Zero}, true, "0", "none"},
 	}
 	for i, c := range cases {

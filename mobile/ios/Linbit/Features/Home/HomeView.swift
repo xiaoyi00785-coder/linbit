@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// 首页（对照图 #1–#3）
 struct HomeView: View {
@@ -14,6 +15,10 @@ struct HomeView: View {
     @State private var bannerPage = 0
     @State private var earnPage = 0
     @State private var moreSheet = false
+    @State private var scanning = false
+    @State private var article: Article?
+    @State private var showAllAnnouncements = false
+    @State private var annTab = 0
     @Environment(\.displayScale) private var displayScale
     var onOpenMarkets: () -> Void = {}
 
@@ -22,9 +27,13 @@ struct HomeView: View {
             topBar
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    assetHeader.padding(.top, 14)
-                    taskCard.padding(.top, 18)
-                    redPacket.padding(.top, 12)
+                    if session.isLoggedIn {
+                        assetHeader.padding(.top, 14)
+                        taskCard.padding(.top, 18)
+                        redPacket.padding(.top, 12)
+                    } else {
+                        guestHero.padding(.top, 28)
+                    }
                     grid.padding(.top, 17)
                     hairline
                     cardPromo
@@ -32,6 +41,7 @@ struct HomeView: View {
                     earnStrip
                     hairline
                     ranking
+                    announcements
                 }
                 .padding(.bottom, Metrics.tabBarH + 40)
             }
@@ -41,6 +51,11 @@ struct HomeView: View {
         .task { await NotifCenter.shared.refresh() }
         .task { await vm.load(); if store.spot.isEmpty { await store.load() } }
         .lbSheet($moreSheet) { HomeMoreSheet { moreSheet = false } }
+        .fullScreenCover(isPresented: $scanning) {
+            CodeScanner(onCode: { code in scanning = false; handleScan(code) }, onClose: { scanning = false })
+        }
+        .sheet(item: $article) { item in AnnouncementBody(item: item.item) }
+        .sheet(isPresented: $showAllAnnouncements) { announcementList }
     }
 
     // MARK: 顶栏：头像 / 搜索 / 扫码 / 客服 / 通知
@@ -53,7 +68,7 @@ struct HomeView: View {
                 } else { IconView(icon: .logo, size: 28) }
             }
                 .buttonStyle(PressableStyle())
-            Button(action: onOpenMarkets) {
+            Button { Router.shared.marketSearch = true; Router.shared.tab = .markets } label: {
                 HStack(spacing: 6) {
                     IconView(icon: .search, size: 15, tint: p.textTertiary)
                     Text(vm.searchHint ?? "BTC").font(.lb(FontSize.label)).foregroundColor(p.textTertiary)
@@ -63,15 +78,35 @@ struct HomeView: View {
                 .frame(height: Metrics.searchBarH)
                 .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
             }.buttonStyle(PressableStyle())
-            Button { Router.shared.open(.deposit(nil)) } label: { IconView(icon: .scan, tint: p.textPrimary) }.buttonStyle(PressableStyle())
+            Button { scanning = true } label: { IconView(icon: .scan, tint: p.textPrimary) }.buttonStyle(PressableStyle()).accessibilityLabel("扫一扫")
             Button { Session.shared.requireLogin { Router.shared.openFeature(.support) } } label: { IconView(icon: .headset, tint: p.textPrimary) }.buttonStyle(PressableStyle())
-            Button { if session.isLoggedIn || NotifShot.state != nil { Router.shared.openFeature(.notifications) } else { session.showAuth = true } } label: {
+            if session.isLoggedIn || NotifShot.state != nil {
+            Button { Router.shared.openFeature(.notifications) } label: {
                 IconView(icon: .bell, tint: p.textPrimary)
                     .overlay(alignment: .topTrailing) { if notif.unread > 0 { Badge(n: notif.unread).offset(x: 8, y: -6) } }
             }.buttonStyle(.plain).accessibilityLabel("消息通知")
+            }
         }
         .padding(.horizontal, Spacing.pageH)
         .frame(height: 44)
+    }
+
+    /// 未登录首页：注册引导，不展示资产和充值（对照 EasiCoin 退出登录后的首页）。
+    private var guestHero: some View {
+        VStack(spacing: 22) {
+            GuestCoinField()
+                .frame(height: 188)
+                .padding(.bottom, 4)
+            Text("立即注册，最高可获得 15,200 USDT")
+                .font(.lb(28, .bold)).foregroundColor(p.textPrimary)
+                .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+            Button { session.present(.login) } label: {
+                Text("登录/注册").font(.lb(FontSize.label, .medium)).foregroundColor(p.textOnPrimary)
+                    .frame(maxWidth: .infinity).frame(height: 48)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.primary))
+            }.buttonStyle(PressableStyle())
+        }
+        .padding(.horizontal, Spacing.pageH)
     }
 
     // MARK: 资产
@@ -168,7 +203,7 @@ struct HomeView: View {
 
     private func gridTap(_ title: String) {
         switch title {
-        case "聊天室": Router.shared.openFeature(.support)
+        case "聊天室": Router.shared.openFeature(.chat)
         case "福利中心": Router.shared.openFeature(.welfare)
         case "理财": Router.shared.openSpotTab(2)
         case "TradFi": Router.shared.openFeature(.tradfi)
@@ -299,6 +334,90 @@ struct HomeView: View {
         }
     }
 
+    private var announcementBuckets: [(String, [APIAnnouncement])] {
+        let groups = Dictionary(grouping: vm.announcements, by: { Self.bucket($0.category) })
+        return ["公告", "快讯", "学院"].compactMap { key in groups[key].map { (key, $0) } }
+    }
+
+    private static func bucket(_ category: String?) -> String {
+        let s = (category ?? "").lowercased()
+        if s.contains("news") || s.contains("flash") || s.contains("快讯") { return "快讯" }
+        if s.contains("academy") || s.contains("learn") || s.contains("学院") || s.contains("school") { return "学院" }
+        return "公告"
+    }
+
+    @ViewBuilder private var announcements: some View {
+        let buckets = announcementBuckets
+        if !buckets.isEmpty || vm.announcementNote != nil {
+            VStack(alignment: .leading, spacing: 0) {
+                if buckets.count > 1 {
+                    PrimaryTabs(items: buckets.map(\.0), selected: $annTab, size: 16, underline: true, spacing: 17)
+                        .padding(.horizontal, Spacing.pageH).padding(.top, 8)
+                } else {
+                    Text(buckets.first?.0 ?? "公告").font(.lb(16, .semibold)).foregroundColor(p.textPrimary)
+                        .padding(.horizontal, Spacing.pageH).padding(.top, 16)
+                }
+                if let note = vm.announcementNote, buckets.isEmpty {
+                    Text(note).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                        .padding(.horizontal, Spacing.pageH).padding(.vertical, 16)
+                }
+                let rows = buckets.isEmpty ? [] : buckets[min(annTab, buckets.count - 1)].1
+                ForEach(Array(rows.prefix(5).enumerated()), id: \.offset) { _, item in
+                    Button { article = Article(item: item) } label: {
+                        HStack {
+                            Text(item.title ?? "公告").font(.lb(FontSize.caption)).foregroundColor(p.textPrimary).lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(item.date ?? "").font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
+                        }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+                    }.buttonStyle(.plain)
+                }
+                if rows.count > 5 {
+                    Button { showAllAnnouncements = true } label: {
+                        HStack(spacing: 2) {
+                            Text("查看更多").font(.lb(FontSize.caption))
+                            IconView(icon: .arrowRight, size: 12, tint: p.textSecondary)
+                        }.foregroundColor(p.textSecondary).frame(maxWidth: .infinity).frame(height: 44)
+                    }
+                }
+            }
+        }
+    }
+
+    private var announcementList: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(vm.announcements.enumerated()), id: \.offset) { _, item in
+                        Button { article = Article(item: item) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.title ?? "公告").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+                                Text(item.date ?? "").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                            }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
+                        }.buttonStyle(.plain)
+                        Divider()
+                    }
+                }
+            }
+            .navigationTitle("公告")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func handleScan(_ raw: String) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.lowercased().hasPrefix("http://") || text.lowercased().hasPrefix("https://") {
+            HomeLink.open(text, fallback: nil)
+            return
+        }
+        let key = text.uppercased().replacingOccurrences(of: "/", with: "").replacingOccurrences(of: " ", with: "")
+        let rows = MarketStore.shared.spot + MarketStore.shared.futures
+        if let row = rows.first(where: { $0.symbol.uppercased() == key || $0.base.uppercased() == key || ($0.base + $0.quote).uppercased() == key }) {
+            Router.shared.marketDetail = row.symbol
+        } else {
+            ToastCenter.shared.show("没有对应的交易对")
+        }
+    }
+
     private func moreLink(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 2) {
@@ -346,7 +465,7 @@ enum HomeLink {
             case "earn": Router.shared.openSpotTab(2); return
             case "grid", "strategy": Router.shared.openSpotTab(1); return
             case "swap", "convert": Router.shared.openSpotTab(3); return
-            case "chat": Router.shared.openFeature(.support); return
+            case "chat": Router.shared.openFeature(.chat); return
             case "futures": Router.shared.tab = .futures; return
             case "event": Router.shared.futuresTop = 1; Router.shared.tab = .futures; return
             default: if let f = routes[first] { Router.shared.openFeature(f); return }
@@ -387,6 +506,43 @@ struct HomeMoreSheet: View {
     }
 }
 
+/// 未登录首页的币面插画。只有形状，没有文字和他人品牌标记。
+private struct GuestCoinField: View {
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width
+            let h = g.size.height
+            ZStack {
+                coin(72, Color(red: 0.62, green: 0.80, blue: 0.18), tilt: -18)
+                    .position(x: w * 0.18, y: h * 0.62)
+                coin(46, Color(red: 0.55, green: 0.58, blue: 0.52), tilt: 24)
+                    .position(x: w * 0.34, y: h * 0.22)
+                coin(58, Color(red: 0.78, green: 0.86, blue: 0.28), tilt: 12)
+                    .position(x: w * 0.52, y: h * 0.48)
+                coin(40, Color(red: 0.45, green: 0.62, blue: 0.16), tilt: -32)
+                    .position(x: w * 0.70, y: h * 0.18)
+                coin(64, Color(red: 0.86, green: 0.90, blue: 0.42), tilt: 8)
+                    .position(x: w * 0.84, y: h * 0.58)
+                coin(34, Color(red: 0.70, green: 0.74, blue: 0.62), tilt: -8)
+                    .position(x: w * 0.62, y: h * 0.78)
+            }
+        }
+    }
+
+    private func coin(_ size: CGFloat, _ face: Color, tilt: Double) -> some View {
+        ZStack {
+            Circle().fill(face.opacity(0.35)).frame(width: size * 1.15, height: size * 0.42).offset(y: size * 0.28).blur(radius: 6)
+            Circle().fill(LinearGradient(colors: [face.opacity(0.95), face.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            Circle().stroke(Color.white.opacity(0.55), lineWidth: max(size * 0.06, 2)).padding(size * 0.08)
+            Circle().stroke(face.opacity(0.9), lineWidth: 1.5).padding(size * 0.16)
+            Capsule().fill(Color.white.opacity(0.28)).frame(width: size * 0.34, height: size * 0.08).rotationEffect(.degrees(-28))
+        }
+        .frame(width: size, height: size)
+        .rotationEffect(.degrees(tilt))
+        .shadow(color: face.opacity(0.25), radius: 8, y: 6)
+    }
+}
+
 /// 倒计时文本（与 Android 一致：「6D:23:46:26」），每秒刷新。
 private struct CountdownText: View {
     let deadline: Date
@@ -404,4 +560,137 @@ private struct CountdownText: View {
         let s = Int(left) % 60
         text = String(format: "%dD:%02d:%02d:%02d", d, h, m, s)
     }
+}
+
+private struct Article: Identifiable {
+    let id = UUID()
+    let item: APIAnnouncement
+}
+
+private struct AnnouncementBody: View {
+    @Environment(\.palette) private var p
+    @Environment(\.dismiss) private var dismiss
+    let item: APIAnnouncement
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(item.title ?? "公告").font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+                    Text(item.date ?? "").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                    Text(Self.plain(item.body ?? "")).font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(Spacing.pageH)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+        }
+    }
+
+    private static func plain(_ s: String) -> String {
+        var t = s.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+        t = t.replacingOccurrences(of: "</p>", with: "\n", options: .caseInsensitive)
+        t = t.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        for pair in [("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\"")] {
+            t = t.replacingOccurrences(of: pair.0, with: pair.1)
+        }
+        let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "这条公告没有正文" : trimmed
+    }
+}
+
+/// 扫描二维码。只识别交易对和链接，不发起充值或转账。
+private struct CodeScanner: UIViewControllerRepresentable {
+    var onCode: (String) -> Void
+    var onClose: () -> Void
+    func makeUIViewController(context: Context) -> ScannerController {
+        let c = ScannerController()
+        c.onCode = onCode
+        c.onClose = onClose
+        return c
+    }
+    func updateUIViewController(_ uiViewController: ScannerController, context: Context) {}
+}
+
+private final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    var onCode: ((String) -> Void)?
+    var onClose: (() -> Void)?
+    private let session = AVCaptureSession()
+    private var preview: AVCaptureVideoPreviewLayer?
+    private var finished = false
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        let close = UIButton(type: .system)
+        close.setTitle("关闭", for: .normal)
+        close.setTitleColor(.white, for: .normal)
+        close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        close.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(close)
+        NSLayoutConstraint.activate([
+            close.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            close.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+        ])
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: start()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] ok in
+                DispatchQueue.main.async { ok ? self?.start() : self?.showDenied() }
+            }
+        default: showDenied()
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        preview?.frame = view.bounds
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if session.isRunning { DispatchQueue.global(qos: .userInitiated).async { [weak self] in self?.session.stopRunning() } }
+    }
+
+    private func start() {
+        guard let device = AVCaptureDevice.default(for: .video),
+              let input = try? AVCaptureDeviceInput(device: device),
+              session.canAddInput(input) else { showDenied(); return }
+        session.addInput(input)
+        let output = AVCaptureMetadataOutput()
+        guard session.canAddOutput(output) else { return }
+        session.addOutput(output)
+        output.setMetadataObjectsDelegate(self, queue: .main)
+        output.metadataObjectTypes = [.qr]
+        let layer = AVCaptureVideoPreviewLayer(session: session)
+        layer.videoGravity = .resizeAspectFill
+        layer.frame = view.bounds
+        view.layer.insertSublayer(layer, at: 0)
+        preview = layer
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in self?.session.startRunning() }
+    }
+
+    private func showDenied() {
+        let label = UILabel()
+        label.text = "没有相机权限，无法扫码"
+        label.textColor = .white
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+        ])
+    }
+
+    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
+        guard !finished, let code = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue else { return }
+        finished = true
+        session.stopRunning()
+        onCode?(code)
+    }
+
+    @objc private func closeTapped() { onClose?() }
 }

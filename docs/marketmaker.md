@@ -11,19 +11,20 @@
 - `/market/index?symbol=BTCUSDT` 供 futures / wallet / admin / marketmaker 使用。生产环境禁止 `INDEX_FEED=off`。
 
 ## 做市服务 marketmaker（端口 8093）
-- 每个现货、合约交易对按指数价双边多档报价；现货 PostOnly，合约 GTC（全仓）。
-- 库存平衡：现货按目标基础币占比、合约按持仓名义值偏移中间价（最多 `maxSkewBps`），达到 `maxPosition` 停止加仓一侧。
+- 报价模式是 **跟盘**：每个现货、合约交易对复制 Binance 深度（OKX 备用），挂到本所撮合引擎。现货 PostOnly，合约 GTC（全仓）。用户成交仍是与做市账户过户，不会打到对方交易所。
+- 现货跟 Binance spot `/api/v3/depth`；合约跟 Binance USDT-M `/fapi/v1/depth`；TradFi（股票/金属/原油）跟对应参考合约（如 PAXG→XAUUSDT，WTI→CLUSDT）。`MM_BOOK_FEED=binance,okx,bybit`（OKX SWAP 没有则退 spot，Binance 空盘口继续试下一家），快照缓存 `MM_BOOK_TTL_MS`（默认 1000）。
+- 档位数 `levels` 决定复制前几档；数量按外部档位同比缩放，每档名义金额夹在 100–1,000,000 USDT（合约再按杠杆压到仓位限额内）。`MM_BOOK_SCALE`（默认 1）再乘一层。外部盘口为空（如下架的 TON）时退回指数梯子，状态 `bookSource=index-ladder`。
+- 库存平衡：达到 `maxPosition` 停止加仓一侧；`maxSkewBps` 把整本复制盘口平移。TradFi 参考偏离时用 `spreadBps × (widen−1)` 把买卖再推开。指数仍用于标记价/库存估值；指数或盘口不可用都撤单暂停。
 - **没有止损**（Yaeko 决定）。
 - 默认参数（每对可在后台修改，需 `mm:edit` + 2FA，写审计 module=mm）：
-  价差 10 bps（0.1%）、5 档、档间距 5 bps、每档 1000 USDT、逐档 ×1.2、刷新 3000 ms、偏离 2 bps 才重挂、
+  价差 10 bps（仅 TradFi 加宽仍用）、5 档、档间距 5 bps、每档 1000 USDT（跟盘后不再用来铺梯子）、逐档 ×1.2、刷新 3000 ms、偏离 2 bps 才重挂、
   现货目标基础币占比 0.5、最大持仓 50,000 USDT、最大偏移 20 bps、合约杠杆 5x。
 - 默认 **不运行**；后台 `/admin/v1/mm/start|stop`（停止时同步撤销全部挂单）。
-- 指数不可用：撤单、暂停，并发 Telegram「做市暂停」；恢复后发「做市恢复」。
+- 指数或外部盘口不可用：撤单、暂停，并发 Telegram「做市暂停」；恢复后发「做市恢复」。
 
-## 资金规则（严格）
-- `WALLET_CHAIN=testnet` 时（即使 `LINBIT_ENV=production`）或 `WALLET_CHAIN=mock` 且非 production 时，后台可给做市账户虚拟入账
-  10,000,000 USDT（`mm_testnet_seed`，2FA + 审计，ref 幂等，上限 `MM_SEED_MAX`）。
-- `WALLET_CHAIN=mainnet`（或任何非 testnet/mock 值）：无论 LINBIT_ENV 如何，admin / marketmaker / asset 三层都直接拒绝，做市账户只能使用真实充值资产。每次入账/拒绝都会以 `!!!` 打印日志；对账（solvency）把虚拟入账从应付中剔除并单列 `virtualSeed`。
+## 资金规则
+- 后台可给做市账户直接入账（`mm_testnet_seed` / `POST /admin/v1/mm/credit`，2FA + 审计，ref 幂等，上限 `MM_SEED_MAX`，默认 10,000,000）。主网可用。
+- 入账记在 `system:mm_testnet_virtual`，对账（solvency）把该金额从应付中剔除并单列 `virtualSeed`。每次入账以 `!!!` 打印日志。
 
 ## 每日偿付对账（admin）
 - `SOLVENCY_HOUR_UTC=1`（每天 01:00 UTC；-1 关闭）。也可 `/admin/v1/solvency/run` 手动触发。
@@ -33,8 +34,7 @@
 
 ## 测试网基础币虚拟注资（2026-11-03）
 
-`POST /admin/v1/mm/testnet-seed`（mm:edit + 2FA + 审计；仅 `common.TestnetSeedAllowed()`：
-WALLET_CHAIN=testnet，或非 production 的 mock；主网一律 403 SEED_DISABLED）。
+`POST /admin/v1/mm/credit` 与 `POST /admin/v1/mm/testnet-seed`（mm:edit + 2FA + 审计；主网可用）。
 
 - `{"ref":"r1"}`：注入 `MM_SEED_AMOUNT` USDT（原行为）。
 - `{"ref":"base-1103","assets":["BTC","ETH","SOL"],"usdtValue":"1000000"}`：每个币按当时
@@ -56,5 +56,5 @@ order 迁移 00003 新增三个交易对（TRX 价格 5 位小数、数量整数
 
 ## Ticker / kline fallback when there are no trades
 - Ticker `lastPrice` = last trade → mid of best bid/ask → index price (futures: → mark) → `"0"`. `priceSource` tells which (`trade|mid|index|mark|none`). Without trades, 24h change is 0, high/low equal lastPrice, volume 0. No trades are fabricated.
-- Klines: if a symbol has no trade candles, index-sampled candles are returned (spot: sampled every INDEX_POLL; futures: from `fut_mark_history.index_price`), volume 0, each candle `source:"index"`; futures klines response also has top-level `source: trade|index|none`. UI should render them as a dashed/flagged line, not as traded volume.
+- Klines and the public trade tape are copied from Binance (spot, then USDⓈ-M; OKX backup), including volume. They are not marked `source:"index"`, so the chart draws them as normal candles. Local fills still update the ticker. If every external venue fails, the old index fallback (gray, volume 0) is used.
 - `/futures/market/contracts` items carry `tags` (ids from `market_categories`, same as spot).

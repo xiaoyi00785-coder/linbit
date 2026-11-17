@@ -5,6 +5,7 @@ go 1.27
 replace github.com/linbit/platform/services/go/common => ../common
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/linbit/platform/services/go/common v0.0.0-00010101000000-000000000000
 	github.com/pressly/goose/v3 v3.29.0

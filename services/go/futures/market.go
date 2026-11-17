@@ -143,3 +143,143 @@ func (c *MarketClient) Klines(ctx context.Context, symbol, interval string, limi
 	}
 	return out, nil
 }
+
+// ExternalKlines reads /market/klines when every candle is a venue candle
+// (no source=index). ok is false for the gray index fallback.
+func (c *MarketClient) ExternalKlines(ctx context.Context, symbol, interval string, limit int) ([]klineBar, bool) {
+	if c == nil || c.baseURL == "" {
+		return nil, false
+	}
+	u := fmt.Sprintf("%s/market/klines?symbol=%s&interval=%s&limit=%d", c.baseURL, url.QueryEscape(symbol), url.QueryEscape(interval), limit)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, false
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	var rows []struct {
+		Time   int64  `json:"time"`
+		O      string `json:"open"`
+		H      string `json:"high"`
+		L      string `json:"low"`
+		C      string `json:"close"`
+		V      string `json:"volume"`
+		Source string `json:"source"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil || len(rows) == 0 {
+		return nil, false
+	}
+	out := make([]klineBar, 0, len(rows))
+	for _, k := range rows {
+		if k.Source == "index" {
+			return nil, false
+		}
+		o, e1 := decimal.NewFromString(k.O)
+		h, e2 := decimal.NewFromString(k.H)
+		l, e3 := decimal.NewFromString(k.L)
+		cl, e4 := decimal.NewFromString(k.C)
+		vol, _ := decimal.NewFromString(k.V)
+		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || cl.Sign() <= 0 {
+			continue
+		}
+		t := k.Time
+		if t > 1e12 {
+			t /= 1000
+		}
+		out = append(out, klineBar{Open: t, O: o, H: h, L: l, C: cl, V: vol, T: vol.Mul(cl)})
+	}
+	return out, len(out) > 0
+}
+
+// ExternalDepth reads the venue order book from market-data.
+func (c *MarketClient) ExternalDepth(ctx context.Context, symbol string, limit int) (bids, asks [][2]decimal.Decimal, ok bool) {
+	if c == nil || c.baseURL == "" {
+		return nil, nil, false
+	}
+	u := fmt.Sprintf("%s/market/depth?symbol=%s&limit=%d", c.baseURL, url.QueryEscape(symbol), limit)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, nil, false
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, false
+	}
+	var body struct {
+		Bids     [][2]string `json:"bids"`
+		Asks     [][2]string `json:"asks"`
+		Snapshot bool        `json:"snapshot"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&body) != nil || !body.Snapshot || len(body.Bids)+len(body.Asks) == 0 {
+		return nil, nil, false
+	}
+	parse := func(rows [][2]string) [][2]decimal.Decimal {
+		out := make([][2]decimal.Decimal, 0, len(rows))
+		for _, r := range rows {
+			p, e1 := decimal.NewFromString(r[0])
+			q, e2 := decimal.NewFromString(r[1])
+			if e1 != nil || e2 != nil || !q.IsPositive() {
+				continue
+			}
+			out = append(out, [2]decimal.Decimal{p, q})
+		}
+		return out
+	}
+	return parse(body.Bids), parse(body.Asks), true
+}
+
+// ExternalTrades reads /market/trades (venue prints, newest first).
+func (c *MarketClient) ExternalTrades(ctx context.Context, symbol string, limit int) ([]Trade, bool) {
+	if c == nil || c.baseURL == "" {
+		return nil, false
+	}
+	u := fmt.Sprintf("%s/market/trades?symbol=%s&limit=%d", c.baseURL, url.QueryEscape(symbol), limit)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, false
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	var rows []struct {
+		TradeID  string `json:"tradeId"`
+		Price    string `json:"price"`
+		Quantity string `json:"quantity"`
+		Side     string `json:"side"`
+		Time     int64  `json:"time"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil || len(rows) == 0 {
+		return nil, false
+	}
+	out := make([]Trade, 0, len(rows))
+	for _, r := range rows {
+		px, err1 := decimal.NewFromString(r.Price)
+		qty, err2 := decimal.NewFromString(r.Quantity)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		var id int64
+		fmt.Sscan(r.TradeID, &id)
+		side := r.Side
+		if side != "buy" && side != "sell" {
+			side = "buy"
+		}
+		out = append(out, Trade{ID: id, Symbol: symbol, Price: px, Qty: qty, TakerSide: side, Time: time.UnixMilli(r.Time).UTC()})
+	}
+	return out, len(out) > 0
+}

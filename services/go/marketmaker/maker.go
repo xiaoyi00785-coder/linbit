@@ -34,6 +34,7 @@ type PairState struct {
 	Reason      string          `json:"reason,omitempty"`
 	Index       decimal.Decimal `json:"indexPrice"`
 	Source      string          `json:"source,omitempty"`
+	BookSource  string          `json:"bookSource,omitempty"`
 	Mid         decimal.Decimal `json:"mid"`
 	Inventory   Inventory       `json:"inventory"`
 	Quotes      []Quote         `json:"quotes"`
@@ -44,6 +45,7 @@ type PairState struct {
 	LastError   string          `json:"lastError,omitempty"`
 	leverageSet int
 	hasOrders   bool
+	lastTake    time.Time
 }
 
 // Maker runs the quoting loop.
@@ -51,27 +53,31 @@ type Maker struct {
 	cfg Config
 	db  *sql.DB
 
-	mu        sync.Mutex
-	rules     map[string]Rules // key market/symbol
-	rulesAt   time.Time
-	state     map[string]*PairState
-	running   bool
-	wasRun    bool
-	feedDown  map[string]bool
-	lastCycle time.Time
-	alert     func(string)
-	seedCache map[string]decimal.Decimal
-	seedAt    time.Time
-	gate      *tradfiGate
-	gateOK    bool
-	gateAt    time.Time
+	mu          sync.Mutex
+	rules       map[string]Rules // key market/symbol
+	rulesAt     time.Time
+	state       map[string]*PairState
+	running     bool
+	wasRun      bool
+	feedDown    map[string]bool
+	lastCycle   time.Time
+	alert       func(string)
+	seedCache   map[string]decimal.Decimal
+	seedAt      time.Time
+	gate        *tradfiGate
+	gateOK      bool
+	gateAt      time.Time
+	invOnce     bool
+	basesSeeded bool
+	books       *bookFeed
+	refsAt      time.Time
 }
 
 func key(market, sym string) string { return market + "/" + sym }
 
 func NewMaker(cfg Config, db *sql.DB) *Maker {
 	return &Maker{cfg: cfg, db: db, rules: map[string]Rules{}, state: map[string]*PairState{}, feedDown: map[string]bool{},
-		alert: common.AlertTelegram}
+		alert: common.AlertTelegram, books: newBookFeed(cfg)}
 }
 
 func (m *Maker) Pairs(ctx context.Context) ([]Pair, error) {
@@ -159,6 +165,10 @@ func (m *Maker) Cycle(ctx context.Context) {
 	}
 	m.refreshRules(ctx)
 	m.refreshGate(ctx)
+	if time.Since(m.refsAt) > 5*time.Minute {
+		m.refreshBookRefs(ctx)
+		m.refsAt = time.Now()
+	}
 	m.mu.Lock()
 	gate, gateOK := m.gate, m.gateOK
 	m.mu.Unlock()
@@ -176,6 +186,9 @@ func (m *Maker) Cycle(ctx context.Context) {
 
 	if starting {
 		m.captureStartBaselines(ctx)
+	}
+	if running {
+		m.ensureInventory(ctx)
 	}
 	var balances map[string]decimal.Decimal
 	var baselines map[string]Baseline
@@ -209,7 +222,23 @@ func (m *Maker) Cycle(ctx context.Context) {
 			m.setStatus(st, map[bool]string{true: "disabled", false: "stopped"}[running], reason)
 			continue
 		}
-		if time.Since(st.LastRun) < time.Duration(p.RefreshMs)*time.Millisecond {
+		dueTake := m.cfg.TakerEnabled && time.Since(st.lastTake) >= m.cfg.TakerInterval
+		dueQuote := time.Since(st.LastRun) >= time.Duration(p.RefreshMs)*time.Millisecond
+		if !dueQuote {
+			if dueTake {
+				m.mu.Lock()
+				quotes := append([]Quote(nil), st.Quotes...)
+				quoting := st.Status == "quoting"
+				st.lastTake = time.Now()
+				m.mu.Unlock()
+				if quoting && len(quotes) > 0 {
+					if err := m.takePair(ctx, r, quotes); err != nil {
+						m.mu.Lock()
+						st.LastError = "take: " + err.Error()
+						m.mu.Unlock()
+					}
+				}
+			}
 			continue
 		}
 		st.LastRun = time.Now()
@@ -230,12 +259,6 @@ func (m *Maker) Cycle(ctx context.Context) {
 			m.mu.Unlock()
 			continue
 		}
-		m.mu.Lock()
-		if m.feedDown[key(p.Market, p.Symbol)] {
-			delete(m.feedDown, key(p.Market, p.Symbol))
-			recovered = append(recovered, key(p.Market, p.Symbol))
-		}
-		m.mu.Unlock()
 
 		var inv Inventory
 		if p.Market == "spot" {
@@ -282,11 +305,34 @@ func (m *Maker) Cycle(ctx context.Context) {
 			inv = futuresInventory(p, index, positions[r.Symbol])
 		}
 		widened := widen.GreaterThan(decimal.NewFromInt(1))
+		extraBps := decimal.Zero
 		if widened {
-			// TradFi spot deviates from the reference: quote wider
-			p.SpreadBps = p.SpreadBps.Mul(widen)
+			// TradFi spot deviates from the reference: push copied bids/asks wider
+			extraBps = p.SpreadBps.Mul(widen.Sub(decimal.NewFromInt(1)))
 		}
-		mid, targets := BuildLadder(p, r, index, inv)
+		var book ExtBook
+		if m.books != nil {
+			book, err = m.books.get(ctx, p.Market, r.Symbol, p.Levels)
+		}
+		usedBook := err == nil && book.Valid()
+		var mid decimal.Decimal
+		var targets []Quote
+		if usedBook {
+			mid, targets = BuildFromBook(p, r, book, inv, extraBps, m.books.scale)
+		} else {
+			// Venue has no depth (delisted / empty). Still quote around the index
+			// so the pair is tradable; mark it so ops can see it is not 跟盘.
+			if extraBps.IsPositive() {
+				p.SpreadBps = p.SpreadBps.Add(extraBps)
+			}
+			mid, targets = BuildLadder(p, r, index, inv)
+		}
+		m.mu.Lock()
+		if m.feedDown[key(p.Market, p.Symbol)] {
+			delete(m.feedDown, key(p.Market, p.Symbol))
+			recovered = append(recovered, key(p.Market, p.Symbol))
+		}
+		m.mu.Unlock()
 		resting, err := m.openOrders(ctx, r)
 		if err != nil {
 			m.fail(st, "open orders: "+err.Error())
@@ -310,21 +356,38 @@ func (m *Maker) Cycle(ctx context.Context) {
 		}
 		m.mu.Lock()
 		st.Index, st.Source, st.Mid, st.Inventory, st.Quotes = index, src, mid, inv, targets
+		if usedBook {
+			st.BookSource = book.Source
+		} else {
+			st.BookSource = "index-ladder"
+		}
 		st.OpenOrders = len(resting) - len(cancel) + len(place)
 		st.hasOrders = true
 		st.Status, st.Reason, st.LastError = "quoting", "", lastErr
-		if widened {
+		if !usedBook {
+			st.Reason = "index ladder (no external book)"
+		} else if widened {
 			st.Reason = "spread widened x" + widen.String() + " (reference deviation)"
 		}
+		if dueTake {
+			st.lastTake = time.Now()
+		}
 		m.mu.Unlock()
+		if dueTake {
+			if err := m.takePair(ctx, r, targets); err != nil && lastErr == "" {
+				m.mu.Lock()
+				st.LastError = "take: " + err.Error()
+				m.mu.Unlock()
+			}
+		}
 	}
 	if len(newlyDown) > 0 {
 		sort.Strings(newlyDown)
-		m.alert(fmt.Sprintf("⚠️ Linbit 做市暂停：外部指数价格不可用，已撤销报价。交易对：%s", strings.Join(newlyDown, ", ")))
+		m.alert(fmt.Sprintf("⚠️ Linbit 做市暂停：外部指数或盘口不可用，已撤销报价。交易对：%s", strings.Join(newlyDown, ", ")))
 	}
 	if len(recovered) > 0 {
 		sort.Strings(recovered)
-		m.alert(fmt.Sprintf("✅ Linbit 做市恢复：外部指数价格已恢复。交易对：%s", strings.Join(recovered, ", ")))
+		m.alert(fmt.Sprintf("✅ Linbit 做市恢复：外部指数/盘口已恢复。交易对：%s", strings.Join(recovered, ", ")))
 	}
 }
 

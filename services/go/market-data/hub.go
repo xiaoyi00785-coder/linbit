@@ -54,7 +54,7 @@ var markChannelRe = regexp.MustCompile(`^mark:[A-Z0-9]{2,30}$`)
 
 // relayChannelRe matches every public channel the futures service may push:
 // mark:{SYMBOL}, futures-ticker:{SYMBOL}, futures-kline:{SYMBOL}:{interval}.
-var relayChannelRe = regexp.MustCompile(`^(mark|futures-ticker):[A-Z0-9]{2,30}$|^futures-kline:[A-Z0-9]{2,30}:(1m|5m|15m|30m|1h|4h|1d|1w)$`)
+var relayChannelRe = regexp.MustCompile(`^(mark|futures-ticker|futures-depth|futures-trades):[A-Z0-9]{2,30}$|^futures-kline:[A-Z0-9]{2,30}:(1m|5m|15m|30m|1h|4h|1d|1w)$`)
 
 // indexChannelRe matches the "index:{SYMBOL}" alias of mark:{SYMBOL} (same payload).
 var indexChannelRe = regexp.MustCompile(`^index:[A-Z0-9]{2,30}$`)
@@ -381,7 +381,7 @@ func (c *wsClient) validateChannel(channel string) (code, msg string) {
 		if !indexChannelRe.MatchString(channel) {
 			return "SUB_INVALID", "无效的指数价格频道: " + channel
 		}
-	case "futures-ticker", "futures-kline":
+	case "futures-ticker", "futures-kline", "futures-depth", "futures-trades":
 		if !relayChannelRe.MatchString(channel) {
 			return "SUB_INVALID", "无效的合约行情频道: " + channel
 		}

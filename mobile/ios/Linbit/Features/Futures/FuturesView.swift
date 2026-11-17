@@ -655,12 +655,12 @@ struct FuturesBookView: View {
     var body: some View {
         let asks = Array(m.book.asks.prefix(7)).reversed()
         let bids = Array(m.book.bids.prefix(7))
-        let maxQ = max((m.book.asks.prefix(7) + m.book.bids.prefix(7)).map(\.qty).max() ?? 1, 0.0000001)
+        let maxQ = max((m.book.asks.prefix(7) + m.book.bids.prefix(7)).map { $0.price * $0.qty }.max() ?? 1, 0.0000001)
         VStack(spacing: 2) {
             HStack {
                 Text("价格\n(USDT)").multilineTextAlignment(.leading)
                 Spacer()
-                Text("数量\n(\(m.base))").multilineTextAlignment(.trailing)
+                Text("数量\n(\(m.quote))").multilineTextAlignment(.trailing)
             }.font(.lb(10)).foregroundColor(p.textTertiary).padding(.bottom, 4)
             if m.book.asks.isEmpty && m.book.bids.isEmpty {
                 ForEach(0..<14, id: \.self) { _ in RoundedRectangle(cornerRadius: 2).fill(p.fill).frame(height: 18) }
@@ -675,11 +675,12 @@ struct FuturesBookView: View {
         }
     }
     private func level(_ l: BookLevel, up: Bool, maxQ: Decimal) -> some View {
-        let ratio = CGFloat(Dec.double(l.qty / maxQ))
+        let notion = l.price * l.qty
+        let ratio = CGFloat(Dec.double(notion / maxQ))
         return HStack {
             Text(Fmt.price(l.price, precision: m.pricePrec)).foregroundColor(up ? p.up : p.down)
             Spacer()
-            Text(Fmt.compact(l.qty)).foregroundColor(p.textPrimary)
+            Text(Fmt.compact(notion)).foregroundColor(p.textPrimary)
         }
         .font(.lbNum(11)).frame(height: 18)
         .background(alignment: .trailing) {

@@ -6847,10 +6847,49 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /admin/v1/mm/credit:
+    post:
+      tags: [Admin]
+      summary: 做市账户充值（主网可用；totpCode 必填，审计）
+      description: |
+        与 /admin/v1/mm/testnet-seed 相同。单资产模式 {asset, amount, reason, totpCode, ref}
+        把指定数量直接入账到做市现货账户；amount ≤ ADMIN_MM_SEED_MAX。
+      operationId: adminMMCredit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ref, totpCode]
+              properties:
+                ref: { type: string, description: 幂等键 }
+                asset: { type: string, example: USDT }
+                amount: { type: string, example: "5000000" }
+                assets: { type: array, items: { type: string } }
+                usdtValue: { type: string }
+                amounts: { type: object, additionalProperties: { type: string } }
+                reason: { type: string }
+                totpCode: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, already_applied] }
+                  txType: { type: string, example: mm_testnet_seed }
+                  asset: { type: string }
+                  amount: { type: string }
+        "400": { description: "VALIDATION_ERROR / ASSET_NOT_ALLOWED" }
+        "401": { description: "TOTP_INVALID" }
+        "403": { description: "无权限" }
   /admin/v1/mm/testnet-seed:
     post:
       tags: [Admin]
-      summary: 做市账户虚拟注资（仅测试网/mock 链；主网或禁用虚拟额度时 403 SEED_DISABLED；totpCode 必填，审计）
+      summary: 做市账户充值（主网可用；totpCode 必填，审计；与 /mm/credit 相同）
       description: |
         三种模式（ref 为幂等键）：
         - 仅 {ref}：注入 MM_SEED_AMOUNT USDT（原行为不变）。
@@ -6891,7 +6930,7 @@ paths:
                   items: { type: array, items: { type: object, additionalProperties: true } }
         "400": { description: "VALIDATION_ERROR / ASSET_NOT_ALLOWED" }
         "401": { description: "TOTP_INVALID" }
-        "403": { description: "SEED_DISABLED（主网/生产）或无权限" }
+        "403": { description: "无权限" }
   /admin/v1/users/{uid}/credit:
     parameters:
       - { name: uid, in: path, required: true, description: "用户 UID（可先用 GET /admin/v1/users?q=邮箱 查询）", schema: { type: string } }
