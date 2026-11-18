@@ -28,6 +28,8 @@ struct EarnView: View {
     @State private var subscribe: APIEarnProduct?
     @State private var redeem: APIEarnPositions200ResponseItemsInner?
     @State private var hide = false
+    @State private var search = ""
+    @State private var mineOpen = false
 
     var body: some View {
         Group {
@@ -48,40 +50,128 @@ struct EarnView: View {
 
     private var earnBody: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 overview
-                // 7 个分类一屏放不下：横向滚动，用二级标签字号 + 下划线（和行情页分类一致）
-                ScrollView(.horizontal, showsIndicators: false) {
-                    PrimaryTabs(items: ["全部", "简单赚币", "定期", "链上赚币", "VIP", "质押借币", "我的"], selected: $tab,
-                                size: FontSize.tabSecondary, underline: true)
-                        .padding(.horizontal, Spacing.pageH)
+                entries.padding(.top, 26)
+                if !recommendations.isEmpty {
+                    sectionTitle("专属推荐").padding(.top, 30)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(recommendations, id: \.id) { pr in
+                                recommendCard(pr)
+                            }
+                        }.padding(.horizontal, Spacing.pageH)
+                    }
+                    .padding(.top, 14)
                 }
-                .padding(.top, 14).padding(.bottom, 4)
-                list
+                sectionTitle("全部产品").padding(.top, 30)
+                searchField.padding(.top, 14)
+                if tab == 6 { mineBody.padding(.top, 8) } else { list }
             }.padding(.bottom, 40)
         }
         .refreshable { await m.load() }
+        .lbSheet(Binding(get: { mineOpen }, set: { if !$0 { mineOpen = false } })) {
+            LBSheet(title: "我的持仓", showClose: true, onClose: { mineOpen = false }) {
+                mineBody
+            }
+        }
+    }
+
+    /// 参考 App 的四个入口：简单赚币 / 链上赚币 / VIP 尊享财富 / 质押借币（点选即筛选下面的列表）
+    private var entries: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(["简单赚币", "链上赚币", "VIP 尊享财富", "质押借币"].enumerated()), id: \.offset) { i, t in
+                let on = tab == i + 1
+                Button { tab = on ? 0 : i + 1 } label: {
+                    VStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill).frame(width: 46, height: 46)
+                            Image(systemName: ["leaf.fill", "link", "crown.fill", "building.columns.fill"][i])
+                                .font(.system(size: 20)).foregroundColor(on ? p.brand : p.textPrimary)
+                        }
+                        Text(t).font(.lb(FontSize.small)).foregroundColor(on ? p.textPrimary : p.textSecondary).lineLimit(1)
+                    }.frame(maxWidth: .infinity)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private var recommendations: [APIEarnProduct] {
+        let all = m.products.value ?? []
+        var seen = Set<String>()
+        return all.filter { pr in
+            let a = pr.asset ?? ""
+            guard !a.isEmpty, !seen.contains(a) else { return false }
+            seen.insert(a); return true
+        }.prefix(3).map { $0 }
+    }
+
+    private func recommendCard(_ pr: APIEarnProduct) -> some View {
+        Button { session.requireLogin { subscribe = pr } } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 5) {
+                    CoinIcon(base: pr.asset ?? "USDT", size: 18)
+                    Text(pr.asset ?? "").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textPrimary)
+                    Text(pr.kind == .onchain ? "质押" : "抢购")
+                        .font(.lb(10)).foregroundColor(p.down)
+                        .padding(.horizontal, 4).frame(height: 15)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(p.downTint))
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(EarnProductRow.aprText(pr)).font(.lbNum(17, .semibold)).foregroundColor(p.textPrimary)
+                    Text("APR").font(.lb(10)).foregroundColor(p.textSecondary)
+                }
+                Text(pr.kind == .onchain ? "链上赚币" : (pr.kind == .fixed ? "定期理财" : "理财宝"))
+                    .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
+            }
+            .padding(12).frame(width: 106, height: 96, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
+        }.buttonStyle(.plain)
+    }
+
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t).font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+            .padding(.horizontal, Spacing.pageH)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(p.textTertiary)
+            TextField("搜索币种", text: $search).font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+        }
+        .padding(.horizontal, 12).frame(height: 34)
+        .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+        .padding(.horizontal, Spacing.pageH)
     }
 
     private var overview: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("理财总资产(USDT)").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                Text("理财资产(USDT)").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
                 Image(systemName: hide ? "eye.slash" : "eye").font(.system(size: 12)).foregroundColor(p.textSecondary).onTapGesture { hide.toggle() }
+                Spacer()
+                Button { mineOpen = true } label: {
+                    HStack(spacing: 2) {
+                        Text("我的持仓").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                        Image(systemName: "chevron.right").font(.system(size: 10)).foregroundColor(p.textTertiary)
+                    }
+                }.buttonStyle(.plain)
             }
             if session.isLoggedIn {
-                Text(hide ? "******" : Fmt.amount(Dec.parse(m.summary?.totalValueUsdt), 2)).font(.lbNum(26, .bold)).foregroundColor(p.textPrimary)
-                HStack {
-                    KVCell(k: "昨日收益", v: hide ? "***" : "+" + Fmt.amount(Dec.parse(m.summary?.recentInterestUsdt), 4), vColor: p.up)
-                    KVCell(k: "累计收益", v: hide ? "***" : "+" + Fmt.amount(Dec.parse(m.summary?.totalInterestUsdt), 4), align: .trailing, vColor: p.up)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(hide ? "******" : Fmt.amount(Dec.parse(m.summary?.totalValueUsdt), 2))
+                        .font(.lbNum(30, .bold)).foregroundColor(p.textPrimary)
+                    Text("USDT").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textPrimary)
                 }
+                Text(hide ? "******" : "昨日收益 +" + Fmt.amount(Dec.parse(m.summary?.recentInterestUsdt), 4))
+                    .font(.lbNum(FontSize.caption)).foregroundColor(p.up)
             } else {
-                Text("--").font(.lbNum(26, .bold)).foregroundColor(p.textPrimary)
+                Text("--").font(.lbNum(30, .bold)).foregroundColor(p.textPrimary)
                 LBButton(title: "登录查看理财资产", kind: .secondary, height: 36) { session.present(.login) }
             }
         }
-        .padding(14).background(RoundedRectangle(cornerRadius: Radius.lg).fill(p.fill))
-        .padding(.horizontal, Spacing.pageH).padding(.top, 8)
+        .padding(.horizontal, Spacing.pageH).padding(.top, 10)
     }
 
     private func matches(_ pr: APIEarnProduct, _ tab: Int) -> Bool {
@@ -103,12 +193,12 @@ struct EarnView: View {
         case let .failed(e): ErrorStateView(message: e) { Task { await m.load() } }.frame(height: 300)
         case let .loaded(all):
             if tab == 6 {
-                mine
+                mineBody
+            } else if filteredRows(all).isEmpty {
+                EmptyStateView(text: "暂无理财产品").frame(height: 260)
             } else {
-                let rows = all.filter { matches($0, tab) }
-                if rows.isEmpty { EmptyStateView(text: "暂无理财产品").frame(height: 260) }
                 LazyVStack(spacing: 0) {
-                    ForEach(rows, id: \.id) { pr in
+                    ForEach(filteredRows(all), id: \.id) { pr in
                         EarnProductRow(product: pr) { session.requireLogin { subscribe = pr } }
                         Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
                     }
@@ -117,7 +207,16 @@ struct EarnView: View {
         }
     }
 
-    @ViewBuilder private var mine: some View {
+    private func filteredRows(_ all: [APIEarnProduct]) -> [APIEarnProduct] {
+        var rows = all.filter { matches($0, tab) }
+        let q = search.trimmingCharacters(in: .whitespaces).uppercased()
+        if !q.isEmpty {
+            rows = rows.filter { ($0.asset ?? "").uppercased().contains(q) || ($0.title ?? "").uppercased().contains(q) }
+        }
+        return rows
+    }
+
+    @ViewBuilder private var mineBody: some View {
         if !session.isLoggedIn {
             EmptyBlock(text: "登录后查看我的理财", actions: [("登录 / 注册", { session.present(.login) })])
         } else if (m.positions?.items ?? []).isEmpty && (m.positions?.unlocking ?? []).isEmpty {
@@ -185,6 +284,11 @@ struct EarnProductRow: View {
                 .padding(.horizontal, 12).frame(height: 30).background(Capsule().fill(soldOut ? p.fill : p.primary))
         }
         .padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
+    }
+    static func aprText(_ p: APIEarnProduct) -> String {
+        let a = Dec.parse(p.apr) * 100
+        if let mx = p.aprMax, Dec.parse(mx) > Dec.parse(p.apr) { return "\(Fmt.amount(a, 2))%~\(Fmt.amount(Dec.parse(mx) * 100, 2))%" }
+        return "\(Fmt.amount(a + Dec.parse(p.bonusApr) * 100, 2))%"
     }
     private var aprText: String {
         let a = Dec.parse(product.apr) * 100

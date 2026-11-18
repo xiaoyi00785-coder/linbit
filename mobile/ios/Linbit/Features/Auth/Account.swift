@@ -52,28 +52,20 @@ struct UserCenterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavBar(title: "用户中心") {
+            NavBar(title: "") {
                 Button { showSwitch = true } label: { Image(systemName: "arrow.left.arrow.right").foregroundColor(p.textPrimary) }
             }
             ScrollView {
-                VStack(spacing: 6) {
-                    ZStack(alignment: .bottomTrailing) {
-                        RoundedRectangle(cornerRadius: Radius.xl).fill(p.fill).frame(width: 68, height: 68)
-                            .overlay(Circle().fill(p.brand).frame(width: 26).offset(y: -8))
-                        Circle().fill(p.bg).frame(width: 22).overlay(Image(systemName: "camera").font(.system(size: 10)).foregroundColor(p.textPrimary)).offset(x: 4, y: 4)
-                    }.padding(.top, 8)
-                    Text(session.account?.nickname ?? "—").font(.lb(18, .semibold)).foregroundColor(p.textPrimary).padding(.top, 6)
-                    Text(masked).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                VStack(alignment: .leading, spacing: 0) {
+                    accountCard.padding(.horizontal, Spacing.pageH).padding(.top, 4)
+                    securityCard.padding(.horizontal, Spacing.pageH).padding(.top, 16)
+                    sectionTitle("推荐功能").padding(.top, 26)
+                    grid(recommended, columns: 4).padding(.top, 18)
+                    sectionTitle("常用功能").padding(.top, 30)
+                    grid(common, columns: 4).padding(.top, 18)
+                    aboutRow.padding(.top, 28)
                 }
-                PrimaryTabs(items: ["个人资料", "偏好设置", "通知设置"], selected: $tab, size: FontSize.label, underline: true)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Spacing.pageH).padding(.top, 24)
-                if tab == 0 {
-                    profileRows
-                } else if tab == 1 {
-                    preferencePane
-                } else {
-                    NotifSettingsView(embedded: true, onBack: {})
-                }
+                .padding(.bottom, 40)
             }
         }
         .background(p.bg.ignoresSafeArea())
@@ -113,6 +105,128 @@ struct UserCenterView: View {
                 }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
             }
         }
+    }
+
+    // MARK: - 用户中心（按参考 App 结构：账号卡 + 安全提示卡 + 推荐功能 / 常用功能 图标宫格 + 关于）
+
+    private struct UCItem: Identifiable {
+        let id = UUID()
+        let title: String
+        let icon: LBIcon?
+        let symbol: String
+        let action: () -> Void
+    }
+
+    private var recommended: [UCItem] {
+        [
+            .init(title: "聊天室", icon: .gChat, symbol: "person.2.fill") { open(.chat) },
+            .init(title: "福利中心", icon: .gGift, symbol: "gift.fill") { open(.welfare) },
+            .init(title: "理财", icon: .gEarn, symbol: "chart.line.uptrend.xyaxis") { open(.earn) },
+            .init(title: "TradFi", icon: .gTradfi, symbol: "building.columns.fill") { open(.tradfi) },
+            .init(title: "跟单", icon: .gCopy, symbol: "person.2.badge.gearshape.fill") { open(.copyTrading) },
+            .init(title: "策略交易", icon: .gBot, symbol: "cpu.fill") { open(.strategy) },
+        ]
+    }
+
+    private var common: [UCItem] {
+        [
+            .init(title: "邀请好友", icon: .gGift, symbol: "person.badge.plus") { open(.partner) },
+            .init(title: "卡券中心", icon: .gGift, symbol: "ticket.fill") { open(.coupons) },
+            .init(title: "账户安全", icon: .gTradfi, symbol: "lock.shield.fill") { Router.shared.showUserCenter = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { SecShot.raw = "sec:"; Router.shared.feature = .security } },
+            .init(title: "身份认证", icon: nil, symbol: "person.text.rectangle.fill") { open(.kyc) },
+            .init(title: "子账户", icon: nil, symbol: "person.3.fill") { open(.subAccounts) },
+            .init(title: "切换账号", icon: nil, symbol: "arrow.left.arrow.right") { showSwitch = true },
+            .init(title: "主题模式", icon: nil, symbol: "moon.fill") { showTheme = true },
+            .init(title: "计价货币", icon: nil, symbol: "yensign.circle.fill") { showQuote = true },
+            .init(title: "通知设置", icon: .bell, symbol: "bell.fill") { open(.notifications) },
+            .init(title: "帮助中心", icon: nil, symbol: "questionmark.circle.fill") { open(.support) },
+            .init(title: "客服与支持", icon: .headset, symbol: "headphones") { open(.support) },
+        ]
+    }
+
+    private var accountCard: some View {
+        HStack(spacing: 12) {
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: Radius.xl).fill(p.fill).frame(width: 54, height: 54)
+                    .overlay(Circle().fill(p.brand).frame(width: 22).offset(y: -6))
+                Circle().fill(p.bg).frame(width: 18)
+                    .overlay(Image(systemName: "camera").font(.system(size: 8)).foregroundColor(p.textPrimary))
+                    .offset(x: 3, y: 3)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.account?.nickname ?? masked).font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
+                HStack(spacing: 6) {
+                    Text("UID: \(session.account?.uid ?? "—")").font(.lbNum(FontSize.caption)).foregroundColor(p.textSecondary)
+                    Image(systemName: "doc.on.doc").font(.system(size: 11)).foregroundColor(p.textSecondary)
+                        .onTapGesture { UIPasteboard.general.string = session.account?.uid; ToastCenter.shared.show("UID 已复制", .success) }
+                }
+                let kyc = session.account?.kycLevel ?? 0
+                Text(kyc > 0 ? "KYC 已认证" : "KYC 未认证")
+                    .font(.lb(FontSize.small)).foregroundColor(kyc > 0 ? p.up : p.down)
+                    .padding(.horizontal, 6).frame(height: 18)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(kyc > 0 ? p.upTint : p.downTint))
+                    .contentShape(Rectangle())
+                    .onTapGesture { open(.kyc) }
+            }
+            Spacer()
+            IconView(icon: .chevronRight, size: 14, tint: p.textSecondary)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { nickDraft = session.account?.nickname ?? ""; editingNick = true }
+    }
+
+    private var securityCard: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.shield.fill").font(.system(size: 26, weight: .light)).foregroundColor(p.textTertiary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("您的账户安全设置较弱，推荐您设置：").font(.lb(FontSize.small)).foregroundColor(p.textPrimary)
+                Text("通行密钥").font(.lb(FontSize.small)).foregroundColor(p.brand)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).stroke(p.border, lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { SecShot.raw = "sec:passkeys"; Router.shared.showUserCenter = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { Router.shared.feature = .security } }
+    }
+
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t).font(.lb(20, .semibold)).foregroundColor(p.textPrimary)
+            .padding(.horizontal, Spacing.pageH)
+    }
+
+    private func grid(_ items: [UCItem], columns: Int) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: columns), spacing: 22) {
+            ForEach(items) { item in
+                Button(action: item.action) {
+                    VStack(spacing: 7) {
+                        Group {
+                            if let icon = item.icon {
+                                IconView(icon: icon, size: 26)
+                            } else {
+                                Image(systemName: item.symbol).font(.system(size: 23)).foregroundColor(p.textPrimary)
+                            }
+                        }
+                        .frame(height: 30)
+                        Text(item.title).font(.lb(FontSize.caption)).foregroundColor(p.textPrimary).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Spacing.pageH)
+    }
+
+    private var aboutRow: some View {
+        HStack {
+            Image(systemName: "info.circle").font(.system(size: 15)).foregroundColor(p.textPrimary)
+            Text("关于 Linbit").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+            Spacer()
+            Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0").font(.lbNum(FontSize.caption)).foregroundColor(p.textTertiary)
+            IconView(icon: .chevronRight, size: 12, tint: p.textTertiary)
+        }
+        .padding(.horizontal, Spacing.pageH)
+        .frame(height: 44)
     }
 
     private var profileRows: some View {
