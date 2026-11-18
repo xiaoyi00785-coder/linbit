@@ -368,7 +368,7 @@ fun FuturesTradeContent(
         "pairs" -> PairPickerSheet(marketRows, vm.symbol, false, { vm.switchSymbol(it) }, { sheet = null })
         "precision" -> PrecisionSheet(vm.pricePrec, vm.bookPrecision, { vm.bookPrecision = it }, { sheet = null })
         "theme" -> ThemeModeSheet(themeMode, onTheme, { sheet = null })
-        "alert" -> LbSheet("价格预警", { sheet = null }) { PriceAlertForm(vm.symbol) { sheet = null } }
+        "alert" -> LbSheet("价格预警", { sheet = null }) { PriceAlertForm(vm.symbol, onClose = { sheet = null }) }
         "tools" -> ToolsSheet(vm.toast::show, { sheet = null }) { tool ->
             when (tool) {
                 "计算器" -> showCalculator = true
