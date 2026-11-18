@@ -27,6 +27,7 @@ enum Fmt {
         f.numberStyle = .decimal
         f.usesGroupingSeparator = grouping
         f.groupingSeparator = ","
+        f.groupingSize = 3   // en_US_POSIX 在 iOS 16 上分组位数是 0：不写这行千分位不显示
         f.minimumFractionDigits = minF
         f.maximumFractionDigits = maxF
         f.roundingMode = .halfUp

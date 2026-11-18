@@ -183,7 +183,8 @@ struct OTPBoxes: View {
                             .overlay(
                                 ZStack {
                                     Text(ch).font(.lbNum(22, .semibold)).foregroundColor(p.textPrimary)
-                                    if active && ch.isEmpty { Rectangle().fill(p.brand).frame(width: 1.5, height: 20).opacity(blink ? 0 : 1) }
+                                    if active && ch.isEmpty { Rectangle().fill(p.brand).frame(width: 1.5, height: 20).opacity(blink ? 0 : 1)
+                                        .animation(blink ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil, value: blink) }
                                 })
                             .frame(height: 48)
                     }
@@ -206,7 +207,8 @@ struct OTPBoxes: View {
         }
         .onAppear {
             focused = true; tick()
-            withAnimation(.easeInOut(duration: 0.5).repeatForever()) { blink = true }
+            // 光标闪烁只绑在光标的透明度上，且晚一拍启动（见 SkeletonList 的说明）
+            Task { @MainActor in try? await Task.sleep(nanoseconds: 150_000_000); blink = true }
         }
     }
     private func tick() {

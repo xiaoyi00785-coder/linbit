@@ -160,7 +160,9 @@ struct HomeView: View {
         .contentShape(Rectangle())
         .onTapGesture { Haptics.tap(); Router.shared.openFeature(.welfare) }
         .padding(.horizontal, 12)
-        .frame(height: Metrics.taskCardH)
+        .padding(.vertical, 8)
+        // 参考 App 的任务卡是两行（任务文案 + 倒计时），高度随内容走，固定 44 会把倒计时裁掉
+        .frame(minHeight: Metrics.taskCardH, alignment: .leading)
         .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(p.border, lineWidth: 1))
         .padding(.horizontal, Spacing.pageH)
     }

@@ -35,6 +35,8 @@ struct ThemedRoot<Content: View>: View {
 }
 
 extension Font {
+    /// 字号固定，不跟随系统「文字大小」：参考 App 实测为固定字号（系统档位调小后它不变），
+    /// 跟随缩放反而会比参考 App 小一圈（实测 14.3pt vs 18.3pt）。
     static func lb(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font { .system(size: size, weight: weight) }
     /// 数字：等宽数字，保证行情跳动时不抖动。
     static func lbNum(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
