@@ -5,9 +5,11 @@ import AVFoundation
 struct HomeView: View {
     @Environment(\.palette) private var p
     @StateObject private var vm = HomeViewModel()
-    @StateObject private var store = MarketStore.shared
+    /// 不在这里订阅行情：价格每秒推几次，整页跟着重算很贵。只有榜单行（HomeRankRows）订阅。
+    private let store = MarketStore.shared
     @StateObject private var watch = Watchlist.shared
     @ObservedObject private var session = Session.shared
+    @ObservedObject private var router = Router.shared
     @State private var hideAssets = false
     @ObservedObject private var notif = NotifCenter.shared
     @State private var rankTab = 1
@@ -51,6 +53,10 @@ struct HomeView: View {
         .background(p.bg)
         .task { await NotifCenter.shared.refresh() }
         .task { await vm.load(); if store.spot.isEmpty { await store.load() }; await loadTradFi() }
+        // 登录 / 退出后重取；首页常驻不卸载，从别的 Tab 回来（如刚充值、划转、下单）也重取
+        .onChange(of: session.isLoggedIn) { _ in Task { await vm.loadTotal() } }
+        .onChange(of: session.account?.uid) { _ in Task { await vm.loadTotal() } }   // 切换账号
+        .onChange(of: router.tab) { t in if t == .home { Task { await vm.loadTotal() } } }
         .lbSheet($moreSheet) { HomeMoreSheet { moreSheet = false } }
         .fullScreenCover(isPresented: $scanning) {
             CodeScanner(onCode: { code in scanning = false; handleScan(code) }, onClose: { scanning = false })
@@ -348,9 +354,7 @@ struct HomeView: View {
                     }.buttonStyle(.plain)
                 }
             } else {
-                let rows = vm.ranking(rankTab, kind: rankKind == 0 ? .spot : .futures, store: store, watch: watch)
-                if rows.isEmpty { EmptyStateView(text: rankTab == 0 ? "暂无自选" : "暂无数据").frame(height: 160) }
-                ForEach(rows) { MarketRowView(row: $0, compactPair: true, marketFutures: rankKind == 1) }
+                HomeRankRows(vm: vm, tab: rankTab, kind: rankKind)
             }
             moreLink(rankKind == 2 ? { Router.shared.openFeature(.tradfi) } : onOpenMarkets)
         }
@@ -776,4 +780,18 @@ private final class ScannerController: UIViewController, AVCaptureMetadataOutput
     }
 
     @objc private func closeTapped() { onClose?() }
+}
+
+/// 首页榜单行：唯一订阅 MarketStore 的部分，价格更新只重算这几行
+private struct HomeRankRows: View {
+    let vm: HomeViewModel
+    let tab: Int
+    let kind: Int
+    @ObservedObject private var store = MarketStore.shared
+    @ObservedObject private var watch = Watchlist.shared
+    var body: some View {
+        let rows = vm.ranking(tab, kind: kind == 0 ? .spot : .futures, store: store, watch: watch)
+        if rows.isEmpty { EmptyStateView(text: tab == 0 ? "暂无自选" : "暂无数据").frame(height: 160) }
+        ForEach(rows) { MarketRowView(row: $0, compactPair: true, marketFutures: kind == 1) }
+    }
 }

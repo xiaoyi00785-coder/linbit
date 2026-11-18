@@ -115,7 +115,10 @@ func (s *Store) AdminTestnetCredit(ctx context.Context, userID, asset string, am
 	}
 	var pu, pa, pamt string
 	var pat time.Time
-	err = tx.QueryRowContext(ctx, `SELECT user_id, asset, amount::text, created_at FROM wallet_ops WHERE ref=$1 AND op=$2`, key, userCreditOp).Scan(&pu, &pa, &pamt, &pat)
+	// claimRef stores the key as "<op>:<key>". Rows from before that carry the bare key.
+	stored := storedRef(userCreditOp, key)
+	err = tx.QueryRowContext(ctx, `SELECT user_id, asset, amount::text, created_at FROM wallet_ops
+		WHERE ref IN ($1, $2) AND op=$3 ORDER BY seq LIMIT 1`, key, stored, userCreditOp).Scan(&pu, &pa, &pamt, &pat)
 	switch {
 	case err == nil:
 		if pu != userID || pa != asset || !decimal.RequireFromString(pamt).Equal(amount) {
@@ -127,7 +130,7 @@ func (s *Store) AdminTestnetCredit(ctx context.Context, userID, asset string, am
 		return UserCredit{}, err
 	}
 	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wallet_ops WHERE ref=$1)`, key).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wallet_ops WHERE ref IN ($1, $2))`, key, stored).Scan(&exists); err != nil {
 		return UserCredit{}, err
 	}
 	if exists {

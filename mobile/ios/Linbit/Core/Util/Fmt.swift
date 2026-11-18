@@ -2,19 +2,35 @@ import Foundation
 
 /// 价格/数量一律用 Decimal（服务端为十进制字符串），禁止转 Double 参与计算。
 enum Dec {
-    static func parse(_ s: String?) -> Decimal { s.flatMap { Decimal(string: $0, locale: Locale(identifier: "en_US_POSIX")) } ?? 0 }
+    static let posix = Locale(identifier: "en_US_POSIX")
+    static func parse(_ s: String?) -> Decimal { s.flatMap { Decimal(string: $0, locale: posix) } ?? 0 }
+    /// 小数位数（0.1 → 1，10 → 0）
+    static func decimals(_ d: Decimal) -> Int {
+        let s = NSDecimalNumber(decimal: d).stringValue
+        guard let dot = s.firstIndex(of: ".") else { return 0 }
+        return s.distance(from: dot, to: s.endIndex) - 1
+    }
 }
 
 enum Fmt {
+    /// 行情页每次重算要格式化上百个数字。NumberFormatter 创建很贵，按配置缓存复用。
+    /// 创建后不再修改，string(from:) 可多线程调用；字典读写加锁。
+    private static var cache: [Int: NumberFormatter] = [:]
+    private static let lock = NSLock()
+
     private static func formatter(_ minF: Int, _ maxF: Int, grouping: Bool = true) -> NumberFormatter {
+        let key = minF << 8 | maxF << 1 | (grouping ? 1 : 0)
+        lock.lock(); defer { lock.unlock() }
+        if let f = cache[key] { return f }
         let f = NumberFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
+        f.locale = Dec.posix
         f.numberStyle = .decimal
         f.usesGroupingSeparator = grouping
         f.groupingSeparator = ","
         f.minimumFractionDigits = minF
         f.maximumFractionDigits = maxF
         f.roundingMode = .halfUp
+        cache[key] = f
         return f
     }
 
@@ -66,10 +82,23 @@ enum Fmt {
 }
 
 extension Fmt {
-    static func dateTime(_ d: Date) -> String {
+    private static let dateTimeFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
+        f.locale = Dec.posix
         f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f
+    }()
+    static func dateTime(_ d: Date) -> String { dateTimeFormatter.string(from: d) }
+
+    private static var dateCache: [String: DateFormatter] = [:]
+    /// 固定格式的本地时间（en_US_POSIX），格式化器按格式缓存
+    static func date(_ d: Date, _ format: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        let f = dateCache[format] ?? {
+            let f = DateFormatter(); f.locale = Dec.posix; f.dateFormat = format
+            dateCache[format] = f
+            return f
+        }()
         return f.string(from: d)
     }
 }

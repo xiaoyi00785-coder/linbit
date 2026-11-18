@@ -221,8 +221,8 @@ struct PaperFuturesScreen: View {
                 }.padding(.horizontal, Spacing.pageH).padding(.bottom, Metrics.tabBarH + 24)
             }
         }
-        .task { await live.start(); await reload() }
-        .onDisappear { live.stop() }
+        .task { await reload() }
+        .liveWhileVisible(.futures, start: { await live.start() }, stop: { live.stop() })
         .lbSheet(Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
             LBSheet(title: pending == "close-all" ? "一键平仓" : (pending ?? "").hasPrefix("close") ? "确认平仓" : (pending == "sell" ? "确认开空" : "确认开多"), onClose: { pending = nil }) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -379,11 +379,13 @@ final class MarketTape: ObservableObject {
     private var subs: [WSSubscription] = []
     private var klineSub: WSSubscription?
     private var barToken = UUID()
-    private var bidMap: [Decimal: Decimal] = [:]
-    private var askMap: [Decimal: Decimal] = [:]
-    private var bookReady = false
-    private var depthFirst = true
-    private var bookSeq: Int64 = 0
+    /// 盘口走 BookStream（固定 0.5 秒节拍）；成交和 ticker 帧先攒着，同样按节拍合并发布一次。
+    /// 之前每来一帧就改一次 @Published，一阵帧到达时整页（含 K 线）要连着重画十几次。
+    private let bookStream = BookStream()
+    private var pendingTrades: [LiveTrade] = []
+    private var pendingTicker: WSTicker?
+    private var pendingBars: [Int64: ChartBar] = [:]
+    private var flush: Task<Void, Never>?
 
     init(symbol: String, futures: Bool, interval: String = "15m") {
         self.symbol = symbol
@@ -399,11 +401,13 @@ final class MarketTape: ObservableObject {
             change = row.changePct
         }
         if bars.isEmpty, let cached = Self.barCache[cacheKey] { bars = cached }
+        bookStream.onPublish = { [weak self] b in self?.book = b }
+        bookStream.start(symbol: symbol, futures: futures)
         async let barsTask: Void = reloadBars()
         async let tickerTask: Void = loadTicker()
-        async let bookTask: Void = loadBook()
         async let tradeTask: Void = loadTrades()
-        _ = await (barsTask, tickerTask, bookTask, tradeTask)
+        _ = await (barsTask, tickerTask, tradeTask)
+        if Task.isCancelled { return }
         subscribeStreams()
     }
 
@@ -412,14 +416,44 @@ final class MarketTape: ObservableObject {
         klineSub?.cancel(); klineSub = nil
         subs.forEach { $0.cancel() }
         subs = []
-        depthFirst = true
-        bookReady = false
+        bookStream.stop()
+        flush?.cancel(); flush = nil
+        pendingTrades = []; pendingTicker = nil; pendingBars = [:]
+    }
+
+    private func scheduleFlush() {
+        guard flush == nil else { return }
+        flush = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: BookStream.tickNanos)
+            guard let self, !Task.isCancelled else { return }
+            self.flush = nil
+            if !self.pendingBars.isEmpty {
+                let bars = self.pendingBars.values.sorted { $0.time < $1.time }
+                self.pendingBars = [:]
+                for b in bars { self.upsert(b) }
+            }
+            if let t = self.pendingTicker {
+                self.pendingTicker = nil
+                self.applyTicker(last: Dec.parse(t.lastPrice), change: Dec.parse(t.priceChangePercent), high: Dec.parse(t.high), low: Dec.parse(t.low), volume: Dec.parse(t.volume), quote: Dec.parse(t.quoteVolume))
+            }
+            if !self.pendingTrades.isEmpty {
+                let batch = self.pendingTrades
+                self.pendingTrades = []
+                var next = self.trades
+                for t in batch where !next.contains(where: { $0.tradeId == t.tradeId }) { next.insert(t, at: 0) }
+                if next.count > 40 { next.removeLast(next.count - 40) }
+                if next != self.trades { self.trades = next }
+                // 详情页大字最新价跟着成交走（合约 ticker 帧不带涨跌幅，解不出来）
+                if let px = batch.last.map({ Dec.parse($0.price) }), px > 0, px != self.last { self.last = px }
+            }
+        }
     }
 
     func setInterval(_ next: String) {
         guard next != interval else { return }
         interval = next
         bars = []
+        pendingBars = [:]
         Task { await reloadBars() }
     }
 
@@ -452,8 +486,8 @@ final class MarketTape: ObservableObject {
             guard let bar = Self.parseBar(frame.data) else { return }
             Task { @MainActor in
                 guard let self, token == self.barToken else { return }
-                self.upsert(bar)
-                self.lastEvent = Date()
+                self.pendingBars[bar.time] = bar
+                self.scheduleFlush()
             }
         }
     }
@@ -465,11 +499,6 @@ final class MarketTape: ObservableObject {
         } else if let r: APIGetTicker200Response = try? await APIClient.shared.get("/market/ticker", query: ["symbol": symbol]), case let .typeAPITicker(t) = r {
             applyTicker(last: Dec.parse(t.lastPrice), change: Dec.parse(t.priceChangePercent), high: Dec.parse(t.high), low: Dec.parse(t.low), volume: Dec.parse(t.volume), quote: Dec.parse(t.quoteVolume))
         }
-    }
-
-    private func loadBook() async {
-        let next = (try? await (futures ? FuturesAPI.depth(symbol, limit: 50) : SpotAPI.depth(symbol, limit: 50))) ?? OrderBook()
-        replaceBook(next)
     }
 
     private func loadTrades() async {
@@ -486,23 +515,19 @@ final class MarketTape: ObservableObject {
 
     private func subscribeStreams() {
         let tickerCh = futures ? "futures-ticker:\(symbol)" : "ticker:\(symbol)"
-        let depthCh = futures ? "futures-depth:\(symbol)" : "depth:\(symbol)"
         let tradeCh = futures ? "futures-trades:\(symbol)" : "trades:\(symbol)"
         subs.append(MarketSocket.shared.subscribe(tickerCh) { [weak self] frame in
             guard let t = try? CodableHelper.jsonDecoder.decode(WSTicker.self, from: frame.data) else { return }
-            Task { @MainActor in
-                guard let self else { return }
-                self.applyTicker(last: Dec.parse(t.lastPrice), change: Dec.parse(t.priceChangePercent), high: Dec.parse(t.high), low: Dec.parse(t.low), volume: Dec.parse(t.volume), quote: Dec.parse(t.quoteVolume))
-                self.lastEvent = Date()
-            }
-        })
-        subs.append(MarketSocket.shared.subscribe(depthCh) { [weak self] frame in
-            guard let d = try? CodableHelper.jsonDecoder.decode(DepthFrame.self, from: frame.data) else { return }
-            Task { @MainActor in self?.applyDepth(d); self?.lastEvent = Date() }
+            Task { @MainActor in self?.pendingTicker = t; self?.scheduleFlush() }
         })
         subs.append(MarketSocket.shared.subscribe(tradeCh) { [weak self] frame in
             guard let raw = try? CodableHelper.jsonDecoder.decode(RawTape.self, from: frame.data) else { return }
-            Task { @MainActor in self?.prepend(raw.live); self?.lastEvent = Date() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.pendingTrades.append(raw.live)
+                if self.pendingTrades.count > 80 { self.pendingTrades.removeFirst(self.pendingTrades.count - 80) }
+                self.scheduleFlush()
+            }
         })
     }
 
@@ -513,48 +538,6 @@ final class MarketTape: ObservableObject {
         if low > 0 { self.low = low }
         if volume > 0 { self.volume = volume }
         if quote > 0 { self.quoteVolume = quote }
-    }
-
-    private func replaceBook(_ next: OrderBook) {
-        bidMap.removeAll(); askMap.removeAll()
-        for l in next.bids where l.price > 0 && l.qty > 0 { bidMap[l.price] = l.qty }
-        for l in next.asks where l.price > 0 && l.qty > 0 { askMap[l.price] = l.qty }
-        publishBook()
-        bookReady = true
-    }
-
-    private func applyDepth(_ d: DepthFrame) {
-        let seq = d.lastUpdateId ?? 0
-        if d.snapshot == true || depthFirst || !bookReady {
-            bidMap.removeAll(); askMap.removeAll()
-            depthFirst = false
-            bookReady = true
-        } else if seq > 0, seq <= bookSeq {
-            return
-        }
-        func put(_ rows: [[String]]?, into map: inout [Decimal: Decimal]) {
-            for r in rows ?? [] where r.count >= 2 {
-                let price = Dec.parse(r[0]), qty = Dec.parse(r[1])
-                if price <= 0 { continue }
-                if qty <= 0 { map.removeValue(forKey: price) } else { map[price] = qty }
-            }
-        }
-        put(d.bids, into: &bidMap)
-        put(d.asks, into: &askMap)
-        if seq > 0 { bookSeq = seq }
-        publishBook()
-    }
-
-    private func publishBook() {
-        book = OrderBook(
-            bids: bidMap.map { BookLevel(price: $0.key, qty: $0.value) }.sorted { $0.price > $1.price },
-            asks: askMap.map { BookLevel(price: $0.key, qty: $0.value) }.sorted { $0.price < $1.price })
-    }
-
-    private func prepend(_ t: LiveTrade) {
-        guard !trades.contains(where: { $0.tradeId == t.tradeId }) else { return }
-        trades.insert(t, at: 0)
-        if trades.count > 40 { trades.removeLast(trades.count - 40) }
     }
 
     private func upsert(_ b: ChartBar) {
@@ -597,12 +580,6 @@ private struct FlexKline: Decodable {
     private enum CodingKeys: String, CodingKey { case time, openTime, open, high, low, close, volume }
 }
 
-private struct DepthFrame: Decodable {
-    var bids: [[String]]?
-    var asks: [[String]]?
-    var snapshot: Bool?
-    var lastUpdateId: Int64?
-}
 
 private struct RawTape: Decodable {
     var tradeId: String

@@ -5,6 +5,7 @@ struct FuturesRootView: View {
     @Environment(\.palette) private var p
     @ObservedObject private var router = Router.shared
     @ObservedObject private var flags = AppFeatures.shared
+    @ObservedObject private var overlays = OverlayTracker.shared
     var body: some View {
         VStack(spacing: 0) {
             if router.futuresTop != 3 {
@@ -12,6 +13,9 @@ struct FuturesRootView: View {
                     PrimaryTabs(items: ["合约", "事件合约", "TradFi", "模拟交易"], selected: $router.futuresTop)
                     Spacer()
                 }.padding(.horizontal, Spacing.pageH).frame(height: 44)
+                // 弹窗挂在下面的交易页上，遮罩盖不到这一行；有弹窗时这里也压暗并挡住点击（对照 EasiCoin 全屏遮罩）
+                .overlay { if overlays.count > 0 { p.mask.ignoresSafeArea(edges: .top).transition(.opacity) } }
+                .animation(.easeOut(duration: 0.2), value: overlays.count)
             }
             switch router.futuresTop {
             case 0: FuturesTradeView()
@@ -42,6 +46,12 @@ struct FuturesTradeView: View {
     @State private var showTools = false
     @State private var showPairs = false
     @State private var showChart = false
+    @State private var showFunding = false
+    @State private var showKindInfo = false
+    @State private var showBookMode = false
+    @State private var showBookPrecision = false
+    @State private var info: InfoSheetItem?
+    @State private var minQtySide: Bool?
     @State private var tpslTarget: APIFuturesPosition?
     @State private var showTpslForm = false
     @State private var marginTarget: APIFuturesPosition?
@@ -60,13 +70,13 @@ struct FuturesTradeView: View {
                 }
                 HStack(alignment: .top, spacing: 12) {
                     form.frame(maxWidth: .infinity)
-                    FuturesBookView(m: m).frame(width: 138)
+                    FuturesBookView(m: m, feed: m.bookStream, rows: bookRows, onMode: { showBookMode = true }, onPrecision: { showBookPrecision = true })
+                        .frame(width: 176)
                 }
                 .padding(.horizontal, Spacing.pageH).padding(.top, 10)
-                chartToggle.padding(.top, 14).id("lb.chart")
-                bottomSection.padding(.top, 8).id("lb.bottom")
+                bottomSection.padding(.top, 18).id("lb.bottom")
             }
-            .padding(.bottom, Metrics.tabBarH + 60)
+            .padding(.bottom, Metrics.tabBarH + 100)
         }
         .task {
             // 截图：把 K 线 / 委托区滚动到画面内
@@ -76,20 +86,21 @@ struct FuturesTradeView: View {
             proxy.scrollTo(target, anchor: .top)
         }
         }
-        .refreshable { await m.refreshMarket(); await m.refreshAccount() }
+        .refreshable { await m.bookStream.refresh(); await m.refreshMarket(); await m.refreshAccount() }
+        // K 线做成贴在底栏上方的抽屉（对照 EasiCoin「BTCUSDT 图表 ▲」），展开后盖住页面下半部分
+        .overlay(alignment: .bottom) { chartDrawer.id("lb.chart") }
         .background(p.bg)
         .onAppear { applyEarlyShot() }
-        .task { await m.start(); applyShot() }
-        .onDisappear { m.stop() }
+        .liveWhileVisible(.futures, start: { await m.start(); applyShot() }, stop: { m.stop() })
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshAccount() } }
-        .onChange(of: router.futuresSymbol) { s in Task { await m.switchSymbol(s) } }
+        .onChange(of: router.futuresSymbol) { s in Task { await m.switchSymbol(s, restart: router.isLive(.futures)) } }
         .lbSheet($showMode) { MarginModeSheet(m: m) { showMode = false } }
         .lbSheet($showLev) { LeverageSheet(m: m) { showLev = false } }
         .lbSheet($showKind) { FuturesKindSheet(selected: m.kind) { k in
             m.kind = k
             showKind = false
         } onClose: { showKind = false } }
-        .lbSheet($showUnit) { FuturesUnitSheet(base: m.base, quote: m.quote, selected: m.orderUnit) { m.setOrderUnit($0); showUnit = false } }
+        .lbSheet($showUnit) { FuturesUnitSheet(base: m.base, quote: m.quote, selected: m.orderUnit, onPick: { m.setOrderUnit($0); showUnit = false }, onClose: { showUnit = false }) }
         .lbSheet($showTools) { FuturesToolsSheet { showTools = false } }
         .lbSheet($showPairs) { FuturesPairSheet(current: m.symbol) { s in showPairs = false; router.futuresSymbol = s } onClose: { showPairs = false } }
         .lbSheet($showTpslForm) { TpslSheet(m: m, position: tpslTarget) { showTpslForm = false } }
@@ -102,7 +113,56 @@ struct FuturesTradeView: View {
         .lbSheet(Binding(get: { amendTarget != nil }, set: { if !$0 { amendTarget = nil } })) {
             if let o = amendTarget { AmendOrderSheet(m: m, order: o) { amendTarget = nil } }
         }
+        .lbSheet($showFunding) { FundingInfoSheet(m: m) { showFunding = false } }
+        .lbSheet($showKindInfo) { OrderKindIntroSheet(initial: m.kind) { showKindInfo = false } }
+        .lbSheet($showBookMode) { BookModeSheet(mode: $bookMode) { showBookMode = false } }
+        .lbSheet($showBookPrecision) { FuturesPrecisionSheet(m: m) { showBookPrecision = false } }
+        .lbSheet(Binding(get: { info != nil }, set: { if !$0 { info = nil } })) {
+            if let i = info { InfoSheet(item: i) { info = nil } }
+        }
+        .lbSheet(Binding(get: { minQtySide != nil }, set: { if !$0 { minQtySide = nil } })) {
+            if let long = minQtySide {
+                MinQtySheet(m: m, onCancel: { minQtySide = nil }) {
+                    minQtySide = nil
+                    m.useMinQty()
+                    if let e = m.validation { ToastCenter.shared.show(e, .error) } else { confirmOrder(long: long) }
+                }
+            }
+        }
         .lbConfirm($confirm)
+    }
+
+    @AppStorage("lb.futures.bookMode") private var bookMode = 0   // 0 默认 1 只看买 2 只看卖
+
+    /// 盘口档数跟着左侧表单高度走，让两列底部大致对齐（对照 EasiCoin 7 / 8 / 10 档）
+    private var bookRows: Int {
+        var n = m.isOpen ? 7 : 6
+        if m.kind != .market && !(m.kind == .plan && m.planMarket) { n += 1 }
+        if m.kind == .plan { n += 2 }
+        if m.isOpen && m.tpsl { n += 2 }
+        return bookMode == 0 ? n : n * 2
+    }
+
+    private var chartDrawer: some View {
+        VStack(spacing: 0) {
+            Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { showChart.toggle() } } label: {
+                HStack {
+                    Text("\(m.symbol) 图表").font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary)
+                    Spacer()
+                    Image(systemName: showChart ? "arrowtriangle.down.fill" : "arrowtriangle.up.fill").font(.system(size: 8)).foregroundColor(p.textSecondary)
+                }
+                .padding(.horizontal, Spacing.pageH).frame(height: 40).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if showChart {
+                FuturesChartPanel(symbol: m.symbol, pricePrec: m.pricePrec)
+                    .padding(.horizontal, Spacing.pageH).padding(.bottom, 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(.bottom, Metrics.tabBarH + 14)
+        // 底色铺到屏幕底：抽屉下面到底栏之间不能透出页面内容
+        .background(Rectangle().fill(p.bg.shadow(.drop(color: .black.opacity(0.06), radius: 6, y: -2))).ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .top) { Divider().overlay(p.divider) }
     }
 
     /// 只改本视图状态的截图路由在 onAppear 立即生效（不等网络），且不清空 shotSheet，保证重建后仍可恢复
@@ -149,6 +209,7 @@ struct FuturesTradeView: View {
         case "mode": showMode = true
         case "tpsl": showTpslForm = true
         case "kind": showKind = true
+        case "unit": showUnit = true
         case "tools": showTools = true
         case "chart": showChart = true
         case "plan": m.kind = .plan
@@ -173,16 +234,20 @@ struct FuturesTradeView: View {
         if router.shotSheet != nil { router.shotSheet = nil }
     }
 
-    // BTCUSDT 永续 +0.66%    图表 / 常用功能
+    // 对照 EasiCoin：第一行「BTCUSDT ▾ ●」，第二行「永续 +0.63%」；右侧主题 / 详情 / 常用功能
     private var pairHeader: some View {
         HStack(alignment: .center) {
             Button { showPairs = true } label: {
-                HStack(spacing: 6) {
-                    Text(m.symbol).font(.lb(18, .semibold)).foregroundColor(p.textPrimary)
-                    Text("永续").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                        .padding(.horizontal, 4).frame(height: 18).background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
-                    Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
-                    Text(m.changePct.map(Fmt.percent) ?? "--").font(.lbNum(FontSize.small)).foregroundColor((m.changePct ?? 0) < 0 ? p.down : p.up)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(m.symbol).font(.lb(20, .bold)).foregroundColor(p.textPrimary)
+                        Image(systemName: "arrowtriangle.down.fill").font(.system(size: 8)).foregroundColor(p.textSecondary)
+                        LiveDot()
+                    }
+                    HStack(spacing: 4) {
+                        Text("永续").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                        Text(m.changePct.map(Fmt.percent) ?? "--").font(.lbNum(FontSize.small)).foregroundColor((m.changePct ?? 0) < 0 ? p.down : p.up)
+                    }
                 }
             }.buttonStyle(PressableStyle())
             Spacer()
@@ -194,33 +259,50 @@ struct FuturesTradeView: View {
         }.padding(.horizontal, Spacing.pageH).padding(.top, 4)
     }
 
-    // 全仓 · 20x       资金费率 / 倒计时
+    // 「全仓 / 合仓」一个按钮打开调整交易模式；杠杆按钮绿底；右侧资金费率（点开说明）
     private var chipsRow: some View {
-        HStack(spacing: 8) {
-            ChipButton(title: m.marginMode == .isolated ? "逐仓" : "全仓") { showMode = true }
-            ChipButton(title: m.hedge ? "分仓" : "合仓") { showMode = true }
-            ChipButton(title: "\(m.leverage)x") { showLev = true }
+        HStack(spacing: 6) {
+            Button { showMode = true } label: {
+                Text("\(m.marginMode == .isolated ? "逐仓" : "全仓") / \(m.hedge ? "分仓" : "合仓")")
+                    .font(.lb(FontSize.small, .medium)).foregroundColor(p.textPrimary)
+                    .padding(.horizontal, 12).frame(minWidth: 104).frame(height: 24)
+                    .background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+            }.buttonStyle(PressableStyle())
+            Button { showLev = true } label: {
+                Text("\(m.leverage)x").font(.lbNum(FontSize.small, .medium)).foregroundColor(p.up)
+                    .padding(.horizontal, 10).frame(height: 24)
+                    .background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.upTint))
+            }.buttonStyle(PressableStyle())
             Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("资金费率 / 倒计时").font(.lb(10)).foregroundColor(p.textTertiary)
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    Text("\(Fmt.amount(m.fundingRate, 4))% / \(m.fundingText(at: ctx.date))").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+            Button { showFunding = true } label: {
+                VStack(alignment: .trailing, spacing: 2) {
+                    DottedText(text: "资金费率(8H) / 倒计时", size: 11, color: p.textTertiary)
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        Text("\(Fmt.amount(m.fundingRate, 4))% / \(m.fundingText(at: ctx.date))").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                    }
                 }
-            }
+            }.buttonStyle(.plain)
         }.padding(.horizontal, Spacing.pageH)
     }
 
     private var form: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PillSegment(items: ["开仓", "平仓"], selected: Binding(get: { m.isOpen ? 0 : 1 }, set: { m.isOpen = $0 == 0; m.setPercent(0) }))
-            Button { showKind = true } label: {
-                HStack(spacing: 6) {
+            // 选中项填色：开仓绿、平仓红
+            PillSegment(items: ["开仓", "平仓"], selected: Binding(get: { m.isOpen ? 0 : 1 }, set: { m.isOpen = $0 == 0; m.setPercent(0) }),
+                        tints: [p.up, p.down])
+            HStack(spacing: 6) {
+                Button { showKindInfo = true } label: {
                     Image(systemName: "info.circle.fill").font(.system(size: 12)).foregroundColor(p.textSecondary)
-                    Text(m.kind.title).font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary)
-                    Spacer()
-                    Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
-                }.padding(.horizontal, 10).frame(height: 34).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
-            }.buttonStyle(PressableStyle(scale: 1))
+                }.buttonStyle(.plain)
+                Button { showKind = true } label: {
+                    HStack(spacing: 6) {
+                        Text(m.kind.title).font(.lb(FontSize.label, .medium)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10).frame(height: 34).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
             if m.kind == .plan {
                 NumberBox(label: "触发价", unit: m.quote, text: $m.triggerText, onEdit: {})
                 HStack(spacing: 6) {
@@ -235,10 +317,9 @@ struct FuturesTradeView: View {
                 }
             }
             if m.kind == .market || (m.kind == .plan && m.planMarket) {
-                Text("市价").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
-                    .frame(maxWidth: .infinity).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
+                EmptyView()
             } else {
-                NumberBox(label: "价格", unit: m.quote, text: $m.priceText, onEdit: {})
+                NumberBox(label: "价格", unit: m.quote, text: $m.priceText, onEdit: {}, onStep: { m.stepPrice($0) })
             }
             if m.isOpen {
                 NumberBox(label: m.orderUnit.fieldLabel, unit: m.orderUnit == .qty ? m.base : m.quote, text: $m.costText, onEdit: { m.percent = 0 }, onUnit: { showUnit = true })
@@ -248,9 +329,10 @@ struct FuturesTradeView: View {
                 }
             } else {
                 HStack {
-                    Text("数量").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    Text("数量").font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
                     Spacer()
-                    Text("\(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)").font(.lbNum(FontSize.label)).foregroundColor(p.textPrimary)
+                    Text(m.percent > 0 ? "\(Fmt.amount(m.qty, m.qtyPrec))" : "").font(.lbNum(FontSize.body)).foregroundColor(p.textPrimary)
+                    Text(m.base).font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
                 }.padding(.horizontal, 10).frame(height: 44).background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.fill))
             }
             PercentSlider(value: Binding(get: { m.percent }, set: { m.setPercent($0) }), tint: p.textPrimary).padding(.horizontal, 2)
@@ -258,28 +340,28 @@ struct FuturesTradeView: View {
                 HStack {
                     Checkbox(on: $m.tpsl, label: "止盈/止损")
                     Spacer()
-                    if m.tpsl { Button("高级设置") { tpslTarget = nil; showTpslForm = true }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary) }
+                    if m.tpsl {
+                        Button { tpslTarget = nil; showTpslForm = true } label: {
+                            HStack(spacing: 2) { Text("高级设置"); Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)) }
+                                .font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                        }.buttonStyle(.plain)
+                    }
                 }
                 if m.tpsl {
-                    NumberBox(label: "止盈触发价(\(m.orderTpType == .last ? "最新" : "标记"))", unit: m.quote, text: $m.tpText, onEdit: {})
-                    NumberBox(label: "止损触发价(\(m.orderSlType == .last ? "最新" : "标记"))", unit: m.quote, text: $m.slText, onEdit: {})
+                    NumberBox(label: "止盈", unit: m.quote, text: $m.tpText, onEdit: {})
+                    NumberBox(label: "止损", unit: m.quote, text: $m.slText, onEdit: {})
                 }
-            }
-            VStack(spacing: 6) {
-                HStack(spacing: 4) {
-                    Text("可用").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                    Spacer()
-                    Text("\(Fmt.amount(m.available, 2)) \(m.quote)").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
-                    Button { Router.shared.open(.transfer) } label: { Image(systemName: "arrow.left.arrow.right.square.fill").font(.system(size: 12)).foregroundColor(p.textPrimary) }
-                }
-                if m.isOpen {
-                    KVRow(k: "可开", v: m.openLimitText)
+                VStack(spacing: 6) {
+                    HStack(spacing: 4) {
+                        Text("可用").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                        Spacer()
+                        Text(session.isLoggedIn ? "\(Fmt.amount(m.available, 2)) \(m.quote)" : "-- \(m.quote)").font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                        Button { session.requireLogin { Router.shared.open(.transfer) } } label: {
+                            Image(systemName: "plus.square.fill").font(.system(size: 13)).foregroundColor(p.textPrimary)
+                        }.buttonStyle(.plain)
+                    }
+                    KVRow(k: "可买", v: m.openLimitText)
                     KVRow(k: "可卖", v: m.openLimitText)
-                } else if m.hedge {
-                    KVRow(k: "可平多", v: "\(Fmt.amount(abs(Dec.parse(m.position(long: true)?.qty)), m.qtyPrec)) \(m.base)")
-                    KVRow(k: "可平空", v: "\(Fmt.amount(abs(Dec.parse(m.position(long: false)?.qty)), m.qtyPrec)) \(m.base)")
-                } else {
-                    KVRow(k: "可平", v: "\(Fmt.amount(abs(Dec.parse(m.closeTarget?.qty)), m.qtyPrec)) \(m.base)")
                 }
             }
             if m.kind == .postOnly {
@@ -290,48 +372,70 @@ struct FuturesTradeView: View {
         }
     }
 
+    /// 开仓：按钮在上（标题 + 价值），下面是预估强平价 / 成本（点标签看说明）。平仓：按钮上方是可平多 / 可平空。
     private func sideButton(long: Bool) -> some View {
         VStack(spacing: 6) {
-            if m.isOpen {
-                KVRow(k: "预估强平价", v: m.orderPrice > 0 ? Fmt.price(m.liqPrice(long: long), precision: m.pricePrec) : "--")
-                KVRow(k: "成本", v: "\(Fmt.amount(m.margin, 2)) \(m.quote)")
+            if !m.isOpen {
+                closeRows
             }
             LBButton(title: session.isLoggedIn ? (m.isOpen ? (long ? "开多" : "开空") : (long ? "买入平空" : "卖出平多")) : "登录 / 注册",
-                     kind: session.isLoggedIn ? (long ? .buy : .sell) : .primary, height: m.isOpen ? 48 : 40,
+                     kind: session.isLoggedIn ? (long ? .buy : .sell) : .primary, height: m.isOpen ? 48 : 44,
                      loading: m.placing,
-                     subtitle: m.isOpen && m.orderValue > 0 ? "≈\(Fmt.amount(m.orderValue, 4)) \(m.quote)" : nil) {
-                session.requireLogin {
-                    if let e = m.validation { ToastCenter.shared.show(e, .error); return }
-                    let dir = m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")
-                    confirm = .init(title: "\(dir) \(m.symbol)",
-                                    message: "\(m.kind.title) · \(m.marginMode == .isolated ? "逐仓" : "全仓") \(m.leverage)x · \(m.hedge ? "分仓" : "合仓")\(m.kind == .plan ? "\n触发价 \(m.triggerText)（\(m.planTriggerType == .mark ? "标记价格" : "最新价格")）" : "")\n价格 \(m.kind == .market || (m.kind == .plan && m.planMarket) ? "市价" : m.priceText)\n数量 \(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)  成本 \(Fmt.amount(m.margin, 2)) \(m.quote)\n价值 \(Fmt.amount(m.orderValue, 2)) \(m.quote)\n预估手续费 \(Fmt.amount(m.qty * m.orderPrice * m.takerFee, 4)) USDT",
-                                    confirmTitle: "确认\(dir)") { Task { _ = await m.place(long: long) } }
+                     subtitle: m.isOpen && session.isLoggedIn ? sideSubtitle : nil) {
+                session.requireLogin { submit(long: long) }
+            }
+            if m.isOpen {
+                infoRow("预估强平价", m.orderPrice > 0 && m.typed > 0 ? "\(Fmt.price(m.liqPrice(long: long), precision: m.pricePrec)) \(m.quote)" : "0 \(m.quote)") {
+                    info = .init(title: "预估强平价", text: "预估强平价（可能会变动），实际强平以标记价格为准，仅供参考。")
+                }
+                infoRow("成本", "\(Fmt.amount(m.margin, 2)) \(m.quote)") {
+                    info = .init(title: "成本", text: "成本是开仓需要占用的保证金。成本 = 仓位价值 ÷ 杠杆倍数，不含手续费。")
                 }
             }
         }
     }
 
-    private var chartToggle: some View {
-        VStack(spacing: 0) {
-            Button { withAnimation { showChart.toggle() } } label: {
-                HStack {
-                    Text("\(m.symbol) 图表").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
-                    Spacer()
-                    Image(systemName: showChart ? "chevron.up" : "chevron.down").font(.system(size: 11)).foregroundColor(p.textSecondary)
-                }.padding(.horizontal, Spacing.pageH).frame(height: 36)
-            }
-            if showChart {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 16) {
-                        KVCell(k: "标记价格", v: Fmt.priceAuto(m.mark))
-                        KVCell(k: "指数价格", v: Fmt.priceAuto(Dec.parse(m.ticker?.indexPrice)))
-                        KVCell(k: "24h 成交额", v: Fmt.volumeCN(Dec.parse(m.ticker?.turnover24h)), align: .trailing)
-                    }
-                    FuturesChartPanel(symbol: m.symbol, pricePrec: m.pricePrec)
-                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 8)
-            }
-            Rectangle().fill(p.fill).frame(height: 8)
+    @ViewBuilder private var closeRows: some View {
+        if m.hedge {
+            KVRow(k: "可平多", v: "\(Fmt.amount(abs(Dec.parse(m.position(long: true)?.qty)), m.qtyPrec)) \(m.base)")
+            KVRow(k: "可平空", v: "\(Fmt.amount(abs(Dec.parse(m.position(long: false)?.qty)), m.qtyPrec)) \(m.base)")
+        } else {
+            let q = abs(Dec.parse(m.closeTarget?.qty))
+            let long = m.closeTarget?.side != .short
+            KVRow(k: "可平多", v: "\(Fmt.amount(long ? q : 0, m.qtyPrec)) \(m.base)")
+            KVRow(k: "可平空", v: "\(Fmt.amount(long ? 0 : q, m.qtyPrec)) \(m.base)")
         }
+    }
+
+    /// 按钮第二行：数量单位时显示数量，否则显示仓位价值；没输入时是「--」
+    private var sideSubtitle: String {
+        if m.orderUnit == .qty { return m.qty > 0 ? "\(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)" : "-- \(m.base)" }
+        return m.orderValue > 0 ? "≈\(Fmt.amount(m.orderValue, 2)) \(m.quote)" : "-- \(m.quote)"
+    }
+
+    private func infoRow(_ k: String, _ v: String, onInfo: @escaping () -> Void) -> some View {
+        HStack {
+            Button(action: onInfo) { DottedText(text: k, size: FontSize.small, color: p.textSecondary) }.buttonStyle(.plain)
+            Spacer()
+            Text(v).font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+        }
+    }
+
+    private func submit(long: Bool) {
+        // 低于最小下单量：先问是否按最小数量下单（对照 EasiCoin），不直接报错
+        if m.isOpen, m.validation?.hasPrefix("数量低于最小下单量") == true || (m.typed <= 0 && m.minQty > 0) {
+            minQtySide = long
+            return
+        }
+        if let e = m.validation { ToastCenter.shared.show(e, .error); return }
+        confirmOrder(long: long)
+    }
+
+    private func confirmOrder(long: Bool) {
+        let dir = m.isOpen ? (long ? "开多" : "开空") : (long ? "平空" : "平多")
+        confirm = .init(title: "\(dir) \(m.symbol)",
+                        message: "\(m.kind.title) · \(m.marginMode == .isolated ? "逐仓" : "全仓") \(m.leverage)x · \(m.hedge ? "分仓" : "合仓")\(m.kind == .plan ? "\n触发价 \(m.triggerText)（\(m.planTriggerType == .mark ? "标记价格" : "最新价格")）" : "")\n价格 \(m.kind == .market || (m.kind == .plan && m.planMarket) ? "市价" : m.priceText)\n数量 \(Fmt.amount(m.qty, m.qtyPrec)) \(m.base)  成本 \(Fmt.amount(m.margin, 2)) \(m.quote)\n价值 \(Fmt.amount(m.orderValue, 2)) \(m.quote)\n预估手续费 \(Fmt.amount(m.qty * m.orderPrice * m.takerFee, 4)) USDT",
+                        confirmTitle: "确认\(dir)") { Task { _ = await m.place(long: long) } }
     }
 
     // 仓位 / 委托 / 跟单 / 卡券
@@ -344,7 +448,7 @@ struct FuturesTradeView: View {
                 tab("卡券 (\(m.bonus?.items?.count ?? 0))", 3)
                 Spacer()
                 Button { Router.shared.openFeature(.futuresHistory) } label: {
-                    Image(systemName: "doc.text").font(.system(size: 15)).foregroundColor(p.textSecondary)
+                    Image(systemName: "clock.fill").font(.system(size: 15)).foregroundColor(p.textSecondary)
                 }
             }.padding(.horizontal, Spacing.pageH).frame(height: 40)
             Divider().overlay(p.divider)
@@ -407,7 +511,8 @@ struct FuturesTradeView: View {
             SkeletonList(rows: 2)
         } else if m.shownPositions.isEmpty {
             // 对照图 #22：充值 / 模拟盘 / 跟单交易
-            EmptyBlock(text: "暂无仓位", actions: [("充值", { Router.shared.open(.deposit("USDT")) }),
+            EmptyBlock(text: "可用余额：\(Fmt.amount(m.available, 2)) \(m.quote)", note: "划转资金到合约账户开始交易，或尝试 0 风险模拟交易",
+                       actions: [("划转", { Router.shared.open(.transfer) }),
                                                  ("模拟盘", { Router.shared.futuresTop = 3 }),
                                                  ("跟单交易", { Router.shared.openFeature(.copyTrading) })])
         } else {
@@ -561,11 +666,13 @@ struct FuturesTradeView: View {
 struct EmptyBlock: View {
     @Environment(\.palette) private var p
     let text: String
+    var note: String? = nil
     let actions: [(String, () -> Void)]
     var body: some View {
         VStack(spacing: 12) {
             EmptyIllustration()
-            Text(text).font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+            Text(text).font(.lb(FontSize.caption, note == nil ? .regular : .medium)).foregroundColor(note == nil ? p.textSecondary : p.textPrimary)
+            if let note { Text(note).font(.lb(FontSize.small)).foregroundColor(p.textSecondary).multilineTextAlignment(.center).padding(.top, -6) }
             if !actions.isEmpty {
                 HStack(spacing: 10) {
                     ForEach(actions.indices, id: \.self) { i in
@@ -685,46 +792,111 @@ struct FuturesOrderRow: View {
     }
 }
 
-/// 合约盘口（价格 / 数量，中间标记价格）
+/// 合约盘口（对照 EasiCoin）：卖盘 / 最新价（按涨跌变色）+ ≈标记价 / 买盘 / B% S% 比例条 / 显示模式 + 价格精度
+/// 档数由页面按左侧表单高度给出；数量列跟着下单单位：数量单位显示币数，其余显示 USDT 价值。
 struct FuturesBookView: View {
     @Environment(\.palette) private var p
     @ObservedObject var m: FuturesModel
+    @ObservedObject var feed: BookStream
+    var rows = 7
+    var onMode: () -> Void = {}
+    var onPrecision: () -> Void = {}
+    @AppStorage("lb.futures.bookMode") private var mode = 0
+
+    private var inBase: Bool { m.orderUnit == .qty || !m.isOpen }
+    private func agg(_ l: [BookLevel], up: Bool) -> [BookLevel] {
+        // 外部盘口价格可能比合约步长更细（BTC 步长 0.1，盘口有 0.01），总是按当前精度合并，避免同价位显示两行
+        let step = m.bookStep
+        guard step > 0 else { return l }
+        var out: [Decimal: Decimal] = [:]
+        for x in l {
+            var q = x.price / step, r = Decimal(); NSDecimalRound(&r, &q, 0, up ? .up : .down)
+            out[r * step, default: 0] += x.qty
+        }
+        return out.map { BookLevel(price: $0.key, qty: $0.value) }.sorted { up ? $0.price < $1.price : $0.price > $1.price }
+    }
+    private func amount(_ l: BookLevel) -> Decimal { inBase ? l.qty : l.price * l.qty }
+    private var pricePrec: Int { min(m.pricePrec, Dec.decimals(m.bookStep)) }
+
     var body: some View {
-        let asks = Array(m.book.asks.prefix(7)).reversed()
-        let bids = Array(m.book.bids.prefix(7))
-        let maxQ = max((m.book.asks.prefix(7) + m.book.bids.prefix(7)).map { $0.price * $0.qty }.max() ?? 1, 0.0000001)
-        VStack(spacing: 2) {
-            HStack {
-                Text("价格\n(USDT)").multilineTextAlignment(.leading)
+        let n = rows
+        let asks = Array(agg(feed.book.asks, up: true).prefix(n)).reversed()
+        let bids = Array(agg(feed.book.bids, up: false).prefix(n))
+        let maxQ = max((Array(asks) + bids).map(amount).max() ?? 1, 0.0000001)
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                Text("价格\n(\(m.quote))").multilineTextAlignment(.leading)
                 Spacer()
-                Text("数量\n(\(m.quote))").multilineTextAlignment(.trailing)
-            }.font(.lb(10)).foregroundColor(p.textTertiary).padding(.bottom, 4)
-            if m.book.asks.isEmpty && m.book.bids.isEmpty {
-                ForEach(0..<14, id: \.self) { _ in RoundedRectangle(cornerRadius: 2).fill(p.fill).frame(height: 18) }
+                Text("数量\n(\(inBase ? m.base : m.quote))").multilineTextAlignment(.trailing)
+            }.font(.lb(11)).foregroundColor(p.textTertiary).padding(.bottom, 6)
+            if feed.book.asks.isEmpty && feed.book.bids.isEmpty {
+                ForEach(0..<(rows * (mode == 0 ? 2 : 1)), id: \.self) { _ in RoundedRectangle(cornerRadius: 2).fill(p.fill).frame(height: 18).padding(.vertical, 2) }
             } else {
-                ForEach(Array(asks), id: \.price) { l in level(l, up: false, maxQ: maxQ) }
-                VStack(spacing: 1) {
-                    Text(Fmt.price(m.last, precision: m.pricePrec)).font(.lbNum(16, .semibold)).foregroundColor((m.changePct ?? 0) < 0 ? p.down : p.up)
-                    Text(Fmt.price(m.mark, precision: m.pricePrec)).font(.lbNum(10)).foregroundColor(p.textSecondary).underline()
-                }.padding(.vertical, 6)
-                ForEach(bids, id: \.price) { l in level(l, up: true, maxQ: maxQ) }
+                if mode != 1 {
+                    ForEach(0..<max(n - asks.count, 0), id: \.self) { _ in emptyLevel }
+                    ForEach(Array(asks), id: \.price) { l in level(l, up: false, maxQ: maxQ) }
+                }
+                mid
+                if mode != 2 {
+                    ForEach(bids, id: \.price) { l in level(l, up: true, maxQ: maxQ) }
+                    ForEach(0..<max(n - bids.count, 0), id: \.self) { _ in emptyLevel }
+                }
             }
+            ratioBar.padding(.top, 8)
+            HStack(spacing: 6) {
+                Button(action: onMode) { BookModeIcon(mode: mode) }.buttonStyle(PressableStyle())
+                Button(action: onPrecision) {
+                    HStack {
+                        Text(NSDecimalNumber(decimal: m.bookStep).stringValue).font(.lbNum(12))
+                        Spacer()
+                        Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6))
+                    }.foregroundColor(p.textPrimary).padding(.horizontal, 8).frame(height: 24)
+                        .background(RoundedRectangle(cornerRadius: Radius.xs).fill(p.fill))
+                }.buttonStyle(PressableStyle())
+            }.padding(.top, 8)
         }
     }
+    private var mid: some View {
+        Button { m.priceText = Dec.plain(m.last, m.pricePrec); if m.kind == .market { m.kind = .limit } } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(m.last > 0 ? Fmt.price(m.last, precision: m.pricePrec) : "--").font(.lbNum(18, .bold))
+                    .foregroundColor(m.tickDir > 0 ? p.up : m.tickDir < 0 ? p.down : p.textPrimary)
+                Text("≈\(Fmt.price(m.mark, precision: m.pricePrec))").font(.lbNum(11)).foregroundColor(p.textSecondary).underline()
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+        }.buttonStyle(.plain)
+    }
+    private var emptyLevel: some View {
+        HStack { Text("--"); Spacer(); Text("--") }.font(.lbNum(12)).foregroundColor(p.textTertiary).frame(height: 22)
+    }
     private func level(_ l: BookLevel, up: Bool, maxQ: Decimal) -> some View {
-        let notion = l.price * l.qty
-        let ratio = CGFloat(Dec.double(notion / maxQ))
+        let a = amount(l)
+        let ratio = CGFloat(Dec.double(a / maxQ))
         return HStack {
-            Text(Fmt.price(l.price, precision: m.pricePrec)).foregroundColor(up ? p.up : p.down)
+            Text(Fmt.price(l.price, precision: pricePrec)).foregroundColor(up ? p.up : p.down)
             Spacer()
-            Text(Fmt.compact(notion)).foregroundColor(p.textPrimary)
+            Text(inBase ? Fmt.amount(a, m.qtyPrec) : (a >= 1000 ? Fmt.compact(a) : Fmt.amount(a, 2))).foregroundColor(p.textPrimary)
         }
-        .font(.lbNum(11)).frame(height: 18)
+        .font(.lbNum(12)).frame(height: 22)
         .background(alignment: .trailing) {
-            Rectangle().fill(up ? p.upTint : p.downTint).frame(width: 120 * min(ratio, 1))
+            GeometryReader { g in
+                Rectangle().fill(up ? p.upTint : p.downTint).frame(width: g.size.width * min(ratio, 1)).frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
         .contentShape(Rectangle())
-        .onTapGesture { m.priceText = Dec.plain(l.price, m.pricePrec); if m.kind == .market { m.kind = .limit } }
+        .onTapGesture { m.priceText = Dec.plain(l.price, m.pricePrec); if m.kind == .market { m.kind = .limit }; Haptics.tap() }
+    }
+    private var ratioBar: some View {
+        let b = feed.book.buyRatio
+        return HStack(spacing: 4) {
+            Text("B \(Int((b * 100).rounded()))%").foregroundColor(p.up)
+            GeometryReader { g in
+                HStack(spacing: 2) {
+                    Capsule().fill(p.up).frame(width: max(g.size.width * b - 1, 0))
+                    Capsule().fill(p.down)
+                }
+            }.frame(height: 3)
+            Text("\(Int(((1 - b) * 100).rounded()))% S").foregroundColor(p.down)
+        }.font(.lbNum(11))
     }
 }
 

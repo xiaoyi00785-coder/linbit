@@ -202,7 +202,8 @@ func (c *MarketClient) ExternalDepth(ctx context.Context, symbol string, limit i
 	if c == nil || c.baseURL == "" {
 		return nil, nil, false
 	}
-	u := fmt.Sprintf("%s/market/depth?symbol=%s&limit=%d", c.baseURL, url.QueryEscape(symbol), limit)
+	// market=futures: the swap book, not the spot one.
+	u := fmt.Sprintf("%s/market/depth?symbol=%s&limit=%d&market=futures", c.baseURL, url.QueryEscape(symbol), limit)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, nil, false

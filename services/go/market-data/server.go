@@ -345,7 +345,14 @@ func (s *Server) handleDepth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := atoiDefault(r.URL.Query().Get("limit"), 20, 1, 200)
-	d, ok := s.agg.DepthFrame(symbol, limit)
+	// market=futures asks for the swap book (the futures service passes it).
+	var d depthDTO
+	var ok bool
+	if r.URL.Query().Get("market") == "futures" {
+		d, ok = s.agg.FuturesDepthFrame(symbol, limit)
+	} else {
+		d, ok = s.agg.DepthFrame(symbol, limit)
+	}
 	if !ok {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "交易对不存在")
 		return

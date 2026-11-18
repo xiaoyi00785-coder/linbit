@@ -95,9 +95,17 @@ func (s *Store) AdminAdjust(ctx context.Context, userID, asset, acct string, amo
 		return AdjustResult{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
+	// A ref names one adjustment whatever its sign. claimRef keys rows by op,
+	// so a credit and a debit under the same ref would land in different rows:
+	// serialise on the ref and look for either, plus the bare key older rows use.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, key); err != nil {
+		return AdjustResult{}, err
+	}
 	var pop, pu, pa, pamt string
 	var pat time.Time
-	err = tx.QueryRowContext(ctx, `SELECT op, user_id, asset, amount::text, created_at FROM wallet_ops WHERE ref=$1`, key).Scan(&pop, &pu, &pa, &pamt, &pat)
+	err = tx.QueryRowContext(ctx, `SELECT op, user_id, asset, amount::text, created_at FROM wallet_ops
+		WHERE ref IN ($1, $2, $3) ORDER BY seq LIMIT 1`,
+		key, storedRef(adminAdjustCredit, key), storedRef(adminAdjustDebit, key)).Scan(&pop, &pu, &pa, &pamt, &pat)
 	switch {
 	case err == nil:
 		if pop != op || pu != userID || pa != asset || !decimal.RequireFromString(pamt).Equal(abs) {

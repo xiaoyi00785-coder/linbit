@@ -162,8 +162,8 @@ struct EventContractView: View {
             }
         }
         .background(p.bg)
-        .task { await m.start(); await loadSpotFree(); if Router.shared.shotSheet == "eventConfirm" { Router.shared.shotSheet = nil; pending = true } }
-        .onDisappear { m.stop() }
+        .task { await loadSpotFree(); if Router.shared.shotSheet == "eventConfirm" { Router.shared.shotSheet = nil; pending = true } }
+        .liveWhileVisible(.futures, start: { await m.start() }, stop: { m.stop() })
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshOrders() } }
         .lbSheet(Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
             if let up = pending { EventConfirmSheet(m: m, up: up) { pending = nil } }
@@ -531,8 +531,7 @@ private struct EventTapeChart: View {
                 CandleChart(bars: live.bars, pricePrec: live.pricePrec)
             }
         }
-        .task { await live.start() }
-        .onDisappear { live.stop() }
+        .liveWhileVisible(.futures, start: { await live.start() }, stop: { live.stop() })
         .onChange(of: interval) { live.setInterval($0) }
     }
 }

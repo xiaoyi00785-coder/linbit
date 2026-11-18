@@ -13,6 +13,11 @@ import (
 // confirmed withdrawal. Both are keyed by a caller-supplied ref and applied at
 // most once (see the wallet_ops table).
 
+// storedRef is the wallet_ops key claimRef writes for (op, ref). Code that
+// looks a ref up in wallet_ops must use this form, plus the bare ref for rows
+// written before the namespacing.
+func storedRef(op, ref string) string { return op + ":" + ref }
+
 // ErrAlreadyApplied indicates the ref was already posted (idempotent no-op).
 var ErrAlreadyApplied = errors.New("operation already applied")
 
@@ -23,17 +28,25 @@ var ErrAlreadyApplied = errors.New("operation already applied")
 // withdraw_complete on the same user-supplied ref remain distinct: a rejected
 // withdrawal can unfreeze without colliding with the initial freeze, and
 // completing a withdrawal does not collide with the freeze that preceded it.
+//
+// Rows written before the namespacing carry the bare ref. A retry of one of
+// those operations must still be a no-op, so the bare ref with the same op
+// counts as applied too.
 func claimRef(ctx context.Context, tx *sql.Tx, ref, op, userID, asset string, amount decimal.Decimal) error {
 	if ref == "" {
 		return nil // no idempotency requested
 	}
-	// Namespace the stored ref by operation to prevent collisions when the same
-	// caller-supplied ref is used for freeze, unfreeze, and withdraw_complete.
-	storedRef := op + ":" + ref
+	var legacy bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM wallet_ops WHERE ref=$1 AND op=$2)`, ref, op).Scan(&legacy); err != nil {
+		return err
+	}
+	if legacy {
+		return ErrAlreadyApplied
+	}
 	res, err := tx.ExecContext(ctx,
 		`INSERT INTO wallet_ops (ref, op, user_id, asset, amount) VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (ref) DO NOTHING`,
-		storedRef, op, userID, asset, amount.String())
+		storedRef(op, ref), op, userID, asset, amount.String())
 	if err != nil {
 		return err
 	}

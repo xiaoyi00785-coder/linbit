@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -476,7 +478,14 @@ func (e *extFeed) onDepth(s streamSym, raw json.RawMessage, bc Broadcaster) {
 	id := e.seq[s.local] + 1
 	e.seq[s.local] = id
 	d := depthDTO{Symbol: s.local, LastUpdateID: id, Bids: pairLevels(bids), Asks: pairLevels(asks), Snapshot: true}
-	e.books[s.local] = d
+	// A futures binding feeds the swap book. Only a spot binding may touch
+	// the spot book.
+	if s.spot || !s.fut {
+		e.books[s.local] = d
+	}
+	if s.fut {
+		e.futBooks[s.local] = d
+	}
 	e.mu.Unlock()
 	e.markLive(s.local)
 	if s.spot {
@@ -601,7 +610,8 @@ func (e *extFeed) streamOKX(ctx context.Context, syms []streamSym, bc Broadcaste
 	if len(fut) == 0 {
 		return
 	}
-	go e.streamOKXLoop(ctx, okxPublicWS, []string{"trades", "books5"}, fut, bc)
+	go e.loadOKXContractValues(ctx)
+	go e.streamOKXLoop(ctx, okxPublicWS, []string{"trades", okxBookChannel()}, fut, bc)
 	e.streamOKXLoop(ctx, "wss://ws.okx.com/ws/v5/business", []string{"candle1m", "candle15m", "candle1H", "candle4H", "candle1D", "candle1W"}, fut, bc)
 }
 
@@ -611,9 +621,13 @@ func (e *extFeed) streamOKXLoop(ctx context.Context, url string, channels []stri
 		if ctx.Err() != nil {
 			return
 		}
+		started := time.Now()
 		err := e.streamOKXOnce(ctx, url, channels, syms, bc)
 		if err != nil && ctx.Err() == nil {
 			log.Printf("ext okx stream %s: %v", url, err)
+		}
+		if time.Since(started) > 30*time.Second {
+			back = time.Second // a connection that worked earns a fast reconnect
 		}
 		select {
 		case <-ctx.Done():
@@ -685,18 +699,25 @@ func (e *extFeed) streamOKXOnce(ctx context.Context, url string, channels []stri
 		if err != nil {
 			return err
 		}
-		e.onOKX(msg, byInst, bc)
+		if e.onOKX(msg, byInst, bc) {
+			return errOKXBookGap
+		}
 	}
 }
 
-func (e *extFeed) onOKX(msg []byte, byInst map[string][]streamSym, bc Broadcaster) {
+var errOKXBookGap = fmt.Errorf("okx book update out of sequence, resubscribing")
+
+// onOKX handles one OKX frame. It reports true when an incremental book lost
+// its sequence and the socket has to be reopened for a fresh snapshot.
+func (e *extFeed) onOKX(msg []byte, byInst map[string][]streamSym, bc Broadcaster) (resync bool) {
 	if string(msg) == "pong" {
 		return
 	}
 	var env struct {
-		Event string `json:"event"`
-		Msg   string `json:"msg"`
-		Arg   struct {
+		Event  string `json:"event"`
+		Msg    string `json:"msg"`
+		Action string `json:"action"`
+		Arg    struct {
 			Channel string `json:"channel"`
 			InstID  string `json:"instId"`
 		} `json:"arg"`
@@ -714,15 +735,16 @@ func (e *extFeed) onOKX(msg []byte, byInst map[string][]streamSym, bc Broadcaste
 	}
 	switch {
 	case env.Arg.Channel == "trades":
-		e.onOKXTrades(targets, env.Data, bc)
+		e.onOKXTrades(env.Arg.InstID, targets, env.Data, bc)
 	case strings.HasPrefix(env.Arg.Channel, "books"):
-		e.onOKXBooks(targets, env.Data, bc)
+		return e.onOKXBooks(env.Arg.InstID, env.Action, targets, env.Data, bc)
 	case strings.HasPrefix(env.Arg.Channel, "candle"):
 		e.onOKXCandle(targets, okxCandleInterval(env.Arg.Channel), env.Data, bc)
 	}
+	return false
 }
 
-func (e *extFeed) onOKXTrades(targets []streamSym, raw json.RawMessage, bc Broadcaster) {
+func (e *extFeed) onOKXTrades(inst string, targets []streamSym, raw json.RawMessage, bc Broadcaster) {
 	var rows []struct {
 		TradeID string `json:"tradeId"`
 		Px      string `json:"px"`
@@ -742,7 +764,8 @@ func (e *extFeed) onOKXTrades(targets []streamSym, raw json.RawMessage, bc Broad
 		if side != "sell" {
 			side = "buy"
 		}
-		tr := tradeDTO{TradeID: row.TradeID, Price: row.Px, Quantity: row.Sz, Side: side, Time: ts}
+		// OKX sizes are in contracts. The app shows coins.
+		tr := tradeDTO{TradeID: row.TradeID, Price: row.Px, Quantity: e.okxCoins(inst, row.Sz), Side: side, Time: ts}
 		for _, s := range targets {
 			e.markLive(s.local)
 			e.touchTicker(s.local, row.Px, "", "", "", "", "")
@@ -758,18 +781,87 @@ func (e *extFeed) onOKXTrades(targets []streamSym, raw json.RawMessage, bc Broad
 	}
 }
 
-func (e *extFeed) onOKXBooks(targets []streamSym, raw json.RawMessage, bc Broadcaster) {
+// okxBookChannel picks the OKX depth channel. "books5" (default) is five
+// levels a side and about 4 KB/s per symbol. "books" is the 400-level
+// incremental book, which gives the trade page 20 levels but measured
+// 100-300 KB/s for 12 symbols. The mainnet host is capped near 600 KB/s
+// inbound and already runs at that cap, so the deep book is opt-in:
+// OKX_BOOK_CHANNEL=books.
+func okxBookChannel() string {
+	if strings.TrimSpace(os.Getenv("OKX_BOOK_CHANNEL")) == "books" {
+		return "books"
+	}
+	return "books5"
+}
+
+// okxBook is the local copy of one OKX swap book, sizes in contracts.
+type okxBook struct {
+	bids, asks map[string]string // price -> size, both as OKX sent them
+	seq        int64
+	ready      bool
+}
+
+const (
+	okxBookLevels   = 20                     // levels a side sent to clients
+	okxBookInterval = 150 * time.Millisecond // at most one futures-depth frame per instrument in this window
+)
+
+// onOKXBooks keeps the swap book and broadcasts its top levels in coins.
+// Channel "books" sends one snapshot and then updates (size "0" removes a
+// level). "books5" and other snapshot-only channels have no action field and
+// replace the book on every frame.
+func (e *extFeed) onOKXBooks(inst, action string, targets []streamSym, raw json.RawMessage, bc Broadcaster) (resync bool) {
 	var rows []struct {
-		Bids [][]string `json:"bids"`
-		Asks [][]string `json:"asks"`
+		Bids      [][]string `json:"bids"`
+		Asks      [][]string `json:"asks"`
+		SeqID     int64      `json:"seqId"`
+		PrevSeqID int64      `json:"prevSeqId"`
 	}
 	if json.Unmarshal(raw, &rows) != nil || len(rows) == 0 {
-		return
+		return false
 	}
-	bids := pairLevels(rows[0].Bids)
-	asks := pairLevels(rows[0].Asks)
+	row := rows[0]
+	e.mu.Lock()
+	if e.okxBooks == nil {
+		e.okxBooks = map[string]*okxBook{}
+	}
+	b := e.okxBooks[inst]
+	if b == nil {
+		b = &okxBook{}
+		e.okxBooks[inst] = b
+	}
+	snapshot := action != "update"
+	switch {
+	case snapshot:
+		b.bids, b.asks, b.ready = map[string]string{}, map[string]string{}, true
+	case !b.ready:
+		e.mu.Unlock()
+		return false // update before the snapshot: wait for it
+	case row.PrevSeqID != b.seq:
+		b.ready = false
+		e.mu.Unlock()
+		return true
+	}
+	applyOKXLevels(b.bids, row.Bids)
+	applyOKXLevels(b.asks, row.Asks)
+	b.seq = row.SeqID
+	// Snapshot-only channels push ten frames a second. Clients redraw twice a
+	// second, so one frame per window is enough either way.
+	now := e.now()
+	if now.Sub(e.okxEmit[inst]) < okxBookInterval {
+		e.mu.Unlock()
+		return false
+	}
+	if e.okxEmit == nil {
+		e.okxEmit = map[string]time.Time{}
+	}
+	e.okxEmit[inst] = now
+	ct, hasCt := e.okxCt[inst]
+	bids := okxTopLevels(b.bids, true, okxBookLevels, ct, hasCt)
+	asks := okxTopLevels(b.asks, false, okxBookLevels, ct, hasCt)
+	e.mu.Unlock()
 	if len(bids) == 0 && len(asks) == 0 {
-		return
+		return false
 	}
 	for _, s := range targets {
 		e.mu.Lock()
@@ -779,16 +871,137 @@ func (e *extFeed) onOKXBooks(targets []streamSym, raw json.RawMessage, bc Broadc
 		id := e.seq[s.local] + 1
 		e.seq[s.local] = id
 		d := depthDTO{Symbol: s.local, LastUpdateID: id, Bids: bids, Asks: asks, Snapshot: true}
-		if e.books == nil {
-			e.books = map[string]depthDTO{}
+		if e.futBooks == nil {
+			e.futBooks = map[string]depthDTO{}
 		}
-		e.books[s.local] = d
+		e.futBooks[s.local] = d
 		e.mu.Unlock()
 		e.markLive(s.local)
 		if bc != nil {
 			bc.Broadcast("futures-depth:"+s.local, d)
 		}
 	}
+	return false
+}
+
+func applyOKXLevels(side map[string]string, rows [][]string) {
+	for _, r := range rows {
+		if len(r) < 2 || r[0] == "" {
+			continue
+		}
+		if sz, err := strconv.ParseFloat(r[1], 64); err != nil || sz <= 0 {
+			delete(side, r[0])
+			continue
+		}
+		side[r[0]] = r[1]
+	}
+}
+
+// okxTopLevels returns the best n levels, sizes converted from contracts to
+// coins when the contract value is known.
+func okxTopLevels(side map[string]string, bids bool, n int, ct decimal.Decimal, hasCt bool) [][2]string {
+	type lvl struct {
+		px    float64
+		p, sz string
+	}
+	all := make([]lvl, 0, len(side))
+	for p, sz := range side {
+		f, err := strconv.ParseFloat(p, 64)
+		if err != nil || f <= 0 {
+			continue
+		}
+		all = append(all, lvl{f, p, sz})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if bids {
+			return all[i].px > all[j].px
+		}
+		return all[i].px < all[j].px
+	})
+	if len(all) > n {
+		all = all[:n]
+	}
+	out := make([][2]string, 0, len(all))
+	for _, l := range all {
+		sz := l.sz
+		if hasCt {
+			if d, err := decimal.NewFromString(l.sz); err == nil {
+				sz = d.Mul(ct).String()
+			}
+		}
+		out = append(out, [2]string{l.p, sz})
+	}
+	return out
+}
+
+// okxCoins converts an OKX contract count to coins. Unknown instruments pass
+// through unchanged.
+func (e *extFeed) okxCoins(inst, sz string) string {
+	e.mu.Lock()
+	ct, ok := e.okxCt[inst]
+	e.mu.Unlock()
+	if !ok {
+		return sz
+	}
+	d, err := decimal.NewFromString(sz)
+	if err != nil {
+		return sz
+	}
+	return d.Mul(ct).String()
+}
+
+// loadOKXContractValues reads ctVal for every swap and refreshes it hourly.
+// Until the first load succeeds sizes go out in contracts, as they did before.
+func (e *extFeed) loadOKXContractValues(ctx context.Context) {
+	wait := 5 * time.Second
+	for {
+		if err := e.pullOKXContractValues(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("ext okx: contract values: %v", err)
+		} else {
+			wait = time.Hour
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+func (e *extFeed) pullOKXContractValues(ctx context.Context) error {
+	var body struct {
+		Code string `json:"code"`
+		Msg  string `json:"msg"`
+		Data []struct {
+			InstID string `json:"instId"`
+			CtVal  string `json:"ctVal"`
+		} `json:"data"`
+	}
+	rctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := getJSONLimit(rctx, e.okx+"/api/v5/public/instruments?instType=SWAP", 32<<20, &body); err != nil {
+		return err
+	}
+	if body.Code != "0" && body.Code != "" {
+		return fmt.Errorf("okx instruments: %s %s", body.Code, body.Msg)
+	}
+	vals := map[string]decimal.Decimal{}
+	for _, r := range body.Data {
+		if d, err := decimal.NewFromString(r.CtVal); err == nil && d.IsPositive() {
+			vals[r.InstID] = d
+		}
+	}
+	if len(vals) == 0 {
+		return fmt.Errorf("okx instruments: empty list")
+	}
+	e.mu.Lock()
+	e.okxCt = vals
+	e.mu.Unlock()
+	log.Printf("ext okx: loaded %d swap contract values", len(vals))
+	return nil
 }
 
 func (e *extFeed) onOKXCandle(targets []streamSym, interval string, raw json.RawMessage, bc Broadcaster) {

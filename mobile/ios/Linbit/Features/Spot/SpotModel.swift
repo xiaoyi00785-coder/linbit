@@ -52,7 +52,12 @@ final class SpotModel: ObservableObject {
     @Published var feeState: Loadable<Void> = .idle
 
     private var subs: [WSSubscription] = []
-    private var poll: Task<Void, Never>?
+    /// 盘口：固定 0.5 秒节拍发布（BookStream），回调里同步到 book
+    let bookStream = BookStream()
+    /// 成交 / ticker 帧先存这里，最多每 250ms 合并发布一次（每帧都发布会让整页一秒重算几十次）
+    private var pendingLast: Decimal?
+    private var pendingChange: Decimal?
+    private var flush: Task<Void, Never>?
     /// 费率未加载时用于估算的兜底值
     static let fallbackFee: Decimal = 0.001
 
@@ -103,52 +108,68 @@ final class SpotModel: ObservableObject {
         return nil
     }
 
+    /// 页面离开时调用方会取消本任务并 stop()。每次 await 之后先看是否已取消，
+    /// 否则会在 stop() 之后重新订阅、起轮询。
     func start() async {
         async let s: [APISymbol]? = try? MarketAPI.symbols()
         if let list = await s { meta = list.first { $0.symbol == symbol } }
+        if Task.isCancelled { return }
         if let row = MarketStore.shared.spot.first(where: { $0.symbol == symbol }) { last = row.last; changePct = row.changePct }
         await loadBook()
+        if Task.isCancelled { return }
+        bookStream.onPublish = { [weak self] b in
+            guard let self else { return }
+            self.book = b
+            if self.bookState.value == nil { self.bookState = .loaded(()) }
+        }
+        bookStream.start(symbol: symbol, futures: false)
         subs.forEach { $0.cancel() }
         subs = [
-            MarketSocket.shared.subscribe("depth:\(symbol)") { [weak self] f in
-                guard let d = try? CodableHelper.jsonDecoder.decode(APIDepth.self, from: f.data) else { return }
-                Task { @MainActor in self?.book = OrderBook(d); self?.bookState = .loaded(()) }
-            },
             MarketSocket.shared.subscribe("ticker:\(symbol)") { [weak self] f in
                 guard let t = TapePrice.decode(f.data) else { return }
                 let px = Dec.parse(t.lastPrice ?? t.price)
-                Task { @MainActor in
-                    guard let self, px > 0 else { return }
-                    self.last = px
-                    if let c = t.priceChangePercent { self.changePct = Dec.parse(c) }
-                }
+                let chg = t.priceChangePercent.map { Dec.parse($0) }
+                Task { @MainActor in self?.queue(last: px, change: chg) }
             },
             MarketSocket.shared.subscribe("trades:\(symbol)") { [weak self] f in
                 guard let t = TapePrice.decode(f.data) else { return }
                 let px = Dec.parse(t.price)
-                Task { @MainActor in if px > 0 { self?.last = px } }
+                Task { @MainActor in self?.queue(last: px, change: nil) }
             },
         ]
-        // WS 不可用时 3 秒轮询兜底
-        poll = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                await self?.loadBook(silent: true)
-            }
-        }
         await refreshAccount()
         await loadFees()
     }
-    func stop() { subs.forEach { $0.cancel() }; subs = []; poll?.cancel() }
+    func stop() {
+        subs.forEach { $0.cancel() }; subs = []
+        bookStream.stop()
+        flush?.cancel(); flush = nil
+        pendingLast = nil; pendingChange = nil
+    }
+
+    private func queue(last px: Decimal? = nil, change: Decimal? = nil) {
+        if let px, px > 0 { pendingLast = px }
+        if let change { pendingChange = change }
+        guard flush == nil else { return }
+        flush = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.flush = nil
+            if let px = self.pendingLast, px != self.last { self.last = px }
+            if let c = self.pendingChange, c != self.changePct { self.changePct = c }
+            self.pendingLast = nil; self.pendingChange = nil
+        }
+    }
 
     func loadBook(silent: Bool = false) async {
         let haveBook = !book.bids.isEmpty || !book.asks.isEmpty
         if !silent && !haveBook { bookState = .loading }
         do {
-            book = try await SpotAPI.depth(symbol, limit: 20)
+            let nb = try await SpotAPI.depth(symbol, limit: 20)
+            if nb != book { book = nb }
             if last == 0 { last = book.bestBid ?? book.bestAsk ?? 0 }
             if priceText.isEmpty, last > 0 { priceText = Fmt.price(last, precision: pricePrec).replacingOccurrences(of: ",", with: "") }
-            bookState = .loaded(())
+            if bookState.value == nil { bookState = .loaded(()) }
         } catch { if !silent { bookState = .failed(error.lbMessage) } }
     }
 
@@ -156,8 +177,12 @@ final class SpotModel: ObservableObject {
         guard TokenStore.shared.isLoggedIn else { balances = [:]; openOrders = []; return }
         async let b = try? AssetsAPI.balances()
         async let o = try? SpotAPI.open(symbol: nil)
-        if let list = await b { balances = Dictionary(list.map { ($0.asset, $0) }, uniquingKeysWith: { a, _ in a }) }
-        openOrders = await o ?? []
+        if let list = await b {
+            let next = Dictionary(list.map { ($0.asset, $0) }, uniquingKeysWith: { a, _ in a })
+            if next != balances { balances = next }
+        }
+        let orders = await o ?? []
+        if orders != openOrders { openOrders = orders }
         await loadConditional()
     }
 

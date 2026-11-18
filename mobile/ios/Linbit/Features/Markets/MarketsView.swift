@@ -3,7 +3,8 @@ import SwiftUI
 /// 行情页（对照图 #7 自选空态推荐、#8/#9 市场-现货）
 struct MarketsView: View {
     @Environment(\.palette) private var p
-    @StateObject private var store = MarketStore.shared
+    /// 不在整页订阅行情（价格每秒推几次）；分类和列表各自用子视图订阅
+    private let store = MarketStore.shared
     @StateObject private var watch = Watchlist.shared
     @State private var top = 1          // 0 自选 1 市场 2 聊天室
     @State private var kind = 0         // 现货 / 合约 / TradFi
@@ -77,9 +78,6 @@ struct MarketsView: View {
         .frame(height: 44)
     }
 
-    private var chipItems: [String] {
-        ["全部"] + (store.categories.isEmpty ? ["公链", "股票代币", "Meme", "DeFi", "Solana 生态", "Layer 2"] : store.categories.map(\.name))
-    }
 
     private var marketTab: some View {
         VStack(spacing: 0) {
@@ -92,21 +90,9 @@ struct MarketsView: View {
             if kind == 2 {
                 TradFiView()
             } else {
-                ChipBar(items: chipItems, selected: $category).padding(.vertical, 10)
+                MarketCategoryChips(selected: $category).padding(.vertical, 10)
                 MarketListHeader(field: $field, dir: $dir)
-                let rows = store.filtered(kind == 0 ? .spot : .futures, categoryIndex: category)
-                    .filter { MarketQuery.match($0, query) }
-                    .sorted(by: field, dir)
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if rows.isEmpty {
-                            if store.loading { ProgressView().padding(40) } else { EmptyStateView() }
-                        }
-                        ForEach(rows) { MarketRowView(row: $0, marketFutures: kind == 1) }
-                    }
-                    .padding(.bottom, Metrics.tabBarH + 30)
-                }
-                .refreshable { await store.load() }
+                MarketListRows(kind: kind, category: category, field: field, dir: dir, query: query)
             }
         }
     }
@@ -340,3 +326,37 @@ private struct WidgetQuote: Decodable, Identifiable {
     var id: String { symbol }
 }
 private struct WidgetResp: Decodable { var items: [WidgetQuote] }
+
+private struct MarketCategoryChips: View {
+    @Binding var selected: Int
+    @ObservedObject private var store = MarketStore.shared
+    var body: some View {
+        ChipBar(items: ["全部"] + (store.categories.isEmpty ? ["公链", "股票代币", "Meme", "DeFi", "Solana 生态", "Layer 2"] : store.categories.map(\.name)),
+                selected: $selected)
+    }
+}
+
+/// 行情列表：只有这里订阅 MarketStore，价格更新不重算整个行情页
+private struct MarketListRows: View {
+    let kind: Int
+    let category: Int
+    let field: SortField
+    let dir: SortDir
+    let query: String
+    @ObservedObject private var store = MarketStore.shared
+    var body: some View {
+        let rows = store.filtered(kind == 0 ? .spot : .futures, categoryIndex: category)
+            .filter { MarketQuery.match($0, query) }
+            .sorted(by: field, dir)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                if rows.isEmpty {
+                    if store.loading { ProgressView().padding(40) } else { EmptyStateView() }
+                }
+                ForEach(rows) { MarketRowView(row: $0, marketFutures: kind == 1) }
+            }
+            .padding(.bottom, Metrics.tabBarH + 30)
+        }
+        .refreshable { await store.load() }
+    }
+}

@@ -48,9 +48,11 @@ struct PrimaryTabs: View {
         HStack(spacing: spacing) {
             ForEach(items.indices, id: \.self) { i in
                 VStack(spacing: 6) {
+                    // 不换行：标签多、放不下时由外层横向滚动，不能把「简单赚币」挤成两行
                     Text(items[i])
                         .font(.lb(size, i == selected ? .semibold : .regular))
                         .foregroundColor(i == selected ? p.textPrimary : p.textSecondary)
+                        .lineLimit(1).fixedSize()
                     if underline {
                         Capsule().fill(i == selected ? p.textPrimary : .clear).frame(width: 16, height: 3)
                     }

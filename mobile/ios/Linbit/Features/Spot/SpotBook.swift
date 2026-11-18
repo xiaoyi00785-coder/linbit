@@ -5,6 +5,7 @@ struct OrderBookView: View {
     @Environment(\.palette) private var p
     @ObservedObject var m: SpotModel
     @Binding var showPrecision: Bool
+    var baseRows = 5
     @AppStorage("lb.book.mode") private var mode = 0   // 0 双边 1 只看买 2 只看卖
 
     private func agg(_ l: [BookLevel], up: Bool) -> [BookLevel] {
@@ -16,7 +17,7 @@ struct OrderBookView: View {
         }
         return out.map { BookLevel(price: $0.key, qty: $0.value) }.sorted { up ? $0.price < $1.price : $0.price > $1.price }
     }
-    private var rows: Int { mode == 0 ? 5 : 10 }
+    private var rows: Int { mode == 0 ? baseRows : baseRows * 2 }
 
     var body: some View {
         VStack(spacing: 0) {

@@ -25,7 +25,8 @@ struct SpotTradeView: View {
                         pairHeader
                         HStack(alignment: .top, spacing: 12) {
                             form.frame(maxWidth: .infinity)
-                            OrderBookView(m: m, showPrecision: $showPrecision).frame(width: 138)
+                            // 盘口列宽和档数对照 EasiCoin：默认 5 档，勾了止盈止损表单变高，补到 7 档
+                            OrderBookView(m: m, showPrecision: $showPrecision, baseRows: m.tpsl ? 7 : 5).frame(width: 176)
                         }
                         .padding(.horizontal, Spacing.pageH).padding(.top, 8)
                         ordersSection.padding(.top, 20)
@@ -51,14 +52,14 @@ struct SpotTradeView: View {
             default: break
             }
             if ["spotPlan", "spotMarketAmount", "spotFee", "spotConditional"].contains(router.shotSheet ?? "") { router.shotSheet = nil }
-            await m.start()
         }
-        .onDisappear { m.stop() }
+        // 只在「现货」子页且现货 Tab 在屏幕上时拉行情；切到策略 / 理财 / 闪兑或别的 Tab 就停
+        .liveWhileVisible(.spot, enabled: router.spotTop == 0, start: { await m.start() }, stop: { m.stop() })
         .onChange(of: session.isLoggedIn) { _ in Task { await m.refreshAccount() } }
         .onChange(of: router.spotSymbol) { s in
             let cached = MarketStore.shared.spot.first { $0.symbol == s }?.last ?? 0
             m.stop(); m.symbol = s; m.priceText = ""; m.qtyText = ""; m.amountText = ""; m.percent = 0; m.last = cached; m.book = OrderBook(); m.bookState = .idle
-            Task { await m.start() }
+            if router.isLive(.spot) && router.spotTop == 0 { Task { await m.start() } }
         }
         .lbSheet($showKind) { OrderKindSheet(selected: m.kind) { k in
             if k.available { m.kind = k; m.qtyEdited() } else { ToastCenter.shared.show("该委托类型暂未开放") }
@@ -330,6 +331,8 @@ struct NumberBox: View {
     @Binding var text: String
     let onEdit: () -> Void
     var onUnit: (() -> Void)? = nil
+    /// 价格框右侧「− | +」：true 加一个最小步长，false 减
+    var onStep: ((Bool) -> Void)? = nil
     @FocusState private var f: Bool
     var body: some View {
         HStack {
@@ -339,11 +342,17 @@ struct NumberBox: View {
                 .placeholder(when: text.isEmpty && !f) { Text(label).foregroundColor(p.textSecondary) }
                 .font(.lbNum(FontSize.body)).foregroundColor(p.textPrimary)
             }
-            if let onUnit {
+            if let onStep {
+                HStack(spacing: 10) {
+                    Button { Haptics.tap(); onStep(false) } label: { Image(systemName: "minus").frame(width: 22, height: 30) }
+                    Rectangle().fill(p.divider).frame(width: 1, height: 12)
+                    Button { Haptics.tap(); onStep(true) } label: { Image(systemName: "plus").frame(width: 22, height: 30) }
+                }.font(.system(size: 13, weight: .medium)).foregroundColor(p.textPrimary).buttonStyle(.plain)
+            } else if let onUnit {
                 Button(action: onUnit) {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 4) {
                         Text(unit)
-                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                        Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7))
                     }.font(.lb(FontSize.label)).foregroundColor(p.textSecondary)
                 }.buttonStyle(.plain)
             } else {

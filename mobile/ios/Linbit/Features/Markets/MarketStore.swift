@@ -16,6 +16,10 @@ final class MarketStore: ObservableObject {
 
     private var subs: [WSSubscription] = []
     private var symbolMeta: [String: APISymbol] = [:]
+    /// 全部现货 ticker 都在推，合起来一秒几十帧。逐帧改 spot 会让首页、行情页等每帧重算，
+    /// 所以先按币种存最新一帧，每 500ms 统一写回一次。
+    private var pendingTickers: [String: WSTicker] = [:]
+    private var tickerFlush: Task<Void, Never>?
 
     func meta(_ symbol: String) -> APISymbol? { symbolMeta[symbol] }
 
@@ -60,13 +64,34 @@ final class MarketStore: ObservableObject {
     }
 
     private func apply(_ t: WSTicker) {
-        guard let i = spot.firstIndex(where: { $0.symbol == t.symbol }) else { return }
-        var r = spot[i]
-        let v = Dec.parse(t.lastPrice)
-        r.last = v > 0 ? v : (refPrice[t.symbol] ?? r.last)
-        r.changePct = Dec.parse(t.priceChangePercent)
-        if let q = t.quoteVolume { r.quoteVolume = Dec.parse(q) }
-        spot[i] = r
+        pendingTickers[t.symbol] = t
+        guard tickerFlush == nil else { return }
+        tickerFlush = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            self?.flushTickers()
+        }
+    }
+
+    private func flushTickers() {
+        tickerFlush = nil
+        let batch = pendingTickers
+        pendingTickers = [:]
+        guard !batch.isEmpty else { return }
+        var next = spot
+        var changed = false
+        for (i, old) in next.enumerated() {
+            guard let t = batch[old.symbol] else { continue }
+            var r = old
+            let v = Dec.parse(t.lastPrice)
+            r.last = v > 0 ? v : (refPrice[t.symbol] ?? r.last)
+            r.changePct = Dec.parse(t.priceChangePercent)
+            if let q = t.quoteVolume { r.quoteVolume = Dec.parse(q) }
+            if r.last != old.last || r.changePct != old.changePct || r.quoteVolume != old.quoteVolume {
+                next[i] = r
+                changed = true
+            }
+        }
+        if changed { spot = next }
     }
 
     func filtered(_ kind: MarketKind, categoryIndex: Int) -> [MarketRow] {

@@ -427,6 +427,15 @@ func (c *wsClient) sendInitial(channel string) {
 		if d, ok := c.hub.snap.DepthFrame(parts[1], depthSnapshotLimit); ok {
 			c.sendData(channel, d)
 		}
+	case "futures-depth":
+		// Send the current swap book at once so the page does not wait for the next push.
+		if fs, ok := c.hub.snap.(interface {
+			FuturesDepthFrame(string, int) (depthDTO, bool)
+		}); ok {
+			if d, ok := fs.FuturesDepthFrame(parts[1], depthSnapshotLimit); ok && d.Snapshot {
+				c.sendData(channel, d)
+			}
+		}
 	case "kline":
 		if d, ok := c.hub.snap.KlineFrame(parts[1], parts[2]); ok {
 			c.sendData(channel, d)
