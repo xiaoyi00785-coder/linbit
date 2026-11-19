@@ -48,11 +48,29 @@ struct MarketDetailView: View {
 
     private var detail: some View {
         VStack(spacing: 0) {
-            NavBar(title: futures ? "\(symbol) 永续" : pair, onBack: { Router.shared.marketDetail = nil }) {
+            NavBar(title: "", onBack: { Router.shared.marketDetail = nil }) {
+                // 参考 App：标题左对齐「← BTC/USDT ▾ •」，右侧星标
+                EmptyView()
+            }
+            .overlay(alignment: .leading) {
+                HStack(spacing: 4) {
+                    Text(futures ? "\(symbol) 永续" : pair).font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+                    if !futures {
+                        Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
+                            .rotationEffect(.degrees(180))
+                    }
+                    Circle().fill(p.up).frame(width: 6, height: 6)
+                }
+                .padding(.leading, 56)
+                .allowsHitTesting(false)
+            }
+            .background(alignment: .trailing) {
                 Button { watch.toggle(symbol) } label: {
                     Image(systemName: watch.contains(symbol) ? "star.fill" : "star")
-                        .foregroundColor(watch.contains(symbol) ? p.brand : p.textPrimary)
-                }.buttonStyle(.plain).accessibilityLabel(watch.contains(symbol) ? "移出自选" : "加入自选")
+                        .font(.system(size: 19))
+                        .foregroundColor(watch.contains(symbol) ? p.brand : p.textTertiary)
+                }.buttonStyle(.plain).padding(.trailing, Spacing.pageH)
+                    .accessibilityLabel(watch.contains(symbol) ? "移出自选" : "加入自选")
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -112,18 +130,23 @@ struct MarketDetailView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(last > 0 ? Fmt.price(last, precision: live.pricePrec) : "--")
-                    .font(.lbNum(28, .bold)).foregroundColor(change < 0 ? p.down : p.up)
-                Text(last > 0 ? "≈ " + Fmt.fiat(last, rate: AppConfig.usdtCny) : "")
-                    .font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
-                Text(Fmt.percent(change)).font(.lbNum(FontSize.body, .medium)).foregroundColor(change < 0 ? p.down : p.up)
+                    .font(.lbNum(30, .bold)).foregroundColor(change < 0 ? p.down : p.up)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                HStack(spacing: 6) {
+                    Text(last > 0 ? "≈ " + Fmt.fiat(last, rate: AppConfig.usdtCny) : "")
+                        .font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                    if last > 0 {
+                        Text(Fmt.percent(change)).font(.lbNum(FontSize.small)).foregroundColor(change < 0 ? p.down : p.up)
+                    }
+                }
             }
             Spacer(minLength: 8)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 stat("24h最高价", live.high > 0 ? Fmt.price(live.high, precision: live.pricePrec) : "--")
                 stat("24h最低价", live.low > 0 ? Fmt.price(live.low, precision: live.pricePrec) : "--")
                 stat("24h成交量(\(base))", Fmt.compact(live.volume))
                 stat("24h成交额(USDT)", Fmt.compact(live.quoteVolume))
-            }.frame(width: 150, alignment: .leading)
+            }
         }
     }
 
@@ -143,9 +166,13 @@ struct MarketDetailView: View {
                     .onTapGesture { interval = iv }
             }
             Spacer()
-            Button { showIntervals = true } label: {
-                Text("更多").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-            }.buttonStyle(.plain)
+            // 参考 App 右侧三个图标：分时/指标设置/图表设置
+            HStack(spacing: 16) {
+                Image(systemName: "chart.xyaxis.line").font(.system(size: 15)).foregroundColor(p.textPrimary)
+                Image(systemName: "slider.horizontal.3").font(.system(size: 15)).foregroundColor(p.textPrimary)
+                    .onTapGesture { showIntervals = true }
+                Image(systemName: "gearshape").font(.system(size: 15)).foregroundColor(p.textPrimary)
+            }
         }
     }
 
@@ -192,8 +219,9 @@ struct MarketDetailView: View {
                 studyChip("MA", studies.ma) { studies.ma.toggle() }
                 studyChip("BOLL", studies.boll) { studies.boll.toggle() }
                 studyChip("EMA", studies.ema) { studies.ema.toggle() }
+                studyChip("撑压线", studies.supportResistance) { studies.supportResistance.toggle() }
+                studyChip("超级趋势", studies.superTrend) { studies.superTrend.toggle() }
                 studyChip("VOL", studies.vol) { studies.vol.toggle() }
-                studyChip("MACD", studies.macd) { studies.macd.toggle() }
             }
         }
     }
@@ -466,36 +494,99 @@ private struct SpotAlertPage: View {
     @State private var saving = false
     @State private var confirm: ConfirmRequest?
 
+    @State private var showKind = false
+    @State private var showAll = false
+
     var body: some View {
         VStack(spacing: 0) {
-            NavBar(title: "价格预警", onBack: onBack)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+            // 参考 App：标题居中「BTC/USDT ▾ / 现货」，右侧「全部提醒」
+            ZStack {
+                HStack(spacing: 4) {
+                    Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
+                        .rotationEffect(.degrees(180))
+                    Circle().fill(p.up).frame(width: 6, height: 6)
+                }.offset(x: 54, y: -6)
+                VStack(spacing: 2) {
                     Text(symbol).font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
-                    Text("按现货指数价比较，通知在站内。").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                    HStack(spacing: 8) {
-                        chip("价格涨到", rise) { rise = true }
-                        chip("价格跌到", !rise) { rise = false }
+                    Text("现货").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity).frame(height: 44)
+            .overlay(alignment: .trailing) {
+                Text("全部提醒").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                    .padding(.trailing, Spacing.pageH)
+                    .onTapGesture { showAll = true }
+            }
+            .overlay(alignment: .leading) {
+                Button(action: onBack) {
+                    Image(systemName: "arrow.left").font(.system(size: 18, weight: .medium)).foregroundColor(p.textPrimary)
+                }.buttonStyle(.plain).padding(.leading, Spacing.pageH)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("市场价格").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                        .frame(maxWidth: .infinity).padding(.top, 18)
+                    Text(suggested).font(.lbNum(28, .bold)).foregroundColor(p.down)
+                        .frame(maxWidth: .infinity).padding(.top, 4)
+                    Text("提醒类型").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).padding(.top, 26)
+                    HStack {
+                        Text(rise ? "价格涨到" : "价格跌到").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        Image(systemName: "triangle.fill").font(.system(size: 8)).foregroundColor(p.textSecondary)
+                            .rotationEffect(.degrees(180))
                     }
-                    HStack(spacing: 8) {
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                    .padding(.top, 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture { showKind = true }
+                    HStack {
+                        Text("数值").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        Text("≈ ¥" + cnyText).font(.lbNum(FontSize.caption)).foregroundColor(p.textSecondary)
+                    }.padding(.top, 18)
+                    HStack {
+                        TextField("价格", text: $threshold, prompt: Text("请输入"))
+                            .font(.lbNum(FontSize.body)).keyboardType(.decimalPad)
+                        Text("USDT").font(.lb(FontSize.body)).foregroundColor(p.textSecondary)
+                    }
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                    .padding(.top, 8)
+                    HStack {
+                        Text("-25%").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                        Spacer()
+                        Text("25%").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                    }.padding(.top, 8)
+                    Text("提醒频率").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).padding(.top, 18)
+                    HStack(spacing: 10) {
                         chip("只提醒一次", mode == "once") { mode = "once" }
-                        chip("每天一次", mode == "daily") { mode = "daily" }
+                        chip("每天提醒一次", mode == "daily") { mode = "daily" }
                         chip("持续提醒", mode == "repeat") { mode = "repeat" }
+                    }.padding(.top, 10)
+                    Text("生效时间").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).padding(.top, 18)
+                    HStack {
+                        Text("一直有效").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        Image(systemName: "triangle.fill").font(.system(size: 8)).foregroundColor(p.textSecondary)
+                            .rotationEffect(.degrees(180))
                     }
-                    LBTextField(placeholder: "价格", text: $threshold, keyboard: .decimalPad)
-                    if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                    .padding(.top, 10)
+                    if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down).padding(.top, 8) }
                     LBButton(title: "创建", enabled: PriceAlertAPI.threshold(threshold) != nil && !saving, loading: saving) {
                         Task { await create() }
-                    }
+                    }.padding(.top, 22)
                     HStack {
                         Text("当前提醒").font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
                         Spacer()
                         if !items.isEmpty {
-                            Button("删除全部") { confirm = ConfirmRequest(title: "删除全部提醒", message: "删除 \(symbol) 的 \(items.count) 条提醒。", confirmTitle: "删除", destructive: true) { Task { await deleteAll() } } }
-                                .font(.lb(FontSize.small)).foregroundColor(p.down)
+                            Text("删除所有").font(.lb(FontSize.body)).foregroundColor(p.textTertiary)
+                                .onTapGesture { confirm = ConfirmRequest(title: "删除全部提醒", message: "删除 \(symbol) 的 \(items.count) 条提醒。", confirmTitle: "删除", destructive: true) { Task { await deleteAll() } } }
                         }
-                    }.padding(.top, 8)
-                    if items.isEmpty { EmptyStateView(text: "暂无提醒") }
+                    }.padding(.top, 30)
+                    if items.isEmpty { EmptyStateView(text: "暂无数据").padding(.top, 20) }
                     ForEach(items) { item in
                         HStack {
                             Text(alertLabel(item)).foregroundColor(p.textSecondary)
@@ -503,13 +594,26 @@ private struct SpotAlertPage: View {
                             Spacer()
                             Text(item.status).font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
                         }.font(.lbNum(FontSize.label)).frame(height: 36)
+                        Divider().overlay(p.divider)
                     }
-                }.padding(Spacing.pageH)
+                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
+            }
+        }
+        .lbSheet($showKind) {
+            LBSheet(title: "提醒类型", showClose: true, onClose: { showKind = false }) {
+                SheetOptionRow(title: "价格涨到", selected: rise) { rise = true; showKind = false }
+                SheetOptionRow(title: "价格跌到", selected: !rise) { rise = false; showKind = false }
             }
         }
         .onAppear { if threshold.isEmpty { threshold = suggested } }
         .task(id: session.isLoggedIn) { await reload() }
         .lbConfirm($confirm)
+    }
+
+    private var cnyText: String {
+        guard let raw = PriceAlertAPI.threshold(threshold),
+              let v = Decimal(string: raw, locale: Dec.posix) else { return "--" }
+        return Fmt.fiat(v, rate: AppConfig.usdtCny)
     }
 
     private func alertLabel(_ item: PriceAlertAPI.Item) -> String {

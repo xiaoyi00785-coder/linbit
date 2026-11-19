@@ -52,7 +52,7 @@ struct HomeView: View {
         }
         .background(p.bg)
         .task { await NotifCenter.shared.refresh() }
-        .task { await vm.load(); if store.spot.isEmpty { await store.load() }; await loadTradFi() }
+        .task { await vm.load(); await store.loadIfEmpty(); await loadTradFi() }
         // 登录 / 退出后重取；首页常驻不卸载，从别的 Tab 回来（如刚充值、划转、下单）也重取
         .onChange(of: session.isLoggedIn) { _ in Task { await vm.loadTotal() } }
         .onChange(of: session.account?.uid) { _ in Task { await vm.loadTotal() } }   // 切换账号

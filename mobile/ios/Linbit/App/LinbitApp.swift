@@ -145,6 +145,9 @@ struct RootTabView: View {
         guard let shot = UserDefaults.standard.string(forKey: "lb.shot"), !shot.isEmpty else { return }
         switch shot {
         case "markets": router.tab = .markets
+        case let s where s.hasPrefix("market-detail:"):
+            router.tab = .markets
+            router.marketDetail = String(s.dropFirst("market-detail:".count))
         case "spot": router.tab = .spot
         case "spot-plan": router.tab = .spot; router.shotSheet = "spotPlan"
         case "spot-market-amount": router.tab = .spot; router.shotSheet = "spotMarketAmount"

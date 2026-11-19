@@ -248,7 +248,7 @@ struct GridCreateView: View {
             } }.padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
         } }
         .task {
-            if store.spot.isEmpty { await store.load() }
+            await store.loadIfEmpty()
             if let c = copy { symbol = c.symbol ?? symbol; lower = c.lowerPrice ?? ""; upper = c.upperPrice ?? ""; grids = "\(c.gridCount ?? 20)"; mode = c.mode == "geometric" ? 1 : 0 }
             else { aiFill() }
             if session.isLoggedIn { avail = (try? await AssetsAPI.spotBalance("USDT")) ?? 0 }
