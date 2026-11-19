@@ -17,6 +17,7 @@ struct MarketDetailView: View {
         _live = StateObject(wrappedValue: MarketTape(symbol: symbol, futures: futures))
     }
     @State private var showIntervals = false
+    @State private var showChartSettings = false
     @State private var editingPins = false
     @State private var showAlert = false
     @AppStorage("lb.kline.pins") private var pinsRaw = "1m,15m,1h,4h,1d"
@@ -36,6 +37,7 @@ struct MarketDetailView: View {
         .task { await live.start() }
         .onDisappear { live.stop() }
         .onChange(of: interval) { live.setInterval($0) }
+        .lbSheet($showChartSettings) { chartSettingsSheet }
         .lbSheet($showIntervals) {
             if editingPins {
                 PinEditor(pins: pinList, all: allIntervals, onConfirm: { savePins($0); editingPins = false; showIntervals = false }, onBack: { editingPins = false })
@@ -48,11 +50,29 @@ struct MarketDetailView: View {
 
     private var detail: some View {
         VStack(spacing: 0) {
-            NavBar(title: futures ? "\(symbol) 永续" : pair, onBack: { Router.shared.marketDetail = nil }) {
+            NavBar(title: "", onBack: { Router.shared.marketDetail = nil }) {
+                // 参考 App：标题左对齐「← BTC/USDT ▾ •」，右侧星标
+                EmptyView()
+            }
+            .overlay(alignment: .leading) {
+                HStack(spacing: 4) {
+                    Text(futures ? "\(symbol) 永续" : pair).font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+                    if !futures {
+                        Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
+                            .rotationEffect(.degrees(180))
+                    }
+                    Circle().fill(p.up).frame(width: 6, height: 6)
+                }
+                .padding(.leading, 56)
+                .allowsHitTesting(false)
+            }
+            .background(alignment: .trailing) {
                 Button { watch.toggle(symbol) } label: {
                     Image(systemName: watch.contains(symbol) ? "star.fill" : "star")
-                        .foregroundColor(watch.contains(symbol) ? p.brand : p.textPrimary)
-                }.buttonStyle(.plain).accessibilityLabel(watch.contains(symbol) ? "移出自选" : "加入自选")
+                        .font(.system(size: 19))
+                        .foregroundColor(watch.contains(symbol) ? p.brand : p.textTertiary)
+                }.buttonStyle(.plain).padding(.trailing, Spacing.pageH)
+                    .accessibilityLabel(watch.contains(symbol) ? "移出自选" : "加入自选")
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -112,18 +132,23 @@ struct MarketDetailView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(last > 0 ? Fmt.price(last, precision: live.pricePrec) : "--")
-                    .font(.lbNum(28, .bold)).foregroundColor(change < 0 ? p.down : p.up)
-                Text(last > 0 ? "≈ " + Fmt.fiat(last, rate: AppConfig.usdtCny) : "")
-                    .font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
-                Text(Fmt.percent(change)).font(.lbNum(FontSize.body, .medium)).foregroundColor(change < 0 ? p.down : p.up)
+                    .font(.lbNum(30, .bold)).foregroundColor(change < 0 ? p.down : p.up)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                HStack(spacing: 6) {
+                    Text(last > 0 ? "≈ " + Fmt.fiat(last, rate: AppConfig.usdtCny) : "")
+                        .font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                    if last > 0 {
+                        Text(Fmt.percent(change)).font(.lbNum(FontSize.small)).foregroundColor(change < 0 ? p.down : p.up)
+                    }
+                }
             }
             Spacer(minLength: 8)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 stat("24h最高价", live.high > 0 ? Fmt.price(live.high, precision: live.pricePrec) : "--")
                 stat("24h最低价", live.low > 0 ? Fmt.price(live.low, precision: live.pricePrec) : "--")
                 stat("24h成交量(\(base))", Fmt.compact(live.volume))
                 stat("24h成交额(USDT)", Fmt.compact(live.quoteVolume))
-            }.frame(width: 150, alignment: .leading)
+            }
         }
     }
 
@@ -143,10 +168,85 @@ struct MarketDetailView: View {
                     .onTapGesture { interval = iv }
             }
             Spacer()
-            Button { showIntervals = true } label: {
-                Text("更多").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-            }.buttonStyle(.plain)
+            // 参考 App 右侧三个图标：分时/指标设置/图表设置
+            HStack(spacing: 16) {
+                Image(systemName: "chart.xyaxis.line").font(.system(size: 15)).foregroundColor(p.textPrimary)
+                Image(systemName: "slider.horizontal.3").font(.system(size: 15)).foregroundColor(p.textPrimary)
+                    .onTapGesture { showIntervals = true }
+                Image(systemName: "gearshape").font(.system(size: 15)).foregroundColor(p.textPrimary)
+                    .onTapGesture { showChartSettings = true }
+            }
         }
+    }
+
+    /// 参考 App「图表设置」：指标 / 画图 / 横屏 / 更多，图表显示勾选项与高度滑杆。
+    private var chartSettingsSheet: some View {
+        @AppStorage("lb.chart.lastPrice") var showLast = true
+        @AppStorage("lb.chart.markPrice") var showMark = false
+        @AppStorage("lb.chart.high") var showHigh = true
+        @AppStorage("lb.chart.low") var showLow = true
+        @AppStorage("lb.chart.countdown") var showCountdown = false
+        @AppStorage("lb.chart.flashOrder") var showFlash = true
+        @AppStorage("lb.chart.orders") var showOrders = false
+        @AppStorage("lb.chart.cost") var showCost = false
+        @AppStorage("lb.chart.height") var chartH = 320.0
+        return LBSheet(title: "图表设置", showClose: true, onClose: { showChartSettings = false }) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    settingsAction("指标", "chart.bar.xaxis") { showChartSettings = false; showIntervals = true }
+                    settingsAction("画图", "pencil.tip") {}
+                    settingsAction("横屏", "rectangle.expand.vertical") {}
+                }
+                settingsAction("更多", "square.grid.2x2") {}.padding(.top, 10).frame(maxWidth: .infinity, alignment: .leading)
+                Text("图表显示").font(.lb(FontSize.body)).foregroundColor(p.textSecondary).padding(.top, 26)
+                VStack(spacing: 18) {
+                    HStack {
+                        checkRow("最新价格", $showLast, new: false)
+                        checkRow("标记价格", $showMark, new: false)
+                    }
+                    HStack {
+                        checkRow("最高价格", $showHigh, new: false)
+                        checkRow("最低价格", $showLow, new: false)
+                    }
+                    HStack {
+                        checkRow("倒计时", $showCountdown, new: true)
+                        checkRow("闪电下单", $showFlash, new: true)
+                    }
+                    HStack {
+                        checkRow("当前委托", $showOrders, new: true)
+                        checkRow("累计成本", $showCost, new: true)
+                    }
+                }.padding(.top, 16)
+                Text("图表高度").font(.lb(FontSize.body)).foregroundColor(p.textSecondary).padding(.top, 26)
+                Slider(value: $chartH, in: 220...520).tint(p.textPrimary).padding(.top, 10)
+            }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
+        }
+    }
+
+    private func settingsAction(_ title: String, _ icon: String, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13))
+                Text(title).font(.lb(FontSize.label))
+            }.foregroundColor(p.textPrimary)
+                .frame(maxWidth: .infinity).frame(height: 38)
+                .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+        }.buttonStyle(.plain)
+    }
+
+    private func checkRow(_ title: String, _ on: Binding<Bool>, new: Bool) -> some View {
+        Button { on.wrappedValue.toggle() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: on.wrappedValue ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16)).foregroundColor(on.wrappedValue ? p.textPrimary : p.textTertiary)
+                Text(title).font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
+                if new {
+                    Text("New").font(.lb(9)).foregroundColor(p.textPrimary)
+                        .padding(.horizontal, 4).frame(height: 14).background(Capsule().fill(p.brand))
+                }
+                Spacer(minLength: 0)
+            }
+        }.buttonStyle(.plain).frame(maxWidth: .infinity)
     }
 
     private var intervalPicker: some View {
@@ -192,8 +292,9 @@ struct MarketDetailView: View {
                 studyChip("MA", studies.ma) { studies.ma.toggle() }
                 studyChip("BOLL", studies.boll) { studies.boll.toggle() }
                 studyChip("EMA", studies.ema) { studies.ema.toggle() }
+                studyChip("撑压线", studies.supportResistance) { studies.supportResistance.toggle() }
+                studyChip("超级趋势", studies.superTrend) { studies.superTrend.toggle() }
                 studyChip("VOL", studies.vol) { studies.vol.toggle() }
-                studyChip("MACD", studies.macd) { studies.macd.toggle() }
             }
         }
     }
@@ -259,14 +360,61 @@ struct MarketDetailView: View {
     }
 
     private var depthChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
-                Label("买入", systemImage: "circle.fill").foregroundColor(p.up)
-                Label("卖出", systemImage: "circle.fill").foregroundColor(p.down)
-            }.font(.lb(10))
-            if book.bids.isEmpty && book.asks.isEmpty { EmptyStateView(text: "暂无深度") }
-            else { DepthPlot(book: book, up: p.up, down: p.down).frame(height: 180) }
+        let plotHeight: CGFloat = {
+            let saved = UserDefaults.standard.double(forKey: "lb.chart.height")
+            return saved > 0 ? CGFloat(min(max(saved, 220), 520)) : 300
+        }()
+        return VStack(alignment: .trailing, spacing: 0) {
+            // 参考 App：右上角图例（方块），深度曲线从底部往上叠
+            HStack(spacing: 14) {
+                Spacer()
+                HStack(spacing: 4) {
+                    Rectangle().fill(p.up).frame(width: 8, height: 8)
+                    Text("买入").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
+                HStack(spacing: 4) {
+                    Rectangle().fill(p.down).frame(width: 8, height: 8)
+                    Text("卖出").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
+            }.padding(.bottom, 6)
+            if book.bids.isEmpty && book.asks.isEmpty { EmptyStateView(text: "暂无深度").frame(height: 260) }
+            else {
+                GeometryReader { geo in
+                    DepthPlot(book: book, up: p.up, down: p.down)
+                        .overlay(alignment: .bottomLeading) {
+                            HStack {
+                                Text(depthLow).font(.lbNum(10)).foregroundColor(p.textTertiary)
+                                Spacer()
+                                Text(depthMid).font(.lbNum(10)).foregroundColor(p.textTertiary)
+                                Spacer()
+                                Text(depthHigh).font(.lbNum(10)).foregroundColor(p.textTertiary)
+                            }
+                        }
+                        .overlay(alignment: .trailing) {
+                            VStack(alignment: .trailing, spacing: 0) {
+                                ForEach(0..<4, id: \.self) { _ in
+                                    Spacer()
+                                    Rectangle().fill(p.divider).frame(width: geo.size.width, height: 0.5)
+                                }
+                                Spacer()
+                            }.allowsHitTesting(false)
+                        }
+                }.frame(height: plotHeight)
+            }
         }
+    }
+
+    private var depthLow: String {
+        guard let v = book.bids.last?.price ?? book.asks.first?.price else { return "--" }
+        return Fmt.price(v, precision: live.pricePrec)
+    }
+    private var depthHigh: String {
+        guard let v = book.asks.last?.price ?? book.bids.first?.price else { return "--" }
+        return Fmt.price(v, precision: live.pricePrec)
+    }
+    private var depthMid: String {
+        guard let v = book.asks.first?.price ?? book.bids.first?.price else { return "--" }
+        return Fmt.price(v, precision: live.pricePrec)
     }
 
     private var fillsList: some View {
@@ -275,15 +423,18 @@ struct MarketDetailView: View {
             else {
                 HStack {
                     Text("时间").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("价格(USDT)").frame(width: 110, alignment: .trailing)
-                    Text("数量(\(base))").frame(width: 90, alignment: .trailing)
+                    Text("价格(USDT)").frame(width: 110, alignment: .leading)
+                    HStack(spacing: 3) {
+                        Text("数量(\(base))")
+                        Image(systemName: "triangle.fill").font(.system(size: 7)).rotationEffect(.degrees(180)).foregroundColor(p.textTertiary)
+                    }.frame(width: 100, alignment: .trailing)
                 }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                 ForEach(live.trades) { t in
                     HStack {
                         Text(Self.clock.string(from: t.time)).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(Fmt.price(Dec.parse(t.price), precision: live.pricePrec)).foregroundColor(t.side == "buy" ? p.up : p.down).frame(width: 110, alignment: .trailing)
-                        Text(Fmt.amount(Dec.parse(t.quantity), 5)).frame(width: 90, alignment: .trailing)
-                    }.font(.lbNum(12)).foregroundColor(p.textPrimary).frame(height: 28)
+                        Text(Fmt.price(Dec.parse(t.price), precision: live.pricePrec)).foregroundColor(t.side == "buy" ? p.up : p.down).frame(width: 110, alignment: .leading)
+                        Text(String(format: "%.5f", NSDecimalNumber(decimal: Dec.parse(t.quantity)).doubleValue)).frame(width: 100, alignment: .trailing)
+                    }.font(.lbNum(12)).foregroundColor(p.textPrimary).frame(height: 30)
                 }
             }
         }
@@ -402,11 +553,18 @@ private struct DepthPlot: View {
                 guard let first = rows.first else { return }
                 var path = Path()
                 path.move(to: CGPoint(x: x(first.0), y: size.height))
-                for row in rows { path.addLine(to: CGPoint(x: x(row.0), y: size.height - CGFloat(row.1 / maxV) * (size.height - 8))) }
+                // 参考 App 是阶梯线：横向走到下一档价位再竖向抬升
+                var prevY = size.height
+                for row in rows {
+                    let ny = size.height - CGFloat(row.1 / maxV) * (size.height - 10)
+                    path.addLine(to: CGPoint(x: x(row.0), y: prevY))
+                    path.addLine(to: CGPoint(x: x(row.0), y: ny))
+                    prevY = ny
+                }
                 if let last = rows.last { path.addLine(to: CGPoint(x: x(last.0), y: size.height)) }
                 path.closeSubpath()
-                ctx.fill(path, with: .color(color.opacity(0.25)))
-                ctx.stroke(path, with: .color(color), lineWidth: 1.5)
+                ctx.fill(path, with: .color(color.opacity(0.12)))
+                ctx.stroke(path, with: .color(color), lineWidth: 1)
             }
             area(b.reversed(), color: up)
             area(a, color: down)
@@ -466,36 +624,99 @@ private struct SpotAlertPage: View {
     @State private var saving = false
     @State private var confirm: ConfirmRequest?
 
+    @State private var showKind = false
+    @State private var showAll = false
+
     var body: some View {
         VStack(spacing: 0) {
-            NavBar(title: "价格预警", onBack: onBack)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+            // 参考 App：标题居中「BTC/USDT ▾ / 现货」，右侧「全部提醒」
+            ZStack {
+                HStack(spacing: 4) {
+                    Image(systemName: "triangle.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
+                        .rotationEffect(.degrees(180))
+                    Circle().fill(p.up).frame(width: 6, height: 6)
+                }.offset(x: 54, y: -6)
+                VStack(spacing: 2) {
                     Text(symbol).font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
-                    Text("按现货指数价比较，通知在站内。").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                    HStack(spacing: 8) {
-                        chip("价格涨到", rise) { rise = true }
-                        chip("价格跌到", !rise) { rise = false }
+                    Text("现货").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity).frame(height: 44)
+            .overlay(alignment: .trailing) {
+                Text("全部提醒").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                    .padding(.trailing, Spacing.pageH)
+                    .onTapGesture { showAll = true }
+            }
+            .overlay(alignment: .leading) {
+                Button(action: onBack) {
+                    Image(systemName: "arrow.left").font(.system(size: 18, weight: .medium)).foregroundColor(p.textPrimary)
+                }.buttonStyle(.plain).padding(.leading, Spacing.pageH)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("市场价格").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                        .frame(maxWidth: .infinity).padding(.top, 18)
+                    Text(suggested).font(.lbNum(28, .bold)).foregroundColor(p.down)
+                        .frame(maxWidth: .infinity).padding(.top, 4)
+                    Text("提醒类型").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).padding(.top, 26)
+                    HStack {
+                        Text(rise ? "价格涨到" : "价格跌到").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        Image(systemName: "triangle.fill").font(.system(size: 8)).foregroundColor(p.textSecondary)
+                            .rotationEffect(.degrees(180))
                     }
-                    HStack(spacing: 8) {
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                    .padding(.top, 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture { showKind = true }
+                    HStack {
+                        Text("数值").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        Text("≈ ¥" + cnyText).font(.lbNum(FontSize.caption)).foregroundColor(p.textSecondary)
+                    }.padding(.top, 18)
+                    HStack {
+                        TextField("价格", text: $threshold, prompt: Text("请输入"))
+                            .font(.lbNum(FontSize.body)).keyboardType(.decimalPad)
+                        Text("USDT").font(.lb(FontSize.body)).foregroundColor(p.textSecondary)
+                    }
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                    .padding(.top, 8)
+                    HStack {
+                        Text("-25%").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                        Spacer()
+                        Text("25%").font(.lbNum(FontSize.small)).foregroundColor(p.textSecondary)
+                    }.padding(.top, 8)
+                    Text("提醒频率").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).padding(.top, 18)
+                    HStack(spacing: 10) {
                         chip("只提醒一次", mode == "once") { mode = "once" }
-                        chip("每天一次", mode == "daily") { mode = "daily" }
+                        chip("每天提醒一次", mode == "daily") { mode = "daily" }
                         chip("持续提醒", mode == "repeat") { mode = "repeat" }
+                    }.padding(.top, 10)
+                    Text("生效时间").font(.lb(FontSize.body)).foregroundColor(p.textPrimary).padding(.top, 18)
+                    HStack {
+                        Text("一直有效").font(.lb(FontSize.body)).foregroundColor(p.textPrimary)
+                        Spacer()
+                        Image(systemName: "triangle.fill").font(.system(size: 8)).foregroundColor(p.textSecondary)
+                            .rotationEffect(.degrees(180))
                     }
-                    LBTextField(placeholder: "价格", text: $threshold, keyboard: .decimalPad)
-                    if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down) }
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+                    .padding(.top, 10)
+                    if let error { Text(error).font(.lb(FontSize.small)).foregroundColor(p.down).padding(.top, 8) }
                     LBButton(title: "创建", enabled: PriceAlertAPI.threshold(threshold) != nil && !saving, loading: saving) {
                         Task { await create() }
-                    }
+                    }.padding(.top, 22)
                     HStack {
                         Text("当前提醒").font(.lb(FontSize.body, .medium)).foregroundColor(p.textPrimary)
                         Spacer()
                         if !items.isEmpty {
-                            Button("删除全部") { confirm = ConfirmRequest(title: "删除全部提醒", message: "删除 \(symbol) 的 \(items.count) 条提醒。", confirmTitle: "删除", destructive: true) { Task { await deleteAll() } } }
-                                .font(.lb(FontSize.small)).foregroundColor(p.down)
+                            Text("删除所有").font(.lb(FontSize.body)).foregroundColor(p.textTertiary)
+                                .onTapGesture { confirm = ConfirmRequest(title: "删除全部提醒", message: "删除 \(symbol) 的 \(items.count) 条提醒。", confirmTitle: "删除", destructive: true) { Task { await deleteAll() } } }
                         }
-                    }.padding(.top, 8)
-                    if items.isEmpty { EmptyStateView(text: "暂无提醒") }
+                    }.padding(.top, 30)
+                    if items.isEmpty { EmptyStateView(text: "暂无数据").padding(.top, 20) }
                     ForEach(items) { item in
                         HStack {
                             Text(alertLabel(item)).foregroundColor(p.textSecondary)
@@ -503,13 +724,26 @@ private struct SpotAlertPage: View {
                             Spacer()
                             Text(item.status).font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
                         }.font(.lbNum(FontSize.label)).frame(height: 36)
+                        Divider().overlay(p.divider)
                     }
-                }.padding(Spacing.pageH)
+                }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
+            }
+        }
+        .lbSheet($showKind) {
+            LBSheet(title: "提醒类型", showClose: true, onClose: { showKind = false }) {
+                SheetOptionRow(title: "价格涨到", selected: rise) { rise = true; showKind = false }
+                SheetOptionRow(title: "价格跌到", selected: !rise) { rise = false; showKind = false }
             }
         }
         .onAppear { if threshold.isEmpty { threshold = suggested } }
         .task(id: session.isLoggedIn) { await reload() }
         .lbConfirm($confirm)
+    }
+
+    private var cnyText: String {
+        guard let raw = PriceAlertAPI.threshold(threshold),
+              let v = Decimal(string: raw, locale: Dec.posix) else { return "--" }
+        return Fmt.fiat(v, rate: AppConfig.usdtCny)
     }
 
     private func alertLabel(_ item: PriceAlertAPI.Item) -> String {

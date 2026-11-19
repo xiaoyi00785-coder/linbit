@@ -35,7 +35,7 @@ struct MarketsView: View {
             }
         }
         .background(p.bg)
-        .task { if store.spot.isEmpty { await store.load() } }
+        .task { await store.loadIfEmpty() }
         .onChange(of: router.marketSearch) { on in
             if on { searching = true; router.marketSearch = false }
         }
@@ -297,7 +297,7 @@ struct WidgetBoardView: View {
             }
         }
         .background(p.bg.ignoresSafeArea())
-        .task { if store.spot.isEmpty { await store.load() }; await load() }
+        .task { await store.loadIfEmpty(); await load() }
         .onChange(of: saved) { _ in Task { await load() } }
     }
 

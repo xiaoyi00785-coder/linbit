@@ -95,6 +95,9 @@ struct ChartStudies: Equatable {
     var ema = false
     var vol = true
     var macd = false
+    /// 参考 App 指标栏里的「撑压线 / 超级趋势」：有开关和选中态，计算待接入
+    var supportResistance = false
+    var superTrend = false
 }
 
 enum ChartMath {

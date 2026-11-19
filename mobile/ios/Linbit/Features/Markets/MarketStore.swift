@@ -27,7 +27,17 @@ final class MarketStore: ObservableObject {
         switch kind { case .spot: spot; case .futures: futures; case .tradfi: [] }
     }
 
+    /// 空数据时按需重拉：首次请求可能被网关短暂拒绝（451/网络抖动），
+    /// 只在页面挂载时拉一次的话，列表会一直空着直到重启 App。
+    private var lastLoad = Date.distantPast
+    private var failures = 0
+    func loadIfEmpty(minInterval: TimeInterval = 20) async {
+        guard spot.isEmpty, !loading, Date().timeIntervalSince(lastLoad) > minInterval else { return }
+        await load()
+    }
+
     func load() async {
+        lastLoad = Date()
         loading = true
         defer { loading = false }
         async let symbolsR = try? MarketAPI.symbols()
@@ -50,6 +60,18 @@ final class MarketStore: ObservableObject {
         if let cats { categories = cats }
         if spotT == nil && futT == nil { error = "行情加载失败，请检查网络" } else { error = nil }
         subscribeTickers()
+        // 首次请求被拒（451 / 网络抖动）时列表会一直空着，没人再触发重试：
+        // 空结果就自己退避重拉，直到拿到数据。
+        if spot.isEmpty && futures.isEmpty && failures < 8 {
+            failures += 1
+            let delay = min(Double(failures) * 3, 20)
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                await self?.load()
+            }
+        } else if !spot.isEmpty || !futures.isEmpty {
+            failures = 0
+        }
     }
 
     private func subscribeTickers() {

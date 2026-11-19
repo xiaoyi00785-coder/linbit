@@ -45,7 +45,7 @@ struct CoinPickerView: View {
             }
         }
         .background(p.bg.ignoresSafeArea()).navigationBarHidden(true)
-        .task { if store.spot.isEmpty { await store.load() } }
+        .task { await store.loadIfEmpty() }
     }
     private func section(_ t: String) -> some View {
         Text(t).font(.lb(FontSize.caption, t.count > 1 ? .semibold : .regular)).foregroundColor(t.count > 1 ? p.textPrimary : p.textTertiary)

@@ -72,7 +72,7 @@ struct SwapView: View {
         }
         .task {
             await loadPairs()
-            if store.spot.isEmpty { await store.load() }
+            await store.loadIfEmpty()
             await loadBalances()
             if Router.shared.shotSheet == "swapPicker" { Router.shared.shotSheet = nil; picking = .to }
         }
