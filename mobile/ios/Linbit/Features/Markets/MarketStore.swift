@@ -40,11 +40,13 @@ final class MarketStore: ObservableObject {
         lastLoad = Date()
         loading = true
         defer { loading = false }
-        async let symbolsR = try? MarketAPI.symbols()
-        async let spotR = try? MarketAPI.spotTickers()
-        async let futR = try? MarketAPI.futuresTickers()
-        async let catR = try? MarketAPI.categories()
-        let (symbols, spotT, futT, cats) = await (symbolsR, spotR, futR, catR)
+        // 保留真实错误：界面要能区分「地区受限(451)」和普通网络故障
+        async let spotR = Self.attempt { try await MarketAPI.spotTickers() }
+        async let futR = Self.attempt { try await MarketAPI.futuresTickers() }
+        async let catR = Self.attempt { try await MarketAPI.categories() }
+        async let symbolsR = Self.attempt { try await MarketAPI.symbols() }
+        let (spotRes, futRes, catRes, symRes) = await (spotR, futR, catR, symbolsR)
+        let spotT = spotRes.value, futT = futRes.value, cats = catRes.value, symbols = symRes.value
         symbolMeta = Dictionary((symbols ?? []).map { ($0.symbol, $0) }, uniquingKeysWith: { a, _ in a })
         // 现货无成交（lastPrice=0）时用同名合约的 标记价 → 指数价 兜底；合约再兜底现货价
         if let futT { refPrice = Dictionary(futT.compactMap { t in t.symbol.map { ($0, t.effectivePrice()) } }, uniquingKeysWith: { a, _ in a }) }
@@ -58,7 +60,9 @@ final class MarketStore: ObservableObject {
             }
         }
         if let cats { categories = cats }
-        if spotT == nil && futT == nil { error = "行情加载失败，请检查网络" } else { error = nil }
+        if spotT == nil && futT == nil {
+            error = (spotRes.error ?? futRes.error)?.lbMessage ?? "行情加载失败，请检查网络"
+        } else { error = nil }
         subscribeTickers()
         // 首次请求被拒（451 / 网络抖动）时列表会一直空着，没人再触发重试：
         // 空结果就自己退避重拉，直到拿到数据。
@@ -72,6 +76,11 @@ final class MarketStore: ObservableObject {
         } else if !spot.isEmpty || !futures.isEmpty {
             failures = 0
         }
+    }
+
+    /// 把一次请求的成败一起带回来（成功值 + 失败原因），失败不再被 try? 吞掉。
+    private static func attempt<T>(_ work: () async throws -> T) async -> (value: T?, error: Error?) {
+        do { return (try await work(), nil) } catch { return (nil, error) }
     }
 
     private func subscribeTickers() {

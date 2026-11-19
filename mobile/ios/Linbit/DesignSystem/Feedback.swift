@@ -141,6 +141,11 @@ extension Error {
                 if status == 401 || e?.code == "AUTH_UNAUTHORIZED" {
                     return TokenStore.shared.sessionExpired ? "登录已过期，请重新登录" : ErrorText.loginRequired
                 }
+                // 451：网关按出口 IP 判定地区受限。不能当成网络故障（用户会一直以为信号不好），
+                // 要说清楚是当前网络的出口地区不支持，换网络即可。
+                if status == 451 || e?.code == "REGION_BLOCKED" {
+                    return "当前网络所在地区暂不支持访问，请切换网络后重试"
+                }
                 if let e { return ErrorText.map[e.code] ?? e.message }
                 return status >= 500 ? "服务繁忙，请稍后再试" : "请求失败（\(status)）"
             case .transport: return "网络连接失败，请检查网络"
