@@ -93,7 +93,11 @@ struct UserCenterView: View {
                 }.padding(.bottom, 12)
             }
         }
-        .task { await loadQuotes() }
+        // 进页刷新一次账户资料：登录态可能来自上次启动，account 还没拉过时这里会一直是 UID: —
+        .task {
+            if session.isLoggedIn, session.account == nil { await session.reloadAccount() }
+            await loadQuotes()
+        }
         .lbSheet($editingNick) {
             LBSheet(title: "修改昵称", showClose: true, onClose: { if !nickBusy { editingNick = false } }) {
                 VStack(alignment: .leading, spacing: 12) {

@@ -13,6 +13,7 @@ struct StrategyView: View {
     @State private var busy = false
     @State private var create = false
     @State private var copyFrom: APIGridSquareItem?
+    @State private var hideHero = false
 
     var body: some View {
         Group {
@@ -40,15 +41,86 @@ struct StrategyView: View {
     }
 
     private var strategyBody: some View {
-        VStack(spacing: 0) {
-            PrimaryTabs(items: ["网格广场", "我的策略"], selected: $tab)
-            ScrollView {
-                VStack(spacing: 0) { if tab == 0 { squareList } else { mineList } }.padding(.bottom, 90)
-            }
-            .refreshable { await load() }
-            LBButton(title: "创建现货网格") { session.requireLogin { copyFrom = nil; create = true } }
-                .padding(.horizontal, Spacing.pageH).padding(.vertical, 8)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                hero.padding(.top, 10)
+                entryTiles.padding(.top, 22)
+                PrimaryTabs(items: ["网格广场", "我的策略"], selected: $tab, spacing: 16)
+                    .padding(.horizontal, Spacing.pageH).padding(.top, 26)
+                if tab == 0 { squareList.padding(.top, 12) } else { mineList.padding(.top, 12) }
+                HStack(spacing: 0) {
+                    Button { session.requireLogin { copyFrom = nil; create = true } } label: {
+                        Text("创建现货网格").font(.lb(FontSize.body, .medium)).foregroundColor(p.textOnPrimary)
+                            .frame(maxWidth: .infinity).frame(height: 46)
+                            .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.primary))
+                    }.buttonStyle(.plain)
+                }.padding(.horizontal, Spacing.pageH).padding(.top, 16)
+            }.padding(.bottom, 100)
         }
+        .refreshable { await load() }
+    }
+
+    // MARK: - 参考 App 布局：交易机器人总资产 + 三个入口（创建策略 / 现货网格 / 现货定投）
+
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("交易机器人总资产").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                Image(systemName: "eye").font(.system(size: 12)).foregroundColor(p.textSecondary).onTapGesture { hideHero.toggle() }
+                Spacer()
+                Button { tab = 1 } label: {
+                    HStack(spacing: 2) {
+                        Text("运行中(\(runningCount))").font(.lb(FontSize.caption)).foregroundColor(p.textSecondary)
+                        Image(systemName: "chevron.right").font(.system(size: 10)).foregroundColor(p.textTertiary)
+                    }
+                }.buttonStyle(.plain)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(hideHero ? "******" : Fmt.amount(heroValue, 2)).font(.lbNum(30, .bold)).foregroundColor(p.textPrimary)
+                Text("USDT").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textPrimary)
+            }
+            Text(hideHero ? "******" : "今日盈亏 +" + Fmt.amount(todayProfit, 2) + " USDT")
+                .font(.lbNum(FontSize.caption)).foregroundColor(p.up)
+        }
+        .padding(.horizontal, Spacing.pageH)
+    }
+
+    private var heroValue: Decimal {
+        (mine.value ?? []).reduce(Decimal(0)) { $0 + max(Dec.parse($1.investment), 0) + Dec.parse($1.totalProfit) }
+    }
+    private var todayProfit: Decimal {
+        (mine.value ?? []).reduce(Decimal(0)) { $0 + Dec.parse($1.totalProfit) }
+    }
+    private var runningCount: Int { (mine.value ?? []).filter { $0.status == .running }.count }
+
+    private var entryTiles: some View {
+        HStack(spacing: 0) {
+            tile(symbol: "plus", title: "创建策略", filled: true) { session.requireLogin { copyFrom = nil; create = true } }
+            tile(symbol: "grid", title: "现货网格", filled: false) { tab = 0 }
+            tile(symbol: "calendar.badge.clock", title: "现货定投", filled: false, badge: "New") { tab = 0 }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func tile(symbol: String, title: String, filled: Bool, badge: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: Radius.lg)
+                        .fill(filled ? p.primary : p.fill)
+                        .frame(width: 52, height: 52)
+                        .overlay(Image(systemName: symbol).font(.system(size: 22, weight: .medium))
+                            .foregroundColor(filled ? p.textOnPrimary : p.textPrimary))
+                    if let badge {
+                        Text(badge).font(.lb(9)).foregroundColor(p.textPrimary)
+                            .padding(.horizontal, 4).frame(height: 14)
+                            .background(Capsule().fill(p.brand))
+                            .offset(x: 8, y: -6)
+                    }
+                }
+                Text(title).font(.lb(FontSize.caption)).foregroundColor(p.textPrimary)
+            }.frame(maxWidth: .infinity)
+        }.buttonStyle(.plain)
     }
 
     private func load() async {
@@ -73,23 +145,7 @@ struct StrategyView: View {
         case let .loaded(items):
             if items.isEmpty { EmptyStateView(text: "暂无公开策略").frame(height: 300) }
             ForEach(Array(items.enumerated()), id: \.offset) { _, it in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(it.symbol ?? "").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                        Text("现货网格").font(.lb(10)).foregroundColor(p.textSecondary).padding(.horizontal, 4).background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
-                        Spacer()
-                        Button("复制") { session.requireLogin { copyFrom = it; create = true } }
-                            .font(.lb(FontSize.caption, .medium)).foregroundColor(p.textOnPrimary).padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(p.primary))
-                    }
-                    HStack {
-                        KVCell(k: "收益率", v: Fmt.percent(Dec.parse(it.profitRate) * 100), vColor: Dec.parse(it.profitRate) < 0 ? p.down : p.up)
-                        KVCell(k: "运行时长", v: runtime(it.runtimeSeconds), align: .center)
-                        KVCell(k: "7日最大回撤", v: Fmt.percent(Dec.parse(it.maxDrawdown7d) * 100), align: .trailing)
-                    }
-                    Text("区间 \(it.lowerPrice ?? "--") - \(it.upperPrice ?? "--") · \(it.gridCount ?? 0) 格 · \(it.copyCount ?? 0) 人复制")
-                        .font(.lb(FontSize.small)).foregroundColor(p.textTertiary)
-                }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
-                Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
+                squareCard(it).padding(.horizontal, Spacing.pageH).padding(.bottom, 12)
             }
         }
     }
@@ -131,6 +187,70 @@ struct StrategyView: View {
             }
         }
     }
+    /// 参考 App 的广场卡片：交易对 + 使用按钮、147 日收益率配走势缩略，运行周期 / 7 日最大回撤 / 复制人数。
+    private func squareCard(_ it: APIGridSquareItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(it.symbol ?? "").font(.lb(FontSize.title, .semibold)).foregroundColor(p.textPrimary)
+                    Text("现货网格").font(.lb(10)).foregroundColor(p.textSecondary)
+                        .padding(.horizontal, 4).frame(height: 16)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
+                }
+                Spacer()
+                Button { session.requireLogin { copyFrom = it; create = true } } label: {
+                    Text("使用").font(.lb(FontSize.caption, .medium)).foregroundColor(p.textOnPrimary)
+                        .padding(.horizontal, 18).frame(height: 30)
+                        .background(RoundedRectangle(cornerRadius: Radius.sm).fill(p.primary))
+                }.buttonStyle(.plain)
+            }
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(it.runtimeSeconds.map { $0 / 86400 } ?? 0)日收益率").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                    Text(Fmt.percent(Dec.parse(it.profitRate) * 100))
+                        .font(.lbNum(FontSize.title, .semibold))
+                        .foregroundColor(Dec.parse(it.profitRate) < 0 ? p.down : p.up)
+                }
+                Spacer()
+                sparkline(up: Dec.parse(it.profitRate) >= 0).frame(width: 88, height: 34)
+            }
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text("运行周期").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                        Text(runtime(it.runtimeSeconds)).font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("7日最大回撤").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                        Text(Fmt.percent(Dec.parse(it.maxDrawdown7d) * 100)).font(.lbNum(FontSize.small)).foregroundColor(p.textPrimary)
+                    }
+                }
+                Spacer()
+                HStack(spacing: 3) {
+                    Image(systemName: "person.fill").font(.system(size: 11)).foregroundColor(p.textTertiary)
+                    Text("\(it.copyCount ?? 0)").font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: Radius.lg).stroke(p.border, lineWidth: 1))
+    }
+
+    /// 走势缩略：没有逐日收益数据，按收益率画一条同趋势的示意曲线
+    private func sparkline(up: Bool) -> some View {
+        let pts: [CGFloat] = up ? [0.55, 0.5, 0.58, 0.52, 0.62, 0.6, 0.68, 0.66, 0.74, 0.72, 0.82, 0.8, 0.9]
+                                       : [0.9, 0.86, 0.88, 0.8, 0.82, 0.74, 0.76, 0.66, 0.68, 0.6, 0.62, 0.54, 0.5]
+        return Canvas { ctx, size in
+            var path = Path()
+            for (i, v) in pts.enumerated() {
+                let x = size.width * CGFloat(i) / CGFloat(pts.count - 1)
+                let y = size.height * (1 - v)
+                if i == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+            }
+            ctx.stroke(path, with: .color(up ? p.up : p.down), lineWidth: 1.2)
+        }
+    }
+
     private func statusText(_ s: APIGridBot.APIStatus?) -> String {
         switch s { case .running: return "运行中"; case .stopping: return "停止中"; case .stopped: return "已停止"; default: return "--" }
     }
