@@ -98,6 +98,8 @@ struct ChartStudies: Equatable {
     /// 参考 App 指标栏里的「撑压线 / 超级趋势」：有开关和选中态，计算待接入
     var supportResistance = false
     var superTrend = false
+    /// 副图 MA（VOL 区里的均线），对应参考 App 指标栏末尾的第二个 MA
+    var volMA = true
 }
 
 enum ChartMath {
@@ -251,7 +253,7 @@ struct CandleChart: View {
                         stroke(ctx, Array(ema7[start..<min(end, ema7.count)]), step: step, y: yD, color: .blue, width: 1)
                         stroke(ctx, Array(ema30[start..<min(end, ema30.count)]), step: step, y: yD, color: .cyan, width: 1)
                     }
-                    if studies.vol {
+                    if studies.vol && studies.volMA {
                         stroke(ctx, Array(vma5[start..<min(end, vma5.count)]), step: step, y: { v in volTop + strip - (vmax <= 0 ? 0 : CGFloat(v / vmax) * (strip - 2)) }, color: Color(red: 0.93, green: 0.62, blue: 0.12), width: 1)
                         stroke(ctx, Array(vma10[start..<min(end, vma10.count)]), step: step, y: { v in volTop + strip - (vmax <= 0 ? 0 : CGFloat(v / vmax) * (strip - 2)) }, color: Color(red: 0.55, green: 0.36, blue: 0.86), width: 1)
                     }
