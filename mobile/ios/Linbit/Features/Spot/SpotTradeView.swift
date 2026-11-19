@@ -99,7 +99,14 @@ struct SpotTradeView: View {
                         Image(systemName: "arrowtriangle.down.fill").font(.system(size: 7)).foregroundColor(p.textSecondary)
                         Circle().fill(p.up).frame(width: 5)
                     }
-                    Text(Fmt.percent(m.changePct)).font(.lbNum(FontSize.small)).foregroundColor(m.changePct < 0 ? p.down : p.up)
+                    // 参考 App：交易对下方是当前价 + 涨跌幅，价格按涨跌着色
+                    HStack(spacing: 6) {
+                        Text(m.last > 0 ? Fmt.price(m.last, precision: m.pricePrec) : "--")
+                            .font(.lbNum(FontSize.small)).foregroundColor(m.changePct < 0 ? p.down : p.up)
+                        if m.last > 0 {
+                            Text(Fmt.percent(m.changePct)).font(.lbNum(FontSize.small)).foregroundColor(m.changePct < 0 ? p.down : p.up)
+                        }
+                    }
                 }
             }.buttonStyle(PressableStyle())
             Spacer()
