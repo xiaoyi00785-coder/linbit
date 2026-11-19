@@ -506,7 +506,14 @@ struct SkeletonList: View {
         }
         .padding(Spacing.pageH)
         .opacity(on ? 0.45 : 1)
-        .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever()) { on = true } }
+        // 动画只绑在透明度上，并且等页面完成首次布局后再启动。
+        // 之前在 onAppear 里直接 withAnimation(.repeatForever)：iOS 16 上页面首次布局的位移
+        // 会被卷进这个永不结束的动画，整页（如资产页）一直漂在屏幕外，看起来是空白。
+        .animation(on ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : nil, value: on)
+        .task {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            on = true
+        }
     }
 }
 

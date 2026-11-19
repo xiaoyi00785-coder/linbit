@@ -50,6 +50,9 @@ final class BookStream: ObservableObject {
         generation += 1
         let gen = generation
         let channel = (futures ? "futures-depth:" : "depth:") + symbol
+        // 先拿一次 REST 盘口：WS 的 futures-depth 通道没数据时（后端未推深度），
+        // 界面至少立刻有真实盘口，不会整块空着。
+        Task { [weak self] in await self?.rest(gen) }
         sub = MarketSocket.shared.subscribe(channel) { [weak self] frame in
             // 回调在主线程：只存数据，不解码
             guard let self, gen == self.generation else { return }

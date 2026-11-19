@@ -141,7 +141,10 @@ struct EmptyStateView: View {
     }
 }
 
-// MARK: - 悬浮胶囊 TabBar（对照图底部：高 61，左右各 21，毛玻璃，选中项灰色胶囊）
+// MARK: - 底部 TabBar
+// 参考 App 用的是系统底栏样式：白色不透明通栏、上沿 0.5pt 分隔线、图标 24–25pt，
+// 选中项图标与文字同时变绿，底部 34pt 安全区一起染色。这里按实机测量复刻（iOS 16 上 375×812：
+// 栏体 49pt，从 y=716 起，选中图标 ≈25pt）。
 enum MainTab: Int, CaseIterable {
     case home, markets, futures, spot, assets
     var title: String { ["首页", "行情", "合约", "现货", "资产"][rawValue] }
@@ -152,24 +155,25 @@ struct FloatingTabBar: View {
     @Environment(\.palette) private var p
     @Binding var selected: MainTab
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(MainTab.allCases, id: \.self) { tab in
-                VStack(spacing: 3) {
-                    IconView(icon: tab.icon, size: 20)
-                    Text(tab.title).font(.lb(FontSize.tabBar, .medium)).foregroundColor(p.textPrimary)
+        VStack(spacing: 0) {
+            Rectangle().fill(p.tabBarBorder).frame(height: 0.5)
+            HStack(spacing: 0) {
+                ForEach(MainTab.allCases, id: \.self) { tab in
+                    let on = selected == tab
+                    VStack(spacing: 2) {
+                        IconView(icon: tab.icon, size: Metrics.tabBarIcon, tint: on ? p.tabBarTint : p.textSecondary)
+                        Text(tab.title)
+                            .font(.lb(FontSize.tabBar, on ? .semibold : .regular))
+                            .foregroundColor(on ? p.tabBarTint : p.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity).frame(height: Metrics.tabBarH)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selected = tab }
                 }
-                .frame(maxWidth: .infinity).frame(height: Metrics.tabBarH - 10)
-                .background(Capsule().fill(selected == tab ? p.tabBarSelected : .clear))
-                .contentShape(Rectangle())
-                .onTapGesture { selected = tab }
             }
+            .padding(.top, 5)
+            .background(p.tabBarBg)
+            .background(p.tabBarBg.ignoresSafeArea(edges: .bottom))
         }
-        .padding(5)
-        .frame(height: Metrics.tabBarH)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .background(Capsule().fill(p.tabBarBg))
-        .overlay(Capsule().stroke(p.tabBarBorder, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
-        .padding(.horizontal, Metrics.tabBarInset)
     }
 }
