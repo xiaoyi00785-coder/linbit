@@ -17,6 +17,7 @@ struct MarketDetailView: View {
         _live = StateObject(wrappedValue: MarketTape(symbol: symbol, futures: futures))
     }
     @State private var showIntervals = false
+    @State private var showChartSettings = false
     @State private var editingPins = false
     @State private var showAlert = false
     @AppStorage("lb.kline.pins") private var pinsRaw = "1m,15m,1h,4h,1d"
@@ -36,6 +37,7 @@ struct MarketDetailView: View {
         .task { await live.start() }
         .onDisappear { live.stop() }
         .onChange(of: interval) { live.setInterval($0) }
+        .lbSheet($showChartSettings) { chartSettingsSheet }
         .lbSheet($showIntervals) {
             if editingPins {
                 PinEditor(pins: pinList, all: allIntervals, onConfirm: { savePins($0); editingPins = false; showIntervals = false }, onBack: { editingPins = false })
@@ -172,8 +174,79 @@ struct MarketDetailView: View {
                 Image(systemName: "slider.horizontal.3").font(.system(size: 15)).foregroundColor(p.textPrimary)
                     .onTapGesture { showIntervals = true }
                 Image(systemName: "gearshape").font(.system(size: 15)).foregroundColor(p.textPrimary)
+                    .onTapGesture { showChartSettings = true }
             }
         }
+    }
+
+    /// 参考 App「图表设置」：指标 / 画图 / 横屏 / 更多，图表显示勾选项与高度滑杆。
+    private var chartSettingsSheet: some View {
+        @AppStorage("lb.chart.lastPrice") var showLast = true
+        @AppStorage("lb.chart.markPrice") var showMark = false
+        @AppStorage("lb.chart.high") var showHigh = true
+        @AppStorage("lb.chart.low") var showLow = true
+        @AppStorage("lb.chart.countdown") var showCountdown = false
+        @AppStorage("lb.chart.flashOrder") var showFlash = true
+        @AppStorage("lb.chart.orders") var showOrders = false
+        @AppStorage("lb.chart.cost") var showCost = false
+        @AppStorage("lb.chart.height") var chartH = 320.0
+        return LBSheet(title: "图表设置", showClose: true, onClose: { showChartSettings = false }) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    settingsAction("指标", "chart.bar.xaxis") { showChartSettings = false; showIntervals = true }
+                    settingsAction("画图", "pencil.tip") {}
+                    settingsAction("横屏", "rectangle.expand.vertical") {}
+                }
+                settingsAction("更多", "square.grid.2x2") {}.padding(.top, 10).frame(maxWidth: .infinity, alignment: .leading)
+                Text("图表显示").font(.lb(FontSize.body)).foregroundColor(p.textSecondary).padding(.top, 26)
+                VStack(spacing: 18) {
+                    HStack {
+                        checkRow("最新价格", $showLast, new: false)
+                        checkRow("标记价格", $showMark, new: false)
+                    }
+                    HStack {
+                        checkRow("最高价格", $showHigh, new: false)
+                        checkRow("最低价格", $showLow, new: false)
+                    }
+                    HStack {
+                        checkRow("倒计时", $showCountdown, new: true)
+                        checkRow("闪电下单", $showFlash, new: true)
+                    }
+                    HStack {
+                        checkRow("当前委托", $showOrders, new: true)
+                        checkRow("累计成本", $showCost, new: true)
+                    }
+                }.padding(.top, 16)
+                Text("图表高度").font(.lb(FontSize.body)).foregroundColor(p.textSecondary).padding(.top, 26)
+                Slider(value: $chartH, in: 220...520).tint(p.textPrimary).padding(.top, 10)
+            }.padding(.horizontal, Spacing.pageH).padding(.bottom, 24)
+        }
+    }
+
+    private func settingsAction(_ title: String, _ icon: String, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13))
+                Text(title).font(.lb(FontSize.label))
+            }.foregroundColor(p.textPrimary)
+                .frame(maxWidth: .infinity).frame(height: 38)
+                .background(RoundedRectangle(cornerRadius: Radius.md).fill(p.fill))
+        }.buttonStyle(.plain)
+    }
+
+    private func checkRow(_ title: String, _ on: Binding<Bool>, new: Bool) -> some View {
+        Button { on.wrappedValue.toggle() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: on.wrappedValue ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16)).foregroundColor(on.wrappedValue ? p.textPrimary : p.textTertiary)
+                Text(title).font(.lb(FontSize.label)).foregroundColor(p.textPrimary)
+                if new {
+                    Text("New").font(.lb(9)).foregroundColor(p.textPrimary)
+                        .padding(.horizontal, 4).frame(height: 14).background(Capsule().fill(p.brand))
+                }
+                Spacer(minLength: 0)
+            }
+        }.buttonStyle(.plain).frame(maxWidth: .infinity)
     }
 
     private var intervalPicker: some View {
@@ -287,14 +360,61 @@ struct MarketDetailView: View {
     }
 
     private var depthChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
-                Label("买入", systemImage: "circle.fill").foregroundColor(p.up)
-                Label("卖出", systemImage: "circle.fill").foregroundColor(p.down)
-            }.font(.lb(10))
-            if book.bids.isEmpty && book.asks.isEmpty { EmptyStateView(text: "暂无深度") }
-            else { DepthPlot(book: book, up: p.up, down: p.down).frame(height: 180) }
+        let plotHeight: CGFloat = {
+            let saved = UserDefaults.standard.double(forKey: "lb.chart.height")
+            return saved > 0 ? CGFloat(min(max(saved, 220), 520)) : 300
+        }()
+        return VStack(alignment: .trailing, spacing: 0) {
+            // 参考 App：右上角图例（方块），深度曲线从底部往上叠
+            HStack(spacing: 14) {
+                Spacer()
+                HStack(spacing: 4) {
+                    Rectangle().fill(p.up).frame(width: 8, height: 8)
+                    Text("买入").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
+                HStack(spacing: 4) {
+                    Rectangle().fill(p.down).frame(width: 8, height: 8)
+                    Text("卖出").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
+            }.padding(.bottom, 6)
+            if book.bids.isEmpty && book.asks.isEmpty { EmptyStateView(text: "暂无深度").frame(height: 260) }
+            else {
+                GeometryReader { geo in
+                    DepthPlot(book: book, up: p.up, down: p.down)
+                        .overlay(alignment: .bottomLeading) {
+                            HStack {
+                                Text(depthLow).font(.lbNum(10)).foregroundColor(p.textTertiary)
+                                Spacer()
+                                Text(depthMid).font(.lbNum(10)).foregroundColor(p.textTertiary)
+                                Spacer()
+                                Text(depthHigh).font(.lbNum(10)).foregroundColor(p.textTertiary)
+                            }
+                        }
+                        .overlay(alignment: .trailing) {
+                            VStack(alignment: .trailing, spacing: 0) {
+                                ForEach(0..<4, id: \.self) { _ in
+                                    Spacer()
+                                    Rectangle().fill(p.divider).frame(width: geo.size.width, height: 0.5)
+                                }
+                                Spacer()
+                            }.allowsHitTesting(false)
+                        }
+                }.frame(height: plotHeight)
+            }
         }
+    }
+
+    private var depthLow: String {
+        guard let v = book.bids.last?.price ?? book.asks.first?.price else { return "--" }
+        return Fmt.price(v, precision: live.pricePrec)
+    }
+    private var depthHigh: String {
+        guard let v = book.asks.last?.price ?? book.bids.first?.price else { return "--" }
+        return Fmt.price(v, precision: live.pricePrec)
+    }
+    private var depthMid: String {
+        guard let v = book.asks.first?.price ?? book.bids.first?.price else { return "--" }
+        return Fmt.price(v, precision: live.pricePrec)
     }
 
     private var fillsList: some View {
@@ -430,11 +550,18 @@ private struct DepthPlot: View {
                 guard let first = rows.first else { return }
                 var path = Path()
                 path.move(to: CGPoint(x: x(first.0), y: size.height))
-                for row in rows { path.addLine(to: CGPoint(x: x(row.0), y: size.height - CGFloat(row.1 / maxV) * (size.height - 8))) }
+                // 参考 App 是阶梯线：横向走到下一档价位再竖向抬升
+                var prevY = size.height
+                for row in rows {
+                    let ny = size.height - CGFloat(row.1 / maxV) * (size.height - 10)
+                    path.addLine(to: CGPoint(x: x(row.0), y: prevY))
+                    path.addLine(to: CGPoint(x: x(row.0), y: ny))
+                    prevY = ny
+                }
                 if let last = rows.last { path.addLine(to: CGPoint(x: x(last.0), y: size.height)) }
                 path.closeSubpath()
-                ctx.fill(path, with: .color(color.opacity(0.25)))
-                ctx.stroke(path, with: .color(color), lineWidth: 1.5)
+                ctx.fill(path, with: .color(color.opacity(0.12)))
+                ctx.stroke(path, with: .color(color), lineWidth: 1)
             }
             area(b.reversed(), color: up)
             area(a, color: down)
