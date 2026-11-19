@@ -295,6 +295,11 @@ struct MarketDetailView: View {
                 studyChip("撑压线", studies.supportResistance) { studies.supportResistance.toggle() }
                 studyChip("超级趋势", studies.superTrend) { studies.superTrend.toggle() }
                 studyChip("VOL", studies.vol) { studies.vol.toggle() }
+                // 参考 App 末尾还有第二个 MA（副图指标）和设置入口
+                studyChip("MA", studies.volMA) { studies.volMA.toggle() }
+                Button { showChartSettings = true } label: {
+                    Image(systemName: "chart.bar.yaxis").font(.system(size: 14)).foregroundColor(p.textPrimary)
+                }.buttonStyle(.plain)
             }
         }
     }
