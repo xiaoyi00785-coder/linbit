@@ -423,15 +423,18 @@ struct MarketDetailView: View {
             else {
                 HStack {
                     Text("时间").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("价格(USDT)").frame(width: 110, alignment: .trailing)
-                    Text("数量(\(base))").frame(width: 90, alignment: .trailing)
+                    Text("价格(USDT)").frame(width: 110, alignment: .leading)
+                    HStack(spacing: 3) {
+                        Text("数量(\(base))")
+                        Image(systemName: "triangle.fill").font(.system(size: 7)).rotationEffect(.degrees(180)).foregroundColor(p.textTertiary)
+                    }.frame(width: 100, alignment: .trailing)
                 }.font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                 ForEach(live.trades) { t in
                     HStack {
                         Text(Self.clock.string(from: t.time)).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(Fmt.price(Dec.parse(t.price), precision: live.pricePrec)).foregroundColor(t.side == "buy" ? p.up : p.down).frame(width: 110, alignment: .trailing)
-                        Text(Fmt.amount(Dec.parse(t.quantity), 5)).frame(width: 90, alignment: .trailing)
-                    }.font(.lbNum(12)).foregroundColor(p.textPrimary).frame(height: 28)
+                        Text(Fmt.price(Dec.parse(t.price), precision: live.pricePrec)).foregroundColor(t.side == "buy" ? p.up : p.down).frame(width: 110, alignment: .leading)
+                        Text(String(format: "%.5f", NSDecimalNumber(decimal: Dec.parse(t.quantity)).doubleValue)).frame(width: 100, alignment: .trailing)
+                    }.font(.lbNum(12)).foregroundColor(p.textPrimary).frame(height: 30)
                 }
             }
         }
