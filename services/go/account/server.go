@@ -52,7 +52,8 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		log.Printf("email provider: dev mock (RESEND_API_KEY/RESEND_FROM unset)")
 	}
 	mail = antiPhishingMailer{inner: mail, store: store, rec: rec}
-	codes := NewCodeService(store, mail, logSmsSender{rec: rec}, rec, rdb, now)
+	sms := newSmsSender(cfg, rec, now)
+	codes := NewCodeService(store, mail, sms, rec, rdb, now)
 	if cfg.DevMode {
 		// Dev/test: relax send throttling so smoke scripts can drive several
 		// code-gated operations back-to-back. Production keeps the real limits.
@@ -122,6 +123,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /auth/password/verify-code", s.handlePasswordVerifyCode)
+	mux.HandleFunc("POST /auth/code/verify", s.handleCodeVerify)
 	mux.HandleFunc("POST /auth/password/reset", s.handlePasswordReset)
 
 	// Public avatar retrieval: a controlled route that streams stored avatars
@@ -147,6 +149,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /account/withdraw-addresses", s.auth(http.HandlerFunc(s.handleCreateAddress)))
 	mux.Handle("DELETE /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handleDeleteAddress)))
 	mux.Handle("PATCH /account/withdraw-addresses/{id}", s.auth(http.HandlerFunc(s.handlePatchAddress)))
+	mux.Handle("POST /account/withdraw-addresses/{id}/verify-free", s.auth(http.HandlerFunc(s.handleSetAddressVerifyFree)))
 	mux.Handle("GET /account/favorites", s.auth(http.HandlerFunc(s.handleListFavorites)))
 	mux.Handle("PUT /account/favorites", s.auth(http.HandlerFunc(s.handleReplaceFavorites)))
 	mux.Handle("PUT /account/favorites/{symbol}", s.auth(http.HandlerFunc(s.handleAddFavorite)))
@@ -222,6 +225,14 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /account/passkeys/{id}", a(s.handleDeletePasskey))
 	mux.HandleFunc("POST /auth/passkey/login/begin", s.handlePasskeyLoginBegin)
 	mux.HandleFunc("POST /auth/passkey/login/finish", s.handlePasskeyLoginFinish)
+	mux.Handle("GET /account/security/u2f/keys", a(s.handleListU2F))
+	mux.Handle("POST /account/security/u2f/register/begin", a(s.handleU2FRegisterBegin))
+	mux.Handle("POST /account/security/u2f/register/finish", a(s.handleU2FRegisterFinish))
+	mux.Handle("DELETE /account/security/u2f/keys/{id}", a(s.handleDeleteU2F))
+	// The step-up assertion is used both after password-login (uid in body) and
+	// from an authed session (empty uid → use the current user).
+	mux.HandleFunc("POST /account/security/u2f/authenticate/begin", s.handleU2FAuthBegin)
+	mux.HandleFunc("POST /account/security/u2f/authenticate/finish", s.handleU2FAuthFinish)
 	mux.HandleFunc("GET /auth/providers", s.handleAuthProviders)
 	mux.HandleFunc("POST /auth/google", s.handleGoogleLogin)
 	mux.Handle("POST /account/oauth/google/link", a(s.handleGoogleLink))
@@ -241,6 +252,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /internal/admin/security-settings", s.handleInternalPutSecuritySettings)
 	mux.HandleFunc("DELETE /internal/admin/users/{uid}/withdraw-lock", s.handleInternalClearWithdrawLock)
 
+	// Account deletion (self-serve, 7-day cool-off).
+	mux.Handle("POST /account/delete-request", s.auth(http.HandlerFunc(s.handleAccountDeleteRequest)))
+	mux.Handle("POST /account/delete-cancel", s.auth(http.HandlerFunc(s.handleAccountDeleteCancel)))
+	mux.Handle("GET /account/delete-status", s.auth(http.HandlerFunc(s.handleAccountDeleteStatus)))
+
+	// Telegram binding (TG Login Widget).
+	mux.Handle("POST /account/bind-telegram", s.auth(http.HandlerFunc(s.handleBindTelegram)))
+	mux.Handle("POST /account/unbind-telegram", s.auth(http.HandlerFunc(s.handleUnbindTelegram)))
+	mux.Handle("GET /account/telegram", s.auth(http.HandlerFunc(s.handleGetTelegram)))
+
 	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))
 	mux.Handle("POST /2fa/totp/verify", s.auth(http.HandlerFunc(s.handleTOTPVerify)))
@@ -251,6 +272,7 @@ func (s *Server) Routes() http.Handler {
 	// check the destination against the user's withdrawal whitelist.
 	mux.HandleFunc("POST /internal/withdraw/verify", s.handleInternalWithdrawVerify)
 	mux.HandleFunc("GET /internal/withdraw/whitelist", s.handleInternalWithdrawWhitelist)
+	mux.HandleFunc("GET /internal/withdraw/verify-free", s.handleInternalWithdrawVerifyFree)
 	// Used by the KYC service to read (wallet limits) and raise (on approval) a
 	// user's kycLevel.
 	mux.HandleFunc("GET /internal/account/kyc-level", s.handleInternalGetKYCLevel)

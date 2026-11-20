@@ -24,6 +24,14 @@ type internalVerifyRequest struct {
 	// the withdrawal lock and fund-password policy are enforced too.
 	Action       string `json:"action,omitempty"`
 	FundPassword string `json:"fundPassword,omitempty"`
+	// SkipTwoFactor is set by the wallet when the destination address is
+	// marked verify-free. We double-check the mark here against our own
+	// store before honouring it, so a compromised wallet can't bypass 2FA
+	// by lying about the flag.
+	SkipTwoFactor bool   `json:"skipTwoFactor,omitempty"`
+	Asset         string `json:"asset,omitempty"`
+	Network       string `json:"network,omitempty"`
+	Address       string `json:"address,omitempty"`
 }
 
 // Reasons: user_not_found, account_frozen, totp_required, totp_invalid,
@@ -63,6 +71,17 @@ func (s *Server) handleInternalWithdrawVerify(w http.ResponseWriter, r *http.Req
 	if pid, err := s.store.ParentIDOf(r.Context(), u.ID); err != nil || pid != 0 {
 		common.WriteJSON(w, http.StatusOK, internalVerifyResponse{OK: false, Reason: "sub_account_withdraw_forbidden"})
 		return
+	}
+	// Verify-free: when the wallet reports the destination is marked
+	// verify-free we re-check the mark against our own store and, on match,
+	// skip the 2FA step (fund password and withdrawal lock still apply via
+	// finishOutflowVerify below).
+	if req.SkipTwoFactor && req.Asset != "" && req.Network != "" && req.Address != "" {
+		free, err := s.store.IsVerifyFreeAddress(r.Context(), u.ID, req.Asset, req.Network, req.Address)
+		if err == nil && free {
+			s.finishOutflowVerify(w, r, u, req)
+			return
+		}
 	}
 	// Second factor first (so a wrong fund password can't be probed without it).
 	if u.TOTPEnabled {
@@ -152,6 +171,39 @@ func (s *Server) handleInternalWithdrawWhitelist(w http.ResponseWriter, r *http.
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, internalWhitelistResponse{Enabled: true, Allowed: allowed})
+}
+
+type internalVerifyFreeResponse struct {
+	VerifyFree bool `json:"verifyFree"`
+}
+
+// handleInternalWithdrawVerifyFree reports whether (asset, network, address)
+// is marked verify-free for the user, i.e. the wallet may skip the 2FA /
+// code step for this destination. Called from the wallet's withdrawal path.
+//
+//	GET /internal/withdraw/verify-free?uid=&asset=&network=&address=
+func (s *Server) handleInternalWithdrawVerifyFree(w http.ResponseWriter, r *http.Request) {
+	if !s.authedInternal(r) {
+		common.WriteError(w, http.StatusUnauthorized, "AUTH_UNAUTHORIZED", "内部令牌无效")
+		return
+	}
+	q := r.URL.Query()
+	uid := strings.TrimSpace(q.Get("uid"))
+	if uid == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "缺少 uid")
+		return
+	}
+	u, err := s.store.UserByUID(r.Context(), uid)
+	if err != nil {
+		common.WriteJSON(w, http.StatusOK, internalVerifyFreeResponse{VerifyFree: false})
+		return
+	}
+	free, err := s.store.IsVerifyFreeAddress(r.Context(), u.ID, q.Get("asset"), q.Get("network"), q.Get("address"))
+	if err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, internalVerifyFreeResponse{VerifyFree: free})
 }
 
 type internalKYCLevelResponse struct {
