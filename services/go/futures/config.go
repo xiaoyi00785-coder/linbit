@@ -46,6 +46,7 @@ type Config struct {
 	MinTransfer         decimal.Decimal // FUTURES_MIN_TRANSFER (0.01 USDT)
 	TPSLRetry           time.Duration   // FUTURES_TPSL_RETRY_SECONDS (5): retry a TP/SL that found no liquidity
 	TransferRetry       time.Duration   // FUTURES_TRANSFER_RETRY_SECONDS (5): outbox retry for spot<->futures
+	AutoMarginEvery     time.Duration   // FUTURES_AUTOMARGIN_SECONDS (5): health-check interval for auto-margin top-ups
 
 	// Event contracts (business values live in ev_config, seeded from EVENT_* once).
 	EventRequireFlag     bool          // EVENT_REQUIRE_FEATURE_FLAG (true): POST /event/orders needs /app/features eventContracts=true
@@ -98,6 +99,7 @@ func LoadConfig() Config {
 		MinTransfer:            decEnv("FUTURES_MIN_TRANSFER", "0.01"),
 		TPSLRetry:              time.Duration(common.EnvInt("FUTURES_TPSL_RETRY_SECONDS", 5)) * time.Second,
 		TransferRetry:          time.Duration(common.EnvInt("FUTURES_TRANSFER_RETRY_SECONDS", 5)) * time.Second,
+		AutoMarginEvery:        time.Duration(common.EnvInt("FUTURES_AUTOMARGIN_SECONDS", 5)) * time.Second,
 		CopyMinAmount:          decEnv("FUTURES_COPY_MIN_AMOUNT", "50"),
 		CopyMaxFollowers:       common.EnvInt("FUTURES_COPY_MAX_FOLLOWERS", 2000),
 		CopyDefaultShare:       decEnv("FUTURES_COPY_DEFAULT_SHARE", "0.10"),
