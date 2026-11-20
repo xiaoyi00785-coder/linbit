@@ -99,9 +99,13 @@ WebSocket：`GET /ws`。行情频道仍可匿名。订阅 `chat:{room}` 必须�
 
 ## 6. 现货成交额与盘口
 
-`GET /market/ticker` 的 `quoteVolume` 是本所 24h 成交的 `price * quantity` 之和（计价币）。没有本所成交时为 0，**不会**改用外部指数成交额。
+`GET /market/ticker` 的 `quoteVolume` 是本所 24h 成交的 `price * quantity` 之和（计价币）。没有本所成交时为 0，不会改用外部指数成交额。`volume` 是本所基础币成交量，同样规则。生产列表里这两项为 0，且 `priceSource` 为 `index`，表示最新价来自外部指数、24h 窗口里没有本所成交；聚合代码在这种情况下明确把成交量留成 0。这不是字段映射错误。
 
-若进程重启后内存成交窗口是空的，但 1 分钟成交 K 线里仍有成交量，ticker 用这些 K 线补 24h 成交额。指数 K 线不参与。本环境访问 `api.cowa.click` 返回 HTTP 451，不能据此判断生产当前有没有成交；字段映射本身按上述规则，不是把有成交写成 0 的固定错误。
+若进程重启后内存成交窗口是空的，但 1 分钟成交 K 线里仍有成交量，ticker 用这些 K 线补 24h 成交额。指数 K 线不参与。
+
+`GET /market/ticker` 不带 `symbol` 时只返回加密现货。股票和现货贵金属用 `include=tradfi` 或 `kind=stock|metal`，或直接 `?symbol=AAPLUSDT`。每条 ticker 带 `market`（spot|futures）和 `kind`（crypto|stock|metal|commodity）。WebSocket `ticker:{symbol}` 使用同一对象，按代码订阅仍可收到 TradFi 交易对。`GET /market/categories?market=spot` 同样去掉 TradFi 成员，贵金属、股票、大宗商品分类因此为空；`kind` 标在分类上。`nonEmpty=true` 会去掉空分类。
+
+`GET /futures/market/ticker` 默认只返回加密永续。`XAGUSDT`、`WTIUSDT` 仍是期货引擎里的 TradFi 永续（`fut_contracts`、风险档、资金费和网关地区校验都还在），用 `?symbol=`、`include=tradfi` 或 `kind=metal|commodity` 读取。下单路径不改。目录仍以 `GET /tradfi/assets` 为准。
 
 盘口：
 

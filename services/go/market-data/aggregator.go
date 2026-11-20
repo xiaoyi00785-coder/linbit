@@ -157,6 +157,9 @@ type Aggregator struct {
 	index func(symbol string) (decimal.Decimal, bool)
 	// usdAnn stamps tickers from memory only. Nil leaves usd omitted.
 	usdAnn func(tickerDTO) *usdQuoteDTO
+	// classes maps a symbol to spot/futures and crypto/stock/metal/commodity.
+	// Missing entries are spot crypto.
+	classes map[string]instClass
 }
 
 type persistJob struct {
@@ -438,6 +441,12 @@ func (a *Aggregator) HasSymbol(symbol string) bool {
 	return ok
 }
 
+func (a *Aggregator) SetClasses(m map[string]instClass) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.classes = m
+}
+
 // TrackedSymbols returns the tracked symbol names.
 func (a *Aggregator) TrackedSymbols() []string {
 	a.mu.Lock()
@@ -497,8 +506,14 @@ func (a *Aggregator) TickerFrame(symbol string) (tickerDTO, bool) {
 func (a *Aggregator) tickerDTOLocked(ss *symbolState) tickerDTO {
 	p := a.prec[ss.symbol]
 	last, src := a.displayPriceLocked(ss)
+	market, kind := "spot", "crypto"
+	if c, ok := a.classes[ss.symbol]; ok && c.Kind != "" {
+		market, kind = c.Market, c.Kind
+	}
 	dto := tickerDTO{
 		Symbol:             ss.symbol,
+		Market:             market,
+		Kind:               kind,
 		PriceSource:        src,
 		LastPrice:          fmtPrec(last, p.pricePrec, p.ok),
 		PriceChangePercent: "0",

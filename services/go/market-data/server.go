@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/shopspring/decimal"
+	"context"
 	"log"
 	"net/http"
 	"sort"
@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/linbit/platform/services/go/common"
+	"github.com/shopspring/decimal"
 )
 
 // Server wires the aggregator, store, WebSocket hub and event ingest into the
@@ -120,12 +121,20 @@ func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
 		return
 	}
+	classes := s.instrumentClasses(r.Context())
+	if k := r.URL.Query().Get("kind"); !validKind(k) {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "kind 仅支持 crypto/stock/metal/commodity")
+		return
+	}
 	listed := map[string]bool{}
 	switch m := strings.ToLower(r.URL.Query().Get("market")); m {
 	case "", "spot":
 		if infos, err := s.store.Symbols(r.Context()); err == nil {
 			for _, si := range infos {
-				listed[si.Symbol] = true
+				cl := classOf(classes, si.Symbol, "spot")
+				if allowInDefaultList(cl.Kind, r.URL.Query()) {
+					listed[si.Symbol] = true
+				}
 			}
 		}
 	case "futures":
@@ -134,7 +143,10 @@ func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request) {
 			log.Printf("categories: futures symbols: %v", err)
 		}
 		for _, sym := range fs {
-			listed[sym] = true
+			cl := classOf(classes, sym, "futures")
+			if allowInDefaultList(cl.Kind, r.URL.Query()) {
+				listed[sym] = true
+			}
 		}
 	default:
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "market 仅支持 spot/futures")
@@ -167,20 +179,40 @@ func filterCategories(cats []Category, listed map[string]bool) []Category {
 				keep = append(keep, sym)
 			}
 		}
-		out = append(out, Category{ID: c.ID, Name: c.Name, Symbols: keep})
+		out = append(out, Category{ID: c.ID, Name: c.Name, Kind: categoryKind(c.ID), Symbols: keep})
 	}
 	return out
 }
 
+func (s *Server) instrumentClasses(ctx context.Context) map[string]instClass {
+	m, err := s.store.TradFiBySymbol(ctx)
+	if err != nil {
+		log.Printf("tradfi class: %v", err)
+		return map[string]instClass{}
+	}
+	if s.agg != nil {
+		s.agg.SetClasses(m)
+	}
+	return m
+}
+
 func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
+	if k := r.URL.Query().Get("kind"); !validKind(k) {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "kind 仅支持 crypto/stock/metal/commodity")
+		return
+	}
+	classes := s.instrumentClasses(r.Context())
 	symbol := r.URL.Query().Get("symbol")
 	if symbol != "" {
 		// With a symbol the response is a single Ticker object (openapi oneOf).
+		// TradFi names stay reachable this way; they are only hidden from the default list.
 		t, ok := s.agg.TickerFrame(symbol)
 		if !ok {
 			common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "交易对不存在")
 			return
 		}
+		cl := classOf(classes, t.Symbol, "spot")
+		t.Market, t.Kind = cl.Market, cl.Kind
 		t.Usd = s.usdForTicker(r.Context(), t)
 		common.WriteJSON(w, http.StatusOK, t)
 		return
@@ -190,6 +222,7 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 	// via ?symbols=), sorted server-side by ?sort=gainers|losers|volume and
 	// truncated by ?limit= (rankings).
 	q := r.URL.Query()
+	explicit := strings.TrimSpace(q.Get("symbols")) != "" || strings.TrimSpace(q.Get("category")) != ""
 	syms := s.agg.TrackedSymbols()
 	if v := strings.TrimSpace(q.Get("symbols")); v != "" {
 		syms = splitUpper(v)
@@ -209,7 +242,12 @@ func (s *Server) handleTicker(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]tickerDTO, 0, len(syms))
 	for _, sym := range syms {
+		cl := classOf(classes, sym, "spot")
+		if !explicit && !allowInDefaultList(cl.Kind, q) {
+			continue
+		}
 		if t, ok := s.agg.TickerFrame(sym); ok {
+			t.Market, t.Kind = cl.Market, cl.Kind
 			t.Usd = s.usdForTicker(r.Context(), t)
 			out = append(out, t)
 		}

@@ -91,7 +91,8 @@ func (s *Server) buildTicker(ctx context.Context, sym string, ps priceState, st 
 		return dZero
 	}
 	return map[string]any{
-		"symbol": sym, "lastPrice": last, "priceSource": src, "markPrice": ps.Mark, "indexPrice": ps.Index,
+		"symbol": sym, "market": "futures", "kind": "crypto",
+		"lastPrice": last, "priceSource": src, "markPrice": ps.Mark, "indexPrice": ps.Index,
 		"fundingRate": s.predictedRate(ps), "lastFundingRate": ps.LastRate,
 		"nextFundingTime": s.nextFunding(s.now()).UnixMilli(),
 		"openPrice24h":    z(open), "highPrice24h": z(high), "lowPrice24h": z(low),
@@ -104,20 +105,77 @@ func (s *Server) buildTicker(ctx context.Context, sym string, ps priceState, st 
 }
 
 func (s *Server) hTicker(w http.ResponseWriter, r *http.Request) {
+	if k := r.URL.Query().Get("kind"); !validInstrumentKind(k) {
+		writeErr(w, bad("VALIDATION_ERROR", "kind 仅支持 crypto/stock/metal/commodity"))
+		return
+	}
+	tradfi := s.futuresTradFi(r.Context())
 	if sym := r.URL.Query().Get("symbol"); sym != "" {
 		c, err := s.contract(sym)
 		if err != nil {
 			writeErr(w, err)
 			return
 		}
-		common.WriteJSON(w, http.StatusOK, s.ticker(r, c.Symbol))
+		common.WriteJSON(w, http.StatusOK, s.stampFuturesKind(s.ticker(r, c.Symbol), tradfi))
 		return
 	}
+	include := r.URL.Query().Get("include") == "tradfi"
+	kind := r.URL.Query().Get("kind")
 	out := []map[string]any{}
 	for _, sym := range s.symbols {
-		out = append(out, s.ticker(r, sym))
+		k := tradfi[sym]
+		if k == "" {
+			k = "crypto"
+		}
+		if !allowFuturesTicker(k, include, kind) {
+			continue
+		}
+		out = append(out, s.stampFuturesKind(s.ticker(r, sym), tradfi))
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"tickers": out})
+}
+
+func (s *Server) stampFuturesKind(t map[string]any, tradfi map[string]string) map[string]any {
+	sym, _ := t["symbol"].(string)
+	if k := tradfi[sym]; k != "" {
+		t["kind"] = k
+	}
+	return t
+}
+
+func (s *Server) futuresTradFi(ctx context.Context) map[string]string {
+	rows, err := s.db.QueryContext(ctx, `SELECT symbol, kind FROM tradfi_assets WHERE market='futures'`)
+	if err != nil {
+		return map[string]string{}
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var sym, kind string
+		if rows.Scan(&sym, &kind) == nil {
+			out[strings.ToUpper(sym)] = kind
+		}
+	}
+	return out
+}
+
+func validInstrumentKind(k string) bool {
+	switch k {
+	case "", "crypto", "stock", "metal", "commodity":
+		return true
+	default:
+		return false
+	}
+}
+
+func allowFuturesTicker(kind string, includeTradfi bool, filter string) bool {
+	if filter != "" {
+		return kind == filter
+	}
+	if kind == "" || kind == "crypto" {
+		return true
+	}
+	return includeTradfi
 }
 
 func (s *Server) hDepth(w http.ResponseWriter, r *http.Request) {
