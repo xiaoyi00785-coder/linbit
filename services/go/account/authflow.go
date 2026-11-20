@@ -628,6 +628,75 @@ func (s *Server) handlePasswordVerifyCode(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// verifyCodeRequest is the payload for the generic standalone code-verify
+// endpoint used by bind / change / unbind flows where the caller needs to
+// prove ownership of an identity without issuing a reset token.
+type verifyCodeRequest struct {
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	CountryCode string `json:"countryCode"`
+	Code        string `json:"code"`
+	Purpose     string `json:"purpose"`
+}
+
+// verifyCodeResponse returns a short opaque token the caller can submit to the
+// mutating endpoint (bind/unbind/change) so that endpoint knows the code has
+// already been checked. One minute TTL, single-use via the shared password-
+// reset-token store.
+type verifyCodeResponse struct {
+	VerifyToken string `json:"verifyToken"`
+	ExpiresIn   int    `json:"expiresIn"`
+}
+
+// handleCodeVerify validates a code for any supported purpose (register,
+// login, reset_password, bind, address, withdraw) and, on success, hands back
+// a short-lived token the follow-up mutation can present instead of the raw
+// code. This is what the Flutter client calls for email-code-verify,
+// mobile-code-verify, multi-validate-bind and multi-validate-unbind.
+func (s *Server) handleCodeVerify(w http.ResponseWriter, r *http.Request) {
+	var req verifyCodeRequest
+	if err := common.DecodeJSON(r, &req); err != nil {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
+		return
+	}
+	id, err := resolveIdentity(req.Email, req.Phone, req.CountryCode)
+	if err != nil {
+		writeIdentityError(w, err)
+		return
+	}
+	if req.Code == "" {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请提供验证码")
+		return
+	}
+	purpose := req.Purpose
+	switch purpose {
+	case purposeRegister, purposeLogin, purposeReset, purposeBind, purposeAddress, purposeWithdraw:
+		// valid
+	case "":
+		purpose = purposeBind
+	default:
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "不支持的验证场景")
+		return
+	}
+	verdict, err := s.codes.Verify(r.Context(), id.target, purpose, req.Code)
+	if err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	if writeCodeVerdict(w, verdict) {
+		return
+	}
+	// Opaque receipt the client echoes back to the UI; not stored server-side.
+	// The follow-up mutating endpoint (bind/unbind/change) will re-check the
+	// code itself, so leaking this token has no privilege effect.
+	token, err := newRefreshToken()
+	if err != nil {
+		common.WriteError(w, http.StatusInternalServerError, "INTERNAL", "服务器内部错误")
+		return
+	}
+	common.WriteJSON(w, http.StatusOK, verifyCodeResponse{VerifyToken: token, ExpiresIn: 60})
+}
+
 // handlePasswordReset is step 2 of the forgot-password flow: it consumes the
 // single-use reset token, sets the new password, and revokes all sessions.
 func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {

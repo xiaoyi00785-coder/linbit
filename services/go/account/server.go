@@ -122,6 +122,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /auth/password/verify-code", s.handlePasswordVerifyCode)
+	mux.HandleFunc("POST /auth/code/verify", s.handleCodeVerify)
 	mux.HandleFunc("POST /auth/password/reset", s.handlePasswordReset)
 
 	// Public avatar retrieval: a controlled route that streams stored avatars
