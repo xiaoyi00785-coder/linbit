@@ -537,6 +537,56 @@ services:
       futures:
         condition: service_started
 
+  web3wallet:
+    build:
+      context: .
+      dockerfile: services/go/web3wallet/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8097"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      DEV_MODE: ${WEB3_DEV_MODE:-false}
+      # Server-wide pepper mixed into the scrypt KDF of the encrypted mnemonic
+      # so a DB dump alone can't be brute-forced against a weak PIN. REQUIRED
+      # in production; leave empty in dev/CI.
+      WEB3_KEYSTORE_PEPPER: ${WEB3_KEYSTORE_PEPPER:-}
+      WEB3_MAX_PIN_ATTEMPTS: ${WEB3_MAX_PIN_ATTEMPTS:-5}
+      WEB3_LOCK_MINUTES: ${WEB3_LOCK_MINUTES:-15}
+      WEB3_HIGH_VALUE_USD: ${WEB3_HIGH_VALUE_USD:-10000}
+      # Per-chain RPCs. Empty = well-known public defaults (fine for dev; set
+      # proper Infura/Alchemy/QuickNode/etc. URLs in production).
+      ETH_RPC_URL: ${ETH_RPC_URL:-}
+      BSC_RPC_URL: ${BSC_RPC_URL:-}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL:-}
+      ARBITRUM_RPC_URL: ${ARBITRUM_RPC_URL:-}
+      BASE_RPC_URL: ${BASE_RPC_URL:-}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
+      TRON_RPC_URL: ${TRON_RPC_URL:-}
+      BTC_RPC_URL: ${BTC_RPC_URL:-}
+      # Comma-separated fallbacks tried on primary RPC error.
+      ETH_RPC_URL_FALLBACKS: ${ETH_RPC_URL_FALLBACKS:-}
+      BSC_RPC_URL_FALLBACKS: ${BSC_RPC_URL_FALLBACKS:-}
+      POLYGON_RPC_URL_FALLBACKS: ${POLYGON_RPC_URL_FALLBACKS:-}
+      ARBITRUM_RPC_URL_FALLBACKS: ${ARBITRUM_RPC_URL_FALLBACKS:-}
+      BASE_RPC_URL_FALLBACKS: ${BASE_RPC_URL_FALLBACKS:-}
+      # Explorer / NFT / aggregator keys (optional; empty disables that path).
+      ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      BSCSCAN_API_KEY: ${BSCSCAN_API_KEY:-}
+      POLYGONSCAN_API_KEY: ${POLYGONSCAN_API_KEY:-}
+      ARBISCAN_API_KEY: ${ARBISCAN_API_KEY:-}
+      BASESCAN_API_KEY: ${BASESCAN_API_KEY:-}
+      ALCHEMY_NFT_KEY: ${ALCHEMY_NFT_KEY:-}
+      MORALIS_API_KEY: ${MORALIS_API_KEY:-}
+      ONEINCH_API_KEY: ${ONEINCH_API_KEY:-}
+      LIFI_API_KEY: ${LIFI_API_KEY:-}
+      WALLETCONNECT_PROJECT_ID: ${WALLETCONNECT_PROJECT_ID:-}
+      ASSET_INTERNAL_URL: http://asset:8082
+      ACCOUNT_INTERNAL_URL: http://account:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   marketmaker:
     build:
       context: .
@@ -630,6 +680,7 @@ services:
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
+      WEB3_URL: http://web3wallet:8097
       PAPER_URL: http://paper:8094
       ADMIN_URL: http://admin:8088
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
@@ -667,6 +718,8 @@ services:
       growth:
         condition: service_started
       earn:
+        condition: service_started
+      web3wallet:
         condition: service_started
       paper:
         condition: service_started

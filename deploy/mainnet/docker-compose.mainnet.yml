@@ -68,6 +68,21 @@ services:
   earn:
     environment:
       <<: *mainnet
+  web3wallet:
+    environment:
+      <<: *mainnet
+      # Mandatory in production: without it the encrypted mnemonic blob can be
+      # brute-forced offline against a weak PIN from a DB dump.
+      WEB3_KEYSTORE_PEPPER: ${WEB3_KEYSTORE_PEPPER:?set WEB3_KEYSTORE_PEPPER (>=32 chars)}
+      # Prod RPCs: Infura/Alchemy/QuickNode (public defaults WILL rate-limit).
+      ETH_RPC_URL: ${ETH_RPC_URL:?set ETH_RPC_URL}
+      BSC_RPC_URL: ${BSC_RPC_URL:?set BSC_RPC_URL}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL:?set POLYGON_RPC_URL}
+      ARBITRUM_RPC_URL: ${ARBITRUM_RPC_URL:?set ARBITRUM_RPC_URL}
+      BASE_RPC_URL: ${BASE_RPC_URL:?set BASE_RPC_URL}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:?set SOLANA_RPC_URL}
+      TRON_RPC_URL: ${TRON_RPC_URL:?set TRON_RPC_URL}
+      BTC_RPC_URL: ${BTC_RPC_URL:?set BTC_RPC_URL}
   marketmaker:
     environment:
       <<: *mainnet
