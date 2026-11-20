@@ -52,7 +52,8 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		log.Printf("email provider: dev mock (RESEND_API_KEY/RESEND_FROM unset)")
 	}
 	mail = antiPhishingMailer{inner: mail, store: store, rec: rec}
-	codes := NewCodeService(store, mail, logSmsSender{rec: rec}, rec, rdb, now)
+	sms := newSmsSender(cfg, rec, now)
+	codes := NewCodeService(store, mail, sms, rec, rdb, now)
 	if cfg.DevMode {
 		// Dev/test: relax send throttling so smoke scripts can drive several
 		// code-gated operations back-to-back. Production keeps the real limits.
