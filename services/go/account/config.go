@@ -89,6 +89,13 @@ type Config struct {
 	// until a real provider adapter exists. No payment is created.
 	FiatOnRampProvider string
 	FiatOnRampAPIBase  string
+
+	// TelegramBotToken signs Telegram Login Widget payloads for the account
+	// binding flow. Empty = bind/unbind return TELEGRAM_UNAVAILABLE.
+	TelegramBotToken string
+	// AccountDeletionSweepInterval drives the deletion sweeper (how often it
+	// finalises pending requests whose grace period has elapsed). Default 10m.
+	AccountDeletionSweepInterval time.Duration
 }
 
 // LoadConfig reads configuration from the environment.
@@ -140,6 +147,9 @@ func LoadConfig() Config {
 		SupportGuestEntryURL:  common.Env("SUPPORT_GUEST_ENTRY_URL", ""),
 		FiatOnRampProvider:    common.Env("FIAT_ONRAMP_PROVIDER", ""),
 		FiatOnRampAPIBase:     common.Env("FIAT_ONRAMP_API_BASE", ""),
+
+		TelegramBotToken:             common.Env("TELEGRAM_BOT_TOKEN", ""),
+		AccountDeletionSweepInterval: time.Duration(common.EnvInt("ACCOUNT_DELETION_SWEEP_SECONDS", 600)) * time.Second,
 	}
 }
 

@@ -241,6 +241,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /internal/admin/security-settings", s.handleInternalPutSecuritySettings)
 	mux.HandleFunc("DELETE /internal/admin/users/{uid}/withdraw-lock", s.handleInternalClearWithdrawLock)
 
+	// Account deletion (self-serve, 7-day cool-off).
+	mux.Handle("POST /account/delete-request", s.auth(http.HandlerFunc(s.handleAccountDeleteRequest)))
+	mux.Handle("POST /account/delete-cancel", s.auth(http.HandlerFunc(s.handleAccountDeleteCancel)))
+	mux.Handle("GET /account/delete-status", s.auth(http.HandlerFunc(s.handleAccountDeleteStatus)))
+
+	// Telegram binding (TG Login Widget).
+	mux.Handle("POST /account/bind-telegram", s.auth(http.HandlerFunc(s.handleBindTelegram)))
+	mux.Handle("POST /account/unbind-telegram", s.auth(http.HandlerFunc(s.handleUnbindTelegram)))
+	mux.Handle("GET /account/telegram", s.auth(http.HandlerFunc(s.handleGetTelegram)))
+
 	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))
 	mux.Handle("POST /2fa/totp/verify", s.auth(http.HandlerFunc(s.handleTOTPVerify)))
