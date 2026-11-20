@@ -264,6 +264,13 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 		return
 	}
+	// Legacy EasiCoin paths the mobile shell still issues are rewritten to the
+	// canonical /account/* routes BEFORE auth + routing so the usual access
+	// control and upstream selection apply unchanged. See compat_v3.go.
+	if canonical, ok := legacyAlias(r.URL.Path); ok {
+		r.URL.Path = canonical
+		r.URL.RawPath = ""
+	}
 	if g.tradfi != nil && !g.tradfi.siteGeoCheck(w, r) {
 		return
 	}
