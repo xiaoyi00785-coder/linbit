@@ -135,9 +135,15 @@ type VerifyResult struct {
 
 // OutflowOpts adds the security-settings checks (withdrawal lock + fund
 // password) to Verify2FA. Action: "withdraw" | "internal_transfer".
+// SkipTwoFactor (verify-free destination) tells account to run only the
+// outflow policy (lock, fund password) without checking TOTP/email/SMS.
 type OutflowOpts struct {
-	Action       string
-	FundPassword string
+	Action        string
+	FundPassword  string
+	SkipTwoFactor bool
+	// Set together with SkipTwoFactor so account can re-verify the
+	// verify-free mark on its own side (defence in depth).
+	Asset, Network, Address string
 }
 
 // Verify2FA validates the withdrawal's second factor (TOTP when enabled, else an
@@ -146,9 +152,13 @@ func (c *AccountClient) Verify2FA(ctx context.Context, uid, totpCode, code strin
 	if c.baseURL == "" {
 		return VerifyResult{}, fmt.Errorf("account internal url not configured")
 	}
-	body := map[string]string{"uid": uid, "totpCode": totpCode, "code": code}
+	body := map[string]any{"uid": uid, "totpCode": totpCode, "code": code}
 	if len(opts) > 0 {
 		body["action"], body["fundPassword"] = opts[0].Action, opts[0].FundPassword
+		if opts[0].SkipTwoFactor {
+			body["skipTwoFactor"] = true
+			body["asset"], body["network"], body["address"] = opts[0].Asset, opts[0].Network, opts[0].Address
+		}
 	}
 	buf, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/withdraw/verify", bytes.NewReader(buf))
@@ -207,6 +217,42 @@ func (c *AccountClient) WhitelistCheck(ctx context.Context, uid, asset, network,
 		return WhitelistResult{}, err
 	}
 	return out, nil
+}
+
+// VerifyFreeCheck reports whether the destination (asset, network, address)
+// is marked verify-free for the user — in which case the wallet skips the
+// 2FA / code step on this withdrawal. A false value (or any error) falls
+// back to the normal verify flow.
+func (c *AccountClient) VerifyFreeCheck(ctx context.Context, uid, asset, network, address string) (bool, error) {
+	if c.baseURL == "" {
+		return false, fmt.Errorf("account internal url not configured")
+	}
+	q := url.Values{}
+	q.Set("uid", uid)
+	q.Set("asset", asset)
+	q.Set("network", network)
+	q.Set("address", address)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+"/internal/withdraw/verify-free?"+q.Encode(), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("X-Internal-Token", c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return false, fmt.Errorf("account verify-free status %d", resp.StatusCode)
+	}
+	var out struct {
+		VerifyFree bool `json:"verifyFree"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false, err
+	}
+	return out.VerifyFree, nil
 }
 
 // KYCLevel returns the user's current KYC level from the account service (the

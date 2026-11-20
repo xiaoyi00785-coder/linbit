@@ -14,6 +14,8 @@ func TestMobilePublicReads(t *testing.T) {
 	}
 	for _, p := range []string{"/convert/pairs", "/event/products",
 		"/strategy/grid/square", "/earn/products", "/earn/products/simple-USDT",
+		"/launchpad/projects", "/launchpad/projects/newcoin-1", "/launchpad/projects/newcoin-1/rules",
+		"/staking/validators", "/staking/validators/stk-ETH-lido",
 		"/academy/categories", "/academy/articles/1", "/cards/product", "/fiat/buy", "/support/guest", "/auth/providers", "/market/search", "/market/usd-rate",
 		"/campaigns/deposit-cashback", "/campaigns/trade-lottery"} {
 		if !g.isPublic(httptest.NewRequest("GET", p, nil)) {
@@ -25,6 +27,9 @@ func TestMobilePublicReads(t *testing.T) {
 	}
 	for _, c := range [][2]string{{"POST", "/convert/quotes"}, {"GET", "/event/orders"}, {"GET", "/chat/rooms"}, {"GET", "/chat/rooms/general/messages"}, {"POST", "/chat/rooms/BTCUSDT/messages"},
 		{"GET", "/strategy/grid/bots"}, {"GET", "/earn/positions"},
+		{"GET", "/launchpad/subscriptions"}, {"POST", "/launchpad/projects/newcoin-1/subscribe"},
+		{"POST", "/launchpad/projects/newcoin-1/cancel"}, {"GET", "/launchpad/subscriptions/newcoin-1"},
+		{"GET", "/staking/positions"}, {"POST", "/staking/stake"}, {"POST", "/staking/unstake"}, {"POST", "/staking/claim"},
 		{"POST", "/cards/applications"}, {"POST", "/fiat/buy/quotes"}, {"GET", "/cards/application"}, {"GET", "/futures/pnl/history"},
 		{"POST", "/campaigns/deposit-cashback/tiers/1/join"}, {"GET", "/campaigns/trade-lottery/entries"}, {"POST", "/account/api-keys"}} {
 		if g.isPublic(httptest.NewRequest(c[0], c[1], nil)) {
