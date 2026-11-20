@@ -29,8 +29,38 @@ type Config struct {
 
 	// --- security settings ---
 	// SMSEnabled: a real SMS provider is wired. When false (and not DevMode)
-	// SMS-dependent flows return 503 SMS_UNAVAILABLE.
+	// SMS-dependent flows return 503 SMS_UNAVAILABLE. A non-log SMSProvider
+	// below also counts as enabled (see Config.hasRealSMS).
 	SMSEnabled bool
+
+	// --- SMS providers (sms.go / sms_aliyun.go / sms_twilio.go) ---
+	// SMSProvider selects the delivery mode: "" or "log" = dev mock; "aliyun",
+	// "twilio" = all numbers go to one provider; "auto" = +86 goes to Aliyun
+	// and the rest to Twilio (both must be configured for "auto"). An unknown
+	// value falls back to the mock with a warning.
+	SMSProvider      string
+	SMSForceProvider string // "aliyun" | "twilio"; overrides routing in "auto"
+
+	// Aliyun SMS (Chinese-mainland numbers). AccessKey pair, pre-registered
+	// SignName and TemplateCode; purpose-specific template codes are optional
+	// and fall back to the default one when empty.
+	AliyunSmsEndpoint             string
+	AliyunSmsRegionID             string
+	AliyunSmsAccessKeyID          string
+	AliyunSmsAccessKeySecret      string
+	AliyunSmsSignName             string
+	AliyunSmsTemplateCode         string
+	AliyunSmsTemplateCodeLogin    string
+	AliyunSmsTemplateCodeReset    string
+	AliyunSmsTemplateCodeWithdraw string
+
+	// Twilio (international). Either FromNumber or MessagingServiceSID must be
+	// set; MessagingServiceSID wins when both are given.
+	TwilioAccountSID          string
+	TwilioAuthToken           string
+	TwilioFromNumber          string
+	TwilioMessagingServiceSID string
+	TwilioAPIBase             string
 	// WebAuthn relying party (passkeys). RPID e.g. "cowa.click"; empty disables passkeys.
 	WebAuthnRPID      string
 	WebAuthnRPName    string
@@ -98,6 +128,13 @@ type Config struct {
 	AccountDeletionSweepInterval time.Duration
 }
 
+// HasRealSMS reports whether a real SMS provider is configured. Used to
+// unlock SMS-dependent flows alongside the explicit SMS_ENABLED switch.
+func (c Config) HasRealSMS() bool {
+	p := strings.ToLower(strings.TrimSpace(c.SMSProvider))
+	return p == "aliyun" || p == "twilio" || p == "auto"
+}
+
 // LoadConfig reads configuration from the environment.
 func LoadConfig() Config {
 	return Config{
@@ -116,6 +153,24 @@ func LoadConfig() Config {
 		DefaultQuoteCurrency: common.Env("ACCOUNT_DEFAULT_QUOTE_CURRENCY", "CNY"),
 		QuoteCurrencies:      upperCSV(common.Env("ACCOUNT_QUOTE_CURRENCIES", "CNY,USD,EUR,HKD,JPY,KRW,GBP")),
 		SMSEnabled:           common.Env("SMS_ENABLED", "") == "true",
+		SMSProvider:          common.Env("SMS_PROVIDER", ""),
+		SMSForceProvider:     common.Env("SMS_FORCE_PROVIDER", ""),
+
+		AliyunSmsEndpoint:             common.Env("ALIYUN_SMS_ENDPOINT", ""),
+		AliyunSmsRegionID:             common.Env("ALIYUN_SMS_REGION_ID", ""),
+		AliyunSmsAccessKeyID:          common.Env("ALIYUN_SMS_ACCESS_KEY_ID", ""),
+		AliyunSmsAccessKeySecret:      common.Env("ALIYUN_SMS_ACCESS_KEY_SECRET", ""),
+		AliyunSmsSignName:             common.Env("ALIYUN_SMS_SIGN_NAME", ""),
+		AliyunSmsTemplateCode:         common.Env("ALIYUN_SMS_TEMPLATE_CODE", ""),
+		AliyunSmsTemplateCodeLogin:    common.Env("ALIYUN_SMS_TEMPLATE_CODE_LOGIN", ""),
+		AliyunSmsTemplateCodeReset:    common.Env("ALIYUN_SMS_TEMPLATE_CODE_RESET", ""),
+		AliyunSmsTemplateCodeWithdraw: common.Env("ALIYUN_SMS_TEMPLATE_CODE_WITHDRAW", ""),
+
+		TwilioAccountSID:          common.Env("TWILIO_ACCOUNT_SID", ""),
+		TwilioAuthToken:           common.Env("TWILIO_AUTH_TOKEN", ""),
+		TwilioFromNumber:          common.Env("TWILIO_FROM_NUMBER", ""),
+		TwilioMessagingServiceSID: common.Env("TWILIO_MESSAGING_SERVICE_SID", ""),
+		TwilioAPIBase:             common.Env("TWILIO_API_BASE", ""),
 		WebAuthnRPID:         common.Env("WEBAUTHN_RP_ID", ""),
 		WebAuthnRPName:       common.Env("WEBAUTHN_RP_NAME", "Linbit"),
 		WebAuthnRPOrigins:    splitCSV(common.Env("WEBAUTHN_RP_ORIGINS", common.Env("WEBAUTHN_ORIGINS", ""))), // WEBAUTHN_ORIGINS: legacy alias,
