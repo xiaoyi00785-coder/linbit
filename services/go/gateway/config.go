@@ -13,6 +13,7 @@ type Config struct {
 	MarketURL   string
 	KycURL      string
 	FuturesURL  string
+	OptionsURL  string
 	StrategyURL string
 	GrowthURL   string
 	EarnURL     string
@@ -50,6 +51,7 @@ func LoadConfig() Config {
 		MarketURL:         common.Env("MARKET_URL", "http://localhost:8085"),
 		KycURL:            common.Env("KYC_URL", "http://localhost:8087"),
 		FuturesURL:        common.Env("FUTURES_URL", "http://localhost:8089"),
+		OptionsURL:        common.Env("OPTIONS_URL", "http://localhost:8096"),
 		StrategyURL:       common.Env("STRATEGY_URL", "http://localhost:8090"),
 		GrowthURL:         common.Env("GROWTH_URL", "http://localhost:8091"),
 		EarnURL:           common.Env("EARN_URL", "http://localhost:8092"),

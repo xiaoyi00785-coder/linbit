@@ -481,6 +481,33 @@ services:
       market-data:
         condition: service_started
 
+  options:
+    build:
+      context: .
+      dockerfile: services/go/options/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8096"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      # Underlying index price (BTC/ETH/SOL ...): shared feed with the futures mark.
+      MARKET_URL: http://market-data:8085
+      OPTIONS_RISK_FREE_RATE: ${OPTIONS_RISK_FREE_RATE:-0.05}
+      OPTIONS_FEE_RATE: ${OPTIONS_FEE_RATE:-0.0003}
+      OPTIONS_DEFAULT_IV: ${OPTIONS_DEFAULT_IV:-0.60}
+      OPTIONS_TICK_MS: ${OPTIONS_TICK_MS:-1000}
+      OPTIONS_MARK_SAMPLE_SECONDS: ${OPTIONS_MARK_SAMPLE_SECONDS:-60}
+      OPTIONS_SETTLE_GRACE_SECONDS: ${OPTIONS_SETTLE_GRACE_SECONDS:-60}
+      OPTIONS_MAX_ORDER_QTY: ${OPTIONS_MAX_ORDER_QTY:-1000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+      market-data:
+        condition: service_started
+
   strategy:
     build:
       context: .
@@ -664,6 +691,7 @@ services:
       KYC_URL: http://kyc:8087
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
       FUTURES_URL: http://futures:8089
+      OPTIONS_URL: http://options:8096
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
@@ -699,6 +727,8 @@ services:
       kyc:
         condition: service_started
       futures:
+        condition: service_started
+      options:
         condition: service_started
       strategy:
         condition: service_started
