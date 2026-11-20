@@ -108,8 +108,26 @@ func (s *Server) submitWithdrawal(ctx context.Context, userID string, in withdra
 		return nil, errf(http.StatusBadRequest, "MIN_WITHDRAW", "提现金额需大于链上 Gas")
 	}
 
-	// Second factor (reuses account's verification via the internal endpoint).
-	vr, err := s.account.Verify2FA(ctx, userID, in.TOTPCode, in.Code, OutflowOpts{Action: "withdraw", FundPassword: in.FundPassword})
+	// Verify-free: a user may mark an address book entry "no 2FA / code
+	// required on later withdrawals" (30 days or permanent). When the mark
+	// is set and (for 30-day) still in its window, we skip the 2FA check.
+	// A network error falls back to the full verify flow.
+	free, freeErr := s.account.VerifyFreeCheck(ctx, userID, in.Asset, in.Network, in.Address)
+	if freeErr != nil {
+		log.Printf("verify-free check: %v", freeErr)
+	}
+	// Even when verify-free, the fund-password policy still applies (it is a
+	// distinct protection) — we pass an empty TOTP/code so the account side
+	// only runs the outflow check, not the 2FA check.
+	totp, code := in.TOTPCode, in.Code
+	if free && freeErr == nil {
+		totp, code = "", ""
+	}
+	vr, err := s.account.Verify2FA(ctx, userID, totp, code, OutflowOpts{
+		Action: "withdraw", FundPassword: in.FundPassword,
+		SkipTwoFactor: free && freeErr == nil,
+		Asset:         in.Asset, Network: in.Network, Address: in.Address,
+	})
 	if err != nil {
 		return nil, errf(http.StatusInternalServerError, "INTERNAL", "二次验证服务不可用")
 	}

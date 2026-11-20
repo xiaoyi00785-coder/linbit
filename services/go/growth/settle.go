@@ -125,12 +125,70 @@ func (s *Server) computeCommissions(ctx context.Context, q queryer, cutoff time.
 			continue
 		}
 		if at.Before(reg.Add(s.cfg.ReferralPeriod)) {
+			// L1 at the configured flat rate, then L2/L3 from g_referral_tiers
+			// when the chain is not interrupted by a partner (partners earn
+			// override on their sub-partners, not stacked referral).
 			add(commKey{inviter, uid, "referral", day}, "", s.cfg.ReferralRate, base)
+			chain, _ := s.inviterChain(ctx, q, inviter, 2) // up to 2 levels above inviter -> L2, L3
+			tierRates, _ := s.referralTierMap(ctx, q)
+			for i, up := range chain {
+				level := i + 2 // i=0 => L2
+				if _, isPartner := tiers[up]; isPartner {
+					break
+				}
+				rate, ok := tierRates[level]
+				if !ok || rate.Sign() <= 0 {
+					continue
+				}
+				add(commKey{up, uid, "referral", day}, "", rate, base)
+			}
 		}
 	}
 	out := make([]*commRow, 0, len(agg))
 	for _, r := range agg {
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// inviterChain returns up to `depth` ancestors above uid in g_users.
+func (s *Server) inviterChain(ctx context.Context, q queryer, uid string, depth int) ([]string, error) {
+	out := []string{}
+	cur := uid
+	for i := 0; i < depth; i++ {
+		var inv *string
+		rows, err := q.QueryContext(ctx, `SELECT inviter FROM g_users WHERE uid=$1`, cur)
+		if err != nil {
+			return out, err
+		}
+		if rows.Next() {
+			_ = rows.Scan(&inv)
+		}
+		rows.Close()
+		if inv == nil || *inv == "" {
+			break
+		}
+		out = append(out, *inv)
+		cur = *inv
+	}
+	return out, nil
+}
+
+// referralTierMap loads g_referral_tiers keyed by level (ignores disabled).
+func (s *Server) referralTierMap(ctx context.Context, q queryer) (map[int]decimal.Decimal, error) {
+	out := map[int]decimal.Decimal{}
+	rows, err := q.QueryContext(ctx, `SELECT level, rate FROM g_referral_tiers WHERE enabled`)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var lv int
+		var r decimal.Decimal
+		if err := rows.Scan(&lv, &r); err != nil {
+			return out, err
+		}
+		out[lv] = r
 	}
 	return out, rows.Err()
 }

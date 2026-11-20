@@ -32,7 +32,21 @@ services:
   account:
     environment:
       <<: *mainnet
-      SMS_ENABLED: "false"
+      SMS_ENABLED: ${SMS_ENABLED:-false}
+      SMS_PROVIDER: ${SMS_PROVIDER:-}
+      SMS_FORCE_PROVIDER: ${SMS_FORCE_PROVIDER:-}
+      ALIYUN_SMS_ACCESS_KEY_ID: ${ALIYUN_SMS_ACCESS_KEY_ID:-}
+      ALIYUN_SMS_ACCESS_KEY_SECRET: ${ALIYUN_SMS_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE:-}
+      ALIYUN_SMS_TEMPLATE_CODE_LOGIN: ${ALIYUN_SMS_TEMPLATE_CODE_LOGIN:-}
+      ALIYUN_SMS_TEMPLATE_CODE_RESET: ${ALIYUN_SMS_TEMPLATE_CODE_RESET:-}
+      ALIYUN_SMS_TEMPLATE_CODE_WITHDRAW: ${ALIYUN_SMS_TEMPLATE_CODE_WITHDRAW:-}
+      ALIYUN_SMS_REGION_ID: ${ALIYUN_SMS_REGION_ID:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
       GROWTH_INVITE_BASE_URL: ${GROWTH_INVITE_BASE_URL:-https://www.cowa.click}
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-www.cowa.click}
       WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-https://www.cowa.click}
@@ -68,6 +82,26 @@ services:
   earn:
     environment:
       <<: *mainnet
+  web3wallet:
+    environment:
+      <<: *mainnet
+      # Mandatory in production: without it the encrypted mnemonic blob can be
+      # brute-forced offline against a weak PIN from a DB dump.
+      WEB3_KEYSTORE_PEPPER: ${WEB3_KEYSTORE_PEPPER:?set WEB3_KEYSTORE_PEPPER (>=32 chars)}
+      # Prod RPCs: Infura/Alchemy/QuickNode (public defaults WILL rate-limit).
+      ETH_RPC_URL: ${ETH_RPC_URL:?set ETH_RPC_URL}
+      BSC_RPC_URL: ${BSC_RPC_URL:?set BSC_RPC_URL}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL:?set POLYGON_RPC_URL}
+      ARBITRUM_RPC_URL: ${ARBITRUM_RPC_URL:?set ARBITRUM_RPC_URL}
+      BASE_RPC_URL: ${BASE_RPC_URL:?set BASE_RPC_URL}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:?set SOLANA_RPC_URL}
+      TRON_RPC_URL: ${TRON_RPC_URL:?set TRON_RPC_URL}
+      BTC_RPC_URL: ${BTC_RPC_URL:?set BTC_RPC_URL}
+  nft:
+  launchpad:
+  staking:
+    environment:
+      <<: *mainnet
   marketmaker:
     environment:
       <<: *mainnet
@@ -92,6 +126,9 @@ services:
       # IM red-packet ledger moves run through asset; INTERNAL_TOKEN is the
       # shared secret the dev compose already pins.
       DEV_MODE: "false"
+  reports:
+    environment:
+      <<: *mainnet
   paper:
     environment:
       <<: *mainnet

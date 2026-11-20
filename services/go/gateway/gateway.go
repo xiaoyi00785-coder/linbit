@@ -88,6 +88,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	futuresProxy := newProxy(futures)
+	options, err := url.Parse(cfg.OptionsURL)
+	if err != nil {
+		return nil, err
+	}
+	optionsProxy := newProxy(options)
 	strategy, err := url.Parse(cfg.StrategyURL)
 	if err != nil {
 		return nil, err
@@ -103,6 +108,30 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	earnProxy := newProxy(earn)
+	web3, err := url.Parse(cfg.Web3URL)
+	if err != nil {
+		return nil, err
+	}
+	web3Proxy := newProxy(web3)
+	nftTarget := cfg.NftURL
+	if nftTarget == "" {
+		nftTarget = "http://localhost:8095"
+	}
+	nftParsed, err := url.Parse(nftTarget)
+	if err != nil {
+		return nil, err
+	}
+	nftProxy := newProxy(nftParsed)
+	launchpad, err := url.Parse(cfg.LaunchpadURL)
+	if err != nil {
+		return nil, err
+	}
+	launchpadProxy := newProxy(launchpad)
+	stakingTarget, err := url.Parse(cfg.StakingURL)
+	if err != nil {
+		return nil, err
+	}
+	stakingProxy := newProxy(stakingTarget)
 	adminURL := cfg.AdminURL
 	if adminURL == "" {
 		adminURL = "http://localhost:8088"
@@ -148,6 +177,14 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	}
 	// ReverseProxy transparently tunnels WebSocket upgrades (used by /im/ws).
 	imProxy := newProxy(im)
+	reports, err := url.Parse(cfg.ReportsURL)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.ReportsURL == "" {
+		reports = asset
+	}
+	reportsProxy := newProxy(reports)
 
 	if _, err := parseCIDRs(cfg.TrustedProxyCIDRs); err != nil {
 		return nil, err
@@ -163,8 +200,14 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			// Fee rates are computed by the order service (spot + futures); must
 			// precede the /account prefix.
 			{prefix: "/account/fee-rates", proxy: orderProxy},
+			// Reports owns the real-time account activity WebSocket. Must precede
+			// the /account prefix.
+			{prefix: "/account/events", exact: true, proxy: reportsProxy},
 			{prefix: "/account", proxy: accountProxy},
+			// Reports owns to-account alert subscriptions. Must precede /notifications.
+			{prefix: "/notifications/subscriptions", proxy: reportsProxy},
 			{prefix: "/notifications", proxy: accountProxy},
+			{prefix: "/reports", proxy: reportsProxy},
 			{prefix: "/vip", proxy: accountProxy},
 			{prefix: "/support", proxy: accountProxy},
 			// General transfer lives in the futures service (spot<->futures saga);
@@ -178,6 +221,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/kyc", proxy: kycProxy},
 			{prefix: "/futures", proxy: futuresProxy},
 			{prefix: "/event", proxy: futuresProxy}, // event contracts (futures service)
+			{prefix: "/options", proxy: optionsProxy}, // European options service
 			{prefix: "/strategy", proxy: strategyProxy},
 			{prefix: "/partner", proxy: growthProxy},
 			{prefix: "/referral", proxy: growthProxy},
@@ -186,14 +230,22 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/rewards", proxy: growthProxy},
 			{prefix: "/activities", proxy: growthProxy},
 			{prefix: "/coupons", proxy: growthProxy},
+			{prefix: "/rebate", proxy: growthProxy},
 			{prefix: "/loans", proxy: earnProxy},
 			{prefix: "/earn", proxy: earnProxy},
+			{prefix: "/web3", proxy: web3Proxy},
+			{prefix: "/nft", proxy: nftProxy},
+			{prefix: "/launchpad", proxy: launchpadProxy},
+			{prefix: "/staking", proxy: stakingProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/paper", proxy: paperProxy},
 			{prefix: "/price-alerts", proxy: paperProxy},
 			// market-data only serves GET /ws; /ws/* is not a route.
 			{prefix: "/ws", exact: true, proxy: marketProxy},
+			// Reports WebSocket needs optionalAuth in the public list too: the
+			// browser handshake carries ?token= which the reports service itself
+			// validates (the gateway would otherwise 401 before proxying).
 			{prefix: "/home/newcomer", proxy: growthProxy},              // newcomer task bar (growth)
 			{prefix: "/growth/config", exact: true, proxy: growthProxy}, // public program numbers (growth)
 			{prefix: "/app/features", proxy: marketProxy},               // app feature switches (market-data)
@@ -215,6 +267,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/refresh"},
 			{method: http.MethodPost, path: "/auth/password/verify-code"},
 			{method: http.MethodPost, path: "/auth/password/reset"},
+			{method: http.MethodPost, path: "/auth/code/verify"},
 			{method: http.MethodPost, path: "/auth/passkey/login/begin"},
 			{method: http.MethodPost, path: "/auth/passkey/login/finish"},
 			{method: http.MethodGet, path: "/auth/providers"},
@@ -222,6 +275,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
 			{method: "", path: "/market/"},                      // public market data (prefix)
 			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
+			{method: http.MethodGet, path: "/options/instruments"},
+			{method: http.MethodGet, path: "/options/chain"},
+			{method: http.MethodGet, path: "/options/ticker/"}, // public ticker (prefix)
 			{method: http.MethodGet, path: "/futures/copy/summary"},
 			{method: http.MethodGet, path: "/futures/copy/traders"},
 			{method: http.MethodGet, path: "/futures/copy/traders/"}, // public trader profiles (prefix)
@@ -230,6 +286,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/partner/rules"},
 			{method: http.MethodGet, path: "/points/campaigns"},
 			{method: http.MethodGet, path: "/points/campaign"},
+			{method: http.MethodGet, path: "/points/shop/products"},
+			{method: http.MethodGet, path: "/vip/levels"},
+			{method: http.MethodGet, path: "/rebate/rules"},
+			{method: http.MethodGet, path: "/referral/tiers"},
 			{method: http.MethodGet, path: "/campaigns/deposit-cashback", optionalAuth: true},
 			{method: http.MethodGet, path: "/campaigns/trade-lottery", optionalAuth: true},
 			{method: http.MethodGet, path: "/activities"},
@@ -238,6 +298,14 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/loans/quote"},
 			{method: http.MethodGet, path: "/earn/products"},
 			{method: http.MethodGet, path: "/earn/products/"}, // public product detail (prefix)
+			{method: http.MethodGet, path: "/nft/collections"},
+			{method: http.MethodGet, path: "/nft/collections/"},   // public collection detail/activity/top (prefix)
+			{method: http.MethodGet, path: "/nft/items"},          // public item list
+			{method: http.MethodGet, path: "/nft/items/", optionalAuth: true}, // item detail + activity (favorited flag needs login)
+			{method: http.MethodGet, path: "/launchpad/projects"},
+			{method: http.MethodGet, path: "/launchpad/projects/"}, // public project detail + rules (prefix)
+			{method: http.MethodGet, path: "/staking/validators"},
+			{method: http.MethodGet, path: "/staking/validators/"}, // public validator detail (prefix)
 			{method: http.MethodGet, path: "/home/banners"},   // home carousel alias (read-only)
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)
@@ -246,6 +314,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/growth/config"},     // invite/newcomer numbers (read-only)
 			{method: http.MethodGet, path: "/home/hot"},          // home hot list (read-only)
 			{method: "", path: "/ws", optionalAuth: true},        // market WebSocket; a token unlocks private channels (event:orders)
+			// Reports' account activity stream (/account/events): browsers cannot
+			// set Authorization on the WS upgrade, so the token travels as ?token=
+			// and the reports service validates it itself.
+			{method: http.MethodGet, path: "/account/events", optionalAuth: true},
 			{method: http.MethodGet, path: "/event/products"},    // event contract products (public)
 			// Chat reads require login (2026-11-08). Market data stays public.
 			{method: http.MethodGet, path: "/academy/"},                          // academy categories and published articles
@@ -274,6 +346,13 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		w.Write([]byte("ok"))
 		return
+	}
+	// Legacy EasiCoin paths the mobile shell still issues are rewritten to the
+	// canonical /account/* routes BEFORE auth + routing so the usual access
+	// control and upstream selection apply unchanged. See compat_v3.go.
+	if canonical, ok := legacyAlias(r.URL.Path); ok {
+		r.URL.Path = canonical
+		r.URL.RawPath = ""
 	}
 	if g.tradfi != nil && !g.tradfi.siteGeoCheck(w, r) {
 		return
@@ -355,9 +434,10 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		// Public route that personalises when a valid token is present; a
 		// missing or invalid token just means anonymous.
 		token := bearer(r)
-		if r.URL.Path == "/ws" {
+		if r.URL.Path == "/ws" || r.URL.Path == "/account/events" {
 			// Browsers cannot set headers on a WebSocket handshake: accept
-			// ?token= and strip it before proxying.
+			// ?token= and strip it before proxying (/account/events's reports
+			// upstream falls back to its own validation when neither is set).
 			q := r.URL.Query()
 			if token == "" {
 				token = q.Get("token")
