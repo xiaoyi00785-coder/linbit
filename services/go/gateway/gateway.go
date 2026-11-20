@@ -103,6 +103,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	earnProxy := newProxy(earn)
+	stakingTarget, err := url.Parse(cfg.StakingURL)
+	if err != nil {
+		return nil, err
+	}
+	stakingProxy := newProxy(stakingTarget)
 	adminURL := cfg.AdminURL
 	if adminURL == "" {
 		adminURL = "http://localhost:8088"
@@ -178,6 +183,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/coupons", proxy: growthProxy},
 			{prefix: "/loans", proxy: earnProxy},
 			{prefix: "/earn", proxy: earnProxy},
+			{prefix: "/staking", proxy: stakingProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
 			{prefix: "/paper", proxy: paperProxy},
@@ -228,6 +234,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/loans/quote"},
 			{method: http.MethodGet, path: "/earn/products"},
 			{method: http.MethodGet, path: "/earn/products/"}, // public product detail (prefix)
+			{method: http.MethodGet, path: "/staking/validators"},
+			{method: http.MethodGet, path: "/staking/validators/"}, // public validator detail (prefix)
 			{method: http.MethodGet, path: "/home/banners"},   // home carousel alias (read-only)
 			{method: http.MethodGet, path: "/home/placements"},
 			{method: http.MethodGet, path: "/app/features"}, // home operations slots (read-only)

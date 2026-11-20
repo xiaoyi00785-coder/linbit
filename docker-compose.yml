@@ -537,6 +537,24 @@ services:
       futures:
         condition: service_started
 
+  staking:
+    build:
+      context: .
+      dockerfile: services/go/staking/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8095"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      STAKING_TICK_MS: ${STAKING_TICK_MS:-60000}
+      DEV_MODE: ${STAKING_DEV_MODE:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+
   marketmaker:
     build:
       context: .
@@ -630,6 +648,7 @@ services:
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
+      STAKING_URL: http://staking:8095
       PAPER_URL: http://paper:8094
       ADMIN_URL: http://admin:8088
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
@@ -667,6 +686,8 @@ services:
       growth:
         condition: service_started
       earn:
+        condition: service_started
+      staking:
         condition: service_started
       paper:
         condition: service_started

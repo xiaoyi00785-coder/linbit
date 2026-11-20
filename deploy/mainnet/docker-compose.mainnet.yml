@@ -68,6 +68,9 @@ services:
   earn:
     environment:
       <<: *mainnet
+  staking:
+    environment:
+      <<: *mainnet
   marketmaker:
     environment:
       <<: *mainnet
