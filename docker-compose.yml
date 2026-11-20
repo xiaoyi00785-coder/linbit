@@ -611,6 +611,34 @@ services:
       futures:
         condition: service_started
 
+  reports:
+    build:
+      context: .
+      dockerfile: services/go/reports/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8098"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      REPORTS_EXPORTS_DIR: /data/exports
+      REPORTS_EXPORTS_TTL_HOURS: ${REPORTS_EXPORTS_TTL_HOURS:-168}
+      REPORTS_DOWNLOAD_BASE_URL: ${REPORTS_DOWNLOAD_BASE_URL:-/reports/exports}
+      REPORTS_WATCHER_MS: ${REPORTS_WATCHER_MS:-5000}
+      REPORTS_MAX_ROWS: ${REPORTS_MAX_ROWS:-200000}
+      REPORTS_TAX_COUNTRIES: ${REPORTS_TAX_COUNTRIES:-US,DE,JP,CN}
+      REPORTS_TAX_DEFAULT_COUNTRY: ${REPORTS_TAX_DEFAULT_COUNTRY:-US}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - reports_exports:/data/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      account:
+        condition: service_started
+
   gateway:
     build:
       context: .
@@ -631,6 +659,7 @@ services:
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
       PAPER_URL: http://paper:8094
+      REPORTS_URL: http://reports:8098
       ADMIN_URL: http://admin:8088
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
@@ -670,6 +699,11 @@ services:
         condition: service_started
       paper:
         condition: service_started
+      reports:
+        condition: service_started
+
+volumes:
+  reports_exports:
 
 secrets:
   signer_passphrase:

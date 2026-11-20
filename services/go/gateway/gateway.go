@@ -139,6 +139,15 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	}
 	paperProxy := newProxy(paper)
 
+	reports, err := url.Parse(cfg.ReportsURL)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.ReportsURL == "" {
+		reports = asset
+	}
+	reportsProxy := newProxy(reports)
+
 	if _, err := parseCIDRs(cfg.TrustedProxyCIDRs); err != nil {
 		return nil, err
 	}
@@ -153,8 +162,14 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			// Fee rates are computed by the order service (spot + futures); must
 			// precede the /account prefix.
 			{prefix: "/account/fee-rates", proxy: orderProxy},
+			// Reports owns the real-time account activity WebSocket. Must precede
+			// the /account prefix.
+			{prefix: "/account/events", exact: true, proxy: reportsProxy},
 			{prefix: "/account", proxy: accountProxy},
+			// Reports owns to-account alert subscriptions. Must precede /notifications.
+			{prefix: "/notifications/subscriptions", proxy: reportsProxy},
 			{prefix: "/notifications", proxy: accountProxy},
+			{prefix: "/reports", proxy: reportsProxy},
 			{prefix: "/vip", proxy: accountProxy},
 			{prefix: "/support", proxy: accountProxy},
 			// General transfer lives in the futures service (spot<->futures saga);
@@ -184,6 +199,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/price-alerts", proxy: paperProxy},
 			// market-data only serves GET /ws; /ws/* is not a route.
 			{prefix: "/ws", exact: true, proxy: marketProxy},
+			// Reports WebSocket needs optionalAuth in the public list too: the
+			// browser handshake carries ?token= which the reports service itself
+			// validates (the gateway would otherwise 401 before proxying).
 			{prefix: "/home/newcomer", proxy: growthProxy},              // newcomer task bar (growth)
 			{prefix: "/growth/config", exact: true, proxy: growthProxy}, // public program numbers (growth)
 			{prefix: "/app/features", proxy: marketProxy},               // app feature switches (market-data)
@@ -235,6 +253,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/growth/config"},     // invite/newcomer numbers (read-only)
 			{method: http.MethodGet, path: "/home/hot"},          // home hot list (read-only)
 			{method: "", path: "/ws", optionalAuth: true},        // market WebSocket; a token unlocks private channels (event:orders)
+			// Reports' account activity stream (/account/events): browsers cannot
+			// set Authorization on the WS upgrade, so the token travels as ?token=
+			// and the reports service validates it itself.
+			{method: http.MethodGet, path: "/account/events", optionalAuth: true},
 			{method: http.MethodGet, path: "/event/products"},    // event contract products (public)
 			// Chat reads require login (2026-11-08). Market data stays public.
 			{method: http.MethodGet, path: "/academy/"},                          // academy categories and published articles
@@ -343,9 +365,10 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		// Public route that personalises when a valid token is present; a
 		// missing or invalid token just means anonymous.
 		token := bearer(r)
-		if r.URL.Path == "/ws" {
+		if r.URL.Path == "/ws" || r.URL.Path == "/account/events" {
 			// Browsers cannot set headers on a WebSocket handshake: accept
-			// ?token= and strip it before proxying.
+			// ?token= and strip it before proxying (/account/events's reports
+			// upstream falls back to its own validation when neither is set).
 			q := r.URL.Query()
 			if token == "" {
 				token = q.Get("token")
