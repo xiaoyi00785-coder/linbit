@@ -68,6 +68,9 @@ services:
   earn:
     environment:
       <<: *mainnet
+  launchpad:
+    environment:
+      <<: *mainnet
   marketmaker:
     environment:
       <<: *mainnet
