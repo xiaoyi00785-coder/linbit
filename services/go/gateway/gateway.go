@@ -88,6 +88,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	futuresProxy := newProxy(futures)
+	options, err := url.Parse(cfg.OptionsURL)
+	if err != nil {
+		return nil, err
+	}
+	optionsProxy := newProxy(options)
 	strategy, err := url.Parse(cfg.StrategyURL)
 	if err != nil {
 		return nil, err
@@ -168,6 +173,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/kyc", proxy: kycProxy},
 			{prefix: "/futures", proxy: futuresProxy},
 			{prefix: "/event", proxy: futuresProxy}, // event contracts (futures service)
+			{prefix: "/options", proxy: optionsProxy}, // European options service
 			{prefix: "/strategy", proxy: strategyProxy},
 			{prefix: "/partner", proxy: growthProxy},
 			{prefix: "/referral", proxy: growthProxy},
@@ -211,6 +217,9 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/account/avatars/"}, // public avatar retrieval (prefix)
 			{method: "", path: "/market/"},                      // public market data (prefix)
 			{method: http.MethodGet, path: "/futures/market/"},  // public futures market data (prefix)
+			{method: http.MethodGet, path: "/options/instruments"},
+			{method: http.MethodGet, path: "/options/chain"},
+			{method: http.MethodGet, path: "/options/ticker/"}, // public ticker (prefix)
 			{method: http.MethodGet, path: "/futures/copy/summary"},
 			{method: http.MethodGet, path: "/futures/copy/traders"},
 			{method: http.MethodGet, path: "/futures/copy/traders/"}, // public trader profiles (prefix)
