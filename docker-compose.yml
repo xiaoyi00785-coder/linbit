@@ -857,7 +857,9 @@ services:
       earn:
         condition: service_started
       web3wallet:
+        condition: service_started
       nft:
+        condition: service_started
       staking:
         condition: service_started
       paper:
@@ -894,9 +896,6 @@ services:
       reports:
         condition: service_started
 
-volumes:
-  reports_exports:
-
 secrets:
   signer_passphrase:
     # HOST path (mode 0400); mounted in wallet-signer as /run/secrets/signer_passphrase.
@@ -905,6 +904,7 @@ secrets:
 
 volumes:
   avatars:
+  reports_exports:
   ticketattachments:
   solexport:
   signerdata:
