@@ -16,9 +16,10 @@ type Config struct {
 	OptionsURL  string
 	StrategyURL string
 	GrowthURL   string
-	EarnURL      string
+	EarnURL     string
+	NftURL      string
+	PaperURL    string
 	LaunchpadURL string
-	PaperURL     string
 	StakingURL   string
 	ReportsURL   string
 	// AdminURL is used ONLY for the public read-only announcements and /site/social.
@@ -57,6 +58,7 @@ func LoadConfig() Config {
 		StrategyURL:       common.Env("STRATEGY_URL", "http://localhost:8090"),
 		GrowthURL:         common.Env("GROWTH_URL", "http://localhost:8091"),
 		EarnURL:           common.Env("EARN_URL", "http://localhost:8092"),
+		NftURL:            common.Env("NFT_URL", "http://localhost:8095"),
 		LaunchpadURL:      common.Env("LAUNCHPAD_URL", "http://localhost:8096"),
 		StakingURL:        common.Env("STAKING_URL", "http://localhost:8095"),
 		PaperURL:          common.Env("PAPER_URL", "http://localhost:8094"),

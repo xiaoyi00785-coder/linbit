@@ -108,6 +108,15 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	earnProxy := newProxy(earn)
+	nftTarget := cfg.NftURL
+	if nftTarget == "" {
+		nftTarget = "http://localhost:8095"
+	}
+	nftParsed, err := url.Parse(nftTarget)
+	if err != nil {
+		return nil, err
+	}
+	nftProxy := newProxy(nftParsed)
 	launchpad, err := url.Parse(cfg.LaunchpadURL)
 	if err != nil {
 		return nil, err
@@ -209,6 +218,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/coupons", proxy: growthProxy},
 			{prefix: "/loans", proxy: earnProxy},
 			{prefix: "/earn", proxy: earnProxy},
+			{prefix: "/nft", proxy: nftProxy},
 			{prefix: "/launchpad", proxy: launchpadProxy},
 			{prefix: "/staking", proxy: stakingProxy},
 			{prefix: "/spot", proxy: orderProxy},
@@ -267,6 +277,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/loans/quote"},
 			{method: http.MethodGet, path: "/earn/products"},
 			{method: http.MethodGet, path: "/earn/products/"}, // public product detail (prefix)
+			{method: http.MethodGet, path: "/nft/collections"},
+			{method: http.MethodGet, path: "/nft/collections/"},   // public collection detail/activity/top (prefix)
+			{method: http.MethodGet, path: "/nft/items"},          // public item list
+			{method: http.MethodGet, path: "/nft/items/", optionalAuth: true}, // item detail + activity (favorited flag needs login)
 			{method: http.MethodGet, path: "/launchpad/projects"},
 			{method: http.MethodGet, path: "/launchpad/projects/"}, // public project detail + rules (prefix)
 			{method: http.MethodGet, path: "/staking/validators"},

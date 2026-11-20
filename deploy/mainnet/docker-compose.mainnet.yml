@@ -82,6 +82,7 @@ services:
   earn:
     environment:
       <<: *mainnet
+  nft:
   launchpad:
   staking:
     environment:
