@@ -28,6 +28,11 @@ type Config struct {
 	SnapshotEvery   time.Duration   // GRID_SNAPSHOT_SECONDS: equity curve sampling
 	SquareMinRun    time.Duration   // GRID_SQUARE_MIN_RUN_SECONDS: min runtime to appear in the strategy square
 	DefaultSellBase bool            // GRID_SELL_ON_STOP: default for "sell base when stopping"
+
+	DCAPoll            time.Duration // DCA_POLL_MS: how often the DCA scheduler wakes up
+	DCAMinInterval     int           // DCA_MIN_INTERVAL_SECONDS: lower bound for a plan's interval
+	DCAMaxPlansPerUser int           // DCA_MAX_PLANS_PER_USER
+	DCAMaxCatchup      int           // DCA_MAX_CATCHUP: max back-dated runs rolled forward in one tick (>=1)
 }
 
 func dec(key, def string) decimal.Decimal {
@@ -57,5 +62,10 @@ func LoadConfig() Config {
 		SnapshotEvery:   time.Duration(common.EnvInt("GRID_SNAPSHOT_SECONDS", 60)) * time.Second,
 		SquareMinRun:    time.Duration(common.EnvInt("GRID_SQUARE_MIN_RUN_SECONDS", 3600)) * time.Second,
 		DefaultSellBase: common.Env("GRID_SELL_ON_STOP", "true") == "true",
+
+		DCAPoll:            time.Duration(common.EnvInt("DCA_POLL_MS", 5000)) * time.Millisecond,
+		DCAMinInterval:     common.EnvInt("DCA_MIN_INTERVAL_SECONDS", 60),
+		DCAMaxPlansPerUser: common.EnvInt("DCA_MAX_PLANS_PER_USER", 20),
+		DCAMaxCatchup:      common.EnvInt("DCA_MAX_CATCHUP", 1),
 	}
 }

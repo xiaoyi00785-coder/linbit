@@ -236,6 +236,24 @@ func wouldTake(ctx context.Context, q queryer, sym, side string, px decimal.Deci
 	return ok, err
 }
 
+// fokFillable reports whether a taker of want units at limit px (own orders
+// skipped, self-trade-prevention mirrors match()) would see at least want units
+// of fillable qty on the opposite side.
+func fokFillable(ctx context.Context, q queryer, sym, uid, side string, px decimal.Decimal, want decimal.Decimal) (bool, error) {
+	opp, cmp := "sell", "<="
+	if side == "sell" {
+		opp, cmp = "buy", ">="
+	}
+	var avail decimal.Decimal
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(sum(qty - filled), 0) FROM fut_orders
+		WHERE symbol=$1 AND side=$2 AND type='limit' AND status IN ('new','partially_filled') AND user_id<>$3 AND price `+cmp+` $4`,
+		sym, opp, uid, px).Scan(&avail)
+	if err != nil {
+		return false, err
+	}
+	return avail.GreaterThanOrEqual(want), nil
+}
+
 // pickSide normalises an optional positionSide for position-level actions.
 func (s *Server) pickSide(ctx context.Context, uid, sym, side string) (string, error) {
 	side = strings.ToUpper(strings.TrimSpace(side))

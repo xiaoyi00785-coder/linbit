@@ -507,7 +507,9 @@ type contactCodeReq struct {
 	CountryCode string `json:"countryCode"`
 }
 
-func (s *Server) smsAvailable() bool { return s.cfg.DevMode || s.cfg.SMSEnabled }
+func (s *Server) smsAvailable() bool {
+	return s.cfg.DevMode || s.cfg.SMSEnabled || s.cfg.HasRealSMS()
+}
 
 // POST /account/contact/code — send a bind code to the NEW email/phone.
 func (s *Server) handleContactCode(w http.ResponseWriter, r *http.Request) {
