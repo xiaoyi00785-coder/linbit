@@ -108,6 +108,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	earnProxy := newProxy(earn)
+	web3, err := url.Parse(cfg.Web3URL)
+	if err != nil {
+		return nil, err
+	}
+	web3Proxy := newProxy(web3)
 	nftTarget := cfg.NftURL
 	if nftTarget == "" {
 		nftTarget = "http://localhost:8095"
@@ -218,6 +223,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/coupons", proxy: growthProxy},
 			{prefix: "/loans", proxy: earnProxy},
 			{prefix: "/earn", proxy: earnProxy},
+			{prefix: "/web3", proxy: web3Proxy},
 			{prefix: "/nft", proxy: nftProxy},
 			{prefix: "/launchpad", proxy: launchpadProxy},
 			{prefix: "/staking", proxy: stakingProxy},

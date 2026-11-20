@@ -17,6 +17,7 @@ type Config struct {
 	StrategyURL string
 	GrowthURL   string
 	EarnURL     string
+	Web3URL     string
 	NftURL      string
 	PaperURL    string
 	LaunchpadURL string
@@ -58,6 +59,7 @@ func LoadConfig() Config {
 		StrategyURL:       common.Env("STRATEGY_URL", "http://localhost:8090"),
 		GrowthURL:         common.Env("GROWTH_URL", "http://localhost:8091"),
 		EarnURL:           common.Env("EARN_URL", "http://localhost:8092"),
+		Web3URL:           common.Env("WEB3_URL", "http://localhost:8097"),
 		NftURL:            common.Env("NFT_URL", "http://localhost:8095"),
 		LaunchpadURL:      common.Env("LAUNCHPAD_URL", "http://localhost:8096"),
 		StakingURL:        common.Env("STAKING_URL", "http://localhost:8095"),
