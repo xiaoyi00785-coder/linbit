@@ -68,6 +68,9 @@ services:
   earn:
     environment:
       <<: *mainnet
+  nft:
+    environment:
+      <<: *mainnet
   marketmaker:
     environment:
       <<: *mainnet

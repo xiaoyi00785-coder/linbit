@@ -514,6 +514,26 @@ services:
       futures:
         condition: service_started
 
+  nft:
+    build:
+      context: .
+      dockerfile: services/go/nft/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8095"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      NFT_PAY_ASSET: ${NFT_PAY_ASSET:-USDT}
+      NFT_LISTING_MAX_DAYS: ${NFT_LISTING_MAX_DAYS:-180}
+      NFT_OFFER_MAX_DAYS: ${NFT_OFFER_MAX_DAYS:-30}
+      NFT_EXPIRY_TICK_MS: ${NFT_EXPIRY_TICK_MS:-60000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+
   earn:
     build:
       context: .
@@ -630,6 +650,7 @@ services:
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
+      NFT_URL: http://nft:8095
       PAPER_URL: http://paper:8094
       ADMIN_URL: http://admin:8088
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
@@ -667,6 +688,8 @@ services:
       growth:
         condition: service_started
       earn:
+        condition: service_started
+      nft:
         condition: service_started
       paper:
         condition: service_started
