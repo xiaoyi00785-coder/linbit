@@ -36,6 +36,8 @@ func (s *Server) Routes() http.Handler {
 			common.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 		})
 	}
+	// DCA plan routes are registered on the same mux.
+	s.dcaRoutes(mux)
 	return mux
 }
 

@@ -24,7 +24,7 @@ type AlgoOrder struct {
 	ID          int64               `json:"algoId"`
 	UserID      string              `json:"-"`
 	Symbol      string              `json:"symbol"`
-	Kind        string              `json:"algoType"` // tp | sl | plan
+	Kind        string              `json:"algoType"` // tp | sl | plan | trailing_stop
 	Side        string              `json:"side"`
 	PosSide     string              `json:"positionSide"`
 	Type        string              `json:"orderType"`
@@ -40,17 +40,25 @@ type AlgoOrder struct {
 	OrderRef    *int64              `json:"orderId"`
 	FailReason  sql.NullString      `json:"-"`
 	Reason      string              `json:"failReason,omitempty"`
-	CreatedAt   time.Time           `json:"createdAt"`
-	UpdatedAt   time.Time           `json:"updatedAt"`
-	TriggeredAt sql.NullTime        `json:"-"`
-	TrigAt      *time.Time          `json:"triggeredAt"`
+	// Trailing-stop state. Activation/CallbackRate/CallbackAmount are set on
+	// create; Peak and ActivatedAt move as the engine ticks after activation.
+	Activation     decimal.NullDecimal `json:"activationPrice"`
+	CallbackRate   decimal.NullDecimal `json:"callbackRate"`
+	CallbackAmount decimal.NullDecimal `json:"callbackAmount"`
+	Peak           decimal.NullDecimal `json:"peakPrice"`
+	ActivatedAt    sql.NullTime        `json:"-"`
+	ActivatedTS    *time.Time          `json:"activatedAt,omitempty"`
+	CreatedAt      time.Time           `json:"createdAt"`
+	UpdatedAt      time.Time           `json:"updatedAt"`
+	TriggeredAt    sql.NullTime        `json:"-"`
+	TrigAt         *time.Time          `json:"triggeredAt"`
 }
 
-const algoCols = `id, user_id, symbol, kind, side, position_side, order_type, price, qty, trigger_price, trigger_type, trigger_dir, reduce_only, tif, status, order_id, fail_reason, created_at, updated_at, triggered_at`
+const algoCols = `id, user_id, symbol, kind, side, position_side, order_type, price, qty, trigger_price, trigger_type, trigger_dir, reduce_only, tif, status, order_id, fail_reason, created_at, updated_at, triggered_at, activation_price, callback_rate, callback_amount, peak_price, activated_at`
 
 func scanAlgo(sc interface{ Scan(...any) error }) (AlgoOrder, error) {
 	var a AlgoOrder
-	err := sc.Scan(&a.ID, &a.UserID, &a.Symbol, &a.Kind, &a.Side, &a.PosSide, &a.Type, &a.Price, &a.Qty, &a.Trigger, &a.TriggerType, &a.Dir, &a.ReduceOnly, &a.TIF, &a.Status, &a.OrderID, &a.FailReason, &a.CreatedAt, &a.UpdatedAt, &a.TriggeredAt)
+	err := sc.Scan(&a.ID, &a.UserID, &a.Symbol, &a.Kind, &a.Side, &a.PosSide, &a.Type, &a.Price, &a.Qty, &a.Trigger, &a.TriggerType, &a.Dir, &a.ReduceOnly, &a.TIF, &a.Status, &a.OrderID, &a.FailReason, &a.CreatedAt, &a.UpdatedAt, &a.TriggeredAt, &a.Activation, &a.CallbackRate, &a.CallbackAmount, &a.Peak, &a.ActivatedAt)
 	if err == nil {
 		if a.OrderID.Valid {
 			v := a.OrderID.Int64
@@ -59,6 +67,10 @@ func scanAlgo(sc interface{ Scan(...any) error }) (AlgoOrder, error) {
 		if a.TriggeredAt.Valid {
 			t := a.TriggeredAt.Time
 			a.TrigAt = &t
+		}
+		if a.ActivatedAt.Valid {
+			t := a.ActivatedAt.Time
+			a.ActivatedTS = &t
 		}
 		a.Reason = a.FailReason.String
 	}
@@ -73,7 +85,14 @@ func (s *Server) triggerRef(sym, tt string) (decimal.Decimal, bool) {
 	}
 	s.pmu.RLock()
 	defer s.pmu.RUnlock()
-	if ps := s.prices[sym]; ps != nil && ps.Last.Sign() > 0 {
+	ps := s.prices[sym]
+	if tt == "INDEX" {
+		if ps != nil && ps.Index.Sign() > 0 {
+			return ps.Index, true
+		}
+		return m, ok
+	}
+	if ps != nil && ps.Last.Sign() > 0 {
 		return ps.Last, true
 	}
 	return m, ok
@@ -88,8 +107,10 @@ func normTrigger(t, def string) (string, error) {
 		return "LAST", nil
 	case "MARK", "MARK_PRICE":
 		return "MARK", nil
+	case "INDEX", "INDEX_PRICE":
+		return "INDEX", nil
 	}
-	return "", bad("VALIDATION_ERROR", "triggerPriceType 只能是 LAST 或 MARK")
+	return "", bad("VALIDATION_ERROR", "triggerPriceType 只能是 LAST、MARK 或 INDEX")
 }
 
 func fires(dir string, ref, trig decimal.Decimal) bool {
@@ -111,23 +132,36 @@ func (s *Server) checkAlgoLimit(ctx context.Context, tx *sql.Tx, uid, sym string
 }
 
 func insertAlgo(ctx context.Context, tx *sql.Tx, a AlgoOrder) (AlgoOrder, error) {
-	return scanAlgo(tx.QueryRowContext(ctx, `INSERT INTO fut_algo_orders (user_id, symbol, kind, side, position_side, order_type, price, qty, trigger_price, trigger_type, trigger_dir, reduce_only, tif)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING `+algoCols,
-		a.UserID, a.Symbol, a.Kind, a.Side, a.PosSide, a.Type, a.Price, a.Qty, a.Trigger, a.TriggerType, a.Dir, a.ReduceOnly, a.TIF))
+	return scanAlgo(tx.QueryRowContext(ctx, `INSERT INTO fut_algo_orders (user_id, symbol, kind, side, position_side, order_type, price, qty, trigger_price, trigger_type, trigger_dir, reduce_only, tif,
+			activation_price, callback_rate, callback_amount, peak_price)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING `+algoCols,
+		a.UserID, a.Symbol, a.Kind, a.Side, a.PosSide, a.Type, a.Price, a.Qty, a.Trigger, a.TriggerType, a.Dir, a.ReduceOnly, a.TIF,
+		a.Activation, a.CallbackRate, a.CallbackAmount, a.Peak))
 }
 
 // ---- TP/SL orders ----
 
+// TPSLLeg is one element of a batched tpOrders / slOrders array. An omitted qty
+// still means whole-position (same semantics as the single-pair API).
+type TPSLLeg struct {
+	Trigger     string `json:"triggerPrice"`
+	Price       string `json:"price"` // empty = market
+	TriggerType string `json:"triggerPriceType"`
+	Qty         string `json:"qty"`
+}
+
 type TPSLReq struct {
-	Symbol       string `json:"symbol"`
-	PositionSide string `json:"positionSide"`
-	Qty          string `json:"qty"` // empty = whole position (closes whatever is open at trigger time)
-	TPTrigger    string `json:"tpTriggerPrice"`
-	TPPrice      string `json:"tpPrice"` // empty = market
-	TPType       string `json:"tpTriggerPriceType"`
-	SLTrigger    string `json:"slTriggerPrice"`
-	SLPrice      string `json:"slPrice"`
-	SLType       string `json:"slTriggerPriceType"`
+	Symbol       string    `json:"symbol"`
+	PositionSide string    `json:"positionSide"`
+	Qty          string    `json:"qty"` // empty = whole position (closes whatever is open at trigger time)
+	TPTrigger    string    `json:"tpTriggerPrice"`
+	TPPrice      string    `json:"tpPrice"` // empty = market
+	TPType       string    `json:"tpTriggerPriceType"`
+	SLTrigger    string    `json:"slTriggerPrice"`
+	SLPrice      string    `json:"slPrice"`
+	SLType       string    `json:"slTriggerPriceType"`
+	TPOrders     []TPSLLeg `json:"tpOrders"` // optional batch: overrides the single-pair fields when non-empty
+	SLOrders     []TPSLLeg `json:"slOrders"`
 }
 
 func (s *Server) CreateTPSL(ctx context.Context, uid string, r TPSLReq) ([]AlgoOrder, error) {
@@ -140,6 +174,30 @@ func (s *Server) CreateTPSL(ctx context.Context, uid string, r TPSLReq) ([]AlgoO
 		if side, err = s.defaultCloseSide(ctx, uid, c.Symbol); err != nil {
 			return nil, err
 		}
+	}
+	type leg struct {
+		kind, trig, px, tt, qty string
+	}
+	// Batched arrays override the single-pair fields when either is non-empty.
+	var legs []leg
+	if len(r.TPOrders) > 0 || len(r.SLOrders) > 0 {
+		for _, l := range r.TPOrders {
+			legs = append(legs, leg{"tp", l.Trigger, l.Price, l.TriggerType, l.Qty})
+		}
+		for _, l := range r.SLOrders {
+			legs = append(legs, leg{"sl", l.Trigger, l.Price, l.TriggerType, l.Qty})
+		}
+	} else {
+		legs = []leg{{"tp", r.TPTrigger, r.TPPrice, r.TPType, r.Qty}, {"sl", r.SLTrigger, r.SLPrice, r.SLType, r.Qty}}
+	}
+	n := 0
+	for _, l := range legs {
+		if strings.TrimSpace(l.trig) != "" {
+			n++
+		}
+	}
+	if n == 0 {
+		return nil, bad("VALIDATION_ERROR", "请填写止盈或止损触发价")
 	}
 	var out []AlgoOrder
 	err = s.withTx(ctx, func(tx *sql.Tx) error {
@@ -167,45 +225,60 @@ func (s *Server) CreateTPSL(ctx context.Context, uid string, r TPSLReq) ([]AlgoO
 		if !long {
 			closeSide = "buy"
 		}
-		var qty decimal.NullDecimal
-		if q := strings.TrimSpace(r.Qty); q != "" {
+		// Per-leg qty: empty string leaves the leg at "whole position". The batch
+		// may mix whole-position and partial legs.
+		posQty := p.Qty.Abs()
+		parseQty := func(q string) (decimal.NullDecimal, error) {
+			q = strings.TrimSpace(q)
+			if q == "" {
+				return decimal.NullDecimal{}, nil
+			}
 			d, err := decimal.NewFromString(q)
 			if err != nil || d.Sign() <= 0 || !isStep(d, c.MinQty) {
-				return bad("INVALID_QTY", fmt.Sprintf("数量须为 %s 的整数倍", c.MinQty))
+				return decimal.NullDecimal{}, bad("INVALID_QTY", fmt.Sprintf("数量须为 %s 的整数倍", c.MinQty))
 			}
-			if d.GreaterThan(p.Qty.Abs()) {
-				return bad("INVALID_QTY", "止盈止损数量不能超过持仓数量")
+			if d.GreaterThan(posQty) {
+				return decimal.NullDecimal{}, bad("INVALID_QTY", "止盈止损数量不能超过持仓数量")
 			}
-			qty = decimal.NullDecimal{Decimal: d, Valid: true}
+			return decimal.NullDecimal{Decimal: d, Valid: true}, nil
 		}
-		type leg struct {
-			kind, trig, px, tt string
-		}
-		legs := []leg{{"tp", r.TPTrigger, r.TPPrice, r.TPType}, {"sl", r.SLTrigger, r.SLPrice, r.SLType}}
-		n := 0
+		// 全仓止盈止损是"设置/修改"语义：同一持仓方向上已有的全仓 tp/sl 由新的替换
+		// （先撤旧，再挂新），而不是叠加出第二组。部分数量的止盈止损仍可多组并存。
+		anyWhole := map[string]bool{}
 		for _, l := range legs {
-			if strings.TrimSpace(l.trig) != "" {
-				n++
+			if strings.TrimSpace(l.trig) == "" {
+				continue
+			}
+			if strings.TrimSpace(l.qty) == "" {
+				anyWhole[l.kind] = true
 			}
 		}
-		if n == 0 {
-			return bad("VALIDATION_ERROR", "请填写止盈或止损触发价")
+		var kinds []string
+		for k := range anyWhole {
+			kinds = append(kinds, k)
 		}
-		// 全仓止盈止损是"设置/修改"语义：同一持仓方向上已有的全仓 tp/sl 由新的替换（先撤旧，再挂新），
-		// 而不是叠加出第二组。部分数量的止盈止损仍可多组并存。
-		if !qty.Valid {
-			var kinds []string
-			for _, l := range legs {
-				if strings.TrimSpace(l.trig) != "" {
-					kinds = append(kinds, l.kind)
-				}
-			}
-			if err := cancelPositionTPSL(ctx, tx, uid, c.Symbol, side, kinds); err != nil {
-				return err
-			}
+		if err := cancelPositionTPSL(ctx, tx, uid, c.Symbol, side, kinds); err != nil {
+			return err
 		}
 		if err := s.checkAlgoLimit(ctx, tx, uid, c.Symbol, n, cfg); err != nil {
 			return err
+		}
+		// Partial legs must not oversubscribe the position (sum per kind <= posQty).
+		sum := map[string]decimal.Decimal{}
+		for _, l := range legs {
+			if strings.TrimSpace(l.trig) == "" || strings.TrimSpace(l.qty) == "" {
+				continue
+			}
+			d, err := decimal.NewFromString(strings.TrimSpace(l.qty))
+			if err != nil {
+				continue // parseQty catches this below
+			}
+			sum[l.kind] = sum[l.kind].Add(d)
+		}
+		for k, v := range sum {
+			if v.GreaterThan(posQty) {
+				return bad("INVALID_QTY", fmt.Sprintf("%s 分批数量之和超过持仓数量", k))
+			}
 		}
 		for _, l := range legs {
 			if strings.TrimSpace(l.trig) == "" {
@@ -227,6 +300,10 @@ func (s *Server) CreateTPSL(ctx context.Context, uid string, r TPSLReq) ([]AlgoO
 			up := (l.kind == "tp") == long
 			if (up && !trig.GreaterThan(ref)) || (!up && !trig.LessThan(ref)) {
 				return bad("INVALID_TPSL", "止盈/止损触发价方向不正确")
+			}
+			qty, err := parseQty(l.qty)
+			if err != nil {
+				return err
 			}
 			a := AlgoOrder{UserID: uid, Symbol: c.Symbol, Kind: l.kind, Side: closeSide, PosSide: side, Type: "market", Qty: qty,
 				Trigger: trig, TriggerType: tt, Dir: "down", ReduceOnly: true, TIF: "GTC"}
@@ -277,11 +354,17 @@ func (s *Server) CreatePlan(ctx context.Context, uid string, r PlaceReq) (AlgoOr
 	if tif == "GTX" {
 		tif = "POST_ONLY"
 	}
-	if tif != "GTC" && tif != "IOC" && tif != "POST_ONLY" {
-		return AlgoOrder{}, bad("VALIDATION_ERROR", "timeInForce 仅支持 GTC/IOC/POST_ONLY")
+	if r.PostOnly && tif == "GTC" {
+		tif = "POST_ONLY"
+	}
+	if tif != "GTC" && tif != "IOC" && tif != "FOK" && tif != "POST_ONLY" {
+		return AlgoOrder{}, bad("VALIDATION_ERROR", "timeInForce 仅支持 GTC/IOC/FOK/POST_ONLY")
 	}
 	if tif == "POST_ONLY" && typ != "limit" {
 		return AlgoOrder{}, bad("VALIDATION_ERROR", "只做 Maker（POST_ONLY）仅支持限价单")
+	}
+	if tif == "FOK" && typ != "limit" {
+		return AlgoOrder{}, bad("VALIDATION_ERROR", "全额成交或撤销（FOK）仅支持限价单")
 	}
 	if strings.TrimSpace(r.TP) != "" || strings.TrimSpace(r.SL) != "" {
 		return AlgoOrder{}, bad("VALIDATION_ERROR", "计划委托暂不支持附带止盈止损，请在成交后设置")
@@ -373,10 +456,10 @@ func (s *Server) CancelAlgo(ctx context.Context, uid string, id int64, kinds []s
 // ---- watcher ----
 
 // triggerAlgos fires active algo orders whose trigger price was reached and
-// expires TP/SL orders whose position is gone. Caller holds s.mu.
+// expires TP/SL / trailing-stop orders whose position is gone. Caller holds s.mu.
 func (s *Server) triggerAlgos(ctx context.Context) {
 	_, _ = s.db.ExecContext(ctx, `UPDATE fut_algo_orders a SET status='canceled', fail_reason='position_closed', updated_at=now()
-		WHERE a.status='active' AND a.kind IN ('tp','sl') AND NOT EXISTS (SELECT 1 FROM fut_positions p WHERE p.user_id=a.user_id AND p.symbol=a.symbol AND p.position_side=a.position_side AND p.qty<>0)`)
+		WHERE a.status='active' AND a.kind IN ('tp','sl','trailing_stop') AND NOT EXISTS (SELECT 1 FROM fut_positions p WHERE p.user_id=a.user_id AND p.symbol=a.symbol AND p.position_side=a.position_side AND p.qty<>0)`)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+algoCols+` FROM fut_algo_orders WHERE status='active' ORDER BY id`)
 	if err != nil {
 		return
@@ -390,7 +473,26 @@ func (s *Server) triggerAlgos(ctx context.Context) {
 	rows.Close()
 	for _, a := range list {
 		ref, ok := s.triggerRef(a.Symbol, a.TriggerType)
-		if !ok || !fires(a.Dir, ref, a.Trigger) {
+		if !ok {
+			continue
+		}
+		if a.Kind == "trailing_stop" {
+			peak, nowAct, fire := updateTrailing(a, ref)
+			if nowAct {
+				// First activation on this tick: record peak and activated_at.
+				_, _ = s.db.ExecContext(ctx, `UPDATE fut_algo_orders SET activated_at=now(), peak_price=$2, updated_at=now() WHERE id=$1 AND status='active'`, a.ID, peak)
+				continue
+			}
+			if !a.Peak.Valid || !peak.Equal(a.Peak.Decimal) {
+				_, _ = s.db.ExecContext(ctx, `UPDATE fut_algo_orders SET peak_price=$2, updated_at=now() WHERE id=$1 AND status='active'`, a.ID, peak)
+			}
+			if !fire {
+				continue
+			}
+			s.fireAlgo(ctx, a)
+			continue
+		}
+		if !fires(a.Dir, ref, a.Trigger) {
 			continue
 		}
 		s.fireAlgo(ctx, a)
@@ -413,7 +515,7 @@ func (s *Server) fireAlgo(ctx context.Context, a AlgoOrder) {
 	if a.Price.Valid {
 		req.Price = a.Price.Decimal.String()
 	}
-	if a.Kind == "tp" || a.Kind == "sl" {
+	if a.Kind == "tp" || a.Kind == "sl" || a.Kind == "trailing_stop" {
 		p, _, err := loadPosition(ctx, s.db, a.UserID, a.Symbol, a.PosSide, false)
 		if err != nil {
 			fail("internal")

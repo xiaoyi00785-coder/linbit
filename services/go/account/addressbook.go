@@ -68,14 +68,21 @@ func (s *Store) UpdateWithdrawAddress(ctx context.Context, userID int64, id stri
 	if wl != nil {
 		b = *wl
 	}
+	var vfu sql.NullTime
 	err := s.db.QueryRowContext(ctx,
 		`UPDATE withdraw_addresses SET
 		   label = COALESCE($3::text, label),
 		   memo = COALESCE($4::text, memo),
 		   whitelisted = COALESCE($5::boolean, whitelisted)
 		 WHERE user_id = $1 AND id::text = $2
-		 RETURNING id::text, asset, network, address, memo, label, whitelisted, created_at`,
-		userID, id, l, m, b).Scan(&a.ID, &a.Asset, &a.Network, &a.Address, &a.Memo, &a.Label, &a.Whitelisted, &a.CreatedAt)
+		 RETURNING id::text, asset, network, address, memo, label, whitelisted, created_at,
+		           verify_free_mode, verify_free_until`,
+		userID, id, l, m, b).Scan(&a.ID, &a.Asset, &a.Network, &a.Address, &a.Memo, &a.Label, &a.Whitelisted, &a.CreatedAt,
+		&a.VerifyFreeMode, &vfu)
+	if vfu.Valid {
+		t := vfu.Time
+		a.VerifyFreeUntil = &t
+	}
 	if err != nil && uniqueConstraint(err) != "" {
 		return a, ErrAddressExists
 	}

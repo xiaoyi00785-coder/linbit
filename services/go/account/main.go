@@ -41,6 +41,9 @@ func main() {
 
 	srv := NewServer(cfg, NewStore(db), rdb)
 	go srv.vipRecomputeLoop(context.Background())
+	go srv.RunVerifyFreeExpiry(context.Background())
+	stopSweeper := srv.StartDeletionSweeper(cfg.AccountDeletionSweepInterval)
+	defer stopSweeper()
 	addr := ":" + cfg.Port
 	log.Printf("account service listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

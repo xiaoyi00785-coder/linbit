@@ -17,6 +17,15 @@ type Server struct {
 	db       *sql.DB
 	mu       sync.Mutex // serialises all bot state changes (poller + API)
 	lastSnap map[int64]time.Time
+
+	// nowFn is the clock the DCA scheduler reads; tests override it.
+	nowFn func() time.Time
+	// marketPriceFn, placeFn, orderInfoFn, symbolFn are injection hooks for
+	// the DCA scheduler's unit tests. When nil, the real HTTP client is used.
+	marketPriceFn func(ctx context.Context, sym string) (decimal.Decimal, error)
+	placeFn       func(ctx context.Context, uid string, r placeReq) (orderDTO, error)
+	orderInfoFn   func(ctx context.Context, uid, id string) (orderInfo, error)
+	symbolFn      func(ctx context.Context, sym string) (SymbolInfo, error)
 }
 
 func NewServer(cfg Config, db *sql.DB) *Server {
