@@ -631,6 +631,7 @@ services:
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
       PAPER_URL: http://paper:8094
+      IM_URL: http://im:8096
       ADMIN_URL: http://admin:8088
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
       # Browser CORS allow-list (empty = dev default: localhost/127.0.0.1 any port).
@@ -669,6 +670,35 @@ services:
       earn:
         condition: service_started
       paper:
+        condition: service_started
+      im:
+        condition: service_started
+
+  im:
+    build:
+      context: .
+      dockerfile: services/go/im/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8096"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-change-me-redis-password}@redis:6379}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      ACCOUNT_INTERNAL_URL: http://account:8081
+      IM_TOKEN_TTL_SECONDS: ${IM_TOKEN_TTL_SECONDS:-86400}
+      IM_REDPACKET_EXPIRE_HOURS: ${IM_REDPACKET_EXPIRE_HOURS:-24}
+      IM_REDPACKET_MAX_USDT: ${IM_REDPACKET_MAX_USDT:-20000}
+      IM_REDPACKET_MIN_USDT: ${IM_REDPACKET_MIN_USDT:-0.01}
+      IM_REDPACKET_MAX_SHARES: ${IM_REDPACKET_MAX_SHARES:-200}
+      IM_RECALL_WINDOW_SECONDS: ${IM_RECALL_WINDOW_SECONDS:-120}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      asset:
         condition: service_started
 
 secrets:

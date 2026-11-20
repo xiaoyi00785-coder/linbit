@@ -17,6 +17,7 @@ type Config struct {
 	GrowthURL   string
 	EarnURL     string
 	PaperURL    string
+	IMURL       string
 	// AdminURL is used ONLY for the public read-only announcements and /site/social.
 	AdminURL string
 	RedisURL string
@@ -53,6 +54,7 @@ func LoadConfig() Config {
 		GrowthURL:         common.Env("GROWTH_URL", "http://localhost:8091"),
 		EarnURL:           common.Env("EARN_URL", "http://localhost:8092"),
 		PaperURL:          common.Env("PAPER_URL", "http://localhost:8094"),
+		IMURL:             common.Env("IM_URL", "http://localhost:8096"),
 		AdminURL:          common.Env("ADMIN_URL", "http://localhost:8088"),
 		RedisURL:          common.Env("REDIS_URL", ""),
 		InternalToken:     common.Env("INTERNAL_TOKEN", ""),
