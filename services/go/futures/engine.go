@@ -331,6 +331,15 @@ func (s *Server) fill(ctx context.Context, tx *sql.Tx, c Contract, uid, posSide 
 	if err = savePosition(ctx, tx, p); err != nil {
 		return
 	}
+	if nq.IsZero() {
+		var other int
+		_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM fut_positions WHERE user_id=$1 AND symbol=$2 AND qty<>0`, uid, c.Symbol).Scan(&other)
+		if other == 0 {
+			if err = resetAutoMarginUsed(ctx, tx, uid, c.Symbol); err != nil {
+				return
+			}
+		}
+	}
 	if s.traders[uid] && !oldQ.Equal(nq) {
 		if _, err = tx.ExecContext(ctx, `INSERT INTO fut_copy_events (trader, symbol, old_qty, new_qty, price) VALUES ($1,$2,$3,$4,$5)`, uid, c.Symbol, oldQ, nq, px); err != nil {
 			return
@@ -368,9 +377,13 @@ type PlaceReq struct {
 	Price      string `json:"price"`
 	Qty        string `json:"qty"`
 	ReduceOnly bool   `json:"reduceOnly"`
-	TP         string `json:"tpPrice"`
-	SL         string `json:"slPrice"`
-	// TPType / SLType: trigger price type for the attached TP / SL (LAST | MARK, default MARK).
+	// PostOnly is an alias for timeInForce=POST_ONLY (EasiCoin / Binance payloads
+	// carry it as a separate boolean alongside TIF=GTC). Either form works and
+	// POST_ONLY wins when both are set.
+	PostOnly bool   `json:"postOnly"`
+	TP       string `json:"tpPrice"`
+	SL       string `json:"slPrice"`
+	// TPType / SLType: trigger price type for the attached TP / SL (LAST | MARK | INDEX, default MARK).
 	TPType string `json:"tpTriggerPriceType"`
 	SLType string `json:"slTriggerPriceType"`
 	// PositionSide: BOTH (default, one-way mode) or LONG/SHORT (hedge mode).
@@ -378,8 +391,12 @@ type PlaceReq struct {
 	// TriggerPrice turns the request into a plan (conditional) order; see algo.go.
 	TriggerPrice string `json:"triggerPrice"`
 	TriggerType  string `json:"triggerPriceType"`
-	source       string
-	algoID       int64
+	// Trailing-stop fields (ignored unless type == "trailing_stop"); see algo.go.
+	ActivationPrice string `json:"activationPrice"`
+	CallbackRate    string `json:"callbackRate"`
+	CallbackAmount  string `json:"callbackAmount"`
+	source          string
+	algoID          int64
 }
 
 func optDec(v string) (decimal.NullDecimal, error) {
@@ -426,8 +443,14 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 	if r.TIF == "GTX" {
 		r.TIF = "POST_ONLY"
 	}
-	if r.TIF != "GTC" && r.TIF != "IOC" && r.TIF != "POST_ONLY" {
-		return Order{}, nil, bad("VALIDATION_ERROR", "timeInForce 仅支持 GTC/IOC/POST_ONLY")
+	if r.PostOnly && r.TIF == "GTC" {
+		r.TIF = "POST_ONLY"
+	}
+	if r.TIF != "GTC" && r.TIF != "IOC" && r.TIF != "FOK" && r.TIF != "POST_ONLY" {
+		return Order{}, nil, bad("VALIDATION_ERROR", "timeInForce 仅支持 GTC/IOC/FOK/POST_ONLY")
+	}
+	if r.TIF == "FOK" && r.Type != "limit" {
+		return Order{}, nil, bad("VALIDATION_ERROR", "全额成交或撤销（FOK）仅支持限价单")
 	}
 	if r.TIF == "POST_ONLY" {
 		if r.Type != "limit" {
@@ -547,6 +570,13 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 				return err
 			} else if cross {
 				return bad("POST_ONLY_REJECTED", "只做 Maker 订单会立即成交，已拒绝")
+			}
+		}
+		if r.TIF == "FOK" {
+			if ok, err := fokFillable(ctx, tx, c.Symbol, uid, r.Side, price.Decimal, qty); err != nil {
+				return err
+			} else if !ok {
+				return bad("FOK_REJECTED", "全额成交或撤销（FOK）无法全部成交，已拒绝")
 			}
 		}
 		var algo any
@@ -709,11 +739,14 @@ func (s *Server) match(ctx context.Context, tx *sql.Tx, c Contract, taker *Order
 		trades = append(trades, t)
 	}
 	if taker.open() && taker.remaining().Sign() > 0 {
-		if taker.Type == "market" || taker.TIF == "IOC" || reason == "reduce_only" {
+		if taker.Type == "market" || taker.TIF == "IOC" || taker.TIF == "FOK" || reason == "reduce_only" {
 			if reason == "" {
 				reason = "no_liquidity"
 				if taker.TIF == "IOC" && taker.Type == "limit" {
 					reason = "ioc_remainder"
+				}
+				if taker.TIF == "FOK" {
+					reason = "fok_remainder"
 				}
 			}
 			if err := releaseOrder(ctx, tx, taker, reason); err != nil {

@@ -35,13 +35,13 @@ func TestTriggerHelpers(t *testing.T) {
 	if !fires("up", d("100"), d("100")) || fires("up", d("99.9"), d("100")) || !fires("down", d("99"), d("100")) || fires("down", d("101"), d("100")) {
 		t.Fatal("fires")
 	}
-	for in, want := range map[string]string{"": "MARK", "last": "LAST", "MARK_PRICE": "MARK", "CONTRACT_PRICE": "LAST"} {
+	for in, want := range map[string]string{"": "MARK", "last": "LAST", "MARK_PRICE": "MARK", "CONTRACT_PRICE": "LAST", "INDEX": "INDEX", "index_price": "INDEX"} {
 		if got, err := normTrigger(in, "MARK"); err != nil || got != want {
 			t.Errorf("normTrigger(%q)=%s,%v", in, got, err)
 		}
 	}
-	if _, err := normTrigger("INDEX", "MARK"); err == nil {
-		t.Fatal("INDEX should be rejected")
+	if _, err := normTrigger("STAR", "MARK"); err == nil {
+		t.Fatal("unknown trigger type should be rejected")
 	}
 	if !losesPriority(d("1"), d("2"), d("1"), d("1")) || !losesPriority(d("1"), d("1"), d("1"), d("2")) || losesPriority(d("1"), d("1"), d("2"), d("1")) {
 		t.Fatal("losesPriority")
