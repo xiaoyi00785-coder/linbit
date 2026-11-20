@@ -522,16 +522,21 @@ func (s *Store) ConsumeLoginChallenge(ctx context.Context, id int64) error {
 
 // ---- withdraw address book ----
 
-// WithdrawAddress is an address-book entry.
+// WithdrawAddress is an address-book entry. VerifyFreeMode (none|30_days|
+// permanent) and VerifyFreeUntil let a user skip the 2FA / code check on
+// repeat withdrawals to this exact (asset, network, address) tuple; see
+// addressverifyfree.go.
 type WithdrawAddress struct {
-	ID          string    `json:"id"`
-	Asset       string    `json:"asset"`
-	Network     string    `json:"network"`
-	Address     string    `json:"address"`
-	Memo        string    `json:"memo"`
-	Label       string    `json:"label"`
-	Whitelisted bool      `json:"whitelisted"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID              string     `json:"id"`
+	Asset           string     `json:"asset"`
+	Network         string     `json:"network"`
+	Address         string     `json:"address"`
+	Memo            string     `json:"memo"`
+	Label           string     `json:"label"`
+	Whitelisted     bool       `json:"whitelisted"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	VerifyFreeMode  string     `json:"verifyFreeMode"`
+	VerifyFreeUntil *time.Time `json:"verifyFreeUntil,omitempty"`
 }
 
 // ErrAddressExists is returned when inserting a duplicate address-book entry.
@@ -556,7 +561,8 @@ func (s *Store) CreateWithdrawAddress(ctx context.Context, userID int64, a Withd
 // ListWithdrawAddresses returns the user's address book, newest first.
 func (s *Store) ListWithdrawAddresses(ctx context.Context, userID int64) ([]WithdrawAddress, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id::text, asset, network, address, memo, label, whitelisted, created_at
+		`SELECT id::text, asset, network, address, memo, label, whitelisted, created_at,
+		        verify_free_mode, verify_free_until
 		 FROM withdraw_addresses WHERE user_id = $1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -565,8 +571,14 @@ func (s *Store) ListWithdrawAddresses(ctx context.Context, userID int64) ([]With
 	var out []WithdrawAddress
 	for rows.Next() {
 		var a WithdrawAddress
-		if err := rows.Scan(&a.ID, &a.Asset, &a.Network, &a.Address, &a.Memo, &a.Label, &a.Whitelisted, &a.CreatedAt); err != nil {
+		var vfu sql.NullTime
+		if err := rows.Scan(&a.ID, &a.Asset, &a.Network, &a.Address, &a.Memo, &a.Label, &a.Whitelisted, &a.CreatedAt,
+			&a.VerifyFreeMode, &vfu); err != nil {
 			return nil, err
+		}
+		if vfu.Valid {
+			t := vfu.Time
+			a.VerifyFreeUntil = &t
 		}
 		out = append(out, a)
 	}

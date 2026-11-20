@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -39,6 +40,7 @@ func main() {
 	}
 
 	srv := NewServer(cfg, NewStore(db), rdb)
+	go srv.RunVerifyFreeExpiry(context.Background())
 	stopSweeper := srv.StartDeletionSweeper(cfg.AccountDeletionSweepInterval)
 	defer stopSweeper()
 	addr := ":" + cfg.Port
