@@ -40,7 +40,8 @@ func main() {
 	}
 	srv := NewServer(cfg, db)
 	go srv.Run(context.Background())
-	log.Printf("strategy service listening on :%s (poll=%s order=%s market=%s)", cfg.Port, cfg.Poll, cfg.OrderURL, cfg.MarketURL)
+	go srv.RunDCA(context.Background())
+	log.Printf("strategy service listening on :%s (poll=%s dca=%s order=%s market=%s)", cfg.Port, cfg.Poll, cfg.DCAPoll, cfg.OrderURL, cfg.MarketURL)
 	if err := http.ListenAndServe(":"+cfg.Port, srv.Routes()); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
