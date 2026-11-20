@@ -204,6 +204,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodPost, path: "/auth/refresh"},
 			{method: http.MethodPost, path: "/auth/password/verify-code"},
 			{method: http.MethodPost, path: "/auth/password/reset"},
+			{method: http.MethodPost, path: "/auth/code/verify"},
 			{method: http.MethodPost, path: "/auth/passkey/login/begin"},
 			{method: http.MethodPost, path: "/auth/passkey/login/finish"},
 			{method: http.MethodGet, path: "/auth/providers"},
