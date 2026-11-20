@@ -191,6 +191,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /internal/vip/applications", s.handleInternalListVIP)
 	mux.HandleFunc("POST /internal/vip/applications/{id}/review", s.handleInternalReviewVIP)
 
+	// VIP tier system (equity/volume based; separate from the manual concierge).
+	mux.HandleFunc("GET /vip/levels", s.handleVIPLevels)
+	mux.Handle("GET /vip/me", s.auth(http.HandlerFunc(s.handleVIPMe)))
+	mux.HandleFunc("GET /internal/vip/fee-rate", s.handleInternalVIPFeeRate)
+
 	// Support tickets (站内客服工单).
 	mux.Handle("POST /support/attachments", s.auth(http.HandlerFunc(s.handleTicketUpload)))
 	mux.Handle("GET /support/attachments/{id}", s.auth(http.HandlerFunc(s.handleTicketAttachment)))

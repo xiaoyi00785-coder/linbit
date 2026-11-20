@@ -182,9 +182,13 @@ func (s *Server) syncFutures(ctx context.Context) (int, error) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	for _, t := range out.Items {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO g_fee_events (src, src_id, uid, product, notional, fee, bonus_fee, copy, at)
-			VALUES ('futures',$1,$2,'futures',$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
-			fmt.Sprintf("%d:%s", t.TradeID, t.Role), t.UserID, t.Notional.Round(8), t.Fee.Round(12), t.BonusFee.Round(12), t.Copy, time.UnixMilli(t.Time)); err != nil {
+		role := t.Role
+		if role != "maker" && role != "taker" {
+			role = "taker"
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO g_fee_events (src, src_id, uid, product, notional, fee, bonus_fee, copy, role, at)
+			VALUES ('futures',$1,$2,'futures',$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
+			fmt.Sprintf("%d:%s", t.TradeID, t.Role), t.UserID, t.Notional.Round(8), t.Fee.Round(12), t.BonusFee.Round(12), t.Copy, role, time.UnixMilli(t.Time)); err != nil {
 			return 0, err
 		}
 	}
