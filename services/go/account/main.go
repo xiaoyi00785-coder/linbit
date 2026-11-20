@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -39,6 +40,7 @@ func main() {
 	}
 
 	srv := NewServer(cfg, NewStore(db), rdb)
+	go srv.vipRecomputeLoop(context.Background())
 	addr := ":" + cfg.Port
 	log.Printf("account service listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

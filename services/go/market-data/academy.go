@@ -54,6 +54,7 @@ func (s *Server) academyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /internal/academy/articles/{id}", s.internal(s.hIntAcademySaveArticle))
 	mux.HandleFunc("POST /internal/academy/articles/{id}/publish", s.internal(s.hIntAcademySetStatus("published")))
 	mux.HandleFunc("POST /internal/academy/articles/{id}/unpublish", s.internal(s.hIntAcademySetStatus("draft")))
+	s.academyEngagementRoutes(mux)
 }
 
 func (s *Server) academyDB() *sql.DB {
