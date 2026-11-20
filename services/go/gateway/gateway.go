@@ -108,6 +108,11 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, err
 	}
 	earnProxy := newProxy(earn)
+	launchpad, err := url.Parse(cfg.LaunchpadURL)
+	if err != nil {
+		return nil, err
+	}
+	launchpadProxy := newProxy(launchpad)
 	stakingTarget, err := url.Parse(cfg.StakingURL)
 	if err != nil {
 		return nil, err
@@ -204,6 +209,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/coupons", proxy: growthProxy},
 			{prefix: "/loans", proxy: earnProxy},
 			{prefix: "/earn", proxy: earnProxy},
+			{prefix: "/launchpad", proxy: launchpadProxy},
 			{prefix: "/staking", proxy: stakingProxy},
 			{prefix: "/spot", proxy: orderProxy},
 			{prefix: "/market", proxy: marketProxy},
@@ -261,6 +267,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/loans/quote"},
 			{method: http.MethodGet, path: "/earn/products"},
 			{method: http.MethodGet, path: "/earn/products/"}, // public product detail (prefix)
+			{method: http.MethodGet, path: "/launchpad/projects"},
+			{method: http.MethodGet, path: "/launchpad/projects/"}, // public project detail + rules (prefix)
 			{method: http.MethodGet, path: "/staking/validators"},
 			{method: http.MethodGet, path: "/staking/validators/"}, // public validator detail (prefix)
 			{method: http.MethodGet, path: "/home/banners"},   // home carousel alias (read-only)

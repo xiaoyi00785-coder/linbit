@@ -644,6 +644,24 @@ services:
       market-data:
         condition: service_started
 
+  launchpad:
+    build:
+      context: .
+      dockerfile: services/go/launchpad/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8096"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ASSET_INTERNAL_URL: http://asset:8082
+      LAUNCHPAD_TICK_MS: ${LAUNCHPAD_TICK_MS:-60000}
+      DEV_MODE: ${LAUNCHPAD_DEV_MODE:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asset:
+        condition: service_started
+
   paper:
     build:
       context: .
@@ -723,6 +741,7 @@ services:
       STRATEGY_URL: http://strategy:8090
       GROWTH_URL: http://growth:8091
       EARN_URL: http://earn:8092
+      LAUNCHPAD_URL: http://launchpad:8096
       STAKING_URL: http://staking:8095
       PAPER_URL: http://paper:8094
       REPORTS_URL: http://reports:8098
