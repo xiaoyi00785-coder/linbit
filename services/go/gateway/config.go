@@ -20,6 +20,7 @@ type Config struct {
 	Web3URL     string
 	NftURL      string
 	PaperURL    string
+	IMURL       string
 	LaunchpadURL string
 	StakingURL   string
 	ReportsURL   string
@@ -64,6 +65,7 @@ func LoadConfig() Config {
 		LaunchpadURL:      common.Env("LAUNCHPAD_URL", "http://localhost:8096"),
 		StakingURL:        common.Env("STAKING_URL", "http://localhost:8095"),
 		PaperURL:          common.Env("PAPER_URL", "http://localhost:8094"),
+		IMURL:             common.Env("IM_URL", "http://localhost:8096"),
 		ReportsURL:        common.Env("REPORTS_URL", "http://localhost:8098"),
 		AdminURL:          common.Env("ADMIN_URL", "http://localhost:8088"),
 		RedisURL:          common.Env("REDIS_URL", ""),

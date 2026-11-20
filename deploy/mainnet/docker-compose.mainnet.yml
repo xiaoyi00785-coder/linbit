@@ -120,6 +120,12 @@ services:
       BINANCE_FAPI_URL: ${BINANCE_FAPI_URL:-https://fapi.binance.com}
       OKX_API_URL: ${OKX_API_URL:-https://www.okx.com}
       BYBIT_API_URL: ${BYBIT_API_URL:-https://api.bybit.com}
+  im:
+    environment:
+      <<: *mainnet
+      # IM red-packet ledger moves run through asset; INTERNAL_TOKEN is the
+      # shared secret the dev compose already pins.
+      DEV_MODE: "false"
   reports:
     environment:
       <<: *mainnet

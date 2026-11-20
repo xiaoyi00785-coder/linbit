@@ -168,6 +168,15 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	}
 	paperProxy := newProxy(paper)
 
+	im, err := url.Parse(cfg.IMURL)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.IMURL == "" {
+		im = account
+	}
+	// ReverseProxy transparently tunnels WebSocket upgrades (used by /im/ws).
+	imProxy := newProxy(im)
 	reports, err := url.Parse(cfg.ReportsURL)
 	if err != nil {
 		return nil, err
@@ -242,6 +251,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/app/features", proxy: marketProxy},               // app feature switches (market-data)
 			{prefix: "/home", proxy: marketProxy},                       // home placements/banners + hot list (market-data)
 			{prefix: "/chat", proxy: marketProxy},                       // trading chat rooms (market-data)
+			{prefix: "/im", proxy: imProxy},                             // IM service (/im/* HTTP + /im/ws WebSocket)
 			{prefix: "/academy", proxy: marketProxy},                    // academy articles (market-data)
 			{prefix: "/cards", proxy: accountProxy},                     // card product / application (account)
 			{prefix: "/fiat", proxy: accountProxy},                      // fiat buy config (account)
@@ -315,6 +325,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: http.MethodGet, path: "/fiat/buy"},                          // fiat buy availability; quotes stay authenticated
 			{method: http.MethodGet, path: "/support/guest"},                     // guest support config; tickets stay authenticated
 			{method: http.MethodGet, path: "/tradfi/assets", optionalAuth: true}, // TradFi catalogue (flag + region gated)
+			{method: "", path: "/im/ws", optionalAuth: true},                     // IM WebSocket; auth carried in ?token=
 		},
 	}, nil
 }
