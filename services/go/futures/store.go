@@ -364,8 +364,11 @@ func cancelUserOrders(ctx context.Context, tx queryer, uid, symbol, why string) 
 
 // trigOr defaults an empty trigger price type to MARK (pre-existing behaviour).
 func trigOr(t string) string {
-	if t == "LAST" {
+	switch t {
+	case "LAST":
 		return "LAST"
+	case "INDEX":
+		return "INDEX"
 	}
 	return "MARK"
 }

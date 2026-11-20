@@ -48,6 +48,7 @@ func main() {
 	go srv.RunTicker(ctx)
 	go srv.PollExternalTape(ctx)
 	go srv.RunTransferRetry(ctx)
+	go srv.RunAutoMargin(ctx)
 	if cfg.EventWorker {
 		go srv.RunEvents(ctx)
 	} else if err := srv.ensureEventConfig(ctx); err != nil {

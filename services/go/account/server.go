@@ -52,7 +52,8 @@ func NewServer(cfg Config, store *Store, rdb *redis.Client) *Server {
 		log.Printf("email provider: dev mock (RESEND_API_KEY/RESEND_FROM unset)")
 	}
 	mail = antiPhishingMailer{inner: mail, store: store, rec: rec}
-	codes := NewCodeService(store, mail, logSmsSender{rec: rec}, rec, rdb, now)
+	sms := newSmsSender(cfg, rec, now)
+	codes := NewCodeService(store, mail, sms, rec, rdb, now)
 	if cfg.DevMode {
 		// Dev/test: relax send throttling so smoke scripts can drive several
 		// code-gated operations back-to-back. Production keeps the real limits.
@@ -122,6 +123,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /auth/password/verify-code", s.handlePasswordVerifyCode)
+	mux.HandleFunc("POST /auth/code/verify", s.handleCodeVerify)
 	mux.HandleFunc("POST /auth/password/reset", s.handlePasswordReset)
 
 	// Public avatar retrieval: a controlled route that streams stored avatars
@@ -249,6 +251,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /internal/admin/security-settings", s.handleInternalGetSecuritySettings)
 	mux.HandleFunc("PUT /internal/admin/security-settings", s.handleInternalPutSecuritySettings)
 	mux.HandleFunc("DELETE /internal/admin/users/{uid}/withdraw-lock", s.handleInternalClearWithdrawLock)
+
+	// Account deletion (self-serve, 7-day cool-off).
+	mux.Handle("POST /account/delete-request", s.auth(http.HandlerFunc(s.handleAccountDeleteRequest)))
+	mux.Handle("POST /account/delete-cancel", s.auth(http.HandlerFunc(s.handleAccountDeleteCancel)))
+	mux.Handle("GET /account/delete-status", s.auth(http.HandlerFunc(s.handleAccountDeleteStatus)))
+
+	// Telegram binding (TG Login Widget).
+	mux.Handle("POST /account/bind-telegram", s.auth(http.HandlerFunc(s.handleBindTelegram)))
+	mux.Handle("POST /account/unbind-telegram", s.auth(http.HandlerFunc(s.handleUnbindTelegram)))
+	mux.Handle("GET /account/telegram", s.auth(http.HandlerFunc(s.handleGetTelegram)))
 
 	// 2FA (TOTP).
 	mux.Handle("POST /2fa/totp/bind", s.auth(http.HandlerFunc(s.handleTOTPBind)))
