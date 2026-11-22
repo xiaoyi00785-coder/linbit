@@ -11,6 +11,7 @@ type Config struct {
 	WalletURL   string
 	OrderURL    string
 	MarketURL   string
+	ChatURL     string
 	KycURL      string
 	FuturesURL  string
 	StrategyURL string
@@ -31,6 +32,7 @@ func LoadConfig() Config {
 		WalletURL:      common.Env("WALLET_URL", "http://localhost:8086"),
 		OrderURL:       common.Env("ORDER_URL", "http://localhost:8084"),
 		MarketURL:      common.Env("MARKET_URL", "http://localhost:8085"),
+		ChatURL:        common.Env("CHAT_URL", "http://localhost:8095"),
 		KycURL:         common.Env("KYC_URL", "http://localhost:8087"),
 		FuturesURL:     common.Env("FUTURES_URL", "http://localhost:8089"),
 		StrategyURL:    common.Env("STRATEGY_URL", "http://localhost:8090"),

@@ -65,6 +65,18 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	// ReverseProxy transparently tunnels WebSocket upgrades (used by /ws).
 	marketProxy := httputil.NewSingleHostReverseProxy(market)
 	kycProxy := httputil.NewSingleHostReverseProxy(kyc)
+	// chat-svc hosts the community chat rooms and 1:1 customer service.
+	// Fall back to the market-data upstream when CHAT_URL is unset so
+	// existing single-upstream tests keep routing /chat correctly.
+	chatURLStr := cfg.ChatURL
+	if chatURLStr == "" {
+		chatURLStr = cfg.MarketURL
+	}
+	chatURL, err := url.Parse(chatURLStr)
+	if err != nil {
+		return nil, err
+	}
+	chatProxy := httputil.NewSingleHostReverseProxy(chatURL)
 	futures, err := url.Parse(cfg.FuturesURL)
 	if err != nil {
 		return nil, err
@@ -118,7 +130,8 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/home/newcomer", proxy: growthProxy}, // newcomer task bar (growth)
 			{prefix: "/app/features", proxy: marketProxy},  // app feature switches (market-data)
 			{prefix: "/home", proxy: marketProxy},          // home placements/banners + hot list (market-data)
-			{prefix: "/chat", proxy: marketProxy},          // trading chat rooms (market-data)
+			{prefix: "/cs", proxy: chatProxy},              // 1:1 customer service (chat-svc)
+			{prefix: "/chat", proxy: chatProxy},            // community chat rooms (chat-svc)
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -154,6 +167,10 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: "", path: "/ws"},                      // public market WebSocket
 			{method: http.MethodGet, path: "/chat/rooms"},  // chat: anyone can read
 			{method: http.MethodGet, path: "/chat/rooms/"}, // chat history (prefix); posting needs auth
+			{method: "", path: "/chat/ws"},                 // chat-svc live WS (public upgrade)
+			{method: "", path: "/cs/ws"},                   // customer-service live WS (public upgrade)
+			{method: "", path: "/cs/guest/"},               // anonymous visitor customer service (prefix)
+			{method: http.MethodGet, path: "/cs/uploads/"}, // CS image retrieval (prefix)
 		},
 	}, nil
 }

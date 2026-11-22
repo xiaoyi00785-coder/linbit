@@ -266,6 +266,34 @@ services:
       matching-engine:
         condition: service_started
 
+  chat-svc:
+    build:
+      context: .
+      dockerfile: services/go/chat-svc/Dockerfile
+    environment:
+      LINBIT_ENV: ${LINBIT_ENV:-development}
+      PORT: "8095"
+      DATABASE_URL: ${DATABASE_URL:-postgres://linbit:linbit@postgres:5432/linbit?sslmode=disable}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me-internal-token}
+      ACCOUNT_URL: http://account:8081
+      FUTURES_URL: http://futures:8089
+      CHAT_ENABLED: ${CHAT_ENABLED:-true}
+      CS_ENABLED: ${CS_ENABLED:-true}
+      CS_GUEST_ENABLED: ${CS_GUEST_ENABLED:-true}
+      CS_UPLOAD_DIR: /data/cs-uploads
+      CS_UPLOAD_MAX_BYTES: ${CS_UPLOAD_MAX_BYTES:-5242880}
+      CS_GUEST_MIN_INTERVAL_MS: ${CS_GUEST_MIN_INTERVAL_MS:-3000}
+      CS_GUEST_MAX_PER_HOUR: ${CS_GUEST_MAX_PER_HOUR:-60}
+    volumes:
+      - csuploads:/data/cs-uploads
+    # market-data memory is tight; chat-svc is capped and isolated.
+    mem_limit: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      account:
+        condition: service_started
+
   kyc:
     build:
       context: .
@@ -481,6 +509,7 @@ services:
       ASSET_URL: http://asset:8082
       ORDER_URL: http://order:8084
       MARKET_URL: http://market-data:8085
+      CHAT_URL: http://chat-svc:8095
       WALLET_URL: http://wallet:8086
       KYC_URL: http://kyc:8087
       FUTURES_URL: http://futures:8089
@@ -501,6 +530,8 @@ services:
       order:
         condition: service_started
       market-data:
+        condition: service_started
+      chat-svc:
         condition: service_started
       wallet:
         condition: service_started
@@ -526,3 +557,4 @@ volumes:
   pgdata:
   enginedata:
   kycdocs:
+  csuploads:
