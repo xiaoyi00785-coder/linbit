@@ -131,7 +131,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{prefix: "/app/features", proxy: marketProxy},  // app feature switches (market-data)
 			{prefix: "/home", proxy: marketProxy},          // home placements/banners + hot list (market-data)
 			{prefix: "/cs", proxy: chatProxy},              // 1:1 customer service (chat-svc)
-			{prefix: "/chat", proxy: chatProxy},            // community chat rooms (chat-svc)
+			{prefix: "/chat", proxy: marketProxy},          // community chat rooms stay on market-data (live: rooms/joined/folders/join)
 		},
 		public: []publicRoute{
 			{method: http.MethodGet, path: "/healthz"},
@@ -167,7 +167,6 @@ func NewGateway(cfg Config) (*Gateway, error) {
 			{method: "", path: "/ws"},                      // public market WebSocket
 			{method: http.MethodGet, path: "/chat/rooms"},  // chat: anyone can read
 			{method: http.MethodGet, path: "/chat/rooms/"}, // chat history (prefix); posting needs auth
-			{method: "", path: "/chat/ws"},                 // chat-svc live WS (public upgrade)
 			{method: "", path: "/cs/ws"},                   // customer-service live WS (public upgrade)
 			{method: "", path: "/cs/guest/"},               // anonymous visitor customer service (prefix)
 			{method: http.MethodGet, path: "/cs/uploads/"}, // CS image retrieval (prefix)
