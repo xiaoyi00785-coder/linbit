@@ -33,6 +33,14 @@ type Config struct {
 	// Guest anti-abuse.
 	GuestMinIntervalMs int
 	GuestMaxPerHour    int
+	// GuestIPMaxPerMin caps guest open+send per client IP per minute across
+	// all guest keys (rotating guestKey cannot bypass it). 0 disables.
+	GuestIPMaxPerMin int
+
+	// TrustedProxyCIDRs: direct TCP peers allowed to assert the client IP via
+	// X-Real-IP / X-Forwarded-For (gateway on the docker network, compat via
+	// the loopback publish). Anyone else: the TCP peer is the client.
+	TrustedProxyCIDRs string
 }
 
 // LoadConfig reads configuration from the environment.
@@ -51,6 +59,8 @@ func LoadConfig() Config {
 		UploadMaxBytes:     int64(common.EnvInt("CS_UPLOAD_MAX_BYTES", 5*1024*1024)),
 		GuestMinIntervalMs: common.EnvInt("CS_GUEST_MIN_INTERVAL_MS", 3000),
 		GuestMaxPerHour:    common.EnvInt("CS_GUEST_MAX_PER_HOUR", 60),
+		GuestIPMaxPerMin:   common.EnvInt("CS_GUEST_IP_MAX_PER_MIN", 20),
+		TrustedProxyCIDRs:  common.Env("CS_TRUSTED_PROXY_CIDRS", defaultTrustedProxyCIDRs),
 	}
 }
 

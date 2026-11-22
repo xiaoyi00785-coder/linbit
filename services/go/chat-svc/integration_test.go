@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -170,3 +171,65 @@ func bytesIndex(s string, b byte) int {
 	}
 	return -1
 }
+
+// Replay of an accepted clientId must return 200 + the original message even
+// while the sender is rate limited; a new clientId is still limited. Per-IP
+// cap counts real client IP (X-Real-IP from a trusted peer) across guest keys.
+func TestIntegrationReplayBeforeRateLimitAndPerIP(t *testing.T) {
+	ts, db := testServer(t)
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE chat_config SET cfg = jsonb_set(cfg::jsonb, '{minIntervalMs}', '3000')::json WHERE id=1`); err != nil {
+		if _, err2 := db.Exec(`UPDATE chat_config SET cfg = jsonb_set(cfg, '{minIntervalMs}', '3000') WHERE id=1`); err2 != nil {
+			t.Fatalf("cfg: %v / %v", err, err2)
+		}
+	}
+	ip := map[string]string{"X-Real-IP": "198.51.100.30"}
+	gk := "guestkey-replay-0001"
+	code, conv := doJSON(t, "POST", ts.URL+"/cs/guest/conversations", map[string]any{"guestKey": gk}, ip)
+	if code != 200 {
+		t.Fatalf("open=%d %v", code, conv)
+	}
+	tok := conv["pubToken"].(string)
+	var recIP string
+	_ = db.QueryRow(`SELECT ip FROM cs_conversations WHERE pub_token=$1`, tok).Scan(&recIP)
+	if recIP != "198.51.100.30" {
+		t.Fatalf("recorded ip=%q want X-Real-IP from trusted peer", recIP)
+	}
+	url := ts.URL + "/cs/guest/conversations/" + tok + "/messages"
+	code, m1 := doJSON(t, "POST", url, map[string]any{"guestKey": gk, "clientId": "r1", "text": "第一条"}, ip)
+	if code != 201 {
+		t.Fatalf("first send=%d %v", code, m1)
+	}
+	for i := 0; i < 3; i++ {
+		code, m := doJSON(t, "POST", url, map[string]any{"guestKey": gk, "clientId": "r1", "text": "第一条"}, ip)
+		if code != 200 || m["id"] != m1["id"] {
+			t.Fatalf("replay %d: code=%d id=%v want 200 id=%v", i, code, m["id"], m1["id"])
+		}
+	}
+	if code, _ := doJSON(t, "POST", url, map[string]any{"guestKey": gk, "clientId": "r2", "text": "第二条"}, ip); code != 429 {
+		t.Fatalf("new clientId inside interval: code=%d want 429", code)
+	}
+	var n int
+	_ = db.QueryRow(`SELECT count(*) FROM cs_messages WHERE client_id='r1'`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("r1 stored %d times", n)
+	}
+
+	// Authed path: same rule.
+	uh := map[string]string{"X-User-Id": "90000001"}
+	code, uc := doJSON(t, "POST", ts.URL+"/cs/conversations", map[string]any{}, uh)
+	if code != 200 {
+		t.Fatalf("user open=%d %v", code, uc)
+	}
+	cid := int64(uc["id"].(float64))
+	uurl := ts.URL + "/cs/conversations/" + itoa(cid) + "/messages"
+	code, um := doJSON(t, "POST", uurl, map[string]any{"clientId": "u1", "text": "hi"}, uh)
+	if code != 201 {
+		t.Fatalf("user send=%d %v", code, um)
+	}
+	if code, rm := doJSON(t, "POST", uurl, map[string]any{"clientId": "u1", "text": "hi"}, uh); code != 200 || rm["id"] != um["id"] {
+		t.Fatalf("user replay code=%d", code)
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }

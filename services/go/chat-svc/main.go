@@ -16,6 +16,9 @@ import (
 
 func main() {
 	cfg := LoadConfig()
+	if nets := parseCIDRList(cfg.TrustedProxyCIDRs); len(nets) > 0 {
+		trustedProxyNets = nets
+	}
 	common.RequireProduction("chat-svc", nil, "DATABASE_URL", "INTERNAL_TOKEN")
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)

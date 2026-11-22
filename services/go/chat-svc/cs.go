@@ -114,19 +114,35 @@ func (c *CS) convByToken(ctx context.Context, token string) (*csConversation, st
 
 // ---- message insert (idempotent) ----
 
+// replay returns the message this sender already stored under clientID, if
+// any. Callers check it BEFORE validation and rate limits so a client retry
+// of an accepted send gets 200 + the original message instead of 429.
+func (c *CS) replay(ctx context.Context, sender, clientID string) (csMessage, bool, error) {
+	var m csMessage
+	if clientID == "" {
+		return m, false, nil
+	}
+	err := c.srv.store.db.QueryRowContext(ctx,
+		`SELECT id, conv_id, sender_kind, client_id, kind, text, image_url, created_at
+		 FROM cs_messages WHERE sender=$1 AND client_id=$2`, sender, clientID).
+		Scan(&m.ID, &m.ConvID, &m.SenderKind, &m.ClientID, &m.Kind, &m.Text, &m.ImageURL, &m.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return m, false, nil
+	}
+	if err != nil {
+		return m, false, err
+	}
+	m.Sender = publicSender(m.SenderKind)
+	return m, true, nil
+}
+
 func (c *CS) insert(ctx context.Context, convID int64, sender, senderKind, clientID, kind, text, imageURL string) (csMessage, bool, error) {
 	var m csMessage
 	m.ConvID, m.SenderKind, m.Kind, m.ClientID = convID, senderKind, kind, clientID
-	if clientID != "" {
-		err := c.srv.store.db.QueryRowContext(ctx,
-			`SELECT id, kind, text, image_url, created_at FROM cs_messages WHERE sender=$1 AND client_id=$2`, sender, clientID).
-			Scan(&m.ID, &m.Kind, &m.Text, &m.ImageURL, &m.CreatedAt)
-		if err == nil {
-			m.Sender = publicSender(senderKind)
-			return m, true, nil
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			return m, false, err
-		}
+	if prev, ok, err := c.replay(ctx, sender, clientID); err != nil {
+		return m, false, err
+	} else if ok {
+		return prev, true, nil
 	}
 	err := c.srv.store.db.QueryRowContext(ctx,
 		`INSERT INTO cs_messages (conv_id, sender, sender_kind, client_id, kind, text, image_url)
@@ -212,6 +228,53 @@ func (c *CS) guestAllow(key string) (ok bool, retryMs int64) {
 		c.guestHits = map[string][]time.Time{key: kept}
 	}
 	return true, 0
+}
+
+// ipAllow is a coarse per-client-IP cap shared by every guest key from that
+// IP (sliding 1-minute window, no min interval so visitors behind one NAT are
+// not serialised). Rotating guestKey cannot bypass it.
+func (c *CS) ipAllow(ip string) bool {
+	max := c.srv.cfg.GuestIPMaxPerMin
+	if max <= 0 || ip == "" {
+		return true
+	}
+	now := time.Now()
+	key := "ip#" + ip
+	c.gmu.Lock()
+	defer c.gmu.Unlock()
+	hits := c.guestHits[key]
+	cutoff := now.Add(-time.Minute)
+	kept := hits[:0]
+	for _, t := range hits {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= max {
+		c.guestHits[key] = kept
+		return false
+	}
+	c.guestHits[key] = append(kept, now)
+	return true
+}
+
+// guestLimit applies the per-IP cap, then the per ip|guestKey interval/hourly
+// cap. Writes the 429 and returns false when either trips.
+func (c *CS) guestLimit(w http.ResponseWriter, r *http.Request, guestKey, msg string) bool {
+	ip := clientIP(r)
+	if !c.ipAllow(ip) {
+		w.Header().Set("Retry-After", "60")
+		common.WriteError(w, http.StatusTooManyRequests, "CS_RATE_LIMITED", msg)
+		return false
+	}
+	if ok, retry := c.guestAllow(ip + "|" + guestKey); !ok {
+		if retry > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(retry/1000)+1))
+		}
+		common.WriteError(w, http.StatusTooManyRequests, "CS_RATE_LIMITED", msg)
+		return false
+	}
+	return true
 }
 
 // ---- user handlers ----
@@ -411,6 +474,15 @@ func (c *CS) hSend(w http.ResponseWriter, r *http.Request) {
 // sendUserMessage is shared by the authed owner and guest send paths.
 func (c *CS) sendUserMessage(w http.ResponseWriter, r *http.Request, cv *csConversation, sender string, in csSendIn) {
 	ctx := r.Context()
+	// Idempotent replay first: same sender+clientId -> 200 original message,
+	// regardless of rate limits or later config changes.
+	if prev, ok, err := c.replay(ctx, sender, in.ClientID); err != nil {
+		intErr(w, "cs send replay", err)
+		return
+	} else if ok {
+		common.WriteJSON(w, http.StatusOK, prev)
+		return
+	}
 	kind, text, imageURL := "text", "", ""
 	if strings.TrimSpace(in.ImageURL) != "" {
 		if !validImageURL(in.ImageURL) {
@@ -487,8 +559,7 @@ func (c *CS) hGuestOpen(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "guestKey 不合法")
 		return
 	}
-	if ok, _ := c.guestAllow(clientIP(r) + "|" + in.GuestKey); !ok {
-		common.WriteError(w, http.StatusTooManyRequests, "CS_RATE_LIMITED", "操作过于频繁，请稍后再试")
+	if !c.guestLimit(w, r, in.GuestKey, "操作过于频繁，请稍后再试") {
 		return
 	}
 	ctx := r.Context()
@@ -566,11 +637,15 @@ func (c *CS) hGuestSend(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "会话不存在")
 		return
 	}
-	if ok, retry := c.guestAllow(clientIP(r) + "|" + in.GuestKey); !ok {
-		if retry > 0 {
-			w.Header().Set("Retry-After", strconv.Itoa(int(retry/1000)+1))
-		}
-		common.WriteError(w, http.StatusTooManyRequests, "CS_RATE_LIMITED", "发送过于频繁，请稍后再试")
+	// Idempotent replay before the guest limiters (a retry is not abuse).
+	if prev, ok, err := c.replay(r.Context(), "guest:"+in.GuestKey, in.ClientID); err != nil {
+		intErr(w, "cs guest replay", err)
+		return
+	} else if ok {
+		common.WriteJSON(w, http.StatusOK, prev)
+		return
+	}
+	if !c.guestLimit(w, r, in.GuestKey, "发送过于频繁，请稍后再试") {
 		return
 	}
 	// Guest sender id is namespaced so it can never collide with a real uid.
