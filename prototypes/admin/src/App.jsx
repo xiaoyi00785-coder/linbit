@@ -15,13 +15,14 @@ import { Adjust } from './pages/Adjust.jsx'
 import { Support } from './pages/Support.jsx'
 import Marketmaker from './pages/Marketmaker.jsx'
 import * as C from './pages/Compliance.jsx'
+import * as SEC from './pages/Security.jsx'
 import { Skeleton } from './ui.jsx'
 
 const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users': U.RiskList, withdraw: F.Withdraw, deposit: F.Deposit, ledger: F.Ledger, adjust: Adjust, support: Support,
   'spot-orders': T.SpotOrders, positions: T.Positions, grid: T.Grid, marketmaker: Marketmaker, coins: P.Coins, pairs: P.Pairs, futures: P.Futures, fees: P.Fees,
   campaigns: O.Campaigns, rewards: O.Rewards, points: O.Points, copy: O.Copy, rebate: O.Rebate, content: O.Content, admins: S.Admins, audit: S.Audit, settings: S.Settings,
   wallets: X.Wallets, liquidation: X.Liquidation, partners: X.Partners, coupons: X.Coupons, notify: X.Notify,
-  cs: C.CsWorkbench, chat: C.ChatModeration, por: C.ProofOfReserves, solvency: C.Solvency }
+  cs: C.CsWorkbench, 'risk-rules': SEC.RiskRules, apikeys: SEC.ApiKeys, chat: C.ChatModeration, por: C.ProofOfReserves, solvency: C.Solvency }
 
 const parse = () => { const [k, q] = (location.hash.slice(2) || 'dashboard').split('?'); return { key: ROUTES[k] ? k : 'dashboard', q: Object.fromEntries(new URLSearchParams(q || '')) } }
 

@@ -2,7 +2,7 @@
 // 数组表示满足其一即可。侧栏只显示当前管理员有权限的菜单，路由同样按此拦截。
 export const MENU = [
   { g: '总览', items: [['dashboard', '数据看板', '◧', 'dash:view']] },
-  { g: '用户与合规', items: [['users', '用户列表', '◉', 'user:view'], ['kyc', 'KYC 审核', '◎', 'kyc:view'], ['risk-users', '风险名单', '⚑', 'user:view'],
+  { g: '用户与合规', items: [['users', '用户列表', '◉', 'user:view'], ['kyc', 'KYC 审核', '◎', 'kyc:view'], ['risk-users', '风险名单', '⚑', 'user:view'], ['risk-rules', '风控规则', '⛨', 'risk:view'], ['apikeys', 'API Key 管理', '⚿', 'user:view'],
     ['cs', '客服工作台', '☏', 'support:view'], ['support', '客服工单', '✆', 'support:view'], ['chat', '聊天审核', '✉', 'content:edit']] },
   { g: '资金', items: [['withdraw', '提现审核', '⇡', 'withdraw:view'], ['deposit', '充值记录', '⇣', 'ledger:view'], ['ledger', '资产流水', '≡', 'ledger:view'], ['adjust', '人工调账', '±', 'fund:adjust'],
     ['wallets', '钱包管理', '▣', 'withdraw:view'], ['solvency', '偿付能力', '⚖', 'mm:view'], ['por', '储备金证明', '◫', 'content:edit']] },

@@ -41,8 +41,13 @@ func main() {
 	if err := srv.Bootstrap(context.Background()); err != nil {
 		log.Fatalf("bootstrap: %v", err)
 	}
+	if err := srv.loadRoles(context.Background()); err != nil {
+		log.Fatalf("load roles: %v", err)
+	}
 	go srv.RunScheduler(context.Background())
 	go srv.RunSolvencyDaily(context.Background())
+	go srv.RunRoleSync(context.Background())
+	go srv.RunRiskScheduler(context.Background())
 
 	addr := ":" + cfg.Port
 	log.Printf("admin service listening on %s (2fa=%v idle=%s feeNotice=%s)", addr, cfg.Require2FA, cfg.SessionIdle, cfg.FeeNotice)

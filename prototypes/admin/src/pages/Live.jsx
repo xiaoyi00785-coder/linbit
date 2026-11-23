@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ApiState, Confirm, DataTable, Drawer, Kpi, Modal, PageHead, Tabs, Tag, has, useApp, useFilter } from '../ui.jsx'
 import { api, ft, items, num, roleCn, ROLE_CN, useApi } from '../api.js'
+import { RolesPanel } from './Security.jsx'
 
 const ST = { active: '生效中', pending_finance: '待财务审批', rejected: '已驳回', executed: '已发放', failed: '失败', trading: '交易中', halted: '暂停交易', pending: '待审批', approved: '已通过', applied: '已生效', disabled: '已停用', canceled: '已取消' }
 const st = s => <Tag k={['active', 'executed', 'trading', 'approved', 'applied'].includes(s) ? 'ok' : ['rejected', 'failed', 'halted', 'disabled'].includes(s) ? 'bad' : 'in'}>{ST[s] || s}</Tag>
@@ -126,19 +127,23 @@ export function Notify() {
 
 /* 管理员 */
 export function Admins() {
+  const [tab, setTab] = useState('admins'); const rq = useApi('roles'); const roleName = Object.fromEntries(items(rq.data).map(r => [r.code, r.name]))
+  const rcn = rs => (rs || []).map(r => roleName[r] || ROLE_CN[r] || r).join(' / ') || '-'
   const q = useApi('admins'); const [cur, setCur] = useState(null); const [m, setM] = useState(null); const [f, setF] = useState({ roles: [] }); const [secret, setSecret] = useState(null)
   const tog = r => setF({ ...f, roles: f.roles.includes(r) ? f.roles.filter(x => x !== r) : [...f.roles, r] })
-  const RolePick = () => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{Object.entries(ROLE_CN).map(([k, n]) => <label key={k}><input type="checkbox" checked={f.roles.includes(k)} onChange={() => tog(k)} /> {n}</label>)}</div>
-  return <><PageHead title="管理员与角色" desc="RBAC：管理员 → 角色 → 权限点 · 强制 2FA · 职责分离 · 账号只停用不删除"><button className="btn p" onClick={() => { setF({ username: '', password: '', roles: [] }); setM('add') }}>+ 新增管理员</button></PageHead>
-    <ApiState q={q}><DataTable rows={items(q.data)} onRow={a => { setCur(a); setF({ roles: a.roles || [] }) }} cols={[{ t: 'ID', k: 'id' }, { t: '账号', render: r => <b>{r.username}</b> }, { t: '角色', render: r => roleCn(r.roles) },
-      { t: '2FA', render: r => r.totpEnabled ? <Tag k="ok">已绑定</Tag> : <Tag k="bad">未绑定</Tag> }, { t: '创建人', k: 'createdBy' }, { t: '创建时间', render: r => ft(r.createdAt) }, { t: '状态', render: r => r.status === 'active' ? <Tag k="ok">正常</Tag> : <Tag k="bad">{r.status === 'disabled' ? '已停用' : r.status}</Tag> }]} /></ApiState>
+  const RolePick = () => <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{(items(rq.data).length ? items(rq.data).map(r => [r.code, r.name]) : Object.entries(ROLE_CN)).map(([k, n]) => <label key={k}><input type="checkbox" checked={f.roles.includes(k)} onChange={() => tog(k)} /> {n}</label>)}</div>
+  return <><PageHead title="管理员与角色" desc="RBAC：管理员 → 角色 → 权限点 · 强制 2FA · 职责分离 · 账号只停用不删除">{tab === 'admins' && <button className="btn p" onClick={() => { setF({ username: '', password: '', roles: [] }); setM('add') }}>+ 新增管理员</button>}</PageHead>
+    <div className="card"><Tabs value={tab} onChange={setTab} items={[['admins', '管理员'], ['roles', '角色与权限']]} /></div>
+    {tab === 'roles' && <RolesPanel q={rq} />}
+    {tab === 'admins' && <ApiState q={q}><DataTable rows={items(q.data)} onRow={a => { setCur(a); setF({ roles: a.roles || [] }) }} cols={[{ t: 'ID', k: 'id' }, { t: '账号', render: r => <b>{r.username}</b> }, { t: '角色', render: r => rcn(r.roles) },
+      { t: '2FA', render: r => r.totpEnabled ? <Tag k="ok">已绑定</Tag> : <Tag k="bad">未绑定</Tag> }, { t: '创建人', k: 'createdBy' }, { t: '创建时间', render: r => ft(r.createdAt) }, { t: '状态', render: r => r.status === 'active' ? <Tag k="ok">正常</Tag> : <Tag k="bad">{r.status === 'disabled' ? '已停用' : r.status}</Tag> }]} /></ApiState>}
     {cur && <Drawer title={`管理员 · ${cur.username}`} onClose={() => setCur(null)} footer={<><button className="btn d" onClick={() => setM(cur.status === 'active' ? 'disable' : 'enable')}>{cur.status === 'active' ? '停用账号' : '恢复账号'}</button><button className="btn p" onClick={() => setM('roles')}>保存角色</button></>}>
       <div className="fr" style={{ alignItems: 'start' }}><label>角色</label><RolePick /></div></Drawer>}
     {m === 'add' && <Confirm title="新增管理员" okText="创建" onClose={() => setM(null)} note="创建后会一次性返回新管理员的 2FA 绑定密钥，请当面交付。"
       onOk={async ({ totpCode }) => { const r = await api('admins', { method: 'POST', body: { username: f.username, password: f.password, roles: f.roles, totpCode } }); q.reload(); setSecret(r); return '已创建' }}>
       <F l="账号"><input className="in" value={f.username} onChange={e => setF({ ...f, username: e.target.value })} /></F><F l="初始密码"><input className="in" type="password" autoComplete="new-password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /></F>
       <div className="fr" style={{ alignItems: 'start' }}><label>角色</label><RolePick /></div></Confirm>}
-    {cur && ['roles', 'disable', 'enable'].includes(m) && <Confirm danger={m === 'disable'} title={{ roles: '修改角色', disable: '停用管理员', enable: '恢复管理员' }[m] + ' · ' + cur.username} rows={m === 'roles' ? [['新角色', roleCn(f.roles)]] : []} onClose={() => setM(null)}
+    {cur && ['roles', 'disable', 'enable'].includes(m) && <Confirm danger={m === 'disable'} title={{ roles: '修改角色', disable: '停用管理员', enable: '恢复管理员' }[m] + ' · ' + cur.username} rows={m === 'roles' ? [['新角色', rcn(f.roles)]] : []} onClose={() => setM(null)}
       onOk={async ({ reason, totpCode }) => { await api('admins/' + cur.id, { method: 'PATCH', body: m === 'roles' ? { roles: f.roles, reason, totpCode } : { status: m === 'disable' ? 'disabled' : 'active', reason, totpCode } }); q.reload(); setCur(null); return '已保存' }} />}
     {secret && <Modal title="2FA 绑定信息（仅显示一次）" onClose={() => setSecret(null)} footer={<button className="btn p" onClick={() => setSecret(null)}>我已妥善交付</button>}>
       <div className="banner bad">关闭后无法再次查看。</div><dl className="kv">{Object.entries(secret).filter(([k]) => /totp|secret|otpauth/i.test(k)).flatMap(([k, v]) => [<dt key={k}>{k}</dt>, <dd key={k + '_v'} style={{ wordBreak: 'break-all' }}>{String(v)}</dd>])}</dl></Modal>}</>

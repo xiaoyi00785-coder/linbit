@@ -52,12 +52,15 @@ const (
 	// 人工调账: create/list, and the second-person approval (maker-checker).
 	permFundAdjust        = "fund:adjust"
 	permFundAdjustApprove = "fund:adjust:approve"
+	// 风控规则：查看命中/规则；编辑规则与处理命中（只告警，不自动冻结或拦截资金）。
+	permRiskView = "risk:view"
+	permRiskEdit = "risk:edit"
 )
 
 var allPerms = []string{permUserView, permUserEdit, permUserPII, permKYCView, permKYCApprove,
 	permWithdrawView, permWithdrawFirst, permWithdrawSecond, permLedgerView, permSymbolView,
 	permSymbolEdit, permFeeView, permFeeEdit, permFeeApprove, permRewardView, permRewardEdit,
-	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView, permFundAdjust, permFundAdjustApprove, permSupportView, permSupportReply}
+	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView, permFundAdjust, permFundAdjustApprove, permSupportView, permSupportReply, permRiskView, permRiskEdit}
 
 // rolePerms is the RBAC matrix from prototypes/admin/DESIGN.md §3.
 var rolePerms = map[string][]string{
@@ -66,13 +69,13 @@ var rolePerms = map[string][]string{
 	roleKYCReviewer:   {permUserView, permKYCView, permKYCApprove},
 	roleFinanceFirst:  {permFundAdjust, permDashView, permEarnView, permUserView, permWithdrawView, permWithdrawFirst, permLedgerView, permCouponApprove, permRewardView},
 	roleFinanceSecond: {permFundAdjust, permFundAdjustApprove, permDashView, permMMView, permEarnView, permUserView, permFeeView, permWithdrawView, permWithdrawSecond, permLedgerView, permFeeApprove, permCouponApprove, permRewardView, permRewardApprove},
-	roleRisk:          {permDashView, permMMView, permEarnView, permCopyView, permPartnerView, permUserView, permUserEdit, permKYCView, permWithdrawView, permLedgerView},
+	roleRisk:          {permRiskView, permRiskEdit, permDashView, permMMView, permEarnView, permCopyView, permPartnerView, permUserView, permUserEdit, permKYCView, permWithdrawView, permLedgerView},
 	roleSupport:       {permSupportView, permSupportReply, permVIPView, permUserView, permKYCView, permLedgerView},
 	roleMarketing:     {permEarnView, permPartnerView, permPartnerReview, permRewardView, permRewardEdit, permContentEdit},
-	roleAuditor:       {permDashView, permSupportView, permMMView, permVIPView, permEarnView, permCopyView, permPartnerView, permUserView, permKYCView, permWithdrawView, permLedgerView, permSymbolView, permFeeView, permRewardView, permAuditView},
+	roleAuditor:       {permRiskView, permDashView, permSupportView, permMMView, permVIPView, permEarnView, permCopyView, permPartnerView, permUserView, permKYCView, permWithdrawView, permLedgerView, permSymbolView, permFeeView, permRewardView, permAuditView},
 }
 
-func validRole(r string) bool { _, ok := rolePerms[r]; return ok }
+func validRole(r string) bool { _, ok := effectiveRoles()[r]; return ok }
 
 func hasRole(roles []string, want string) bool {
 	for _, r := range roles {
@@ -84,8 +87,9 @@ func hasRole(roles []string, want string) bool {
 }
 
 func can(roles []string, perm string) bool {
+	eff := effectiveRoles()
 	for _, r := range roles {
-		for _, p := range rolePerms[r] {
+		for _, p := range eff[r] {
 			if p == perm {
 				return true
 			}

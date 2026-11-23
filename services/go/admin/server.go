@@ -180,6 +180,9 @@ func (s *Server) Routes() http.Handler {
 	s.registerTradFiRoutes(a)
 
 	a("GET /admin/v1/audit-logs", permAuditView, s.handleAuditLogs)
+	s.registerRoleRoutes(a)
+	s.registerAPIKeyRoutes(a)
+	s.registerRiskRoutes(a)
 
 	if s.cfg.DevMode {
 		// Dev only: run the scheduler once at an arbitrary "now" so the smoke can
