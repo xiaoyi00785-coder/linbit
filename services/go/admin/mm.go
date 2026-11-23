@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/linbit/platform/services/go/common"
@@ -54,6 +56,31 @@ func (s *Server) handleMMUpdatePair(w http.ResponseWriter, r *http.Request) {
 	delete(body, "reason")
 	delete(body, "updatedBy")
 	if !s.verify2FA(w, a, code) {
+		return
+	}
+	// batch6: 只有「停用做市」可以直接生效（应急）；其余参数变更走双人审批。
+	if !mmPureDisable(body) {
+		if strings.TrimSpace(reason) == "" {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请填写变更原因")
+			return
+		}
+		if err := mmPrecheck(body); err != nil {
+			common.WriteError(w, http.StatusBadRequest, "INVALID_PARAM", err.Error())
+			return
+		}
+		raw, _ := json.Marshal(body)
+		fa, err := buildFundAction("mm_pair", market+":"+sym, raw)
+		if err != nil {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
+		id, err := s.submitFundChange(r.Context(), a, fa, reason)
+		if err != nil {
+			common.WriteError(w, http.StatusConflict, "CHANGE_REFUSED", err.Error())
+			return
+		}
+		s.audit(r, a, fundChangeModule, "submit", "mm_pair:"+market+"/"+sym, levelHigh, "ok", nil, body, reason)
+		writePending(w, id, "mm_pair")
 		return
 	}
 	body["updatedBy"], _ = json.Marshal(a.Username)
@@ -227,13 +254,53 @@ func (s *Server) handleMMUpdateBaseline(w http.ResponseWriter, r *http.Request) 
 	if !s.verify2FA(w, a, code) {
 		return
 	}
-	out["updatedBy"], _ = json.Marshal(a.Username)
-	u, err := s.call(r.Context(), http.MethodPut, s.cfg.MMURL, "/internal/mm/baselines/"+url.PathEscape(asset), out)
-	if err != nil {
-		upstreamErr(w, "mm baseline", err)
+	// batch6: 库存基线影响做市可动用资金，走双人审批。
+	{
+		raw, _ := json.Marshal(out)
+		fa, err := buildFundAction("mm_baseline", asset, raw)
+		if err != nil {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
+		id, err := s.submitFundChange(r.Context(), a, fa, reason)
+		if err != nil {
+			common.WriteError(w, http.StatusConflict, "CHANGE_REFUSED", err.Error())
+			return
+		}
+		s.audit(r, a, fundChangeModule, "submit", "mm_baseline:"+asset, levelHigh, "ok", nil, out, reason)
+		writePending(w, id, "mm_baseline")
 		return
 	}
-	delete(out, "updatedBy")
-	s.audit(r, a, "mm", "update_baseline", "mm:baseline/"+asset, levelHigh, resultOf(u), nil, out, reason)
-	relay(w, u)
+}
+
+// mmPureDisable: 请求体只包含 enabled=false（紧急停用某交易对做市）。
+func mmPureDisable(body map[string]json.RawMessage) bool {
+	if len(body) != 1 {
+		return false
+	}
+	v, ok := body["enabled"]
+	return ok && strings.TrimSpace(string(v)) == "false"
+}
+
+// mmPrecheck 与 marketmaker pairPatch.Validate 保持一致，在提交审批前拦截越界参数，
+// 避免把注定失败的变更送进审批队列。最终仍以做市服务的校验为准。
+func mmPrecheck(body map[string]json.RawMessage) error {
+	type rng struct{ lo, hi float64 }
+	bounds := map[string]rng{
+		"spreadBps": {0.5, 1000}, "levels": {1, 50}, "levelStepBps": {0, 500}, "levelNotional": {0.00000001, 10000000},
+		"sizeGrowth": {1, 3}, "refreshMs": {500, 60000}, "requoteBps": {0, 100}, "targetBaseRatio": {0, 1},
+		"maxPosition": {0, 1e12}, "maxSkewBps": {0, 500}, "leverage": {1, 125},
+	}
+	for k, b := range bounds {
+		v, ok := body[k]
+		if !ok || string(v) == "null" {
+			continue
+		}
+		str := strings.Trim(strings.TrimSpace(string(v)), `"`)
+		f, err := strconv.ParseFloat(str, 64)
+		if err != nil || f < b.lo || f > b.hi {
+			return fmt.Errorf("%s 必须在 %v–%v 之间", k, b.lo, b.hi)
+		}
+	}
+	return nil
 }

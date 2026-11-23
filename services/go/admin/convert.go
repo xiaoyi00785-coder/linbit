@@ -49,14 +49,21 @@ func (s *Server) handleConvertConfig(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请填写变更原因 reason")
 		return
 	}
-	before, _ := s.call(r.Context(), http.MethodGet, s.cfg.AssetURL, "/internal/convert/config", nil)
-	body["updatedBy"], _ = json.Marshal(a.Username)
-	u, err := s.call(r.Context(), http.MethodPut, s.cfg.AssetURL, "/internal/convert/config", body)
-	if err != nil {
-		upstreamErr(w, "convert config", err)
+	// batch6: 闪兑配置（价差/限额）属于资金类配置，走双人审批。
+	{
+		raw, _ := json.Marshal(body)
+		fa, err := buildFundAction("convert_config", "config", raw)
+		if err != nil {
+			common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
+		id, err := s.submitFundChange(r.Context(), a, fa, reason)
+		if err != nil {
+			common.WriteError(w, http.StatusConflict, "CHANGE_REFUSED", err.Error())
+			return
+		}
+		s.audit(r, a, fundChangeModule, "submit", "convert:config", levelHigh, "ok", nil, body, reason)
+		writePending(w, id, "convert_config")
 		return
 	}
-	delete(body, "updatedBy")
-	s.audit(r, a, "convert", "update_config", "convert:config", levelHigh, resultOf(u), json.RawMessage(before.Body), body, reason)
-	relay(w, u)
 }

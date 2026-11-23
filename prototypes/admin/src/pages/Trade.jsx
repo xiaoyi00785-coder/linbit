@@ -1,8 +1,8 @@
 /* 交易监控：现货订单 / 合约持仓 / 网格策略（只读，数据来自 admin/v1） */
 import { useEffect, useRef, useState } from 'react'
 import { Filters, useFilters } from './P1.jsx'
-import { ApiState, DataTable, Kpi, PageHead, Tag, useApp } from '../ui.jsx'
-import { ft, items, num, useApi } from '../api.js'
+import { ApiState, Confirm, DataTable, Kpi, PageHead, Tag, useApp } from '../ui.jsx'
+import { api, ft, items, num, useApi } from '../api.js'
 
 const O_ST = { new: '挂单中', partially_filled: '部分成交', filled: '已成交', canceled: '已撤销', rejected: '已拒绝', expired: '已过期' }
 const G_ST = { running: '运行中', stopped: '已停止', stopping: '停止中', failed: '失败' }
@@ -47,12 +47,18 @@ export function Positions() {
 }
 
 export function Grid() {
-  const [f, v] = useQ(); const q = useApi('grids', { ...f, size: 200 })
-  return <><PageHead title="网格策略" desc="用户现货网格策略（只读）；强制停止暂无后台接口" />
+  const [f, v] = useQ(); const q = useApi('grids', { ...f, size: 200 }); const [stop, setStop] = useState(null); const [sell, setSell] = useState(false)
+  const app = useApp(); const canStop = ((app && app.me && app.me.perms) || []).includes('strategy:force_stop')
+  return <><PageHead title="网格策略" desc="用户现货网格策略。强制停止：撤销该网格全部挂单并冻结终值，默认不卖出底仓；需 strategy:force_stop 权限 + Google 验证码。" />
+    {stop && <Confirm danger title={`强制停止网格 #${stop.id}`} rows={[['UID', stop.uid], ['交易对', stop.symbol], ['投入', num(stop.investment)]]} onClose={() => setStop(null)}
+      note="停止后资金退回用户现货账户；勾选卖出会按市价卖出网格持有的基础币。"
+      onOk={async ({ totpCode, reason }) => { await api(`grids/${stop.id}/force-stop`, { method: 'POST', body: { totpCode, reason, sellBase: sell } }); q.reload(); return '已强制停止' }}>
+      <div className="fr"><label>卖出底仓</label><input type="checkbox" checked={sell} onChange={e => setSell(e.target.checked)} /></div></Confirm>}
     <div className="card"><div className="filters"><input className="in" placeholder="UID" onChange={v('uid')} /><input className="in" placeholder="交易对" onChange={v('symbol')} />
       <select className="sel" onChange={v('status')}><option value="">全部状态</option><option value="running">运行中</option><option value="stopped">已停止</option></select></div></div>
     <ApiState q={q}>{total(q.data)}<DataTable rows={items(q.data)}
       cols={[{ t: '策略 ID', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '交易对', k: 'symbol' }, { t: '模式', render: r => r.mode === 'geometric' ? '等比' : r.mode === 'arithmetic' ? '等差' : r.mode }, { t: '区间', render: r => r.lowerPrice + ' ~ ' + r.upperPrice }, { t: '网格数', k: 'grids' },
         { t: '投入', r: 1, num: 1, render: r => num(r.investment) }, { t: '网格收益', r: 1, num: 1, render: r => <span className={+r.gridProfit >= 0 ? 'up' : 'down'}>{num(r.gridProfit, 4)}</span> },
-        { t: '状态', render: r => <Tag k={r.status === 'running' ? 'ok' : ''}>{G_ST[r.status] || r.status}</Tag> }, { t: '创建', render: r => ft(r.createdAt) }, { t: '停止', render: r => ft(r.stoppedAt) }]} /></ApiState></>
+        { t: '状态', render: r => <Tag k={r.status === 'running' ? 'ok' : ''}>{G_ST[r.status] || r.status}</Tag> }, { t: '创建', render: r => ft(r.createdAt) }, { t: '停止', render: r => ft(r.stoppedAt) },
+        { t: '', render: r => canStop && r.status === 'running' ? <a onClick={() => { setSell(false); setStop(r) }}>强制停止</a> : null }]} /></ApiState></>
 }

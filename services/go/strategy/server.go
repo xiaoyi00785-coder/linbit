@@ -30,6 +30,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /strategy/grid/{id}/stop", s.user(s.hStop))
 	// Internal: gateway TradFi gate resolves a copy source's symbol.
 	mux.HandleFunc("GET /internal/strategy/grid/{id}/symbol", s.hInternalSymbol)
+	mux.HandleFunc("POST /internal/strategy/grid/{id}/force-stop", s.hInternalForceStop)
 	if s.cfg.DevMode {
 		mux.HandleFunc("POST /internal/dev/grid/tick", func(w http.ResponseWriter, r *http.Request) {
 			s.Tick(r.Context())

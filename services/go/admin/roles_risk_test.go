@@ -5,7 +5,7 @@ import "testing"
 func TestFinalPermsKeepsLockedDefaults(t *testing.T) {
 	// finance_second has withdraw:second by default; dropping it must not stick, adding fund perms to support must not stick.
 	got := finalPerms(roleFinanceSecond, []string{permDashView})
-	want := map[string]bool{permDashView: true, permFundAdjust: true, permFundAdjustApprove: true, permWithdrawSecond: true, permFeeApprove: true, permCouponApprove: true, permRewardApprove: true}
+	want := map[string]bool{permDashView: true, permFundAdjust: true, permFundAdjustApprove: true, permWithdrawSecond: true, permFeeApprove: true, permCouponApprove: true, permRewardApprove: true, permConfigApprove: true}
 	if len(got) != len(want) {
 		t.Fatalf("got %v", got)
 	}

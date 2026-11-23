@@ -56,6 +56,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /announcements", s.handlePublicAnnouncements)
 	mux.HandleFunc("GET /announcements/{id}", s.handlePublicAnnouncement)
 	mux.HandleFunc("GET /site/social", s.handlePublicSocial)
+	s.registerBatch6Public(mux)
 
 	a := func(pattern, perm string, h http.HandlerFunc) {
 		mux.HandleFunc(pattern, s.guard(s.authed(perm, h)))
@@ -185,6 +186,7 @@ func (s *Server) Routes() http.Handler {
 	s.registerAPIKeyRoutes(a)
 	s.registerRiskRoutes(a)
 	s.p1Routes(a)
+	s.registerBatch6Routes(a)
 	s.registerTopbarRoutes(a)
 	a("GET /admin/v1/users/{uid}/security", permUserView, s.handleUserSecurity)
 

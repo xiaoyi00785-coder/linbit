@@ -26,7 +26,7 @@ var lockedPerms = map[string]bool{
 	permWithdrawFirst: true, permWithdrawSecond: true, permFundAdjust: true, permFundAdjustApprove: true,
 	permFeeEdit: true, permFeeApprove: true, permRewardApprove: true, permCouponApprove: true,
 	permEarnEdit: true, permUserEdit: true, permMMEdit: true, permAdminManage: true,
-	permWalletColdSweep: true,
+	permWalletColdSweep: true, permConfigApprove: true, permStrategyForce: true,
 }
 
 var builtinRoleNames = map[string]string{

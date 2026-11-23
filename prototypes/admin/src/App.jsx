@@ -17,6 +17,7 @@ import Marketmaker from './pages/Marketmaker.jsx'
 import * as C from './pages/Compliance.jsx'
 import * as SEC from './pages/Security.jsx'
 import * as P1 from './pages/P1.jsx'
+import * as B6 from './pages/Batch6.jsx'
 import { Skeleton } from './ui.jsx'
 import { InboxBell, TodoBell, TopSearch } from './Topbar.jsx'
 
@@ -27,7 +28,9 @@ const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users':
   cs: C.CsWorkbench, 'risk-rules': SEC.RiskRules, apikeys: SEC.ApiKeys, chat: C.ChatModeration, por: C.ProofOfReserves, solvency: C.Solvency,
   'spot-trades': P1.SpotTrades, 'fut-orders': P1.FutOrders, 'fut-trades': P1.FutTrades, 'fut-risk': P1.FutRisk, 'login-history': P1.LoginHistory, 'report-exports': P1.ReportExports,
   earn: P1.EarnLoans, convert: P1.Convert, event: P1.EventContracts, 'fee-overrides': P1.FeeOverrides, 'sub-accounts': P1.SubAccounts, vip: P1.VipApplications,
-  referrals: P1.Referrals, 'internal-transfers': P1.InternalTransfers, 'user-coupons': P1.UserCoupons }
+  referrals: P1.Referrals, 'internal-transfers': P1.InternalTransfers, 'user-coupons': P1.UserCoupons,
+  'fund-changes': B6.FundChanges, launchpad: B6.Launchpad, staking: B6.Staking, nft: B6.NFT, options: B6.Options, web3wallet: B6.Web3Wallet, paper: B6.Paper, dca: B6.DCA,
+  'im-groups': B6.IMGroups, 'app-versions': B6.AppVersions, 'content-docs': B6.ContentDocs, 'app-push': B6.AppPush }
 
 const parse = () => { const [k, q] = (location.hash.slice(2) || 'dashboard').split('?'); return { key: ROUTES[k] ? k : 'dashboard', q: Object.fromEntries(new URLSearchParams(q || '')) } }
 

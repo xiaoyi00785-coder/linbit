@@ -55,12 +55,15 @@ function Pairs({ q, states, onSaved }) {
       { t: '盘口来源', render: r => stOf(r)?.bookSource || '-' },
       { t: '价差 bps', r: 1, num: 1, k: 'spreadBps' }, { t: '档位', r: 1, k: 'levels' }, { t: '每档金额', r: 1, num: 1, k: 'levelNotional' },
       { t: '最大持仓', r: 1, num: 1, k: 'maxPosition' }, { t: '挂单数', r: 1, render: r => stOf(r)?.openOrders ?? '-' },
+      { t: '买盘深度', r: 1, num: 1, render: r => { const d = depth(stOf(r)); return d ? <span title={`${d.bidLv} 档 · 最优 ${d.bestBid}`}>{fmtD(d.bid)}</span> : '-' } },
+      { t: '卖盘深度', r: 1, num: 1, render: r => { const d = depth(stOf(r)); return d ? <span title={`${d.askLv} 档 · 最优 ${d.bestAsk}`}>{fmtD(d.ask)}</span> : '-' } },
+      { t: '实际价差', r: 1, render: r => { const d = depth(stOf(r)); return d && d.spread != null ? d.spread.toFixed(1) + ' bps' : '-' } },
       { t: '更新', render: r => <span className="muted">{ft(r.updatedAt)} {r.updatedBy || ''}</span> }]} /></ApiState>
     {cur && <Drawer title={`${cur.market === 'futures' ? '合约' : '现货'} · ${cur.symbol}`} onClose={() => setCur(null)} footer={<button className="btn p" disabled={!changed.length} onClick={() => setOk(true)}>保存</button>}>
       <div className="fr"><label>启用做市</label><Sw on={d.enabled} onClick={() => setD({ ...d, enabled: !d.enabled })} /></div>
       {fields.map(([k, l]) => <div className="fr" key={k}><label>{l}</label><input className="in" value={d[k] ?? ''} onChange={e => setD({ ...d, [k]: e.target.value })} /></div>)}</Drawer>}
     {ok && <Confirm danger title={`修改 ${cur.symbol} 做市参数`} rows={changed.map(k => [k, `${cur[k] ?? '-'} → ${d[k]}`])} onClose={() => setOk(false)}
-      onOk={async ({ totpCode, reason }) => { await api(`mm/pairs/${cur.market}/${encodeURIComponent(cur.symbol)}`, { method: 'PUT', body: { ...body(), totpCode, reason } }); setCur(null); onSaved(); return '已保存' }} />}</>
+      onOk={async ({ totpCode, reason }) => { return api(`mm/pairs/${cur.market}/${encodeURIComponent(cur.symbol)}`, { method: 'PUT', body: { ...body(), totpCode, reason } }).then(x => { setCur(null); onSaved(); return x && x.pendingApproval ? `已提交双人审批 #${x.changeId}（资金类配置审批页）` : '已保存' }) }} note="停用做市立即生效；其他参数变更需另一名有 config:approve 权限的管理员审批。" />}</>
 }
 
 function Baselines({ q, onSaved }) {
@@ -81,7 +84,7 @@ function Baselines({ q, onSaved }) {
       onOk={async ({ totpCode, reason }) => {
         const body = { clearTarget: d.clearTarget, resetStart: d.resetStart, totpCode, reason }
         if (!d.clearTarget && String(d.targetBase).trim() !== '') body.targetBase = String(d.targetBase).trim()
-        await api(`mm/baselines/${encodeURIComponent(d.asset)}`, { method: 'PUT', body }); setCur(null); onSaved(); return '已保存' }} />}</>
+        const x = await api(`mm/baselines/${encodeURIComponent(d.asset)}`, { method: 'PUT', body }); setCur(null); onSaved(); return x && x.pendingApproval ? `已提交双人审批 #${x.changeId}（资金类配置审批页）` : '已保存' }} note="库存基线变更需另一名有 config:approve 权限的管理员审批后生效。" />}</>
 }
 
 function Credit({ status, onSaved }) {
@@ -111,3 +114,13 @@ function Transfer({ onSaved }) {
     {ok && <Confirm danger title="做市账户划转" rows={[['方向', d.direction === 'in' ? '现货 → 合约' : '合约 → 现货'], ['金额', d.amount + ' USDT']]} onClose={() => setOk(false)}
       onOk={async ({ totpCode, reason }) => { await api('mm/futures-transfer', { method: 'POST', body: { ...d, totpCode, reason } }); setD({ ...d, amount: '' }); onSaved(); return '划转已提交' }} />}</>
 }
+
+// 盘口深度：由做市服务实时报价（status.pairs[].quotes）计算，单位为计价币（USDT）名义金额。
+function depth(x) {
+  const qs = (x && x.quotes) || []; if (!qs.length) return null
+  let bid = 0, ask = 0, bidLv = 0, askLv = 0, bestBid = 0, bestAsk = 0
+  for (const q of qs) { const v = (+q.price) * (+q.qty); if (q.side === 'buy' || q.side === 'bid') { bid += v; bidLv++; if (+q.price > bestBid) bestBid = +q.price } else { ask += v; askLv++; if (!bestAsk || +q.price < bestAsk) bestAsk = +q.price } }
+  const mid = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : 0
+  return { bid, ask, bidLv, askLv, bestBid, bestAsk, spread: mid ? (bestAsk - bestBid) / mid * 10000 : null }
+}
+const fmtD = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : v.toFixed(0)
