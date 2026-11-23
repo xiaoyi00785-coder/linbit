@@ -65,9 +65,10 @@ export const has = (v, s) => !s || String(v).toLowerCase().includes(String(s).to
 export const eq = (v, s) => !s || s === '全部' || v === s
 
 /* ===== SVG 图表（无第三方依赖） ===== */
-export function LineChart({ series, labels, h = 200, area = true }) {
+export function LineChart({ series, labels, h = 200, area = true, fit = false }) {
   const W = 600, H = h, P = 28
-  const all = series.flatMap(s => s.data); const max = Math.max(...all) * 1.1, min = 0
+  const all = series.flatMap(s => s.data); const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.001 || 1
+  const max = fit ? hi + pad : hi * 1.1, min = fit ? lo - pad : 0
   const x = i => P + (i * (W - P * 2)) / (labels.length - 1), y = v => H - 22 - ((v - min) / (max - min)) * (H - 40)
   return <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: h }}>
     {[0, 1, 2, 3].map(i => { const yy = 18 + i * ((H - 40) / 3); return <line key={i} x1={P} x2={W - P} y1={yy} y2={yy} style={{ stroke: 'var(--lb-grid)' }} /> })}

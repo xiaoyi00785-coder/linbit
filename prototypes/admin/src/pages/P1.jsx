@@ -107,14 +107,14 @@ export function FutRisk() {
     {t === 'mark' && <Series path="futures/marks" sym={sym} symSel={symSel} k="ts" v="markPrice" v2="indexPrice" lbl="标记价" fmt={x => dec(x, 4)} extra={[{ t: '指数价', r: 1, num: 1, render: r => dec(r.indexPrice, 4) }, { t: '基差', r: 1, num: 1, render: r => (r.basisBps || '-') + ' bps' }]} />}
     {t === 'tiers' && <Tiers sym={sym} symSel={symSel} />}
     {t === 'insurance' && <ApiState q={ov}>{ov.data && <><div className="card pad" style={{ marginTop: 12 }}><h3>保险基金余额（最近 {ov.data.insurance.length} 个快照）</h3>
-      {ov.data.insurance.length > 1 ? <LineChart labels={[...ov.data.insurance].reverse().map(x => ft(x.ts).slice(5, 13))} series={[{ color: '#9be21e', data: [...ov.data.insurance].reverse().map(x => +x.balance) }]} /> : <Empty />}</div>
+      {ov.data.insurance.length > 1 ? <LineChart fit labels={[...ov.data.insurance].reverse().map(x => ft(x.ts).slice(5, 13))} series={[{ color: '#9be21e', data: [...ov.data.insurance].reverse().map(x => +x.balance) }]} /> : <Empty />}</div>
       <DataTable rowKey="ts" rows={ov.data.insurance} cols={[{ t: '时间', render: r => ft(r.ts) }, { t: '币种', k: 'asset' }, { t: '余额', r: 1, num: 1, render: r => dec(r.balance, 2) }, { t: '权益', r: 1, num: 1, render: r => dec(r.equity, 2) }]} /></>}</ApiState>}
     {t === 'adl' && <Adl />}</>
 }
 function Series({ path, sym, symSel, k, v, v2, lbl, fmt, extra }) {
   const q = useApi(path, { symbol: sym, size: 120 }); const rows = items(q.data); const rv = [...rows].reverse()
   return <ApiState q={q}><div className="card pad" style={{ marginTop: 12 }}><div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><h3 style={{ margin: 0 }}>{lbl} · {sym}</h3>{symSel}<span className="muted">最近 {rows.length} 条{v2 ? ' · 绿=标记价 灰=指数价' : ''}</span></div>
-    {rows.length > 1 ? <LineChart area={false} labels={rv.map(x => ft(x[k]).slice(11))} series={[{ color: '#9be21e', data: rv.map(x => +x[v]) }, ...(v2 ? [{ color: '#8a94a6', data: rv.map(x => +x[v2]) }] : [])]} /> : <Empty />}</div>
+    {rows.length > 1 ? <LineChart area={false} fit labels={rv.map(x => ft(x[k]).slice(5, 16))} series={[{ color: '#9be21e', data: rv.map(x => +x[v]) }, ...(v2 ? [{ color: '#8a94a6', data: rv.map(x => +x[v2]) }] : [])]} /> : <Empty />}</div>
     <DataTable rowKey={k} rows={rows} pageSize={20} cols={[{ t: '时间', render: r => ft(r[k]) }, { t: lbl, r: 1, num: 1, render: r => fmt(r[v]) }, ...extra]} /></ApiState>
 }
 function Tiers({ sym, symSel }) {
