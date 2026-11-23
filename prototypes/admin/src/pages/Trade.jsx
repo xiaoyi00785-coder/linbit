@@ -57,8 +57,9 @@ export function Grid() {
     <div className="card"><div className="filters"><input className="in" placeholder="UID" onChange={v('uid')} /><input className="in" placeholder="交易对" onChange={v('symbol')} />
       <select className="sel" onChange={v('status')}><option value="">全部状态</option><option value="running">运行中</option><option value="stopped">已停止</option></select></div></div>
     <ApiState q={q}>{total(q.data)}<DataTable rows={items(q.data)}
-      cols={[{ t: '策略 ID', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '交易对', k: 'symbol' }, { t: '模式', render: r => r.mode === 'geometric' ? '等比' : r.mode === 'arithmetic' ? '等差' : r.mode }, { t: '区间', render: r => r.lowerPrice + ' ~ ' + r.upperPrice }, { t: '网格数', k: 'grids' },
+      cols={[{ t: '策略 ID', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '交易对', k: 'symbol' }, { t: '模式', render: r => r.mode === 'geometric' ? '等比' : r.mode === 'arithmetic' ? '等差' : r.mode }, { t: '区间', render: r => (+r.lowerPrice) + ' ~ ' + (+r.upperPrice) }, { t: '网格数', k: 'grids' },
         { t: '投入', r: 1, num: 1, render: r => num(r.investment) }, { t: '网格收益', r: 1, num: 1, render: r => <span className={+r.gridProfit >= 0 ? 'up' : 'down'}>{num(r.gridProfit, 4)}</span> },
-        { t: '状态', render: r => <Tag k={r.status === 'running' ? 'ok' : ''}>{G_ST[r.status] || r.status}</Tag> }, { t: '创建', render: r => ft(r.createdAt) }, { t: '停止', render: r => ft(r.stoppedAt) },
-        { t: '', render: r => canStop && r.status === 'running' ? <a onClick={() => { setSell(false); setStop(r) }}>强制停止</a> : null }]} /></ApiState></>
+        { t: '状态', render: r => <Tag k={r.status === 'running' ? 'ok' : ''}>{G_ST[r.status] || r.status}</Tag> },
+        { t: '操作', render: r => canStop && r.status === 'running' ? <a style={{ color: 'var(--down, #d33)', whiteSpace: 'nowrap' }} onClick={() => { setSell(false); setStop(r) }}>强制停止</a> : null },
+        { t: '创建', render: r => ft(r.createdAt) }, { t: '停止', render: r => ft(r.stoppedAt) }]} /></ApiState></>
 }
