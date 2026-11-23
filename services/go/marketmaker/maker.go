@@ -391,7 +391,11 @@ func (m *Maker) runPair(ctx context.Context, p Pair, running, stopping bool, gat
 	var mid decimal.Decimal
 	var targets []Quote
 	if usedBook {
-		mid, targets = BuildFromBook(p, r, book, inv, extraBps, m.books.scale)
+		if depthMode(p) {
+			mid, targets = BuildDepthGrid(p, r, book, inv, extraBps)
+		} else {
+			mid, targets = BuildFromBook(p, r, book, inv, extraBps, m.books.scale)
+		}
 		if depthMode(p) {
 			var f decimal.Decimal
 			if targets, f = capMarginBudget(targets, p.Leverage, m.cfg.DepthMargin, r); f.LessThan(one) {
@@ -427,7 +431,13 @@ func (m *Maker) runPair(ctx context.Context, p Pair, running, stopping bool, gat
 		m.fail(st, "open orders listing truncated (>= 500); reduce levels")
 		return
 	}
-	cancel, place := Diff(resting, targets, p.RequoteBps)
+	var cancel []restingOrder
+	var place []Quote
+	if depthMode(p) && usedBook {
+		cancel, place = DiffExact(resting, targets)
+	} else {
+		cancel, place = Diff(resting, targets, p.RequoteBps)
+	}
 	// inner levels first so the top of book refills before the tail
 	sort.SliceStable(place, func(i, j int) bool { return place[i].Level < place[j].Level })
 	lastErr := m.applyOps(ctx, r, st, cancel, place)
