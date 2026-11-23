@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FLAT, MENU } from './menu.js'
+import { FLAT, allowed, menuFor } from './menu.js'
 import { Ctx } from './ui.jsx'
 import { api, getToken, roleCn, setToken, setUnauthorizedHandler } from './api.js'
 import Login from './pages/Login.jsx'
@@ -14,11 +14,14 @@ import * as X from './pages/Extra.jsx'
 import { Adjust } from './pages/Adjust.jsx'
 import { Support } from './pages/Support.jsx'
 import Marketmaker from './pages/Marketmaker.jsx'
+import * as C from './pages/Compliance.jsx'
+import { Skeleton } from './ui.jsx'
 
 const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users': U.RiskList, withdraw: F.Withdraw, deposit: F.Deposit, ledger: F.Ledger, adjust: Adjust, support: Support,
   'spot-orders': T.SpotOrders, positions: T.Positions, grid: T.Grid, marketmaker: Marketmaker, coins: P.Coins, pairs: P.Pairs, futures: P.Futures, fees: P.Fees,
   campaigns: O.Campaigns, rewards: O.Rewards, points: O.Points, copy: O.Copy, rebate: O.Rebate, content: O.Content, admins: S.Admins, audit: S.Audit, settings: S.Settings,
-  wallets: X.Wallets, liquidation: X.Liquidation, partners: X.Partners, coupons: X.Coupons, notify: X.Notify }
+  wallets: X.Wallets, liquidation: X.Liquidation, partners: X.Partners, coupons: X.Coupons, notify: X.Notify,
+  cs: C.CsWorkbench, chat: C.ChatModeration, por: C.ProofOfReserves, solvency: C.Solvency }
 
 const parse = () => { const [k, q] = (location.hash.slice(2) || 'dashboard').split('?'); return { key: ROUTES[k] ? k : 'dashboard', q: Object.fromEntries(new URLSearchParams(q || '')) } }
 
@@ -32,13 +35,19 @@ export default function App() {
   useEffect(() => { setUnauthorizedHandler(() => { setAuthed(false); setMe(null) }) }, [])
   useEffect(() => { if (authed) api('me').then(setMe, () => {}) }, [authed])
   const logout = () => { api('auth/logout', { method: 'POST' }).catch(() => {}).finally(() => { setToken(null); setAuthed(false); setMe(null) }) }
-  if (!authed) return <Login onDone={() => setAuthed(true)} />
   const meV = { user: me ? me.username : '…', role: me ? roleCn(me.roles) : '', perms: me ? me.permissions : [] }
-  const cur = FLAT.find(f => f.key === r.key); const Page = ROUTES[r.key]
+  const menu = menuFor(meV.perms)
+  const cur = FLAT.find(f => f.key === r.key)
+  const ok = !!me && allowed(meV.perms, cur.perm)
+  // 无权限的路由（含默认 dashboard）：跳到第一个有权限的菜单
+  const first = menu.length ? menu[0].items[0][0] : null
+  useEffect(() => { if (authed && me && !ok && first && r.key === 'dashboard') go(first) }, [authed, me, ok, first, r.key]) // eslint-disable-line
+  if (!authed) return <Login onDone={() => setAuthed(true)} />
+  const Page = ok ? ROUTES[r.key] : null
   return <Ctx.Provider value={{ go, say, q: r.q, me: meV }}>
     <div className="app">
       <aside className="side"><div className="brand"><i />linbit<em>Admin</em></div>
-        {MENU.map(m => <div key={m.g}><div className="grp">{m.g}</div>
+        {menu.map(m => <div key={m.g}><div className="grp">{m.g}</div>
           {m.items.map(([k, n, ic, , b]) => <a key={k} className={'mi' + (k === r.key ? ' on' : '')} href={'#/' + k}><span className="ic">{ic}</span>{n}{b && <span className="bd">{b}</span>}</a>)}</div>)}
       </aside>
       <div className="main">
@@ -47,7 +56,8 @@ export default function App() {
           <div className="ibtn" title="待办">☑<span className="dot" /></div><div className="ibtn" title="通知">🔔</div>
           <div className="me"><div className="av">{meV.user.slice(0, 2).toUpperCase()}</div><div style={{ lineHeight: 1.2 }}>{meV.user}<div className="muted" style={{ fontSize: 11 }}>{meV.role}</div></div>
             <a className="btn g" style={{ marginLeft: 8 }} onClick={logout}>退出</a></div></header>
-        <main className="content" key={r.key}><Page /></main>
+        <main className="content" key={r.key}>{!me ? <Skeleton /> : Page ? <Page /> : <div className="card pad"><div className="banner bad">无权限访问「{cur.name}」</div>
+          <div className="muted">当前角色：{meV.role || '-'}。如需开通请联系超级管理员在「管理员与角色」中调整角色。</div>{first && <button className="btn" style={{ marginTop: 10 }} onClick={() => go(first)}>返回首个可用页面</button>}</div>}</main>
       </div>
     </div>{toast && <div className="toast">✓ {toast}</div>}
   </Ctx.Provider>

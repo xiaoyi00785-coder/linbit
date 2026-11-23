@@ -55,7 +55,7 @@ export function Support() {
     <ApiState q={r}><DataTable rows={items(r.data)} onRow={x => setCur(x.id)} filters={<>
       <select className="sel" value={cat} onChange={e => setCat(e.target.value)}><option value="">全部分类</option>{Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
       <input className="in" placeholder="按 UID 筛选" value={uid} onChange={e => setUid(e.target.value)} />
-      <select className="sel" value={asg} onChange={e => setAsg(e.target.value)}><option value="">全部处理人</option><option value="me">指派给我</option><option value="-1">未指派</option></select></>}
+      <select className="sel" value={asg} onChange={e => setAsg(e.target.value)}><option value="">全部处理人</option><option value="me">指派给我</option><option value="none">未指派</option></select></>}
       cols={[{ t: '单号', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '分类', render: x => CAT[x.category] || x.category }, { t: '标题', render: x => <span style={pre}>{x.subject}</span> },
         { t: '处理人', render: x => x.assigneeName || '-' }, { t: '最近回复', render: x => (x.lastReplyBy === 'user' ? '用户 · ' : '客服 · ') + ft(x.lastReplyAt) },
         { t: '创建', render: x => ft(x.createdAt) }, { t: '状态', render: x => st(x.status) }]} /></ApiState>

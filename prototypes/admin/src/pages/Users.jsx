@@ -3,7 +3,7 @@ import { DataTable, Drawer, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilt
 import { ApiState } from '../ui.jsx'
 import { Profile30d } from './Common.jsx'
 import { API_BASE, getToken, api, ft, items, KYC_LV, KYC_ST, num, USER_ST, useApi } from '../api.js'
-const mapUser = u => ({ ...u, id: u.uid, nick: u.nickname || '-', email: u.email || '-', phone: u.phone || '-', country: u.countryCode || '-', kyc: KYC_LV(u.kycLevel), status: USER_ST[u.status] || u.status, raw: u.status, tfa: u.totpEnabled, reg: ft(u.createdAt), identity: '-', risk: '-', inviter: '-', last: '-' })
+export const mapUser = u => ({ ...u, id: u.uid, nick: u.nickname || '-', email: u.email || '-', phone: u.phone || '-', country: u.countryCode || '-', kyc: KYC_LV(u.kycLevel), status: USER_ST[u.status] || u.status, raw: u.status, tfa: u.totpEnabled, reg: ft(u.createdAt), identity: '-', risk: '-', inviter: '-', last: '-' })
 const stTag = s => <Tag k={s === '正常' ? 'ok' : s === '冻结' ? 'bad' : 'wn'}>{s}</Tag>
 
 export function FreezeModal({ user, onClose, onDone }) {
