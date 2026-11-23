@@ -3,24 +3,23 @@ import { DataTable, Drawer, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilt
 import { ApiState } from '../ui.jsx'
 import { Profile30d } from './Common.jsx'
 import { API_BASE, getToken, api, ft, items, KYC_LV, KYC_ST, num, USER_ST, useApi } from '../api.js'
-export const mapUser = u => ({ ...u, id: u.uid, nick: u.nickname || '-', email: u.email || '-', phone: u.phone || '-', country: u.countryCode || '-', kyc: KYC_LV(u.kycLevel), status: USER_ST[u.status] || u.status, raw: u.status, tfa: u.totpEnabled, reg: ft(u.createdAt), identity: '-', risk: '-', inviter: '-', last: '-' })
+export const mapUser = u => ({ ...u, id: u.uid, nick: u.nickname || '-', email: u.email || '-', phone: u.phone || '-', country: u.countryCode || '-', kyc: KYC_LV(u.kycLevel), status: USER_ST[u.status] || u.status, raw: u.status, tfa: u.totpEnabled, reg: ft(u.createdAt) })
 const stTag = s => <Tag k={s === '正常' ? 'ok' : s === '冻结' ? 'bad' : 'wn'}>{s}</Tag>
 
 export function FreezeModal({ user, onClose, onDone }) {
-  const { say } = useApp(); const [scope, setScope] = useState(['提现']); const [reason, setReason] = useState(''); const [code, setCode] = useState(''); const [err, setErr] = useState('')
+  const { say } = useApp(); const [reason, setReason] = useState(''); const [cat, setCat] = useState(''); const [ticket, setTicket] = useState(''); const [note, setNote] = useState(''); const [code, setCode] = useState(''); const [err, setErr] = useState('')
   const unfreeze = !!user.raw && user.raw !== 'active'
-  const submit = async () => { setErr(''); try { await api(`users/${user.uid}/${unfreeze ? 'unfreeze' : 'freeze'}`, { method: 'POST', body: { reason, totpCode: code } }); say(unfreeze ? '已解冻' : '已冻结'); onDone && onDone(); onClose() } catch (e) { setErr(e.message) } }
-  const opts = ['登录', '交易', '提现', '划转', '充值入账', '跟单/带单']
-  return <Modal title={`冻结 / 限制账户 · UID ${user.uid}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>取消</button><button className="btn d" disabled={!reason.trim() || code.length < 6} onClick={submit}>{unfreeze ? '提交解冻' : '提交冻结'}</button></>}>
-    <div className="banner">高危操作：需填写原因 + Google 验证码，全程写入审计日志。当前接口为整户冻结，冻结范围/期限仅作记录。</div>{err && <div className="banner bad">{err}</div>}
-    <div className="fr"><label>原因</label><input className="in" placeholder="必填" value={reason} onChange={e => setReason(e.target.value)} /></div>
+  // 后端只接收一个 reason 字段（写入用户状态说明 + 审计日志）；分类/工单号/备注拼进 reason 一并留痕
+  const full = [cat && `[${cat}]`, reason.trim(), ticket.trim() && `工单 ${ticket.trim()}`, note.trim() && `备注：${note.trim()}`].filter(Boolean).join(' ')
+  const submit = async () => { setErr(''); try { await api(`users/${user.uid}/${unfreeze ? 'unfreeze' : 'freeze'}`, { method: 'POST', body: { reason: full, totpCode: code } }); say(unfreeze ? '已解冻' : '已冻结'); onDone && onDone(); onClose() } catch (e) { setErr(e.message) } }
+  return <Modal title={`${unfreeze ? '解冻账户' : '冻结账户'} · UID ${user.uid}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>取消</button><button className="btn d" disabled={!reason.trim() || code.length < 6} onClick={submit}>{unfreeze ? '提交解冻' : '提交冻结'}</button></>}>
+    <div className="banner"><div>高危操作：需填写原因 + Google 验证码，全程写入审计日志。<b>{unfreeze ? '解冻后账户恢复为正常状态。' : '当前仅支持整户冻结（状态 → 冻结），不支持按功能范围或期限冻结；到期不会自动解冻。'}</b>系统不会自动通知用户，如需告知请在「通知用户」中单独发送。</div></div>{err && <div className="banner bad">{err}</div>}
+    <div className="fr"><label>原因分类</label><select className="sel" value={cat} onChange={e => setCat(e.target.value)}><option value="">（可选）</option>{(unfreeze ? ['核实无风险', '司法协查解除', '用户申诉通过', '误操作更正'] : ['疑似盗号', '司法协查', 'AML 命中', '羊毛党/刷量', '用户自助申请']).map(x => <option key={x}>{x}</option>)}</select></div>
+    <div className="fr"><label>原因</label><input className="in" placeholder="必填，将记录为状态说明" value={reason} onChange={e => setReason(e.target.value)} /></div>
+    <div className="fr"><label>工单号</label><input className="in" placeholder="（可选）如 CS-20261102-0012" value={ticket} onChange={e => setTicket(e.target.value)} /></div>
+    <div className="fr" style={{ alignItems: 'start' }}><label>备注</label><textarea className="in" rows="2" placeholder="（可选）内部可见" value={note} onChange={e => setNote(e.target.value)} /></div>
     <div className="fr"><label>Google 验证码</label><input className="in" maxLength={6} placeholder="6 位动态码" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></div>
-    <div className="fr"><label>冻结范围</label><div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>{opts.map(o => <label key={o}><input type="checkbox" checked={scope.includes(o)} onChange={() => setScope(s => s.includes(o) ? s.filter(x => x !== o) : [...s, o])} /> {o}</label>)}</div></div>
-    <div className="fr"><label>原因分类</label><select className="sel"><option>疑似盗号</option><option>司法协查</option><option>AML 命中</option><option>羊毛党/刷量</option><option>用户自助申请</option></select></div>
-    <div className="fr"><label>期限</label><select className="sel"><option>永久（手动解冻）</option><option>24 小时</option><option>7 天</option></select></div>
-    <div className="fr"><label>工单号</label><input className="in" placeholder="如 CS-20261102-0012" /></div>
-    <div className="fr" style={{ alignItems: 'start' }}><label>备注</label><textarea className="in" rows="3" placeholder="内部可见，用户不可见" /></div>
-    <div className="fr"><label>通知用户</label><label><input type="checkbox" defaultChecked /> 发送站内信 + 邮件（模板：账户安全冻结）</label></div>
+    {full && <div className="muted" style={{ fontSize: 12 }}>将记录为：{full}</div>}
   </Modal>
 }
 
@@ -28,8 +27,8 @@ export function UserDrawer({ u, onClose, onChanged }) {
   const bal = useApi('users/' + u.uid + '/balances')
   const [tab, setTab] = useState('base'); const [fz, setFz] = useState(false)
   const pos = useApi(tab === 'pos' ? 'futures/positions' : null, { uid: u.uid, size: 200 }); const dev = useApi(tab === 'log' ? `users/${u.uid}/devices` : null)
-  return <Drawer width={760} title={<>{u.nick} <span className="muted" style={{ fontWeight: 400 }}>UID {u.uid}</span></>} extra={<>{stTag(u.status)}<Tag k="gd">{u.identity}</Tag></>} onClose={onClose}
-    footer={<><button className="btn" onClick={() => { location.hash = '#/adjust?uid=' + encodeURIComponent(u.uid) }}>人工调账</button><button className="btn d" onClick={() => setFz(true)}>{u.raw && u.raw !== 'active' ? '解冻' : '冻结 / 限制'}</button></>}>
+  return <Drawer width={760} title={<>{u.nick} <span className="muted" style={{ fontWeight: 400 }}>UID {u.uid}</span></>} extra={<>{stTag(u.status)}</>} onClose={onClose}
+    footer={<><button className="btn" onClick={() => { location.hash = '#/adjust?uid=' + encodeURIComponent(u.uid) }}>人工调账</button><button className="btn d" onClick={() => setFz(true)}>{u.raw && u.raw !== 'active' ? '解冻' : '冻结账户'}</button></>}>
     <div className="grid g4" style={{ marginBottom: 12 }}>{[['总资产估值', '$' + num(items(bal.data).reduce((a, b) => a + (+b.valuationUsd || 0), 0))]].map(([l, v]) => <div key={l} className="card kpi"><div className="l">{l}</div><div className="v num" style={{ fontSize: 16 }}>{v}</div></div>)}</div>
     <div className="sec" style={{ marginTop: 0 }}>近 30 日资金画像</div><div style={{ marginBottom: 12 }}><Profile30d uid={u.uid} /></div>
     <div className="card"><Tabs value={tab} onChange={setTab} items={[['base', '基本信息'], ['asset', '资产'], ['pos', '持仓'], ['log', '登录/设备']]} />
@@ -49,20 +48,34 @@ export function UserDrawer({ u, onClose, onChanged }) {
   </Drawer>
 }
 
+const csvCell = v => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t }
+export function downloadCsv(name, cols, rows) {
+  const body = [cols.map(c => csvCell(c[0])).join(','), ...rows.map(r => cols.map(c => csvCell(typeof c[1] === 'function' ? c[1](r) : r[c[1]])).join(','))].join('\n')
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + body], { type: 'text/csv;charset=utf-8' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+const USER_CSV = [['UID', 'uid'], ['昵称', 'nick'], ['邮箱(脱敏)', 'email'], ['手机(脱敏)', 'phone'], ['国家', 'country'], ['KYC', 'kyc'], ['2FA', r => r.tfa ? '已开启' : '未开启'], ['状态', 'status'], ['注册时间', 'reg']]
+const PS = 50
 export function Users() {
-  const { q } = useApp(); const [kw, setKw] = useState(''); const [st, setSt] = useState('')
-  const r = useApi('users', { q: kw, status: st, size: 200 }); const list = items(r.data).map(mapUser)
-  const [rows, set, f] = useFilter(list, (r, f) => eq(r.kyc, f.kyc))
+  const { q, say } = useApp(); const init = (q && (q.q || q.uid)) || ''
+  const [kw, setKw] = useState(init); const [app, setApp] = useState(init); const [st, setSt] = useState(''); const [kyc, setKyc] = useState(''); const [page, setPage] = useState(1)
+  const r = useApi('users', { q: app, status: st, page, size: PS }); const all = items(r.data).map(mapUser)
+  const list = kyc === '' ? all : all.filter(u => String(u.kycLevel ?? '') === kyc)
+  const total = r.data ? (r.data.total ?? all.length) : 0; const pages = Math.max(1, Math.ceil(total / PS))
   const [cur, setCur] = useState(null)
-  return <><PageHead title="用户列表" desc={`共 ${r.data ? r.data.total ?? list.length : '-'} 名用户 · 支持 UID / 昵称 / 邮箱检索（敏感字段已脱敏）`}><button className="btn">导出 CSV</button></PageHead>
-    <ApiState q={r}><DataTable rows={rows} select onRow={setCur} cols={[
-      { t: 'UID', k: 'uid', render: r => <span className="pri">{r.uid}</span> }, { t: '昵称', k: 'nick' }, { t: '邮箱', k: 'email' }, { t: '国家', k: 'country' },
-      { t: 'KYC', k: 'kyc', render: r => <Tag k={r.kyc.startsWith('L2') ? 'ok' : r.kyc === '审核中' ? 'in' : ''}>{r.kyc}</Tag> }, { t: '2FA', render: r => r.tfa ? <Tag k="ok">已开启</Tag> : <Tag k="wn">未开启</Tag> }, { t: '状态', k: 'status', render: r => stTag(r.status) },
+  const run = () => { setApp(kw.trim()); setPage(1) }
+  const exp = (rows, tag) => { downloadCsv(`users-${tag}-${new Date().toISOString().slice(0, 10)}.csv`, USER_CSV, rows); say(`已导出 ${rows.length} 条（字段已脱敏）`) }
+  const hasCountry = all.some(u => u.country && u.country !== '-')
+  return <><PageHead title="用户列表" desc={`共 ${r.data ? total : '-'} 名用户 · 支持 UID / 昵称 / 邮箱检索（敏感字段已脱敏）`}><button className="btn" disabled={!list.length} onClick={() => exp(list, 'page' + page)}>导出本页 CSV</button></PageHead>
+    <ApiState q={r}><DataTable rows={list} select rowKey="uid" onRow={setCur} pager={<><span>共 {total} 条 · 第 {page}/{pages} 页 · 每页 {PS} 条{kyc !== '' ? '（KYC 筛选仅作用于本页）' : ''}</span><span className="sp" />
+        <b style={{ opacity: page > 1 ? 1 : .4 }} onClick={() => page > 1 && setPage(page - 1)}>‹ 上一页</b><b style={{ opacity: page < pages ? 1 : .4 }} onClick={() => page < pages && setPage(page + 1)}>下一页 ›</b></>}
+      cols={[
+      { t: 'UID', k: 'uid', render: r => <span className="pri">{r.uid}</span> }, { t: '昵称', k: 'nick' }, { t: '邮箱', k: 'email' }, ...(hasCountry ? [{ t: '国家', k: 'country' }] : []),
+      { t: 'KYC', k: 'kyc', render: r => <Tag k={r.kyc.startsWith('L2') ? 'ok' : r.kyc.startsWith('L1') ? 'in' : ''}>{r.kyc}</Tag> }, { t: '2FA', render: r => r.tfa ? <Tag k="ok">已开启</Tag> : <Tag k="wn">未开启</Tag> }, { t: '状态', k: 'status', render: r => stTag(r.status) },
       { t: '注册时间', k: 'reg' }, { t: '操作', render: r => <a className="btn g">详情</a> }]}
-      filters={<><input className="in" style={{ width: 220 }} placeholder="UID / 昵称 / 邮箱" value={kw} onChange={e => setKw(e.target.value)} />
-        <select className="sel" onChange={e => setSt({ 正常: 'active', 冻结: 'frozen', 限制提现: 'withdraw_restricted' }[e.target.value] || '')}><option>全部</option><option>正常</option><option>冻结</option><option>限制提现</option></select>
-        <select className="sel" onChange={set('kyc')}><option>全部</option><option>未认证</option><option>L1 基础</option><option>L2 高级</option><option>审核中</option></select></>}
-      toolbar={(sel) => <><button className="btn" disabled={!sel.length}>批量打标签</button><button className="btn d" disabled={!sel.length}>批量冻结</button></>} /></ApiState>
+      filters={<><input className="in" style={{ width: 220 }} placeholder="UID / 昵称 / 邮箱（回车查询）" value={kw} onChange={e => setKw(e.target.value)} onKeyDown={e => e.key === 'Enter' && run()} /><button className="btn" onClick={run}>查询</button>
+        <select className="sel" value={st} onChange={e => { setSt(e.target.value); setPage(1) }}><option value="">全部状态</option><option value="active">正常</option><option value="frozen">冻结</option><option value="withdraw_restricted">限制提现</option></select>
+        <select className="sel" value={kyc} onChange={e => setKyc(e.target.value)}><option value="">全部 KYC</option><option value="0">未认证</option><option value="1">L1 基础</option><option value="2">L2 高级</option></select></>}
+      toolbar={(sel) => <button className="btn" disabled={!sel.length} onClick={() => exp(list.filter(u => sel.includes(u.uid)), 'selected')}>导出所选 CSV</button>} /></ApiState>
     {cur && <UserDrawer u={cur} onClose={() => setCur(null)} onChanged={() => { setCur(null); r.reload() }} />}</>
 }
 

@@ -1,14 +1,14 @@
 /* 交易监控：现货订单 / 合约持仓 / 网格策略（只读，数据来自 admin/v1） */
 import { useEffect, useRef, useState } from 'react'
 import { Filters, useFilters } from './P1.jsx'
-import { ApiState, DataTable, Kpi, PageHead, Tag } from '../ui.jsx'
+import { ApiState, DataTable, Kpi, PageHead, Tag, useApp } from '../ui.jsx'
 import { ft, items, num, useApi } from '../api.js'
 
 const O_ST = { new: '挂单中', partially_filled: '部分成交', filled: '已成交', canceled: '已撤销', rejected: '已拒绝', expired: '已过期' }
 const G_ST = { running: '运行中', stopped: '已停止', stopping: '停止中', failed: '失败' }
 /** 筛选状态：下拉框立即生效；输入框停止输入 600ms 后才请求（不再每个按键都查库） */
 export const useQ = () => {
-  const [f, setF] = useState({}); const draft = useRef({}); const timer = useRef(null)
+  const { q } = useApp(); const [f, setF] = useState(() => ({ ...(q || {}) })); const draft = useRef({ ...(q || {}) }); const timer = useRef(null)
   useEffect(() => () => clearTimeout(timer.current), [])
   const commit = () => setF(Object.fromEntries(Object.entries(draft.current).filter(([, x]) => x !== '')))
   const v = k => e => { draft.current = { ...draft.current, [k]: e.target.value.trim() }; clearTimeout(timer.current)

@@ -18,6 +18,7 @@ import * as C from './pages/Compliance.jsx'
 import * as SEC from './pages/Security.jsx'
 import * as P1 from './pages/P1.jsx'
 import { Skeleton } from './ui.jsx'
+import { InboxBell, TodoBell, TopSearch } from './Topbar.jsx'
 
 const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users': U.RiskList, withdraw: F.Withdraw, deposit: F.Deposit, ledger: F.Ledger, adjust: Adjust, support: Support,
   'spot-orders': T.SpotOrders, positions: T.Positions, grid: T.Grid, marketmaker: Marketmaker, coins: P.Coins, pairs: P.Pairs, futures: P.Futures, fees: P.Fees,
@@ -57,11 +58,11 @@ export default function App() {
       </aside>
       <div className="main">
         <header className="top"><span className="crumb">{cur.group} / <b>{cur.name}</b></span><span className="env">{import.meta.env.VITE_ADMIN_ENV_LABEL || '后台'}</span>
-          <div className="search">⌕&nbsp; 搜索 UID / 邮箱 / 订单号 / TxID</div>
-          <div className="ibtn" title="待办">☑<span className="dot" /></div><div className="ibtn" title="通知">🔔</div>
+          <TopSearch perms={meV.perms} />
+          {me && <TodoBell perms={meV.perms} />}{me && <InboxBell user={meV.user} />}
           <div className="me"><div className="av">{meV.user.slice(0, 2).toUpperCase()}</div><div style={{ lineHeight: 1.2 }}>{meV.user}<div className="muted" style={{ fontSize: 11 }}>{meV.role}</div></div>
             <a className="btn g" style={{ marginLeft: 8 }} onClick={logout}>退出</a></div></header>
-        <main className="content" key={r.key}>{!me ? <Skeleton /> : Page ? <Page /> : <div className="card pad"><div className="banner bad">无权限访问「{cur.name}」</div>
+        <main className="content" key={r.key + JSON.stringify(r.q)}>{!me ? <Skeleton /> : Page ? <Page /> : <div className="card pad"><div className="banner bad">无权限访问「{cur.name}」</div>
           <div className="muted">当前角色：{meV.role || '-'}。如需开通请联系超级管理员在「管理员与角色」中调整角色。</div>{first && <button className="btn" style={{ marginTop: 10 }} onClick={() => go(first)}>返回首个可用页面</button>}</div>}</main>
       </div>
     </div>{toast && <div className="toast">✓ {toast}</div>}

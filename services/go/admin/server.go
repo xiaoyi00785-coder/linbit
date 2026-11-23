@@ -184,6 +184,7 @@ func (s *Server) Routes() http.Handler {
 	s.registerAPIKeyRoutes(a)
 	s.registerRiskRoutes(a)
 	s.p1Routes(a)
+	s.registerTopbarRoutes(a)
 
 	if s.cfg.DevMode {
 		// Dev only: run the scheduler once at an arbitrary "now" so the smoke can
