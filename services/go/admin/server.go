@@ -176,6 +176,7 @@ func (s *Server) Routes() http.Handler {
 	s.registerCardRoutes(a)
 	s.registerUserCreditRoutes(a)
 	s.registerAdjustRoutes(a)
+	s.registerColdSweepRoutes(a)
 	s.registerEventRoutes(a)
 	s.registerTradFiRoutes(a)
 

@@ -52,6 +52,8 @@ const (
 	// 人工调账: create/list, and the second-person approval (maker-checker).
 	permFundAdjust        = "fund:adjust"
 	permFundAdjustApprove = "fund:adjust:approve"
+	// 热转冷手动归集：仅超级管理员默认拥有，并列入 lockedPerms。
+	permWalletColdSweep = "wallet:cold_sweep"
 	// 风控规则：查看命中/规则；编辑规则与处理命中（只告警，不自动冻结或拦截资金）。
 	permRiskView = "risk:view"
 	permRiskEdit = "risk:edit"
@@ -60,7 +62,7 @@ const (
 var allPerms = []string{permUserView, permUserEdit, permUserPII, permKYCView, permKYCApprove,
 	permWithdrawView, permWithdrawFirst, permWithdrawSecond, permLedgerView, permSymbolView,
 	permSymbolEdit, permFeeView, permFeeEdit, permFeeApprove, permRewardView, permRewardEdit,
-	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView, permFundAdjust, permFundAdjustApprove, permSupportView, permSupportReply, permRiskView, permRiskEdit}
+	permRewardApprove, permCouponApprove, permContentEdit, permAuditView, permAdminManage, permCopyView, permCopyReview, permPartnerView, permPartnerReview, permEarnView, permEarnEdit, permVIPView, permVIPReview, permMMView, permMMEdit, permDashView, permFundAdjust, permFundAdjustApprove, permSupportView, permSupportReply, permWalletColdSweep, permRiskView, permRiskEdit}
 
 // rolePerms is the RBAC matrix from prototypes/admin/DESIGN.md §3.
 var rolePerms = map[string][]string{

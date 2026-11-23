@@ -35,7 +35,7 @@ func newTestStore(t *testing.T) (*Store, *sql.DB) {
 	// Isolate tests: ProcessWithdrawals/Scan operate over every row in the DB, so
 	// leftovers from a previous run would be picked up here. The devstack DB is
 	// shared by all modules, but these tables are wallet-only.
-	if _, err := db.Exec(`TRUNCATE chain_txs, chain_state, withdrawals, deposits, deposit_addresses RESTART IDENTITY`); err != nil {
+	if _, err := db.Exec(`TRUNCATE chain_txs, chain_state, withdrawals, deposits, deposit_addresses, hot_cold_transfers, sweeps RESTART IDENTITY`); err != nil {
 		t.Fatalf("truncate wallet tables: %v", err)
 	}
 	return NewStore(db), db

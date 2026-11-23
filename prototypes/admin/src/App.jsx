@@ -40,7 +40,7 @@ export default function App() {
   useEffect(() => { setUnauthorizedHandler(() => { setAuthed(false); setMe(null) }) }, [])
   useEffect(() => { if (authed) api('me').then(setMe, () => {}) }, [authed])
   const logout = () => { api('auth/logout', { method: 'POST' }).catch(() => {}).finally(() => { setToken(null); setAuthed(false); setMe(null) }) }
-  const meV = { user: me ? me.username : '…', role: me ? roleCn(me.roles) : '', perms: me ? me.permissions : [] }
+  const meV = { id: me ? me.id : 0, user: me ? me.username : '…', role: me ? roleCn(me.roles) : '', perms: me ? me.permissions : [] }
   const menu = menuFor(meV.perms)
   const cur = FLAT.find(f => f.key === r.key)
   const ok = !!me && allowed(meV.perms, cur.perm)

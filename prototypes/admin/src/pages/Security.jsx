@@ -123,7 +123,7 @@ function RiskRuleList() {
 export const PERM_GROUPS = [
   ['看板', [['dash:view', '数据看板']]],
   ['用户', [['user:view', '查看用户'], ['user:pii', '查看完整个人信息'], ['user:edit', '冻结/解冻/吊销 Key'], ['kyc:view', '查看 KYC'], ['kyc:approve', 'KYC 审核']]],
-  ['资金', [['withdraw:view', '查看提现'], ['withdraw:first', '提现初审'], ['withdraw:second', '提现复审'], ['ledger:view', '查看流水/充值/持仓'], ['fund:adjust', '发起人工调账'], ['fund:adjust:approve', '复核人工调账']]],
+  ['资金', [['withdraw:view', '查看提现'], ['withdraw:first', '提现初审'], ['withdraw:second', '提现复审'], ['ledger:view', '查看流水/充值/持仓'], ['fund:adjust', '发起人工调账'], ['fund:adjust:approve', '复核人工调账'], ['wallet:cold_sweep', '热转冷（发起/复核）']]],
   ['产品', [['symbol:view', '查看交易对/合约'], ['symbol:edit', '编辑交易对/合约'], ['fee:view', '查看费率'], ['fee:edit', '提交费率变更'], ['fee:approve', '审批费率变更']]],
   ['运营', [['reward:view', '查看活动/奖励'], ['reward:edit', '创建活动/奖励'], ['reward:approve', '审批奖励'], ['coupon:approve', '审批卡券'], ['content:edit', '内容/公告/聊天/PoR'], ['earn:view', '查看理财'], ['earn:edit', '编辑理财'], ['vip:view', '查看 VIP'], ['vip:review', 'VIP 审核']]],
   ['社区', [['copy:view', '查看跟单'], ['copy:review', '跟单审核'], ['partner:view', '查看合伙人'], ['partner:review', '合伙人审核']]],

@@ -53,7 +53,7 @@ func (s *Server) UseRealChain(ctx context.Context, mode string) error {
 	if err != nil {
 		return err
 	}
-	s.chain, s.real, s.mock = rc, rc, nil
+	s.chain, s.real, s.mock, s.coldMove = rc, rc, nil, rc
 	return nil
 }
 
@@ -134,6 +134,9 @@ func (s *Server) workerPass(ctx context.Context) {
 	}
 	if _, _, err := s.ProcessWithdrawals(pass); err != nil {
 		log.Printf("worker: withdrawals: %v", err)
+	}
+	if _, _, err := s.ProcessColdTransfers(pass); err != nil {
+		log.Printf("worker: cold-transfers: %v", err)
 	}
 	if s.real != nil && os.Getenv("WALLET_SWEEP_ENABLED") != "false" {
 		if _, err := s.real.Sweep(pass, s.sweepMin); err != nil {

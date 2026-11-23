@@ -30,6 +30,7 @@ type Server struct {
 	market     *MarketClient
 	scanner    *Scanner
 	real       *RealChain // non-nil when WALLET_CHAIN=testnet|mainnet
+	coldMove   coldMover  // hot→cold; tests inject a stub, else RealChain
 }
 
 // NewServer constructs a Server with the mock chain, mock signers and local risk
@@ -80,6 +81,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /internal/admin/internal-transfer/config", s.internal(s.handleAdminITConfig))
 	mux.HandleFunc("PUT /internal/admin/internal-transfer/config", s.internal(s.handleAdminPutITConfig))
 	mux.HandleFunc("GET /internal/admin/internal-transfers", s.internal(s.handleAdminITList))
+	mux.HandleFunc("GET /internal/admin/wallet/cold-transfers/quote", s.internal(s.handleColdTransferQuote))
+	mux.HandleFunc("GET /internal/admin/wallet/cold-transfers", s.internal(s.handleColdTransferList))
+	mux.HandleFunc("GET /internal/admin/wallet/cold-transfers/{id}", s.internal(s.handleColdTransferGet))
+	mux.HandleFunc("POST /internal/admin/wallet/cold-transfers", s.internal(s.handleColdTransferCreate))
+	mux.HandleFunc("POST /internal/admin/wallet/cold-transfers/{id}/approve", s.internal(s.handleColdTransferApprove))
+	mux.HandleFunc("POST /internal/admin/wallet/cold-transfers/{id}/reject", s.internal(s.handleColdTransferReject))
+	mux.HandleFunc("POST /internal/admin/wallet/cold-transfers/{id}/cancel", s.internal(s.handleColdTransferCancel))
 
 	// Dev-only simulated-chain control.
 	if s.real != nil {
