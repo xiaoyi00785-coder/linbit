@@ -379,6 +379,14 @@ func (m *Maker) runPair(ctx context.Context, p Pair, running, stopping bool, gat
 	if m.books != nil && m.cfg.followsBook(p.Market, r.Symbol) {
 		book, err = m.books.get(ctx, p.Market, r.Symbol, p.Levels)
 	}
+	if err == nil && depthMode(p) {
+		// depth mode sizes the book in base units: convert venue contracts
+		var ok bool
+		if book, ok = book.baseUnits(); !ok {
+			err = fmt.Errorf("%s: contract value unknown", book.Source)
+			log.Printf("mm: %s/%s depth: %v; quoting index ladder", p.Market, r.Symbol, err)
+		}
+	}
 	usedBook := err == nil && book.Valid()
 	var mid decimal.Decimal
 	var targets []Quote
@@ -412,7 +420,7 @@ func (m *Maker) runPair(ctx context.Context, p Pair, running, stopping bool, gat
 		m.fail(st, "open orders: "+err.Error())
 		return
 	}
-	if r.Market != "spot" && len(resting) >= openOrdersPageMax {
+	if depthMode(p) && len(resting) >= openOrdersPageMax {
 		// listing is capped: we can't see every resting order, so placing
 		// would duplicate. Cancel what we see and rebuild next pass.
 		m.cancelAll(ctx, r, st)

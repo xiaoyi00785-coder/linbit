@@ -124,9 +124,13 @@ func TestOKXSwapContractsConvertedToBase(t *testing.T) {
 	f := newBookFeed(Config{BookFeed: "okx", BookScale: d("1"), BookTTL: time.Millisecond, OKXURL: ox.URL})
 	f.client = http.DefaultClient
 	for i := 0; i < 2; i++ {
-		b, err := f.fetchOKX(context.Background(), "BTC-USDT-SWAP", 5)
-		if err != nil || !b.Bids[0].Qty.Equal(d("5")) || !b.Asks[0].Qty.Equal(d("3")) {
-			t.Fatalf("want 500/300 contracts -> 5/3 BTC, got %+v %v", b, err)
+		raw, err := f.fetchOKX(context.Background(), "BTC-USDT-SWAP", 5)
+		if err != nil || !raw.Bids[0].Qty.Equal(d("500")) || !raw.CtVal.Equal(d("0.01")) {
+			t.Fatalf("raw book must keep contract sizes (non-depth pairs unchanged): %+v %v", raw, err)
+		}
+		b, ok := raw.baseUnits()
+		if !ok || !b.Bids[0].Qty.Equal(d("5")) || !b.Asks[0].Qty.Equal(d("3")) {
+			t.Fatalf("want 500/300 contracts -> 5/3 BTC, got %+v", b)
 		}
 	}
 	if inst != 1 {
@@ -151,8 +155,12 @@ func TestOKXSwapWithoutCtValFails(t *testing.T) {
 	defer ox.Close()
 	f := newBookFeed(Config{BookFeed: "okx", BookScale: d("1"), OKXURL: ox.URL})
 	f.client = http.DefaultClient
-	if _, err := f.fetchOKX(context.Background(), "BTC-USDT-SWAP", 5); err == nil {
-		t.Fatal("unknown contract value must not copy contracts as BTC")
+	b, err := f.fetchOKX(context.Background(), "BTC-USDT-SWAP", 5)
+	if err != nil || !b.Bids[0].Qty.Equal(d("500")) {
+		t.Fatalf("non-depth pairs must still get the book as before: %+v %v", b, err)
+	}
+	if _, ok := b.baseUnits(); ok {
+		t.Fatal("depth mode must not use a SWAP book with unknown contract value")
 	}
 }
 
@@ -396,6 +404,14 @@ func TestLargeOrderSimulationBinanceProd(t *testing.T) {
 					t.Errorf("%s %s %s: filled %s slip %s", c.name, side, qty, s.Filled, s.SlipBps)
 				}
 			}
+		}
+	}
+	if out := os.Getenv("MM_SIM_DUMP_BN"); out != "" {
+		_, qs := BuildFromBook(cases[2].p, btcRules, truncBook(book, depthLimit(200)), Inventory{AllowBuy: true, AllowSell: true}, decimal.Zero, one)
+		qs, _ = capMarginBudget(qs, 1, d("10000000"), btcRules)
+		b, _ := json.Marshal(map[string]any{"mark": mark, "quotes": qs})
+		if err := os.WriteFile(out, b, 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
 	t.Log(rep.String())

@@ -17,6 +17,24 @@ type ExtBook struct {
 	Bids   []BookLevel
 	Asks   []BookLevel
 	Source string
+	// CtVal is the base units per quoted size unit when the venue quotes
+	// contracts (OKX SWAP: BTC-USDT-SWAP = 0.01). Zero = sizes are already base
+	// units, or unknown for a SWAP (CtUnknown). Only depth-mode pairs convert;
+	// every other pair keeps the sizes exactly as before.
+	CtVal     decimal.Decimal
+	CtUnknown bool
+}
+
+// baseUnits converts contract sizes to base units. ok=false when the venue
+// quotes contracts but the contract value could not be read.
+func (b ExtBook) baseUnits() (ExtBook, bool) {
+	if b.CtUnknown {
+		return b, false
+	}
+	if b.CtVal.IsPositive() {
+		return scaleBook(b, b.CtVal), true
+	}
+	return b, true
 }
 
 func (b ExtBook) Valid() bool {

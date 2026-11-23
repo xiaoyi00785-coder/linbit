@@ -309,14 +309,14 @@ func (f *bookFeed) fetchOKX(ctx context.Context, inst string, limit int) (ExtBoo
 		return b, err
 	}
 	// SWAP sizes are contracts, not base units (BTC-USDT-SWAP: 1 contract =
-	// 0.01 BTC). Copying them as base made every level ~100x too big. Without a
-	// known contract value the depth is meaningless: fail and let the caller
-	// fall back.
-	cv, err := f.okxCtVal(ctx, inst)
-	if err != nil {
-		return ExtBook{}, err
+	// 0.01 BTC). The book is returned unchanged (non-depth pairs keep their
+	// old sizes); depth-mode pairs convert with ExtBook.baseUnits().
+	if cv, cerr := f.okxCtVal(ctx, inst); cerr == nil {
+		b.CtVal = cv
+	} else {
+		b.CtUnknown = true
 	}
-	return scaleBook(b, cv), nil
+	return b, nil
 }
 
 func scaleBook(b ExtBook, k decimal.Decimal) ExtBook {
