@@ -37,16 +37,11 @@ export function NotifyModal({ uid, onClose }) {
   </Modal>
 }
 
-function SecurityRows({ uid, canEdit }) {
-  const sec = useApi('users/' + uid + '/security'); const [rel, setRel] = useState(false); const d = sec.data
+function SecurityRows({ uid }) {
+  const sec = useApi('users/' + uid + '/security'); const d = sec.data
   if (!d) return sec.error ? <><dt>提现锁</dt><dd className="muted">读取失败</dd></> : null
-  return <><dt>提现锁</dt><dd>{d.withdrawLocked ? <><Tag k="wn">锁定至 {ft(d.withdrawLockedUntil)}</Tag> <span className="muted">{d.withdrawLockReason || ''}</span>
-      {canEdit && <a className="btn g" style={{ marginLeft: 8 }} onClick={() => setRel(true)}>解除</a>}</> : <span className="muted">未锁定</span>}</dd>
-    <dt>资金密码</dt><dd>{d.fundPasswordSet ? '已设置' : '未设置'}{d.fundPasswordLockedUntil && new Date(d.fundPasswordLockedUntil) > new Date() ? <Tag k="wn">输错锁定至 {ft(d.fundPasswordLockedUntil)}</Tag> : ''}</dd>
-    {rel && <Confirm title={`解除提现锁 · UID ${uid}`} danger okText="确认解除" onClose={() => setRel(false)}
-      rows={[['当前锁定至', ft(d.withdrawLockedUntil)], ['锁定原因', d.withdrawLockReason || '-']]}
-      note="提现锁通常由修改密码/2FA/资金密码等安全操作自动触发（默认 24 小时），用于防盗号后立即转出。仅在已核实为本人操作时解除；解除后用户可立即提现。"
-      onOk={async b => { await api(`users/${uid}/withdraw-lock`, { method: 'DELETE', body: b }); sec.reload(); return '已解除提现锁' }} />}</>
+  return <><dt>提现锁</dt><dd>{d.withdrawLocked ? <><Tag k="wn">锁定至 {ft(d.withdrawLockedUntil)}</Tag> <span className="muted">{d.withdrawLockReason || ''}</span></> : <span className="muted">未锁定</span>}</dd>
+    <dt>资金密码</dt><dd>{d.fundPasswordSet ? '已设置' : '未设置'}{d.fundPasswordLockedUntil && new Date(d.fundPasswordLockedUntil) > new Date() ? <Tag k="wn">输错锁定至 {ft(d.fundPasswordLockedUntil)}</Tag> : ''}</dd></>
 }
 
 export function UserDrawer({ u, onClose, onChanged }) {
@@ -60,7 +55,7 @@ export function UserDrawer({ u, onClose, onChanged }) {
     <div className="card"><Tabs value={tab} onChange={setTab} items={[['base', '基本信息'], ['asset', '资产'], ['pos', '持仓'], ['log', '登录/设备']]} />
       <div style={{ padding: 14 }}>
         {tab === 'base' && <dl className="kv"><dt>昵称</dt><dd>{u.nick}</dd><dt>邮箱</dt><dd>{u.email} {u.emailVerified ? <Tag k="ok">已验证</Tag> : <Tag k="wn">未验证</Tag>}</dd><dt>手机</dt><dd>{u.phone}</dd><dt>国家/地区</dt><dd>{u.country}</dd>
-          <dt>KYC</dt><dd>{u.kyc}</dd><dt>2FA</dt><dd>{u.tfa ? <Tag k="ok">Google 验证器</Tag> : <Tag k="wn">未开启</Tag>}</dd><dt>状态说明</dt><dd>{u.statusReason || '-'}</dd><SecurityRows uid={u.uid} canEdit={can('user:edit')} /><dt>注册时间</dt><dd>{u.reg}</dd></dl>}
+          <dt>KYC</dt><dd>{u.kyc}</dd><dt>2FA</dt><dd>{u.tfa ? <Tag k="ok">Google 验证器</Tag> : <Tag k="wn">未开启</Tag>}</dd><dt>状态说明</dt><dd>{u.statusReason || '-'}</dd><SecurityRows uid={u.uid} /><dt>注册时间</dt><dd>{u.reg}</dd></dl>}
         {tab === 'asset' && <ApiState q={bal}><table className="t"><thead><tr><th>币种</th><th className="r">可用</th><th className="r">冻结</th><th className="r">合计</th><th className="r">估值 USD</th></tr></thead><tbody>
           {items(bal.data).map(r => <tr key={r.asset}><td>{r.asset}</td><td className="r num">{num(r.free, 4)}</td><td className="r num">{num(r.locked, 4)}</td><td className="r num">{num(r.total, 4)}</td><td className="r num">{num(r.valuationUsd)}</td></tr>)}</tbody></table></ApiState>}
         {tab === 'pos' && <ApiState q={pos}><table className="t"><thead><tr><th>合约</th><th>方向</th><th>杠杆</th><th className="r">数量</th><th className="r">开仓价</th><th className="r">未实现盈亏</th></tr></thead><tbody>
