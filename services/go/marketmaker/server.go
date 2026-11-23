@@ -102,6 +102,8 @@ type pairPatch struct {
 	MaxPosition     *decimal.Decimal `json:"maxPosition"`
 	MaxSkewBps      *decimal.Decimal `json:"maxSkewBps"`
 	Leverage        *int             `json:"leverage"`
+	DepthTargetQty  *decimal.Decimal `json:"depthTargetQty"`
+	DepthBandBps    *decimal.Decimal `json:"depthBandBps"`
 	UpdatedBy       string           `json:"updatedBy"`
 }
 
@@ -115,8 +117,8 @@ func (p pairPatch) Validate() error {
 	switch {
 	case !inRange(p.SpreadBps, 0.5, 1000):
 		return errors.New("spreadBps 必须在 0.5–1000 之间")
-	case !intIn(p.Levels, 1, 50):
-		return errors.New("levels 必须在 1–50 之间")
+	case !intIn(p.Levels, 1, maxLevelsPerSide):
+		return errors.New("levels 必须在 1–200 之间")
 	case !inRange(p.LevelStepBps, 0, 500):
 		return errors.New("levelStepBps 必须在 0–500 之间")
 	case !inRange(p.LevelNotional, 0.00000001, 10000000):
@@ -135,6 +137,10 @@ func (p pairPatch) Validate() error {
 		return errors.New("maxSkewBps 必须在 0–500 之间")
 	case !intIn(p.Leverage, 1, 125):
 		return errors.New("leverage 必须在 1–125 之间")
+	case !inRange(p.DepthTargetQty, 0, 1e9):
+		return errors.New("depthTargetQty 必须 >= 0（0 = 关闭深度模式）")
+	case !inRange(p.DepthBandBps, 1, 500):
+		return errors.New("depthBandBps 必须在 1–500 之间")
 	}
 	return nil
 }
@@ -159,10 +165,11 @@ func (m *Maker) handleUpdatePair(w http.ResponseWriter, r *http.Request) {
 		level_step_bps=COALESCE($6,level_step_bps), level_notional=COALESCE($7,level_notional), size_growth=COALESCE($8,size_growth),
 		refresh_ms=COALESCE($9,refresh_ms), requote_bps=COALESCE($10,requote_bps), target_base_ratio=COALESCE($11,target_base_ratio),
 		max_position=COALESCE($12,max_position), max_skew_bps=COALESCE($13,max_skew_bps), leverage=COALESCE($14,leverage),
+		depth_target_qty=COALESCE($16,depth_target_qty), depth_band_bps=COALESCE($17,depth_band_bps),
 		updated_by=$15, updated_at=now()
 		WHERE market=$1 AND symbol=$2 RETURNING `+pairCols,
 		market, sym, p.Enabled, nd(p.SpreadBps), p.Levels, nd(p.LevelStepBps), nd(p.LevelNotional), nd(p.SizeGrowth),
-		p.RefreshMs, nd(p.RequoteBps), nd(p.TargetBaseRatio), nd(p.MaxPosition), nd(p.MaxSkewBps), p.Leverage, by)
+		p.RefreshMs, nd(p.RequoteBps), nd(p.TargetBaseRatio), nd(p.MaxPosition), nd(p.MaxSkewBps), p.Leverage, by, nd(p.DepthTargetQty), nd(p.DepthBandBps))
 	out, err := scanPair(row)
 	if err != nil {
 		common.WriteError(w, 404, "NOT_FOUND", "交易对不存在")

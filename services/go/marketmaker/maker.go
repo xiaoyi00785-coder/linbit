@@ -15,13 +15,13 @@ import (
 )
 
 const pairCols = `market, symbol, enabled, spread_bps, levels, level_step_bps, level_notional, size_growth, refresh_ms,
-	requote_bps, target_base_ratio, max_position, max_skew_bps, leverage, updated_by, updated_at`
+	requote_bps, target_base_ratio, max_position, max_skew_bps, leverage, depth_target_qty, depth_band_bps, updated_by, updated_at`
 
 func scanPair(sc interface{ Scan(...any) error }) (Pair, error) {
 	var p Pair
 	var at time.Time
 	err := sc.Scan(&p.Market, &p.Symbol, &p.Enabled, &p.SpreadBps, &p.Levels, &p.LevelStepBps, &p.LevelNotional, &p.SizeGrowth,
-		&p.RefreshMs, &p.RequoteBps, &p.TargetBaseRatio, &p.MaxPosition, &p.MaxSkewBps, &p.Leverage, &p.UpdatedBy, &at)
+		&p.RefreshMs, &p.RequoteBps, &p.TargetBaseRatio, &p.MaxPosition, &p.MaxSkewBps, &p.Leverage, &p.DepthTargetQty, &p.DepthBandBps, &p.UpdatedBy, &at)
 	p.UpdatedAt = at.UTC().Format(time.RFC3339)
 	return p, err
 }
@@ -41,6 +41,7 @@ type PairState struct {
 	OpenOrders  int             `json:"openOrders"`
 	Placed      int64           `json:"placed"`
 	Cancelled   int64           `json:"cancelled"`
+	Refills     int64           `json:"refills"` // depth mode: re-quotes triggered by fills before refresh_ms
 	Amended     int64           `json:"amended"`
 	LastRun     time.Time       `json:"lastRun"`
 	LastError   string          `json:"lastError,omitempty"`
@@ -279,6 +280,21 @@ func (m *Maker) runPair(ctx context.Context, p Pair, running, stopping bool, gat
 	}
 	dueTake := m.cfg.TakerEnabled && time.Since(st.lastTake) >= takeEvery
 	dueQuote := time.Since(st.LastRun) >= time.Duration(p.RefreshMs)*time.Millisecond
+	if !dueQuote && depthMode(p) && time.Since(st.LastRun) >= m.cfg.RefillMin {
+		// fast refill: a large taker emptied levels; don't wait for refresh_ms
+		m.mu.Lock()
+		quotes := append([]Quote(nil), st.Quotes...)
+		quoting := st.Status == "quoting"
+		m.mu.Unlock()
+		if quoting && len(quotes) > 0 {
+			if resting, err := m.openOrders(ctx, r); err == nil && needsRefill(resting, quotes) {
+				dueQuote = true
+				m.mu.Lock()
+				st.Refills++
+				m.mu.Unlock()
+			}
+		}
+	}
 	if !dueQuote {
 		if dueTake {
 			m.mu.Lock()
@@ -368,6 +384,12 @@ func (m *Maker) runPair(ctx context.Context, p Pair, running, stopping bool, gat
 	var targets []Quote
 	if usedBook {
 		mid, targets = BuildFromBook(p, r, book, inv, extraBps, m.books.scale)
+		if depthMode(p) {
+			var f decimal.Decimal
+			if targets, f = capMarginBudget(targets, p.Leverage, m.cfg.DepthMargin, r); f.LessThan(one) {
+				log.Printf("mm: %s depth scaled x%s to stay within margin budget %s", r.Symbol, f.StringFixed(3), m.cfg.DepthMargin)
+			}
+		}
 	} else {
 		// Venue has no depth (delisted / empty). Still quote around the index
 		// so the pair is tradable; mark it so ops can see it is not 跟盘.
@@ -390,7 +412,16 @@ func (m *Maker) runPair(ctx context.Context, p Pair, running, stopping bool, gat
 		m.fail(st, "open orders: "+err.Error())
 		return
 	}
+	if r.Market != "spot" && len(resting) >= openOrdersPageMax {
+		// listing is capped: we can't see every resting order, so placing
+		// would duplicate. Cancel what we see and rebuild next pass.
+		m.cancelAll(ctx, r, st)
+		m.fail(st, "open orders listing truncated (>= 500); reduce levels")
+		return
+	}
 	cancel, place := Diff(resting, targets, p.RequoteBps)
+	// inner levels first so the top of book refills before the tail
+	sort.SliceStable(place, func(i, j int) bool { return place[i].Level < place[j].Level })
 	lastErr := m.applyOps(ctx, r, st, cancel, place)
 	m.mu.Lock()
 	st.Index, st.Source, st.Mid, st.Inventory, st.Quotes = index, src, mid, inv, targets

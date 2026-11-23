@@ -121,9 +121,17 @@ func TestPatchValidate(t *testing.T) {
 	if (pairPatch{SpreadBps: &bad}).Validate() == nil {
 		t.Fatal("spread too small accepted")
 	}
-	lv := 99
+	lv := 201 // open-orders listing returns 500 rows: <= 200/side (+20 depth levels)
 	if (pairPatch{Levels: &lv}).Validate() == nil {
 		t.Fatal("levels accepted")
+	}
+	lv = 200
+	if (pairPatch{Levels: &lv}).Validate() != nil {
+		t.Fatal("200 levels rejected")
+	}
+	neg, band := d("-1"), d("0")
+	if (pairPatch{DepthTargetQty: &neg}).Validate() == nil || (pairPatch{DepthBandBps: &band}).Validate() == nil {
+		t.Fatal("bad depth params accepted")
 	}
 	if (pairPatch{}).Validate() != nil {
 		t.Fatal("empty patch rejected")

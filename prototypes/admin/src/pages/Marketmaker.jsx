@@ -6,10 +6,11 @@ import { api, ft, items, useApi } from '../api.js'
 const ST = { quoting: ['报价中', 'ok'], paused: ['暂停', 'warn'], disabled: ['未启用', ''], stopped: ['已停止', ''], error: ['异常', 'bad'] }
 // 交易对可调参数：[字段, 名称, 是否整数, 仅合约]
 const FIELDS = [
-  ['spreadBps', '价差 (bps, 0.5–1000)'], ['levels', '档位数 (1–50)', true], ['levelStepBps', '档位间距 (bps, 0–500)'],
+  ['spreadBps', '价差 (bps, 0.5–1000)'], ['levels', '档位数 (1–200)', true], ['levelStepBps', '档位间距 (bps, 0–500)'],
   ['levelNotional', '每档名义金额 (USDT)'], ['sizeGrowth', '档位数量递增 (1–3)'], ['refreshMs', '刷新间隔 (ms, 500–60000)', true],
   ['requoteBps', '重新报价阈值 (bps, 0–100)'], ['targetBaseRatio', '目标基础币占比 (0–1)'], ['maxPosition', '最大净持仓'],
   ['maxSkewBps', '最大偏移 (bps, 0–500)'], ['leverage', '杠杆 (1–125)', true, true],
+  ['depthTargetQty', '大单深度目标 (每侧基础币数量, 0=关闭)', false, true], ['depthBandBps', '深度目标范围 (距中间价 bps, 1–500)', false, true],
 ]
 
 export default function Marketmaker() {

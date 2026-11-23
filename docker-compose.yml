@@ -697,6 +697,8 @@ services:
       MM_BOOK_FEED: ${MM_BOOK_FEED:-binance,okx,bybit}
       MM_BOOK_SCALE: ${MM_BOOK_SCALE:-1}
       MM_BOOK_TTL_MS: ${MM_BOOK_TTL_MS:-1000}
+      MM_REFILL_MIN_MS: ${MM_REFILL_MIN_MS:-300}
+      MM_DEPTH_MARGIN_USDT: ${MM_DEPTH_MARGIN_USDT:-10000000}
       BINANCE_API_URL: ${BINANCE_API_URL:-https://data-api.binance.vision}
       BINANCE_FAPI_URL: ${BINANCE_FAPI_URL:-https://fapi.binance.com}
       OKX_API_URL: ${OKX_API_URL:-https://www.okx.com}

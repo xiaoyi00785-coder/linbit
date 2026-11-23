@@ -42,6 +42,14 @@ type bookFeed struct {
 	cache    map[string]cacheEnt
 	inflight map[string]chan struct{}
 	refs     map[string]bookRef
+
+	ctMu  sync.Mutex
+	ctVal map[string]ctEnt // OKX SWAP instId -> contract value (base units per contract)
+}
+
+type ctEnt struct {
+	val decimal.Decimal
+	at  time.Time
 }
 
 func newBookFeed(cfg Config) *bookFeed {
@@ -70,6 +78,7 @@ func newBookFeed(cfg Config) *bookFeed {
 		cache:      map[string]cacheEnt{},
 		inflight:   map[string]chan struct{}{},
 		refs:       defaultTradFiRefs(),
+		ctVal:      map[string]ctEnt{},
 	}
 }
 
@@ -112,9 +121,33 @@ func depthLimit(levels int) int {
 		return 20
 	case levels <= 50:
 		return 50
-	default:
+	case levels <= 100:
 		return 100
+	case levels <= 200:
+		return 200
+	default:
+		return 400 // OKX books sz max
 	}
+}
+
+// binanceDepthLimit maps a wanted depth onto Binance's accepted limits.
+func binanceDepthLimit(limit int) int {
+	for _, v := range []int{5, 10, 20, 50, 100, 500, 1000} {
+		if limit <= v {
+			return v
+		}
+	}
+	return 1000
+}
+
+func truncBook(b ExtBook, n int) ExtBook {
+	if len(b.Bids) > n {
+		b.Bids = b.Bids[:n]
+	}
+	if len(b.Asks) > n {
+		b.Asks = b.Asks[:n]
+	}
+	return b
 }
 
 func okxSpotInst(sym string) string {
@@ -192,7 +225,7 @@ func (f *bookFeed) get(ctx context.Context, market, symbol string, levels int) (
 				last = fmt.Errorf("%s empty book", src)
 				continue
 			}
-			return book, nil
+			return truncBook(book, limit), nil
 		}
 		if last == nil {
 			last = fmt.Errorf("no book source")
@@ -238,7 +271,7 @@ func (f *bookFeed) fetchBinance(ctx context.Context, fapi bool, symbol string, l
 	if fapi {
 		base, path = f.fapiURL, "/fapi/v1/depth"
 	}
-	u := base + path + "?symbol=" + url.QueryEscape(symbol) + "&limit=" + fmt.Sprint(limit)
+	u := base + path + "?symbol=" + url.QueryEscape(symbol) + "&limit=" + fmt.Sprint(binanceDepthLimit(limit))
 	var raw struct {
 		Bids [][]string `json:"bids"`
 		Asks [][]string `json:"asks"`
@@ -271,7 +304,62 @@ func (f *bookFeed) fetchOKX(ctx context.Context, inst string, limit int) (ExtBoo
 	if len(raw.Data) == 0 {
 		return ExtBook{}, fmt.Errorf("okx empty")
 	}
-	return parseSides(raw.Data[0].Bids, raw.Data[0].Asks, "okx")
+	b, err := parseSides(raw.Data[0].Bids, raw.Data[0].Asks, "okx")
+	if err != nil || !strings.HasSuffix(inst, "-SWAP") {
+		return b, err
+	}
+	// SWAP sizes are contracts, not base units (BTC-USDT-SWAP: 1 contract =
+	// 0.01 BTC). Copying them as base made every level ~100x too big. Without a
+	// known contract value the depth is meaningless: fail and let the caller
+	// fall back.
+	cv, err := f.okxCtVal(ctx, inst)
+	if err != nil {
+		return ExtBook{}, err
+	}
+	return scaleBook(b, cv), nil
+}
+
+func scaleBook(b ExtBook, k decimal.Decimal) ExtBook {
+	mul := func(in []BookLevel) []BookLevel {
+		out := make([]BookLevel, len(in))
+		for i, lv := range in {
+			out[i] = BookLevel{Price: lv.Price, Qty: lv.Qty.Mul(k)}
+		}
+		return out
+	}
+	return ExtBook{Bids: mul(b.Bids), Asks: mul(b.Asks), Source: b.Source}
+}
+
+// okxCtVal returns the base units per contract of an OKX SWAP (cached 6h).
+func (f *bookFeed) okxCtVal(ctx context.Context, inst string) (decimal.Decimal, error) {
+	f.ctMu.Lock()
+	if e, ok := f.ctVal[inst]; ok && f.now().Sub(e.at) < 6*time.Hour {
+		f.ctMu.Unlock()
+		return e.val, nil
+	}
+	f.ctMu.Unlock()
+	var raw struct {
+		Code string `json:"code"`
+		Data []struct {
+			CtVal    string `json:"ctVal"`
+			CtValCcy string `json:"ctValCcy"`
+		} `json:"data"`
+	}
+	u := f.okxURL + "/api/v5/public/instruments?instType=SWAP&instId=" + url.QueryEscape(inst)
+	if err := f.getJSON(ctx, u, &raw); err != nil {
+		return decimal.Zero, fmt.Errorf("okx ctVal %s: %w", inst, err)
+	}
+	if (raw.Code != "" && raw.Code != "0") || len(raw.Data) == 0 {
+		return decimal.Zero, fmt.Errorf("okx ctVal %s: code %s", inst, raw.Code)
+	}
+	v, err := decimal.NewFromString(raw.Data[0].CtVal)
+	if err != nil || !v.IsPositive() {
+		return decimal.Zero, fmt.Errorf("okx ctVal %s: bad %q", inst, raw.Data[0].CtVal)
+	}
+	f.ctMu.Lock()
+	f.ctVal[inst] = ctEnt{val: v, at: f.now()}
+	f.ctMu.Unlock()
+	return v, nil
 }
 
 func (f *bookFeed) fetchBybit(ctx context.Context, linear bool, symbol string, limit int) (ExtBook, error) {

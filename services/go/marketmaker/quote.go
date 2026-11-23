@@ -63,8 +63,14 @@ type Pair struct {
 	MaxPosition     decimal.Decimal `json:"maxPosition"`
 	MaxSkewBps      decimal.Decimal `json:"maxSkewBps"`
 	Leverage        int             `json:"leverage"`
-	UpdatedBy       string          `json:"updatedBy"`
-	UpdatedAt       string          `json:"updatedAt"`
+	// DepthTargetQty (futures, base units per side, 0 = off) turns on depth
+	// mode: copied venue depth is not capped by 3M/(lev*levels), and if less
+	// than this much sits within DepthBandBps of mid the shortfall is added to
+	// the farther levels so a large market order still fills.
+	DepthTargetQty decimal.Decimal `json:"depthTargetQty"`
+	DepthBandBps   decimal.Decimal `json:"depthBandBps"`
+	UpdatedBy      string          `json:"updatedBy"`
+	UpdatedAt      string          `json:"updatedAt"`
 }
 
 // Quote is one target order.

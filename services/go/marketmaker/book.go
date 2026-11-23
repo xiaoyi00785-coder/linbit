@@ -92,13 +92,23 @@ func BuildFromBook(p Pair, r Rules, book ExtBook, inv Inventory, extraBps, scale
 		return out
 	}
 
-	out := emit("buy", book.Bids)
-	out = append(out, emit("sell", book.Asks)...)
-	return mid, out
+	if depthMode(p) && n > maxLevelsPerSide {
+		n = maxLevelsPerSide
+	}
+	bids, asks := emit("buy", book.Bids), emit("sell", book.Asks)
+	if depthMode(p) {
+		bids = applyDepthTarget(bids, "buy", mid, p, r)
+		asks = applyDepthTarget(asks, "sell", mid, p, r)
+	}
+	return mid, append(bids, asks...)
 }
 
 func quoteNotionalCap(p Pair) decimal.Decimal {
 	cap := bookNotionalMax()
+	if depthMode(p) {
+		// side total is bounded by applyDepthTarget + capMarginBudget instead
+		return cap
+	}
 	if p.NotionalCap.IsPositive() && p.NotionalCap.LessThan(cap) {
 		cap = p.NotionalCap
 	}

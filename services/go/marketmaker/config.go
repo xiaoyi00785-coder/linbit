@@ -46,6 +46,9 @@ type Config struct {
 
 	Workers         int // MM_WORKERS: pairs refreshed concurrently
 	PairConcurrency int // MM_PAIR_CONCURRENCY: order calls in flight per pair
+
+	RefillMin   time.Duration   // MM_REFILL_MIN_MS: depth mode re-quotes this soon after a fill (default 300ms)
+	DepthMargin decimal.Decimal // MM_DEPTH_MARGIN_USDT: max initial margin frozen by one depth-mode pair's quotes
 }
 
 // LoadConfig reads the environment.
@@ -81,6 +84,8 @@ func LoadConfig() Config {
 		BybitURL:           common.Env("BYBIT_API_URL", "https://api.bybit.com"),
 		Workers:            max(1, common.EnvInt("MM_WORKERS", 8)),
 		PairConcurrency:    max(1, common.EnvInt("MM_PAIR_CONCURRENCY", 4)),
+		RefillMin:          time.Duration(common.EnvInt("MM_REFILL_MIN_MS", 300)) * time.Millisecond,
+		DepthMargin:        decEnv("MM_DEPTH_MARGIN_USDT", "10000000"),
 	}
 }
 
