@@ -7,10 +7,12 @@ package main
 //   - App 版本升级配置（iOS / Android）、帮助中心与活动文案、App 推送（设备来自 compat 注册表）
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -563,10 +565,23 @@ func (s *Server) handleFundDecision(decision string) http.HandlerFunc {
 			return
 		}
 		if !u.ok() {
-			s.finishFund(ctx, id, "failed", strings.TrimSpace(string(u.Body)))
-		} else {
-			s.finishFund(ctx, id, "applied", "")
+			msg := strings.TrimSpace(string(u.Body))
+			if msg == "" {
+				msg = fmt.Sprintf("上游返回 HTTP %d", u.Status)
+			}
+			if len(msg) > 2000 {
+				msg = msg[:2000]
+			}
+			s.finishFund(ctx, id, "failed", msg)
+			s.audit(r, a, fundChangeModule, "apply", target, levelHigh, resultOf(u), nil, fa, comment)
+			if len(bytes.TrimSpace(u.Body)) == 0 || !json.Valid(u.Body) {
+				common.WriteError(w, http.StatusBadGateway, "APPLY_FAILED", "审批已通过但下游执行失败（变更单已标记 failed）："+msg)
+				return
+			}
+			relay(w, u)
+			return
 		}
+		s.finishFund(ctx, id, "applied", "")
 		s.audit(r, a, fundChangeModule, "apply", target, levelHigh, resultOf(u), nil, fa, comment)
 		relay(w, u)
 	}
