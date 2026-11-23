@@ -246,6 +246,24 @@ func TestPhoneRegisterAndTwoStepLoginNewDevice(t *testing.T) {
 	}
 }
 
+func TestCompatClientSkipsNewDeviceOTP(t *testing.T) {
+	srv := newTestServer(t)
+	h := srv.Routes()
+	email := uniqueEmail()
+	registerWithCode(t, srv, email, "", "")
+
+	w := doJSONDevice(t, h, "POST", "/auth/login", "", "Linbit-iOS/1.0 EasiCoin-compat",
+		map[string]string{"email": email, "password": "Str0ng-Passw0rd!", "deviceId": "iphone-uuid", "deviceName": "Linbit iOS"})
+	var tok authTokens
+	_ = json.Unmarshal(w.Body.Bytes(), &tok)
+	if w.Code != http.StatusOK || tok.AccessToken == "" {
+		t.Fatalf("compat new-device login = %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "challengeToken") {
+		t.Fatalf("compat client must not get email OTP challenge: %s", w.Body.String())
+	}
+}
+
 func TestPasswordResetRevokesSessions(t *testing.T) {
 	srv := newTestServer(t)
 	h := srv.Routes()

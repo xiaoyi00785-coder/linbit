@@ -119,3 +119,15 @@ func TestLogoutRevokesAccessToken(t *testing.T) {
 		t.Fatalf("anon logout: %d", w.Code)
 	}
 }
+
+func TestSkipNewDeviceOTP(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	r.Header.Set("User-Agent", "Linbit-iOS/1.0 EasiCoin-compat")
+	if !skipNewDeviceOTP(r) {
+		t.Fatal("compat UA should skip email OTP")
+	}
+	r.Header.Set("User-Agent", "Mozilla/5.0")
+	if skipNewDeviceOTP(r) {
+		t.Fatal("web UA must still challenge new devices")
+	}
+}

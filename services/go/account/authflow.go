@@ -164,8 +164,8 @@ func (s *Server) handleSendCode(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法")
 		return
 	}
-	if req.Purpose != purposeRegister && req.Purpose != purposeReset {
-		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "purpose 仅支持 register / reset_password")
+	if req.Purpose != purposeRegister && req.Purpose != purposeReset && req.Purpose != purposeLogin {
+		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "purpose 仅支持 register / login / reset_password")
 		return
 	}
 	id, err := resolveIdentity(req.Email, req.Phone, req.CountryCode)
@@ -174,7 +174,7 @@ func (s *Server) handleSendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Purpose == purposeReset {
+	if req.Purpose == purposeReset || req.Purpose == purposeLogin {
 		// Only send when the account exists; respond 200 either way.
 		if _, err := s.lookupByIdentity(r.Context(), id); err != nil {
 			common.WriteJSON(w, http.StatusOK, map[string]any{"sent": true, "channel": id.channel, "ttlSeconds": int(s.codes.ttl.Seconds())})
@@ -355,7 +355,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !known {
-			method = s.contactChannel(u)
+			if skipNewDeviceOTP(r) {
+				log.Printf("login: skip new-device OTP uid=%s ua=%q", u.UID, r.Header.Get("User-Agent"))
+			} else {
+				method = s.contactChannel(u)
+			}
 		}
 	}
 
@@ -741,6 +745,14 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 		s.notifyAsync(u, common.NoticeSecurity, "登录密码已重置", "您的登录密码已重置，所有设备已退出登录。如非本人操作，请立即联系客服。")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// skipNewDeviceOTP is true for the SuperEx iOS app behind easicoin-compat.
+// That client cannot open Linbit's email/SMS challenge page: a 200 challenge
+// is a no-op, the next tap re-sends the code, and the 429 is mapped by the
+// app locale for 20000203 to 「禁止用户登录」.
+func skipNewDeviceOTP(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("User-Agent"), "EasiCoin-compat")
 }
 
 // contactChannel returns the preferred second-factor channel for a user

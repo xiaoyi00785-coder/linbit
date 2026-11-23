@@ -95,6 +95,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		IPWhitelist []string `json:"ipWhitelist"`
 		IPAllowlist []string `json:"ipAllowlist"`
 		TOTPCode    string   `json:"totpCode"`
+		Code        string   `json:"code"`
 	}
 	if err := common.DecodeJSON(r, &req); err != nil || len([]rune(strings.TrimSpace(req.Label))) == 0 || len([]rune(req.Label)) > 40 {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "label 必填且不超过 40 字")
@@ -113,7 +114,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "IP 白名单格式不正确（最多 20 条 IPv4/IPv6 或 CIDR）")
 		return
 	}
-	if !s.requireParentTOTP(r.Context(), w, u, req.TOTPCode) {
+	if !s.requireSensitiveAuth(w, r, u, req.TOTPCode, req.Code, purposeSecurity) {
 		return
 	}
 	var n int
