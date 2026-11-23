@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { DataTable, Drawer, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilter } from '../ui.jsx'
+import { Confirm, DataTable, Drawer, Modal, PageHead, Tabs, Tag, eq, has, useApp, useFilter } from '../ui.jsx'
+import { allowed } from '../menu.js'
 import { ApiState } from '../ui.jsx'
 import { Profile30d } from './Common.jsx'
 import { API_BASE, getToken, api, ft, items, KYC_LV, KYC_ST, num, USER_ST, useApi } from '../api.js'
@@ -23,18 +24,43 @@ export function FreezeModal({ user, onClose, onDone }) {
   </Modal>
 }
 
+export function NotifyModal({ uid, onClose }) {
+  const { say } = useApp(); const [kind, setKind] = useState('system'); const [title, setTitle] = useState(''); const [body, setBody] = useState(''); const [email, setEmail] = useState(false); const [code, setCode] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false)
+  const send = async () => { setBusy(true); setErr(''); try { await api(`users/${uid}/notifications`, { method: 'POST', body: { kind, title: title.trim(), body: body.trim(), email, totpCode: code } }); say('已发送站内信'); onClose() } catch (e) { setErr(e.message) } finally { setBusy(false) } }
+  return <Modal title={`通知用户 · UID ${uid}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>取消</button><button className="btn p" disabled={!title.trim() || !body.trim() || code.length < 6 || busy} onClick={send}>{busy ? '发送中…' : '发送'}</button></>}>
+    <div className="banner">发送到该用户的站内信（可选同时发邮件），需 Google 验证码，写入审计日志。内容用户可见，请勿包含内部信息。</div>{err && <div className="banner bad">{err}</div>}
+    <div className="fr"><label>类型</label><select className="sel" value={kind} onChange={e => setKind(e.target.value)}><option value="system">系统通知</option><option value="security">安全通知</option><option value="activity">活动通知</option><option value="trade">交易通知</option></select></div>
+    <div className="fr"><label>标题</label><input className="in" maxLength={60} value={title} onChange={e => setTitle(e.target.value)} placeholder="必填，≤ 60 字" /></div>
+    <div className="fr" style={{ alignItems: 'start' }}><label>内容</label><textarea className="in" rows="4" maxLength={1000} value={body} onChange={e => setBody(e.target.value)} placeholder="必填" /></div>
+    <div className="fr"><label>同时发邮件</label><label><input type="checkbox" checked={email} onChange={e => setEmail(e.target.checked)} /> 发送到用户注册邮箱</label></div>
+    <div className="fr"><label>Google 验证码</label><input className="in" maxLength={6} placeholder="6 位动态码" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} /></div>
+  </Modal>
+}
+
+function SecurityRows({ uid, canEdit }) {
+  const sec = useApi('users/' + uid + '/security'); const [rel, setRel] = useState(false); const d = sec.data
+  if (!d) return sec.error ? <><dt>提现锁</dt><dd className="muted">读取失败</dd></> : null
+  return <><dt>提现锁</dt><dd>{d.withdrawLocked ? <><Tag k="wn">锁定至 {ft(d.withdrawLockedUntil)}</Tag> <span className="muted">{d.withdrawLockReason || ''}</span>
+      {canEdit && <a className="btn g" style={{ marginLeft: 8 }} onClick={() => setRel(true)}>解除</a>}</> : <span className="muted">未锁定</span>}</dd>
+    <dt>资金密码</dt><dd>{d.fundPasswordSet ? '已设置' : '未设置'}{d.fundPasswordLockedUntil && new Date(d.fundPasswordLockedUntil) > new Date() ? <Tag k="wn">输错锁定至 {ft(d.fundPasswordLockedUntil)}</Tag> : ''}</dd>
+    {rel && <Confirm title={`解除提现锁 · UID ${uid}`} danger okText="确认解除" onClose={() => setRel(false)}
+      rows={[['当前锁定至', ft(d.withdrawLockedUntil)], ['锁定原因', d.withdrawLockReason || '-']]}
+      note="提现锁通常由修改密码/2FA/资金密码等安全操作自动触发（默认 24 小时），用于防盗号后立即转出。仅在已核实为本人操作时解除；解除后用户可立即提现。"
+      onOk={async b => { await api(`users/${uid}/withdraw-lock`, { method: 'DELETE', body: b }); sec.reload(); return '已解除提现锁' }} />}</>
+}
+
 export function UserDrawer({ u, onClose, onChanged }) {
   const bal = useApi('users/' + u.uid + '/balances')
-  const [tab, setTab] = useState('base'); const [fz, setFz] = useState(false)
+  const [tab, setTab] = useState('base'); const [fz, setFz] = useState(false); const [nt, setNt] = useState(false); const { me } = useApp(); const can = p => allowed(me && me.perms, p)
   const pos = useApi(tab === 'pos' ? 'futures/positions' : null, { uid: u.uid, size: 200 }); const dev = useApi(tab === 'log' ? `users/${u.uid}/devices` : null)
   return <Drawer width={760} title={<>{u.nick} <span className="muted" style={{ fontWeight: 400 }}>UID {u.uid}</span></>} extra={<>{stTag(u.status)}</>} onClose={onClose}
-    footer={<><button className="btn" onClick={() => { location.hash = '#/adjust?uid=' + encodeURIComponent(u.uid) }}>人工调账</button><button className="btn d" onClick={() => setFz(true)}>{u.raw && u.raw !== 'active' ? '解冻' : '冻结账户'}</button></>}>
+    footer={<>{can('content:edit') && <button className="btn" onClick={() => setNt(true)}>通知用户</button>}<button className="btn" onClick={() => { location.hash = '#/adjust?uid=' + encodeURIComponent(u.uid) }}>人工调账</button><button className="btn d" onClick={() => setFz(true)}>{u.raw && u.raw !== 'active' ? '解冻' : '冻结账户'}</button></>}>
     <div className="grid g4" style={{ marginBottom: 12 }}>{[['总资产估值', '$' + num(items(bal.data).reduce((a, b) => a + (+b.valuationUsd || 0), 0))]].map(([l, v]) => <div key={l} className="card kpi"><div className="l">{l}</div><div className="v num" style={{ fontSize: 16 }}>{v}</div></div>)}</div>
     <div className="sec" style={{ marginTop: 0 }}>近 30 日资金画像</div><div style={{ marginBottom: 12 }}><Profile30d uid={u.uid} /></div>
     <div className="card"><Tabs value={tab} onChange={setTab} items={[['base', '基本信息'], ['asset', '资产'], ['pos', '持仓'], ['log', '登录/设备']]} />
       <div style={{ padding: 14 }}>
         {tab === 'base' && <dl className="kv"><dt>昵称</dt><dd>{u.nick}</dd><dt>邮箱</dt><dd>{u.email} {u.emailVerified ? <Tag k="ok">已验证</Tag> : <Tag k="wn">未验证</Tag>}</dd><dt>手机</dt><dd>{u.phone}</dd><dt>国家/地区</dt><dd>{u.country}</dd>
-          <dt>KYC</dt><dd>{u.kyc}</dd><dt>2FA</dt><dd>{u.tfa ? <Tag k="ok">Google 验证器</Tag> : <Tag k="wn">未开启</Tag>}</dd><dt>状态说明</dt><dd>{u.statusReason || '-'}</dd><dt>注册时间</dt><dd>{u.reg}</dd></dl>}
+          <dt>KYC</dt><dd>{u.kyc}</dd><dt>2FA</dt><dd>{u.tfa ? <Tag k="ok">Google 验证器</Tag> : <Tag k="wn">未开启</Tag>}</dd><dt>状态说明</dt><dd>{u.statusReason || '-'}</dd><SecurityRows uid={u.uid} canEdit={can('user:edit')} /><dt>注册时间</dt><dd>{u.reg}</dd></dl>}
         {tab === 'asset' && <ApiState q={bal}><table className="t"><thead><tr><th>币种</th><th className="r">可用</th><th className="r">冻结</th><th className="r">合计</th><th className="r">估值 USD</th></tr></thead><tbody>
           {items(bal.data).map(r => <tr key={r.asset}><td>{r.asset}</td><td className="r num">{num(r.free, 4)}</td><td className="r num">{num(r.locked, 4)}</td><td className="r num">{num(r.total, 4)}</td><td className="r num">{num(r.valuationUsd)}</td></tr>)}</tbody></table></ApiState>}
         {tab === 'pos' && <ApiState q={pos}><table className="t"><thead><tr><th>合约</th><th>方向</th><th>杠杆</th><th className="r">数量</th><th className="r">开仓价</th><th className="r">未实现盈亏</th></tr></thead><tbody>
@@ -45,6 +71,7 @@ export function UserDrawer({ u, onClose, onChanged }) {
           {!items(dev.data).length && <tr><td colSpan="5" className="muted">无设备记录</td></tr>}</tbody></table></ApiState>}
       </div></div>
     {fz && <FreezeModal user={u} onClose={() => setFz(false)} onDone={onChanged} />}
+    {nt && <NotifyModal uid={u.uid} onClose={() => setNt(false)} />}
   </Drawer>
 }
 

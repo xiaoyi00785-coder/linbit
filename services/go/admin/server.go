@@ -186,6 +186,7 @@ func (s *Server) Routes() http.Handler {
 	s.registerRiskRoutes(a)
 	s.p1Routes(a)
 	s.registerTopbarRoutes(a)
+	a("GET /admin/v1/users/{uid}/security", permUserView, s.handleUserSecurity)
 
 	if s.cfg.DevMode {
 		// Dev only: run the scheduler once at an arbitrary "now" so the smoke can

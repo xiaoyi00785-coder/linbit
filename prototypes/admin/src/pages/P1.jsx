@@ -2,8 +2,9 @@
    邀请关系 / 内部转账 / 用户卡券 / 合约风险参数。全部来自 admin/v1 真实接口；筛选条件按回车或「查询」才请求。
    大表（订单/成交）用游标分页，不做总数统计。 */
 import { useState } from 'react'
-import { ApiState, DataTable, Drawer, Empty, Kpi, LineChart, PageHead, Tabs, Tag, useApp } from '../ui.jsx'
-import { ft, items, useApi } from '../api.js'
+import { ApiState, Confirm, DataTable, Drawer, Empty, Kpi, LineChart, PageHead, Tabs, Tag, useApp } from '../ui.jsx'
+import { api, ft, items, useApi } from '../api.js'
+import { allowed } from '../menu.js'
 
 /* ---------- 通用 ---------- */
 export const dec = (v, max = 8) => { if (v === null || v === undefined || v === '') return '-'; const n = Number(v); if (!isFinite(n)) return String(v)
@@ -246,12 +247,19 @@ export function SubAccounts() {
 /* ===================== VIP 申请 ===================== */
 const VIP_ST = { pending: ['待审核', 'wn'], approved: ['已通过', 'ok'], rejected: ['已驳回', 'bad'] }
 export function VipApplications() {
-  const f = useFilters({ status: 'pending' }); const [q, pager] = usePaged('vip/applications', f.applied, 50, 'pageSize'); const [cur, setCur] = useState(null)
-  return <><PageHead title="VIP 申请" desc="用户提交的 VIP 升级申请（本批只读；审核操作下一批上线）" />
+  const f = useFilters({ status: 'pending' }); const [q, pager] = usePaged('vip/applications', f.applied, 50, 'pageSize'); const [cur, setCur] = useState(null); const [act, setAct] = useState(null)
+  const { me } = useApp(); const canReview = allowed(me && me.perms, 'vip:review')
+  const decide = (r, d) => setAct({ r, d })
+  return <><PageHead title="VIP 申请" desc="用户提交的 VIP 升级申请。通过/驳回只改变申请状态并站内通知用户，不会自动调整费率等级" />
     <ApiState q={q}><DataTable rows={items(q.data)} onRow={setCur} pager={pager} emptyText="暂无申请" filters={<Filters f={f} fields={[['uid', 'UID'], ['status', '', [['', '全部状态'], ...Object.entries(VIP_ST).map(([k, v]) => [k, v[0]])]]]} />}
       cols={[{ t: '申请号', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '联系渠道', k: 'channel' }, { t: '联系方式', k: 'contact' }, { t: '状态', render: r => { const s = VIP_ST[r.status] || [r.status]; return <Tag k={s[1]}>{s[0]}</Tag> } },
-        { t: '审核人', k: 'reviewer' }, { t: '说明', k: 'reason' }, { t: '申请时间', render: r => ft(r.createdAt) }, { t: '审核时间', render: r => ft(r.reviewedAt) }]} /></ApiState>
-    <RowDrawer title={cur && 'VIP 申请 ' + cur.id} row={cur} onClose={() => setCur(null)} /></>
+        { t: '审核人', k: 'reviewer' }, { t: '说明', k: 'reason' }, { t: '申请时间', render: r => ft(r.createdAt) }, { t: '审核时间', render: r => ft(r.reviewedAt) },
+        ...(canReview ? [{ t: '操作', render: r => r.status === 'pending' ? <span onClick={e => e.stopPropagation()}><a className="btn g" onClick={() => decide(r, 'approve')}>通过</a> <a className="btn g down" onClick={() => decide(r, 'reject')}>驳回</a></span> : '' }] : [])]} /></ApiState>
+    <RowDrawer title={cur && 'VIP 申请 ' + cur.id} row={cur} onClose={() => setCur(null)} />
+    {act && <Confirm title={`${act.d === 'approve' ? '通过' : '驳回'} VIP 申请 ${act.r.id}`} danger={act.d === 'reject'} okText={act.d === 'approve' ? '确认通过' : '确认驳回'} noReason={act.d === 'approve'}
+      reasonLabel="驳回原因（用户可见）" rows={[['UID', act.r.uid], ['联系方式', `${act.r.channel} · ${act.r.contact}`]]}
+      note={act.d === 'approve' ? '通过后将站内通知用户「VIP 申请已通过，专属客户经理将尽快联系」。' : '驳回原因会出现在发给用户的站内信中。'}
+      onClose={() => setAct(null)} onOk={async b => { await api(`vip/applications/${act.r.id}/${act.d}`, { method: 'POST', body: b }); q.reload(); return act.d === 'approve' ? '已通过' : '已驳回' }} />}</>
 }
 
 /* ===================== 邀请关系 ===================== */
