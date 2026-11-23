@@ -121,13 +121,43 @@ func TestLogoutRevokesAccessToken(t *testing.T) {
 }
 
 func TestSkipNewDeviceOTP(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
-	r.Header.Set("User-Agent", "Linbit-iOS/1.0 EasiCoin-compat")
-	if !skipNewDeviceOTP(r) {
-		t.Fatal("compat UA should skip email OTP")
+	const key = "test-compat-shared-key-0123456789abcdef"
+	old := compatSharedKey
+	t.Cleanup(func() { compatSharedKey = old })
+
+	mk := func(ua, hdr, peer string) *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+		r.RemoteAddr = peer
+		if ua != "" {
+			r.Header.Set("User-Agent", ua)
+		}
+		if hdr != "" {
+			r.Header.Set(compatKeyHeader, hdr)
+		}
+		return r
 	}
-	r.Header.Set("User-Agent", "Mozilla/5.0")
-	if skipNewDeviceOTP(r) {
-		t.Fatal("web UA must still challenge new devices")
+	compatSharedKey = key
+	if skipNewDeviceOTP(mk("Linbit-iOS/1.0 EasiCoin-compat", "", "172.18.0.5:4000")) {
+		t.Fatal("forged compat UA without key must not skip OTP")
+	}
+	if skipNewDeviceOTP(mk("Linbit-iOS/1.0 EasiCoin-compat", "wrong-key-wrong-key-wrong-key-wrong", "172.18.0.5:4000")) {
+		t.Fatal("wrong key must not skip OTP")
+	}
+	if skipNewDeviceOTP(mk("x", key, "203.0.113.9:4000")) {
+		t.Fatal("key from a public peer must not skip OTP")
+	}
+	if !skipNewDeviceOTP(mk("anything", key, "172.18.0.5:4000")) {
+		t.Fatal("key from the internal gateway should skip OTP")
+	}
+	if !skipNewDeviceOTP(mk("", key, "127.0.0.1:4000")) {
+		t.Fatal("key over loopback should skip OTP")
+	}
+	compatSharedKey = "short"
+	if skipNewDeviceOTP(mk("", "short", "127.0.0.1:4000")) {
+		t.Fatal("a too-short configured key must disable the bypass")
+	}
+	compatSharedKey = ""
+	if skipNewDeviceOTP(mk("", "", "127.0.0.1:4000")) {
+		t.Fatal("no configured key must disable the bypass")
 	}
 }

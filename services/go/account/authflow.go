@@ -356,7 +356,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		if !known {
 			if skipNewDeviceOTP(r) {
-				log.Printf("login: skip new-device OTP uid=%s ua=%q", u.UID, r.Header.Get("User-Agent"))
+				log.Printf("login: new-device OTP delegated to easicoin-compat uid=%s", u.UID)
 			} else {
 				method = s.contactChannel(u)
 			}
@@ -747,13 +747,6 @@ func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// skipNewDeviceOTP is true for the SuperEx iOS app behind easicoin-compat.
-// That client cannot open Linbit's email/SMS challenge page: a 200 challenge
-// is a no-op, the next tap re-sends the code, and the 429 is mapped by the
-// app locale for 20000203 to 「禁止用户登录」.
-func skipNewDeviceOTP(r *http.Request) bool {
-	return strings.Contains(r.Header.Get("User-Agent"), "EasiCoin-compat")
-}
 
 // contactChannel returns the preferred second-factor channel for a user
 // (SMS when a phone is on file, else email).

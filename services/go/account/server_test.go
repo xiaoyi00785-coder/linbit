@@ -252,8 +252,28 @@ func TestCompatClientSkipsNewDeviceOTP(t *testing.T) {
 	email := uniqueEmail()
 	registerWithCode(t, srv, email, "", "")
 
-	w := doJSONDevice(t, h, "POST", "/auth/login", "", "Linbit-iOS/1.0 EasiCoin-compat",
-		map[string]string{"email": email, "password": "Str0ng-Passw0rd!", "deviceId": "iphone-uuid", "deviceName": "Linbit iOS"})
+	const key = "test-compat-shared-key-0123456789abcdef"
+	old := compatSharedKey
+	compatSharedKey = key
+	t.Cleanup(func() { compatSharedKey = old })
+	login := func(withKey bool, dev string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]string{"email": email, "password": "Str0ng-Passw0rd!", "deviceId": dev, "deviceName": "Linbit iOS"})
+		r := httptest.NewRequest("POST", "/auth/login", strings.NewReader(string(b)))
+		r.RemoteAddr = "172.18.0.9:5555"
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("User-Agent", "Linbit-iOS/1.0 EasiCoin-compat")
+		if withKey {
+			r.Header.Set(compatKeyHeader, key)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	// A forged compat UA alone must get the normal new-device challenge.
+	if w := login(false, "attacker-device"); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "challengeToken") {
+		t.Fatalf("forged compat UA must be challenged: %d %s", w.Code, w.Body.String())
+	}
+	w := login(true, "iphone-uuid")
 	var tok authTokens
 	_ = json.Unmarshal(w.Body.Bytes(), &tok)
 	if w.Code != http.StatusOK || tok.AccessToken == "" {
