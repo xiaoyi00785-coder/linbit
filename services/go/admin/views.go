@@ -196,18 +196,54 @@ func (s *Server) handleDeposits(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSpotOrders(w http.ResponseWriter, r *http.Request) {
+	// orders has ~18M rows and no created_at index: no count(*), and history (non-open)
+	// queries require a UID; everything runs read-only with a 3s timeout (offsetList).
 	f := &filter{}
 	f.eq(r, "uid", "user_id")
-	f.eq(r, "symbol", "symbol")
-	f.eq(r, "side", "side")
-	if v := r.URL.Query().Get("status"); v == "open" {
-		f.where = append(f.where, "status IN ('new','partially_filled')")
-	} else if v != "" {
-		f.add("status = ?", v)
+	if v := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("symbol"))); v != "" {
+		f.add("symbol = ?", v)
 	}
-	s.pagedList(w, r, "spot orders", `order_id AS "orderId", user_id AS uid, symbol, side, type, price::text AS price,
+	f.eq(r, "side", "side")
+	f.eq(r, "orderId", "order_id")
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "", "open":
+		f.where = append(f.where, "status IN ('new','partially_filled')")
+	default:
+		f.add("status = ?", status)
+	}
+	if status != "" && status != "open" && strings.TrimSpace(r.URL.Query().Get("uid")) == "" && r.URL.Query().Get("orderId") == "" {
+		common.WriteError(w, http.StatusBadRequest, "UID_REQUIRED", "历史订单请先输入 UID 或订单号")
+		return
+	}
+	s.offsetList(w, r, "spot orders", `order_id AS "orderId", user_id AS uid, symbol, side, type, price::text AS price,
 		quantity::text AS quantity, filled_quantity::text AS filled, status, created_at AS "createdAt"`,
-		"orders", "created_at DESC", f, nil)
+		"orders", "created_at DESC", f)
+}
+
+// offsetList pages without count(*): LIMIT size+1 OFFSET, read-only, 3s timeout.
+func (s *Server) offsetList(w http.ResponseWriter, r *http.Request, where, cols, from, order string, f *filter) {
+	page, size := pageParams(r)
+	if size == 20 && r.URL.Query().Get("size") == "" {
+		size = 50
+	}
+	args := append(append([]interface{}{}, f.args...), size+1, (page-1)*size)
+	n := len(args)
+	items, err := s.readOnlyMaps(r.Context(), "3s", `SELECT `+cols+` FROM `+from+f.sql()+` ORDER BY `+order+
+		` LIMIT $`+strconv.Itoa(n-1)+` OFFSET $`+strconv.Itoa(n), args...)
+	if err != nil {
+		if isTimeout(err) {
+			common.WriteError(w, http.StatusUnprocessableEntity, "QUERY_TIMEOUT", "查询超时：请增加交易对等过滤条件")
+			return
+		}
+		internalErr(w, where, err)
+		return
+	}
+	more := len(items) > size
+	if more {
+		items = items[:size]
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]interface{}{"items": items, "page": page, "pageSize": size, "hasMore": more})
 }
 
 func (s *Server) handleFutPositions(w http.ResponseWriter, r *http.Request) {

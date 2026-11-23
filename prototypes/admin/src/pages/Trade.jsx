@@ -1,23 +1,36 @@
 /* 交易监控：现货订单 / 合约持仓 / 网格策略（只读，数据来自 admin/v1） */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Filters, useFilters } from './P1.jsx'
 import { ApiState, DataTable, Kpi, PageHead, Tag } from '../ui.jsx'
 import { ft, items, num, useApi } from '../api.js'
 
 const O_ST = { new: '挂单中', partially_filled: '部分成交', filled: '已成交', canceled: '已撤销', rejected: '已拒绝', expired: '已过期' }
 const G_ST = { running: '运行中', stopped: '已停止', stopping: '停止中', failed: '失败' }
-export const useQ = () => { const [f, setF] = useState({}); const v = k => e => setF({ ...f, [k]: e.target.value.trim() }); return [f, v] }
+/** 筛选状态：下拉框立即生效；输入框停止输入 600ms 后才请求（不再每个按键都查库） */
+export const useQ = () => {
+  const [f, setF] = useState({}); const draft = useRef({}); const timer = useRef(null)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const commit = () => setF(Object.fromEntries(Object.entries(draft.current).filter(([, x]) => x !== '')))
+  const v = k => e => { draft.current = { ...draft.current, [k]: e.target.value.trim() }; clearTimeout(timer.current)
+    if (e.target.tagName === 'SELECT') commit(); else timer.current = setTimeout(commit, 600) }
+  return [f, v]
+}
 const total = d => d && d.total > (d.items || []).length ? <div className="muted" style={{ margin: '0 0 8px' }}>共 {d.total} 条，显示最新 {d.items.length} 条，请用筛选缩小范围</div> : null
 
 export function SpotOrders() {
-  const [f, v] = useQ(); const q = useApi('spot/orders', { ...f, size: 200 })
-  return <><PageHead title="现货订单" desc="全站现货订单查询（只读）。强制撤单暂无后台接口，请通知用户自行撤单或由运维处理" />
-    <div className="card"><div className="filters"><input className="in" placeholder="UID" onChange={v('uid')} /><input className="in" placeholder="交易对，如 BTCUSDT" onChange={v('symbol')} />
-      <select className="sel" onChange={v('side')}><option value="">全部方向</option><option value="buy">买入</option><option value="sell">卖出</option></select>
-      <select className="sel" onChange={v('status')}><option value="">全部状态</option><option value="open">挂单中/部分成交</option><option value="filled">已成交</option><option value="canceled">已撤销</option></select></div></div>
-    <ApiState q={q}>{total(q.data)}<DataTable rows={items(q.data)} rowKey="orderId"
-      cols={[{ t: '订单号', k: 'orderId' }, { t: 'UID', k: 'uid' }, { t: '交易对', k: 'symbol' }, { t: '方向', render: r => <span className={r.side === 'buy' ? 'up' : 'down'}>{r.side === 'buy' ? '买入' : '卖出'}</span> }, { t: '类型', k: 'type' },
-        { t: '价格', r: 1, num: 1, render: r => r.price }, { t: '数量', r: 1, num: 1, render: r => r.quantity }, { t: '已成交', r: 1, num: 1, render: r => r.filled },
-        { t: '状态', render: r => <Tag k={r.status === 'filled' ? 'ok' : r.status === 'canceled' ? '' : 'in'}>{O_ST[r.status] || r.status}</Tag> }, { t: '时间', render: r => ft(r.createdAt) }]} /></ApiState></>
+  const f = useFilters({ status: 'open' }); const [stack, setStack] = useState([]); const page = stack.length
+  const key = JSON.stringify(f.applied); const [k0, setK0] = useState(key); if (k0 !== key) { setK0(key); setStack([]) }
+  const needUid = f.applied.status !== 'open' && !f.applied.uid && !f.applied.orderId
+  const q = useApi(needUid ? null : 'spot/orders', { ...f.applied, size: 50, page: page + 1 })
+  const pager = <><span>第 {page + 1} 页 · 每页 50 条（大表不统计总数）</span><span className="sp" /><b style={{ opacity: page ? 1 : .4 }} onClick={() => page && setStack(stack.slice(0, -1))}>‹ 上一页</b>
+    <b style={{ opacity: q.data && q.data.hasMore ? 1 : .4 }} onClick={() => q.data && q.data.hasMore && setStack([...stack, 1])}>下一页 ›</b></>
+  const table = <DataTable rows={needUid ? [] : items(q.data)} rowKey="orderId" pager={pager} emptyText={needUid ? '查询历史订单请先输入 UID 或订单号' : undefined} filters={<Filters f={f} fields={[['uid', 'UID'], ['orderId', '订单号'], ['symbol', '交易对，如 BTCUSDT'], ['side', '', [['', '全部方向'], ['buy', '买入'], ['sell', '卖出']]],
+      ['status', '', [['open', '挂单中/部分成交'], ['', '全部状态（需 UID）'], ['filled', '已成交（需 UID）'], ['canceled', '已撤销（需 UID）']]]]} />}
+    cols={[{ t: '订单号', k: 'orderId' }, { t: 'UID', k: 'uid' }, { t: '交易对', k: 'symbol' }, { t: '方向', render: r => <span className={r.side === 'buy' ? 'up' : 'down'}>{r.side === 'buy' ? '买入' : '卖出'}</span> }, { t: '类型', k: 'type' },
+      { t: '价格', r: 1, num: 1, render: r => r.price }, { t: '数量', r: 1, num: 1, render: r => r.quantity }, { t: '已成交', r: 1, num: 1, render: r => r.filled },
+      { t: '状态', render: r => <Tag k={r.status === 'filled' ? 'ok' : r.status === 'canceled' ? '' : 'in'}>{O_ST[r.status] || r.status}</Tag> }, { t: '时间', render: r => ft(r.createdAt) }]} />
+  return <><PageHead title="现货订单" desc="全站现货订单查询（只读）。历史订单量大，查询已成交/已撤销需指定 UID 或订单号。强制撤单暂无后台接口" />
+    {needUid ? table : <ApiState q={q}>{table}</ApiState>}</>
 }
 
 export function Positions() {

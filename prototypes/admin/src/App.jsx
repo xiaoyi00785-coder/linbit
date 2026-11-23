@@ -16,13 +16,17 @@ import { Support } from './pages/Support.jsx'
 import Marketmaker from './pages/Marketmaker.jsx'
 import * as C from './pages/Compliance.jsx'
 import * as SEC from './pages/Security.jsx'
+import * as P1 from './pages/P1.jsx'
 import { Skeleton } from './ui.jsx'
 
 const ROUTES = { dashboard: Dashboard, users: U.Users, kyc: U.Kyc, 'risk-users': U.RiskList, withdraw: F.Withdraw, deposit: F.Deposit, ledger: F.Ledger, adjust: Adjust, support: Support,
   'spot-orders': T.SpotOrders, positions: T.Positions, grid: T.Grid, marketmaker: Marketmaker, coins: P.Coins, pairs: P.Pairs, futures: P.Futures, fees: P.Fees,
   campaigns: O.Campaigns, rewards: O.Rewards, points: O.Points, copy: O.Copy, rebate: O.Rebate, content: O.Content, admins: S.Admins, audit: S.Audit, settings: S.Settings,
   wallets: X.Wallets, liquidation: X.Liquidation, partners: X.Partners, coupons: X.Coupons, notify: X.Notify,
-  cs: C.CsWorkbench, 'risk-rules': SEC.RiskRules, apikeys: SEC.ApiKeys, chat: C.ChatModeration, por: C.ProofOfReserves, solvency: C.Solvency }
+  cs: C.CsWorkbench, 'risk-rules': SEC.RiskRules, apikeys: SEC.ApiKeys, chat: C.ChatModeration, por: C.ProofOfReserves, solvency: C.Solvency,
+  'spot-trades': P1.SpotTrades, 'fut-orders': P1.FutOrders, 'fut-trades': P1.FutTrades, 'fut-risk': P1.FutRisk, 'login-history': P1.LoginHistory, 'report-exports': P1.ReportExports,
+  earn: P1.EarnLoans, convert: P1.Convert, event: P1.EventContracts, 'fee-overrides': P1.FeeOverrides, 'sub-accounts': P1.SubAccounts, vip: P1.VipApplications,
+  referrals: P1.Referrals, 'internal-transfers': P1.InternalTransfers, 'user-coupons': P1.UserCoupons }
 
 const parse = () => { const [k, q] = (location.hash.slice(2) || 'dashboard').split('?'); return { key: ROUTES[k] ? k : 'dashboard', q: Object.fromEntries(new URLSearchParams(q || '')) } }
 

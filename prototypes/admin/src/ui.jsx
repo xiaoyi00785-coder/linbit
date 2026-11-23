@@ -33,8 +33,8 @@ export function Tabs({ items, value, onChange }) {
 }
 
 /** 通用表格：cols=[{k,t,r,w,render}]，支持关键字过滤、勾选、分页 */
-export function DataTable({ cols, rows, filters, pageSize = 12, select, onRow, toolbar, rowKey = 'id' }) {
-  const [page, setPage] = useState(1)
+export function DataTable({ cols, rows, filters, pageSize = 12, select, onRow, toolbar, rowKey = 'id', pager, emptyText }) {
+  const [page, setPage] = useState(1); const [ps, setPs] = useState(pageSize); pageSize = pager === false || pager ? Math.max(rows.length, 1) : ps
   const [sel, setSel] = useState([])
   const pages = Math.max(1, Math.ceil(rows.length / pageSize))
   const p = Math.min(page, pages)
@@ -51,12 +51,12 @@ export function DataTable({ cols, rows, filters, pageSize = 12, select, onRow, t
         {select && <td onClick={e => e.stopPropagation()}><input type="checkbox" checked={sel.includes(r[rowKey])}
           onChange={() => setSel(s => s.includes(r[rowKey]) ? s.filter(x => x !== r[rowKey]) : [...s, r[rowKey]])} /></td>}
         {cols.map(c => <td key={c.k || c.t} className={(c.r ? 'r ' : '') + (c.num ? 'num' : '')}>{c.render ? c.render(r) : r[c.k]}</td>)}</tr>)}</tbody></table>
-      {rows.length === 0 && <Empty text="没有符合条件的记录，试试调整筛选条件" />}</div>
-    <div className="pager">共 {rows.length} 条<span className="sp" />
+      {rows.length === 0 && <Empty text={emptyText || '没有符合条件的记录，试试调整筛选条件'} />}</div>
+    {pager ? <div className="pager">{pager}</div> : pager === false ? null : <div className="pager">共 {rows.length} 条<span className="sp" />
       <b onClick={() => setPage(Math.max(1, p - 1))}>‹</b>
       {Array.from({ length: Math.min(pages, 6) }, (_, i) => i + 1).map(i => <b key={i} className={i === p ? 'on' : ''} onClick={() => setPage(i)}>{i}</b>)}
       {pages > 6 && <span>… {pages}</span>}
-      <b onClick={() => setPage(Math.min(pages, p + 1))}>›</b><select className="sel" style={{ minWidth: 0, height: 26 }}><option>{pageSize} 条/页</option><option>50 条/页</option></select></div>
+      <b onClick={() => setPage(Math.min(pages, p + 1))}>›</b><select className="sel" style={{ minWidth: 0, height: 26 }} value={ps} onChange={e => { setPs(+e.target.value); setPage(1) }}>{[...new Set([ps, 12, 20, 50, 100])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n} 条/页</option>)}</select></div>}
   </div>
 }
 
