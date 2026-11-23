@@ -56,7 +56,7 @@ const D_ST = { completed: ['已入账', 'ok'], pending: ['确认中', 'in'], con
 export function Deposit() {
   const [f, v] = useQ(); const q = useApi('deposits', { ...f, size: 200 })
   return <><PageHead title="充值记录" desc="链上监听自动入账记录" />
-    <div className="card"><div className="filters"><input className="in" placeholder="UID" onChange={v('uid')} /><input className="in" placeholder="TxHash" onChange={v('txHash')} /><input className="in" placeholder="币种" onChange={v('asset')} />
+    <div className="card"><div className="filters"><input className="in" placeholder="UID" defaultValue={f.uid || ''} onChange={v('uid')} /><input className="in" placeholder="TxHash" defaultValue={f.txHash || ''} onChange={v('txHash')} /><input className="in" placeholder="币种" onChange={v('asset')} />
       <select className="sel" onChange={v('status')}><option value="">全部状态</option><option value="completed">已入账</option><option value="confirming">确认中</option></select></div></div>
     <ApiState q={q}>{q.data && q.data.total > items(q.data).length && <div className="muted">共 {q.data.total} 条，显示最新 {items(q.data).length} 条，请用筛选缩小范围</div>}
       <DataTable rows={items(q.data)} cols={[{ t: 'ID', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '币种', k: 'asset' }, { t: '网络', k: 'network' }, { t: '数量', r: 1, num: 1, render: r => num(r.amount, 4) }, { t: '确认数', k: 'confirmations' },
@@ -66,11 +66,11 @@ export function Deposit() {
 
 const TX = { deposit: '充值', withdraw: '提现', withdrawal: '提现', transfer: '划转', trade: '现货成交', fee: '手续费', funding: '资金费', liquidation: '强平', copy_profit: '跟单分润', reward: '活动奖励', admin_adjust: '人工调账', admin_testnet_credit: '测试网充值' }
 export function Ledger() {
-  const [uid, setUid] = useState(''); const [page, setPage] = useState(1)
-  const r = useApi('ledger', { userId: uid, page, size: 100 })
+  const { q } = useApp(); const [uid, setUid] = useState((q && q.uid) || ''); const [app, setApp] = useState((q && q.uid) || ''); const [page, setPage] = useState(1)
+  const r = useApi('ledger', { userId: app, page, size: 100 })
   const rows = items(r.data).flatMap(t => (t.entries || []).map((e, i) => ({ id: t.id + '-' + i, uid: t.userId, acct: e.account, coin: e.asset, biz: TX[t.txType] || t.txType, dir: e.direction === 'credit' ? '贷' : '借', amt: e.amount, ref: t.ref, time: ft(t.createdAt) })))
   return <><PageHead title="资产流水" desc="复式记账：每笔业务至少一借一贷，借贷平衡；流水不可修改，冲正需新增反向分录"><button className="btn" onClick={r.reload}>刷新</button></PageHead>
-    <ApiState q={r}><DataTable rows={rows} pageSize={20} filters={<><input className="in" placeholder="UID" value={uid} onChange={e => { setUid(e.target.value); setPage(1) }} />
+    <ApiState q={r}><DataTable rows={rows} pageSize={20} filters={<><input className="in" placeholder="UID（回车查询）" value={uid} onChange={e => setUid(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { setApp(uid.trim()); setPage(1) } }} /><button className="btn" onClick={() => { setApp(uid.trim()); setPage(1) }}>查询</button>
       <span className="muted" style={{ alignSelf: 'center' }}>服务端第 {page} 页 · 共 {r.data ? r.data.total : '-'} 笔业务</span><button className="btn" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</button><button className="btn" disabled={!r.data || page * 100 >= r.data.total} onClick={() => setPage(page + 1)}>下一页</button></>}
       cols={[{ t: '流水号', k: 'id' }, { t: 'UID', k: 'uid' }, { t: '账户', k: 'acct' }, { t: '币种', k: 'coin' }, { t: '业务类型', k: 'biz' }, { t: '借/贷', render: r => <span className={r.dir === '贷' ? 'up' : 'down'}>{r.dir}</span> },
         { t: '金额', r: 1, num: 1, render: r => num(r.amt, 8) }, { t: '关联单号', k: 'ref' }, { t: '时间', k: 'time' }]} /></ApiState></>

@@ -2,7 +2,7 @@
    邀请关系 / 内部转账 / 用户卡券 / 合约风险参数。全部来自 admin/v1 真实接口；筛选条件按回车或「查询」才请求。
    大表（订单/成交）用游标分页，不做总数统计。 */
 import { useState } from 'react'
-import { ApiState, DataTable, Drawer, Empty, Kpi, LineChart, PageHead, Tabs, Tag } from '../ui.jsx'
+import { ApiState, DataTable, Drawer, Empty, Kpi, LineChart, PageHead, Tabs, Tag, useApp } from '../ui.jsx'
 import { ft, items, useApi } from '../api.js'
 
 /* ---------- 通用 ---------- */
@@ -14,7 +14,8 @@ const yes = b => b ? <Tag k="ok">是</Tag> : <span className="muted">否</span>
 
 /** 筛选：编辑中的 draft 与已提交的 applied 分开，回车或点「查询」才发请求 */
 export function useFilters(init = {}) {
-  const [draft, setDraft] = useState(init); const [applied, setApplied] = useState(init)
+  const { q } = useApp(); init = { ...init, ...(q || {}) } // 顶栏搜索跳转带来的 ?uid= / ?orderId= 等
+  const [draft, setDraft] = useState(init); const [applied, setApplied] = useState(() => Object.fromEntries(Object.entries(init).filter(([k, v]) => v !== '' || k === 'status')))
   const set = k => e => setDraft({ ...draft, [k]: e.target.value })
   const apply = (next) => setApplied(Object.fromEntries(Object.entries(next || draft).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]).filter(([, v]) => v !== '')))
   return { draft, applied, set, apply, setDraft }
