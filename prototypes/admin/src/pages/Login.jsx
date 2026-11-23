@@ -9,9 +9,9 @@ export default function Login({ onDone }) {
     try { const r = await api('auth/login', { method: 'POST', body: f }); setToken(r.token); onDone() }
     catch (x) { setErr(x && (x.code === 'ADMIN_LOCKED' || x.status === 423) ? '连续失败5次，账号已锁定15分钟' : x && x.code === 'TOTP_INVALID' ? '验证码错误' : errText(x)) } finally { setBusy(false) }
   }
-  return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
-    <form className="card pad" style={{ width: 360 }} onSubmit={submit}>
-      <div className="brand" style={{ marginBottom: 16 }}><i />linbit<em>Admin</em></div>
+  return <div className="login">
+    <form className="card pad login-card" onSubmit={submit}>
+      <div className="brand"><i />linbit<em>Admin</em></div><p className="muted login-sub">运营后台 · 请使用管理员账号与 Google 验证码登录</p>
       {err && <div className="banner bad">{err}</div>}
       <div className="fr"><label>账号</label><input className="in" autoComplete="username" value={f.username} onChange={set('username')} /></div>
       <div className="fr"><label>密码</label><input className="in" type="password" autoComplete="current-password" value={f.password} onChange={set('password')} /></div>

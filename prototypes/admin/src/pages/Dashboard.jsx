@@ -36,10 +36,10 @@ export default function Dashboard() {
       <div className="grid g21" style={{ marginBottom: 12 }}>
         <div className="card"><Tabs value={t} onChange={setT} items={[['vol', '成交额趋势'], ['fee', '合约手续费'], ['user', '用户增长']]} />
           <div style={{ padding: '8px 14px' }}>{daily.length === 0 ? <Empty /> : <>
-            <div className="legend">{t === 'vol' ? <><span><i style={{ background: 'var(--lb-primary)' }} />合约</span><span><i style={{ background: 'var(--lb-info)' }} />现货</span></> : t === 'fee' ? <span><i style={{ background: 'var(--lb-gold)' }} />合约手续费（USDT）</span> : <span><i style={{ background: 'var(--lb-primary)' }} />注册</span>}</div>
-            {t === 'vol' && <LineChart labels={labels} series={[{ data: daily.map(x => Number(x.futuresVolume)), color: 'var(--lb-primary)' }, { data: daily.map(x => Number(x.spotVolume)), color: 'var(--lb-info)' }]} h={230} />}
+            <div className="legend">{t === 'vol' ? <><span><i style={{ background: 'var(--lb-chart-1)' }} />合约</span><span><i style={{ background: 'var(--lb-info)' }} />现货</span></> : t === 'fee' ? <span><i style={{ background: 'var(--lb-gold)' }} />合约手续费（USDT）</span> : <span><i style={{ background: 'var(--lb-chart-1)' }} />注册</span>}</div>
+            {t === 'vol' && <LineChart labels={labels} series={[{ data: daily.map(x => Number(x.futuresVolume)), color: 'var(--lb-chart-1)' }, { data: daily.map(x => Number(x.spotVolume)), color: 'var(--lb-info)' }]} h={230} />}
             {t === 'fee' && <BarChart labels={labels} data={[daily.map(x => Number(x.futuresFees))]} colors={['var(--lb-gold)']} h={230} />}
-            {t === 'user' && <BarChart labels={labels} data={[daily.map(x => Number(x.signups))]} colors={['var(--lb-primary)']} h={230} />}</>}</div></div>
+            {t === 'user' && <BarChart labels={labels} data={[daily.map(x => Number(x.signups))]} colors={['var(--lb-chart-1)']} h={230} />}</>}</div></div>
         <div className="card pad"><h3>待办事项<small>实时统计</small></h3>
           {[['KYC 待审核', d.kyc && d.kyc.pending, 'kyc', 'wn'], ['提现待初审', wd.pending_review || 0, 'withdraw', 'wn'], ['提现待复审/执行', wd.approved || 0, 'withdraw', 'bad'], ['提现处理中', wd.processing || 0, 'withdraw', '']]
             .map(([l, n, k, c]) => <div className="todo" key={l}><span className={'tag ' + c}>●</span>{l}<b className="num">{n ?? '-'}</b><a className="btn sm" onClick={() => go(k)}>处理</a></div>)}</div>

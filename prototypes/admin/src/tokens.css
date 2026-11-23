@@ -1,51 +1,52 @@
 /**
- * Linbit 设计令牌（design tokens）。
- * 全部颜色以 CSS 变量定义：lime 绿主色 + 深色底（亮色区块用于资产/账户等白底页面）。
+ * Linbit 后台设计令牌（design tokens）· 白色主题 v2（2026-11-23）。
  * 只允许在此文件出现色值；组件与样式一律通过 var(--lb-*) 引用。修改这里即可整站换肤。
+ * 品牌 lime 绿 #abe127 用于主按钮 / 选中指示；白底上的绿色文字使用 --lb-primary-ink 保证对比度。
  */
 :root {
-  /* ===== 背景 / 容器（深色） ===== */
-  --lb-bg: #070808;
-  --lb-bg-deep: #000000;
-  --lb-card: #101112;
-  --lb-card-2: #1d1d1d;
-  --lb-surface-3: #2b2d2e;          /* 三级面板、默认按钮底、渐变起点 */
-  --lb-surface-grad-end: #0e0f10;   /* 面板竖向渐变终点 */
-  --lb-surface-glow: #1d1f1f;       /* 径向光晕中心 */
-  --lb-mask: rgba(0, 0, 0, .6);     /* 弹窗遮罩 */
+  /* ===== 背景 / 容器（白底） ===== */
+  --lb-bg: #f5f6f8;                 /* 内容区底色（近白灰，衬托白色卡片） */
+  --lb-bg-deep: #ffffff;            /* 侧边栏 / 顶栏 */
+  --lb-card: #ffffff;
+  --lb-card-2: #f7f8fa;             /* 表头、次级按钮、斑马底 */
+  --lb-surface-3: #f0f2f5;          /* 默认标签底、头像底 */
+  --lb-surface-grad-end: #e9ecf1;
+  --lb-surface-glow: #f7f8fa;
+  --lb-mask: rgba(15, 23, 42, .38);
 
   /* ===== 描边 ===== */
-  --lb-border: #28292a;
-  --lb-border-2: #37393a;
-  --lb-border-3: #333333;
+  --lb-border: #eceef2;
+  --lb-border-2: #dfe3e8;
+  --lb-border-3: #d0d5dd;
 
   /* ===== 品牌主色（lime） ===== */
   --lb-primary: #abe127;
-  --lb-primary-dark: #7aa60f;       /* hover / 按下 */
-  --lb-primary-soft: #e8ffb0;       /* 渐变高光 */
-  --lb-primary-tint: #2a3510;       /* 深色底上的主色淡底（标签、徽章） */
-  --lb-primary-shade: #2d3a0c;      /* 主色渐变暗端 */
-  --lb-primary-deep: #3b4a12;       /* 主色渐变深端 */
-  --lb-on-primary: #101112;         /* 主色按钮上的文字 */
+  --lb-primary-dark: #9bd01a;
+  --lb-primary-soft: #e8ffb0;
+  --lb-primary-tint: #f3fadf;       /* 选中菜单 / 主色淡底 */
+  --lb-primary-shade: #dff3a8;
+  --lb-primary-deep: #c6e86a;
+  --lb-primary-ink: #4d7c0f;        /* 白底上的主色文字 / 链接 */
+  --lb-on-primary: #1b2405;
 
   /* ===== 文本 ===== */
   --lb-white: #ffffff;
-  --lb-text: #ffffff;               /* 正文主色（globals.css、tailwind-preset 使用） */
-  --lb-text-2: #a8aaad;
-  --lb-text-3: #6b6e70;
-  --lb-text-4: #777777;
+  --lb-text: #1d2129;
+  --lb-text-2: #4e5969;
+  --lb-text-3: #86909c;
+  --lb-text-4: #a9aeb8;
 
-  /* ===== 中性灰阶（插画、图标、指标线） ===== */
-  --lb-neutral-50: #f2f4f5;
-  --lb-neutral-100: #e9eaeb;
-  --lb-neutral-150: #e9e9e9;
-  --lb-neutral-250: #c8c8c8;
+  /* ===== 中性灰阶 ===== */
+  --lb-neutral-50: #f7f8fa;
+  --lb-neutral-100: #f2f3f5;
+  --lb-neutral-150: #e5e6eb;
+  --lb-neutral-250: #c9cdd4;
   --lb-neutral-300: #c4c4c4;
-  --lb-neutral-400: #7d8285;
-  --lb-neutral-500: #5a5d5f;
-  --lb-neutral-600: #44484a;
+  --lb-neutral-400: #86909c;
+  --lb-neutral-500: #4e5969;
+  --lb-neutral-600: #272e3b;
 
-  /* ===== 亮色区块（资产/账户/设置白底页面） ===== */
+  /* ===== 亮色区块（保留以兼容） ===== */
   --lb-light-border: #eeeeee;
   --lb-light-border-2: #dddddd;
   --lb-light-fill: #f4f4f4;
@@ -54,32 +55,37 @@
   --lb-light-fill-hover: #f5f5f5;
   --lb-light-fill-active: #f3f3f3;
   --lb-light-text-2: #3a3c3e;
-  --lb-light-primary-bg: #fafdf2;   /* 选中卡片底 */
-  --lb-light-primary-tint: #f2fadf; /* 选中标签底 */
-  --lb-light-down-bg: #fdecef;      /* 下跌/风险标签底 */
+  --lb-light-primary-bg: #fafdf2;
+  --lb-light-primary-tint: #f2fadf;
+  --lb-light-down-bg: #fdecef;
 
-  /* ===== 金色：VIP 等级、积分/奖励、K 线 MA7 指标线等「荣誉/奖励」语义 ===== */
-  --lb-gold: #f3c77a;
-  --lb-gold-2: #b8862f;
-  --lb-gold-bg: #1a1406;
+  /* ===== 金色：VIP / 奖励 ===== */
+  --lb-gold: #b7791f;
+  --lb-gold-2: #d69e2e;
+  --lb-gold-bg: #fff7e6;
   --lb-on-gold: #2a1d05;
 
   /* ===== 涨跌 / 图表 ===== */
-  --lb-up: #abe127;
-  --lb-down: #f43f5e;
-  --lb-up-vol: #5a7a1e;
-  --lb-down-vol: #8a2236;
-  --lb-grid: #161718;
+  --lb-up: #16a34a;
+  --lb-down: #e5484d;
+  --lb-up-vol: #86efac;
+  --lb-down-vol: #fca5a5;
+  --lb-grid: #eef0f3;
+  --lb-chart-1: #8cc919;            /* 图表主色（比品牌色略深，白底可读） */
 
   /* ===== 其它 ===== */
-  --lb-warn: #f59e0b;
+  --lb-warn: #d97706;
   --lb-usdt: #26a17b;
 
-  /* ===== 后台补充：状态色与密集布局 ===== */
-  --lb-info: #3b82f6;
-  --lb-up-bg: rgba(171, 225, 39, .12);
-  --lb-down-bg: rgba(244, 63, 94, .12);
-  --lb-warn-bg: rgba(245, 158, 11, .12);
-  --lb-info-bg: rgba(59, 130, 246, .12);
-  --lb-row-hover: rgba(255, 255, 255, .03);
+  /* ===== 后台：状态色与布局 ===== */
+  --lb-info: #2563eb;
+  --lb-up-bg: #ecfdf3;
+  --lb-down-bg: #fff1f2;
+  --lb-warn-bg: #fff7ed;
+  --lb-info-bg: #eff6ff;
+  --lb-row-hover: #f9fafb;
+  --lb-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .04);
+  --lb-shadow-lg: 0 12px 32px rgba(16, 24, 40, .12), 0 2px 6px rgba(16, 24, 40, .06);
+  --lb-radius: 10px;
+  --lb-radius-sm: 6px;
 }

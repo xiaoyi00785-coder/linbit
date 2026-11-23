@@ -38,7 +38,7 @@ function Detail({ id, onClose, onDone }) {
         <select className="sel" value={x.status} disabled={busy} onChange={e => patch({ status: e.target.value })}>{Object.entries(ST).map(([k, [n]]) => <option key={k} value={k}>{n}</option>)}</select>
         <select className="sel" value={x.assigneeId || 0} disabled={busy} onChange={e => patch({ assigneeId: +e.target.value })}>
           <option value={0}>未指派</option>{items(who.data).map(a => <option key={a.id} value={a.id}>{a.username}</option>)}</select></div>}
-      <div style={{ display: 'grid', gap: 10 }}>{(x.messages || []).map(m => <div key={m.id} className="card" style={m.author === 'support' ? { borderLeft: '3px solid var(--p, #3b82f6)' } : undefined}>
+      <div style={{ display: 'grid', gap: 10 }}>{(x.messages || []).map(m => <div key={m.id} className="card" style={m.author === 'support' ? { borderLeft: '3px solid var(--p, var(--lb-info))' } : undefined}>
         <div className="muted" style={{ marginBottom: 4 }}>{m.author === 'support' ? `客服 ${m.authorName || ''}` : `用户 ${x.uid}`} · {ft(m.createdAt)}</div>
         <div style={pre}>{m.body}</div>
         {(m.attachments || []).length > 0 && <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>{m.attachments.map(a => <Img key={a.id} id={a.id} />)}</div>}</div>)}</div>

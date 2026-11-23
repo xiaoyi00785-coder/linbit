@@ -35,7 +35,7 @@ export function SocialSettings() {
       <label htmlFor={`social-${key}`}>{label}</label>
       <input id={`social-${key}`} className="in" type="url" inputMode="url" placeholder="https://…（留空为未配置）" maxLength={2048} value={draft[key] || ''} onChange={event => set(key, event.target.value)} />
     </div>)}</ApiState>
-    {clientError && <p role="alert" style={{ color: 'var(--red, #e66)' }}>{clientError}</p>}
+    {clientError && <p role="alert" style={{ color: 'var(--red, var(--lb-down))' }}>{clientError}</p>}
     <div style={{ textAlign: 'right' }}><button className="btn" disabled={!changed.length} onClick={() => { setDraft({ ...EMPTY, ...(query.data?.links || {}) }); setClientError('') }}>还原</button>{' '}
       <button className="btn p" disabled={!changed.length} onClick={save}>保存</button></div>
     {confirm && <Confirm title="保存 · 社区链接" rows={changed.map(([key, label]) => [label, `${(query.data?.links || EMPTY)[key] || '（未配置）'} → ${draft[key].trim() || '（清除）'}`])} onClose={() => setConfirm(false)}
