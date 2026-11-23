@@ -44,7 +44,7 @@ func resolveBaseline(b Baseline, _ bool) Baseline {
 // cached briefly; invalidated after a seed.
 func (m *Maker) seedTotals(ctx context.Context) (map[string]decimal.Decimal, error) {
 	m.mu.Lock()
-	if m.seedCache != nil && time.Since(m.seedAt) < 15*time.Second {
+	if m.seedCache != nil && time.Since(m.seedAt) < 60*time.Second {
 		c := m.seedCache
 		m.mu.Unlock()
 		return c, nil
@@ -56,7 +56,23 @@ func (m *Maker) seedTotals(ctx context.Context) (map[string]decimal.Decimal, err
 			VirtualSeed string `json:"virtualSeed"`
 		} `json:"items"`
 	}
+	m.mu.Lock()
+	if time.Since(m.seedFailAt) < time.Minute {
+		// The liabilities aggregate is heavy (it kept Postgres busy and
+		// timed out). After a failure, serve the last good totals, if any,
+		// and do not retry for a minute.
+		c := m.seedCache
+		m.mu.Unlock()
+		if c != nil {
+			return c, nil
+		}
+		return nil, errors.New("seed totals: backing off after failure")
+	}
+	m.mu.Unlock()
 	if err := call(ctx, "GET", m.cfg.AssetURL+"/internal/solvency/liabilities", m.internalHdr(), nil, &body); err != nil {
+		m.mu.Lock()
+		m.seedFailAt = time.Now()
+		m.mu.Unlock()
 		return nil, err
 	}
 	out := map[string]decimal.Decimal{}

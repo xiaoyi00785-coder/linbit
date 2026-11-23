@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/linbit/platform/services/go/common"
 	"github.com/shopspring/decimal"
@@ -118,10 +119,14 @@ func (m *Maker) ensureInventory(ctx context.Context) {
 		}
 	}
 	m.mu.Lock()
-	if m.invOnce {
+	if m.invOnce || time.Since(m.invTryAt) < time.Minute {
+		// Failed setup is retried once a minute. Cycle now ticks every
+		// MM_TICK_MS (pairs run async), and an unconditional retry spammed
+		// the asset service twice a second.
 		m.mu.Unlock()
 		return
 	}
+	m.invTryAt = time.Now()
 	m.mu.Unlock()
 	ok := true
 	if err := m.seedTaker(ctx); err != nil {

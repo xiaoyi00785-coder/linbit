@@ -99,6 +99,9 @@ func BuildFromBook(p Pair, r Rules, book ExtBook, inv Inventory, extraBps, scale
 
 func quoteNotionalCap(p Pair) decimal.Decimal {
 	cap := bookNotionalMax()
+	if p.NotionalCap.IsPositive() && p.NotionalCap.LessThan(cap) {
+		cap = p.NotionalCap
+	}
 	if strings.EqualFold(p.Market, "futures") && p.Leverage > 0 && p.Levels > 0 {
 		// Stay under typical USDT-M notional bands at this leverage (e.g. 5x → 5M).
 		lim := decimal.NewFromInt(3_000_000).Div(decimal.NewFromInt(int64(p.Leverage * p.Levels)))

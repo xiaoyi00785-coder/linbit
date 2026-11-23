@@ -13,7 +13,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-var httpc = &http.Client{Timeout: 8 * time.Second}
+// Pairs and their orders now run concurrently; the default transport keeps
+// only 2 idle conns per host, which would churn TCP to order/futures.
+var httpc = &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{
+	Proxy:               http.ProxyFromEnvironment,
+	MaxIdleConns:        256,
+	MaxIdleConnsPerHost: 64,
+	IdleConnTimeout:     90 * time.Second,
+	ForceAttemptHTTP2:   true,
+}}
 
 type apiErr struct {
 	Status  int
@@ -165,6 +173,7 @@ type restingOrder struct {
 	Side      string
 	Price     decimal.Decimal
 	Remaining decimal.Decimal
+	Filled    decimal.Decimal // futures only (amend takes the new total qty)
 }
 
 func (m *Maker) openOrders(ctx context.Context, r Rules) ([]restingOrder, error) {
@@ -209,7 +218,7 @@ func (m *Maker) openOrders(ctx context.Context, r Rules) ([]restingOrder, error)
 		if !o.Price.Valid {
 			continue
 		}
-		out = append(out, restingOrder{ID: fmt.Sprint(o.OrderID), Side: o.Side, Price: o.Price.Decimal, Remaining: o.Qty.Sub(o.Filled)})
+		out = append(out, restingOrder{ID: fmt.Sprint(o.OrderID), Side: o.Side, Price: o.Price.Decimal, Remaining: o.Qty.Sub(o.Filled), Filled: o.Filled})
 	}
 	return out, nil
 }
@@ -230,6 +239,14 @@ func (m *Maker) place(ctx context.Context, r Rules, q Quote) error {
 	}
 	return call(ctx, "POST", m.cfg.FuturesURL+"/futures/orders", m.userHdr(), map[string]any{
 		"symbol": r.Symbol, "side": q.Side, "type": "limit", "timeInForce": "GTC", "price": price, "qty": qty}, nil)
+}
+
+// amend moves one resting futures order to a new price/size in place
+// (PUT /futures/orders/{id}): one order row update instead of a cancel plus a
+// new order. qty is the new total, so the filled part is added back.
+func (m *Maker) amend(ctx context.Context, o restingOrder, q Quote) error {
+	return call(ctx, "PUT", m.cfg.FuturesURL+"/futures/orders/"+url.PathEscape(o.ID), m.userHdr(), map[string]any{
+		"price": q.Price.String(), "qty": o.Filled.Add(q.Qty).String()}, nil)
 }
 
 func (m *Maker) setLeverage(ctx context.Context, sym string, lev int) error {

@@ -45,6 +45,10 @@ var (
 
 // Pair is one market-making configuration row.
 type Pair struct {
+	// NotionalCap (not stored) caps one level's notional for light-profile
+	// pairs (MM_LIGHT_NOTIONAL_MAX), so their inventory stays small.
+	NotionalCap decimal.Decimal
+
 	Market          string          `json:"market"`
 	Symbol          string          `json:"symbol"`
 	Enabled         bool            `json:"enabled"`
