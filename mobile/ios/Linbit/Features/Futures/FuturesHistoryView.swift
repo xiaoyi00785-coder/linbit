@@ -400,7 +400,7 @@ private struct PositionHistoryPnlSection: View {
             }
             HStack {
                 KVCell(k: "净盈亏", v: h.netPnl ?? "--", vColor: net < 0 ? p.down : p.up)
-                KVCell(k: "价格盈亏", v: h.realizedPnl ?? "--", vColor: rp < 0 ? p.down : p.up, align: .trailing)
+                KVCell(k: "价格盈亏", v: h.realizedPnl ?? "--", align: .trailing, vColor: rp < 0 ? p.down : p.up)
             }
             HStack {
                 KVCell(k: "手续费", v: h.fee ?? "--")
