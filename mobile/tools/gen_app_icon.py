@@ -8,12 +8,28 @@ logo.svg 本身就是满版（full-bleed）App 图标：viewBox 直接映射到 
 曲线细分为折线，按非零环绕规则填充，4× 垂直子采样 + 水平覆盖率抗锯齿。
 用法：python3 mobile/tools/gen_app_icon.py [输出路径]
 """
-import os, re, struct, sys, zlib
+import os, re, struct, subprocess, sys, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SVG = os.path.join(HERE, "..", "icons", "logo.svg")
-OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-    HERE, "..", "ios", "Linbit", "Resources", "Assets.xcassets", "AppIcon.appiconset", "AppIcon.png")
+ICONSET = os.path.join(HERE, "..", "ios", "Linbit", "Resources", "Assets.xcassets", "AppIcon.appiconset")
+OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ICONSET, "AppIcon-1024.png")
+# pixel sizes referenced by AppIcon.appiconset/Contents.json
+ICON_SIZES = {
+    "AppIcon-20.png": 20,
+    "AppIcon-29.png": 29,
+    "AppIcon-40.png": 40,
+    "AppIcon-58.png": 58,
+    "AppIcon-60.png": 60,
+    "AppIcon-76.png": 76,
+    "AppIcon-80.png": 80,
+    "AppIcon-87.png": 87,
+    "AppIcon-120.png": 120,
+    "AppIcon-152.png": 152,
+    "AppIcon-167.png": 167,
+    "AppIcon-180.png": 180,
+    "AppIcon-1024.png": 1024,
+}
 SIZE, SUB, CURVE_STEPS = 1024, 4, 24
 DEFAULT_BG, DEFAULT_FG = (0xFF, 0xFF, 0xFF), (0x00, 0x00, 0x00)
 
@@ -149,7 +165,21 @@ def render():
         + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
     os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
     open(OUT, "wb").write(png)
-    print(f"AppIcon.png {SIZE}x{SIZE} -> {OUT}")
+    print(f"AppIcon {SIZE}x{SIZE} -> {OUT}")
+    master = os.path.abspath(OUT)
+    dest1024 = os.path.join(ICONSET, "AppIcon-1024.png")
+    if master != dest1024:
+        os.makedirs(os.path.dirname(dest1024), exist_ok=True)
+        with open(dest1024, "wb") as f:
+            f.write(open(OUT, "rb").read())
+    master = dest1024
+    for name, px in ICON_SIZES.items():
+        dst = os.path.join(ICONSET, name)
+        if px == 1024:
+            continue
+        subprocess.run(["sips", "-z", str(px), str(px), master, "--out", dst], check=True, capture_output=True)
+    # legacy alias some scripts still expect
+    subprocess.run(["cp", master, os.path.join(ICONSET, "AppIcon.png")], check=True)
 
 
 if __name__ == "__main__":
