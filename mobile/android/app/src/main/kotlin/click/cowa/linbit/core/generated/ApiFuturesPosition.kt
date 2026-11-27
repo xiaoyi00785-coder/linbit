@@ -116,7 +116,13 @@ data class ApiFuturesPosition (
     val adlRank: kotlin.Int? = null,
 
     @SerialName(value = "positionSide")
-    val positionSide: ApiFuturesPosition.PositionSide? = null
+    val positionSide: ApiFuturesPosition.PositionSide? = null,
+
+    @SerialName(value = "mirrored")
+    val mirrored: kotlin.Boolean? = null,
+
+    @SerialName(value = "closeOrderSide")
+    val closeOrderSide: kotlin.String? = null
 
 ) {
 

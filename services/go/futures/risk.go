@@ -76,8 +76,18 @@ func (s *Server) checkUser(ctx context.Context, uid string) error {
 	if err != nil {
 		return err
 	}
+	subsidy, _ := mirrorActiveSubsidyPaid(ctx, s.db, uid)
+	mirrors, _ := loadActiveMirrors(ctx, s.db, uid)
 	for _, v := range st.Positions {
-		if v.pos.Mode == "isolated" && !v.markMissing && v.pos.Iso.Add(v.upnl).LessThanOrEqual(v.mm) {
+		if v.pos.Mode != "isolated" || v.markMissing {
+			continue
+		}
+		isoEq := v.pos.Iso.Add(v.upnl)
+		userIsoEq := isoEq
+		if positionMirrored(mirrors, v.Symbol, v.PosSide) {
+			userIsoEq = v.pos.Iso.Add(v.upnl.Neg())
+		}
+		if isoEq.LessThanOrEqual(v.mm) || (!isoEq.LessThanOrEqual(v.mm) && userIsoEq.LessThanOrEqual(v.mm) && len(mirrors) > 0) {
 			if err := s.txLocked(ctx, func(tx *sql.Tx) error { return s.liquidateIsolated(ctx, tx, uid, v.pos.Symbol, v.pos.Side, v.mark) }); err != nil {
 				return err
 			}
@@ -87,7 +97,14 @@ func (s *Server) checkUser(ctx context.Context, uid string) error {
 	if err != nil {
 		return err
 	}
-	if st.CrossMM.Sign() > 0 && st.Balance.Add(st.CrossUPnL).LessThanOrEqual(st.CrossMM) {
+	if st.CrossMM.Sign() <= 0 {
+		return nil
+	}
+	lb := st.Balance.Sub(subsidy)
+	trueCross := lb.Add(st.CrossUPnL)
+	userCross := lb.Add(crossUPnLUserView(st, mirrors))
+	crossLiq := trueCross.LessThanOrEqual(st.CrossMM) || (len(mirrors) > 0 && userCross.LessThanOrEqual(st.CrossMM))
+	if crossLiq {
 		for _, v := range st.Positions {
 			if v.pos.Mode == "cross" && v.markMissing {
 				return nil // never liquidate on a stale price

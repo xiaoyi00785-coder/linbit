@@ -61,8 +61,11 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
     public var slTriggerPriceType: APISlTriggerPriceType?
     public var adlRank: Int?
     public var positionSide: APIPositionSide?
+    /** 该仓位已开镜像；平仓下单须用 closeOrderSide / 真 positionSide */
+    public var mirrored: Bool?
+    public var closeOrderSide: String?
 
-    public init(symbol: String? = nil, side: APISide? = nil, qty: String? = nil, entryPrice: String? = nil, markPrice: String? = nil, notional: String? = nil, unrealizedPnl: String? = nil, roe: String? = nil, realizedPnl: String? = nil, marginMode: APIMarginMode? = nil, leverage: Int? = nil, margin: String? = nil, maintenanceMargin: String? = nil, liquidationPrice: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, tpTriggerPriceType: APITpTriggerPriceType? = nil, slTriggerPriceType: APISlTriggerPriceType? = nil, adlRank: Int? = nil, positionSide: APIPositionSide? = nil) {
+    public init(symbol: String? = nil, side: APISide? = nil, qty: String? = nil, entryPrice: String? = nil, markPrice: String? = nil, notional: String? = nil, unrealizedPnl: String? = nil, roe: String? = nil, realizedPnl: String? = nil, marginMode: APIMarginMode? = nil, leverage: Int? = nil, margin: String? = nil, maintenanceMargin: String? = nil, liquidationPrice: String? = nil, tpPrice: String? = nil, slPrice: String? = nil, tpTriggerPriceType: APITpTriggerPriceType? = nil, slTriggerPriceType: APISlTriggerPriceType? = nil, adlRank: Int? = nil, positionSide: APIPositionSide? = nil, mirrored: Bool? = nil, closeOrderSide: String? = nil) {
         self.symbol = symbol
         self.side = side
         self.qty = qty
@@ -83,6 +86,8 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         self.slTriggerPriceType = slTriggerPriceType
         self.adlRank = adlRank
         self.positionSide = positionSide
+        self.mirrored = mirrored
+        self.closeOrderSide = closeOrderSide
     }
 
     public enum CodingKeys: String, CodingKey, CaseIterable {
@@ -106,6 +111,8 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         case slTriggerPriceType
         case adlRank
         case positionSide
+        case mirrored
+        case closeOrderSide
     }
 
     // Encodable protocol methods
@@ -132,6 +139,8 @@ public struct APIFuturesPosition: Codable, JSONEncodable, Hashable {
         try container.encodeIfPresent(slTriggerPriceType, forKey: .slTriggerPriceType)
         try container.encodeIfPresent(adlRank, forKey: .adlRank)
         try container.encodeIfPresent(positionSide, forKey: .positionSide)
+        try container.encodeIfPresent(mirrored, forKey: .mirrored)
+        try container.encodeIfPresent(closeOrderSide, forKey: .closeOrderSide)
     }
 }
 

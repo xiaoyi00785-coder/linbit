@@ -473,11 +473,15 @@ export function FutForm({ pair }: { pair: PairMeta }) {
     if (curTy === "plan" && !Number(trig)) return toast("请输入触发价", "err");
     const ty = curTy;
     const hedge = st.mode.pos === "split";
-    // 双向持仓：开多/平多 → LONG，开空/平空 → SHORT；单向持仓用 reduceOnly 表示平仓
-    const positionSide: PlaceReq["positionSide"] = hedge ? (act === 0 ? (side === "buy" ? "LONG" : "SHORT") : (side === "buy" ? "SHORT" : "LONG")) : undefined;
+    const curPos = (acct?.positions ?? []).find((p: { symbol?: string; qty?: string }) => p.symbol === pair.symbol && Math.abs(Number(p.qty)) > 0) as { mirrored?: boolean; closeOrderSide?: "buy" | "sell"; positionSide?: string; side?: string } | undefined;
+    let orderSide = side;
+    if (act === 1 && curPos?.mirrored && (curPos.closeOrderSide === "buy" || curPos.closeOrderSide === "sell")) orderSide = curPos.closeOrderSide;
+    // 双向持仓：开多/平多 → LONG，开空/平空 → SHORT；镜像平仓用真 positionSide
+    let positionSide: PlaceReq["positionSide"] = hedge ? (act === 0 ? (side === "buy" ? "LONG" : "SHORT") : (side === "buy" ? "SHORT" : "LONG")) : undefined;
+    if (act === 1 && hedge && curPos?.mirrored && curPos.positionSide && curPos.positionSide !== "BOTH") positionSide = curPos.positionSide as PlaceReq["positionSide"];
     const isLimit = ty === "limit" || (ty === "plan" && !!Number(price));
     const body: PlaceReq = {
-      symbol: pair.symbol, side, qty,
+      symbol: pair.symbol, side: orderSide, qty,
       type: isLimit ? "limit" : "market",
       timeInForce: ty === "limit" ? tif : isLimit ? "GTC" : "IOC",
       price: isLimit ? price : undefined,

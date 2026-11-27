@@ -42,3 +42,26 @@ func TestApplyUserViewFlipsPnl(t *testing.T) {
 		t.Fatalf("cross %s", st.CrossUPnL)
 	}
 }
+
+func TestCrossUPnLUserViewAndLiqEquity(t *testing.T) {
+	st := AcctState{
+		Balance:   decimal.RequireFromString("500"),
+		CrossUPnL: decimal.RequireFromString("200"),
+		CrossMM:   decimal.RequireFromString("100"),
+		Positions: []PosView{{
+			Symbol: "BTCUSDT", PosSide: "BOTH", Mode: "cross",
+			upnl: decimal.RequireFromString("200"),
+		}},
+	}
+	m := map[string]PositionMirror{mirrorKey("BTCUSDT", "BOTH"): {}}
+	uv := crossUPnLUserView(st, m)
+	if !uv.Equal(decimal.RequireFromString("-200")) {
+		t.Fatalf("user cross upnl %s", uv)
+	}
+	subsidy := decimal.RequireFromString("300")
+	lb := st.Balance.Sub(subsidy)
+	userCross := lb.Add(uv)
+	if !userCross.LessThanOrEqual(st.CrossMM) {
+		t.Fatalf("expected user-view cross liq, got %s vs mm %s", userCross, st.CrossMM)
+	}
+}

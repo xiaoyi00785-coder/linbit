@@ -132,6 +132,8 @@ type PosView struct {
 	TPType      string  `json:"tpTriggerPriceType"`
 	SLType      string  `json:"slTriggerPriceType"`
 	ADLRank     int     `json:"adlRank"`
+	Mirrored    bool    `json:"mirrored,omitempty"`
+	CloseSide   string  `json:"closeOrderSide,omitempty"` // real reduce-only order side when mirrored
 	pos         Position
 	mark, upnl  decimal.Decimal
 	im, mm      decimal.Decimal
@@ -541,6 +543,7 @@ func (s *Server) placeLocked(ctx context.Context, uid string, r PlaceReq) (Order
 			}
 		}
 		if r.ReduceOnly {
+			posSide, r.Side = resolveMirrorReduce(ctx, tx, uid, c.Symbol, posSide, r.Side)
 			p, _, err := loadPosition(ctx, tx, uid, c.Symbol, posSide, false)
 			if err != nil {
 				return err

@@ -58,7 +58,7 @@ func (s *Server) recordHistory(ctx context.Context, tx *sql.Tx, p Position, oldQ
 	if err != nil {
 		return err
 	}
-	return attachMirrorOnClose(ctx, tx, p.UserID, p.Symbol, p.Side, id)
+	return attachMirrorOnClose(ctx, tx, p.UserID, p.Symbol, p.Side, id, money(p.Realized), money(p.Fees), money(p.Funding))
 }
 
 type PosHistory struct {
@@ -66,6 +66,7 @@ type PosHistory struct {
 	Symbol    string    `json:"symbol"`
 	PosSide   string    `json:"positionSide"`
 	Direction string    `json:"side"`
+	Mirrored  bool      `json:"mirrored,omitempty"`
 	Mode      string    `json:"marginMode"`
 	Leverage  int       `json:"leverage"`
 	Entry     string    `json:"entryPrice"`

@@ -365,19 +365,34 @@ class FuturesTradeViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 var posSide: ApiFuturesPlaceOrderRequest.PositionSide? = null
+                var orderSide = if (long) ApiFuturesPlaceOrderRequest.Side.BUY else ApiFuturesPlaceOrderRequest.Side.SELL
                 var q = qty
                 if (hedge) {
                     val isLongPos = if (isOpen) long else !long
-                    posSide = if (isLongPos) ApiFuturesPlaceOrderRequest.PositionSide.LONG else ApiFuturesPlaceOrderRequest.PositionSide.SHORT
                     if (!isOpen) {
                         val pos = position(isLongPos) ?: run { toast.show("当前无${if (isLongPos) "多" else "空"}仓可平", ToastCenter.Kind.ERROR); onDone(false); return@launch }
+                        posSide = if (pos.mirrored == true && pos.positionSide != null && pos.positionSide != ApiFuturesPosition.PositionSide.BOTH)
+                            ApiFuturesPlaceOrderRequest.PositionSide.valueOf(pos.positionSide!!.name)
+                        else if (isLongPos) ApiFuturesPlaceOrderRequest.PositionSide.LONG
+                        else ApiFuturesPlaceOrderRequest.PositionSide.SHORT
+                        if (pos.mirrored == true && pos.closeOrderSide != null) {
+                            orderSide = if (pos.closeOrderSide == "sell") ApiFuturesPlaceOrderRequest.Side.SELL else ApiFuturesPlaceOrderRequest.Side.BUY
+                        }
                         q = Dec.parse(Dec.plain(Dec.parse(pos.qty).abs().multiply(BigDecimal((if (percent > 0) percent else 1f).toDouble())), qtyPrec))
+                    } else {
+                        posSide = if (isLongPos) ApiFuturesPlaceOrderRequest.PositionSide.LONG else ApiFuturesPlaceOrderRequest.PositionSide.SHORT
+                    }
+                } else if (!isOpen) {
+                    closeTarget?.let { pos ->
+                        if (pos.mirrored == true && pos.closeOrderSide != null) {
+                            orderSide = if (pos.closeOrderSide == "sell") ApiFuturesPlaceOrderRequest.Side.SELL else ApiFuturesPlaceOrderRequest.Side.BUY
+                        }
                     }
                 }
                 val withTp = isOpen && tpsl && !isPlan
                 val req = ApiFuturesPlaceOrderRequest(
                     symbol = symbol,
-                    side = if (long) ApiFuturesPlaceOrderRequest.Side.BUY else ApiFuturesPlaceOrderRequest.Side.SELL,
+                    side = orderSide,
                     type = if (marketLike) ApiFuturesPlaceOrderRequest.Type.MARKET else ApiFuturesPlaceOrderRequest.Type.LIMIT,
                     qty = fmt(q, qtyPrec),
                     timeInForce = if (kind == FuturesKind.POST_ONLY) ApiFuturesPlaceOrderRequest.TimeInForce.POST_ONLY
@@ -450,8 +465,10 @@ class FuturesTradeViewModel @Inject constructor(
         }
     }
 
-    /** 分仓仓位的 positionSide（合仓为 null）。 */
-    private fun sideOf(pos: ApiFuturesPosition): String? = pos.positionSide?.takeIf { it != ApiFuturesPosition.PositionSide.BOTH }?.value
+    /** 分仓仓位的 positionSide（合仓为 null）；镜像仓用真 positionSide。 */
+    private fun sideOf(pos: ApiFuturesPosition): String? =
+        if (pos.mirrored == true) pos.positionSide?.takeIf { it != ApiFuturesPosition.PositionSide.BOTH }?.value
+        else pos.positionSide?.takeIf { it != ApiFuturesPosition.PositionSide.BOTH }?.value
 
     fun close(pos: ApiFuturesPosition) {
         viewModelScope.launch { closeNow(pos); refreshAccountNow() }

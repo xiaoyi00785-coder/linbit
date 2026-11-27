@@ -64,7 +64,22 @@ func loadActiveMirrors(ctx context.Context, q queryer, uid string) (map[string]P
 }
 
 func loadHistoryMirrors(ctx context.Context, q queryer, uid string) (map[int64]bool, error) {
-	rows, err := q.QueryContext(ctx, `SELECT history_id FROM fut_position_mirror WHERE user_id=$1 AND history_id IS NOT NULL`, uid)
+	rows, err := q.QueryContext(ctx, `
+		SELECT DISTINCT h.id
+		FROM fut_position_history h
+		INNER JOIN fut_position_mirror m
+		  ON m.user_id = h.user_id
+		 AND upper(m.symbol) = upper(h.symbol)
+		 AND upper(m.position_side) = upper(h.position_side)
+		WHERE h.user_id = $1
+		  AND h.closed_at >= m.created_at - interval '1 second'
+		  AND (
+		    m.history_id = h.id
+		    OR (
+		      m.history_id IS NULL
+		      AND h.closed_at <= COALESCE(m.closed_at, h.closed_at) + interval '10 minutes'
+		    )
+		  )`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +93,11 @@ func loadHistoryMirrors(ctx context.Context, q queryer, uid string) (map[int64]b
 		out[id] = true
 	}
 	return out, rows.Err()
+}
+
+// mirrorUserNet is realised − fees + funding on the user (mirrored) view.
+func mirrorUserNet(rp, fees, fund decimal.Decimal) decimal.Decimal {
+	return money(rp.Neg().Sub(fees).Add(fund.Neg()))
 }
 
 // targetSubsidy is the cumulative credit so user equity tracks flipped UPnL (-2×u).
@@ -95,7 +115,48 @@ func (s *Server) syncMirrorSubsidies(ctx context.Context, uid string) error {
 	})
 }
 
+func closeOrderSide(q decimal.Decimal) string {
+	if q.Sign() > 0 {
+		return "sell"
+	}
+	return "buy"
+}
+
+func reduceMatches(p Position, side string) bool {
+	if p.Qty.IsZero() {
+		return false
+	}
+	return (p.Qty.Sign() > 0) != (side == "buy")
+}
+
+// resolveMirrorReduce fixes positionSide/side when a mirrored user closes from the flipped UI.
+func resolveMirrorReduce(ctx context.Context, q queryer, uid, sym, posSide, side string) (string, string) {
+	p, ok, err := loadPosition(ctx, q, uid, sym, posSide, false)
+	if err == nil && ok && reduceMatches(p, side) {
+		return posSide, side
+	}
+	mirrors, err := loadActiveMirrors(ctx, q, uid)
+	if err != nil || len(mirrors) == 0 {
+		return posSide, side
+	}
+	sym = strings.ToUpper(sym)
+	for _, m := range mirrors {
+		if strings.ToUpper(m.Symbol) != sym {
+			continue
+		}
+		ps := normSide(m.PositionSide)
+		p2, ok2, err2 := loadPosition(ctx, q, uid, sym, ps, false)
+		if err2 != nil || !ok2 || p2.Qty.IsZero() {
+			continue
+		}
+		return ps, closeOrderSide(p2.Qty)
+	}
+	return posSide, side
+}
+
 func flipPosView(v *PosView) {
+	v.Mirrored = true
+	v.CloseSide = closeOrderSide(v.pos.Qty)
 	u, err := decimal.NewFromString(v.UPnL)
 	if err != nil {
 		return
@@ -109,6 +170,35 @@ func flipPosView(v *PosView) {
 	if roe, err := decimal.NewFromString(v.ROE); err == nil {
 		v.ROE = roe.Neg().String()
 	}
+}
+
+func mirrorActiveSubsidyPaid(ctx context.Context, q queryer, uid string) (decimal.Decimal, error) {
+	var sum decimal.Decimal
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(SUM(subsidy_paid),0) FROM fut_position_mirror WHERE user_id=$1 AND status='active'`, uid).Scan(&sum)
+	return money(sum), err
+}
+
+// crossUPnLUserView is cross UPnL after mirror display flip (true state + flip deltas).
+func crossUPnLUserView(st AcctState, mirrors map[string]PositionMirror) decimal.Decimal {
+	if len(mirrors) == 0 {
+		return st.CrossUPnL
+	}
+	var flip decimal.Decimal
+	for _, v := range st.Positions {
+		if v.Mode != "cross" {
+			continue
+		}
+		if _, ok := mirrors[mirrorKey(v.Symbol, v.PosSide)]; !ok {
+			continue
+		}
+		flip = flip.Add(v.upnl.Neg().Sub(v.upnl))
+	}
+	return st.CrossUPnL.Add(flip)
+}
+
+func positionMirrored(mirrors map[string]PositionMirror, sym, posSide string) bool {
+	_, ok := mirrors[mirrorKey(sym, posSide)]
+	return ok
 }
 
 func applyUserView(st *AcctState, mirrors map[string]PositionMirror) {
@@ -156,13 +246,19 @@ func (s *Server) userAccountState(ctx context.Context, uid string) (AcctState, e
 }
 
 func applyHistoryMirror(h *PosHistory) {
-	for _, f := range []*string{&h.Realized, &h.Net, &h.Fees, &h.Funding} {
-		d, err := decimal.NewFromString(strings.TrimSpace(*f))
-		if err != nil {
-			continue
-		}
-		*f = money(d.Neg()).String()
+	h.Mirrored = true
+	rp, err := decimal.NewFromString(strings.TrimSpace(h.Realized))
+	if err != nil {
+		return
 	}
+	fees, _ := decimal.NewFromString(strings.TrimSpace(h.Fees))
+	fund, _ := decimal.NewFromString(strings.TrimSpace(h.Funding))
+	rp = money(rp.Neg())
+	fundM := money(fund.Neg())
+	h.Realized = feeStr(rp)
+	h.Fees = feeStr(money(fees))
+	h.Funding = feeStr(fundM)
+	h.Net = feeStr(money(rp.Sub(fees).Add(fundM)))
 	if h.Direction == "long" {
 		h.Direction = "short"
 	} else {
@@ -170,17 +266,48 @@ func applyHistoryMirror(h *PosHistory) {
 	}
 }
 
-func attachMirrorOnClose(ctx context.Context, tx *sql.Tx, uid, sym, side string, historyID int64) error {
-	res, err := tx.ExecContext(ctx, `UPDATE fut_position_mirror SET status='closed', history_id=$4, closed_at=now()
-		WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND status='active'`, uid, strings.ToUpper(sym), normSide(side), historyID)
+// settleMirrorClose aligns wallet delta with mirrorUserNet after true net was booked.
+func settleMirrorClose(ctx context.Context, tx *sql.Tx, uid, sym string, historyID int64, rp, fees, fund decimal.Decimal) error {
+	trueNet := money(rp.Sub(fees).Add(fund))
+	userNet := mirrorUserNet(rp, fees, fund)
+	adj := money(userNet.Sub(trueNet))
+	if adj.IsZero() {
+		return nil
+	}
+	ref := fmt.Sprintf("mirror:close:%d", historyID)
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM fut_bills WHERE user_id=$1 AND ref=$2)`, uid, ref).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	if err := addBalance(ctx, tx, mirrorUser, sym, "mirror_close_settlement", adj.Neg(), ref); err != nil {
+		return err
+	}
+	return addBalance(ctx, tx, uid, sym, "mirror_close_settlement", adj, ref)
+}
+
+func attachMirrorOnClose(ctx context.Context, tx *sql.Tx, uid, sym, side string, historyID int64, rp, fees, fund decimal.Decimal) error {
+	var id int64
+	err := tx.QueryRowContext(ctx, `UPDATE fut_position_mirror SET status='closed', history_id=$4, closed_at=now()
+		WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND status='active' RETURNING id`,
+		uid, strings.ToUpper(sym), normSide(side), historyID).Scan(&id)
+	if err == sql.ErrNoRows {
+		err = tx.QueryRowContext(ctx, `UPDATE fut_position_mirror SET status='closed', history_id=$3, closed_at=now()
+			WHERE id = (
+				SELECT id FROM fut_position_mirror
+				WHERE user_id=$1 AND upper(symbol)=upper($2) AND status='active'
+				ORDER BY id DESC LIMIT 1
+			) RETURNING id`, uid, sym, historyID).Scan(&id)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+	}
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return nil
-	}
-	return nil
+	return settleMirrorClose(ctx, tx, uid, sym, historyID, rp, fees, fund)
 }
 
 func (s *Server) mirrorRoutes(mux *http.ServeMux) {

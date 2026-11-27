@@ -436,16 +436,27 @@ final class FuturesModel: ObservableObject {
     /// 分仓（HEDGE）：开多/平多 → LONG，开空/平空 → SHORT；平仓数量按对应方向仓位计算
     func place(long: Bool) async -> Bool {
         placing = true; defer { placing = false }
-        let side: APIFuturesPlaceOrderRequest.APISide = long ? .buy : .sell
+        var side: APIFuturesPlaceOrderRequest.APISide = long ? .buy : .sell
         var posSide: APIFuturesPlaceOrderRequest.APIPositionSide? = nil
         var q = qty
         if hedge {
             let isLongPos = isOpen ? long : !long
-            posSide = isLongPos ? .long : .short
             if !isOpen {
                 guard let pos = position(long: isLongPos) else { ToastCenter.shared.show("当前无\(isLongPos ? "多" : "空")仓可平", .error); return false }
+                if pos.mirrored == true, let ps = pos.positionSide, ps != .both {
+                    posSide = APIFuturesPlaceOrderRequest.APIPositionSide(rawValue: ps.rawValue)
+                } else {
+                    posSide = isLongPos ? .long : .short
+                }
+                if pos.mirrored == true, let cs = pos.closeOrderSide {
+                    side = cs == "sell" ? .sell : .buy
+                }
                 q = Dec.parse(Dec.plain(abs(Dec.parse(pos.qty)) * Decimal(percent > 0 ? percent : 1), qtyPrec))
+            } else {
+                posSide = isLongPos ? .long : .short
             }
+        } else if !isOpen, let pos = closeTarget, pos.mirrored == true, let cs = pos.closeOrderSide {
+            side = cs == "sell" ? .sell : .buy
         }
         let isPlan = kind == .plan
         let marketLike = kind == .market || (isPlan && planMarket)
@@ -569,7 +580,9 @@ final class FuturesModel: ObservableObject {
         defer { closingKeys.remove(key) }
         let before = abs(Dec.parse(pos.qty))
         do {
-            let resp = try await FuturesAPI.close(sym, positionSide: Self.side(of: pos))
+            let ps: String? = (pos.mirrored == true && pos.positionSide != nil && pos.positionSide != .both)
+                ? pos.positionSide?.rawValue : Self.side(of: pos)
+            let resp = try await FuturesAPI.close(sym, positionSide: ps)
             await refreshAccount()
             return Self.outcome(sym, before: before, after: qtyLeft(sym, Self.side(of: pos)), order: resp.order)
         } catch {

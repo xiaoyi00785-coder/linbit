@@ -426,7 +426,7 @@ func (s *Server) hTodayPnl(w http.ResponseWriter, r *http.Request, uid string) {
 	now := s.now().UTC()
 	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	rows, err := s.db.QueryContext(r.Context(), `SELECT kind, COALESCE(sum(amount),0) FROM fut_bills
-		WHERE user_id=$1 AND created_at >= $2 AND kind IN ('realized_pnl','funding','fee','liquidation_fee','insurance_cover') GROUP BY kind`, uid, since)
+		WHERE user_id=$1 AND created_at >= $2 AND kind IN ('realized_pnl','funding','fee','liquidation_fee','insurance_cover','mirror_close_settlement') GROUP BY kind`, uid, since)
 	if err != nil {
 		writeErr(w, err)
 		return
