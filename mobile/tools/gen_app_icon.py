@@ -8,7 +8,7 @@ logo.svg 本身就是满版（full-bleed）App 图标：viewBox 直接映射到 
 曲线细分为折线，按非零环绕规则填充，4× 垂直子采样 + 水平覆盖率抗锯齿。
 用法：python3 mobile/tools/gen_app_icon.py [输出路径]
 """
-import os, re, struct, subprocess, sys, zlib
+import os, re, shutil, struct, subprocess, sys, tempfile, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SVG = os.path.join(HERE, "..", "icons", "logo.svg")
@@ -163,15 +163,14 @@ def render():
     chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
     png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", SIZE, SIZE, 8, 2, 0, 0, 0)) \
         + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
-    os.makedirs(os.path.dirname(os.path.abspath(OUT)), exist_ok=True)
-    open(OUT, "wb").write(png)
-    print(f"AppIcon {SIZE}x{SIZE} -> {OUT}")
-    master = os.path.abspath(OUT)
+    os.makedirs(ICONSET, exist_ok=True)
     dest1024 = os.path.join(ICONSET, "AppIcon-1024.png")
-    if master != dest1024:
-        os.makedirs(os.path.dirname(dest1024), exist_ok=True)
-        with open(dest1024, "wb") as f:
-            f.write(open(OUT, "rb").read())
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp.write(png)
+        tmp_path = tmp.name
+    shutil.copyfile(tmp_path, dest1024)
+    os.remove(tmp_path)
+    print(f"AppIcon {SIZE}x{SIZE} -> {dest1024}")
     master = dest1024
     for name, px in ICON_SIZES.items():
         dst = os.path.join(ICONSET, name)
