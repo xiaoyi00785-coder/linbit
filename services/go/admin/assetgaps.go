@@ -83,6 +83,7 @@ func (s *Server) gapWrite(base func() string, method, path, module, action strin
 		if !s.verify2FA(w, a, code) {
 			return
 		}
+		m["reason"] = reason
 		m["updatedBy"] = a.Username
 		if _, ok := m["note"]; !ok && strings.Contains(module+action, "override") {
 			m["note"] = reason
