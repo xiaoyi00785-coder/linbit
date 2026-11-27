@@ -84,7 +84,7 @@ func (s *Server) checkUser(ctx context.Context, uid string) error {
 		}
 		isoEq := v.pos.Iso.Add(v.upnl)
 		userIsoEq := isoEq
-		if positionMirrored(mirrors, v.Symbol, v.PosSide) {
+		if m, ok := mirrors[mirrorKey(v.Symbol, v.PosSide)]; ok && mirrorDisplayFlip(m) {
 			userIsoEq = v.pos.Iso.Add(v.upnl.Neg())
 		}
 		if isoEq.LessThanOrEqual(v.mm) || (!isoEq.LessThanOrEqual(v.mm) && userIsoEq.LessThanOrEqual(v.mm) && len(mirrors) > 0) {

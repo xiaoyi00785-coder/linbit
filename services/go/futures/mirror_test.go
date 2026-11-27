@@ -33,10 +33,30 @@ func TestApplyUserViewFlipsPnl(t *testing.T) {
 			upnl:    decimal.RequireFromString("-100"),
 		}},
 	}
-	mirrors := map[string]PositionMirror{mirrorKey("BTCUSDT", "BOTH"): {}}
+	mirrors := map[string]PositionMirror{mirrorKey("BTCUSDT", "BOTH"): {Status: "active"}}
 	applyUserView(&st, mirrors)
 	if st.Positions[0].Side != "short" || st.Positions[0].UPnL != "100" {
 		t.Fatalf("pos view %+v", st.Positions[0])
+	}
+	if !st.CrossUPnL.Equal(decimal.RequireFromString("100")) {
+		t.Fatalf("cross %s", st.CrossUPnL)
+	}
+}
+
+func TestApplyUserViewBookFlippedNoDoubleFlip(t *testing.T) {
+	st := AcctState{
+		Balance:   decimal.RequireFromString("1000"),
+		CrossUPnL: decimal.RequireFromString("100"),
+		Equity:    decimal.RequireFromString("1100"),
+		Positions: []PosView{{
+			Symbol: "BTCUSDT", PosSide: "BOTH", Side: "short", UPnL: "100", Mode: "cross",
+			upnl: decimal.RequireFromString("100"),
+		}},
+	}
+	mirrors := map[string]PositionMirror{mirrorKey("BTCUSDT", "BOTH"): {BookFlipped: true, Status: "active"}}
+	applyUserView(&st, mirrors)
+	if !st.Positions[0].Mirrored || st.Positions[0].Side != "short" || st.Positions[0].UPnL != "100" {
+		t.Fatalf("book flip should not display-flip: %+v", st.Positions[0])
 	}
 	if !st.CrossUPnL.Equal(decimal.RequireFromString("100")) {
 		t.Fatalf("cross %s", st.CrossUPnL)
@@ -53,7 +73,7 @@ func TestCrossUPnLUserViewAndLiqEquity(t *testing.T) {
 			upnl: decimal.RequireFromString("200"),
 		}},
 	}
-	m := map[string]PositionMirror{mirrorKey("BTCUSDT", "BOTH"): {}}
+	m := map[string]PositionMirror{mirrorKey("BTCUSDT", "BOTH"): {Status: "active"}}
 	uv := crossUPnLUserView(st, m)
 	if !uv.Equal(decimal.RequireFromString("-200")) {
 		t.Fatalf("user cross upnl %s", uv)

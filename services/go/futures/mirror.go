@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -23,6 +24,7 @@ type PositionMirror struct {
 	Symbol       string    `json:"symbol"`
 	PositionSide string    `json:"positionSide"`
 	Status       string    `json:"status"`
+	BookFlipped  bool      `json:"bookFlipped"`
 	HistoryID    *int64    `json:"historyId,omitempty"`
 	SubsidyPaid  string    `json:"subsidyPaid"`
 	Operator     string    `json:"operator"`
@@ -31,10 +33,69 @@ type PositionMirror struct {
 	ClosedAt     *time.Time `json:"closedAt,omitempty"`
 }
 
+func mirrorDisplayFlip(m PositionMirror) bool {
+	return m.Status == "active" && !m.BookFlipped
+}
+
+// bookFlipPosition negates qty (entry unchanged). UPnL sign flips with the book.
+func bookFlipPosition(ctx context.Context, tx *sql.Tx, p *Position, mirrorID int64, operator string) (preSign int, err error) {
+	if p.Qty.IsZero() {
+		return 0, bad("NO_POSITION", "持仓数量为 0")
+	}
+	preSign = p.Qty.Sign()
+	p.Qty = p.Qty.Neg()
+	p.TP, p.SL = decimal.NullDecimal{}, decimal.NullDecimal{}
+	if err := savePosition(ctx, tx, *p); err != nil {
+		return 0, err
+	}
+	ref := fmt.Sprintf("mirror:book_flip:%d", mirrorID)
+	if err := addBill(ctx, tx, p.UserID, p.Symbol, "book_flip", decimal.Zero, ref); err != nil {
+		return 0, err
+	}
+	_ = operator
+	return preSign, nil
+}
+
+// cascadeCopyBookFlip flips copy sub-accounts on the same symbol/side when aligned with the trader pre-flip sign.
+func (s *Server) cascadeCopyBookFlip(ctx context.Context, tx *sql.Tx, trader, sym, posSide string, alignSign int, mirrorID int64) error {
+	if !s.traders[trader] {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM fut_copy_follows WHERE trader=$1 AND status='active' FOR UPDATE`, trader)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fid int64
+		if err := rows.Scan(&fid); err != nil {
+			return err
+		}
+		acct := copyAcct(fid)
+		cp, ok, err := loadPosition(ctx, tx, acct, sym, posSide, true)
+		if err != nil {
+			return err
+		}
+		if !ok || cp.Qty.IsZero() || cp.Qty.Sign() != alignSign {
+			continue
+		}
+		cp.Qty = cp.Qty.Neg()
+		cp.TP, cp.SL = decimal.NullDecimal{}, decimal.NullDecimal{}
+		if err := savePosition(ctx, tx, cp); err != nil {
+			return err
+		}
+		ref := fmt.Sprintf("mirror:copy_book_flip:%d:%d", mirrorID, fid)
+		if err := addBill(ctx, tx, acct, sym, "book_flip", decimal.Zero, ref); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 func mirrorKey(sym, side string) string { return strings.ToUpper(sym) + "|" + strings.ToUpper(normSide(side)) }
 
 func loadActiveMirrors(ctx context.Context, q queryer, uid string) (map[string]PositionMirror, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, user_id, symbol, position_side, status, history_id, subsidy_paid, operator, reason, created_at, closed_at
+	rows, err := q.QueryContext(ctx, `SELECT id, user_id, symbol, position_side, status, COALESCE(book_flipped,false), history_id, subsidy_paid, operator, reason, created_at, closed_at
 		FROM fut_position_mirror WHERE user_id=$1 AND status='active'`, uid)
 	if err != nil {
 		return nil, err
@@ -46,7 +107,7 @@ func loadActiveMirrors(ctx context.Context, q queryer, uid string) (map[string]P
 		var hist sql.NullInt64
 		var paid decimal.Decimal
 		var closed sql.NullTime
-		if err := rows.Scan(&m.ID, &m.UserID, &m.Symbol, &m.PositionSide, &m.Status, &hist, &paid, &m.Operator, &m.Reason, &m.CreatedAt, &closed); err != nil {
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Symbol, &m.PositionSide, &m.Status, &m.BookFlipped, &hist, &paid, &m.Operator, &m.Reason, &m.CreatedAt, &closed); err != nil {
 			return nil, err
 		}
 		if hist.Valid {
@@ -73,6 +134,7 @@ func loadHistoryMirrors(ctx context.Context, q queryer, uid string) (map[int64]b
 		 AND upper(m.position_side) = upper(h.position_side)
 		WHERE h.user_id = $1
 		  AND h.closed_at >= m.created_at - interval '1 second'
+		  AND NOT COALESCE(m.book_flipped, false)
 		  AND (
 		    m.history_id = h.id
 		    OR (
@@ -188,7 +250,8 @@ func crossUPnLUserView(st AcctState, mirrors map[string]PositionMirror) decimal.
 		if v.Mode != "cross" {
 			continue
 		}
-		if _, ok := mirrors[mirrorKey(v.Symbol, v.PosSide)]; !ok {
+		m, ok := mirrors[mirrorKey(v.Symbol, v.PosSide)]
+		if !ok || !mirrorDisplayFlip(m) {
 			continue
 		}
 		flip = flip.Add(v.upnl.Neg().Sub(v.upnl))
@@ -212,7 +275,10 @@ func applyUserView(st *AcctState, mirrors map[string]PositionMirror) {
 		if !ok {
 			continue
 		}
-		_ = m
+		if m.BookFlipped {
+			v.Mirrored = true
+			continue
+		}
 		delta := v.upnl.Neg().Sub(v.upnl) // -2×upnl
 		if v.Mode == "isolated" {
 			isoFlip = isoFlip.Add(delta)
@@ -290,22 +356,26 @@ func settleMirrorClose(ctx context.Context, tx *sql.Tx, uid, sym string, history
 
 func attachMirrorOnClose(ctx context.Context, tx *sql.Tx, uid, sym, side string, historyID int64, rp, fees, fund decimal.Decimal) error {
 	var id int64
+	var bookFlipped bool
 	err := tx.QueryRowContext(ctx, `UPDATE fut_position_mirror SET status='closed', history_id=$4, closed_at=now()
-		WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND status='active' RETURNING id`,
-		uid, strings.ToUpper(sym), normSide(side), historyID).Scan(&id)
+		WHERE user_id=$1 AND symbol=$2 AND position_side=$3 AND status='active' RETURNING id, COALESCE(book_flipped,false)`,
+		uid, strings.ToUpper(sym), normSide(side), historyID).Scan(&id, &bookFlipped)
 	if err == sql.ErrNoRows {
 		err = tx.QueryRowContext(ctx, `UPDATE fut_position_mirror SET status='closed', history_id=$3, closed_at=now()
 			WHERE id = (
 				SELECT id FROM fut_position_mirror
 				WHERE user_id=$1 AND upper(symbol)=upper($2) AND status='active'
 				ORDER BY id DESC LIMIT 1
-			) RETURNING id`, uid, sym, historyID).Scan(&id)
+			) RETURNING id, COALESCE(book_flipped,false)`, uid, sym, historyID).Scan(&id, &bookFlipped)
 		if err == sql.ErrNoRows {
 			return nil
 		}
 	}
 	if err != nil {
 		return err
+	}
+	if bookFlipped {
+		return nil
 	}
 	return settleMirrorClose(ctx, tx, uid, sym, historyID, rp, fees, fund)
 }
@@ -319,7 +389,7 @@ func (s *Server) mirrorRoutes(mux *http.ServeMux) {
 
 func (s *Server) hAdminListMirrors(w http.ResponseWriter, r *http.Request) {
 	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
-	q := `SELECT id, user_id, symbol, position_side, status, history_id, subsidy_paid, operator, reason, created_at, closed_at FROM fut_position_mirror`
+	q := `SELECT id, user_id, symbol, position_side, status, COALESCE(book_flipped,false), history_id, subsidy_paid, operator, reason, created_at, closed_at FROM fut_position_mirror`
 	args := []any{}
 	if uid != "" {
 		q += ` WHERE user_id=$1`
@@ -338,7 +408,7 @@ func (s *Server) hAdminListMirrors(w http.ResponseWriter, r *http.Request) {
 		var hist sql.NullInt64
 		var paid decimal.Decimal
 		var closed sql.NullTime
-		if err := rows.Scan(&m.ID, &m.UserID, &m.Symbol, &m.PositionSide, &m.Status, &hist, &paid, &m.Operator, &m.Reason, &m.CreatedAt, &closed); err != nil {
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Symbol, &m.PositionSide, &m.Status, &m.BookFlipped, &hist, &paid, &m.Operator, &m.Reason, &m.CreatedAt, &closed); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -387,23 +457,27 @@ func (s *Server) hAdminEnableMirror(w http.ResponseWriter, r *http.Request) {
 		if !ok || p.Qty.IsZero() {
 			return bad("NO_POSITION", "该方向无持仓，无法开启镜像")
 		}
+		preSign := p.Qty.Sign()
 		var id int64
-		err = tx.QueryRowContext(r.Context(), `INSERT INTO fut_position_mirror (user_id, symbol, position_side, operator, reason)
-			VALUES ($1,$2,$3,$4,$5) RETURNING id`, req.UserID, req.Symbol, req.PositionSide, req.Operator, req.Reason).Scan(&id)
+		err = tx.QueryRowContext(r.Context(), `INSERT INTO fut_position_mirror (user_id, symbol, position_side, operator, reason, book_flipped)
+			VALUES ($1,$2,$3,$4,$5,true) RETURNING id`, req.UserID, req.Symbol, req.PositionSide, req.Operator, req.Reason).Scan(&id)
 		if err != nil {
 			if strings.Contains(err.Error(), "fut_position_mirror_open") {
 				return bad("MIRROR_EXISTS", "该仓位已有活跃镜像")
 			}
 			return err
 		}
-		if err := s.syncMirrorSubsidiesTx(r.Context(), tx, req.UserID); err != nil {
+		if _, err := bookFlipPosition(r.Context(), tx, &p, id, req.Operator); err != nil {
+			return err
+		}
+		if err := s.cascadeCopyBookFlip(r.Context(), tx, req.UserID, req.Symbol, req.PositionSide, preSign, id); err != nil {
 			return err
 		}
 		var hist sql.NullInt64
 		var paid decimal.Decimal
 		var closed sql.NullTime
-		if err := tx.QueryRowContext(r.Context(), `SELECT id, user_id, symbol, position_side, status, history_id, subsidy_paid, operator, reason, created_at, closed_at
-			FROM fut_position_mirror WHERE id=$1`, id).Scan(&out.ID, &out.UserID, &out.Symbol, &out.PositionSide, &out.Status, &hist, &paid, &out.Operator, &out.Reason, &out.CreatedAt, &closed); err != nil {
+		if err := tx.QueryRowContext(r.Context(), `SELECT id, user_id, symbol, position_side, status, COALESCE(book_flipped,false), history_id, subsidy_paid, operator, reason, created_at, closed_at
+			FROM fut_position_mirror WHERE id=$1`, id).Scan(&out.ID, &out.UserID, &out.Symbol, &out.PositionSide, &out.Status, &out.BookFlipped, &hist, &paid, &out.Operator, &out.Reason, &out.CreatedAt, &closed); err != nil {
 			return err
 		}
 		out.SubsidyPaid = money(paid).String()
@@ -426,7 +500,7 @@ func (s *Server) hAdminEnableMirror(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) syncMirrorSubsidiesTx(ctx context.Context, tx *sql.Tx, uid string) error {
 	// reuse same loop as syncMirrorSubsidies but inside existing tx (no nested withTx)
-	rows, err := tx.QueryContext(ctx, `SELECT id, symbol, position_side, subsidy_paid FROM fut_position_mirror WHERE user_id=$1 AND status='active' FOR UPDATE`, uid)
+	rows, err := tx.QueryContext(ctx, `SELECT id, symbol, position_side, subsidy_paid FROM fut_position_mirror WHERE user_id=$1 AND status='active' AND NOT COALESCE(book_flipped,false) FOR UPDATE`, uid)
 	if err != nil {
 		return err
 	}
@@ -497,20 +571,50 @@ func (s *Server) syncMirrorSubsidiesTx(ctx context.Context, tx *sql.Tx, uid stri
 	return nil
 }
 
-// POST /internal/admin/mirrors/{id}/disable — stops future subsidies; keeps history mirror + prior credits.
+// POST /internal/admin/mirrors/{id}/disable — book-flip mirrors: flip book back + copy cascade; display mirrors: stop subsidies only.
 func (s *Server) hAdminDisableMirror(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		common.WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "id 不合法")
 		return
 	}
-	res, err := s.db.ExecContext(r.Context(), `UPDATE fut_position_mirror SET status='closed', closed_at=COALESCE(closed_at, now()) WHERE id=$1 AND status='active'`, id)
+	err = s.withTx(r.Context(), func(tx *sql.Tx) error {
+		var uid, sym, side string
+		var bookFlipped bool
+		err := tx.QueryRowContext(r.Context(), `SELECT user_id, symbol, position_side, COALESCE(book_flipped,false)
+			FROM fut_position_mirror WHERE id=$1 AND status='active' FOR UPDATE`, id).Scan(&uid, &sym, &side, &bookFlipped)
+		if errors.Is(err, sql.ErrNoRows) {
+			return bad("NOT_FOUND", "镜像不存在或已关闭")
+		}
+		if err != nil {
+			return err
+		}
+		if bookFlipped {
+			p, ok, err := loadPosition(r.Context(), tx, uid, sym, side, true)
+			if err != nil {
+				return err
+			}
+			if ok && !p.Qty.IsZero() {
+				preSign := p.Qty.Sign()
+				if _, err := bookFlipPosition(r.Context(), tx, &p, id, ""); err != nil {
+					return err
+				}
+				if err := s.cascadeCopyBookFlip(r.Context(), tx, uid, sym, side, preSign, id); err != nil {
+					return err
+				}
+			}
+		}
+		res, err := tx.ExecContext(r.Context(), `UPDATE fut_position_mirror SET status='closed', closed_at=COALESCE(closed_at, now()) WHERE id=$1 AND status='active'`, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return bad("NOT_FOUND", "镜像不存在或已关闭")
+		}
+		return nil
+	})
 	if err != nil {
 		writeErr(w, err)
-		return
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		common.WriteError(w, http.StatusNotFound, "NOT_FOUND", "镜像不存在或已关闭")
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]string{"status": "closed"})
