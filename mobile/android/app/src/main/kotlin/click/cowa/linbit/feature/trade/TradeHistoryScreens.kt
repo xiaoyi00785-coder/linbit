@@ -112,7 +112,7 @@ class TradeHistoryViewModel @Inject constructor(
     }
 
     /**
-     * @param tab 0 当前委托 1 历史委托 2 历史仓位 3 成交 4 流水 5 条件委托
+     * @param tab 0 当前委托 1 历史委托 2 历史仓位 3 成交 4 平仓盈亏 5 流水 6 条件委托
      * @param timeFilter 仓位时间档
      * @param billKind 流水 kind
      * @param algoPlan true=计划委托 false=止盈止损
@@ -140,8 +140,13 @@ class TradeHistoryViewModel @Inject constructor(
                         futPositions = r.positions.orEmpty(); posCursor = r.nextCursor
                     }
                     3 -> futTrades = apiCall { api.futuresMyTrades(symbol = symbol) }.trades.orEmpty()
-                    4 -> futBills = apiCall { api.futuresBills(kind = billKind) }.bills.orEmpty()
-                    5 -> {
+                    4 -> {
+                        val start = TradeHistoryLogic.positionStartTimeMs(timeFilter)
+                        val r = apiCall { api.futuresPositionHistory(symbol = symbol, startTime = start, limit = 50) }
+                        futPositions = r.positions.orEmpty(); posCursor = r.nextCursor
+                    }
+                    5 -> futBills = apiCall { api.futuresBills(kind = billKind) }.bills.orEmpty()
+                    6 -> {
                         val status = TradeHistoryLogic.algoStatusParam(algoHistory)
                         val r = if (algoPlan) apiCall { api.futuresPlanOrders(symbol = symbol, status = status) }
                         else apiCall { api.futuresTpslOrders(symbol = symbol, status = status) }
@@ -247,7 +252,7 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
     var billKind by remember { mutableStateOf<String?>(null) }
     var algoPlan by remember { mutableStateOf(true) }
     var algoHistory by remember { mutableStateOf(false) }
-    val tabs = listOf("当前委托", "历史委托", "历史仓位", "成交明细", "资金流水", "条件委托")
+    val tabs = listOf("当前委托", "历史委托", "历史仓位", "成交明细", "平仓盈亏", "资金流水", "条件委托")
     fun reload() {
         if (loggedIn) vm.loadFutures(tab, symbol, timeFilter, billKind, algoPlan, algoHistory)
     }
@@ -305,7 +310,15 @@ fun FuturesHistoryScreen(onClose: () -> Unit, onLogin: () -> Unit, symbol: Strin
                 }
             }
             tab == 3 -> vm.futTrades.forEach { t -> HistTradeRow(t.symbol ?: "", t.side?.value ?: "", t.price, t.qty, t.time) }
-            tab == 4 -> vm.futBills.forEach { BillRow(it) }
+            tab == 4 -> {
+                vm.futPositions.forEach { ClosePnlHistRow(it) }
+                if (vm.posCursor != null) {
+                    ChipButton(if (vm.loadingMore) "加载中…" else "加载更多", Modifier.fillMaxWidth().height(40.dp).padding(vertical = 8.dp)) {
+                        if (!vm.loadingMore) vm.loadMorePositions(symbol, timeFilter)
+                    }
+                }
+            }
+            tab == 5 -> vm.futBills.forEach { BillRow(it) }
             else -> {
                 vm.futAlgos.forEach { a ->
                     AlgoHistRow(a, canCancel = !algoHistory) {
@@ -345,13 +358,13 @@ private fun HistoryFilterBar(
             0, 1 -> TradeHistoryLogic.orderTypeLabels.forEachIndexed { i, label ->
                 FilterChip(label, typeFilter == i) { onType(i) }
             }
-            2 -> TradeHistoryLogic.timeFilterLabels.forEachIndexed { i, label ->
+            2, 4 -> TradeHistoryLogic.timeFilterLabels.forEachIndexed { i, label ->
                 FilterChip(label, timeFilter == i) { onTime(i) }
             }
-            4 -> TradeHistoryLogic.billKindOptions.forEach { (kind, label) ->
+            5 -> TradeHistoryLogic.billKindOptions.forEach { (kind, label) ->
                 FilterChip(label, billKind == kind) { onBillKind(kind) }
             }
-            5 -> {
+            6 -> {
                 FilterChip("计划委托", algoPlan) { onAlgoPlan(true) }
                 FilterChip("止盈止损", !algoPlan) { onAlgoPlan(false) }
                 FilterChip("进行中", !algoHistory) { onAlgoHistory(false) }
@@ -380,7 +393,7 @@ private fun listForSpot(vm: TradeHistoryViewModel, tab: Int) = when (tab) {
     0 -> vm.spotOpen; 1 -> vm.spotHistory; else -> vm.spotTrades
 }
 private fun listForFut(vm: TradeHistoryViewModel, tab: Int): List<*> = when (tab) {
-    0 -> vm.futOrders; 1 -> vm.futHistory; 2 -> vm.futPositions; 3 -> vm.futTrades; 4 -> vm.futBills; else -> vm.futAlgos
+    0 -> vm.futOrders; 1 -> vm.futHistory; 2, 4 -> vm.futPositions; 3 -> vm.futTrades; 5 -> vm.futBills; else -> vm.futAlgos
 }
 
 @Composable
@@ -450,24 +463,53 @@ private fun HistTradeRow(symbol: String, side: String, price: String?, qty: Stri
 }
 
 @Composable
+private fun ClosePnlHistRow(h: ApiFuturesPositionHistory) {
+  PosHistoryPnlBlock(h, compact = true)
+  HorizontalDivider(color = LB.p.divider)
+}
+
+@Composable
 private fun PosHistRow(h: ApiFuturesPositionHistory) {
+  Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.padding(horizontal = 0.dp), verticalAlignment = Alignment.CenterVertically) {
+      Text("最大持仓 ${h.maxQty?.let(::apiAmount) ?: "--"}", style = lb(FontSize.small), color = LB.p.textSecondary)
+    }
+    PosHistoryPnlBlock(h, compact = false)
+  }
+  HorizontalDivider(color = LB.p.divider)
+}
+
+/** 历史仓位 / 平仓盈亏同源 positions/history，手续费等字段一致 */
+@Composable
+private fun PosHistoryPnlBlock(h: ApiFuturesPositionHistory, compact: Boolean) {
     val p = LB.p
-    val pnlRaw = h.netPnl ?: h.realizedPnl
-    val pnlSign = Dec.parse(pnlRaw).signum()
-    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val short = h.side == ApiFuturesPositionHistory.Side.SHORT
+    val netSign = Dec.parse(h.netPnl).signum()
+    val rpSign = Dec.parse(h.realizedPnl).signum()
+    Column(Modifier.fillMaxWidth().padding(vertical = if (compact) 10.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(h.symbol ?: "", style = lb(FontSize.body, FontWeight.Medium), color = p.textPrimary)
-            Text(" ${if (h.side == ApiFuturesPositionHistory.Side.SHORT) "空" else "多"}", style = lb(FontSize.small), color = if (h.side == ApiFuturesPositionHistory.Side.SHORT) p.down else p.up)
+            Text(
+                " ${if (short) "空" else "多"}${if (!compact) " · ${h.leverage}x" else ""}",
+                style = lb(FontSize.small),
+                color = if (short) p.down else p.up,
+            )
             Box(Modifier.weight(1f))
-            Text(apiAmount(pnlRaw), style = lbNum(FontSize.label, FontWeight.Medium), color = if (pnlSign < 0) p.down else p.up)
         }
         Row {
-            KVCell("开仓价", apiAmount(h.entryPrice), Modifier.weight(1f))
-            KVCell("平仓价", apiAmount(h.closePrice), Modifier.weight(1f), TextAlign.Center)
+            KVCell("净盈亏", apiAmount(h.netPnl), Modifier.weight(1f), vColor = if (netSign < 0) p.down else p.up)
+            KVCell("价格盈亏", apiAmount(h.realizedPnl), Modifier.weight(1f), TextAlign.End, if (rpSign < 0) p.down else p.up)
+        }
+        Row {
+            KVCell("手续费", apiAmount(h.fee), Modifier.weight(1f))
+            KVCell("资金费用", apiAmount(h.fundingFee), Modifier.weight(1f), TextAlign.Center)
             KVCell("数量", apiAmount(h.closedQty ?: h.maxQty), Modifier.weight(1f), TextAlign.End)
         }
+        Row {
+            KVCell("开仓均价", apiAmount(h.entryPrice), Modifier.weight(1f))
+            KVCell("平仓均价", apiAmount(h.closePrice), Modifier.weight(1f), TextAlign.End)
+        }
     }
-    HorizontalDivider(color = p.divider)
 }
 
 @Composable

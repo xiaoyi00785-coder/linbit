@@ -98,7 +98,7 @@ struct FuturesHistoryView: View {
         HStack(spacing: 14) {
             dropdown(filterSymbol ?? "币对") { picking = true }
             if tab <= 1 { dropdown(typeFilter == 0 ? "委托类型" : typeTitles[typeFilter]) { pickingType = true } }
-            if tab == 2 { dropdown(timeTitles[timeFilter]) { pickingTime = true } }
+            if tab == 2 || tab == 4 { dropdown(timeTitles[timeFilter]) { pickingTime = true } }
             if tab == 6 {
                 dropdown(algoKind == 0 ? "计划委托" : "止盈止损") { algoKind = algoKind == 0 ? 1 : 0; Task { await load() } }
                 dropdown(algoHistory ? "历史" : "进行中") { algoHistory.toggle(); Task { await load() } }
@@ -165,11 +165,11 @@ struct FuturesHistoryView: View {
                         }
                     }
                 }
-            case 2:
-                LoadableView(state: posHist, emptyText: "暂无历史仓位", isEmpty: { $0.isEmpty }, retry: { Task { await load() } }) { list in
+            case 2, 4:
+                LoadableView(state: posHist, emptyText: tab == 4 ? "暂无平仓盈亏" : "暂无历史仓位", isEmpty: { $0.isEmpty }, retry: { Task { await load() } }) { list in
                     LazyVStack(spacing: 0) {
                         ForEach(Array(list.enumerated()), id: \.offset) { _, h in
-                            PositionHistoryRow(h: h)
+                            if tab == 4 { ClosePnlHistoryRow(h: h) } else { PositionHistoryRow(h: h) }
                             Divider().overlay(p.divider).padding(.horizontal, Spacing.pageH)
                         }
                         moreButton(hasMore: posCursor != nil) { await loadMorePositions() }
@@ -242,8 +242,9 @@ struct FuturesHistoryView: View {
                 trades = .loading
                 trades = .loaded(try await FuturesAPI.myTrades(symbol: filterSymbol))
             case 4:
-                bills = .loading
-                bills = .loaded(try await FuturesAPI.bills(kind: "realized_pnl").filter { filterSymbol == nil || $0.symbol == filterSymbol })
+                posHist = .loading
+                let rPnl = try await FuturesAPI.positionHistory(symbol: filterSymbol, startTime: startTime, endTime: nil, cursor: nil)
+                posHist = .loaded(rPnl.positions ?? []); posCursor = rPnl.nextCursor
             default:
                 bills = .loading
                 bills = .loaded(try await FuturesAPI.bills(kind: billKind).filter { filterSymbol == nil || $0.symbol == filterSymbol })
@@ -251,7 +252,7 @@ struct FuturesHistoryView: View {
         } catch {
             switch tab {
             case 0, 1: orders = .failed(error.lbMessage)
-            case 2: posHist = .failed(error.lbMessage)
+            case 2, 4: posHist = .failed(error.lbMessage)
             case 3: trades = .failed(error.lbMessage)
             case 6: algos = .failed(error.lbMessage)
             default: bills = .failed(error.lbMessage)
@@ -367,46 +368,88 @@ struct FuturesBillRow: View {
     }
 }
 
+/// 平仓盈亏：与 Web「平仓盈亏」一致，走 positions/history（含镜像）
+struct ClosePnlHistoryRow: View {
+    @Environment(\.palette) private var p
+    let h: APIFuturesPositionHistory
+    var body: some View {
+        PositionHistoryPnlSection(h: h, compact: true)
+    }
+}
+
+/// 历史仓位 / 平仓盈亏共用：同一笔 positions/history，手续费等字段一致
+private struct PositionHistoryPnlSection: View {
+    @Environment(\.palette) private var p
+    let h: APIFuturesPositionHistory
+    var compact: Bool = false
+    var body: some View {
+        let long = h.side != .short
+        let net = Dec.parse(h.netPnl)
+        let rp = Dec.parse(h.realizedPnl)
+        VStack(alignment: .leading, spacing: compact ? 8 : 10) {
+            HStack(spacing: 6) {
+                Text(long ? "多" : "空").font(.lb(FontSize.small, .semibold)).foregroundColor(.white)
+                    .frame(width: 20, height: 18).background(RoundedRectangle(cornerRadius: 3).fill(long ? p.up : p.down))
+                Text(h.symbol ?? "").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
+                if !compact {
+                    Text("\(h.marginMode == "isolated" ? "逐仓" : "全仓") \(h.leverage ?? 0)x").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                } else {
+                    Text("\(h.leverage ?? 0)x").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
+                }
+                Spacer()
+            }
+            HStack {
+                KVCell(k: "净盈亏", v: h.netPnl ?? "--", vColor: net < 0 ? p.down : p.up)
+                KVCell(k: "价格盈亏", v: h.realizedPnl ?? "--", vColor: rp < 0 ? p.down : p.up, align: .trailing)
+            }
+            HStack {
+                KVCell(k: "手续费", v: h.fee ?? "--")
+                KVCell(k: "资金费用", v: h.fundingFee ?? "--", align: .center)
+                KVCell(k: "数量", v: h.closedQty ?? "--", align: .trailing)
+            }
+            HStack {
+                KVCell(k: "开仓均价", v: Fmt.priceAuto(Dec.parse(h.entryPrice)))
+                KVCell(k: "平仓均价", v: Fmt.priceAuto(Dec.parse(h.closePrice)), align: .trailing)
+            }
+            if compact {
+                HStack {
+                    Text("开仓 \(h.openTime.map(Fmt.dateTime) ?? "--")")
+                    Spacer()
+                    Text("平仓 \(h.closeTime.map(Fmt.dateTime) ?? "--")")
+                }.font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
+            }
+        }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
+    }
+}
+
 /// 历史仓位行：方向 / 杠杆 / 状态，开平仓均价、最大持仓、已平数量、已实现 / 手续费 / 资金费 / 净盈亏，开平仓时间
 struct PositionHistoryRow: View {
     @Environment(\.palette) private var p
     let h: APIFuturesPositionHistory
     var body: some View {
-        let long = h.side != .short
-        let net = Dec.parse(h.netPnl)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
+                let long = h.side != .short
                 Text(long ? "多" : "空").font(.lb(FontSize.small, .semibold)).foregroundColor(.white)
                     .frame(width: 20, height: 18).background(RoundedRectangle(cornerRadius: 3).fill(long ? p.up : p.down))
                 Text(h.symbol ?? "").font(.lb(FontSize.body, .semibold)).foregroundColor(p.textPrimary)
-                Text("\(h.marginMode == "isolated" ? "逐仓" : "全仓") \(h.leverage ?? 0)x").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
-                    .padding(.horizontal, 4).frame(height: 18).background(RoundedRectangle(cornerRadius: 3).fill(p.fill))
                 if let ps = h.positionSide, ps != "BOTH" {
                     Text("分仓").font(.lb(FontSize.small)).foregroundColor(p.textSecondary)
                 }
                 Spacer()
                 Text(statusText).font(.lb(FontSize.small)).foregroundColor(h.status == .closed ? p.textSecondary : p.down)
             }
-            HStack {
-                KVCell(k: "净盈亏(USDT)", v: h.netPnl ?? "--", vColor: net < 0 ? p.down : p.up)
-                KVCell(k: "已实现盈亏", v: h.realizedPnl ?? "--", align: .trailing)
-            }
-            HStack {
-                KVCell(k: "开仓均价", v: Fmt.priceAuto(Dec.parse(h.entryPrice)))
-                KVCell(k: "平仓均价", v: Fmt.priceAuto(Dec.parse(h.closePrice)), align: .center)
-                KVCell(k: "最大持仓", v: h.maxQty ?? "--", align: .trailing)
-            }
-            HStack {
-                KVCell(k: "已平数量", v: h.closedQty ?? "--")
-                KVCell(k: "手续费", v: h.fee ?? "--", align: .center)
-                KVCell(k: "资金费用", v: h.fundingFee ?? "--", align: .trailing)
-            }
+            .padding(.horizontal, Spacing.pageH).padding(.top, 12)
+            KVRow(k: "最大持仓", v: h.maxQty ?? "--")
+                .padding(.horizontal, Spacing.pageH).padding(.top, 6)
+            PositionHistoryPnlSection(h: h, compact: false)
             HStack {
                 Text("开仓 \(h.openTime.map(Fmt.dateTime) ?? "--")")
                 Spacer()
                 Text("平仓 \(h.closeTime.map(Fmt.dateTime) ?? "--")")
             }.font(.lbNum(FontSize.small)).foregroundColor(p.textTertiary)
-        }.padding(.horizontal, Spacing.pageH).padding(.vertical, 12)
+                .padding(.horizontal, Spacing.pageH).padding(.bottom, 12)
+        }
     }
     private var statusText: String {
         switch h.status {
