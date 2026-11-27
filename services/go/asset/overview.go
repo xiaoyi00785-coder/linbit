@@ -88,37 +88,40 @@ func (s *Server) valued(ctx context.Context, name string, bs []Balance, cache ma
 }
 
 // futuresWallet reads the user's futures USDT wallet from the futures service.
-func (s *Server) futuresWallet(ctx context.Context, userID string) (Balance, bool) {
+// /futures/account returns the mirror-adjusted user view (marginBalance / available)
+// when ops has enabled position mirroring; overview totals include that equity.
+func (s *Server) futuresWallet(ctx context.Context, userID string) (Balance, bool, bool) {
 	if s.cfg.FuturesURL == "" {
-		return Balance{}, false
+		return Balance{}, false, false
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(s.cfg.FuturesURL, "/")+"/futures/account", nil)
 	if err != nil {
-		return Balance{}, false
+		return Balance{}, false, false
 	}
 	req.Header.Set("X-User-Id", userID)
 	req.Header.Set("X-Internal-Token", s.cfg.InternalToken)
 	resp, err := overviewHTTP.Do(req)
 	if err != nil {
 		log.Printf("overview: futures: %v", err)
-		return Balance{}, false
+		return Balance{}, false, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return Balance{}, false
+		return Balance{}, false, false
 	}
 	var a struct {
 		Asset            string `json:"asset"`
 		MarginBalance    string `json:"marginBalance"`
 		AvailableBalance string `json:"availableBalance"`
+		MirrorActive     bool   `json:"mirrorActive"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&a) != nil {
-		return Balance{}, false
+		return Balance{}, false, false
 	}
 	eq, err1 := decimal.NewFromString(a.MarginBalance)
 	av, err2 := decimal.NewFromString(a.AvailableBalance)
 	if err1 != nil || err2 != nil {
-		return Balance{}, false
+		return Balance{}, false, false
 	}
 	if a.Asset == "" {
 		a.Asset = "USDT"
@@ -128,7 +131,7 @@ func (s *Server) futuresWallet(ctx context.Context, userID string) (Balance, boo
 	if locked.IsNegative() {
 		locked = decimal.Zero
 	}
-	return Balance{Asset: a.Asset, Free: av, Locked: locked}, true
+	return Balance{Asset: a.Asset, Free: av, Locked: locked}, true, a.MirrorActive
 }
 
 // GET /assets/overview
@@ -160,8 +163,10 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	fa := s.valued(ctx, AcctFunding, funding, cache)
 	sa := s.valued(ctx, AcctSpot, spot, cache)
 	var fu overviewAccount
-	if b, ok := s.futuresWallet(ctx, userID); ok {
+	mirrorInTotal := false
+	if b, ok, mirrored := s.futuresWallet(ctx, userID); ok {
 		fu = s.valued(ctx, "futures", []Balance{b}, cache)
+		mirrorInTotal = mirrored
 	} else {
 		fu = overviewAccount{Account: "futures", Available: false, TotalValueUsdt: "0.00", Balances: []balanceDTO{}}
 	}
@@ -173,6 +178,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	dep, depSource := s.store.effectiveDepositAccount(ctx, userID)
 	common.WriteJSON(w, http.StatusOK, map[string]any{
 		"totalValueUsdt":         total.StringFixed(2),
+		"futuresMirrorInTotal":   mirrorInTotal,
 		"accounts":               []overviewAccount{fa, sa, fu},
 		"depositAccount":         dep,
 		"depositAccountSource":   depSource,

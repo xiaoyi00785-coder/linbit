@@ -100,6 +100,7 @@ func (s *Server) Routes() http.Handler {
 	a("PUT /admin/v1/site/social", permContentEdit, s.handleSocialPut)
 
 	s.assetGapRoutes(a)
+	s.mirrorRoutes(a)
 	s.viewRoutes(a)
 	a("GET /admin/v1/fees", permFeeView, s.handleGetFees)
 	a("GET /admin/v1/fee-changes", permFeeView, s.handleListFeeChanges)

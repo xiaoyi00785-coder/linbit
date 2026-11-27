@@ -80,6 +80,7 @@ func (s *Server) Routes() http.Handler {
 	s.copyRoutes(mux)
 	s.tradeFeedRoutes(mux)
 	s.bonusRoutes(mux)
+	s.mirrorRoutes(mux)
 	s.eventRoutes(mux)
 	mux.HandleFunc("GET /internal/solvency/liabilities", s.hSolvency)
 	mux.HandleFunc("POST /internal/dev/index", s.dev(s.hDevIndex))
@@ -144,23 +145,25 @@ func limitParam(r *http.Request, def, maxV int) int {
 // ---- account handlers ----
 
 func (s *Server) hAccount(w http.ResponseWriter, r *http.Request, uid string) {
-	st, err := s.state(r.Context(), s.db, uid)
+	st, err := s.userAccountState(r.Context(), uid)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	s.adlRanks(r.Context(), st.Positions)
+	mirrors, _ := loadActiveMirrors(r.Context(), s.db, uid)
 	common.WriteJSON(w, http.StatusOK, map[string]any{
 		"asset": "USDT", "walletBalance": money(st.Balance), "orderMargin": money(st.Frozen),
 		"crossPositionMargin": money(st.CrossIM), "crossMaintenanceMargin": money(st.CrossMM),
 		"crossUnrealizedPnl": money(st.CrossUPnL), "isolatedMargin": money(st.IsoMargin),
 		"isolatedUnrealizedPnl": money(st.IsoUPnL), "availableBalance": money(dmax(st.Available, dZero)),
 		"marginBalance": money(st.Equity), "positions": st.Positions,
+		"mirrorActive": len(mirrors) > 0, "userView": true,
 	})
 }
 
 func (s *Server) hPositions(w http.ResponseWriter, r *http.Request, uid string) {
-	st, err := s.state(r.Context(), s.db, uid)
+	st, err := s.userAccountState(r.Context(), uid)
 	if err != nil {
 		writeErr(w, err)
 		return

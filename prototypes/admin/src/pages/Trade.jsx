@@ -35,15 +35,23 @@ export function SpotOrders() {
 
 export function Positions() {
   const [f, v] = useQ(); const q = useApi('futures/positions', { ...f, size: 200 }); const rows = items(q.data)
+  const [mirror, setMirror] = useState(null)
+  const app = useApp()
+  const canMirror = ((app && app.me && app.me.perms) || []).includes('fund:adjust')
   const long = rows.filter(r => +r.qty > 0).reduce((a, r) => a + +r.notional, 0), short = rows.filter(r => +r.qty < 0).reduce((a, r) => a + +r.notional, 0)
-  return <><PageHead title="合约持仓" desc="USDT 本位永续当前持仓（只读）· 标记价取最新标记价快照；强制减仓暂无后台接口" />
+  return <><PageHead title="合约持仓" desc="真仓数据（对账）· 可开启用户视图镜像（方向/盈亏翻转 + system:mirror 补贴，可划出）。用户侧见 mirror-preview。" />
+    {mirror && <Confirm danger title="开启持仓镜像（用户视图）" rows={[['UID', mirror.uid], ['合约', mirror.symbol], ['腿', mirror.positionSide || 'BOTH'], ['真·未实现盈亏', num(mirror.unrealizedPnl)]]} onClose={() => setMirror(null)}
+      note="后台真账不变；用户端方向与未实现盈亏取反，并按 -2×UPnL 从 system:mirror 补贴进合约钱包（可划出）。平仓后历史仍镜像。需填写原因 + TOTP。"
+      onOk={async ({ totpCode, reason }) => { await api('futures/mirrors/enable', { method: 'POST', body: { userId: mirror.uid, symbol: mirror.symbol, positionSide: mirror.positionSide || 'BOTH', totpCode, reason } }); q.reload(); return '已开启镜像' }} />}
     <ApiState q={q}><div className="grid g4" style={{ marginBottom: 12 }}><Kpi l="持仓数" v={q.data ? q.data.total : '-'} /><Kpi l="多头价值（当前页）" v={'$' + num(long, 0)} /><Kpi l="空头价值（当前页）" v={'$' + num(short, 0)} /><Kpi l="未实现盈亏（当前页）" v={num(rows.reduce((a, r) => a + +r.unrealizedPnl, 0))} /></div></ApiState>
     <div className="card"><div className="filters"><input className="in" placeholder="UID" onChange={v('uid')} /><input className="in" placeholder="合约，如 BTCUSDT" onChange={v('symbol')} />
       <select className="sel" onChange={v('side')}><option value="">全部方向</option><option value="long">多</option><option value="short">空</option></select></div></div>
     <ApiState q={q}>{total(q.data)}<DataTable rows={rows.map((r, i) => ({ ...r, id: r.uid + r.symbol + r.positionSide + i }))}
       cols={[{ t: 'UID', k: 'uid' }, { t: '合约', k: 'symbol' }, { t: '方向', render: r => <span className={+r.qty > 0 ? 'up' : 'down'}>{+r.qty > 0 ? '多' : '空'}</span> }, { t: '杠杆', render: r => r.leverage + 'x' }, { t: '模式', render: r => r.marginMode === 'isolated' ? '逐仓' : '全仓' },
         { t: '数量', r: 1, num: 1, render: r => r.qty }, { t: '仓位价值', r: 1, num: 1, render: r => num(r.notional) }, { t: '开仓价', r: 1, num: 1, render: r => r.entryPrice }, { t: '标记价', r: 1, num: 1, render: r => r.markPrice || '-' },
-        { t: '未实现盈亏', r: 1, num: 1, render: r => <span className={+r.unrealizedPnl >= 0 ? 'up' : 'down'}>{num(r.unrealizedPnl)}</span> }, { t: '已实现盈亏', r: 1, num: 1, render: r => num(r.realizedPnl) }]} /></ApiState></>
+        { t: '未实现盈亏', r: 1, num: 1, render: r => <span className={+r.unrealizedPnl >= 0 ? 'up' : 'down'}>{num(r.unrealizedPnl)}</span> }, { t: '已实现盈亏', r: 1, num: 1, render: r => num(r.realizedPnl) },
+        { t: '镜像', render: r => r.mirrorActive ? <Tag k="wn">用户视图</Tag> : null },
+        { t: '操作', render: r => canMirror && !r.mirrorActive ? <a onClick={() => setMirror(r)}>开镜像</a> : null }]} /></ApiState></>
 }
 
 export function Grid() {

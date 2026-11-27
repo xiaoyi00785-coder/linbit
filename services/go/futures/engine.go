@@ -1055,6 +1055,9 @@ func (s *Server) TransferWallet(ctx context.Context, uid, dir, wallet string, am
 	if dir != "in" && dir != "out" {
 		return "", "", bad("VALIDATION_ERROR", "direction 必须为 in 或 out")
 	}
+	if dir == "out" {
+		_ = s.syncMirrorSubsidies(ctx, uid)
+	}
 	var cid any
 	if clientID != "" {
 		cid = clientID

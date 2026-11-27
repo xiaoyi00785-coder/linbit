@@ -50,11 +50,15 @@ func (s *Server) recordHistory(ctx context.Context, tx *sql.Tx, p Position, oldQ
 	}
 	maxQ := dmax(p.MaxQty, oldQ.Abs())
 	net := money(p.Realized.Sub(p.Fees).Add(p.Funding))
-	_, err := tx.ExecContext(ctx, `INSERT INTO fut_position_history (user_id, symbol, position_side, direction, margin_mode, leverage, entry_price, close_price,
-		max_qty, closed_qty, realized_pnl, fees, funding, net_pnl, status, opened_at, closed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+	var id int64
+	err := tx.QueryRowContext(ctx, `INSERT INTO fut_position_history (user_id, symbol, position_side, direction, margin_mode, leverage, entry_price, close_price,
+		max_qty, closed_qty, realized_pnl, fees, funding, net_pnl, status, opened_at, closed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
 		p.UserID, p.Symbol, normSide(p.Side), dir, p.Mode, p.Leverage, entry.Round(8), closePx.Round(8), maxQ, p.CloseQty,
-		money(p.Realized), money(p.Fees), money(p.Funding), net, status, opened, s.now())
-	return err
+		money(p.Realized), money(p.Fees), money(p.Funding), net, status, opened, s.now()).Scan(&id)
+	if err != nil {
+		return err
+	}
+	return attachMirrorOnClose(ctx, tx, p.UserID, p.Symbol, p.Side, id)
 }
 
 type PosHistory struct {
@@ -109,6 +113,7 @@ func (s *Server) hPositionHistory(w http.ResponseWriter, r *http.Request, uid st
 		return
 	}
 	defer rows.Close()
+	histMirrors, _ := loadHistoryMirrors(r.Context(), s.db, uid)
 	out := []PosHistory{}
 	for rows.Next() {
 		var h PosHistory
@@ -119,6 +124,9 @@ func (s *Server) hPositionHistory(w http.ResponseWriter, r *http.Request, uid st
 		}
 		h.Entry, h.Close, h.MaxQty, h.ClosedQty = e.String(), c.String(), mq.String(), cq.String()
 		h.Realized, h.Fees, h.Funding, h.Net = feeStr(money(rp)), feeStr(money(f)), feeStr(money(fu)), feeStr(money(n))
+		if histMirrors[h.ID] {
+			applyHistoryMirror(&h)
+		}
 		out = append(out, h)
 	}
 	var next any

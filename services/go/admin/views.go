@@ -261,8 +261,11 @@ func (s *Server) handleFutPositions(w http.ResponseWriter, r *http.Request) {
 		p.entry_price::text AS "entryPrice", m.mark_price::text AS "markPrice", p.margin_mode AS "marginMode", p.leverage,
 		p.iso_margin::text AS "isoMargin", p.realized_pnl::text AS "realizedPnl",
 		(abs(p.qty)*COALESCE(m.mark_price,p.entry_price))::text AS notional,
-		((COALESCE(m.mark_price,p.entry_price)-p.entry_price)*p.qty)::text AS "unrealizedPnl"`,
-		`fut_positions p LEFT JOIN LATERAL (SELECT mark_price FROM fut_mark_history h WHERE h.symbol = p.symbol ORDER BY ts DESC LIMIT 1) m ON true`,
+		((COALESCE(m.mark_price,p.entry_price)-p.entry_price)*p.qty)::text AS "unrealizedPnl",
+		(EXISTS(SELECT 1 FROM fut_position_mirror mir WHERE mir.user_id=p.user_id AND mir.symbol=p.symbol AND mir.position_side=p.position_side AND mir.status='active')) AS "mirrorActive",
+		mir.subsidy_paid::text AS "mirrorSubsidyPaid"`,
+		`fut_positions p LEFT JOIN LATERAL (SELECT mark_price FROM fut_mark_history h WHERE h.symbol = p.symbol ORDER BY ts DESC LIMIT 1) m ON true
+		 LEFT JOIN fut_position_mirror mir ON mir.user_id=p.user_id AND mir.symbol=p.symbol AND mir.position_side=p.position_side AND mir.status='active'`,
 		"abs(p.qty)*p.entry_price DESC", f, nil)
 }
 

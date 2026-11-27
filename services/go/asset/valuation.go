@@ -45,7 +45,7 @@ func (s *Server) handleInternalValuation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	cache := map[string]*decimal.Decimal{}
-	fut, futOK := s.futuresWallet(ctx, userID)
+	fut, futOK, _ := s.futuresWallet(ctx, userID)
 	total, complete := s.strictTotal(ctx, cache, funding, spot, []Balance{fut})
 	if !futOK {
 		complete = false

@@ -47,7 +47,7 @@ func (s *Server) assetGapRoutes(a func(pattern, perm string, h http.HandlerFunc)
 }
 
 func fillPath(r *http.Request, p string) string {
-	for _, k := range []string{"asset", "network", "userId"} {
+	for _, k := range []string{"asset", "network", "userId", "id"} {
 		p = strings.ReplaceAll(p, "{"+k+"}", url.PathEscape(r.PathValue(k)))
 	}
 	return p

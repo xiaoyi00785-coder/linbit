@@ -44,6 +44,7 @@ type Config struct {
 	ADLEnabled          bool            // FUTURES_ADL_ENABLED (true): auto-deleverage when the insurance fund cannot cover a bankruptcy
 	LiqFeeRate          decimal.Decimal // FUTURES_LIQUIDATION_FEE_RATE ("" = contract MMR): to the insurance fund
 	MinTransfer         decimal.Decimal // FUTURES_MIN_TRANSFER (0.01 USDT)
+	MirrorMaxSubsidy    decimal.Decimal // FUTURES_MIRROR_MAX_SUBSIDY per position (0 = no cap)
 	TPSLRetry           time.Duration   // FUTURES_TPSL_RETRY_SECONDS (5): retry a TP/SL that found no liquidity
 	TransferRetry       time.Duration   // FUTURES_TRANSFER_RETRY_SECONDS (5): outbox retry for spot<->futures
 	AutoMarginEvery     time.Duration   // FUTURES_AUTOMARGIN_SECONDS (5): health-check interval for auto-margin top-ups
@@ -97,6 +98,7 @@ func LoadConfig() Config {
 		FundingClamp:           decEnv("FUTURES_FUNDING_CLAMP", "0.0005"),
 		FundingCap:             decEnv("FUTURES_FUNDING_CAP", "0.0075"),
 		MinTransfer:            decEnv("FUTURES_MIN_TRANSFER", "0.01"),
+		MirrorMaxSubsidy:       decEnv("FUTURES_MIRROR_MAX_SUBSIDY", "0"),
 		TPSLRetry:              time.Duration(common.EnvInt("FUTURES_TPSL_RETRY_SECONDS", 5)) * time.Second,
 		TransferRetry:          time.Duration(common.EnvInt("FUTURES_TRANSFER_RETRY_SECONDS", 5)) * time.Second,
 		AutoMarginEvery:        time.Duration(common.EnvInt("FUTURES_AUTOMARGIN_SECONDS", 5)) * time.Second,
