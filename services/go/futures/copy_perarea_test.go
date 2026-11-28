@@ -40,3 +40,26 @@ func TestCopyPerAreaShareCap(t *testing.T) {
 		t.Fatalf("private 0.45 should pass: %v", err)
 	}
 }
+
+func TestCopyPerAreaShareCapOnUpdate(t *testing.T) {
+	s, ctx := copyServer(t, map[string]int{"trader": 1})
+	s.cfg.CopyMaxSharePublic = decimal.RequireFromString("0.3")
+	s.cfg.CopyMaxSharePrivate = decimal.RequireFromString("0.5")
+	nick, priv, inv, ok := "Alpha", "PRIVATE_AREA", "PRIV01", "0.45"
+	if _, err := s.ApplyTrader(ctx, "trader", traderReq{Nickname: &nick, DealerIdentity: &priv, InvitationCode: &inv, ProfitShare: &ok}); err != nil {
+		t.Fatal(err)
+	}
+	// switching to PUBLIC while keeping 0.45 share must be rejected (public cap 0.30)
+	pub := "PUBLIC_AREA"
+	_, err := s.UpdateTrader(ctx, "trader", traderReq{DealerIdentity: &pub})
+	mustCode(t, err, "INVALID_PROFIT_SHARE")
+	// raising share to 0.45 on a public trader must also be rejected
+	s2, ctx2 := copyServer(t, map[string]int{"trader": 1})
+	s2.cfg.CopyMaxSharePublic = decimal.RequireFromString("0.3")
+	nick2, over := "Beta", "0.45"
+	if _, err := s2.ApplyTrader(ctx2, "trader", traderReq{Nickname: &nick2}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s2.UpdateTrader(ctx2, "trader", traderReq{ProfitShare: &over})
+	mustCode(t, err, "INVALID_PROFIT_SHARE")
+}
