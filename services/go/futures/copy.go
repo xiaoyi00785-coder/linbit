@@ -50,40 +50,48 @@ func copyAcct(id int64) string { return "copy:" + strconv.FormatInt(id, 10) }
 var copyNetKinds = `('realized_pnl','fee','funding','liquidation_fee','insurance_cover')`
 
 type Trader struct {
-	UserID      string          `json:"traderId"`
-	Nickname    string          `json:"nickname"`
-	Bio         string          `json:"bio"`
-	ProfitShare decimal.Decimal `json:"profitShare"`
-	Status      string          `json:"status"`
-	ReviewNote  string          `json:"reviewNote,omitempty"` // rejection reason
-	CreatedAt   time.Time       `json:"createdAt"`
+	UserID          string          `json:"traderId"`
+	Nickname        string          `json:"nickname"`
+	Bio             string          `json:"bio"`
+	ProfitShare     decimal.Decimal `json:"profitShare"`
+	Status          string          `json:"status"`
+	ReviewNote      string          `json:"reviewNote,omitempty"` // rejection reason
+	LogoURL         string          `json:"logoUrl,omitempty"`
+	InvitationCode  string          `json:"invitationCode,omitempty"`
+	PositionPrivacy bool            `json:"positionPrivacy"`
+	DealerIdentity  string          `json:"dealerIdentity"`
+	ClosedAt        *time.Time      `json:"closedAt,omitempty"`
+	CreatedAt       time.Time       `json:"createdAt"`
 }
 
 type Follow struct {
-	ID          int64           `json:"id"`
-	Follower    string          `json:"-"`
-	Trader      string          `json:"traderId"`
-	Status      string          `json:"status"`
-	Mode        string          `json:"mode"`
-	FixedMargin decimal.Decimal `json:"fixedMargin"`
-	Ratio       decimal.Decimal `json:"ratio"`
-	MaxPerTrade decimal.Decimal `json:"maxPerTrade"`
-	TPRatio     decimal.Decimal `json:"tpRatio"`
-	SLRatio     decimal.Decimal `json:"slRatio"`
-	Principal   decimal.Decimal `json:"principal"`
-	Returned    decimal.Decimal `json:"returned"`
-	HWM         decimal.Decimal `json:"-"`
-	SharePaid   decimal.Decimal `json:"sharePaid"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	StoppedAt   *time.Time      `json:"stoppedAt,omitempty"`
+	ID             int64           `json:"id"`
+	Follower       string          `json:"-"`
+	Trader         string          `json:"traderId"`
+	Status         string          `json:"status"`
+	Mode           string          `json:"mode"`
+	FixedMargin    decimal.Decimal `json:"fixedMargin"`
+	Ratio          decimal.Decimal `json:"ratio"`
+	MaxPerTrade    decimal.Decimal `json:"maxPerTrade"`
+	TPRatio        decimal.Decimal `json:"tpRatio"`
+	SLRatio        decimal.Decimal `json:"slRatio"`
+	SupportSymbols string          `json:"supportSymbols"`
+	StopLossAmount decimal.Decimal `json:"stopLossAmount"`
+	Leverage       int             `json:"leverage"`
+	Principal      decimal.Decimal `json:"principal"`
+	Returned       decimal.Decimal `json:"returned"`
+	HWM            decimal.Decimal `json:"-"`
+	SharePaid      decimal.Decimal `json:"sharePaid"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	StoppedAt      *time.Time      `json:"stoppedAt,omitempty"`
 }
 
-const followCols = `id, follower, trader, status, mode, fixed_margin, ratio, max_per_trade, tp_ratio, sl_ratio, principal, returned, hwm, share_paid, created_at, stopped_at`
+const followCols = `id, follower, trader, status, mode, fixed_margin, ratio, max_per_trade, tp_ratio, sl_ratio, support_symbols, stop_loss_amount, leverage, principal, returned, hwm, share_paid, created_at, stopped_at`
 
 func scanFollow(sc interface{ Scan(...any) error }) (Follow, error) {
 	var f Follow
 	var st sql.NullTime
-	err := sc.Scan(&f.ID, &f.Follower, &f.Trader, &f.Status, &f.Mode, &f.FixedMargin, &f.Ratio, &f.MaxPerTrade, &f.TPRatio, &f.SLRatio, &f.Principal, &f.Returned, &f.HWM, &f.SharePaid, &f.CreatedAt, &st)
+	err := sc.Scan(&f.ID, &f.Follower, &f.Trader, &f.Status, &f.Mode, &f.FixedMargin, &f.Ratio, &f.MaxPerTrade, &f.TPRatio, &f.SLRatio, &f.SupportSymbols, &f.StopLossAmount, &f.Leverage, &f.Principal, &f.Returned, &f.HWM, &f.SharePaid, &f.CreatedAt, &st)
 	if st.Valid {
 		f.StoppedAt = &st.Time
 	}
@@ -127,8 +135,12 @@ func (s *Server) loadTraders(ctx context.Context) error {
 
 func (s *Server) getTrader(ctx context.Context, uid string) (Trader, error) {
 	var t Trader
-	err := s.db.QueryRowContext(ctx, `SELECT user_id, nickname, bio, profit_share, status, review_note, created_at FROM fut_copy_traders WHERE user_id=$1`, uid).
-		Scan(&t.UserID, &t.Nickname, &t.Bio, &t.ProfitShare, &t.Status, &t.ReviewNote, &t.CreatedAt)
+	var closedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx, `SELECT user_id, nickname, bio, profit_share, status, review_note, logo_url, invitation_code, position_privacy, dealer_identity, closed_at, created_at FROM fut_copy_traders WHERE user_id=$1`, uid).
+		Scan(&t.UserID, &t.Nickname, &t.Bio, &t.ProfitShare, &t.Status, &t.ReviewNote, &t.LogoURL, &t.InvitationCode, &t.PositionPrivacy, &t.DealerIdentity, &closedAt, &t.CreatedAt)
+	if closedAt.Valid {
+		t.ClosedAt = &closedAt.Time
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return t, bad("TRADER_NOT_FOUND", "交易员不存在")
 	}
@@ -149,12 +161,19 @@ func parseShare(v *string, def decimal.Decimal) (decimal.Decimal, error) {
 // ---- trader lifecycle ----
 
 type traderReq struct {
-	Nickname    *string `json:"nickname"`
-	Bio         *string `json:"bio"`
-	ProfitShare *string `json:"profitShare"`
+	Nickname        *string `json:"nickname"`
+	Bio             *string `json:"bio"`
+	ProfitShare     *string `json:"profitShare"`
+	LogoURL         *string `json:"logoUrl"`
+	InvitationCode  *string `json:"invitationCode"`
+	PositionPrivacy *bool   `json:"positionPrivacy"`
+	DealerIdentity  *string `json:"dealerIdentity"`
 }
 
 func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trader, error) {
+	if err := s.requireKYC(ctx, uid); err != nil {
+		return Trader{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	share, err := parseShare(r.ProfitShare, s.cfg.CopyDefaultShare)
@@ -175,6 +194,30 @@ func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trad
 	if len([]rune(bio)) > 280 {
 		return Trader{}, bad("INVALID_BIO", "简介最多 280 个字符")
 	}
+	logo, inv := "", ""
+	var errLogo, errInv error
+	if r.LogoURL != nil {
+		logo, errLogo = parseLogoURL(*r.LogoURL)
+		if errLogo != nil {
+			return Trader{}, errLogo
+		}
+	}
+	if r.InvitationCode != nil {
+		inv, errInv = parseInvitation(*r.InvitationCode)
+		if errInv != nil {
+			return Trader{}, errInv
+		}
+	}
+	privacy := false
+	if r.PositionPrivacy != nil {
+		privacy = *r.PositionPrivacy
+	}
+	identity := "PUBLIC_AREA"
+	if r.DealerIdentity != nil {
+		if identity, err = parseDealerIdentity(*r.DealerIdentity); err != nil {
+			return Trader{}, err
+		}
+	}
 	if t, err := s.getTrader(ctx, uid); err == nil && t.Status != "closed" && t.Status != "rejected" {
 		return t, bad("ALREADY_TRADER", "已是交易员或申请审核中")
 	}
@@ -189,14 +232,22 @@ func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trad
 	if s.cfg.CopyAutoApprove {
 		status = "active"
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO fut_copy_traders (user_id, nickname, bio, profit_share, status) VALUES ($1,$2,$3,$4,$5)
-		ON CONFLICT (user_id) DO UPDATE SET nickname=$2, bio=$3, profit_share=$4, status=$5, review_note='', reviewed_by='', reviewed_at=NULL, created_at=now(), updated_at=now()`, uid, nick, bio, share, status); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO fut_copy_traders (user_id, nickname, bio, profit_share, status, logo_url, invitation_code, position_privacy, dealer_identity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (user_id) DO UPDATE SET nickname=$2, bio=$3, profit_share=$4, status=$5, logo_url=$6, invitation_code=$7, position_privacy=$8, dealer_identity=$9, review_note='', reviewed_by='', reviewed_at=NULL, closed_at=NULL, created_at=now(), updated_at=now()`, uid, nick, bio, share, status, logo, inv, privacy, identity); err != nil {
 		return Trader{}, err
 	}
 	if status == "active" {
 		s.traders[uid] = true
 	}
-	return s.getTrader(ctx, uid)
+	t, err := s.getTrader(ctx, uid)
+	if err == nil {
+		if status == "pending" {
+			s.notifyCopy(uid, "带单申请已提交", "您的带单员申请已提交，通过审核后将出现在跟单广场。", "copy-apply-"+uid+"-"+t.CreatedAt.UTC().Format("20060102T150405"))
+		} else {
+			s.notifyCopy(uid, "您已成为带单员", "您的带单员申请已通过，现在可以开始带单。", "copy-active-"+uid)
+		}
+	}
+	return t, err
 }
 
 func (s *Server) UpdateTrader(ctx context.Context, uid string, r traderReq) (Trader, error) {
@@ -225,15 +276,33 @@ func (s *Server) UpdateTrader(ctx context.Context, uid string, r traderReq) (Tra
 		}
 		t.Bio = strings.TrimSpace(*r.Bio)
 	}
+	if r.LogoURL != nil {
+		if t.LogoURL, err = parseLogoURL(*r.LogoURL); err != nil {
+			return t, err
+		}
+	}
+	if r.InvitationCode != nil {
+		if t.InvitationCode, err = parseInvitation(*r.InvitationCode); err != nil {
+			return t, err
+		}
+	}
+	if r.PositionPrivacy != nil {
+		t.PositionPrivacy = *r.PositionPrivacy
+	}
+	if r.DealerIdentity != nil {
+		if t.DealerIdentity, err = parseDealerIdentity(*r.DealerIdentity); err != nil {
+			return t, err
+		}
+	}
 	// A new rate applies from the next settlement onwards.
-	_, err = s.db.ExecContext(ctx, `UPDATE fut_copy_traders SET nickname=$2, bio=$3, profit_share=$4, updated_at=now() WHERE user_id=$1`, uid, t.Nickname, t.Bio, t.ProfitShare)
+	_, err = s.db.ExecContext(ctx, `UPDATE fut_copy_traders SET nickname=$2, bio=$3, profit_share=$4, logo_url=$5, invitation_code=$6, position_privacy=$7, dealer_identity=$8, updated_at=now() WHERE user_id=$1`, uid, t.Nickname, t.Bio, t.ProfitShare, t.LogoURL, t.InvitationCode, t.PositionPrivacy, t.DealerIdentity)
 	return t, err
 }
 
 func (s *Server) SetTraderStatus(ctx context.Context, uid, status string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res, err := s.db.ExecContext(ctx, `UPDATE fut_copy_traders SET status=$2, updated_at=now() WHERE user_id=$1`, uid, status)
+	res, err := s.db.ExecContext(ctx, `UPDATE fut_copy_traders SET status=$2, closed_at=CASE WHEN $2='closed' THEN now() ELSE NULL END, updated_at=now() WHERE user_id=$1`, uid, status)
 	if err != nil {
 		return err
 	}
@@ -253,14 +322,18 @@ func (s *Server) SetTraderStatus(ctx context.Context, uid, status string) error 
 // ---- follow lifecycle ----
 
 type followReq struct {
-	TraderID    string `json:"traderId"`
-	Amount      string `json:"amount"`
-	Mode        string `json:"mode"`
-	FixedMargin string `json:"fixedMargin"`
-	Ratio       string `json:"ratio"`
-	MaxPerTrade string `json:"maxPerTrade"`
-	TPRatio     string `json:"tpRatio"`
-	SLRatio     string `json:"slRatio"`
+	TraderID       string `json:"traderId"`
+	Amount         string `json:"amount"`
+	Mode           string `json:"mode"`
+	FixedMargin    string `json:"fixedMargin"`
+	Ratio          string `json:"ratio"`
+	MaxPerTrade    string `json:"maxPerTrade"`
+	TPRatio        string `json:"tpRatio"`
+	SLRatio        string `json:"slRatio"`
+	SupportSymbols string `json:"supportSymbols"`
+	StopLossAmount string `json:"stopLossAmount"`
+	InvitationCode string `json:"invitationCode"`
+	Leverage       *int   `json:"leverage"`
 }
 
 func nonNeg(v string, def decimal.Decimal, code, msg string) (decimal.Decimal, error) {
@@ -311,10 +384,36 @@ func (s *Server) applyParams(f *Follow, r followReq, create bool) error {
 	if f.SLRatio.GreaterThan(dOne) {
 		return bad("INVALID_SL_RATIO", "止损比例不能超过 100%")
 	}
+	if r.SupportSymbols != "" || create {
+		syms, err := parseSupportSymbols(r.SupportSymbols)
+		if err != nil {
+			return err
+		}
+		if r.SupportSymbols != "" || create {
+			f.SupportSymbols = syms
+		}
+	}
+	if r.StopLossAmount != "" || create {
+		sl, err := nonNeg(r.StopLossAmount, f.StopLossAmount, "INVALID_STOP_LOSS", "跟单止损金额不合法")
+		if err != nil {
+			return err
+		}
+		f.StopLossAmount = sl
+	}
+	if r.Leverage != nil {
+		lev := *r.Leverage
+		if lev < 0 || lev > 125 {
+			return bad("INVALID_LEVERAGE", "跟单杠杆须在 1–125 之间，0 表示跟随带单员")
+		}
+		f.Leverage = lev
+	}
 	return nil
 }
 
 func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, error) {
+	if err := s.requireKYC(ctx, uid); err != nil {
+		return Follow{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r.TraderID == uid {
@@ -327,13 +426,25 @@ func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, e
 	if t.Status != "active" {
 		return Follow{}, bad("TRADER_NOT_ACTIVE", "该交易员暂不可跟随")
 	}
+	if t.InvitationCode != "" {
+		got, err := parseInvitation(r.InvitationCode)
+		if err != nil {
+			return Follow{}, err
+		}
+		if !strings.EqualFold(got, t.InvitationCode) {
+			return Follow{}, bad("INVITATION_REQUIRED", "请填写正确的邀请码后再跟单")
+		}
+	}
 	amt, err := decimal.NewFromString(strings.TrimSpace(r.Amount))
 	if err != nil || amt.Exponent() < -8 || amt.LessThan(s.cfg.CopyMinAmount) {
-		return Follow{}, bad("INVALID_AMOUNT", fmt.Sprintf("跟单金额最低 %s USDT", s.cfg.CopyMinAmount))
+		return Follow{}, bad("INVALID_AMOUNT", fmt.Sprintf("请设置最大跟单金额，至少 %s USDT。该金额将从合约账户划入跟单子账户。", s.cfg.CopyMinAmount))
 	}
 	f := Follow{Follower: uid, Trader: t.UserID, Ratio: dOne}
 	if err := s.applyParams(&f, r, true); err != nil {
 		return f, err
+	}
+	if f.StopLossAmount.Sign() > 0 && f.StopLossAmount.GreaterThanOrEqual(amt) {
+		return f, bad("INVALID_STOP_LOSS", "跟单止损须小于跟单本金")
 	}
 	err = s.txLocked(ctx, func(tx *sql.Tx) error {
 		var n int
@@ -353,8 +464,8 @@ func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, e
 		if st.Available.LessThan(amt) {
 			return bad("INSUFFICIENT_BALANCE", "合约账户可用余额不足")
 		}
-		row := tx.QueryRowContext(ctx, `INSERT INTO fut_copy_follows (follower, trader, status, mode, fixed_margin, ratio, max_per_trade, tp_ratio, sl_ratio, principal)
-			VALUES ($1,$2,'active',$3,$4,$5,$6,$7,$8,$9) RETURNING `+followCols, uid, t.UserID, f.Mode, f.FixedMargin, f.Ratio, f.MaxPerTrade, f.TPRatio, f.SLRatio, amt)
+		row := tx.QueryRowContext(ctx, `INSERT INTO fut_copy_follows (follower, trader, status, mode, fixed_margin, ratio, max_per_trade, tp_ratio, sl_ratio, support_symbols, stop_loss_amount, leverage, principal)
+			VALUES ($1,$2,'active',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING `+followCols, uid, t.UserID, f.Mode, f.FixedMargin, f.Ratio, f.MaxPerTrade, f.TPRatio, f.SLRatio, f.SupportSymbols, f.StopLossAmount, f.Leverage, amt)
 		if f, err = scanFollow(row); err != nil {
 			if strings.Contains(err.Error(), "fut_copy_follows_live") {
 				return bad("ALREADY_FOLLOWING", "已在跟随该交易员")
@@ -367,6 +478,9 @@ func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, e
 		}
 		return addBalance(ctx, tx, copyAcct(f.ID), "", "copy_transfer_in", amt, ref)
 	})
+	if err == nil {
+		s.notifyCopy(uid, "跟单已开始", fmt.Sprintf("已跟随 %s，本金 %s USDT 已划入跟单子账户。", t.Nickname, money(amt)), fmt.Sprintf("copy-follow-%d", f.ID))
+	}
 	return f, err
 }
 
@@ -387,8 +501,11 @@ func (s *Server) UpdateFollow(ctx context.Context, uid string, id int64, r follo
 	if err := s.applyParams(&f, r, false); err != nil {
 		return f, err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE fut_copy_follows SET mode=$2, fixed_margin=$3, ratio=$4, max_per_trade=$5, tp_ratio=$6, sl_ratio=$7 WHERE id=$1`,
-		f.ID, f.Mode, f.FixedMargin, f.Ratio, f.MaxPerTrade, f.TPRatio, f.SLRatio)
+	if f.StopLossAmount.Sign() > 0 && f.StopLossAmount.GreaterThanOrEqual(f.Principal) {
+		return f, bad("INVALID_STOP_LOSS", "跟单止损须小于跟单本金")
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE fut_copy_follows SET mode=$2, fixed_margin=$3, ratio=$4, max_per_trade=$5, tp_ratio=$6, sl_ratio=$7, support_symbols=$8, stop_loss_amount=$9, leverage=$10 WHERE id=$1`,
+		f.ID, f.Mode, f.FixedMargin, f.Ratio, f.MaxPerTrade, f.TPRatio, f.SLRatio, f.SupportSymbols, f.StopLossAmount, f.Leverage)
 	return f, err
 }
 
@@ -418,6 +535,7 @@ func (s *Server) Unfollow(ctx context.Context, uid string, id int64) (Follow, er
 	if err != nil || len(fs) == 0 {
 		return Follow{}, err
 	}
+	s.notifyCopy(uid, "跟单已停止", fmt.Sprintf("已停止跟随 %s，剩余资金将退回合约账户。", fs[0].Trader), fmt.Sprintf("copy-unfollow-%d", id))
 	return fs[0], nil
 }
 
@@ -441,6 +559,7 @@ func (s *Server) copyHousekeeping(ctx context.Context) {
 }
 
 func (s *Server) copyHousekeepingLocked(ctx context.Context) {
+	s.checkStopLoss(ctx)
 	fs, err := s.follows(ctx, `status='stopping'`)
 	if err != nil {
 		log.Printf("futures: copy stopping: %v", err)
@@ -562,6 +681,8 @@ func (s *Server) settleFollow(ctx context.Context, f Follow, period string) erro
 	})
 	if err == nil && ref != "" {
 		s.completeOut(ctx, ref, f.Trader, "spot", share)
+		s.notifyCopy(f.Trader, "跟单分润已到账", fmt.Sprintf("跟单分润 %s USDT 已转入您的现货账户。", money(share)), "copy-share-"+strconv.FormatInt(f.ID, 10)+"-"+period)
+		s.notifyCopy(f.Follower, "跟单分润已结算", fmt.Sprintf("本期已向带单员结算分润 %s USDT。", money(share)), "copy-share-f-"+strconv.FormatInt(f.ID, 10)+"-"+period)
 	}
 	return err
 }
@@ -683,6 +804,10 @@ func (s *Server) mirror(ctx context.Context, f Follow, e copyEvent) {
 	if e.New.Sign() < 0 {
 		side = "sell"
 	}
+	if !symbolAllowed(f.SupportSymbols, c.Symbol) {
+		s.skipCopy(ctx, f.ID, e.ID, c.Symbol, "open", side, "SYMBOL_FILTERED")
+		return
+	}
 	// TradFi gate (flag + follower KYC country, fail closed); closes above stay open.
 	if reason := s.tradfi.blocked(ctx, c.Symbol, f.Follower); reason != "" {
 		s.skipCopy(ctx, f.ID, e.ID, c.Symbol, "open", side, reason)
@@ -691,6 +816,9 @@ func (s *Server) mirror(ctx context.Context, f Follow, e copyEvent) {
 	lev, mode, err := s.settings(ctx, s.db, e.Trader, c)
 	if err != nil {
 		return
+	}
+	if f.Leverage > 0 {
+		lev = f.Leverage // follower's chosen leverage overrides the trader's
 	}
 	if p2, _, _ := loadPosition(ctx, s.db, acct, c.Symbol, "BOTH", false); p2.Qty.Sign() != 0 && p2.Qty.Sign() != e.New.Sign() {
 		s.skipCopy(ctx, f.ID, e.ID, c.Symbol, "open", side, "OPPOSITE_POSITION")
@@ -907,6 +1035,9 @@ func (s *Server) copyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /futures/copy/follows/{id}", s.user(s.hUpdateFollow))
 	mux.HandleFunc("DELETE /futures/copy/follows/{id}", s.user(s.hUnfollow))
 	mux.HandleFunc("GET /futures/copy/follows/{id}/trades", s.user(s.hFollowTrades))
+	mux.HandleFunc("GET /futures/copy/trader/settlements", s.user(s.hMySettlements))
+	mux.HandleFunc("GET /futures/copy/traders/{id}/positions", s.hCopyTraderPositions)
+	mux.HandleFunc("POST /futures/copy/trader/followers/{id}/stop", s.user(s.hStopFollower))
 	mux.HandleFunc("POST /internal/copy/traders/{id}/status", s.internalOnly(s.hTraderStatus))
 	mux.HandleFunc("GET /internal/copy/applications", s.internalOnly(s.hTraderApplications))
 	mux.HandleFunc("POST /internal/copy/applications/{id}/review", s.internalOnly(s.hTraderReview))
@@ -924,7 +1055,7 @@ func (s *Server) internalOnly(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) activeTraders(ctx context.Context) ([]Trader, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT user_id, nickname, bio, profit_share, status, created_at FROM fut_copy_traders WHERE status='active' ORDER BY created_at`)
+	rows, err := s.db.QueryContext(ctx, `SELECT user_id, nickname, bio, profit_share, status, logo_url, invitation_code, position_privacy, dealer_identity, created_at FROM fut_copy_traders WHERE status='active' ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -932,7 +1063,7 @@ func (s *Server) activeTraders(ctx context.Context) ([]Trader, error) {
 	var out []Trader
 	for rows.Next() {
 		var t Trader
-		if err := rows.Scan(&t.UserID, &t.Nickname, &t.Bio, &t.ProfitShare, &t.Status, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.UserID, &t.Nickname, &t.Bio, &t.ProfitShare, &t.Status, &t.LogoURL, &t.InvitationCode, &t.PositionPrivacy, &t.DealerIdentity, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -965,13 +1096,21 @@ func (s *Server) hCopyTraders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	days := statDays(r)
+	identFilter := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("dealer_identity")))
+	if identFilter == "" {
+		identFilter = strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("identity")))
+	}
 	out := []TraderStats{}
 	for _, t := range ts {
+		if identFilter != "" && identFilter != "ALL" && !strings.EqualFold(t.DealerIdentity, identFilter) {
+			continue
+		}
 		st, err := s.traderStats(ctx, t, days, false)
 		if err != nil {
 			writeErr(w, err)
 			return
 		}
+		st.InvitationCode = ""
 		out = append(out, st)
 	}
 	key := r.URL.Query().Get("sort")
@@ -1011,20 +1150,18 @@ func (s *Server) hCopyTrader(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	ps, err := openPositions(ctx, s.db, t.UserID)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
 	pos := []map[string]any{}
-	for _, p := range ps {
-		side := "long"
-		if p.Qty.Sign() < 0 {
-			side = "short"
+	viewer := r.Header.Get("X-User-Id")
+	if !t.PositionPrivacy || viewer == t.UserID {
+		var err error
+		pos, err = s.copyPositionViews(ctx, t.UserID)
+		if err != nil {
+			writeErr(w, err)
+			return
 		}
-		pos = append(pos, map[string]any{"symbol": p.Symbol, "side": side, "entryPrice": p.Entry, "leverage": p.Leverage, "marginMode": p.Mode, "openedAt": p.UpdatedAt})
 	}
-	common.WriteJSON(w, http.StatusOK, map[string]any{"trader": st, "positions": pos})
+	st.InvitationCode = ""
+	common.WriteJSON(w, http.StatusOK, map[string]any{"trader": st, "positions": pos, "positionPrivacy": t.PositionPrivacy})
 }
 
 func (s *Server) hMyTrader(w http.ResponseWriter, r *http.Request, uid string) {
@@ -1111,11 +1248,7 @@ func (s *Server) followView(ctx context.Context, f Follow) map[string]any {
 	_ = s.db.QueryRowContext(ctx, `SELECT nickname FROM fut_copy_traders WHERE user_id=$1`, f.Trader).Scan(&nick)
 	var unsettled decimal.Decimal
 	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(amount),0) FROM fut_bills WHERE user_id=$1 AND kind IN `+copyNetKinds, acct).Scan(&unsettled)
-	ps, _ := openPositions(ctx, s.db, acct)
-	pos := []map[string]any{}
-	for _, p := range ps {
-		pos = append(pos, map[string]any{"symbol": p.Symbol, "qty": p.Qty, "entryPrice": p.Entry, "leverage": p.Leverage, "marginMode": p.Mode, "tpPrice": p.TP, "slPrice": p.SL})
-	}
+	pos, _ := s.copyPositionViews(ctx, acct)
 	return map[string]any{"follow": f, "traderNickname": nick, "equity": eq, "available": st.Available,
 		"pnl": eq.Add(f.Returned).Sub(f.Principal), "realizedNet": unsettled, "positions": pos}
 }
@@ -1294,7 +1427,7 @@ func (s *Server) hTraderApplications(w http.ResponseWriter, r *http.Request) {
 	}
 	args = append(args, size, (page-1)*size)
 	n := len(args)
-	rows, err := s.db.QueryContext(r.Context(), fmt.Sprintf(`SELECT user_id, nickname, bio, profit_share, status, review_note, reviewed_by, reviewed_at, created_at
+	rows, err := s.db.QueryContext(r.Context(), fmt.Sprintf(`SELECT user_id, nickname, bio, profit_share, status, dealer_identity, review_note, reviewed_by, reviewed_at, created_at
 		FROM fut_copy_traders %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, n-1, n), args...)
 	if err != nil {
 		writeErr(w, err)
@@ -1309,7 +1442,7 @@ func (s *Server) hTraderApplications(w http.ResponseWriter, r *http.Request) {
 	items := []app{}
 	for rows.Next() {
 		var a app
-		if err := rows.Scan(&a.UserID, &a.Nickname, &a.Bio, &a.ProfitShare, &a.Status, &a.ReviewNote, &a.ReviewedBy, &a.ReviewedAt, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.UserID, &a.Nickname, &a.Bio, &a.ProfitShare, &a.Status, &a.DealerIdentity, &a.ReviewNote, &a.ReviewedBy, &a.ReviewedAt, &a.CreatedAt); err != nil {
 			rows.Close()
 			writeErr(w, err)
 			return
@@ -1375,7 +1508,37 @@ func (s *Server) hTraderReview(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if status == "active" {
+		s.notifyCopy(uid, "带单申请已通过", "您的带单员申请已通过审核，现在会出现在跟单广场。", "copy-approved-"+uid)
+	} else {
+		reason := req.Reason
+		s.notifyCopy(uid, "带单申请未通过", "您的带单员申请未通过："+reason+"。您可以修改资料后再次申请。", "copy-rejected-"+uid)
+	}
 	common.WriteJSON(w, http.StatusOK, t)
 }
 
 var errNotPending = errors.New("not pending")
+
+func (s *Server) hMySettlements(w http.ResponseWriter, r *http.Request, uid string) {
+	rows, err := s.db.QueryContext(r.Context(), `SELECT s.follow_id, s.period, s.realized, s.share, s.rate, s.created_at, f.follower
+		FROM fut_copy_settlements s JOIN fut_copy_follows f ON f.id=s.follow_id
+		WHERE s.trader=$1 ORDER BY s.created_at DESC LIMIT $2`, uid, limitParam(r, 50, 200))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	var total decimal.Decimal
+	for rows.Next() {
+		var fid int64
+		var period, follower string
+		var realized, share, rate decimal.Decimal
+		var at time.Time
+		if rows.Scan(&fid, &period, &realized, &share, &rate, &at, &follower) == nil {
+			out = append(out, map[string]any{"followId": fid, "follower": follower, "period": period, "realizedNet": realized, "share": share, "rate": rate, "createdAt": at})
+			total = total.Add(share)
+		}
+	}
+	common.WriteJSON(w, http.StatusOK, map[string]any{"settlements": out, "totalShare": total})
+}
