@@ -39,7 +39,8 @@ type Server struct {
 	tpslRetry      map[string]time.Time
 	traders        map[string]bool // active copy traders (their fills emit copy events)
 	lastCopySettle string
-	histStatus     string // status for position history rows written by the current liquidation/ADL step
+	kycLevel       func(context.Context, string) (int, error) // tests override; nil = account HTTP
+	histStatus     string                                     // status for position history rows written by the current liquidation/ADL step
 }
 
 func NewServer(cfg Config, db *sql.DB) (*Server, error) {

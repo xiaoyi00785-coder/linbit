@@ -17,6 +17,7 @@ type Config struct {
 	AssetURL      string // asset internal URL (spot <-> futures transfers)
 	MarketURL     string // market-data URL (index price = spot last price)
 	KycURL        string // kyc internal URL (copy-trading TradFi gate: follower country)
+	AccountURL    string // ACCOUNT_INTERNAL_URL (KYC level for apply/follow)
 	DevMode       bool   // enables /internal/dev/* (index override, tick, funding)
 
 	DefaultLeverage   int    // FUTURES_DEFAULT_LEVERAGE (20, matches the UI)
@@ -40,7 +41,8 @@ type Config struct {
 	CopyTraderMinEquity decimal.Decimal // FUTURES_COPY_TRADER_MIN_EQUITY (100 USDT futures equity to apply)
 	CopyAutoApprove     bool            // FUTURES_COPY_AUTO_APPROVE (false: applications wait for admin review)
 	CopySettleHourUTC   int             // FUTURES_COPY_SETTLE_HOUR_UTC (16 = 00:00 UTC+8)
-	CopyMaxRatio        decimal.Decimal // FUTURES_COPY_MAX_RATIO (10)
+	CopyMaxRatio        decimal.Decimal // FUTURES_COPY_MAX_RATIO (50)
+	CopyMinKYCLevel     int             // FUTURES_COPY_MIN_KYC_LEVEL (1; 0 = disable check)
 	ADLEnabled          bool            // FUTURES_ADL_ENABLED (true): auto-deleverage when the insurance fund cannot cover a bankruptcy
 	LiqFeeRate          decimal.Decimal // FUTURES_LIQUIDATION_FEE_RATE ("" = contract MMR): to the insurance fund
 	MinTransfer         decimal.Decimal // FUTURES_MIN_TRANSFER (0.01 USDT)
@@ -84,6 +86,7 @@ func LoadConfig() Config {
 		AssetURL:               common.Env("ASSET_INTERNAL_URL", "http://localhost:8082"),
 		MarketURL:              common.Env("MARKET_URL", "http://localhost:8085"),
 		KycURL:                 common.Env("KYC_URL", "http://localhost:8087"),
+		AccountURL:             common.Env("ACCOUNT_INTERNAL_URL", "http://localhost:8081"),
 		DevMode:                common.Env("DEV_MODE", "false") == "true",
 		DefaultLeverage:        common.EnvInt("FUTURES_DEFAULT_LEVERAGE", 20),
 		DefaultMarginMode:      mode,
@@ -108,7 +111,8 @@ func LoadConfig() Config {
 		CopyTraderMinEquity:    decEnv("FUTURES_COPY_TRADER_MIN_EQUITY", "100"),
 		CopyAutoApprove:        strings.ToLower(common.Env("FUTURES_COPY_AUTO_APPROVE", "false")) == "true",
 		CopySettleHourUTC:      common.EnvInt("FUTURES_COPY_SETTLE_HOUR_UTC", 16),
-		CopyMaxRatio:           decEnv("FUTURES_COPY_MAX_RATIO", "10"),
+		CopyMaxRatio:           decEnv("FUTURES_COPY_MAX_RATIO", "50"),
+		CopyMinKYCLevel:        common.EnvInt("FUTURES_COPY_MIN_KYC_LEVEL", 1),
 		ADLEnabled:             strings.ToLower(common.Env("FUTURES_ADL_ENABLED", "true")) != "false",
 		EventRequireFlag:       strings.ToLower(common.Env("EVENT_REQUIRE_FEATURE_FLAG", "true")) != "false",
 		EventSettleTolerance:   time.Duration(common.EnvInt("EVENT_SETTLE_TOLERANCE_SECONDS", 5)) * time.Second,
