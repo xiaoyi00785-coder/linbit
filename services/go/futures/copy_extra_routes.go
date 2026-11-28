@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -12,10 +13,9 @@ import (
 )
 
 // hCopyTraderPositions serves GET /futures/copy/traders/{id}/positions.
-// status=closed returns the trader's realised (closed) positions from
-// fut_position_history; otherwise the trader's current open positions. The
-// compat gateway calls this for the "copy closed PnL" screens. The trader's
-// position-privacy switch hides both from non-owner viewers.
+// Closed history is selected when the query has status=closed (original) or
+// the App/compat spelling position_status=close. Otherwise open positions
+// are returned. Privacy hides both from non-owner viewers.
 func (s *Server) hCopyTraderPositions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	t, err := s.getTrader(ctx, r.PathValue("id"))
@@ -31,7 +31,7 @@ func (s *Server) hCopyTraderPositions(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, http.StatusOK, map[string]any{"positions": []any{}, "positionPrivacy": true})
 		return
 	}
-	if r.URL.Query().Get("status") == "closed" {
+	if copyPositionsWantClosed(r.URL.Query()) {
 		out, next, err := s.copyClosedPositions(ctx, t.UserID, r)
 		if err != nil {
 			writeErr(w, err)
@@ -46,6 +46,20 @@ func (s *Server) hCopyTraderPositions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, http.StatusOK, map[string]any{"positions": pos, "positionPrivacy": t.PositionPrivacy})
+}
+
+// copyPositionsWantClosed reports whether the client asked for closed / history
+// positions. The App and compat send position_status=close; the original
+// futures query was the stricter status=closed only, so 仓位历史 was empty.
+func copyPositionsWantClosed(q url.Values) bool {
+	st := strings.ToLower(strings.TrimSpace(q.Get("position_status")))
+	if st == "" {
+		st = strings.ToLower(strings.TrimSpace(q.Get("positionStatus")))
+	}
+	if st == "" {
+		st = strings.ToLower(strings.TrimSpace(q.Get("status")))
+	}
+	return st == "close" || st == "closed"
 }
 
 // copyClosedPositions reads the trader's closed positions (newest first) with
@@ -63,7 +77,17 @@ func (s *Server) copyClosedPositions(ctx context.Context, uid string, r *http.Re
 		args = append(args, v)
 		qs += ` AND id<$` + strconv.Itoa(len(args))
 	}
-	lim := limitParam(r, 50, 200)
+	lim := limitParam(r, 200, 200)
+	ps := q.Get("page_size")
+	if ps == "" {
+		ps = q.Get("pageSize")
+	}
+	if n, err := strconv.Atoi(ps); err == nil && n > 0 {
+		if n > 200 {
+			n = 200
+		}
+		lim = n
+	}
 	args = append(args, lim+1)
 	qs += ` ORDER BY id DESC LIMIT $` + strconv.Itoa(len(args))
 	rows, err := s.db.QueryContext(ctx, qs, args...)
