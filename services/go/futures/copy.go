@@ -218,6 +218,9 @@ func (s *Server) ApplyTrader(ctx context.Context, uid string, r traderReq) (Trad
 			return Trader{}, err
 		}
 	}
+	if share.GreaterThan(s.maxShareFor(identity)) {
+		return Trader{}, bad("INVALID_PROFIT_SHARE", fmt.Sprintf("该区域分润比例最高 %s%%", s.maxShareFor(identity).Mul(decimal.NewFromInt(100)).String()))
+	}
 	if t, err := s.getTrader(ctx, uid); err == nil && t.Status != "closed" && t.Status != "rejected" {
 		return t, bad("ALREADY_TRADER", "已是交易员或申请审核中")
 	}
@@ -426,6 +429,11 @@ func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, e
 	if t.Status != "active" {
 		return Follow{}, bad("TRADER_NOT_ACTIVE", "该交易员暂不可跟随")
 	}
+	if blocked, err := s.isBlacklisted(ctx, t.UserID, uid); err != nil {
+		return Follow{}, err
+	} else if blocked {
+		return Follow{}, bad("BLACKLISTED", "你已被该交易员加入黑名单，暂时无法跟单")
+	}
 	if t.InvitationCode != "" {
 		got, err := parseInvitation(r.InvitationCode)
 		if err != nil {
@@ -451,7 +459,7 @@ func (s *Server) Follow(ctx context.Context, uid string, r followReq) (Follow, e
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM fut_copy_follows WHERE trader=$1 AND status<>'stopped'`, t.UserID).Scan(&n); err != nil {
 			return err
 		}
-		if n >= s.cfg.CopyMaxFollowers {
+		if n >= s.maxFollowersFor(t.DealerIdentity) {
 			return bad("TRADER_FULL", "该交易员跟单人数已满")
 		}
 		if _, _, err := lockAccount(ctx, tx, uid); err != nil {
@@ -941,7 +949,7 @@ func (s *Server) followerProfit(ctx context.Context, fs []Follow) (aum, profit d
 }
 
 func (s *Server) traderStats(ctx context.Context, t Trader, days int, curve bool) (TraderStats, error) {
-	ts := TraderStats{Trader: t, Days: days, MaxFollowers: s.cfg.CopyMaxFollowers}
+	ts := TraderStats{Trader: t, Days: days, MaxFollowers: s.maxFollowersFor(t.DealerIdentity)}
 	since := s.now().AddDate(0, 0, -days)
 	rows, err := s.db.QueryContext(ctx, `SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD'), kind, amount FROM fut_bills
 		WHERE user_id=$1 AND created_at >= $2 AND kind IN `+copyNetKinds+` ORDER BY created_at`, t.UserID, since)
@@ -1024,6 +1032,10 @@ func statDays(r *http.Request) int {
 func (s *Server) copyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /futures/copy/summary", s.hCopySummary)
 	mux.HandleFunc("GET /futures/copy/traders", s.hCopyTraders)
+	mux.HandleFunc("GET /futures/copy/topn", s.hCopyTopN)
+	mux.HandleFunc("GET /futures/copy/trader/blacklist", s.user(s.hListBlacklist))
+	mux.HandleFunc("POST /futures/copy/trader/blacklist", s.user(s.hAddBlacklist))
+	mux.HandleFunc("DELETE /futures/copy/trader/blacklist/{uid}", s.user(s.hRemoveBlacklist))
 	mux.HandleFunc("GET /futures/copy/traders/{id}", s.hCopyTrader)
 	mux.HandleFunc("GET /futures/copy/trader", s.user(s.hMyTrader))
 	mux.HandleFunc("POST /futures/copy/trader", s.user(s.hApplyTrader))
