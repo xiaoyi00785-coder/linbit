@@ -321,6 +321,8 @@ func (s *Server) hOrders(w http.ResponseWriter, r *http.Request, uid string) {
 		}
 		out = append(out, o)
 	}
+	mirrors, _ := loadActiveMirrors(r.Context(), s.db, uid)
+	applyBookMirrorOrders(out, mirrors)
 	common.WriteJSON(w, http.StatusOK, map[string]any{"orders": out})
 }
 

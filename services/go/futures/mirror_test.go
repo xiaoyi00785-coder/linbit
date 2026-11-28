@@ -2,9 +2,30 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
+
+func TestApplyBookMirrorOrderFlipsPreMirrorSide(t *testing.T) {
+	t0 := time.Now()
+	mirrors := map[string]PositionMirror{
+		mirrorKey("BTCUSDT", "BOTH"): {
+			Symbol: "BTCUSDT", PositionSide: "BOTH", Status: "active", BookFlipped: true,
+			CreatedAt: t0,
+		},
+	}
+	o := Order{Symbol: "BTCUSDT", Side: "buy", PosSide: "BOTH", CreatedAt: t0.Add(-time.Minute)}
+	applyBookMirrorOrder(&o, mirrors)
+	if o.Side != "sell" {
+		t.Fatalf("got side %s", o.Side)
+	}
+	o2 := Order{Symbol: "BTCUSDT", Side: "buy", PosSide: "BOTH", CreatedAt: t0.Add(time.Minute)}
+	applyBookMirrorOrder(&o2, mirrors)
+	if o2.Side != "buy" {
+		t.Fatalf("post-mirror order should stay buy, got %s", o2.Side)
+	}
+}
 
 func TestTargetSubsidy(t *testing.T) {
 	u := decimal.RequireFromString("-100")

@@ -37,6 +37,53 @@ func mirrorDisplayFlip(m PositionMirror) bool {
 	return m.Status == "active" && !m.BookFlipped
 }
 
+func flipTradeSide(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "buy":
+		return "sell"
+	case "sell":
+		return "buy"
+	default:
+		return s
+	}
+}
+
+// applyBookMirrorOrder flips order.side for user-facing lists while book_flipped mirror is active.
+// Only orders strictly before mirror.created_at are flipped (facts in DB stay; display matches post-flip book).
+func applyBookMirrorOrder(o *Order, mirrors map[string]PositionMirror) {
+	if o == nil || len(mirrors) == 0 {
+		return
+	}
+	sym := strings.ToUpper(o.Symbol)
+	ps := normSide(o.PosSide)
+	for _, m := range mirrors {
+		if !m.BookFlipped || m.Status != "active" {
+			continue
+		}
+		if strings.ToUpper(m.Symbol) != sym {
+			continue
+		}
+		mps := normSide(m.PositionSide)
+		if mps != "BOTH" && mps != ps {
+			continue
+		}
+		if mps == "BOTH" && ps != "BOTH" {
+			continue
+		}
+		if !o.CreatedAt.Before(m.CreatedAt) {
+			continue
+		}
+		o.Side = flipTradeSide(o.Side)
+		return
+	}
+}
+
+func applyBookMirrorOrders(orders []Order, mirrors map[string]PositionMirror) {
+	for i := range orders {
+		applyBookMirrorOrder(&orders[i], mirrors)
+	}
+}
+
 // bookFlipPosition negates qty (entry unchanged). UPnL sign flips with the book.
 func bookFlipPosition(ctx context.Context, tx *sql.Tx, p *Position, mirrorID int64, operator string) (preSign int, err error) {
 	if p.Qty.IsZero() {
