@@ -297,6 +297,9 @@ func (s *Server) UpdateTrader(ctx context.Context, uid string, r traderReq) (Tra
 			return t, err
 		}
 	}
+	if t.ProfitShare.GreaterThan(s.maxShareFor(t.DealerIdentity)) {
+		return t, bad("INVALID_PROFIT_SHARE", fmt.Sprintf("该区域分润比例最高 %s%%", s.maxShareFor(t.DealerIdentity).Mul(decimal.NewFromInt(100)).String()))
+	}
 	// A new rate applies from the next settlement onwards.
 	_, err = s.db.ExecContext(ctx, `UPDATE fut_copy_traders SET nickname=$2, bio=$3, profit_share=$4, logo_url=$5, invitation_code=$6, position_privacy=$7, dealer_identity=$8, updated_at=now() WHERE user_id=$1`, uid, t.Nickname, t.Bio, t.ProfitShare, t.LogoURL, t.InvitationCode, t.PositionPrivacy, t.DealerIdentity)
 	return t, err
