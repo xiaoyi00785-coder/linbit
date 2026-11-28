@@ -88,7 +88,7 @@ func (s *Server) checkUser(ctx context.Context, uid string) error {
 			userIsoEq = v.pos.Iso.Add(v.upnl.Neg())
 		}
 		if isoEq.LessThanOrEqual(v.mm) || (!isoEq.LessThanOrEqual(v.mm) && userIsoEq.LessThanOrEqual(v.mm) && len(mirrors) > 0) {
-			if err := s.txLocked(ctx, func(tx *sql.Tx) error { return s.liquidateIsolated(ctx, tx, uid, v.pos.Symbol, v.pos.Side, v.mark) }); err != nil {
+			if err := s.commitLiq(ctx, func(tx *sql.Tx) error { return s.liquidateIsolated(ctx, tx, uid, v.pos.Symbol, v.pos.Side, v.mark) }); err != nil {
 				return err
 			}
 		}
@@ -110,7 +110,7 @@ func (s *Server) checkUser(ctx context.Context, uid string) error {
 				return nil // never liquidate on a stale price
 			}
 		}
-		return s.txLocked(ctx, func(tx *sql.Tx) error { return s.liquidateCross(ctx, tx, uid) })
+		return s.commitLiq(ctx, func(tx *sql.Tx) error { return s.liquidateCross(ctx, tx, uid) })
 	}
 	return nil
 }
@@ -281,6 +281,10 @@ func (s *Server) settleLiq(ctx context.Context, tx *sql.Tx, uid string, c Contra
 	_, err := tx.ExecContext(ctx, `INSERT INTO fut_liquidations (user_id, symbol, margin_mode, qty, mark_price, fee, shortfall) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		uid, c.Symbol, p.Mode, p.Qty, mark, fee, shortfall)
 	if err == nil {
+		if p.Symbol == "" {
+			p.Symbol = c.Symbol
+		}
+		s.queueLiqNotice(uid, p, mark, fee, shortfall)
 		var ins decimal.Decimal
 		_ = tx.QueryRowContext(ctx, `SELECT balance FROM fut_accounts WHERE user_id=$1`, insuranceUser).Scan(&ins)
 		if ins.Sign() < 0 {
