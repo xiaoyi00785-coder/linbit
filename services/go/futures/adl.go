@@ -150,6 +150,10 @@ func (s *Server) deleverage(ctx context.Context, tx *sql.Tx, uid string, c Contr
 			c.Symbol, uid, cd.p.UserID, decimal.NewFromInt(int64(p.Qty.Sign())).Mul(x), px, cpnl); err != nil {
 			return rem, err
 		}
+		if cd.p.Symbol == "" {
+			cd.p.Symbol = c.Symbol
+		}
+		s.queueADLNotice(cd.p, x, px)
 		log.Printf("futures: ADL %s %s qty=%s px=%s against %s", uid, c.Symbol, x, px, cd.p.UserID)
 		rem = rem.Sub(x)
 	}

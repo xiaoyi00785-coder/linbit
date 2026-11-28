@@ -41,6 +41,8 @@ type Server struct {
 	lastCopySettle string
 	kycLevel       func(context.Context, string) (int, error) // tests override; nil = account HTTP
 	histStatus     string                                     // status for position history rows written by the current liquidation/ADL step
+	pendingNotices []pendingLiqNotice                         // queued during a liq/ADL tx; flushed only after commit
+	notify         func(uid, title, body string)              // tests override; nil = common.Notify
 }
 
 func NewServer(cfg Config, db *sql.DB) (*Server, error) {
